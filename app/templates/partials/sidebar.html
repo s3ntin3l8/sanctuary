@@ -1,0 +1,101 @@
+<aside x-data="{ expanded: true }" :class="expanded ? 'w-[18%] min-w-[240px] max-w-[300px]' : 'w-[80px]'" class="bg-slate-900 flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r-0 font-headline tracking-tight font-semibold transition-all duration-300 ease-in-out z-50">
+    <!-- Brand Header -->
+    <div class="px-4 pt-8 min-h-[80px]">
+        <div class="px-3 flex items-center gap-3">
+            <!-- Shielded Leaf Icon -->
+            <div class="relative flex items-center justify-center w-5 h-5 bg-slate-800 shrink-0 shadow-sm mx-auto lg:mx-0" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);">
+                <span class="material-symbols-outlined text-teal-400 text-[14px]" style="font-variation-settings: 'FILL' 1;">eco</span>
+            </div>
+            <!-- Brand Text -->
+            <div class="flex flex-col justify-center whitespace-nowrap transition-opacity duration-300" x-show="expanded">
+                <h1 class="text-xl font-bold text-teal-200 leading-tight">The Sanctuary</h1>
+                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Lead Counsel</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Navigation Links -->
+    <nav class="flex-1 px-4 space-y-1">
+        <!-- Focus Mode Toggle -->
+        <div class="mt-8 mb-4">
+            <button @click="expanded = !expanded" class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-slate-400 hover:text-teal-400 hover:bg-slate-800/50 transition-all duration-300 group" title="Toggle Focus Mode">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] group-hover:text-teal-400" x-text="expanded ? 'side_navigation' : 'menu_open'"></span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Focus Mode</span>
+                </div>
+            </button>
+        </div>
+        
+        <div class="mb-6">
+            <p class="px-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2" x-show="expanded">Workspace</p>
+            
+            <!-- 1. Dashboard -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="/" title="Dashboard">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/' %}group-hover:text-teal-400{% endif %}">dashboard</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Dashboard</span>
+                </div>
+            </a>
+            
+            <!-- 2. Triage Center -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/triage' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/triage' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="#" title="Triage Center">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/triage' %}group-hover:text-teal-400{% endif %}">inbox</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Triage Center</span>
+                </div>
+                <span class="bg-slate-800 text-slate-500 text-[10px] px-2 py-0.5 rounded-full group-hover:bg-teal-900/50 group-hover:text-teal-400 transition-opacity duration-300" x-show="expanded">3</span>
+            </a>
+            
+            <!-- 3. Case Files -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/cases' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/cases' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="/cases" title="Case Files">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/cases' %}group-hover:text-teal-400{% endif %}">folder_open</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Case Files</span>
+                </div>
+                <span class="bg-teal-900/50 text-teal-400 text-[10px] px-2 py-0.5 rounded-full transition-opacity duration-300" x-show="expanded">12</span>
+            </a>
+            
+            <!-- 4. Master Timeline -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/timeline' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/timeline' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="#" title="Master Timeline">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/timeline' %}group-hover:text-teal-400{% endif %}">timeline</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Master Timeline</span>
+                </div>
+            </a>
+            
+            <!-- 5. Legal Costs -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/costs' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/costs' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="#" title="Legal Costs">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/costs' %}group-hover:text-teal-400{% endif %}">payments</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Legal Costs</span>
+                </div>
+            </a>
+            
+            <!-- 6. Contacts -->
+            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-teal-400 font-bold bg-white/5' if request.url.path == '/contacts' else 'text-slate-400 hover:text-teal-400 hover:bg-slate-800/50' }} transition-all duration-300 group" {% if request.url.path == '/contacts' %}:class="expanded ? 'border-r-2 border-teal-400' : ''"{% endif %} href="#" title="Contacts">
+                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/contacts' %}group-hover:text-teal-400{% endif %}">contacts</span>
+                    <span class="text-sm whitespace-nowrap" x-show="expanded">Contacts</span>
+                </div>
+            </a>
+        </div>
+    </nav>
+    
+    <!-- Profile & CTA -->
+    <div class="p-4 mt-auto border-t border-slate-800/50 flex flex-col items-center">
+        <button class="w-full bg-teal-700 hover:bg-teal-600 text-white py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-95 mb-4 px-0" title="New Case File">
+            <span class="material-symbols-outlined text-lg">add_circle</span>
+            <span x-show="expanded" class="whitespace-nowrap">New Case File</span>
+        </button>
+        
+        <div class="flex items-center gap-3 px-2 w-full" :class="expanded ? '' : 'justify-center'">
+            <div class="w-8 h-8 rounded-full overflow-hidden bg-slate-700 shrink-0">
+                <img alt="professional legal counsel portrait in corporate attire" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvPYsY2I41EeSTepj1kaksZjInCinC2mPkRvsrFV-Y7HOrkfzwIEB4IcvUAGa5m3l0rzVXVIbxlGjfHA6tmI4lvD43PTfLW14ZZKx-SqHQGZIe-b2aF_JnHMdwUHPqw2CbYNAX5Tsb7dFXFggFgDE0IXwRvJ9gbfDXB8JKQ9c0_3UZP9KTgNHTq_d4WUoo4Wj_zhJXWaU4KPVht-sLfi324B1DempL_pUZ-xf5_5Jnv_3oVYjcbq030R1_naqq7tni7omhbsiy27s"/>
+            </div>
+            <div class="overflow-hidden transition-opacity duration-300" x-show="expanded">
+                <p class="text-xs font-bold text-slate-200 truncate">Julian Vance</p>
+                <p class="text-[10px] text-slate-500 truncate">Senior Associate</p>
+            </div>
+        </div>
+    </div>
+</aside>

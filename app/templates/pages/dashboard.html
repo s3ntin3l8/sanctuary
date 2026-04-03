@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | The Sanctuary{% endblock %}
+
+{% block content %}
+<section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden transition-all duration-500 ease-in-out">
+    <!-- Header -->
+    <header class="px-8 py-4 bg-slate-50/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10">
+        <div class="flex items-center gap-4">
+            <h2 class="text-lg font-black tracking-tighter text-teal-900 uppercase">Dashboard Overview</h2>
+            <div class="h-4 w-px bg-slate-300"></div>
+            <p class="text-xs font-semibold text-slate-500">Good morning, Julian. You have <span class="text-teal-700 font-bold">3 items</span> requiring your attention.</p>
+        </div>
+        <div class="flex gap-3">
+            <span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-teal-600 transition-colors">search</span>
+            <div class="relative">
+                <span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-teal-600 transition-colors">notifications</span>
+                <span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+            </div>
+            <span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-teal-600 transition-colors">settings</span>
+        </div>
+    </header>
+    
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface pb-12">
+        <div class="p-8 max-w-7xl mx-auto space-y-8">
+            
+            <!-- Metrics Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Metric 1 -->
+                <div class="bg-white rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all cursor-pointer relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-teal-500"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-teal-50 rounded-lg group-hover:bg-teal-100 transition-colors">
+                            <span class="material-symbols-outlined text-teal-700">work</span>
+                        </div>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest"><span class="text-teal-500">+2</span> this week</span>
+                    </div>
+                    <h3 class="text-3xl font-black text-slate-800 mb-1">12</h3>
+                    <p class="text-sm font-semibold text-slate-500">Active Case Files</p>
+                </div>
+                
+                <!-- Metric 2 -->
+                <div class="bg-white rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all cursor-pointer relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-[#B91C1C]"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-red-50 rounded-lg group-hover:bg-red-100 transition-colors">
+                            <span class="material-symbols-outlined text-[#B91C1C]">gavel</span>
+                        </div>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Requires action</span>
+                    </div>
+                    <h3 class="text-3xl font-black text-slate-800 mb-1">3</h3>
+                    <p class="text-sm font-semibold text-slate-500">Urgent Motions</p>
+                </div>
+                
+                <!-- Metric 3 -->
+                <div class="bg-white rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] transition-all cursor-pointer relative overflow-hidden group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-[#0369A1]"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="p-2 bg-sky-50 rounded-lg group-hover:bg-sky-100 transition-colors">
+                            <span class="material-symbols-outlined text-[#0369A1]">payments</span>
+                        </div>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-widest text-[#0369A1]">Month to Date</span>
+                    </div>
+                    <h3 class="text-3xl font-black text-slate-800 mb-1">142h</h3>
+                    <p class="text-sm font-semibold text-slate-500">Billable Hours Logged</p>
+                </div>
+            </div>
+            
+            <!-- Main Content Area -->
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                
+                <!-- Left Column (Items) -->
+                <div class="xl:col-span-2 space-y-8">
+                    
+                    <!-- Priority Action Items -->
+                    <div class="bg-white rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
+                        <div class="px-6 py-4 border-b border-outline-variant/10 bg-slate-50 flex items-center justify-between">
+                            <h3 class="text-xs font-bold text-slate-600 uppercase tracking-widest flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm text-[#B91C1C]">bolt</span>
+                                Priority Action Items
+                            </h3>
+                            <button class="text-[10px] uppercase font-bold text-teal-600 hover:text-teal-800 tracking-wider">View All</button>
+                        </div>
+                        <div class="divide-y divide-outline-variant/10">
+                            <!-- Action Item 1 -->
+                            <div class="p-6 hover:bg-slate-50/50 transition-colors flex gap-4 items-start">
+                                <div class="w-2 h-2 mt-1.5 rounded-full bg-[#B91C1C] shrink-0"></div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <p class="text-sm font-bold text-slate-800">Draft Responses to Interrogatories</p>
+                                        <span class="bg-red-100 text-red-800 text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-wider">Due Today</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mb-3">Vane vs. Vane: Divorce &amp; Assets (ADV-992-K)</p>
+                                    <div class="flex gap-2">
+                                        <button class="text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-md transition-colors">Begin Draft</button>
+                                        <button class="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md transition-colors">Delegate</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Action Item 2 -->
+                            <div class="p-6 hover:bg-slate-50/50 transition-colors flex gap-4 items-start">
+                                <div class="w-2 h-2 mt-1.5 rounded-full bg-amber-500 shrink-0"></div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <p class="text-sm font-bold text-slate-800">Review Settlement Counter-Offer</p>
+                                        <span class="bg-amber-100 text-amber-800 text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-wider">Due Tomorrow</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 mb-3">Smith Construction vs. City Council (ADV-804-M)</p>
+                                    <div class="flex gap-2">
+                                        <button class="text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-md transition-colors">Review Document</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Files -->
+                    <div>
+                        <div class="flex items-center justify-between mb-4 px-1">
+                            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">history</span>
+                                Recently Accessed Files
+                            </h3>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- File Card 1 -->
+                            <a href="/" class="flex items-center gap-4 p-4 bg-white rounded-xl border border-outline-variant/10 shadow-sm hover:border-teal-300 transition-colors group">
+                                <div class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center shrink-0 group-hover:bg-teal-50 transition-colors">
+                                    <span class="material-symbols-outlined text-slate-400 group-hover:text-teal-600 text-[20px]">folder</span>
+                                </div>
+                                <div class="overflow-hidden">
+                                    <p class="text-sm font-bold text-slate-800 truncate">Vane vs. Vane</p>
+                                    <p class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Updated 2h ago</p>
+                                </div>
+                            </a>
+                            <!-- File Card 2 -->
+                            <a href="#" class="flex items-center gap-4 p-4 bg-white rounded-xl border border-outline-variant/10 shadow-sm hover:border-teal-300 transition-colors group">
+                                <div class="w-10 h-10 rounded bg-slate-100 flex items-center justify-center shrink-0 group-hover:bg-teal-50 transition-colors">
+                                    <span class="material-symbols-outlined text-slate-400 group-hover:text-teal-600 text-[20px]">folder</span>
+                                </div>
+                                <div class="overflow-hidden">
+                                    <p class="text-sm font-bold text-slate-800 truncate">Mercury Tech IP Dispute</p>
+                                    <p class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Updated yesterday</p>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                    
+                </div>
+                
+                <!-- Right Column (Context) -->
+                <div class="space-y-8">
+                    <!-- Mini Calendar/Hearings -->
+                    <div class="bg-slate-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+                        <!-- Abstract Background Decoration -->
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                        
+                        <div class="flex items-center justify-between mb-6 relative z-10">
+                            <h3 class="text-xs font-bold text-teal-400 uppercase tracking-widest flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">calendar_month</span>
+                                Upcoming Hearings
+                            </h3>
+                            <span class="bg-white/10 text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">Dec 2024</span>
+                        </div>
+                        
+                        <!-- Hearing Item -->
+                        <div class="relative pl-4 mb-5 group cursor-pointer">
+                            <div class="absolute left-0 top-1.5 bottom-0 w-[2px] bg-teal-500 group-hover:bg-teal-400 transition-colors"></div>
+                            <p class="text-sm font-bold text-white mb-1 group-hover:text-teal-200 transition-colors">Preliminary Hearing</p>
+                            <p class="text-xs text-slate-400 mb-2">Smith Construction vs. City Council</p>
+                            <div class="flex items-center gap-2 text-[10px] text-slate-300 bg-white/5 py-1 px-2 rounded w-fit">
+                                <span class="material-symbols-outlined text-[12px]">schedule</span>
+                                Tomorrow, 10:00 AM EST • Courtroom 4B
+                            </div>
+                        </div>
+                        
+                        <!-- Hearing Item -->
+                        <div class="relative pl-4 group cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
+                            <div class="absolute left-0 top-1.5 bottom-0 w-[2px] bg-slate-600 group-hover:bg-slate-400 transition-colors"></div>
+                            <p class="text-sm font-bold text-white mb-1">Deposition: Dr. Aris</p>
+                            <p class="text-xs text-slate-400 mb-2">Vane vs. Vane Medical Records</p>
+                            <div class="flex items-center gap-2 text-[10px] text-slate-300 bg-white/5 py-1 px-2 rounded w-fit">
+                                <span class="material-symbols-outlined text-[12px]">schedule</span>
+                                Thursday, 2:00 PM EST • Office Conf A
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Contacts -->
+                    <div class="bg-white rounded-2xl border border-outline-variant/10 p-6 shadow-sm">
+                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4">
+                            <span class="material-symbols-outlined text-sm">groups</span>
+                            Active Counsel
+                        </h3>
+                        
+                        <div class="space-y-4">
+                            <!-- Contact -->
+                            <div class="flex items-center justify-between group cursor-pointer">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-500">
+                                        MS
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-bold text-slate-800 group-hover:text-teal-700 transition-colors">Marcus Steele</p>
+                                        <p class="text-[10px] text-slate-500">Partner</p>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center hover:bg-teal-50 hover:text-teal-600 transition-colors text-slate-400">
+                                        <span class="material-symbols-outlined text-[14px]">mail</span>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Contact -->
+                            <div class="flex items-center justify-between group cursor-pointer">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-slate-200 overflow-hidden flex items-center justify-center text-xs font-bold text-slate-500">
+                                        EL
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-bold text-slate-800 group-hover:text-teal-700 transition-colors">Elena Rust</p>
+                                        <p class="text-[10px] text-slate-500">Junior Associate</p>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center hover:bg-teal-50 hover:text-teal-600 transition-colors text-slate-400">
+                                        <span class="material-symbols-outlined text-[14px]">mail</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="w-full mt-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">View Directory</button>
+                    </div>
+                    
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</section>
+{% endblock %}
