@@ -87,6 +87,77 @@ class Hearing(Base):
     source_document = relationship('Document')
 
 
+class CostCategory(str, enum.Enum):
+    """German legal cost categories (Kostenkategorien)."""
+    GERICHTSKOSTEN      = "gerichtskosten"       # Court fees — GKG
+    ANWALTSKOSTEN       = "anwaltskosten"         # Own lawyer fees — RVG
+    ANWALTSKOSTEN_GEGNER = "anwaltskosten_gegner" # Opposing counsel fees (§91 ZPO claim/liability)
+    SACHVERSTAENDIGER   = "sachverstaendiger"     # Expert witnesses — JVEG
+    VORSCHUSS           = "vorschuss"             # Advance payments (Gerichtskostenvorschuss)
+    VOLLSTRECKUNG       = "vollstreckung"         # Enforcement costs
+    AUSLAGEN            = "auslagen"              # Out-of-pocket expenses (RVG Nr. 7000 ff.)
+    SONSTIGES           = "sonstiges"             # Other
+
+
+class CostStatus(str, enum.Enum):
+    """Payment/reimbursement status of a cost position."""
+    OFFEN      = "offen"      # Due but unpaid (ausstehend)
+    BEZAHLT    = "bezahlt"    # Paid by us
+    ERSTATTET  = "erstattet"  # Reimbursed by opposing party (§91 ZPO)
+    TEILWEISE  = "teilweise"  # Partially paid / partially reimbursed
+    STRITTIG   = "strittig"   # Disputed
+
+
+class LegalCost(Base):
+    """
+    A single cost position in the German legal cost system.
+
+    German legal costs are governed by:
+    - RVG (Rechtsanwaltsvergütungsgesetz) — lawyer fees
+    - GKG (Gerichtskostengesetz) — court fees
+    - JVEG (Justizvergütungs- und -entschädigungsgesetz) — expert/witness fees
+    - §§ 91–107 ZPO — cost allocation ("loser pays")
+
+    The Streitwert (value in dispute) drives all RVG and GKG calculations.
+    """
+    __tablename__ = "legal_costs"
+
+    id       = Column(Integer, primary_key=True, index=True)
+    case_id  = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+
+    category     = Column(SAEnum(CostCategory), nullable=False)
+    status       = Column(SAEnum(CostStatus), default=CostStatus.OFFEN, nullable=False, index=True)
+
+    # Human-readable label, e.g. "Verfahrensgebühr 1. Instanz"
+    title        = Column(String, nullable=False)
+    # Statutory position reference, e.g. "Nr. 3100 VV RVG" or "KV GKG Nr. 1210"
+    rvg_position = Column(String, nullable=True)
+
+    # Amounts in EUR
+    amount_net        = Column(Float, nullable=False)   # Nettobetrag
+    vat_rate          = Column(Float, default=0.0)       # 0.19 for lawyer, 0.0 for court
+    amount_gross      = Column(Float, nullable=False)   # Bruttobetrag (net + VAT)
+    amount_paid       = Column(Float, default=0.0)      # Bereits bezahlt von uns
+    amount_reimbursed = Column(Float, default=0.0)      # Vom Gegner erstattet
+
+    # German-specific metadata
+    streitwert      = Column(Float, nullable=True)      # Streitwert basis for this position
+    gebuehren_faktor = Column(Float, nullable=True)     # RVG factor, e.g. 1.3 for Verfahrensgebühr
+    is_reimbursable = Column(Boolean, default=True)     # Erstattungsfähig nach §91 ZPO
+
+    # Dates
+    issued_at = Column(DateTime, nullable=True)   # Rechnung / Kostenfestsetzung
+    due_at    = Column(DateTime, nullable=True)   # Fälligkeitsdatum
+    paid_at   = Column(DateTime, nullable=True)   # Bezahlt am
+
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    notes       = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    case            = relationship("Case")
+    source_document = relationship("Document")
+
+
 class Expense(Base):
     __tablename__ = 'expenses'
 

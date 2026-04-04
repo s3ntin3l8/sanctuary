@@ -11,9 +11,12 @@ from app.models.database import (
     SessionLocal,
     Case,
     CaseStatus,
+    CostCategory,
+    CostStatus,
     Deadline,
     Document,
     Hearing,
+    LegalCost,
     OriginatorType,
 )
 from sqlalchemy.orm import Session
@@ -68,6 +71,148 @@ _SEED_HEARINGS = [
     },
 ]
 
+# Seed legal costs — realistic German Kostenrecht data (RVG / GKG / JVEG)
+# Streitwert ADV-992-K: 150,000 EUR (family/divorce) → RVG simple Gebühr ≈ 1,971 EUR
+# Streitwert ADV-804-M: 85,000 EUR (construction)    → RVG simple Gebühr ≈ 1,461 EUR
+_SEED_COSTS = [
+    # ── ADV-992-K: Vane vs. Vane ──────────────────────────────────────────────
+    {
+        "case_id": "ADV-992-K",
+        "category": CostCategory.VORSCHUSS,
+        "status": CostStatus.BEZAHLT,
+        "title": "Gerichtskostenvorschuss 1. Instanz",
+        "rvg_position": "KV GKG Nr. 1210",
+        "amount_net": 2710.00,
+        "vat_rate": 0.0,
+        "amount_gross": 2710.00,
+        "amount_paid": 2710.00,
+        "streitwert": 150000.0,
+        "is_reimbursable": True,
+        "offset_issued": -45,
+        "offset_due": -42,
+        "offset_paid": -40,
+    },
+    {
+        "case_id": "ADV-992-K",
+        "category": CostCategory.ANWALTSKOSTEN,
+        "status": CostStatus.BEZAHLT,
+        "title": "Verfahrensgebühr 1. Instanz",
+        "rvg_position": "Nr. 3100 VV RVG",
+        "amount_net": 2562.30,
+        "vat_rate": 0.19,
+        "amount_gross": 3049.14,
+        "amount_paid": 3049.14,
+        "streitwert": 150000.0,
+        "gebuehren_faktor": 1.3,
+        "is_reimbursable": True,
+        "offset_issued": -44,
+        "offset_due": -30,
+        "offset_paid": -28,
+    },
+    {
+        "case_id": "ADV-992-K",
+        "category": CostCategory.ANWALTSKOSTEN,
+        "status": CostStatus.OFFEN,
+        "title": "Terminsgebühr",
+        "rvg_position": "Nr. 3104 VV RVG",
+        "amount_net": 2365.20,
+        "vat_rate": 0.19,
+        "amount_gross": 2814.59,
+        "amount_paid": 0.0,
+        "streitwert": 150000.0,
+        "gebuehren_faktor": 1.2,
+        "is_reimbursable": True,
+        "offset_issued": -10,
+        "offset_due": 14,
+        "offset_paid": None,
+    },
+    {
+        "case_id": "ADV-992-K",
+        "category": CostCategory.AUSLAGEN,
+        "status": CostStatus.OFFEN,
+        "title": "Auslagenpauschale",
+        "rvg_position": "Nr. 7001 VV RVG",
+        "amount_net": 20.00,
+        "vat_rate": 0.19,
+        "amount_gross": 23.80,
+        "amount_paid": 0.0,
+        "streitwert": None,
+        "is_reimbursable": True,
+        "offset_issued": -10,
+        "offset_due": 14,
+        "offset_paid": None,
+    },
+    # ── ADV-804-M: Smith Construction vs. City Council ─────────────────────────
+    {
+        "case_id": "ADV-804-M",
+        "category": CostCategory.VORSCHUSS,
+        "status": CostStatus.BEZAHLT,
+        "title": "Gerichtskostenvorschuss 1. Instanz",
+        "rvg_position": "KV GKG Nr. 1210",
+        "amount_net": 1974.00,
+        "vat_rate": 0.0,
+        "amount_gross": 1974.00,
+        "amount_paid": 1974.00,
+        "streitwert": 85000.0,
+        "is_reimbursable": True,
+        "offset_issued": -60,
+        "offset_due": -57,
+        "offset_paid": -55,
+    },
+    {
+        "case_id": "ADV-804-M",
+        "category": CostCategory.ANWALTSKOSTEN,
+        "status": CostStatus.BEZAHLT,
+        "title": "Verfahrensgebühr 1. Instanz",
+        "rvg_position": "Nr. 3100 VV RVG",
+        "amount_net": 1899.30,
+        "vat_rate": 0.19,
+        "amount_gross": 2260.17,
+        "amount_paid": 2260.17,
+        "streitwert": 85000.0,
+        "gebuehren_faktor": 1.3,
+        "is_reimbursable": True,
+        "offset_issued": -58,
+        "offset_due": -45,
+        "offset_paid": -43,
+    },
+    {
+        "case_id": "ADV-804-M",
+        "category": CostCategory.SACHVERSTAENDIGER,
+        "status": CostStatus.OFFEN,
+        "title": "Sachverständigengebühr (Baugutachten)",
+        "rvg_position": "JVEG § 9",
+        "amount_net": 1200.00,
+        "vat_rate": 0.19,
+        "amount_gross": 1428.00,
+        "amount_paid": 0.0,
+        "streitwert": None,
+        "is_reimbursable": True,
+        "offset_issued": -5,
+        "offset_due": 21,
+        "offset_paid": None,
+    },
+    {
+        "case_id": "ADV-804-M",
+        "category": CostCategory.ANWALTSKOSTEN_GEGNER,
+        "status": CostStatus.STRITTIG,
+        "title": "Anwaltskosten Gegner (Kostenrisiko §91 ZPO)",
+        "rvg_position": "Nr. 3100 VV RVG (gegnerisch)",
+        "amount_net": 1899.30,
+        "vat_rate": 0.19,
+        "amount_gross": 2260.17,
+        "amount_paid": 0.0,
+        "streitwert": 85000.0,
+        "gebuehren_faktor": 1.3,
+        "is_reimbursable": False,
+        "notes": "Kostenfestsetzungsantrag des Gegners erwartet nach Urteil",
+        "offset_issued": None,
+        "offset_due": None,
+        "offset_paid": None,
+    },
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -107,6 +252,33 @@ async def lifespan(app: FastAPI):
                         ),
                     )
                 )
+
+        if db.query(LegalCost).count() == 0:
+            now = datetime.utcnow().replace(second=0, microsecond=0)
+
+            def _offset_date(offset):
+                return now + timedelta(days=offset) if offset is not None else None
+
+            for seed in _SEED_COSTS:
+                db.add(LegalCost(
+                    case_id=seed["case_id"],
+                    category=seed["category"],
+                    status=seed["status"],
+                    title=seed["title"],
+                    rvg_position=seed.get("rvg_position"),
+                    amount_net=seed["amount_net"],
+                    vat_rate=seed["vat_rate"],
+                    amount_gross=seed["amount_gross"],
+                    amount_paid=seed["amount_paid"],
+                    amount_reimbursed=seed.get("amount_reimbursed", 0.0),
+                    streitwert=seed.get("streitwert"),
+                    gebuehren_faktor=seed.get("gebuehren_faktor"),
+                    is_reimbursable=seed.get("is_reimbursable", True),
+                    notes=seed.get("notes"),
+                    issued_at=_offset_date(seed.get("offset_issued")),
+                    due_at=_offset_date(seed.get("offset_due")),
+                    paid_at=_offset_date(seed.get("offset_paid")),
+                ))
 
         db.commit()
     finally:
@@ -298,6 +470,17 @@ REVIEW_FIELD_LABELS = {
 }
 
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
+
+
+def format_eur(value: float) -> str:
+    """Formats a float as EUR with German-style punctuation: € 1.234,56"""
+    if value is None:
+        return "—"
+    formatted = f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"€\u00a0{formatted}"
+
+
+templates.env.globals["format_eur"] = format_eur
 
 @app.get("/")
 async def dashboard(request: Request, db: Session = Depends(get_db)):
@@ -581,9 +764,123 @@ async def master_timeline(request: Request, db: Session = Depends(get_db)):
         originator_icons=ORIGINATOR_ICONS,
     )
 
+COST_CATEGORY_META = {
+    CostCategory.GERICHTSKOSTEN:       {"label": "Gerichtskosten",         "short": "GKG",      "color": "bg-originator-court/10 text-originator-court"},
+    CostCategory.ANWALTSKOSTEN:        {"label": "Anwaltskosten",          "short": "RVG",      "color": "bg-originator-own/10 text-originator-own"},
+    CostCategory.ANWALTSKOSTEN_GEGNER: {"label": "Anwaltskosten Gegner",   "short": "§91 ZPO",  "color": "bg-originator-opposing/10 text-originator-opposing"},
+    CostCategory.SACHVERSTAENDIGER:    {"label": "Sachverständiger",       "short": "JVEG",     "color": "bg-amber-500/10 text-amber-600"},
+    CostCategory.VORSCHUSS:            {"label": "Gerichtskostenvorschuss","short": "GKV",      "color": "bg-primary/10 text-primary"},
+    CostCategory.VOLLSTRECKUNG:        {"label": "Vollstreckung",          "short": "ZVG",      "color": "bg-error/10 text-error"},
+    CostCategory.AUSLAGEN:             {"label": "Auslagen",               "short": "RVG",      "color": "bg-surface-container-highest text-on-surface-variant"},
+    CostCategory.SONSTIGES:            {"label": "Sonstiges",              "short": "—",        "color": "bg-surface-container-highest text-on-surface-variant"},
+}
+
+COST_STATUS_META = {
+    CostStatus.OFFEN:     {"label": "Offen",     "color": "bg-originator-opposing/10 text-originator-opposing"},
+    CostStatus.BEZAHLT:   {"label": "Bezahlt",   "color": "bg-originator-own/10 text-originator-own"},
+    CostStatus.ERSTATTET: {"label": "Erstattet", "color": "bg-primary/10 text-primary"},
+    CostStatus.TEILWEISE: {"label": "Teilweise", "color": "bg-amber-500/10 text-amber-600"},
+    CostStatus.STRITTIG:  {"label": "Strittig",  "color": "bg-error/10 text-error"},
+}
+
+
+def _build_cost_summary(costs: list) -> dict:
+    total_gross      = sum(c.amount_gross for c in costs)
+    total_paid       = sum(c.amount_paid for c in costs)
+    total_reimbursed = sum(c.amount_reimbursed for c in costs)
+    total_outstanding = sum(
+        c.amount_gross - c.amount_paid
+        for c in costs
+        if c.status not in (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
+    )
+    total_reimbursable = sum(
+        c.amount_gross - c.amount_reimbursed
+        for c in costs
+        if c.is_reimbursable and c.status not in (CostStatus.ERSTATTET,)
+    )
+    return {
+        "total_gross": total_gross,
+        "total_paid": total_paid,
+        "total_reimbursed": total_reimbursed,
+        "total_outstanding": total_outstanding,
+        "total_reimbursable": total_reimbursable,
+    }
+
+
 @app.get("/costs")
 async def legal_costs(request: Request, db: Session = Depends(get_db)):
-    return render_page(request, "pages/costs.html", db=db)
+    all_cases = db.query(Case).order_by(Case.created_at.desc()).all()
+    all_costs = db.query(LegalCost).order_by(LegalCost.case_id, LegalCost.issued_at.asc()).all()
+
+    costs_by_case = {}
+    for case in all_cases:
+        case_costs = [c for c in all_costs if c.case_id == case.id]
+        if not case_costs:
+            continue
+        costs_by_case[case.id] = {
+            "case": case,
+            "costs": case_costs,
+            "summary": _build_cost_summary(case_costs),
+            "streitwert": next((c.streitwert for c in case_costs if c.streitwert), None),
+        }
+
+    global_summary = _build_cost_summary(all_costs)
+
+    return render_page(
+        request,
+        "pages/costs.html",
+        db=db,
+        costs_by_case=costs_by_case,
+        global_summary=global_summary,
+        cost_category_meta=COST_CATEGORY_META,
+        cost_status_meta=COST_STATUS_META,
+        status_meta=CASE_STATUS_META,
+    )
+
+
+@app.post("/costs/{cost_id}/pay")
+async def mark_cost_paid(
+    request: Request,
+    cost_id: int,
+    db: Session = Depends(get_db),
+):
+    cost = db.get(LegalCost, cost_id)
+    if cost:
+        cost.amount_paid = cost.amount_gross
+        cost.paid_at = datetime.utcnow()
+        cost.status = CostStatus.BEZAHLT
+        db.commit()
+        db.refresh(cost)
+    return render_page(
+        request,
+        "partials/cost_row.html",
+        db=db,
+        cost=cost,
+        cost_category_meta=COST_CATEGORY_META,
+        cost_status_meta=COST_STATUS_META,
+    )
+
+
+@app.post("/costs/{cost_id}/reimburse")
+async def mark_cost_reimbursed(
+    request: Request,
+    cost_id: int,
+    db: Session = Depends(get_db),
+):
+    cost = db.get(LegalCost, cost_id)
+    if cost:
+        cost.amount_reimbursed = cost.amount_gross
+        cost.status = CostStatus.ERSTATTET
+        db.commit()
+        db.refresh(cost)
+    return render_page(
+        request,
+        "partials/cost_row.html",
+        db=db,
+        cost=cost,
+        cost_category_meta=COST_CATEGORY_META,
+        cost_status_meta=COST_STATUS_META,
+    )
 
 @app.get("/contacts")
 async def contacts(request: Request, db: Session = Depends(get_db)):

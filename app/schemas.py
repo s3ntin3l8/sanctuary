@@ -134,3 +134,62 @@ class Hearing(HearingBase):
     id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Legal Cost Schemas ---
+
+class CostCategory(str, Enum):
+    GERICHTSKOSTEN       = "gerichtskosten"
+    ANWALTSKOSTEN        = "anwaltskosten"
+    ANWALTSKOSTEN_GEGNER = "anwaltskosten_gegner"
+    SACHVERSTAENDIGER    = "sachverstaendiger"
+    VORSCHUSS            = "vorschuss"
+    VOLLSTRECKUNG        = "vollstreckung"
+    AUSLAGEN             = "auslagen"
+    SONSTIGES            = "sonstiges"
+
+
+class CostStatus(str, Enum):
+    OFFEN     = "offen"
+    BEZAHLT   = "bezahlt"
+    ERSTATTET = "erstattet"
+    TEILWEISE = "teilweise"
+    STRITTIG  = "strittig"
+
+
+class LegalCostBase(BaseModel):
+    case_id: str
+    category: CostCategory
+    status: CostStatus = CostStatus.OFFEN
+    title: str
+    rvg_position: Optional[str] = None
+    amount_net: float
+    vat_rate: float = 0.0
+    amount_gross: float
+    amount_paid: float = 0.0
+    amount_reimbursed: float = 0.0
+    streitwert: Optional[float] = None
+    gebuehren_faktor: Optional[float] = None
+    is_reimbursable: bool = True
+    issued_at: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+    paid_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class LegalCostCreate(LegalCostBase):
+    pass
+
+
+class LegalCostUpdate(BaseModel):
+    status: Optional[CostStatus] = None
+    amount_paid: Optional[float] = None
+    amount_reimbursed: Optional[float] = None
+    paid_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class LegalCost(LegalCostBase):
+    id: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
