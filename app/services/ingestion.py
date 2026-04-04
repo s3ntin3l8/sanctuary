@@ -5,6 +5,7 @@ import re
 import aiofiles
 import asyncio
 from typing import Optional
+from datetime import timedelta
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 from app.models.database import Document, OriginatorType
@@ -53,6 +54,22 @@ SENDER_PATTERNS = [
     re.compile(r'(?:from|sender|by|signed|submitted by)[:\s]+([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', re.IGNORECASE),
     re.compile(r'(?:from|sender)[:\s]+([A-Z][a-z]+ (?:&|and) [A-Z][a-z]+ (?:LLP|LLC|PC|PLLC))', re.IGNORECASE),
 ]
+
+ABSOLUTE_DATE_PATTERN = re.compile(
+    r'\b('
+    r'(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
+    r'Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}'
+    r'|\d{4}-\d{2}-\d{2}'
+    r'|\d{1,2}/\d{1,2}/\d{4}'
+    r')\b',
+    re.IGNORECASE,
+)
+HEARING_KEYWORDS = ("hearing", "conference", "appearance", "oral argument", "trial", "status conference")
+DEADLINE_KEYWORDS = ("deadline", "due", "respond", "response", "file", "serve", "submit", "production")
+RELATIVE_DEADLINE_PATTERN = re.compile(
+    r'(?:within|no later than)\s+(\d{1,3})\s+days?\s+(?:of|after|from)\s+(?:receipt|service|receipt of this notice|the order|this order|filing)',
+    re.IGNORECASE,
+)
 
 
 def extract_case_id(filename: str, content: str) -> str | None:
@@ -111,6 +128,102 @@ def extract_sender(content: str) -> str | None:
         if match:
             return match.group(1).strip()
     return None
+
+
+def _parse_candidate_date(raw_value: str):
+    """Parse a single absolute date string into a datetime."""
+    from datetime import datetime as dt
+
+    cleaned = raw_value.strip().replace(",", "")
+    for fmt in ("%B %d %Y", "%b %d %Y", "%Y-%m-%d", "%m/%d/%Y"):
+        try:
+            return dt.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def extract_schedule_candidates(content: str, base_date=None) -> list[dict]:
+    """
+    Extract likely hearing/deadline candidates from document content.
+    This is heuristic on purpose: we want promotion hooks, not full AI extraction yet.
+    """
+    candidates: list[dict] = []
+    seen: set[tuple] = set()
+    snippet = (content or "")[:5000]
+    lines = [line.strip(" -*\t") for line in snippet.splitlines() if line.strip()]
+
+    for line in lines:
+        lowered = line.lower()
+        absolute_match = ABSOLUTE_DATE_PATTERN.search(line)
+
+        if absolute_match and any(keyword in lowered for keyword in HEARING_KEYWORDS):
+            scheduled_for = _parse_candidate_date(absolute_match.group(1))
+            if scheduled_for:
+                title = "Court hearing"
+                if "status conference" in lowered:
+                    title = "Status conference"
+                elif "settlement conference" in lowered:
+                    title = "Settlement conference"
+                elif "trial" in lowered:
+                    title = "Trial setting"
+                elif "motion" in lowered:
+                    title = "Motion hearing"
+                key = ("hearing", title, scheduled_for.isoformat())
+                if key not in seen:
+                    candidates.append(
+                        {
+                            "type": "hearing",
+                            "title": title,
+                            "description": line[:220],
+                            "scheduled_for": scheduled_for,
+                        }
+                    )
+                    seen.add(key)
+
+        if absolute_match and any(keyword in lowered for keyword in DEADLINE_KEYWORDS):
+            due_at = _parse_candidate_date(absolute_match.group(1))
+            if due_at:
+                title = "Filing deadline"
+                if "respond" in lowered or "response" in lowered:
+                    title = "Response deadline"
+                elif "serve" in lowered:
+                    title = "Service deadline"
+                elif "submit" in lowered:
+                    title = "Submission deadline"
+                key = ("deadline", title, due_at.isoformat())
+                if key not in seen:
+                    candidates.append(
+                        {
+                            "type": "deadline",
+                            "title": title,
+                            "description": line[:220],
+                            "due_at": due_at,
+                        }
+                    )
+                    seen.add(key)
+
+        if base_date:
+            relative_match = RELATIVE_DEADLINE_PATTERN.search(line)
+            if relative_match:
+                due_at = base_date + timedelta(days=int(relative_match.group(1)))
+                title = "Relative response deadline"
+                key = ("deadline", title, due_at.isoformat())
+                if key not in seen:
+                    candidates.append(
+                        {
+                            "type": "deadline",
+                            "title": title,
+                            "description": line[:220],
+                            "due_at": due_at,
+                        }
+                    )
+                    seen.add(key)
+
+    candidates.sort(
+        key=lambda item: item.get("due_at") or item.get("scheduled_for")
+    )
+    return candidates[:6]
 
 
 def extract_clean_title(filename: str) -> str:

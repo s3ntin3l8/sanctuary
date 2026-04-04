@@ -57,9 +57,8 @@
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/triage' %}group-hover:text-primary{% endif %}">inbox</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Triage Center</span>
                 </div>
-                {% set counts = sidebar_counts() %}
-                {% if counts.triage_count > 0 %}
-                <span class="bg-error-container/30 text-error text-[10px] px-2 py-0.5 rounded-full group-hover:bg-error-container/50 transition-opacity duration-300 font-bold" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ counts.triage_count }}</span>
+                {% if sidebar_counts.triage_count > 0 %}
+                <span class="bg-error-container/30 text-error text-[10px] px-2 py-0.5 rounded-full group-hover:bg-error-container/50 transition-opacity duration-300 font-bold" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.triage_count }}</span>
                 {% endif %}
             </a>
             
@@ -69,7 +68,7 @@
                     <span class="material-symbols-outlined text-[20px] {% if not request.url.path.startswith('/cases') %}group-hover:text-primary{% endif %}">folder_open</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Case Files</span>
                 </div>
-                <span class="bg-primary-container/20 text-primary text-[10px] px-2 py-0.5 rounded-full transition-opacity duration-300" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts().case_count }}</span>
+                <span class="bg-primary-container/20 text-primary text-[10px] px-2 py-0.5 rounded-full transition-opacity duration-300" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.case_count }}</span>
             </a>
             
             <!-- 4. Master Timeline -->

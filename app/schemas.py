@@ -11,6 +11,15 @@ class OriginatorType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class CaseStatus(str, Enum):
+    INTAKE = "intake"
+    DISCOVERY = "discovery"
+    PRE_TRIAL = "pre_trial"
+    TRIAL = "trial"
+    POST_TRIAL = "post_trial"
+    CLOSED = "closed"
+
+
 # --- Document Schemas ---
 
 class DocumentBase(BaseModel):
@@ -66,4 +75,62 @@ class ExpenseUpdate(BaseModel):
 class Expense(ExpenseBase):
     id: int
     date: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Deadline Schemas ---
+
+class DeadlineBase(BaseModel):
+    case_id: str
+    title: str
+    description: Optional[str] = None
+    due_at: datetime
+    completed: bool = False
+    source_document_id: Optional[int] = None
+
+
+class DeadlineCreate(DeadlineBase):
+    pass
+
+
+class DeadlineUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_at: Optional[datetime] = None
+    completed: Optional[bool] = None
+    source_document_id: Optional[int] = None
+
+
+class Deadline(DeadlineBase):
+    id: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Hearing Schemas ---
+
+class HearingBase(BaseModel):
+    case_id: str
+    title: str
+    description: Optional[str] = None
+    scheduled_for: datetime
+    location: Optional[str] = None
+    source_document_id: Optional[int] = None
+
+
+class HearingCreate(HearingBase):
+    pass
+
+
+class HearingUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    scheduled_for: Optional[datetime] = None
+    location: Optional[str] = None
+    source_document_id: Optional[int] = None
+
+
+class Hearing(HearingBase):
+    id: int
+    created_at: datetime
     model_config = ConfigDict(from_attributes=True)

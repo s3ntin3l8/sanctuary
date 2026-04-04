@@ -55,6 +55,38 @@ class Case(Base):
     closed_at  = Column(DateTime, nullable=True)
 
 
+class Deadline(Base):
+    __tablename__ = 'deadlines'
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey('cases.id'), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    due_at = Column(DateTime, nullable=False, index=True)
+    completed = Column(Boolean, default=False, nullable=False, index=True)
+    source_document_id = Column(Integer, ForeignKey('documents.id'), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    case = relationship('Case')
+    source_document = relationship('Document')
+
+
+class Hearing(Base):
+    __tablename__ = 'hearings'
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey('cases.id'), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    scheduled_for = Column(DateTime, nullable=False, index=True)
+    location = Column(String, nullable=True)
+    source_document_id = Column(Integer, ForeignKey('documents.id'), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    case = relationship('Case')
+    source_document = relationship('Document')
+
+
 class Expense(Base):
     __tablename__ = 'expenses'
 

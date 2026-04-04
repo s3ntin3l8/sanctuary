@@ -43,6 +43,9 @@
                         <a :class="activeSection === 'chronology' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
                            href="#section-chronology"
                            @click.prevent="activeSection = 'chronology'; document.getElementById('section-chronology').scrollIntoView({ behavior: 'smooth' })">Chronology</a>
+                        <a :class="activeSection === 'calendar' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
+                           href="#section-calendar"
+                           @click.prevent="activeSection = 'calendar'; document.getElementById('section-calendar').scrollIntoView({ behavior: 'smooth' })">Calendar</a>
                         <a :class="activeSection === 'entities' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
                            href="#section-entities"
                            @click.prevent="activeSection = 'entities'; document.getElementById('section-entities').scrollIntoView({ behavior: 'smooth' })">Entities</a>
@@ -175,6 +178,18 @@
                     <div class="text-sm text-on-surface-variant italic">No documents available. Upload one to get started.</div>
                     {% endif %}
                 </div>
+            </div>
+
+            <!-- Case Calendar -->
+            <div id="section-calendar" class="p-8 border-t border-outline-variant/10 bg-surface-container-low/20" style="scroll-margin-top: 48px;">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">calendar_month</span>
+                        Case Calendar
+                    </h3>
+                    <span class="text-[10px] font-bold text-primary">{{ upcoming_deadlines|length + upcoming_hearings|length }} UPCOMING</span>
+                </div>
+                {% include "partials/case_schedule_panel.html" %}
             </div>
 
             <!-- Entities (stub) -->

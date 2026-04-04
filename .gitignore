@@ -5,7 +5,8 @@ __pycache__/
 .env
 .DS_Store
 data/
-
+.claude/
 gemini.md
 templates/
 claude.md
+agent_task.md
