@@ -440,6 +440,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
     case = db.get(Case, case_id)
     case_title = case.title if case else f"Case {case_id}"
     court_id = case.court_id if case and case.court_id else ""
+    case_status = case.status if case else CaseStatus.INTAKE
     schedule = load_case_schedule(db, case_id)
 
     return render_page(
@@ -451,12 +452,14 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         case_id=case_id,
         case_title=case_title,
         court_id=court_id,
+        case_status=case_status,
         upcoming_deadlines=schedule["upcoming_deadlines"],
         completed_deadlines=schedule["completed_deadlines"],
         upcoming_hearings=schedule["upcoming_hearings"],
         past_hearings=schedule["past_hearings"],
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
+        status_meta=CASE_STATUS_META,
         format_upcoming_datetime=format_upcoming_datetime,
         format_form_datetime=format_form_datetime,
     )

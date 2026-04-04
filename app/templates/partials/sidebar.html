@@ -2,20 +2,20 @@
   .sb-label-enter { transition: opacity 150ms ease 220ms; }
   .sb-label-leave { transition: none; }
 </style>
-<aside x-data="{ expanded: true, ready: false }"
+<aside x-data="{ expanded: true }"
     style="width:18%; min-width:240px; max-width:300px;"
     :style="{
         width:      expanded ? '18%'   : '80px',
         minWidth:   expanded ? '240px' : '80px',
         maxWidth:   expanded ? '300px' : '80px',
-        transition: ready ? 'width 300ms ease-in-out, min-width 300ms ease-in-out, max-width 300ms ease-in-out' : 'none'
+        transition: 'width 300ms ease-in-out, min-width 300ms ease-in-out, max-width 300ms ease-in-out'
     }"
     class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r-0 font-headline tracking-tight font-semibold z-50">
     <!-- Brand Header -->
     <div class="px-4 pt-8 min-h-[80px]">
         <div class="px-3 flex items-center gap-3" style="min-height: 40px;">
             <!-- Shielded Leaf Icon -->
-            <div class="relative flex items-center justify-center w-5 h-5 bg-surface-container shrink-0 shadow-sm mx-auto lg:mx-0" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);">
+            <div class="relative flex items-center justify-center w-5 h-5 bg-surface-container shrink-0 shadow-sm" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);">
                 <span class="material-symbols-outlined text-primary text-[14px]" style="font-variation-settings: 'FILL' 1;">eco</span>
             </div>
             <!-- Brand Text -->
@@ -30,10 +30,14 @@
     <nav class="flex-1 px-4 space-y-1">
         <!-- Focus Mode Toggle -->
         <div class="mt-8 mb-4">
-            <button @click="ready = true; expanded = !expanded" class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-all duration-300 group" title="Toggle Focus Mode">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
-                    <span class="material-symbols-outlined text-[20px] group-hover:text-primary" x-text="expanded ? 'side_navigation' : 'menu_open'"></span>
-                    <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Focus Mode</span>
+            <button @click="expanded = !expanded" class="w-full flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Toggle Focus Mode">
+                <div class="flex w-full items-center gap-3">
+                    <span class="material-symbols-outlined text-[20px] group-hover:text-primary" x-text="expanded ? 'side_navigation' : 'menu_open'">side_navigation</span>
+                    <span class="text-sm whitespace-nowrap overflow-hidden"
+                          style="display:inline-block; max-width:140px; opacity:1;"
+                          :style="expanded
+                            ? 'max-width:140px; opacity:1; transition: max-width 200ms ease 80ms, opacity 150ms ease 200ms;'
+                            : 'max-width:0; opacity:0; transition: max-width 100ms ease, opacity 50ms ease;'">Focus Mode</span>
                 </div>
             </button>
         </div>
@@ -44,16 +48,22 @@
             </div>
             
             <!-- 1. Dashboard -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path == '/' %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/" title="Dashboard">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/" title="Dashboard">
+                {% if request.url.path == '/' %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/' %}group-hover:text-primary{% endif %}">dashboard</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Dashboard</span>
                 </div>
             </a>
             
             <!-- 2. Triage Center -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path == '/triage' %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/triage" title="Triage Center">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage" title="Triage Center">
+                {% if request.url.path == '/triage' %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/triage' %}group-hover:text-primary{% endif %}">inbox</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Triage Center</span>
                 </div>
@@ -63,8 +73,11 @@
             </a>
             
             <!-- 3. Case Files -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path.startswith('/cases') %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/cases" title="Case Files">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases" title="Case Files">
+                {% if request.url.path.startswith('/cases') %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if not request.url.path.startswith('/cases') %}group-hover:text-primary{% endif %}">folder_open</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Case Files</span>
                 </div>
@@ -72,24 +85,33 @@
             </a>
             
             <!-- 4. Master Timeline -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path == '/timeline' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path == '/timeline' %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/timeline" title="Master Timeline">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/timeline' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/timeline" title="Master Timeline">
+                {% if request.url.path == '/timeline' %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/timeline' %}group-hover:text-primary{% endif %}">timeline</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Master Timeline</span>
                 </div>
             </a>
             
             <!-- 5. Legal Costs -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path == '/costs' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path == '/costs' %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/costs" title="Legal Costs">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/costs' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/costs" title="Legal Costs">
+                {% if request.url.path == '/costs' %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/costs' %}group-hover:text-primary{% endif %}">payments</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Legal Costs</span>
                 </div>
             </a>
             
             <!-- 6. Contacts -->
-            <a class="flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary font-bold bg-primary/5' if request.url.path == '/contacts' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-all duration-300 group" {% if request.url.path == '/contacts' %}:class="expanded ? 'border-r-2 border-primary' : ''"{% endif %} href="/contacts" title="Contacts">
-                <div class="flex items-center gap-3 mx-auto lg:mx-0">
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/contacts' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/contacts" title="Contacts">
+                {% if request.url.path == '/contacts' %}
+                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+                {% endif %}
+                <div class="flex min-w-0 items-center gap-3">
                     <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/contacts' %}group-hover:text-primary{% endif %}">contacts</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Contacts</span>
                 </div>
@@ -99,13 +121,16 @@
     
     <!-- Profile & CTA -->
     <div class="p-4 mt-auto border-t border-outline-variant/20 flex flex-col items-center">
-        <button class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-95 mb-4 px-0" title="New Case File">
+        <button class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors active:scale-95 mb-4 px-0" title="New Case File">
             <span class="material-symbols-outlined text-lg">add_circle</span>
-            <span class="whitespace-nowrap overflow-hidden"
-                  style="display:inline-block; max-width:0; opacity:0;"
-                  :style="expanded
-                    ? 'max-width:120px; opacity:1; transition: max-width 200ms ease 80ms, opacity 150ms ease 200ms;'
-                    : 'max-width:0; opacity:0; transition: max-width 100ms ease, opacity 50ms ease;'">New Case File</span>
+            <span class="whitespace-nowrap"
+                  x-show="expanded"
+                  x-transition:enter="sb-label-enter"
+                  x-transition:enter-start="opacity-0"
+                  x-transition:enter-end="opacity-100"
+                  x-transition:leave="sb-label-leave"
+                  x-transition:leave-start="opacity-100"
+                  x-transition:leave-end="opacity-0">New Case File</span>
         </button>
         
         <div class="flex items-center gap-3 px-2 w-full" :class="expanded ? '' : 'justify-center'">

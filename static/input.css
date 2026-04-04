@@ -147,6 +147,9 @@
 }
 
 @layer utilities {
+  .custom-scrollbar {
+    scrollbar-gutter: stable;
+  }
   .custom-scrollbar::-webkit-scrollbar {
     width: 4px;
   }
