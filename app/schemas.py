@@ -1,13 +1,28 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
+from enum import Enum
+
+
+class OriginatorType(str, Enum):
+    COURT = "court"
+    OPPOSING = "opposing"
+    OWN = "own"
+    UNKNOWN = "unknown"
+
 
 # --- Document Schemas ---
 
 class DocumentBase(BaseModel):
     title: str
     content: Optional[str] = None
+    case_id: Optional[str] = None
+    file_path: Optional[str] = None
     parent_id: Optional[int] = None
+    originator_type: OriginatorType = OriginatorType.UNKNOWN
+    sender: Optional[str] = None
+    received_date: Optional[datetime] = None
+    needs_review: bool = True
 
 class DocumentCreate(DocumentBase):
     pass
@@ -15,7 +30,12 @@ class DocumentCreate(DocumentBase):
 class DocumentUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
+    case_id: Optional[str] = None
     parent_id: Optional[int] = None
+    originator_type: Optional[OriginatorType] = None
+    sender: Optional[str] = None
+    received_date: Optional[datetime] = None
+    needs_review: Optional[bool] = None
 
 class Document(DocumentBase):
     id: int

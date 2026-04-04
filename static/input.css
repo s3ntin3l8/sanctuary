@@ -1,64 +1,145 @@
 @import "tailwindcss";
+@source "../app/templates";
+
+/* ── Dark mode via .dark class on <html> ── */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-on-tertiary-container: #3a5765;
-  --color-primary-fixed: #c8e8f2;
-  --color-surface-container-high: #e1eaec;
-  --color-on-secondary-fixed-variant: #435f6d;
-  --color-on-secondary: #f3faff;
-  --color-error-container: #fe8983;
-  --color-primary-fixed-dim: #badae3;
-  --color-inverse-on-surface: #9a9d9e;
-  --color-surface-bright: #f8fafb;
-  --color-on-secondary-fixed: #264350;
-  --color-surface-variant: #d9e4e8;
-  --color-secondary: #466370;
-  --color-inverse-surface: #0b0f10;
-  --color-on-background: #2a3437;
-  --color-surface-container-highest: #d9e4e8;
-  --color-surface-container: #e8eff1;
+  /* ── Light Mode Palette (default) ── */
   --color-surface-container-lowest: #ffffff;
   --color-surface: #f8fafb;
-  --color-secondary-fixed: #c9e7f7;
-  --color-on-tertiary-fixed-variant: #44616f;
-  --color-on-error-container: #752121;
-  --color-on-error: #fff7f6;
-  --color-on-primary: #ecfaff;
-  --color-on-tertiary-fixed: #284552;
-  --color-outline-variant: #a9b4b7;
-  --color-surface-container-low: #f0f4f6;
-  --color-inverse-primary: #cdeef7;
   --color-surface-dim: #cfdce0;
-  --color-error-dim: #4e0309;
-  --color-on-primary-fixed-variant: #426068;
-  --color-tertiary-fixed-dim: #bddcec;
-  --color-on-primary-container: #38565e;
-  --color-secondary-dim: #3a5764;
-  --color-tertiary-fixed: #cbeafa;
-  --color-on-tertiary: #f3faff;
-  --color-secondary-fixed-dim: #bbd9e9;
-  --color-on-secondary-container: #395663;
-  --color-outline: #727d80;
-  --color-tertiary-container: #cbeafa;
-  --color-tertiary: #466371;
-  --color-secondary-container: #c9e7f7;
+  --color-surface-bright: #f8fafb;
+  --color-surface-container-low: #f0f4f6;
+  --color-surface-container: #e8eff1;
+  --color-surface-container-high: #e1eaec;
+  --color-surface-container-highest: #d9e4e8;
+  --color-surface-variant: #d9e4e8;
   --color-background: #f8fafb;
-  --color-primary-container: #c8e8f2;
-  --color-tertiary-dim: #3a5764;
-  --color-primary-dim: #39575f;
-  --color-error: #9f403d;
-  --color-on-surface-variant: #566164;
-  --color-surface-tint: #45636b;
-  --color-on-primary-fixed: #25444c;
-  --color-on-surface: #2a3437;
+  --color-inverse-surface: #0b0f10;
+  --color-inverse-on-surface: #9a9d9e;
+
   --color-primary: #45636b;
+  --color-on-primary: #ecfaff;
+  --color-primary-container: #c8e8f2;
+  --color-on-primary-container: #38565e;
+  --color-primary-fixed: #c8e8f2;
+  --color-primary-fixed-dim: #badae3;
+  --color-on-primary-fixed: #25444c;
+  --color-on-primary-fixed-variant: #426068;
+  --color-primary-dim: #39575f;
+  --color-inverse-primary: #cdeef7;
+  --color-surface-tint: #45636b;
+
+  --color-secondary: #466370;
+  --color-on-secondary: #f3faff;
+  --color-secondary-container: #c9e7f7;
+  --color-on-secondary-container: #395663;
+  --color-secondary-fixed: #c9e7f7;
+  --color-secondary-fixed-dim: #bbd9e9;
+  --color-on-secondary-fixed: #264350;
+  --color-on-secondary-fixed-variant: #435f6d;
+  --color-secondary-dim: #3a5764;
+
+  --color-tertiary: #466371;
+  --color-on-tertiary: #f3faff;
+  --color-tertiary-container: #cbeafa;
+  --color-on-tertiary-container: #3a5765;
+  --color-tertiary-fixed: #cbeafa;
+  --color-tertiary-fixed-dim: #bddcec;
+  --color-on-tertiary-fixed: #284552;
+  --color-on-tertiary-fixed-variant: #44616f;
+  --color-tertiary-dim: #3a5764;
+
+  --color-error: #9f403d;
+  --color-on-error: #fff7f6;
+  --color-error-container: #fe8983;
+  --color-on-error-container: #752121;
+  --color-error-dim: #4e0309;
+
+  --color-originator-court: #0369a1;
+  --color-originator-opposing: #b91c1c;
+  --color-originator-own: #047857;
+  --color-originator-unknown: #64748b;
+
+  --color-on-surface: #2a3437;
+  --color-on-surface-variant: #566164;
+  --color-on-background: #2a3437;
+
+  --color-outline: #727d80;
+  --color-outline-variant: #a9b4b7;
 
   --font-headline: "Manrope", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-label: "Inter", sans-serif;
 }
 
-/* Base custom styles from template code.html */
+/* ── Dark Mode Overrides (applied when .dark is on <html>) ── */
+@layer base {
+  .dark {
+    --color-surface-container-lowest: #060e20;
+    --color-surface: #0b1326;
+    --color-surface-dim: #0b1326;
+    --color-surface-bright: #31394d;
+    --color-surface-container-low: #131b2e;
+    --color-surface-container: #171f33;
+    --color-surface-container-high: #222a3d;
+    --color-surface-container-highest: #2d3449;
+    --color-surface-variant: #2d3449;
+    --color-background: #0b1326;
+    --color-inverse-surface: #dae2fd;
+    --color-inverse-on-surface: #283044;
+
+    --color-primary: #57f1db;
+    --color-on-primary: #003731;
+    --color-primary-container: #2dd4bf;
+    --color-on-primary-container: #00574d;
+    --color-primary-fixed: #62fae3;
+    --color-primary-fixed-dim: #3cddc7;
+    --color-on-primary-fixed: #00201c;
+    --color-on-primary-fixed-variant: #005047;
+    --color-primary-dim: #3cddc7;
+    --color-inverse-primary: #006b5f;
+    --color-surface-tint: #3cddc7;
+
+    --color-secondary: #9cd1c6;
+    --color-on-secondary: #003731;
+    --color-secondary-container: #1a4f47;
+    --color-on-secondary-container: #8bbfb5;
+    --color-secondary-fixed: #b8ede2;
+    --color-secondary-fixed-dim: #9cd1c6;
+    --color-on-secondary-fixed: #00201c;
+    --color-on-secondary-fixed-variant: #1a4f47;
+
+    --color-tertiary: #ffd1aa;
+    --color-on-tertiary: #4b2800;
+    --color-tertiary-container: #ffac5a;
+    --color-on-tertiary-container: #744000;
+    --color-tertiary-fixed: #ffdcc0;
+    --color-tertiary-fixed-dim: #ffb875;
+    --color-on-tertiary-fixed: #2d1600;
+    --color-on-tertiary-fixed-variant: #6b3b00;
+
+    --color-error: #ffb4ab;
+    --color-on-error: #690005;
+    --color-error-container: #93000a;
+    --color-on-error-container: #ffdad6;
+
+    --color-originator-court: #0369a1;
+    --color-originator-opposing: #b91c1c;
+    --color-originator-own: #047857;
+    --color-originator-unknown: #859490;
+
+    --color-on-surface: #dae2fd;
+    --color-on-surface-variant: #bacac5;
+    --color-on-background: #dae2fd;
+
+    --color-outline: #859490;
+    --color-outline-variant: #3c4a46;
+  }
+}
+
+/* ── Base styles ── */
 @layer base {
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;

@@ -2,85 +2,85 @@
 <section class="flex-1 flex flex-col bg-surface-container-low h-full overflow-hidden w-full">
     <!-- Top 70%: PDF Previewer placeholder -->
     <div class="h-[70%] border-b border-outline-variant/10 relative overflow-hidden flex flex-col" id="right-pane">
-        <div class="px-8 py-4 bg-slate-50/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10">
-            <h4 class="text-lg font-black tracking-tighter text-teal-900 uppercase">Document Preview</h4>
+        <div class="px-8 py-4 bg-surface-container-low/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10">
+            <h4 class="text-lg font-black tracking-tighter text-on-surface uppercase">Document Preview</h4>
             <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-sm text-slate-400 cursor-pointer hover:text-teal-600">zoom_in</span>
-                <span class="material-symbols-outlined text-sm text-slate-400 cursor-pointer hover:text-teal-600">print</span>
-                <span class="material-symbols-outlined text-sm text-slate-400 cursor-pointer hover:text-teal-600">download</span>
+                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">zoom_in</span>
+                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">print</span>
+                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">download</span>
                 <!-- Close Button for Mobile/Split -->
-                <button @click="activeDoc = null" class="material-symbols-outlined text-slate-400 ml-4 hover:text-error transition-colors cursor-pointer" title="Close Preview">close</button>
+                <button @click="activeDoc = null" class="material-symbols-outlined text-on-surface-variant ml-4 hover:text-error transition-colors cursor-pointer" title="Close Preview">close</button>
             </div>
         </div>
         
-        <div class="flex-1 p-8 overflow-y-auto bg-slate-200/30 flex items-center justify-center">
+        <div class="flex-1 p-8 overflow-y-auto bg-surface-container/40 flex items-center justify-center">
                 {% if doc %}
-                <div class="prose prose-sm max-w-none text-slate-700">
-                    <h1 class="text-2xl font-black text-teal-950 mb-4">{{ doc.title }}</h1>
-                    <div class="p-6 bg-slate-50 border border-slate-100 rounded-lg whitespace-pre-wrap font-mono text-xs">{{ doc.content }}</div>
+                <div class="prose prose-sm max-w-none text-on-surface-variant">
+                    <h1 class="text-2xl font-black text-on-surface mb-4">{{ doc.title }}</h1>
+                    <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content }}</div>
                 </div>
                 {% else %}
-                <div class="mt-12 w-full h-48 bg-slate-50/50 border border-dashed border-slate-200 flex items-center justify-center">
-                    <span class="text-[10px] text-slate-300 font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
+                <div class="mt-12 w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">
+                    <span class="text-[10px] text-outline font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
                 </div>
                 {% endif %}
                 
                 <div class="mt-auto flex justify-between items-end">
-                    <div class="w-24 h-8 border-b border-slate-300"></div>
-                    <div class="w-12 h-12 rounded-full border-2 border-slate-100 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-slate-100">approval</span>
+                    <div class="w-24 h-8 border-b border-outline-variant"></div>
+                    <div class="w-12 h-12 rounded-full border-2 border-outline-variant/15 flex items-center justify-center">
+                        <span class="material-symbols-outlined text-outline-variant">approval</span>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="absolute bottom-6 right-6 flex flex-col gap-2">
-            <button class="w-12 h-12 bg-teal-700 text-white rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform" title="Edit Document">
+            <button class="w-12 h-12 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform" title="Edit Document">
                 <span class="material-symbols-outlined">edit</span>
             </button>
         </div>
     </div>
     
     <!-- AI Management Summary -->
-    <div class="p-6 bg-teal-50/50 border-b border-teal-100/50 flex-shrink-0">
-        <h4 class="text-[10px] font-bold text-teal-800 uppercase tracking-widest mb-3 flex items-center gap-2">
+    <div class="p-6 bg-primary-container/10 border-b border-outline-variant/10 flex-shrink-0">
+        <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
             <span class="material-symbols-outlined text-sm">smart_toy</span>
             AI Management Summary
         </h4>
         <ul class="space-y-2">
             <li class="flex gap-2 items-start">
-                <span class="text-teal-600 font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-slate-700">
-                    <span class="font-bold text-teal-900">Legal Significance:</span> Substantial response from Supreme Court of NY regarding Case #882-C.
+                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
+                <p class="text-[11px] leading-relaxed text-on-surface-variant">
+                    <span class="font-bold text-on-surface">Legal Significance:</span> Substantial response from Supreme Court of NY regarding Case #882-C.
                 </p>
             </li>
             <li class="flex gap-2 items-start">
-                <span class="text-teal-600 font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-slate-700">
-                    <span class="font-bold text-teal-900">Required Action:</span> Await confirmation of signature, deadline for review is Oct 24, 2023.
+                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
+                <p class="text-[11px] leading-relaxed text-on-surface-variant">
+                    <span class="font-bold text-on-surface">Required Action:</span> Await confirmation of signature, deadline for review is Oct 24, 2023.
                 </p>
             </li>
             <li class="flex gap-2 items-start">
-                <span class="text-teal-600 font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-slate-700"><span class="font-bold text-teal-900">Key Financial Impact:</span> None currently identified; confirm no pending H&amp;M receipts required for attachment.</p>
+                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
+                <p class="text-[11px] leading-relaxed text-on-surface-variant"><span class="font-bold text-on-surface">Key Financial Impact:</span> None currently identified; confirm no pending H&amp;M receipts required for attachment.</p>
             </li>
         </ul>
     </div>
     
     <!-- Bottom 30%: Extracted Entities panel -->
     <div class="h-[30%] min-h-[200px] p-8 overflow-y-auto custom-scrollbar">
-        <h4 class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6">Extracted Entities</h4>
+        <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6">Extracted Entities</h4>
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
             <!-- People Section -->
             <div>
-                <h5 class="text-[9px] font-black text-teal-800 uppercase tracking-widest mb-3">PEOPLE</h5>
+                <h5 class="text-[9px] font-black text-primary uppercase tracking-widest mb-3">PEOPLE</h5>
                 <div class="flex flex-wrap gap-2">
-                    <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-outline-variant/10 shadow-sm">
-                        <div class="w-4 h-4 rounded-full bg-teal-100 flex items-center justify-center text-[8px] font-bold text-teal-800">JR</div>
+                    <div class="flex items-center gap-2 bg-surface-container-lowest px-3 py-1.5 rounded-full border border-outline-variant/10 shadow-sm">
+                        <div class="w-4 h-4 rounded-full bg-primary-container/30 flex items-center justify-center text-[8px] font-bold text-primary">JR</div>
                         <span class="text-[11px] font-medium text-on-surface">Judge Richards</span>
                     </div>
-                    <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-outline-variant/10 shadow-sm">
-                        <div class="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-bold text-slate-800">AS</div>
+                    <div class="flex items-center gap-2 bg-surface-container-lowest px-3 py-1.5 rounded-full border border-outline-variant/10 shadow-sm">
+                        <div class="w-4 h-4 rounded-full bg-surface-container-high flex items-center justify-center text-[8px] font-bold text-on-surface-variant">AS</div>
                         <span class="text-[11px] font-medium text-on-surface">Arthur Smith</span>
                     </div>
                 </div>
@@ -89,14 +89,14 @@
             <!-- Deadlines Section -->
             <div>
                 <div class="flex items-center justify-between mb-3">
-                    <h5 class="text-[9px] font-black text-teal-800 uppercase tracking-widest">DEADLINES</h5>
-                    <button class="flex items-center gap-1 text-[9px] font-bold text-teal-600 hover:text-teal-700 transition-colors uppercase tracking-tight">
+                    <h5 class="text-[9px] font-black text-primary uppercase tracking-widest">DEADLINES</h5>
+                    <button class="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-on-primary-container transition-colors uppercase tracking-tight">
                         <span class="material-symbols-outlined text-xs">calendar_add_on</span>
                         Sync
                     </button>
                 </div>
                 <div class="space-y-2">
-                    <div class="flex items-center justify-between bg-white p-2.5 rounded-lg border border-outline-variant/5 shadow-sm">
+                    <div class="flex items-center justify-between bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/5 shadow-sm">
                         <div class="flex items-center gap-3">
                             <span class="material-symbols-outlined text-sm text-error">event_busy</span>
                             <span class="text-[11px] font-bold text-on-surface">Response Filing</span>
@@ -108,15 +108,15 @@
             
             <!-- Expenses Section -->
             <div>
-                <h5 class="text-[9px] font-black text-teal-800 uppercase tracking-widest mb-3">EXPENSES</h5>
+                <h5 class="text-[9px] font-black text-primary uppercase tracking-widest mb-3">EXPENSES</h5>
                 <div class="bg-surface-container-highest/30 p-3 rounded-lg border border-outline-variant/5">
                     <div class="flex justify-between items-center mb-1">
-                        <span class="text-[10px] text-slate-500 font-medium">Court Filing Fees</span>
+                        <span class="text-[10px] text-on-surface-variant font-medium">Court Filing Fees</span>
                         <span class="text-[11px] font-bold text-on-surface">$425.00</span>
                     </div>
                     <div class="mt-2 pt-2 border-t border-outline-variant/10 flex justify-between items-center">
-                        <span class="text-[10px] font-bold text-teal-900 uppercase">Total Billable</span>
-                        <span class="text-xs font-black text-teal-900">$2,925.00</span>
+                        <span class="text-[10px] font-bold text-on-surface uppercase">Total Billable</span>
+                        <span class="text-xs font-black text-on-surface">$2,925.00</span>
                     </div>
                 </div>
             </div>
