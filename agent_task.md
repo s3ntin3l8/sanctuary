@@ -111,34 +111,32 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 ### Quick Wins
 
 #### Improve Ingestion
-1. **`missing_parent` never computed** — `constants.py` defines `missing_parent` review reason but `compute_review_reasons()` in `ingestion.py` never checks for it. Add validation (e.g., flag when `parent_id` is None for documents that appear to be replies/attachments based on title/content cues).
-2. **Duplicate route definitions in `actions.py`** — `update_case_deadline` defined twice (lines 504, 564), `create_case_hearing` defined twice (lines 530, 590). First `create_case_hearing` has a bug: creates a `Deadline` instead of `Hearing` and references undefined `due_at`. Remove duplicates, fix the bug.
-3. **AI summary model mismatch** — `ai_summary.py` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Align the model constant.
-4. **H&M normalization too aggressive** — `r"(?i)h\s*&\s*m"` matches "height & mass". Add word boundary anchors: `r"\b(?i)h\s*&\s*m\b|\bh\s+and\s+m\b"`.
-5. **`extract_clean_title()` bypasses H&M normalization** — Titles extracted from content skip `normalize_hm()`. Apply normalization to extracted titles.
-6. **No file size validation** — Large uploads could exhaust memory. Add max file size check (e.g., 50MB) before saving.
-7. **No `parent_id` existence validation** — Bogus `parent_id` causes generic 500 on FK constraint. Validate parent exists before Document creation, return 400.
-8. **Triage promotion uses `"_triage"` as case_id** — When promoting a triage doc without a `case_id` to deadline/hearing, `"_triage"` won't match any real case FK. Should either require a case_id or use NULL with a nullable FK.
-9. **No deduplication** — Same PDF uploaded twice creates two documents. Add content hash (SHA-256) check or filename+case_id uniqueness constraint.
-10. **Docling converter global not thread-safe** — `_converter` singleton in `ingestion.py` can race on concurrent uploads. Use `threading.Lock` or `asyncio.Lock` for initialization.
-11. **Content snippet limits are arbitrary** — `extract_case_id()` scans 2000 chars, `extract_sender()` 3000 chars, etc. Metadata in longer docs may be missed. Consider scanning full content or using smarter windowing (e.g., header section only for sender/date, full text for case_id).
-12. **Date extraction is greedy** — `extract_received_date()` returns first match per tier. A date cited in a referenced prior case may be captured over the actual email date. Consider scoring multiple candidates by proximity to "received"/"dated"/"from" keywords.
+
+> **Status key:** 🔴 Bug fix (can cause runtime errors) · 🟡 Improvement (robustness/UX) · 🟢 Partially fixed
+
+1. 🔴 **Duplicate route definitions in `actions.py`** — `update_case_deadline` defined twice (lines 496, 556 — identical). `create_case_hearing` defined twice (lines 522, 582) — the **first version is buggy**: creates `Deadline` instead of `Hearing` and references undefined `due_at` (line 548 → `NameError`). Remove the duplicate block (lines 556-579) and fix the first `create_case_hearing` to use `Hearing` + `scheduled_for`.
+2. 🔴 **Docling converter race condition** — `_get_converter()` at `ingestion.py:20-36` has TOCTOU race: two concurrent uploads both see `_converter is None` and each create a `DocumentConverter`. Called inside `asyncio.to_thread()` at line 789. Fix: wrap init in `threading.Lock`.
+3. 🔴 **`missing_parent` never computed** — `constants.py:126` defines `missing_parent` in `REVIEW_FIELD_LABELS` and `unlink-parent` adds it (actions.py:142), but `compute_review_reasons()` at `ingestion.py:702-728` checks 7 reasons and never flags `missing_parent` when `parent_id` is None. Add the check.
+4. 🔴 **No `parent_id` existence validation** — `ingest_file()` accepts `parent_id` at line 740, passes it directly to `Document` at line 811 with no DB lookup. Bogus ID causes FK constraint 500. Note: `link_parent` endpoint *does* validate (actions.py:82-87). Fix: query parent exists before Document creation, return 400.
+5. 🟡 **H&M normalization too aggressive** — regex `r"(?i)h\s*&\s*m|h\s+and\s+m"` at `normalization.py:9` matches "height & mass", "hazard & maintenance" etc. Fix: add word boundary anchors `r"\b(?i)h\s*&\s*m\b|\bh\s+and\s+m\b"`.
+6. 🟡 **No file size validation** — Files read in 1MB chunks at `ingestion.py:769-777` with no upper bound. Could exhaust memory. Add max file size check (e.g., 50MB) before saving.
+7. 🟡 **No deduplication** — Same PDF uploaded twice creates two `Document` records. No SHA-256 hash check, no filename+case_id uniqueness constraint. Add content hash on `Document` model + check before insert.
+8. 🟡 **Content snippet limits are arbitrary** — `extract_case_id()` scans 2000 chars, `extract_originator()` 3000, `extract_sender()` 3000, `extract_schedule_candidates()` 5000. Metadata beyond these offsets silently missed. Consider smarter windowing (header section for sender/date, full text for case_id).
+9. 🟡 **Date extraction is greedy** — `extract_received_date()` at `ingestion.py:405-411` returns first match per tier. A date in quoted prior correspondence wins over actual document date. Consider scoring candidates by proximity to "received"/"dated"/"from" keywords.
+10. 🟢 **`extract_clean_title()` bypasses H&M normalization** — Pipeline order ensures normalization runs first (line 790) before title extraction (line 800), so content passed in *is* normalized. But the function itself doesn't call `normalize_hm()` — fragile to call-order changes. Fix: apply `normalize_hm()` inside the function for self-containment.
+11. 🟢 **Triage uses `"_triage"` as case_id** — `case_id` column is nullable, promotion endpoints reject docs without `case_id` (actions.py:384, 427). The `"_triage"` string is only a filesystem directory, not a DB value. Lower severity than originally described. Consider: create a real "triage" case record so `case_id` can be non-nullable.
 
 #### Case Stream Improvements
+
 1. ~~**"Link to Parent" button is dead**~~ — Implemented: Alpine.js dropdown lists top-level docs, `POST /document/{doc_id}/link-parent` and `POST /document/{doc_id}/unlink-parent` endpoints with validation (same case, not self, no circular refs). Button toggles between `link` and `link_off` icons.
-2. **"Mark Reviewed" broken target** — `hx-target="closest div"` targets the card itself, leaving empty space in the 3-column grid. Should target a wrapper and reflow.
-3. **Raw markdown in review card preview** — 150 chars of Docling content may include markdown artifacts. Strip or clean.
-4. **No document count badge on Chronology** — Review shows "X PENDING", Calendar shows "X UPCOMING", Chronology has no count.
-5. ~~**Costs section — no "Add Cost" button**~~ — Implemented: button in Costs header, `GET /cases/{case_id}/costs/new` endpoint, `cost_form.html` accepts `preselected_case_id` for hidden case field.
-6. ~~**No upload button on case stream**~~ — Implemented: upload button in secondary header, `GET /upload` endpoint, `upload_form.html` modal partial with drag-and-drop, hidden `case_id`, optional `parent_id` dropdown (top-level docs only).
+2. 🔴 **"Mark Reviewed" broken target** — `hx-target="closest div"` at `case_stream.html:117` resolves to the inner action-buttons `<div>`, not the card container. After `outerHTML` swap, the card retains a broken button area. Fix: change to `hx-target="closest .bg-surface-container"` or give the card an explicit ID.
+3. 🔴 **Raw markdown in card previews** — 3 locations slice `doc.content` with zero markdown cleaning: review card `[:150]` (line 110), chronology `[:150]` (line 200), child docs `[:120]` with `\| safe` (line 250 — actively harmful, renders Docling HTML unescaped). Fix: add `| striptags` or a markdown-to-text filter.
+4. 🟡 **No document count badge on Chronology** — Review shows "X PENDING" (`case_stream.html:91`), Calendar shows "X UPCOMING" (line 286), Chronology header at line 176 has nothing. Add `{{ documents|length }} DOCS` badge.
 
-#### Upload Button Polish
-1. **Upload button design review** — Modal overlay works but needs visual polish: backdrop blur, smooth transitions, file type icons, progress indicator during upload, success/error states.
-2. **Parent link logic rethink** — Current dropdown shows all top-level docs in the case. Consider: (a) grouping by date, (b) showing only docs with `needs_review=False` as parent candidates, (c) adding a search/filter in the dropdown for large cases, (d) showing the relationship visually after linking (e.g., "Child of: [parent title]").
+#### Upload Modal Polish
 
-#### Upload Button Polish
-1. **Upload button design review** — Modal overlay works but needs visual polish: backdrop blur, smooth transitions, file type icons, progress indicator during upload, success/error states.
-2. **Parent link logic rethink** — Current dropdown shows all top-level docs in the case. Consider: (a) grouping by date, (b) showing only docs with `needs_review=False` as parent candidates, (c) adding a search/filter in the dropdown for large cases, (d) showing the relationship visually after linking (e.g., "Child of: [parent title]").
+1. 🟡 **Visual polish** — Has backdrop blur + transitions (`upload_form.html:1-4`), file type list (line 30). Missing: per-file-type icons, HTMX progress indicator during upload (`hx-indicator`), visual success/error states beyond server-rendered response text.
+2. 🟡 **Parent link logic** — Review card picker (`case_stream.html:126-148`) and upload form (`upload_form.html:34-44`) both use flat dropdowns of all top-level docs. Consider: (a) grouping by date, (b) filtering to `needs_review=False` candidates, (c) search/filter for large cases, (d) visual relationship feedback after linking (e.g., "Child of: [parent title]"). Note: review card picker uses `hx-swap="outerHTML"` which replaces the form element — picker disappears but action buttons lose form structure.
 
 ### Next Layer: Medium Effort / High Value
 
@@ -217,6 +215,7 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 20. Test Suite
 - Unit, integration, and UI/E2E coverage
+- Priority: ingestion pipeline (extraction functions, normalization, review reasons), route dedup validation, HTMX target correctness
 
 #### 21. Database Connection / Runtime Hardening
 - Better pooling/health handling as concurrency grows
@@ -226,6 +225,11 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 21b. Delete, Archive, and Undo Flows
 - Safe delete/archive behavior, lightweight undo/recovery patterns
+
+#### 21c. Template Safety Filters
+- Add `| striptags` or markdown-to-text Jinja filter for Docling content previews (prevents unescaped HTML rendering)
+- Make `extract_clean_title()` self-contained by applying `normalize_hm()` internally
+- Add HTMX loading indicators to upload form (`hx-indicator` or CSS spinner)
 
 ---
 

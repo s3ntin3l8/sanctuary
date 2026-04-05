@@ -6,4 +6,4 @@ def normalize_hm(text: str) -> str:
 
     Catches: h&m, H&M, h & m, H & M, h and m, H AND M, etc.
     """
-    return re.sub(r"(?i)h\s*&\s*m|h\s+and\s+m", "H&M", text)
+    return re.sub(r"\b(?i)h\s*&\s*m\b|\bh\s+and\s+m\b", "H&M", text)

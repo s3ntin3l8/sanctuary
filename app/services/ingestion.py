@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import aiofiles
 import asyncio
 from typing import Optional
@@ -12,27 +13,31 @@ from app.models.database import Document, OriginatorType
 from app.services.normalization import normalize_hm
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx"}
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # ---------------------------------------------------------------------------
 # Lazy converter initialization
 # ---------------------------------------------------------------------------
 
 _converter: Optional[object] = None
+_converter_lock = threading.Lock()
 
 
 def _get_converter():
-    """Lazy-init the Docling DocumentConverter on first use."""
+    """Lazy-init the Docling DocumentConverter on first use (thread-safe)."""
     global _converter
     if _converter is None:
-        try:
-            from docling.document_converter import DocumentConverter
+        with _converter_lock:
+            if _converter is None:
+                try:
+                    from docling.document_converter import DocumentConverter
 
-            _converter = DocumentConverter()
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to initialize Docling converter: {e}. "
-                "Ensure Docling is installed and system dependencies are met."
-            )
+                    _converter = DocumentConverter()
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to initialize Docling converter: {e}. "
+                        "Ensure Docling is installed and system dependencies are met."
+                    )
     return _converter
 
 
@@ -311,11 +316,20 @@ HEADER_PREFIXES = (
 
 MAX_TITLE_LENGTH = 120
 
+# Snippet scan limits for heuristic extraction.
+# case_id scans full content (IDs can appear in headers, footers, or signatures).
+# originator/sender scan generous windows to catch metadata in longer docs.
+# schedule candidates already use a generous 5000-char window.
+CASE_ID_SCAN_LIMIT = 0  # 0 = no limit, scan full content
+ORIGINATOR_SCAN_LIMIT = 8000
+SENDER_SCAN_LIMIT = 8000
+SCHEDULE_SCAN_LIMIT = 5000
+
 
 def extract_case_id(filename: str, content: str) -> str | None:
     """Try to extract a case ID from content first, then from filename as fallback."""
-    # Search first 2000 chars of content for performance
-    snippet = (content or "")[:2000]
+    # Scan full content — case IDs can appear in headers, footers, or signatures
+    snippet = content or ""
     for pattern in CASE_ID_PATTERNS:
         match = pattern.search(snippet)
         if match:
@@ -335,7 +349,7 @@ def extract_case_id(filename: str, content: str) -> str | None:
 
 def extract_originator(filename: str, content: str) -> OriginatorType:
     """Classify originator based on weighted keyword matching."""
-    combined = (filename + " " + (content or "")[:3000]).lower()
+    combined = (filename + " " + (content or "")[:ORIGINATOR_SCAN_LIMIT]).lower()
     court_score = sum(weight for kw, weight in COURT_KEYWORDS.items() if kw in combined)
     opposing_score = sum(
         weight for kw, weight in OPPOSING_KEYWORDS.items() if kw in combined
@@ -396,22 +410,36 @@ def _parse_date_string(date_str: str):
 
 
 def extract_received_date(content: str, filename: str = ""):
-    """Try to extract a date from document content, with filename fallback."""
+    """Try to extract a date from document content, with filename fallback.
+
+    Prefers dates found in the first 1000 characters (header region) over
+    dates deeper in the document, which are more likely to be from quoted
+    prior correspondence or referenced cases.
+    """
     from datetime import datetime as dt
 
-    snippet = (content or "")[:3000]
+    snippet = content or ""
 
-    # 1. Try contextual date patterns (received/dated/filed/etc.)
+    # 1. Try header region first (first 1000 chars) — most likely the actual document date
+    header_snippet = snippet[:1000]
     for pattern in DATE_PATTERNS:
-        match = pattern.search(snippet)
+        match = pattern.search(header_snippet)
         if match:
-            date_str = match.group(1)
-            parsed = _parse_date_string(date_str)
+            parsed = _parse_date_string(match.group(1))
             if parsed:
                 return parsed
 
-    # 2. Try German long form: DD. Month YYYY (e.g. "5. Januar 2024")
-    german_match = GERMAN_LONG_DATE_PATTERN.search(snippet)
+    # 2. Fall back to broader scan if nothing found in header
+    full_snippet = snippet[:3000]
+    for pattern in DATE_PATTERNS:
+        match = pattern.search(full_snippet)
+        if match:
+            parsed = _parse_date_string(match.group(1))
+            if parsed:
+                return parsed
+
+    # 3. Try German long form: DD. Month YYYY (e.g. "5. Januar 2024")
+    german_match = GERMAN_LONG_DATE_PATTERN.search(full_snippet)
     if german_match:
         day = int(german_match.group(1))
         month_name = german_match.group(2).lower()
@@ -423,14 +451,14 @@ def extract_received_date(content: str, filename: str = ""):
             except ValueError:
                 pass
 
-    # 3. Try absolute date pattern as fallback
-    absolute_match = ABSOLUTE_DATE_PATTERN.search(snippet)
+    # 4. Try absolute date pattern as fallback
+    absolute_match = ABSOLUTE_DATE_PATTERN.search(full_snippet)
     if absolute_match:
         parsed = _parse_candidate_date(absolute_match.group(1))
         if parsed:
             return parsed
 
-    # 4. Fallback: check filename for date patterns
+    # 5. Fallback: check filename for date patterns
     if filename:
         for pattern in FILENAME_DATE_PATTERNS:
             match = pattern.search(filename)
@@ -451,7 +479,7 @@ def extract_received_date(content: str, filename: str = ""):
 
 def extract_sender(content: str) -> str | None:
     """Try to extract a sender name from content."""
-    snippet = (content or "")[:3000]
+    snippet = (content or "")[:SENDER_SCAN_LIMIT]
 
     # 1. Try explicit sender patterns first (From:, Von:, etc.)
     for pattern in SENDER_PATTERNS:
@@ -508,7 +536,7 @@ def extract_schedule_candidates(content: str, base_date=None) -> list[dict]:
 
     candidates: list[dict] = []
     seen: set[tuple] = set()
-    snippet = (content or "")[:5000]
+    snippet = (content or "")[:SCHEDULE_SCAN_LIMIT]
     lines = [line.strip(" -*\t") for line in snippet.splitlines() if line.strip()]
 
     for line in lines:
@@ -672,7 +700,7 @@ def extract_clean_title(filename: str, content: str = "") -> str:
         if subject_match:
             title = subject_match.group(1).strip()
             if title and len(title) > 2:
-                return title[:120]
+                return normalize_hm(title[:120])
 
     # Use first non-empty, non-header line from content
     if content:
@@ -686,7 +714,7 @@ def extract_clean_title(filename: str, content: str = "") -> str:
                 continue
             title = stripped.strip("#*-_ ")
             if title and len(title) > 2:
-                return title[:120]
+                return normalize_hm(title[:120])
 
     # Fallback: convert filename to title
     name = os.path.splitext(filename)[0]
@@ -695,8 +723,8 @@ def extract_clean_title(filename: str, content: str = "") -> str:
         name = pattern.sub("", name)
     name = name.strip()
     if name:
-        return name.title()[:120]
-    return filename[:120]
+        return normalize_hm(name.title()[:120])
+    return normalize_hm(filename[:120])
 
 
 def compute_review_reasons(doc: Document) -> list[str]:
@@ -714,6 +742,8 @@ def compute_review_reasons(doc: Document) -> list[str]:
         reasons.append("missing_sender")
     if not doc.received_date:
         reasons.append("missing_received_date")
+    if not doc.parent_id:
+        reasons.append("missing_parent")
     # Title is the raw filename — still counts as "needs review" for renaming
     if (
         doc.title
@@ -768,8 +798,18 @@ async def ingest_file(
     # 2. Save the file to disk asynchronously
     try:
         async with aiofiles.open(file_path, "wb") as out_file:
+            total_size = 0
             while content := await file.read(1024 * 1024):  # 1MB chunks
+                total_size += len(content)
+                if total_size > MAX_FILE_SIZE:
+                    os.remove(file_path)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                    )
                 await out_file.write(content)
+    except HTTPException:
+        raise
     except OSError as e:
         raise HTTPException(
             status_code=500,
@@ -801,6 +841,12 @@ async def ingest_file(
 
     # Prefer the explicitly provided case_id, fall back to extraction
     final_case_id = case_id if case_id else extracted_case_id
+
+    # 4b. Validate parent_id exists before building the document
+    if parent_id is not None:
+        parent = db.query(Document).filter(Document.id == parent_id).first()
+        if not parent:
+            raise HTTPException(status_code=400, detail="Parent document not found.")
 
     # 5. Build the document
     new_doc = Document(
