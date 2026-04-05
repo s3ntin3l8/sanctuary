@@ -47,6 +47,7 @@ class Document(Base):
     )  # sqlite-vec f32 binary blob (future semantic search)
     case_id = Column(String, nullable=True, index=True)
     file_path = Column(String, nullable=True)
+    content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex digest
     originator_type = Column(
         SAEnum(OriginatorType), default=OriginatorType.UNKNOWN, nullable=False
     )

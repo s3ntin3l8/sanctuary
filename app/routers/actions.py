@@ -537,66 +537,6 @@ async def create_case_hearing(
 
     if errors:
         return render_case_schedule_panel(
-            request, db, case_id, deadline_errors=errors, deadline_data=dict(form)
-        )
-
-    db.add(
-        Deadline(
-            case_id=case_id,
-            title=title,
-            description=(form.get("description") or "").strip() or None,
-            due_at=due_at,
-        )
-    )
-    db.commit()
-
-    return render_case_schedule_panel(request, db, case_id)
-
-
-@router.post("/cases/{case_id}/deadlines/{deadline_id}")
-async def update_case_deadline(
-    request: Request,
-    case_id: str,
-    deadline_id: int,
-    db: Session = Depends(get_db),
-):
-    form = await request.form()
-    deadline = (
-        db.query(Deadline)
-        .filter(Deadline.id == deadline_id, Deadline.case_id == case_id)
-        .first()
-    )
-    if deadline:
-        title = (form.get("title") or "").strip()
-        due_at = parse_form_datetime(form.get("due_at"))
-        deadline.title = title or deadline.title
-        if due_at:
-            deadline.due_at = due_at
-        deadline.description = (form.get("description") or "").strip() or None
-        deadline.completed = form.get("completed") == "on"
-        db.commit()
-
-    return render_case_schedule_panel(request, db, case_id)
-
-
-@router.post("/cases/{case_id}/hearings")
-async def create_case_hearing(
-    request: Request,
-    case_id: str,
-    db: Session = Depends(get_db),
-):
-    form = await request.form()
-    scheduled_for = parse_form_datetime(form.get("scheduled_for"))
-    title = (form.get("title") or "").strip()
-
-    errors = []
-    if not title:
-        errors.append("Title is required")
-    if not scheduled_for:
-        errors.append("Valid date/time is required")
-
-    if errors:
-        return render_case_schedule_panel(
             request, db, case_id, hearing_errors=errors, hearing_data=dict(form)
         )
 

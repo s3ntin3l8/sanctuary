@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 import threading
 import aiofiles
 import asyncio
@@ -795,7 +796,8 @@ async def ingest_file(
     safe_filename = os.path.basename(file.filename)
     file_path = os.path.join(case_dir, safe_filename)
 
-    # 2. Save the file to disk asynchronously
+    # 2. Save the file to disk asynchronously, computing SHA-256 hash in the process
+    sha256 = hashlib.sha256()
     try:
         async with aiofiles.open(file_path, "wb") as out_file:
             total_size = 0
@@ -807,6 +809,7 @@ async def ingest_file(
                         status_code=413,
                         detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
                     )
+                sha256.update(content)
                 await out_file.write(content)
     except HTTPException:
         raise
@@ -815,6 +818,8 @@ async def ingest_file(
             status_code=500,
             detail=f"Failed to save uploaded file: {e}",
         )
+
+    content_hash = sha256.hexdigest()
 
     # 3. Convert to markdown with docling
     markdown_content: str | None = None
@@ -848,12 +853,30 @@ async def ingest_file(
         if not parent:
             raise HTTPException(status_code=400, detail="Parent document not found.")
 
+    # 4c. Check for duplicate: same content hash + same case_id
+    if content_hash and final_case_id:
+        existing = (
+            db.query(Document)
+            .filter(
+                Document.content_hash == content_hash,
+                Document.case_id == final_case_id,
+            )
+            .first()
+        )
+        if existing:
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate document: '{existing.title}' (ID: {existing.id})",
+            )
+
     # 5. Build the document
     new_doc = Document(
         title=extracted_title if extracted_title != safe_filename else safe_filename,
         content=markdown_content,
         case_id=final_case_id,
         file_path=file_path,
+        content_hash=content_hash,
         parent_id=parent_id,
         originator_type=extracted_originator,
         sender=extracted_sender,
