@@ -4,6 +4,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 
 ## Features
 
+- **Search** — Global search with autocomplete dropdown (Cmd+K) and full-page results
 - **Russian Doll Document Protocol** — Nested document hierarchy with originator colour stripes (Court / Opposing Counsel / Own Lawyer), provenance footers, and L-connector indentation
 - **Case Directory** — Active and closed cases with status badges, grouped by litigation lifecycle
 - **Case Stream** — Tabbed view (Review / Calendar / Costs) with split-pane document detail panel
@@ -11,9 +12,11 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 - **Master Timeline** — Cross-case chronological feed
 - **Legal Cost Tracking** — German Kostenrecht (RVG/GKG), 4-metric summaries, overdue alerts
 - **Contact Hub** — Relationship intelligence aggregated from document senders
+- **Keyboard Shortcuts** — Cmd+K search, Cmd+D toggle theme, Cmd+/ focus search, Esc close modals
 - **Animated Sidebar** — Collapsible focus mode with choreographed fade transitions and zero FOUC
 - **Dual Light/Dark Mode** — Semantic token system; toggle via `.dark` class on `<html>`
 - **Docling Ingestion** — PDF → Markdown conversion with heuristic metadata extraction
+- **Email Ingestion** — `.eml` file support with header parsing and thread detection
 - **AI Summaries** — 3-bullet management summaries generated locally via Ollama
 
 ## Stack
