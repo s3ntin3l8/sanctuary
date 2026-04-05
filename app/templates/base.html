@@ -7,67 +7,9 @@
     <script>
         (() => {
             const savedTheme = localStorage.getItem('site-theme');
-            const root = document.documentElement;
-            const lightTheme = {
-                '--color-surface-container-lowest': '#ffffff',
-                '--color-surface': '#f8fafb',
-                '--color-surface-dim': '#cfdce0',
-                '--color-surface-bright': '#f8fafb',
-                '--color-surface-container-low': '#f0f4f6',
-                '--color-surface-container': '#e8eff1',
-                '--color-surface-container-high': '#e1eaec',
-                '--color-surface-container-highest': '#d9e4e8',
-                '--color-surface-variant': '#d9e4e8',
-                '--color-background': '#f8fafb',
-                '--color-primary': '#45636b',
-                '--color-on-primary': '#ecfaff',
-                '--color-primary-container': '#c8e8f2',
-                '--color-on-primary-container': '#38565e',
-                '--color-error': '#9f403d',
-                '--color-error-container': '#fe8983',
-                '--color-originator-court': '#0369a1',
-                '--color-originator-opposing': '#b91c1c',
-                '--color-originator-own': '#047857',
-                '--color-originator-unknown': '#64748b',
-                '--color-on-surface': '#2a3437',
-                '--color-on-surface-variant': '#566164',
-                '--color-on-background': '#2a3437',
-                '--color-outline': '#727d80',
-                '--color-outline-variant': '#a9b4b7',
-            };
-            const darkTheme = {
-                '--color-surface-container-lowest': '#060e20',
-                '--color-surface': '#0b1326',
-                '--color-surface-dim': '#0b1326',
-                '--color-surface-bright': '#31394d',
-                '--color-surface-container-low': '#131b2e',
-                '--color-surface-container': '#171f33',
-                '--color-surface-container-high': '#222a3d',
-                '--color-surface-container-highest': '#2d3449',
-                '--color-surface-variant': '#2d3449',
-                '--color-background': '#0b1326',
-                '--color-primary': '#57f1db',
-                '--color-on-primary': '#003731',
-                '--color-primary-container': '#2dd4bf',
-                '--color-on-primary-container': '#00574d',
-                '--color-error': '#ffb4ab',
-                '--color-error-container': '#93000a',
-                '--color-originator-court': '#0369a1',
-                '--color-originator-opposing': '#b91c1c',
-                '--color-originator-own': '#047857',
-                '--color-originator-unknown': '#859490',
-                '--color-on-surface': '#dae2fd',
-                '--color-on-surface-variant': '#bacac5',
-                '--color-on-background': '#dae2fd',
-                '--color-outline': '#859490',
-                '--color-outline-variant': '#3c4a46',
-            };
-            const theme = savedTheme === 'dark' ? darkTheme : lightTheme;
-
-            Object.entries(theme).forEach(([key, value]) => {
-                root.style.setProperty(key, value);
-            });
-            root.classList.toggle('dark', savedTheme === 'dark');
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
         })();
     </script>
     
@@ -142,68 +84,9 @@
             const root = document.documentElement;
             const body = document.body;
             const toastHost = document.getElementById('shell-toast-host');
-            const lightTheme = {
-                '--color-surface-container-lowest': '#ffffff',
-                '--color-surface': '#f8fafb',
-                '--color-surface-dim': '#cfdce0',
-                '--color-surface-bright': '#f8fafb',
-                '--color-surface-container-low': '#f0f4f6',
-                '--color-surface-container': '#e8eff1',
-                '--color-surface-container-high': '#e1eaec',
-                '--color-surface-container-highest': '#d9e4e8',
-                '--color-surface-variant': '#d9e4e8',
-                '--color-background': '#f8fafb',
-                '--color-primary': '#45636b',
-                '--color-on-primary': '#ecfaff',
-                '--color-primary-container': '#c8e8f2',
-                '--color-on-primary-container': '#38565e',
-                '--color-error': '#9f403d',
-                '--color-error-container': '#fe8983',
-                '--color-originator-court': '#0369a1',
-                '--color-originator-opposing': '#b91c1c',
-                '--color-originator-own': '#047857',
-                '--color-originator-unknown': '#64748b',
-                '--color-on-surface': '#2a3437',
-                '--color-on-surface-variant': '#566164',
-                '--color-on-background': '#2a3437',
-                '--color-outline': '#727d80',
-                '--color-outline-variant': '#a9b4b7',
-            };
-            const darkTheme = {
-                '--color-surface-container-lowest': '#060e20',
-                '--color-surface': '#0b1326',
-                '--color-surface-dim': '#0b1326',
-                '--color-surface-bright': '#31394d',
-                '--color-surface-container-low': '#131b2e',
-                '--color-surface-container': '#171f33',
-                '--color-surface-container-high': '#222a3d',
-                '--color-surface-container-highest': '#2d3449',
-                '--color-surface-variant': '#2d3449',
-                '--color-background': '#0b1326',
-                '--color-primary': '#57f1db',
-                '--color-on-primary': '#003731',
-                '--color-primary-container': '#2dd4bf',
-                '--color-on-primary-container': '#00574d',
-                '--color-error': '#ffb4ab',
-                '--color-error-container': '#93000a',
-                '--color-originator-court': '#0369a1',
-                '--color-originator-opposing': '#b91c1c',
-                '--color-originator-own': '#047857',
-                '--color-originator-unknown': '#859490',
-                '--color-on-surface': '#dae2fd',
-                '--color-on-surface-variant': '#bacac5',
-                '--color-on-background': '#dae2fd',
-                '--color-outline': '#859490',
-                '--color-outline-variant': '#3c4a46',
-            };
 
             window.setSiteTheme = (mode) => {
                 const isDark = mode === 'dark';
-                const theme = isDark ? darkTheme : lightTheme;
-
-                Object.entries(theme).forEach(([key, value]) => {
-                    root.style.setProperty(key, value);
-                });
                 root.classList.toggle('dark', isDark);
                 body.classList.toggle('dark', isDark);
                 localStorage.setItem('site-theme', isDark ? 'dark' : 'light');
@@ -244,7 +127,7 @@
                 toastHost.appendChild(toast);
                 window.setTimeout(() => {
                     toast.remove();
-                }, 2200);
+                }, 4000);
             };
 
             window.showShellPlaceholder = (label) => {
@@ -314,10 +197,115 @@
                 });
             });
 
-            window.setSiteTheme(root.classList.contains('dark') ? 'dark' : 'light');
             window.syncHeaderThemeControls();
             window.addEventListener('site-theme-changed', window.syncHeaderThemeControls);
         })();
     </script>
+
+    {# Notifications Panel — at body level so fixed positioning works correctly #}
+    {% if notification_count is defined %}
+    <div id="notifications-panel-root"
+         x-data="{ open: false }"
+         @toggle-notif.window="open = !open"
+         @click.outside="open = false"
+         @keydown.escape.window="open = false"
+         class="fixed right-8 top-14 w-80 bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl z-[9999] overflow-hidden"
+         x-show="open"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-2"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-2"
+         style="display: none;">
+        <div class="px-4 py-3 border-b border-outline-variant/10 bg-surface-container-low">
+            <h3 class="text-xs font-bold text-on-surface uppercase tracking-wider">Notifications</h3>
+        </div>
+
+        <div class="max-h-96 overflow-y-auto custom-scrollbar">
+            {% if overdue_deadlines %}
+            <div class="px-4 py-2 bg-error-container/10 border-b border-error/10">
+                <p class="text-[9px] font-bold text-error uppercase tracking-wider mb-2">Overdue Deadlines — {{ overdue_deadlines|length }}</p>
+                {% for dl in overdue_deadlines %}
+                <a href="/cases/{{ dl.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                    <span class="material-symbols-outlined text-error text-sm shrink-0 mt-0.5">event_busy</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
+                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(dl.case_id, dl.case_id) }} &middot; Due {{ dl.due_at.strftime('%b %d') }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if upcoming_deadlines_notif %}
+            <div class="px-4 py-2 border-b border-outline-variant/10">
+                <p class="text-[9px] font-bold text-originator-opposing uppercase tracking-wider mb-2">Upcoming Deadlines — {{ upcoming_deadlines_notif|length }}</p>
+                {% for dl in upcoming_deadlines_notif %}
+                <a href="/cases/{{ dl.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                    <span class="material-symbols-outlined text-originator-opposing text-sm shrink-0 mt-0.5">event</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
+                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(dl.case_id, dl.case_id) }} &middot; {{ dl.due_at.strftime('%b %d') }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if upcoming_hearings_notif %}
+            <div class="px-4 py-2 border-b border-outline-variant/10">
+                <p class="text-[9px] font-bold text-originator-court uppercase tracking-wider mb-2">Upcoming Hearings — {{ upcoming_hearings_notif|length }}</p>
+                {% for h in upcoming_hearings_notif %}
+                <a href="/cases/{{ h.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                    <span class="material-symbols-outlined text-originator-court text-sm shrink-0 mt-0.5">gavel</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-on-surface truncate">{{ h.title }}</p>
+                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(h.case_id, h.case_id) }} &middot; {{ h.scheduled_for.strftime('%b %d') }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if pending_docs %}
+            <div class="px-4 py-2 border-b border-outline-variant/10">
+                <p class="text-[9px] font-bold text-primary uppercase tracking-wider mb-2">Pending Review — {{ pending_docs|length }}</p>
+                {% for doc in pending_docs %}
+                <a href="/triage" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                    <span class="material-symbols-outlined text-primary text-sm shrink-0 mt-0.5">inbox</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-on-surface truncate">{{ doc.title }}</p>
+                        <p class="text-[10px] text-on-surface-variant">{{ doc.case_id or 'Unassigned' }} &middot; {{ doc.created_at.strftime('%b %d') }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if overdue_costs_notif %}
+            <div class="px-4 py-2 border-b border-outline-variant/10">
+                <p class="text-[9px] font-bold text-error uppercase tracking-wider mb-2">Overdue Costs — {{ overdue_costs_notif|length }}</p>
+                {% for cost in overdue_costs_notif %}
+                <a href="/costs" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                    <span class="material-symbols-outlined text-error text-sm shrink-0 mt-0.5">payments</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-bold text-on-surface truncate">{{ cost.title }}</p>
+                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; {{ cost.due_at.strftime('%b %d') }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if notification_count == 0 %}
+            <div class="px-4 py-8 text-center">
+                <span class="material-symbols-outlined text-3xl text-outline mb-2">notifications_none</span>
+                <p class="text-xs text-on-surface-variant">All caught up</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </body>
 </html>

@@ -47,26 +47,58 @@
             <span class="material-symbols-outlined text-sm">smart_toy</span>
             AI Management Summary
         </h4>
+        {% if doc and doc.ai_summary_status == "generated" and doc.ai_summary %}
         <ul class="space-y-2">
             <li class="flex gap-2 items-start">
                 <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
                 <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Legal Significance:</span> Substantial response from Supreme Court of NY regarding Case #882-C.
+                    <span class="font-bold text-on-surface">Legal Significance:</span> {{ doc.ai_summary.legal_significance|default("Not available")|hm }}
                 </p>
             </li>
             <li class="flex gap-2 items-start">
                 <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
                 <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Required Action:</span> Await confirmation of signature, deadline for review is Oct 24, 2023.
+                    <span class="font-bold text-on-surface">Required Action:</span> {{ doc.ai_summary.required_action|default("Not available")|hm }}
                 </p>
             </li>
             <li class="flex gap-2 items-start">
                 <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant"><span class="font-bold text-on-surface">Key Financial Impact:</span> None currently identified; confirm no pending H&amp;M receipts required for attachment.</p>
+                <p class="text-[11px] leading-relaxed text-on-surface-variant">
+                    <span class="font-bold text-on-surface">Financial Impact:</span> {{ doc.ai_summary.financial_impact|default("Not available")|hm }}
+                </p>
             </li>
         </ul>
+        {% elif doc and doc.ai_summary_status == "pending" %}
+        <div class="flex items-center gap-2 text-[11px] text-on-surface-variant">
+            <span class="material-symbols-outlined text-sm animate-spin text-primary">autorenew</span>
+            Generating summary...
+        </div>
+        {% elif doc and doc.ai_summary_status == "failed" %}
+        <div class="space-y-2">
+            <p class="text-[11px] text-error">Summary generation failed: {{ doc.ai_summary.error|default("Unknown error") }}</p>
+            <button
+                hx-post="/document/{{ doc.id }}/summarize"
+                hx-target="closest div.bg-primary-container\\/10"
+                hx-swap="outerHTML"
+                class="text-[11px] text-primary underline hover:no-underline cursor-pointer"
+            >
+                Retry
+            </button>
+        </div>
+        {% else %}
+        <button
+            hx-post="/document/{{ doc.id }}/summarize"
+            hx-target="closest div.bg-primary-container\\/10"
+            hx-swap="outerHTML"
+            hx-indicator="this"
+            class="text-[11px] text-primary underline hover:no-underline flex items-center gap-1 cursor-pointer"
+        >
+            <span class="material-symbols-outlined text-sm">auto_fix_high</span>
+            Generate Summary
+        </button>
+        {% endif %}
     </div>
-    
+
     <!-- Bottom 30%: Extracted Entities panel -->
     <div class="h-[30%] min-h-[200px] p-8 overflow-y-auto custom-scrollbar">
         <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6">Extracted Entities</h4>

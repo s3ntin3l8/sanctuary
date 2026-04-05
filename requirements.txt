@@ -1,4 +1,5 @@
 accelerate==1.10.1
+alembic==1.14.1
 aiofiles==25.1.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
@@ -106,3 +107,4 @@ tzdata==2026.1
 urllib3==2.6.3
 uvicorn==0.39.0
 xlsxwriter==3.2.9
+sqlite-vec>=0.1.0

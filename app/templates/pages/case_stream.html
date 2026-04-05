@@ -14,7 +14,7 @@
     <p class="text-xs font-mono text-on-surface-variant uppercase tracking-tight">COURT ID: <span class="text-on-surface font-bold">{{ court_id }}</span></p>
     <div class="h-3 w-px bg-outline-variant"></div>
     {% endif %}
-    <p class="text-xs font-mono text-on-surface-variant uppercase tracking-tight">INTERNAL ID: <span class="text-on-surface font-bold">{{ case_id }}</span></p>
+    <p class="text-xs font-mono text-on-surface-variant uppercase tracking-tight">ID: <span class="text-on-surface font-bold">{{ case_id }}</span></p>
 {% endset %}
 {% set secondary_nav %}
     <a :class="activeSection === 'review' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
@@ -26,6 +26,9 @@
     <a :class="activeSection === 'calendar' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
        href="#section-calendar"
        @click.prevent="scrollToSection('calendar')">Calendar</a>
+    <a :class="activeSection === 'costs' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
+       href="#section-costs"
+       @click.prevent="scrollToSection('costs')">Costs</a>
     <a :class="activeSection === 'entities' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
        href="#section-entities"
        @click.prevent="scrollToSection('entities')">Entities</a>
@@ -37,7 +40,7 @@
 <div x-data="{
         activeDoc: null,
         activeSection: 'review',
-        sectionIds: ['review', 'chronology', 'calendar', 'entities'],
+        sectionIds: ['review', 'chronology', 'calendar', 'costs', 'entities'],
         scrollToSection(section) {
             this.activeSection = section;
             const target = document.getElementById(`section-${section}`);
@@ -74,28 +77,30 @@
             {% include "partials/secondary_header.html" %}
 
             <!-- Review Section (DB-driven) -->
-            <div id="section-review" class="p-8 bg-surface-container-low/40 border-b border-outline-variant/10" style="scroll-margin-top: 48px;">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+            <div id="section-review" class="p-8 bg-surface-container-low/40 border-b border-outline-variant/10 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
+                 :class="activeSection === 'review' ? 'border-l-primary' : ''">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
                         <span class="material-symbols-outlined text-sm">inbox</span>
                         Needs Review
                     </h3>
                     <span class="text-[10px] font-bold text-primary">{{ review_docs|length }} PENDING</span>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {% if review_docs %}
                     {% for doc in review_docs %}
                     {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
-                    <div class="bg-surface-container p-4 rounded-lg shadow-sm group cursor-pointer hover:bg-surface-container-high transition-colors"
-                         style="border-left: 4px solid {{ stripe_color }};"
+                    <div class="bg-surface-container p-5 rounded-2xl shadow-sm group cursor-pointer hover:bg-surface-container-low transition-colors border-l-4"
+                         style="border-left-color: {{ stripe_color }};"
                          @click="activeDoc = '{{ doc.id }}'"
                          hx-get="/document/{{ doc.id }}"
                          hx-target="#document-pane"
-                         hx-swap="innerHTML">
+                         hx-swap="innerHTML"
+                         :class="activeDoc === '{{ doc.id }}' ? 'border-primary bg-primary/10' : 'border-outline-variant/10'">
                         <div class="flex justify-between items-start mb-1">
-                            <p class="text-sm font-bold text-on-surface line-clamp-1" title="{{ doc.title }}">{{ doc.title }}</p>
+                            <p class="text-sm font-bold text-on-surface line-clamp-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
                             <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
                         </div>
                         <p class="text-xs text-on-surface-variant mb-3 line-clamp-2">{{ (doc.content or '')[:150] }}{% if (doc.content or '')|length > 150 %}...{% endif %}</p>
@@ -144,8 +149,9 @@
             </div>
 
             <!-- Legal Chronology -->
-            <div id="section-chronology" class="p-8" style="scroll-margin-top: 48px;">
-                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6 flex items-center gap-2">
+            <div id="section-chronology" class="p-8 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
+                 :class="activeSection === 'chronology' ? 'border-l-primary' : ''">
+                <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest mb-6 flex items-center gap-2 border-l-2 border-primary pl-3">
                     <span class="material-symbols-outlined text-sm">history</span>
                     Legal Chronology
                 </h3>
@@ -155,51 +161,72 @@
                     {% for doc in documents %}
                     {% set doc_stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set doc_stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
-                    <div class="relative mb-8 cursor-pointer" @click="activeDoc = '{{ doc.id }}'"
+                    {% set is_last = loop.last %}
+                    <div class="relative mb-8 cursor-pointer group" @click="activeDoc = '{{ doc.id }}'"
                         hx-get="/document/{{ doc.id }}" hx-target="#document-pane" hx-swap="innerHTML">
-                        <div class="absolute left-[-16px] top-4 bottom-[-60px] w-[1px] bg-outline-variant/30"></div>
-                        <div class="bg-surface-container-lowest p-6 rounded-xl border transition-colors shadow-sm border-l-4"
+                        <div class="absolute left-0 translate-x-[-8px] top-6 w-[1px] bg-outline-variant/30"
+                             {% if is_last %}style="bottom: 0;"{% else %}style="bottom: -32px;"{% endif %}></div>
+                        <div class="bg-surface-container p-5 rounded-2xl border transition-all shadow-sm border-l-4"
                             style="border-left-color: {{ doc_stripe_color }};"
-                            :class="activeDoc === '{{ doc.id }}' ? 'border-primary selected-card' : 'border-outline-variant/10 hover:border-primary/50'">
+                            :class="activeDoc === '{{ doc.id }}' ? 'border-primary bg-primary/10' : 'border-outline-variant/10 hover:bg-surface-container-low'">
                             <div class="flex justify-between items-start mb-2">
-                                <p class="text-base font-bold text-on-surface">{{ doc.title }}</p>
-                                <span class="font-mono text-xs text-on-surface-variant">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
+                                <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{{ doc.title }}</p>
+                                <span class="font-mono text-[10px] text-on-surface-variant">{{ (doc.received_date or doc.created_at).strftime('%b %d, %Y') }}</span>
                             </div>
-                            <p class="text-sm text-on-surface-variant mb-4 leading-relaxed max-w-4xl line-clamp-2">
+                            <p class="text-xs text-on-surface-variant mb-4 leading-relaxed max-w-4xl line-clamp-2">
                                 {{ (doc.content or '')[:150] }}...
                             </p>
                             <div class="flex items-center justify-between">
-                                <div class="flex gap-3">
-                                    <span class="text-[9px] bg-primary-container/20 text-on-primary-container px-3 py-1 rounded-full font-bold uppercase tracking-wider">Ingested</span>
+                                <div class="flex gap-2 items-center">
+                                    {% if doc.ai_summary_status == 'generated' %}
+                                        <span class="text-[9px] bg-primary-container/20 text-primary px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>Summary Ready
+                                        </span>
+                                    {% elif doc.ai_summary_status == 'pending' %}
+                                        <span class="text-[9px] bg-outline-container/20 text-on-surface-variant px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant inline-block animate-pulse"></span>Pending
+                                        </span>
+                                    {% elif doc.ai_summary_status == 'failed' %}
+                                        <span class="text-[9px] bg-error-container/20 text-error px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-error inline-block"></span>Failed
+                                        </span>
+                                    {% else %}
+                                        <span class="text-[9px] bg-outline-container/20 text-on-surface-variant px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant inline-block"></span>No Summary
+                                        </span>
+                                    {% endif %}
                                 </div>
                                 <span class="material-symbols-outlined text-base"
                                     style="color: {{ doc_stripe_color }}; font-variation-settings: 'FILL' 1;">{{ doc_stripe_icon }}</span>
                             </div>
-                            <p class="mt-4 text-[10px] text-on-surface-variant font-medium">Case: {{ doc.case_id or 'Unknown' }}
-                                • Document ID: {{ doc.id }}</p>
+                            <p class="mt-3 text-[9px] text-on-surface-variant font-medium">
+                                {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ doc.case_id or 'Unknown' }} &bull; Document ID: {{ doc.id }}{% endif %}
+                            </p>
                         </div>
 
                         <!-- Nested Children -->
                         {% if doc.children %}
                         {% for child in doc.children %}
                         {% set child_stripe_color = originator_colors.get(child.originator_type, '#64748b') %}
-                        <div class="ml-12 mt-6 relative cursor-pointer" @click.stop="activeDoc = '{{ child.id }}'"
+                        <div class="ml-12 mt-6 relative cursor-pointer group" @click.stop="activeDoc = '{{ child.id }}'"
                             hx-get="/document/{{ child.id }}" hx-target="#document-pane" hx-swap="innerHTML">
-                            <div
-                                class="absolute left-[-24px] top-[-30px] bottom-[24px] w-[24px] border-l border-b border-outline-variant/30 rounded-bl-xl">
-                            </div>
-                            <div class="bg-surface-container p-5 rounded-xl border border-outline-variant/10 transition-all shadow-sm border-l-4"
+                            <svg class="absolute left-[-32px] top-[-30px] w-8 h-8" viewBox="0 0 32 32" fill="none">
+                                <path d="M0 0 L0 24 L24 24" stroke="currentColor" stroke-width="1" class="text-outline-variant/30" fill="none"/>
+                            </svg>
+                            <div class="bg-surface-container p-5 rounded-2xl border border-outline-variant/10 transition-all shadow-sm border-l-4"
                                 style="border-left-color: {{ child_stripe_color }};"
-                                :class="activeDoc === '{{ child.id }}' ? 'border-primary selected-card' : 'hover:bg-surface-container-high'">
+                                :class="activeDoc === '{{ child.id }}' ? 'border-primary bg-primary/10' : 'hover:bg-surface-container-low'">
                                 <div class="flex justify-between items-start mb-2">
-                                    <p class="text-sm font-bold text-on-surface">{{ child.title }}</p>
+                                    <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{{ child.title }}</p>
                                     <span class="font-mono text-[10px] text-on-surface-variant">{{ child.created_at.strftime('%Y-%m-%d') }}</span>
                                 </div>
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="text-[8px] bg-surface-container-highest text-on-surface-variant px-2 py-0.5 rounded-sm font-bold uppercase tracking-wider">Nested</span>
                                 </div>
-                                <p class="text-[10px] text-on-surface-variant font-medium leading-relaxed">{{ (child.content or '')[:120] | safe }}...</p>
-                                <p class="mt-3 text-[9px] text-on-surface-variant font-medium italic">Case: {{ child.case_id }} • ID: {{ child.id }}</p>
+                                <p class="text-xs text-on-surface-variant font-medium leading-relaxed">{{ (child.content or '')[:120] | safe }}...</p>
+                                <p class="mt-3 text-[9px] text-on-surface-variant font-medium">
+                                    {% if child.sender %}Via: Email from {{ child.sender }}{% if child.received_date %} on {{ child.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ child.case_id }} &bull; Document ID: {{ child.id }}{% endif %}
+                                </p>
                             </div>
                         </div>
                         {% endfor %}
@@ -225,9 +252,10 @@
             </div>
 
             <!-- Case Calendar -->
-            <div id="section-calendar" class="p-8 border-t border-outline-variant/10 bg-surface-container-low/20" style="scroll-margin-top: 48px;">
+            <div id="section-calendar" class="p-8 border-t border-outline-variant/10 bg-surface-container-low/20 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
+                 :class="activeSection === 'calendar' ? 'border-l-primary' : ''">
                 <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                    <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
                         <span class="material-symbols-outlined text-sm">calendar_month</span>
                         Case Calendar
                     </h3>
@@ -236,21 +264,113 @@
                 {% include "partials/case_schedule_panel.html" %}
             </div>
 
+            <!-- Case Costs -->
+            <div id="section-costs" class="p-8 border-t border-outline-variant/10 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
+                 :class="activeSection === 'costs' ? 'border-l-primary' : ''">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
+                        <span class="material-symbols-outlined text-sm">payments</span>
+                        Case Costs
+                    </h3>
+                    <a href="/costs" class="text-[10px] font-bold text-primary hover:underline">View Full Overview →</a>
+                </div>
+
+                {% if case_costs %}
+                {# 4-Metric Summary Strip #}
+                <div class="grid grid-cols-4 gap-3 mb-4">
+                    <div class="bg-surface-container rounded-xl p-3 border border-outline-variant/10">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Total</p>
+                        <p class="text-lg font-black font-mono text-on-surface">{{ format_eur(case_costs.summary.total_gross) }}</p>
+                    </div>
+                    <div class="bg-surface-container rounded-xl p-3 border border-outline-variant/10">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Paid</p>
+                        <p class="text-lg font-black font-mono text-originator-own">{{ format_eur(case_costs.summary.total_paid) }}</p>
+                    </div>
+                    <div class="bg-surface-container rounded-xl p-3 border border-outline-variant/10">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Outstanding</p>
+                        <p class="text-lg font-black font-mono {% if case_costs.summary.total_outstanding > 0 %}text-originator-opposing{% else %}text-originator-own{% endif %}">{{ format_eur(case_costs.summary.total_outstanding) }}</p>
+                    </div>
+                    <div class="bg-surface-container rounded-xl p-3 border border-outline-variant/10">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">§91 ZPO</p>
+                        <p class="text-lg font-black font-mono text-primary">{{ format_eur(case_costs.summary.total_reimbursable) }}</p>
+                    </div>
+                </div>
+
+                {# Compact Cost Table #}
+                <div class="overflow-x-auto rounded-xl border border-outline-variant/10">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="border-b border-outline-variant/10 bg-surface-container-low/50">
+                                <th class="px-3 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
+                                <th class="px-3 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Title</th>
+                                <th class="px-3 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+                                <th class="px-3 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
+                                <th class="px-3 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cost in case_costs.costs %}
+                            {% include "partials/cost_row.html" %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                {% with
+                    icon='payments',
+                    title='No Costs Recorded',
+                    body='No cost positions recorded for this case yet.',
+                    container_class='flex flex-col items-center justify-center py-8 px-4 text-center',
+                    icon_wrapper_class='w-12 h-12 bg-surface-container-high rounded-xl flex items-center justify-center mb-3',
+                    icon_class='text-2xl text-outline',
+                    title_class='text-sm font-black text-on-surface tracking-tight mb-1',
+                    body_class='text-xs text-on-surface-variant max-w-xs leading-relaxed'
+                %}
+                    {% include "partials/empty_state.html" %}
+                {% endwith %}
+                {% endif %}
+            </div>
+
             <!-- Entities (stub) -->
             <div id="section-entities" class="p-8 border-t border-outline-variant/10" style="scroll-margin-top: 48px;">
-                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6 flex items-center gap-2">
+                <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest mb-6 flex items-center gap-2 border-l-2 border-primary pl-3">
                     <span class="material-symbols-outlined text-sm">people</span>
                     Entities
                 </h3>
-                <p class="text-sm text-on-surface-variant italic">Entity extraction coming soon.</p>
+                {% with
+                    icon='people',
+                    title='Coming Soon',
+                    body='Entity extraction is under development. Soon you will be able to see people, organizations, and key dates pulled automatically from your case documents.',
+                    container_class='flex flex-col items-center justify-center py-12 px-4 text-center',
+                    icon_wrapper_class='w-14 h-14 bg-surface-container-high rounded-xl flex items-center justify-center mb-4',
+                    icon_class='text-2xl text-outline',
+                    title_class='text-base font-black text-on-surface tracking-tight mb-2',
+                    body_class='text-sm text-on-surface-variant max-w-sm leading-relaxed'
+                %}
+                    {% include "partials/empty_state.html" %}
+                {% endwith %}
             </div>
 
     </section>
 
     <!-- Document Details Pane (HTMX Target) -->
-    <div id="document-pane" class="relative flex flex-col"
-        x-init="$nextTick(() => $el.classList.add('transition-[width,opacity]', 'duration-300', 'ease-in-out'))"
-        :class="activeDoc ? 'w-[53%] opacity-100' : 'w-0 max-w-[0px] overflow-hidden opacity-0'">
+    <div id="document-pane" class="relative flex flex-col bg-surface transition-[width,opacity] duration-300 ease-in-out"
+        :class="activeDoc ? 'w-[53%] opacity-100' : 'w-0 opacity-0'">
+        <!-- Empty state when no doc is selected — rendered outside overflow-hidden -->
+        <div x-show="!activeDoc"
+             class="absolute inset-0 flex items-center justify-center pointer-events-none"
+             style="min-width: 300px;">
+            {% with
+                icon='description',
+                title='Select a Document',
+                body='Click a document in the stream to view its details, AI summary, and metadata.',
+                icon_wrapper_class='w-20 h-20 rounded-2xl bg-surface-container flex items-center justify-center mb-6',
+                icon_class='text-4xl text-outline'
+            %}
+                {% include "partials/empty_state.html" %}
+            {% endwith %}
+        </div>
+    </div>
     </div>
 </div>
 {% endblock %}

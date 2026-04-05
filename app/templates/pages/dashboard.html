@@ -15,51 +15,54 @@
             <!-- Metrics Row -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <!-- Metric 1 -->
-                <a href="/cases" class="block bg-surface-container rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_30px_-10px_rgba(87,241,219,0.15)] hover:border-primary/30 transition-all cursor-pointer relative overflow-hidden group">
+                <a href="/cases" class="block bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm hover:shadow-lg hover:border-primary/30 hover:bg-surface-container-low transition-all duration-300 cursor-pointer relative overflow-hidden group">
                     <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-primary-container/20 rounded-lg group-hover:bg-primary-container/30 transition-colors">
-                            <span class="material-symbols-outlined text-primary">work</span>
+                        <div class="p-2 bg-primary-container/20 rounded-lg transition-colors duration-300">
+                            <span class="material-symbols-outlined text-primary inline-block transition-transform duration-300 group-hover:scale-110">work</span>
                         </div>
                         <span class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"><span class="text-primary">+{{ new_active_cases_this_week }}</span> this week</span>
                     </div>
-                    <h3 class="text-3xl font-black text-on-surface mb-1">{{ active_case_count }}</h3>
+                    <h3 class="text-3xl font-black font-mono text-on-surface mb-1">{{ active_case_count }}</h3>
                     <p class="text-sm font-semibold text-on-surface-variant">Active Case Files</p>
                 </a>
 
                 <!-- Metric 2 -->
-                <a href="/triage" class="block bg-surface-container rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_30px_-4px_rgba(185,28,28,0.2)] hover:border-originator-opposing/30 transition-all cursor-pointer relative overflow-hidden group">
+                <a href="/triage" class="block bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm hover:shadow-lg hover:border-originator-opposing/30 hover:bg-surface-container-low transition-all duration-300 cursor-pointer relative overflow-hidden group">
                     <div class="absolute top-0 left-0 w-1 h-full bg-originator-opposing"></div>
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-originator-opposing/10 rounded-lg group-hover:bg-originator-opposing/20 transition-colors">
-                            <span class="material-symbols-outlined text-originator-opposing">assignment_late</span>
+                        <div class="p-2 bg-originator-opposing/10 rounded-lg transition-colors duration-300">
+                            <span class="material-symbols-outlined text-originator-opposing inline-block transition-transform duration-300 group-hover:scale-110">assignment_late</span>
                         </div>
                         <span class="text-xs font-bold text-on-surface-variant uppercase tracking-widest"><span class="text-originator-opposing">+{{ pending_added_this_week }}</span> this week</span>
                     </div>
-                    <h3 class="text-3xl font-black text-on-surface mb-1">{{ pending_review_count }}</h3>
+                    <h3 class="text-3xl font-black font-mono text-on-surface mb-1">{{ pending_review_count }}</h3>
                     <p class="text-sm font-semibold text-on-surface-variant">Documents Needing Review</p>
                 </a>
 
                 <!-- Metric 3 -->
-                <a href="/timeline" class="block bg-surface-container rounded-2xl p-6 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_30px_-4px_rgba(3,105,161,0.2)] hover:border-originator-court/30 transition-all cursor-pointer relative overflow-hidden group">
+                <a href="/timeline" class="block bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm hover:shadow-lg hover:border-originator-court/30 hover:bg-surface-container-low transition-all duration-300 cursor-pointer relative overflow-hidden group">
                     <div class="absolute top-0 left-0 w-1 h-full bg-originator-court"></div>
                     <div class="flex justify-between items-start mb-4">
-                        <div class="p-2 bg-originator-court/10 rounded-lg group-hover:bg-originator-court/20 transition-colors">
-                            <span class="material-symbols-outlined text-originator-court">payments</span>
+                        <div class="p-2 bg-originator-court/10 rounded-lg transition-colors duration-300">
+                            <span class="material-symbols-outlined text-originator-court inline-block transition-transform duration-300 group-hover:scale-110">gavel</span>
                         </div>
                         <span class="text-xs font-bold text-originator-court uppercase tracking-widest">+{{ new_documents_this_week }} this week</span>
                     </div>
-                    <h3 class="text-3xl font-black text-on-surface mb-1">{{ court_doc_count }}</h3>
+                    <h3 class="text-3xl font-black font-mono text-on-surface mb-1">{{ court_doc_count }}</h3>
                     <p class="text-sm font-semibold text-on-surface-variant">Court-Originated Documents</p>
                 </a>
             </div>
 
             <!-- Schedule Focus Row -->
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                <div class="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
+                <!-- Deadlines Panel -->
+                <div class="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-32 h-32 bg-originator-opposing/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+
+                    <div class="flex items-center justify-between mb-4 relative z-10">
                         <div>
-                            <h3 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                            <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
                                 <span class="material-symbols-outlined text-sm text-originator-opposing">event_upcoming</span>
                                 Upcoming Deadlines
                             </h3>
@@ -68,7 +71,7 @@
                         <span class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{{ upcoming_deadlines|length }} open</span>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                         {% if upcoming_deadlines %}
                         {% for deadline in upcoming_deadlines %}
                         {% set badge = format_deadline_badge(deadline.due_at) %}
@@ -97,24 +100,25 @@
                     </div>
                 </div>
 
-                <div class="bg-surface-container-low rounded-2xl p-6 shadow-xl relative overflow-hidden border border-outline-variant/10">
+                <!-- Hearings Panel -->
+                <div class="bg-surface-container rounded-2xl p-6 shadow-sm relative overflow-hidden border border-outline-variant/10">
                     <div class="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
 
                     <div class="flex items-center justify-between mb-4 relative z-10">
                         <div>
-                            <h3 class="text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-2">
+                            <h3 class="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
                                 <span class="material-symbols-outlined text-sm">gavel</span>
                                 Upcoming Hearings
                             </h3>
                             <p class="text-xs text-on-surface-variant mt-1">Scheduled court appearances and conferences that need preparation.</p>
                         </div>
-                        <span class="bg-surface-container-highest text-on-surface-variant text-[10px] px-2 py-0.5 rounded-full font-semibold">{{ upcoming_hearings|length }} scheduled</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{{ upcoming_hearings|length }} scheduled</span>
                     </div>
 
                     {% if upcoming_hearings %}
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 relative z-10">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                         {% for hearing in upcoming_hearings %}
-                        <a href="/cases/{{ hearing.case_id }}" class="flex h-full min-h-[190px] flex-col rounded-xl border border-outline-variant/10 bg-surface/70 p-4 group hover:border-primary/30 transition-colors">
+                        <a href="/cases/{{ hearing.case_id }}" class="flex h-full min-h-[190px] flex-col rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 group hover:border-primary/30 transition-colors">
                             <div class="flex items-start justify-between gap-3 mb-2">
                                 <div>
                                     <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors line-clamp-2">{{ hearing.title }}</p>
@@ -127,7 +131,7 @@
                             <p class="mt-2 text-xs text-on-surface-variant line-clamp-3">{{ hearing.description }}</p>
                             {% endif %}
                             <div class="mt-auto pt-3">
-                                <div class="flex items-center gap-2 text-[10px] text-on-surface-variant bg-surface-container py-1 px-2 rounded w-fit">
+                                <div class="flex items-center gap-2 text-[10px] text-on-surface-variant bg-surface-container-high py-1 px-2 rounded w-fit">
                                     <span class="material-symbols-outlined text-[12px]">schedule</span>
                                     {{ format_upcoming_datetime(hearing.scheduled_for) }}
                                 </div>
@@ -147,7 +151,7 @@
                     <!-- Priority Action Items -->
                     <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
                         <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container-low flex items-center justify-between">
-                            <h3 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                            <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
                                 <span class="material-symbols-outlined text-sm text-originator-opposing">bolt</span>
                                 Priority Action Items
                             </h3>
@@ -168,9 +172,9 @@
                                     <p class="text-xs text-on-surface-variant mb-1">{{ case_label }}</p>
                                     <p class="text-[10px] text-on-surface-variant mb-3 uppercase tracking-wider">{{ format_relative_time(doc.created_at) }}</p>
                                     <div class="flex gap-2">
-                                        <a href="/triage" class="text-xs font-bold text-on-primary-container bg-primary-container/20 hover:bg-primary-container/30 px-3 py-1.5 rounded-md transition-colors">Open Triage</a>
+                                        <a href="/triage" class="text-xs font-bold text-on-primary-container bg-primary-container/20 hover:bg-primary-container/30 px-3 py-1.5 rounded-lg transition-colors">Open Triage</a>
                                         {% if doc.case_id %}
-                                        <a href="/cases/{{ doc.case_id }}" class="text-xs font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-3 py-1.5 rounded-md transition-colors">Open Case</a>
+                                        <a href="/cases/{{ doc.case_id }}" class="text-xs font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-3 py-1.5 rounded-lg transition-colors">Open Case</a>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -183,29 +187,32 @@
                     </div>
 
                     <!-- Recent Files -->
-                    <div>
-                        <div class="flex items-center justify-between mb-4 px-1">
-                            <h3 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                    <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
+                        <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container-low flex items-center justify-between">
+                            <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
                                 <span class="material-symbols-outlined text-sm">history</span>
                                 Recent Documents
                             </h3>
+                            <a href="/timeline" class="text-[10px] uppercase font-bold text-primary hover:text-on-primary-container tracking-wider">View All</a>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {% if recent_documents %}
-                            {% for doc in recent_documents %}
-                            <a href="{{ '/cases/' ~ doc.case_id if doc.case_id else '/triage' }}" class="flex items-center gap-4 p-4 bg-surface-container rounded-xl border border-outline-variant/10 shadow-sm hover:border-primary/40 transition-colors group">
-                                <div class="w-10 h-10 rounded bg-surface-container-high flex items-center justify-center shrink-0 group-hover:bg-primary-container/20 transition-colors">
-                                    <span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary text-[20px]">folder</span>
-                                </div>
-                                <div class="overflow-hidden">
-                                    <p class="text-sm font-bold text-on-surface truncate">{{ doc.title }}</p>
-                                    <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">{{ case_titles.get(doc.case_id, doc.case_id or 'Triage') }} • {{ format_relative_time(doc.created_at) }}</p>
-                                </div>
-                            </a>
-                            {% endfor %}
-                            {% else %}
-                            <div class="col-span-full text-sm text-on-surface-variant italic">No documents have been ingested yet.</div>
-                            {% endif %}
+                        <div class="p-5">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {% if recent_documents %}
+                                {% for doc in recent_documents %}
+                                <a href="{{ '/cases/' ~ doc.case_id if doc.case_id else '/triage' }}" class="flex items-center gap-4 p-5 bg-surface-container-low rounded-xl border border-outline-variant/10 shadow-sm hover:border-primary/40 hover:shadow-md transition-all group">
+                                    <div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 group-hover:bg-primary-container/20 transition-colors">
+                                        <span class="material-symbols-outlined text-on-surface-variant group-hover:text-primary text-[20px]">folder</span>
+                                    </div>
+                                    <div class="overflow-hidden">
+                                        <p class="text-sm font-bold text-on-surface truncate">{{ doc.title }}</p>
+                                        <p class="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">{{ case_titles.get(doc.case_id, doc.case_id or 'Triage') }} &bull; {{ format_relative_time(doc.created_at) }}</p>
+                                    </div>
+                                </a>
+                                {% endfor %}
+                                {% else %}
+                                <div class="col-span-full text-sm text-on-surface-variant italic">No documents have been ingested yet.</div>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -214,7 +221,7 @@
                     <!-- Active Cases -->
                     <div class="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 shadow-sm">
                         <div class="flex items-center justify-between gap-3 mb-4">
-                            <h3 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+                            <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
                                 <span class="material-symbols-outlined text-sm">folder_managed</span>
                                 Active Cases
                             </h3>
@@ -225,7 +232,7 @@
                             {% if active_case_snapshot %}
                             {% for case in active_case_snapshot %}
                             {% set meta = status_meta[case.status] %}
-                            <a href="/cases/{{ case.id }}" class="flex items-center justify-between group cursor-pointer">
+                            <a href="/cases/{{ case.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-high/50 group cursor-pointer transition-colors">
                                 <div class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden flex items-center justify-center text-xs font-bold text-on-surface-variant">
                                         {{ case.id[:2] }}
