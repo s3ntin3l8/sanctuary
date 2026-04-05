@@ -198,11 +198,54 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         .all()
     )
 
-    top_level_docs = (
-        db.query(Document)
-        .filter(Document.case_id == case_id, Document.parent_id == None)
-        .order_by(Document.created_at.desc())
-        .all()
+    # Group resolved top-level docs by month for the parent picker
+    resolved_docs = [d for d in top_level_docs if not d.needs_review]
+    resolved_by_month = {}
+    for doc in resolved_docs:
+        dt = doc.created_at or doc.received_date
+        month_key = dt.strftime("%B %Y") if dt else "Unknown"
+        if month_key not in resolved_by_month:
+            resolved_by_month[month_key] = []
+        resolved_by_month[month_key].append(doc)
+
+    # Sort months chronologically
+    def _month_sort_key(m):
+        if m == "Unknown":
+            return datetime.min
+        try:
+            return datetime.strptime(m, "%B %Y")
+        except ValueError:
+            return datetime.min
+
+    resolved_by_month = dict(
+        sorted(
+            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
+        )
+    )
+
+    # Group resolved top-level docs by month for the parent picker
+    resolved_docs = [d for d in top_level_docs if not d.needs_review]
+    resolved_by_month = {}
+    for doc in resolved_docs:
+        dt = doc.created_at or doc.received_date
+        month_key = dt.strftime("%B %Y") if dt else "Unknown"
+        if month_key not in resolved_by_month:
+            resolved_by_month[month_key] = []
+        resolved_by_month[month_key].append(doc)
+
+    # Sort months chronologically
+    def _month_sort_key(m):
+        if m == "Unknown":
+            return datetime.min
+        try:
+            return datetime.strptime(m, "%B %Y")
+        except ValueError:
+            return datetime.min
+
+    resolved_by_month = dict(
+        sorted(
+            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
+        )
     )
 
     # Load case costs
@@ -235,6 +278,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         past_hearings=schedule["past_hearings"],
         case_costs=case_costs,
         top_level_docs=top_level_docs,
+        resolved_by_month=resolved_by_month,
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
         status_meta=CASE_STATUS_META,

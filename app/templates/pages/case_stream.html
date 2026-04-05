@@ -96,78 +96,10 @@
                     {% for doc in review_docs %}
                     {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
-                    <div class="bg-surface-container p-5 rounded-2xl shadow-sm group cursor-pointer hover:bg-surface-container-low transition-colors border-l-4 relative"
-                         style="border-left-color: {{ stripe_color }};"
-                         @click="activeDoc = '{{ doc.id }}'"
-                         hx-get="/document/{{ doc.id }}"
-                         hx-target="#document-pane"
-                         hx-swap="innerHTML"
-                         :class="activeDoc === '{{ doc.id }}' ? 'border-primary bg-primary/10' : 'border-outline-variant/10'">
-                        <div class="flex justify-between items-start mb-1">
-                            <p class="text-sm font-bold text-on-surface line-clamp-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
-                            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                        </div>
-                        <p class="text-xs text-on-surface-variant mb-3 line-clamp-2">{{ (doc.content or '')[:150] }}{% if (doc.content or '')|length > 150 %}...{% endif %}</p>
-                        <div class="flex items-center justify-between">
-                            <div class="flex gap-2 items-center">
-                                <span class="text-[9px] bg-primary-container/20 text-on-primary-container px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Needs Review</span>
-                                <span class="material-symbols-outlined text-sm text-outline">{{ stripe_icon }}</span>
-                            </div>
-                            <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-primary"
-                                        title="Mark Reviewed"
-                                        hx-post="/triage/resolve/{{ doc.id }}"
-                                        hx-swap="outerHTML"
-                                        hx-target="closest div"
-                                        @click.stop="">
-                                    <span class="material-symbols-outlined" data-loading-idle>check_circle</span>
-                                    <span class="material-symbols-outlined htmx-indicator animate-spin" data-loading-active>progress_activity</span>
-                                </button>
-                                <button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-primary"
-                                        title="Link to Parent"
-                                        @click.stop="showParentPicker = (showParentPicker === {{ doc.id }} ? null : {{ doc.id }})">link</button>
-                                <div x-show="showParentPicker === {{ doc.id }}" @click.outside="showParentPicker = null" class="absolute right-0 top-8 w-64 bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl z-50 overflow-hidden" style="display: none;">
-                                    <div class="px-3 py-2 border-b border-outline-variant/10">
-                                        <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Select Parent</p>
-                                    </div>
-                                    <div class="max-h-48 overflow-y-auto custom-scrollbar">
-                                        {% for parent_doc in top_level_docs %}
-                                        {% if parent_doc.id != doc.id %}
-                                        <form hx-post="/document/{{ doc.id }}/link-parent" hx-swap="outerHTML">
-                                            <input type="hidden" name="parent_id" value="{{ parent_doc.id }}">
-                                            <button type="submit" class="w-full text-left px-3 py-2 text-xs text-on-surface hover:bg-surface-container-highest transition-colors truncate">
-                                                {{ parent_doc.title[:60] }}
-                                            </button>
-                                        </form>
-                                        {% endif %}
-                                        {% endfor %}
-                                        {% if not top_level_docs %}
-                                        <p class="px-3 py-3 text-xs text-on-surface-variant italic">No other documents available</p>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <p class="mt-3 text-[9px] text-on-surface-variant font-medium truncate">
-                            {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ doc.case_id or 'Unassigned' }} &bull; Document ID: {{ doc.id }}{% endif %}
-                        </p>
-                    </div>
+                    {% with doc=doc, stripe_color=stripe_color, stripe_icon=stripe_icon, top_level_docs=top_level_docs, resolved_by_month=resolved_by_month, originator_colors=originator_colors, originator_icons=originator_icons %}
+                        {% include "partials/review_card.html" %}
+                    {% endwith %}
                     {% endfor %}
-                    {% else %}
-                    <div class="col-span-full">
-                        {% with
-                            icon='check_circle',
-                            title='Review Queue Clear',
-                            body='No documents are currently pending review for this case.',
-                            container_class='flex flex-col items-center justify-center py-8 px-4 text-center',
-                            icon_wrapper_class='w-14 h-14 rounded-2xl bg-primary-container/20 flex items-center justify-center mb-4',
-                            icon_class='text-primary text-2xl',
-                            title_class='text-base font-black text-on-surface tracking-tight mb-2',
-                            body_class='text-sm text-on-surface-variant max-w-sm leading-relaxed'
-                        %}
-                            {% include "partials/empty_state.html" %}
-                        {% endwith %}
-                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -175,10 +107,13 @@
             <!-- Legal Chronology -->
             <div id="section-chronology" class="p-8 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
                  :class="activeSection === 'chronology' ? 'border-l-primary' : ''">
-                <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest mb-6 flex items-center gap-2 border-l-2 border-primary pl-3">
-                    <span class="material-symbols-outlined text-sm">history</span>
-                    Legal Chronology
-                </h3>
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
+                        <span class="material-symbols-outlined text-sm">history</span>
+                        Legal Chronology
+                    </h3>
+                    <span class="text-[10px] font-bold text-primary">{{ documents|length }} DOCS</span>
+                </div>
 
                 <div class="relative pl-4">
                     {% if documents %}
@@ -198,7 +133,7 @@
                                 <span class="font-mono text-[10px] text-on-surface-variant">{{ (doc.received_date or doc.created_at).strftime('%b %d, %Y') }}</span>
                             </div>
                             <p class="text-xs text-on-surface-variant mb-4 leading-relaxed max-w-4xl line-clamp-2">
-                                {{ (doc.content or '')[:150] }}...
+                                {{ (doc.content or '')[:150] | striptags }}...
                             </p>
                             <div class="flex items-center justify-between">
                                 <div class="flex gap-2 items-center">
@@ -247,7 +182,7 @@
                                 <div class="flex items-center gap-2 mb-2">
                                     <span class="text-[8px] bg-surface-container-highest text-on-surface-variant px-2 py-0.5 rounded-sm font-bold uppercase tracking-wider">Nested</span>
                                 </div>
-                                <p class="text-xs text-on-surface-variant font-medium leading-relaxed">{{ (child.content or '')[:120] | safe }}...</p>
+                                <p class="text-xs text-on-surface-variant font-medium leading-relaxed">{{ (child.content or '')[:120] | striptags }}...</p>
                                 <p class="mt-3 text-[9px] text-on-surface-variant font-medium">
                                     {% if child.sender %}Via: Email from {{ child.sender }}{% if child.received_date %} on {{ child.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ child.case_id }} &bull; Document ID: {{ child.id }}{% endif %}
                                 </p>
@@ -364,10 +299,13 @@
 
             <!-- Entities (stub) -->
             <div id="section-entities" class="p-8 border-t border-outline-variant/10" style="scroll-margin-top: 48px;">
-                <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest mb-6 flex items-center gap-2 border-l-2 border-primary pl-3">
-                    <span class="material-symbols-outlined text-sm">people</span>
-                    Entities
-                </h3>
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
+                        <span class="material-symbols-outlined text-sm">history</span>
+                        Legal Chronology
+                    </h3>
+                    <span class="text-[10px] font-bold text-primary">{{ documents|length }} DOCS</span>
+                </div>
                 {% with
                     icon='people',
                     title='Coming Soon',

@@ -40,13 +40,63 @@ router = APIRouter()
 
 
 @router.post("/triage/resolve/{doc_id}")
-async def resolve_triage(doc_id: int, db: Session = Depends(get_db)):
+async def resolve_triage(doc_id: int, request: Request, db: Session = Depends(get_db)):
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if doc:
-        doc.needs_review = False
-        doc.review_reasons = []
-        db.commit()
-    return HTMLResponse('<div class="hidden" data-resolved="true"></div>')
+    if not doc:
+        return HTMLResponse("", status_code=404)
+
+    doc.needs_review = False
+    doc.review_reasons = []
+    db.commit()
+    db.refresh(doc)
+
+    # Re-render the full review card with updated state
+    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
+    from collections import defaultdict
+
+    top_level_docs = (
+        db.query(Document)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    resolved_docs = [d for d in top_level_docs if not d.needs_review]
+    resolved_by_month = defaultdict(list)
+    for d in resolved_docs:
+        dt = d.created_at or d.received_date
+        month_key = dt.strftime("%B %Y") if dt else "Unknown"
+        resolved_by_month[month_key].append(d)
+
+    def _month_sort_key(m):
+        if m == "Unknown":
+            return datetime.min
+        try:
+            return datetime.strptime(m, "%B %Y")
+        except ValueError:
+            return datetime.min
+
+    resolved_by_month = dict(
+        sorted(
+            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
+        )
+    )
+
+    stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
+    stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
+
+    return templates.TemplateResponse(
+        "partials/review_card.html",
+        {
+            "request": request,
+            "doc": doc,
+            "stripe_color": stripe_color,
+            "stripe_icon": stripe_icon,
+            "top_level_docs": top_level_docs,
+            "resolved_by_month": resolved_by_month,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+        },
+    )
 
 
 @router.post("/document/{doc_id}/link-parent")
@@ -112,19 +162,62 @@ async def link_document_to_parent(
             doc.needs_review = False
 
     db.commit()
+    db.refresh(doc)
 
-    return HTMLResponse(
-        f'<button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-error" '
-        f'title="Unlink from Parent" '
-        f'hx-post="/document/{doc_id}/unlink-parent" '
-        f'hx-swap="outerHTML" '
-        f'@click.stop="">link_off</button>',
+    # Re-render the full review card with updated state
+    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
+    from collections import defaultdict
+
+    # Get resolved docs grouped by month for the picker
+    top_level_docs = (
+        db.query(Document)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    resolved_docs = [d for d in top_level_docs if not d.needs_review]
+    resolved_by_month = defaultdict(list)
+    for d in resolved_docs:
+        dt = d.created_at or d.received_date
+        month_key = dt.strftime("%B %Y") if dt else "Unknown"
+        resolved_by_month[month_key].append(d)
+
+    def _month_sort_key(m):
+        if m == "Unknown":
+            return datetime.min
+        try:
+            return datetime.strptime(m, "%B %Y")
+        except ValueError:
+            return datetime.min
+
+    resolved_by_month = dict(
+        sorted(
+            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
+        )
+    )
+
+    stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
+    stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
+
+    return templates.TemplateResponse(
+        "partials/review_card.html",
+        {
+            "request": request,
+            "doc": doc,
+            "stripe_color": stripe_color,
+            "stripe_icon": stripe_icon,
+            "top_level_docs": top_level_docs,
+            "resolved_by_month": resolved_by_month,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+        },
     )
 
 
 @router.post("/document/{doc_id}/unlink-parent")
 async def unlink_document_from_parent(
     doc_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -143,13 +236,54 @@ async def unlink_document_from_parent(
         doc.needs_review = True
 
     db.commit()
+    db.refresh(doc)
 
-    return HTMLResponse(
-        f'<button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-primary" '
-        f'title="Link to Parent" '
-        f'hx-post="/document/{doc_id}/link-parent" '
-        f'hx-swap="outerHTML" '
-        f'@click.stop="">link</button>',
+    # Re-render the full review card with updated state
+    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
+    from collections import defaultdict
+
+    top_level_docs = (
+        db.query(Document)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    resolved_docs = [d for d in top_level_docs if not d.needs_review]
+    resolved_by_month = defaultdict(list)
+    for d in resolved_docs:
+        dt = d.created_at or d.received_date
+        month_key = dt.strftime("%B %Y") if dt else "Unknown"
+        resolved_by_month[month_key].append(d)
+
+    def _month_sort_key(m):
+        if m == "Unknown":
+            return datetime.min
+        try:
+            return datetime.strptime(m, "%B %Y")
+        except ValueError:
+            return datetime.min
+
+    resolved_by_month = dict(
+        sorted(
+            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
+        )
+    )
+
+    stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
+    stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
+
+    return templates.TemplateResponse(
+        "partials/review_card.html",
+        {
+            "request": request,
+            "doc": doc,
+            "stripe_color": stripe_color,
+            "stripe_icon": stripe_icon,
+            "top_level_docs": top_level_docs,
+            "resolved_by_month": resolved_by_month,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+        },
     )
 
 

@@ -1,0 +1,62 @@
+<div id="upload-modal" x-data="{ open: true, fileName: '', dragOver: false, fileIcon: '', setFileIcon(name) { const ext = name.split('.').pop()?.toLowerCase(); this.fileIcon = {pdf:'picture_as_pdf',docx:'description',txt:'description',md:'code',pptx:'slideshow',xlsx:'table_chart'}[ext] || 'insert_drive_file'; } }" x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-[9999] flex items-center justify-center" @keydown.escape.window="open = false">
+    <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="open = false"></div>
+
+    <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95 translate-y-4" x-transition:enter-end="opacity-100 scale-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100 translate-y-0" x-transition:leave-end="opacity-0 scale-95 translate-y-4" class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
+            <h3 class="text-sm font-black text-on-surface uppercase tracking-wider">Upload Document</h3>
+            <button @click="open = false" class="material-symbols-outlined text-on-surface-variant hover:text-error cursor-pointer text-sm">close</button>
+        </div>
+
+        <form hx-post="/upload" hx-encoding="multipart/form-data" hx-target="#upload-result" hx-swap="innerHTML" hx-indicator="#upload-spinner" class="p-6 space-y-4">
+            {% if case_id %}
+            <input type="hidden" name="case_id" value="{{ case_id }}">
+            <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+                <span class="material-symbols-outlined text-sm text-primary">folder</span>
+                <span class="font-bold text-on-surface">{{ case_title or case_id }}</span>
+            </div>
+            {% endif %}
+
+            <div
+                class="relative border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer"
+                :class="dragOver ? 'border-primary bg-primary/5' : 'border-outline-variant/30 hover:border-primary/50'"
+                @dragover.prevent="dragOver = true"
+                @dragleave.prevent="dragOver = false"
+                @drop.prevent="dragOver = false; $refs.fileInput.files = $event.dataTransfer.files; fileName = $event.dataTransfer.files[0]?.name || ''; setFileIcon(fileName); $refs.fileInput.dispatchEvent(new Event('change'))"
+                @click="$refs.fileInput.click()"
+            >
+                <input x-ref="fileInput" type="file" name="file" accept=".pdf,.docx,.txt,.md,.pptx,.xlsx" @change="fileName = $event.target.files[0]?.name || ''; setFileIcon(fileName)" class="hidden" required>
+                <span class="material-symbols-outlined text-3xl text-outline mb-2">cloud_upload</span>
+                <p class="text-sm font-bold text-on-surface mb-1">Drop files here or click to browse</p>
+                <p class="text-[10px] text-on-surface-variant">PDF, DOCX, TXT, MD, PPTX, XLSX</p>
+                <p x-show="fileName" class="text-xs font-mono text-primary mt-2 flex items-center justify-center gap-1">
+                    <span class="material-symbols-outlined text-sm" x-text="fileIcon || 'insert_drive_file'"></span>
+                    <span x-text="fileName"></span>
+                </p>
+            </div>
+
+            {% if top_level_docs %}
+            <div>
+                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Link as Child of (optional)</label>
+                <select name="parent_id" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                    <option value="">Top-level document</option>
+                    {% for doc in top_level_docs %}
+                    <option value="{{ doc.id }}">{{ doc.title[:80] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div id="upload-result"></div>
+
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="text-sm font-bold text-on-primary bg-primary hover:bg-primary/90 px-5 py-2 rounded transition-colors cursor-pointer flex items-center gap-2">
+                    <span class="htmx-indicator animate-spin material-symbols-outlined text-sm" id="upload-spinner">progress_activity</span>
+                    <span>Upload</span>
+                </button>
+                <button type="button" @click="open = false" class="text-sm font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-5 py-2 rounded transition-colors cursor-pointer">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
