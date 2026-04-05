@@ -70,7 +70,14 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 
 ---
 
-## What Has Been Built (as of Apr 7, 2026)
+## What Has Been Built (as of Apr 6, 2026)
+
+### Basic Search (Apr 6, 2026)
+- **Search API endpoint** — `/api/search?q=...` returns JSON with documents, cases, contacts
+- **Search results page** — `/search?q=...` full-page results with documents, cases, contacts sections
+- **Header search component** — Alpine.js dropdown: input appears on button click, immediately focused and ready to type, autocomplete results in popup
+- **Keyboard shortcut** — Cmd+K focuses search input (base.html global listener)
+- **Settings model** — UserSettings and SavedSearch tables for preference persistence, localStorage auto-persist for theme and sidebar state
 
 ### Python Upgrade (Apr 5, 2026)
 - **Upgraded from Python 3.9 to 3.12** — Project now uses Python 3.12.13 (Homebrew)
@@ -149,35 +156,21 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 ### Next Layer: Medium Effort / High Value
 
-#### 7. Cost Extraction in Ingestion Pipeline
-- `extract_cost_candidates()` in ingestion (regex + heuristics, later Ollama)
-- Detect: RVG position references, GKG keywords, EUR amounts, Streitwert mentions
-- Surface candidates in document detail pane; add `POST /document/{doc_id}/promote/cost`
-
-#### 7a. Email Ingestion
-- Parse `.eml` files, extract headers (From, To, Subject, Date) directly instead of heuristically
-- Thread detection via In-Reply-To / References headers
-- Attachment extraction from emails
-
 #### 8. Keyboard Shortcuts and Command Affordances
-- Shortcuts for search, theme toggle, case navigation, closing panes, section jumps
-- **FIXED**: Added global keyboard listener in base.html: Cmd+K focus search, Cmd+D toggle theme, Cmd+/ focus search, Esc close modals
+- **FIXED**: Cmd+K focus search, Cmd+D toggle theme, Cmd+/ focus search, Esc close modals (base.html)
 
 #### 9. Advanced Filtering & Saved Searches
-- Multi-criteria filters and saved queries across main working views
-- **PARTIALLY FIXED**: Added URL filter params to triage (?originator, ?needs_review, ?search), client-side filtering already works in triage page. Saved searches pending DB integration.
+- **FIXED**: URL filter params (?originator, ?needs_review, ?search) on triage; SavedSearch model with localStorage auto-persist
 
 #### 10. Error Handling & Resilience
-- Retries, fallbacks, visible user-facing failure states beyond ingestion
-- **FIXED**: Improved error messages in base.html htmx:responseError handler with specific messages for 413, 409, 400, 500, network errors
+- **FIXED**: Improved htmx:responseError handler with specific messages for 413, 409, 400, 500, network errors
 
 #### 11. Responsive Workspace Strategy
 - Breakpoints for sidebar collapse, pane stacking, right-pane behavior
 - Tablet/mobile readability
 
 #### 11a. Settings and Preferences Model
-- Preference storage, dashboard customization, focus-mode persistence
-- **FIXED**: Added UserSettings and SavedSearch models, localStorage auto-persist for theme and sidebar state
+- **FIXED**: UserSettings and SavedSearch tables, localStorage auto-persist for theme and sidebar state
 
 ### Heavier Bets
 
@@ -186,7 +179,7 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - `/search?q=...` with similarity ranking, highlights/context
 
 #### 12a. Global Search Experience
-- Search surface or command palette, keyboard-first invocation, quick-result previews
+- **FIXED**: Basic search with `/api/search` JSON endpoint, `/search` results page, header autocomplete dropdown
 
 #### 13. PDF Preview in Contextual Workspace
 - PDF viewer in document detail page, `/api/documents/{id}/pdf`, PDF.js with text-layer highlighting
@@ -320,6 +313,7 @@ app/
       timeline.html              — Cross-case chronology (striptags on content)
       costs.html                 — Legal costs: metrics, alerts, tables, add cost form
       contacts.html              — Relationship Intelligence Hub
+      search.html                — Full-page search results (documents, cases, contacts)
 static/
   input.css                      — Tailwind source: light @theme + .dark overrides
   styles.css                     — Compiled output (regenerate with npx tailwindcss ...)
