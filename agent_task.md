@@ -110,16 +110,35 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 ### Quick Wins
 
-#### 6b. Accessibility Pass
-- improve focus states, aria labels, reduced-motion behavior, contrast consistency, screen-reader semantics
+#### Improve Ingestion
+1. **`missing_parent` never computed** — `constants.py` defines `missing_parent` review reason but `compute_review_reasons()` in `ingestion.py` never checks for it. Add validation (e.g., flag when `parent_id` is None for documents that appear to be replies/attachments based on title/content cues).
+2. **Duplicate route definitions in `actions.py`** — `update_case_deadline` defined twice (lines 504, 564), `create_case_hearing` defined twice (lines 530, 590). First `create_case_hearing` has a bug: creates a `Deadline` instead of `Hearing` and references undefined `due_at`. Remove duplicates, fix the bug.
+3. **AI summary model mismatch** — `ai_summary.py` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Align the model constant.
+4. **H&M normalization too aggressive** — `r"(?i)h\s*&\s*m"` matches "height & mass". Add word boundary anchors: `r"\b(?i)h\s*&\s*m\b|\bh\s+and\s+m\b"`.
+5. **`extract_clean_title()` bypasses H&M normalization** — Titles extracted from content skip `normalize_hm()`. Apply normalization to extracted titles.
+6. **No file size validation** — Large uploads could exhaust memory. Add max file size check (e.g., 50MB) before saving.
+7. **No `parent_id` existence validation** — Bogus `parent_id` causes generic 500 on FK constraint. Validate parent exists before Document creation, return 400.
+8. **Triage promotion uses `"_triage"` as case_id** — When promoting a triage doc without a `case_id` to deadline/hearing, `"_triage"` won't match any real case FK. Should either require a case_id or use NULL with a nullable FK.
+9. **No deduplication** — Same PDF uploaded twice creates two documents. Add content hash (SHA-256) check or filename+case_id uniqueness constraint.
+10. **Docling converter global not thread-safe** — `_converter` singleton in `ingestion.py` can race on concurrent uploads. Use `threading.Lock` or `asyncio.Lock` for initialization.
+11. **Content snippet limits are arbitrary** — `extract_case_id()` scans 2000 chars, `extract_sender()` 3000 chars, etc. Metadata in longer docs may be missed. Consider scanning full content or using smarter windowing (e.g., header section only for sender/date, full text for case_id).
+12. **Date extraction is greedy** — `extract_received_date()` returns first match per tier. A date cited in a referenced prior case may be captured over the actual email date. Consider scoring multiple candidates by proximity to "received"/"dated"/"from" keywords.
 
 #### Case Stream Improvements
-1. **"Link to Parent" button is dead** — `link` icon with `@click.stop=""` and no action. Implement or remove.
+1. ~~**"Link to Parent" button is dead**~~ — Implemented: Alpine.js dropdown lists top-level docs, `POST /document/{doc_id}/link-parent` and `POST /document/{doc_id}/unlink-parent` endpoints with validation (same case, not self, no circular refs). Button toggles between `link` and `link_off` icons.
 2. **"Mark Reviewed" broken target** — `hx-target="closest div"` targets the card itself, leaving empty space in the 3-column grid. Should target a wrapper and reflow.
 3. **Raw markdown in review card preview** — 150 chars of Docling content may include markdown artifacts. Strip or clean.
 4. **No document count badge on Chronology** — Review shows "X PENDING", Calendar shows "X UPCOMING", Chronology has no count.
-5. **Costs section — no "Add Cost" button** — `/costs` page has one, case stream doesn't.
-6. **No upload button on case stream** — Users must navigate to dashboard or triage to upload.
+5. ~~**Costs section — no "Add Cost" button**~~ — Implemented: button in Costs header, `GET /cases/{case_id}/costs/new` endpoint, `cost_form.html` accepts `preselected_case_id` for hidden case field.
+6. ~~**No upload button on case stream**~~ — Implemented: upload button in secondary header, `GET /upload` endpoint, `upload_form.html` modal partial with drag-and-drop, hidden `case_id`, optional `parent_id` dropdown (top-level docs only).
+
+#### Upload Button Polish
+1. **Upload button design review** — Modal overlay works but needs visual polish: backdrop blur, smooth transitions, file type icons, progress indicator during upload, success/error states.
+2. **Parent link logic rethink** — Current dropdown shows all top-level docs in the case. Consider: (a) grouping by date, (b) showing only docs with `needs_review=False` as parent candidates, (c) adding a search/filter in the dropdown for large cases, (d) showing the relationship visually after linking (e.g., "Child of: [parent title]").
+
+#### Upload Button Polish
+1. **Upload button design review** — Modal overlay works but needs visual polish: backdrop blur, smooth transitions, file type icons, progress indicator during upload, success/error states.
+2. **Parent link logic rethink** — Current dropdown shows all top-level docs in the case. Consider: (a) grouping by date, (b) showing only docs with `needs_review=False` as parent candidates, (c) adding a search/filter in the dropdown for large cases, (d) showing the relationship visually after linking (e.g., "Child of: [parent title]").
 
 ### Next Layer: Medium Effort / High Value
 

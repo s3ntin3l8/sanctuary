@@ -2,8 +2,12 @@ from datetime import datetime, timedelta
 from itertools import groupby
 from urllib.parse import unquote
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.config import templates
+from app.config import templates
 from app.constants import (
     CASE_STATUS_META,
     COST_CATEGORY_META,
@@ -187,6 +191,20 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
     case_status = case.status if case else CaseStatus.INTAKE
     schedule = load_case_schedule(db, case_id)
 
+    top_level_docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.parent_id == None)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
+    top_level_docs = (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.parent_id == None)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
     # Load case costs
     case_costs_list = (
         db.query(LegalCost)
@@ -216,6 +234,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         upcoming_hearings=schedule["upcoming_hearings"],
         past_hearings=schedule["past_hearings"],
         case_costs=case_costs,
+        top_level_docs=top_level_docs,
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
         status_meta=CASE_STATUS_META,
@@ -343,6 +362,19 @@ async def cost_form(request: Request, db: Session = Depends(get_db)):
         "partials/cost_form.html",
         db=db,
         all_cases=all_cases,
+        cost_category_meta=COST_CATEGORY_META,
+    )
+
+
+@router.get("/cases/{case_id}/costs/new")
+async def case_cost_form(request: Request, case_id: str, db: Session = Depends(get_db)):
+    case = db.query(Case).filter(Case.id == case_id).first()
+    return render_page(
+        request,
+        "partials/cost_form.html",
+        db=db,
+        preselected_case_id=case_id,
+        preselected_case_title=case.title if case else case_id,
         cost_category_meta=COST_CATEGORY_META,
     )
 
@@ -520,3 +552,49 @@ async def render_document_extraction_panel(
         format_form_datetime=format_form_datetime,
         **extraction_context,
     )
+
+
+@router.get("/upload")
+async def upload_form(
+    request: Request, case_id: str = None, db: Session = Depends(get_db)
+):
+    try:
+        top_level_docs = []
+        case_title = None
+        if case_id:
+            case = db.query(Case).filter(Case.id == case_id).first()
+            case_title = case.title if case else case_id
+            top_level_docs = (
+                db.query(Document)
+                .filter(Document.case_id == case_id, Document.parent_id == None)
+                .order_by(Document.created_at.desc())
+                .all()
+            )
+        return templates.TemplateResponse(
+            "partials/upload_form.html",
+            {
+                "request": request,
+                "case_id": case_id,
+                "case_title": case_title,
+                "top_level_docs": top_level_docs,
+            },
+        )
+    except Exception as e:
+        return HTMLResponse(
+            f'<div class="p-6 text-sm text-error">Failed to load upload form: {e}</div>',
+            status_code=500,
+        )
+        return templates.TemplateResponse(
+            "partials/upload_form.html",
+            {
+                "request": request,
+                "case_id": case_id,
+                "case_title": case_title,
+                "top_level_docs": top_level_docs,
+            },
+        )
+    except Exception as e:
+        return HTMLResponse(
+            f'<div class="p-6 text-sm text-error">Failed to load upload form: {e}</div>',
+            status_code=500,
+        )

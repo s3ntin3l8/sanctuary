@@ -49,115 +49,107 @@ async def resolve_triage(doc_id: int, db: Session = Depends(get_db)):
     return HTMLResponse('<div class="hidden" data-resolved="true"></div>')
 
 
-@router.post("/triage/{doc_id}/promote/deadline")
-async def promote_triage_deadline(
-    request: Request,
+@router.post("/document/{doc_id}/link-parent")
+async def link_document_to_parent(
     doc_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     form = await request.form()
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
+    parent_id = form.get("parent_id")
+
+    if not parent_id:
         return HTMLResponse(
-            '<div class="text-xs text-error">Document not found.</div>',
-            status_code=404,
-        )
-
-    due_at = parse_form_datetime(form.get("due_at"))
-    title = (form.get("title") or "").strip()
-
-    errors = []
-    if not title:
-        errors.append("Title is required")
-    if not due_at:
-        errors.append("Valid date is required")
-
-    if errors:
-        error_list = "".join(f'<li class="text-xs text-error">{e}</li>' for e in errors)
-        return HTMLResponse(
-            f'<div class="p-3 bg-error/10 rounded-md border border-error/20">'
-            f'<p class="text-[10px] font-bold text-error uppercase tracking-widest mb-2">Failed to Create Deadline</p>'
-            f'<ul class="space-y-1 mb-3">{error_list}</ul>'
-            f'<button hx-get="/triage" hx-target="#triage-list" hx-swap="innerHTML" '
-            f'class="text-xs text-primary underline hover:no-underline">Refresh Triage</button>'
-            f"</div>",
+            '<span class="text-[9px] text-error">Select a parent document</span>',
             status_code=400,
         )
 
-    case_id = doc.case_id if doc.case_id else "_triage"
-    db.add(
-        Deadline(
-            case_id=case_id,
-            title=title,
-            description=(form.get("description") or "").strip() or None,
-            due_at=due_at,
-            source_document_id=doc.id,
+    try:
+        parent_id = int(parent_id)
+    except (ValueError, TypeError):
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Invalid parent ID</span>',
+            status_code=400,
         )
-    )
-    db.commit()
 
-    doc.needs_review = False
-    doc.review_reasons = []
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Document not found</span>',
+            status_code=404,
+        )
+
+    parent = db.query(Document).filter(Document.id == parent_id).first()
+    if not parent:
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Parent document not found</span>',
+            status_code=404,
+        )
+
+    if doc_id == parent_id:
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Cannot link to itself</span>',
+            status_code=400,
+        )
+
+    if doc.case_id and parent.case_id and doc.case_id != parent.case_id:
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Parent must be in the same case</span>',
+            status_code=400,
+        )
+
+    if parent.parent_id == doc_id:
+        return HTMLResponse(
+            '<span class="text-[9px] text-error">Cannot create circular reference</span>',
+            status_code=400,
+        )
+
+    doc.parent_id = parent_id
+
+    if doc.review_reasons and "missing_parent" in doc.review_reasons:
+        doc.review_reasons = [r for r in doc.review_reasons if r != "missing_parent"]
+        if not doc.review_reasons:
+            doc.needs_review = False
+
     db.commit()
 
     return HTMLResponse(
-        f'<div id="triage-wrapper-{doc.id}" class="hidden" data-resolved="true"></div>'
+        f'<button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-error" '
+        f'title="Unlink from Parent" '
+        f'hx-post="/document/{doc_id}/unlink-parent" '
+        f'hx-swap="outerHTML" '
+        f'@click.stop="">link_off</button>',
     )
 
 
-@router.post("/triage/{doc_id}/promote/hearing")
-async def promote_triage_hearing(
-    request: Request,
+@router.post("/document/{doc_id}/unlink-parent")
+async def unlink_document_from_parent(
     doc_id: int,
     db: Session = Depends(get_db),
 ):
-    form = await request.form()
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         return HTMLResponse(
-            '<div class="text-xs text-error">Document not found.</div>',
+            '<span class="text-[9px] text-error">Document not found</span>',
             status_code=404,
         )
 
-    scheduled_for = parse_form_datetime(form.get("scheduled_for"))
-    title = (form.get("title") or "").strip()
+    doc.parent_id = None
 
-    errors = []
-    if not title:
-        errors.append("Title is required")
-    if not scheduled_for:
-        errors.append("Valid date is required")
+    if not doc.review_reasons:
+        doc.review_reasons = []
+    if "missing_parent" not in doc.review_reasons:
+        doc.review_reasons.append("missing_parent")
+        doc.needs_review = True
 
-    if errors:
-        error_list = "".join(f'<li class="text-xs text-error">{e}</li>' for e in errors)
-        return HTMLResponse(
-            f'<div class="p-3 bg-error/10 rounded-md border border-error/20">'
-            f'<p class="text-[10px] font-bold text-error uppercase tracking-widest mb-2">Failed to Create Hearing</p>'
-            f'<ul class="space-y-1 mb-3">{error_list}</ul>'
-            f'<button hx-get="/triage" hx-target="#triage-list" hx-swap="innerHTML" '
-            f'class="text-xs text-primary underline hover:no-underline">Refresh Triage</button>'
-            f"</div>",
-            status_code=400,
-        )
-
-    case_id = doc.case_id if doc.case_id else "_triage"
-    db.add(
-        Hearing(
-            case_id=case_id,
-            title=title,
-            description=(form.get("description") or "").strip() or None,
-            scheduled_for=scheduled_for,
-            source_document_id=doc.id,
-        )
-    )
-    db.commit()
-
-    doc.needs_review = False
-    doc.review_reasons = []
     db.commit()
 
     return HTMLResponse(
-        f'<div id="triage-wrapper-{doc.id}" class="hidden" data-resolved="true"></div>'
+        f'<button class="material-symbols-outlined text-sm text-on-surface-variant hover:text-primary" '
+        f'title="Link to Parent" '
+        f'hx-post="/document/{doc_id}/link-parent" '
+        f'hx-swap="outerHTML" '
+        f'@click.stop="">link</button>',
     )
 
 
@@ -485,7 +477,7 @@ async def create_case_deadline(
 
     if errors:
         return render_case_schedule_panel(
-            request, db, case_id, form_errors=errors, form_data=dict(form)
+            request, db, case_id, deadline_errors=errors, deadline_data=dict(form)
         )
 
     db.add(
@@ -545,7 +537,67 @@ async def create_case_hearing(
 
     if errors:
         return render_case_schedule_panel(
-            request, db, case_id, form_errors=errors, form_data=dict(form)
+            request, db, case_id, deadline_errors=errors, deadline_data=dict(form)
+        )
+
+    db.add(
+        Deadline(
+            case_id=case_id,
+            title=title,
+            description=(form.get("description") or "").strip() or None,
+            due_at=due_at,
+        )
+    )
+    db.commit()
+
+    return render_case_schedule_panel(request, db, case_id)
+
+
+@router.post("/cases/{case_id}/deadlines/{deadline_id}")
+async def update_case_deadline(
+    request: Request,
+    case_id: str,
+    deadline_id: int,
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
+    deadline = (
+        db.query(Deadline)
+        .filter(Deadline.id == deadline_id, Deadline.case_id == case_id)
+        .first()
+    )
+    if deadline:
+        title = (form.get("title") or "").strip()
+        due_at = parse_form_datetime(form.get("due_at"))
+        deadline.title = title or deadline.title
+        if due_at:
+            deadline.due_at = due_at
+        deadline.description = (form.get("description") or "").strip() or None
+        deadline.completed = form.get("completed") == "on"
+        db.commit()
+
+    return render_case_schedule_panel(request, db, case_id)
+
+
+@router.post("/cases/{case_id}/hearings")
+async def create_case_hearing(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    form = await request.form()
+    scheduled_for = parse_form_datetime(form.get("scheduled_for"))
+    title = (form.get("title") or "").strip()
+
+    errors = []
+    if not title:
+        errors.append("Title is required")
+    if not scheduled_for:
+        errors.append("Valid date/time is required")
+
+    if errors:
+        return render_case_schedule_panel(
+            request, db, case_id, hearing_errors=errors, hearing_data=dict(form)
         )
 
     db.add(

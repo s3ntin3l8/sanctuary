@@ -197,6 +197,18 @@
                 });
             });
 
+            document.body.addEventListener('htmx:afterSwap', (event) => {
+                if (typeof Alpine !== 'undefined' && event.detail && event.detail.target) {
+                    Alpine.scan(event.detail.target);
+                }
+            });
+
+            document.body.addEventListener('htmx:afterSwap', (event) => {
+                if (typeof Alpine !== 'undefined' && event.detail && event.detail.target) {
+                    Alpine.scan(event.detail.target);
+                }
+            });
+
             window.syncHeaderThemeControls();
             window.addEventListener('site-theme-changed', window.syncHeaderThemeControls);
         })();
@@ -307,5 +319,8 @@
         </div>
     </div>
     {% endif %}
+
+    {# Upload Modal Root — at body level so fixed positioning works correctly #}
+    <div id="upload-modal-root"></div>
 </body>
 </html>

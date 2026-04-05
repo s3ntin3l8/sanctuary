@@ -215,7 +215,13 @@ def load_case_schedule(db: Session, case_id: str) -> dict:
 
 
 def render_case_schedule_panel(
-    request: Request, db: Session, case_id: str, form_errors=None, form_data=None
+    request: Request,
+    db: Session,
+    case_id: str,
+    deadline_errors=None,
+    deadline_data=None,
+    hearing_errors=None,
+    hearing_data=None,
 ):
     schedule = load_case_schedule(db, case_id)
     return render_page(
@@ -225,8 +231,10 @@ def render_case_schedule_panel(
         case_id=case_id,
         format_upcoming_datetime=format_upcoming_datetime,
         format_form_datetime=format_form_datetime,
-        form_errors=form_errors or [],
-        form_data=form_data or {},
+        deadline_errors=deadline_errors or [],
+        deadline_data=deadline_data or {},
+        hearing_errors=hearing_errors or [],
+        hearing_data=hearing_data or {},
         **schedule,
     )
 
