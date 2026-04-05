@@ -160,10 +160,13 @@
                 if (modifier && e.key === 'k') {
                     e.preventDefault();
                     const searchInput = document.querySelector('[data-search-input]');
-                    if (searchInput) searchInput.focus();
-                    else {
-                        const searchBtn = document.querySelector('[data-search-trigger]');
-                        if (searchBtn) searchBtn.click();
+                    if (searchInput) {
+                        searchInput.focus();
+                        // Try to open the search dropdown via Alpine.js
+                        const parent = searchInput.closest('[x-data]');
+                        if (parent && parent.__x) {
+                            parent.__x.$data.searchOpen = true;
+                        }
                     }
                 }
 

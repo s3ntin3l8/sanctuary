@@ -1,14 +1,108 @@
-<div class="flex items-center gap-3">
-    <button
-        type="button"
-        class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
-        onclick="window.showShellPlaceholder && window.showShellPlaceholder('Search')"
-        title="Search">
+<div class="flex items-center gap-3" x-data="{ 
+    searchOpen: false, 
+    searchQuery: '', 
+    searchResults: {documents: [], cases: [], contacts: [], total: 0},
+    async doSearch() {
+        if (this.searchQuery.length < 2) { 
+            this.searchResults = {documents:[], cases:[], contacts:[], total:0}; 
+            return; 
+        }
+        try {
+            const r = await fetch('/api/search?q=' + encodeURIComponent(this.searchQuery));
+            this.searchResults = await r.json();
+        } catch (e) { console.error(e); }
+    }
+}" @click.outside="searchOpen = false">
+    
+    <!-- Search Input -->
+    <div x-show="searchOpen"
+         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter-start="opacity-0 -translate-x-2"
+         x-transition:enter-end="opacity-100 translate-x-0"
+         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave-start="opacity-100 translate-x-0"
+         x-transition:leave-end="opacity-0 -translate-x-2"
+         class="relative"
+         style="display: none;">
+        <input type="text" 
+               x-ref="searchInput"
+               x-model="searchQuery"
+               @focus="searchOpen = true"
+               @input.debounce.300ms="doSearch()"
+               @keydown.escape="searchOpen = false; searchQuery = ''"
+               @keydown.enter="if(searchResults.total > 10) window.location.href='/search?q=' + encodeURIComponent(searchQuery)"
+               placeholder="Search... (⌘K)"
+               class="bg-surface-container-low text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 focus:border-primary focus:outline-none w-96 placeholder:text-on-surface-variant/50"
+               data-search-input>
+        
+        <!-- Autocomplete Dropdown -->
+        <div x-show="searchOpen && (searchResults.total > 0)"
+             x-transition:enter="transition ease-out duration-100"
+             x-transition:enter-start="opacity-0 translate-y-1"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-75"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 translate-y-1"
+             class="absolute top-full right-0 mt-2 w-96 bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl z-[9999] overflow-hidden max-h-[60vh] overflow-y-auto"
+             style="display: none;">
+            
+            <!-- Documents Section -->
+            <template x-if="searchResults.documents?.length">
+                <div class="border-b border-outline-variant/10">
+                    <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2 bg-surface-container-low">Documents</p>
+                    <template x-for="doc in searchResults.documents.slice(0,5)">
+                        <a :href="'/document/' + doc.id" @click="searchOpen = false" class="block px-3 py-2 hover:bg-surface-container-high transition-colors">
+                            <p class="text-sm text-on-surface truncate" x-text="doc.title"></p>
+                            <p class="text-[10px] text-on-surface-variant" x-text="doc.case_id || '_TRIAGE'"></p>
+                        </a>
+                    </template>
+                </div>
+            </template>
+            
+            <!-- Cases Section -->
+            <template x-if="searchResults.cases?.length">
+                <div class="border-b border-outline-variant/10">
+                    <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2 bg-surface-container-low">Cases</p>
+                    <template x-for="c in searchResults.cases.slice(0,3)">
+                        <a :href="'/cases/' + c.id" @click="searchOpen = false" class="block px-3 py-2 hover:bg-surface-container-high transition-colors">
+                            <p class="text-sm text-on-surface" x-text="c.title"></p>
+                            <p class="text-[10px] text-on-surface-variant" x-text="c.status"></p>
+                        </a>
+                    </template>
+                </div>
+            </template>
+            
+            <!-- Contacts Section -->
+            <template x-if="searchResults.contacts?.length">
+                <div class="border-b border-outline-variant/10">
+                    <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2 bg-surface-container-low">Contacts</p>
+                    <template x-for="contact in searchResults.contacts.slice(0,3)">
+                        <a :href="'/contacts/' + encodeURIComponent(contact.name)" @click="searchOpen = false" class="block px-3 py-2 hover:bg-surface-container-high transition-colors">
+                            <p class="text-sm text-on-surface" x-text="contact.name"></p>
+                        </a>
+                    </template>
+                </div>
+            </template>
+            
+            <!-- More Results Link -->
+            <template x-if="searchResults.total > 10">
+                <a :href="'/search?q=' + encodeURIComponent(searchQuery)" @click="searchOpen = false" 
+                   class="block px-3 py-2 text-center text-xs text-primary hover:bg-surface-container-high transition-colors font-bold">
+                    View all <span x-text="searchResults.total"></span> results →
+                </a>
+            </template>
+        </div>
+    </div>
+    
+    <button type="button"
+            @click="searchOpen = true; $nextTick(() => $refs.searchInput.focus())"
+            class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+            title="Search">
         search
     </button>
+    
     <div class="relative flex items-center">
-        <button
-            type="button"
+        <button type="button"
             class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
             onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))"
             title="Notifications">
@@ -18,8 +112,7 @@
         <span class="absolute -top-1 -right-1 w-2 h-2 bg-error rounded-full border border-surface"></span>
         {% endif %}
     </div>
-    <button
-        type="button"
+    <button type="button"
         data-theme-toggle
         class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
         onclick="window.toggleSiteTheme && window.toggleSiteTheme()"

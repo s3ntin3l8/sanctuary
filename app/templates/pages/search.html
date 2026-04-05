@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Search: {{ q }} | The Sanctuary{% endblock %}
+
+{% set header_title = "Search Results" %}
+{% set header_subtitle = q %}
+{% set header_actions %}
+    <span class="bg-surface-container text-xs font-mono px-2 py-1 rounded">
+        {{ total }} results
+    </span>
+{% endset %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto bg-surface">
+    {% include "partials/page_header.html" %}
+    
+    <div class="p-8">
+        {% if total == 0 %}
+            <div class="text-center py-12">
+                <span class="material-symbols-outlined text-4xl text-on-surface-variant">search_off</span>
+                <p class="text-on-surface-variant mt-4">No results found for "{{ q }}"</p>
+                <p class="text-sm text-on-surface-variant/70 mt-2">Try different keywords or check your spelling</p>
+            </div>
+        {% else %}
+            {% if documents %}
+            <div class="mb-8">
+                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">description</span>
+                    Documents ({{ documents|length }})
+                </h3>
+                <div class="space-y-2">
+                    {% for doc in documents %}
+                    <a href="/document/{{ doc.id }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors">
+                        <p class="text-sm font-medium text-on-surface">{{ doc.title }}</p>
+                        <p class="text-xs text-on-surface-variant mt-1">
+                            {% if doc.case_id %}<span class="font-mono">{{ doc.case_id }}</span> • {% endif %}
+                            {% if doc.sender %}Via: {{ doc.sender }}{% endif %}
+                        </p>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if cases %}
+            <div class="mb-8">
+                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">folder</span>
+                    Cases ({{ cases|length }})
+                </h3>
+                <div class="space-y-2">
+                    {% for case in cases %}
+                    <a href="/cases/{{ case.id }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-on-surface">{{ case.title }}</p>
+                                <p class="text-xs text-on-surface-variant mt-1 font-mono">{{ case.id }}</p>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full 
+                                {% if case.status.value == 'active' %}bg-primary-container text-on-primary-container
+                                {% elif case.status.value == 'closed' %}bg-surface-container-highest text-on-surface-variant
+                                {% else %}bg-warning-container text-warning{% endif %}">
+                                {{ case.status.value }}
+                            </span>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if contacts %}
+            <div class="mb-8">
+                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">people</span>
+                    Contacts ({{ contacts|length }})
+                </h3>
+                <div class="space-y-2">
+                    {% for contact in contacts %}
+                    <a href="/contacts/{{ contact }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors">
+                        <p class="text-sm font-medium text-on-surface">{{ contact }}</p>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

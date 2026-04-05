@@ -4,6 +4,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.config import templates
 from app.constants import (
@@ -297,7 +298,7 @@ async def triage_center(
     if search:
         search_term = f"%{search}%"
         query = query.filter(
-            db.or_(
+            or_(
                 Document.title.ilike(search_term),
                 Document.sender.ilike(search_term),
                 Document.content.ilike(search_term),
@@ -638,3 +639,122 @@ async def upload_form(
             f'<div class="p-6 text-sm text-error">Failed to load upload form: {e}</div>',
             status_code=500,
         )
+
+
+@router.get("/api/search")
+async def search_api(
+    q: str,
+    db: Session = Depends(get_db),
+    limit: int = 10,
+):
+    """API endpoint for search autocomplete."""
+    if not q or len(q) < 2:
+        return {"documents": [], "cases": [], "contacts": [], "total": 0}
+
+    from sqlalchemy import or_
+
+    q_like = f"%{q}%"
+
+    docs = (
+        db.query(Document)
+        .filter(
+            or_(
+                Document.title.ilike(q_like),
+                Document.sender.ilike(q_like),
+                Document.content.ilike(q_like),
+            )
+        )
+        .limit(limit)
+        .all()
+    )
+
+    cases = (
+        db.query(Case)
+        .filter(or_(Case.id.ilike(q_like), Case.title.ilike(q_like)))
+        .limit(limit)
+        .all()
+    )
+
+    contacts = (
+        db.query(Document.sender)
+        .filter(Document.sender.ilike(q_like))
+        .distinct()
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "documents": [
+            {
+                "id": d.id,
+                "title": d.title[:80],
+                "case_id": d.case_id,
+                "sender": d.sender,
+            }
+            for d in docs
+        ],
+        "cases": [
+            {"id": c.id, "title": c.title, "status": c.status.value} for c in cases
+        ],
+        "contacts": [{"name": c[0]} for c in contacts if c[0]],
+        "total": len(docs) + len(cases) + len(contacts),
+    }
+
+
+@router.get("/search")
+async def search_page(
+    request: Request,
+    q: str,
+    db: Session = Depends(get_db),
+):
+    """Full search results page."""
+    from sqlalchemy import or_
+
+    if not q or len(q) < 2:
+        return render_page(
+            request,
+            "pages/search.html",
+            db=db,
+            q=q,
+            documents=[],
+            cases=[],
+            contacts=[],
+            total=0,
+        )
+
+    q_like = f"%{q}%"
+
+    docs = (
+        db.query(Document)
+        .filter(
+            or_(
+                Document.title.ilike(q_like),
+                Document.sender.ilike(q_like),
+                Document.content.ilike(q_like),
+            )
+        )
+        .all()
+    )
+
+    cases = (
+        db.query(Case)
+        .filter(or_(Case.id.ilike(q_like), Case.title.ilike(q_like)))
+        .all()
+    )
+
+    contacts = (
+        db.query(Document.sender).filter(Document.sender.ilike(q_like)).distinct().all()
+    )
+
+    total = len(docs) + len(cases) + len(contacts)
+
+    return render_page(
+        request,
+        "pages/search.html",
+        db=db,
+        q=q,
+        documents=docs,
+        cases=cases,
+        contacts=[c[0] for c in contacts if c[0]],
+        total=total,
+    )
