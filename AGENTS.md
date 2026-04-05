@@ -1,5 +1,11 @@
 # AGENTS.md — The Sanctuary
 
+## Requirements
+
+- **Python 3.12+** — Required. Install via Homebrew: `brew install python@3.12`
+- Create venv: `python3.12 -m venv venv`
+- Install deps: `venv/bin/pip install -r requirements.txt`
+
 ## Quick Start
 
 ```bash

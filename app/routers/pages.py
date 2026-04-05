@@ -43,8 +43,8 @@ router = APIRouter()
 
 @router.get("/")
 async def dashboard(request: Request, db: Session = Depends(get_db)):
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    now = datetime.utcnow()
+    now = datetime.now()
+    week_ago = now - timedelta(days=7)
 
     all_cases = db.query(Case).order_by(Case.created_at.desc()).all()
     case_titles = {case.id: case.title for case in all_cases}
@@ -52,7 +52,9 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     active_cases = [case for case in all_cases if case.status != CaseStatus.CLOSED]
     active_case_count = len(active_cases)
     new_active_cases_this_week = sum(
-        1 for case in active_cases if case.created_at >= week_ago
+        1
+        for case in active_cases
+        if case.created_at and case.created_at.replace(tzinfo=None) >= week_ago
     )
 
     pending_docs = (
@@ -63,7 +65,31 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     )
     pending_review_count = len(pending_docs)
     pending_added_this_week = sum(
-        1 for doc in pending_docs if doc.created_at >= week_ago
+        1
+        for doc in pending_docs
+        if doc.created_at and doc.created_at.replace(tzinfo=None) >= week_ago
+    )
+
+    court_doc_count = (
+        db.query(Document)
+        .filter(Document.originator_type == OriginatorType.COURT)
+        .count()
+    )
+    new_documents_this_week = (
+        db.query(Document).filter(Document.created_at >= week_ago).count()
+    )
+
+    pending_docs = (
+        db.query(Document)
+        .filter(Document.needs_review == True)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+    pending_review_count = len(pending_docs)
+    pending_added_this_week = sum(
+        1
+        for doc in pending_docs
+        if doc.created_at and doc.created_at.replace(tzinfo=None) >= week_ago
     )
 
     court_doc_count = (
@@ -348,7 +374,7 @@ async def legal_costs(request: Request, db: Session = Depends(get_db)):
         db.query(LegalCost).order_by(LegalCost.case_id, LegalCost.issued_at.asc()).all()
     )
 
-    now = datetime.utcnow()
+    now = datetime.now()
     seven_days = timedelta(days=7)
     overdue_costs = [
         c

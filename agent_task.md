@@ -9,7 +9,7 @@
 **The Sanctuary** is a privacy-first legal case management platform for a single user managing active litigation. All AI runs locally via Ollama. No data leaves the machine. The aesthetic is "Quiet Sanctuary" — high information density, dark slate palette, minimal chrome.
 
 **Stack:**
-- Backend: Python 3.9+ / FastAPI
+- Backend: Python 3.12+ / FastAPI
 - Frontend: HTMX (server comms) + Alpine.js (local UI state)
 - Styling: Tailwind CSS v4 with dual light/dark token system (`static/input.css`)
 - Database: SQLite + Alembic migrations + `sqlite-vec` extension (column ready, integration pending)
@@ -65,6 +65,13 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 ---
 
 ## What Has Been Built (as of Apr 5, 2026)
+
+### Python Upgrade (Apr 5, 2026)
+- **Upgraded from Python 3.9 to 3.12** — Project now uses Python 3.12.13 (Homebrew)
+- **Fixed datetime deprecation** — Replaced all `datetime.utcnow()` with `datetime.now()` for Python 3.12+ compatibility
+- **Fixed regex compatibility** — Fixed inline `(?i)` flag in `normalization.py` to use compiled regex pattern for Python 3.12+
+- **Added httpx dependency** — Required for AI summary service, was missing from requirements.txt
+- **Fixed timezone-aware/naive datetime mismatch** — SQLite stores naive datetimes, all code now uses naive `datetime.now()` consistently
 
 ### Structure & Infrastructure
 - Modular FastAPI: `routers/pages.py` (GET), `routers/actions.py` (POST), `helpers.py`, `constants.py`, `config.py`, `dependencies.py`
@@ -139,6 +146,28 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 10. ~~🟢 **`extract_clean_title()` bypasses H&M normalization**~~ — **FIXED**: All 4 return paths now apply `normalize_hm()` internally.
 11. ~~🟢 **Triage uses `"_triage"` as case_id**~~ — **FIXED**: Real `_TRIAGE` case record seeded on startup. Unassigned docs get `case_id = "_TRIAGE"` instead of `None`. Sidebar/notification counts and triage page filter by `case_id == '_TRIAGE'`. Promotion endpoints reassign from `_TRIAGE` to target case.
 
+#### Ingestion Pipeline Hardening
+
+1. 🔴 **Docling conversion timeout** — `ingest_file()` calls `asyncio.to_thread(convert_to_md)` with no timeout. A corrupt or complex PDF could hang indefinitely. Fix: wrap in `asyncio.wait_for(..., timeout=120)`.
+2. 🔴 **Fire-and-forget AI summary is fragile** — `ai_summary.py:126` uses `asyncio.create_task(asyncio.to_thread(_run))`. If the request finishes and the event loop cleans up, the task may be cancelled. Fix: use FastAPI `BackgroundTasks` instead.
+3. 🟡 **No case_id existence validation** — `ingest_file()` accepts any string as `final_case_id` (line 848). If extraction produces a bogus case ID, document gets orphaned. Fix: query `Case` table; if not found, default to `_TRIAGE`.
+4. 🟡 **File path vs DB case_id inconsistency** — Directory uses `case_id or "_triage"` (lowercase, line 792) but DB uses `"_TRIAGE"` (uppercase, line 848). Fix: use `final_case_id` for directory path too.
+5. 🟡 **AI summary model mismatch** — `ai_summary.py:10` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Fix: update `MODEL` constant.
+6. 🟡 **Case_id scan limit on large files** — `extract_case_id()` scans full content with no limit. A 50MB PDF → 10MB+ markdown × 6 regex patterns could be slow. Fix: add reasonable cap (e.g., 20000 chars).
+7. 🟡 **Upload success response is generic** — Just "File ingested successfully" with no link to case stream. Fix: return case link and document ID.
+8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
+
+#### Ingestion Pipeline Hardening
+
+1. 🔴 **Docling conversion timeout** — `ingest_file()` calls `asyncio.to_thread(convert_to_md)` with no timeout. A corrupt or complex PDF could hang indefinitely. Fix: wrap in `asyncio.wait_for(..., timeout=120)`.
+2. 🔴 **Fire-and-forget AI summary is fragile** — `ai_summary.py:126` uses `asyncio.create_task(asyncio.to_thread(_run))`. If the request finishes and the event loop cleans up, the task may be cancelled. Fix: use FastAPI `BackgroundTasks` instead.
+3. 🟡 **No case_id existence validation** — `ingest_file()` accepts any string as `final_case_id` (line 848). If extraction produces a bogus case ID, document gets orphaned. Fix: query `Case` table; if not found, default to `_TRIAGE`.
+4. 🟡 **File path vs DB case_id inconsistency** — Directory uses `case_id or "_triage"` (lowercase, line 792) but DB uses `"_TRIAGE"` (uppercase, line 848). Fix: use `final_case_id` for directory path too.
+5. 🟡 **AI summary model mismatch** — `ai_summary.py:10` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Fix: update `MODEL` constant.
+6. 🟡 **Case_id scan limit on large files** — `extract_case_id()` scans full content with no limit. A 50MB PDF → 10MB+ markdown × 6 regex patterns could be slow. Fix: add reasonable cap (e.g., 20000 chars).
+7. 🟡 **Upload success response is generic** — Just "File ingested successfully" with no link to case stream. Fix: return case link and document ID.
+8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
+
 #### Case Stream Improvements
 
 1. ~~**"Link to Parent" button is dead**~~ — Implemented: Alpine.js dropdown lists top-level docs, `POST /document/{doc_id}/link-parent` and `POST /document/{doc_id}/unlink-parent` endpoints with validation (same case, not self, no circular refs). Button toggles between `link` and `link_off` icons.
@@ -157,6 +186,11 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - `extract_cost_candidates()` in ingestion (regex + heuristics, later Ollama)
 - Detect: RVG position references, GKG keywords, EUR amounts, Streitwert mentions
 - Surface candidates in document detail pane; add `POST /document/{doc_id}/promote/cost`
+
+#### 7a. Email Ingestion
+- Parse `.eml` files, extract headers (From, To, Subject, Date) directly instead of heuristically
+- Thread detection via In-Reply-To / References headers
+- Attachment extraction from emails
 
 #### 8. Keyboard Shortcuts and Command Affordances
 - Shortcuts for search, theme toggle, case navigation, closing panes, section jumps
@@ -225,6 +259,50 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 19a. Search Indexing and Background Jobs
 - Background processing for embeddings, AI summaries, extraction
+
+#### 19b. Batch Upload
+- Upload multiple files at once, each processed independently with individual success/error reporting
+- Progress indicator for batch operations
+
+#### 19c. Re-ingestion Pipeline
+- Ability to re-run extraction on existing documents (e.g., after Docling update or extraction improvements)
+- Bulk re-ingest by case or by date range
+
+#### 19d. Extraction Confidence Scores
+- Store confidence per extracted field (sender: 0.95, date: 0.7) instead of binary extracted/not-extracted
+- Use confidence to prioritize review queue
+
+#### 19e. Content Embedding Pipeline
+- `content_embedding` column exists on `Document` but is never populated
+- Generate embeddings via Ollama (`nomic-embed-text`) on ingestion
+- Enable semantic search across documents
+
+#### 19f. Upload Success UX
+- Return case stream link after successful upload
+- Show document preview or metadata summary
+- Option to immediately promote to deadline/hearing from upload result
+
+#### 19b. Batch Upload
+- Upload multiple files at once, each processed independently with individual success/error reporting
+- Progress indicator for batch operations
+
+#### 19c. Re-ingestion Pipeline
+- Ability to re-run extraction on existing documents (e.g., after Docling update or extraction improvements)
+- Bulk re-ingest by case or by date range
+
+#### 19d. Extraction Confidence Scores
+- Store confidence per extracted field (sender: 0.95, date: 0.7) instead of binary extracted/not-extracted
+- Use confidence to prioritize review queue
+
+#### 19e. Content Embedding Pipeline
+- `content_embedding` column exists on `Document` but is never populated
+- Generate embeddings via Ollama (`nomic-embed-text`) on ingestion
+- Enable semantic search across documents
+
+#### 19f. Upload Success UX
+- Return case stream link after successful upload
+- Show document preview or metadata summary
+- Option to immediately promote to deadline/hearing from upload result
 
 #### 20. Test Suite
 - Unit, integration, and UI/E2E coverage

@@ -263,7 +263,7 @@ async def lifespan(app: FastAPI):
             .count()
             == 0
         ):
-            now = datetime.utcnow().replace(second=0, microsecond=0)
+            now = datetime.now().replace(second=0, microsecond=0)
             for seed in _SEED_DEADLINES:
                 db.add(
                     Deadline(
@@ -280,7 +280,7 @@ async def lifespan(app: FastAPI):
             .count()
             == 0
         ):
-            base_time = datetime.utcnow().replace(second=0, microsecond=0)
+            base_time = datetime.now().replace(second=0, microsecond=0)
             for seed in _SEED_HEARINGS:
                 scheduled_day = base_time + timedelta(days=seed["offset_days"])
                 db.add(
@@ -302,7 +302,7 @@ async def lifespan(app: FastAPI):
             .count()
             == 0
         ):
-            now = datetime.utcnow().replace(second=0, microsecond=0)
+            now = datetime.now().replace(second=0, microsecond=0)
 
             def _offset_date(offset):
                 return now + timedelta(days=offset) if offset is not None else None

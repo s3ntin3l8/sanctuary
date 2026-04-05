@@ -387,7 +387,7 @@ async def mark_cost_paid(
             status_code=404,
         )
     cost.amount_paid = cost.amount_gross
-    cost.paid_at = datetime.utcnow()
+    cost.paid_at = datetime.now()
     cost.status = CostStatus.BEZAHLT
     db.commit()
     db.refresh(cost)

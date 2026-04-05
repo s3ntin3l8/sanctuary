@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Request
 from sqlalchemy.orm import Session
@@ -47,7 +47,7 @@ from datetime import timedelta
 
 def _build_notifications(db: Session) -> dict:
     """Build notification data for the header notifications panel."""
-    now = datetime.utcnow()
+    now = datetime.now()
     seven_days = timedelta(days=7)
 
     overdue_deadlines = (
@@ -117,7 +117,12 @@ def _build_notifications(db: Session) -> dict:
 
 def format_relative_time(value: datetime) -> str:
     """Returns a compact human-readable relative timestamp."""
-    delta = datetime.utcnow() - value
+    if value is None:
+        return "unknown"
+    now = datetime.now()
+    if value.tzinfo is not None:
+        value = value.replace(tzinfo=None)
+    delta = now - value
     total_seconds = max(int(delta.total_seconds()), 0)
     if total_seconds < 60:
         return "just now"
@@ -137,7 +142,8 @@ def format_relative_time(value: datetime) -> str:
 
 def format_upcoming_datetime(value: datetime) -> str:
     """Formats upcoming deadlines/hearings for compact dashboard display."""
-    delta_days = (value.date() - datetime.utcnow().date()).days
+    now = datetime.now()
+    delta_days = (value.date() - now.date()).days
     if delta_days == 0:
         day_label = "Today"
     elif delta_days == 1:
@@ -149,7 +155,8 @@ def format_upcoming_datetime(value: datetime) -> str:
 
 def format_deadline_badge(value: datetime) -> dict:
     """Returns a compact urgency label + tone for dashboard deadline cards."""
-    day_delta = (value.date() - datetime.utcnow().date()).days
+    now = datetime.now()
+    day_delta = (value.date() - now.date()).days
     if day_delta < 0:
         return {"label": "Overdue", "tone": "bg-error-container/30 text-error"}
     if day_delta == 0:
@@ -189,7 +196,7 @@ def parse_form_datetime(raw_value: Optional[str]) -> Optional[datetime]:
 
 def load_case_schedule(db: Session, case_id: str) -> dict:
     """Loads schedule data for the case calendar panel."""
-    now = datetime.utcnow()
+    now = datetime.now()
     deadlines = (
         db.query(Deadline)
         .filter(Deadline.case_id == case_id)

@@ -60,7 +60,7 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     try:
         summary = await generate_summary(doc.content, doc.title or "")
         doc.ai_summary = summary
-        doc.ai_summary_created_at = datetime.utcnow()
+        doc.ai_summary_created_at = datetime.now()
         doc.ai_summary_status = "generated"
     except Exception as e:
         doc.ai_summary_status = "failed"
@@ -100,7 +100,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
 
             summary = _parse_summary_response(raw_text)
             doc.ai_summary = summary
-            doc.ai_summary_created_at = datetime.utcnow()
+            doc.ai_summary_created_at = datetime.now()
             doc.ai_summary_status = "generated"
     except Exception as e:
         doc.ai_summary_status = "failed"

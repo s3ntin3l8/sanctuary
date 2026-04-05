@@ -3,7 +3,7 @@ parent-child relationships, costs, deadlines, and hearings across 4 cases."""
 
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db")
 
@@ -415,7 +415,7 @@ HEARING_TEMPLATES = [
 
 # ── Generate Documents ──────────────────────────────────────────────────────
 random.seed(42)
-now = datetime.utcnow().replace(second=0, microsecond=0)
+now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 doc_counter = 0
 parent_docs = {}  # case_id -> list of doc ids that can be parents
 

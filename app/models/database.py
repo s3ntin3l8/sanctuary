@@ -55,7 +55,7 @@ class Document(Base):
     received_date = Column(
         DateTime, nullable=True
     )  # When the physical document was received
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     needs_review = Column(Boolean, default=True, index=True)
     review_reasons = Column(
         JSON, default=list
@@ -86,7 +86,7 @@ class Case(Base):
     title = Column(String, nullable=False)
     court_id = Column(String, nullable=True)  # Official docket ID
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
 
 
@@ -102,7 +102,7 @@ class Deadline(Base):
     source_document_id = Column(
         Integer, ForeignKey("documents.id"), nullable=True, index=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")
@@ -120,7 +120,7 @@ class Hearing(Base):
     source_document_id = Column(
         Integer, ForeignKey("documents.id"), nullable=True, index=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")
@@ -200,7 +200,7 @@ class LegalCost(Base):
 
     source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")

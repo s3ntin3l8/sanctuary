@@ -613,7 +613,7 @@ def extract_schedule_candidates(content: str, base_date=None) -> list[dict]:
                 days = int(relative_match.group(1))
                 if "wochen" in lowered:
                     days *= 7
-                ref_date = base_date if base_date else dt.utcnow()
+                ref_date = base_date if base_date else dt.now()
                 due_at = ref_date + timedelta(days=days)
                 title = "Response deadline"
                 key = ("deadline", title, due_at.isoformat())

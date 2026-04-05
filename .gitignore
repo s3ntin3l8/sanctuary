@@ -7,6 +7,4 @@ __pycache__/
 data/
 .claude/
 .opencode/
-gemini.md
 /templates/
-claude.md
