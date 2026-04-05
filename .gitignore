@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 data/
 .claude/
+.opencode/
 gemini.md
-templates/
+/templates/
 claude.md
