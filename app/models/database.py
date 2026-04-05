@@ -95,6 +95,38 @@ class Case(Base):
     closed_at = Column(DateTime, nullable=True)
 
 
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, default="single_user", unique=True, nullable=False)
+    settings_json = Column(
+        JSON,
+        default=lambda: {
+            "theme": "dark",
+            "sidebar_collapsed": False,
+            "default_view": "dashboard",
+            "dashboard_cards": {
+                "deadlines": True,
+                "hearings": True,
+                "costs": True,
+                "documents": True,
+            },
+        },
+    )
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SavedSearch(Base):
+    __tablename__ = "saved_searches"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, default="single_user", nullable=False)
+    name = Column(String, nullable=False)
+    filter_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class Deadline(Base):
     __tablename__ = "deadlines"
 

@@ -24,6 +24,53 @@
     
     <!-- Tailwind CSS Compiled Styles -->
     <link href="/static/styles.css" rel="stylesheet"/>
+    <script>
+        // Settings auto-persist
+        (function() {
+            // Default settings
+            const defaultSettings = {
+                theme: 'dark',
+                sidebarCollapsed: false,
+                dashboardCards: {
+                    deadlines: true,
+                    hearings: true,
+                    costs: true,
+                    documents: true
+                }
+            };
+
+            // Load settings from localStorage or use defaults
+            window.userSettings = JSON.parse(localStorage.getItem('user-settings') || 'null') || defaultSettings;
+
+            // Save settings to localStorage
+            window.saveUserSettings = (newSettings) => {
+                window.userSettings = { ...window.userSettings, ...newSettings };
+                localStorage.setItem('user-settings', JSON.stringify(window.userSettings));
+
+                // Also persist sidebar state for page loads
+                if (newSettings.sidebarCollapsed !== undefined) {
+                    localStorage.setItem('sidebar-collapsed', newSettings.sidebarCollapsed);
+                }
+            };
+
+            // Apply theme on load
+            const savedTheme = localStorage.getItem('site-theme');
+            const userPrefersDark = window.userSettings.theme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (savedTheme === 'light' || window.userSettings.theme === 'light') {
+                document.documentElement.classList.remove('dark');
+                document.body.classList.remove('dark');
+            } else {
+                document.documentElement.classList.add('dark');
+                document.body.classList.add('dark');
+            }
+
+            // Apply sidebar collapsed state
+            const sidebarCollapsed = localStorage.getItem('sidebar-collapsed') === 'true' || window.userSettings.sidebarCollapsed;
+            if (sidebarCollapsed) {
+                document.body.setAttribute('data-sidebar-collapsed', 'true');
+            }
+        })();
+    </script>
     <style>
         @keyframes shell-fade-in {
             from {
@@ -98,7 +145,53 @@
             window.toggleSiteTheme = () => {
                 const nextMode = root.classList.contains('dark') ? 'light' : 'dark';
                 window.setSiteTheme(nextMode);
+                // Auto-persist theme preference
+                if (window.saveUserSettings) {
+                    window.saveUserSettings({ theme: nextMode });
+                }
             };
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const modifier = isMac ? e.metaKey : e.ctrlKey;
+
+                // Cmd/Ctrl + K: Focus search
+                if (modifier && e.key === 'k') {
+                    e.preventDefault();
+                    const searchInput = document.querySelector('[data-search-input]');
+                    if (searchInput) searchInput.focus();
+                    else {
+                        const searchBtn = document.querySelector('[data-search-trigger]');
+                        if (searchBtn) searchBtn.click();
+                    }
+                }
+
+                // Cmd/Ctrl + /: Focus search alternative
+                if (modifier && e.key === '/') {
+                    e.preventDefault();
+                    const searchInput = document.querySelector('[data-search-input]');
+                    if (searchInput) searchInput.focus();
+                }
+
+                // Cmd/Ctrl + D: Toggle dark/light theme
+                if (modifier && e.key === 'd') {
+                    e.preventDefault();
+                    window.toggleSiteTheme();
+                }
+
+                // Escape: Close modals and panels
+                if (e.key === 'Escape') {
+                    // Close any open modals
+                    document.querySelectorAll('[x-show][style*="display"]').forEach(el => {
+                        const xShow = el.getAttribute('x-show');
+                        if (xShow && !xShow.includes('false') && !xShow.includes('open === false')) {
+                            // Try to close by dispatching escape event
+                            el.dispatchEvent(new CustomEvent('escape'));
+                        }
+                    });
+                }
+            });
 
             window.syncHeaderThemeControls = () => {
                 const isDark = root.classList.contains('dark');
@@ -189,12 +282,47 @@
                 }
             });
 
-            document.body.addEventListener('htmx:responseError', () => {
+            document.body.addEventListener('htmx:responseError', (event) => {
+                const xhr = event.detail?.xhr;
+                let message = 'The update did not complete. Please try again.';
+                let title = 'Request failed';
+
+                if (xhr) {
+                    if (xhr.status === 413) {
+                        message = 'File too large. Maximum size is 50MB.';
+                        title = 'File rejected';
+                    } else if (xhr.status === 409) {
+                        message = 'This document already exists. Duplicate not allowed.';
+                        title = 'Duplicate detected';
+                    } else if (xhr.status === 400) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            message = data.detail || message;
+                        } catch (e) {}
+                    } else if (xhr.status === 500) {
+                        message = 'Server error. Please try again later.';
+                    } else if (!xhr.status) {
+                        message = 'Network error. Check your connection.';
+                        title = 'Network error';
+                    }
+                }
+
                 window.showShellToast({
-                    title: 'Request failed',
-                    body: 'The update did not complete. Please try again.',
+                    title: title,
+                    body: message,
                     icon: 'error',
                 });
+            });
+
+            // Upload retry handling
+            document.body.addEventListener('htmx:sendError', (event) => {
+                if (event.detail?.target?.tagName === 'FORM' && event.detail.target.enctype === 'multipart/form-data') {
+                    window.showShellToast({
+                        title: 'Upload failed',
+                        body: 'Network error. Click retry or try again.',
+                        icon: 'error',
+                    });
+                }
             });
 
             document.body.addEventListener('htmx:afterSwap', (event) => {

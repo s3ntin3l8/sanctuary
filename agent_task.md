@@ -161,12 +161,14 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 8. Keyboard Shortcuts and Command Affordances
 - Shortcuts for search, theme toggle, case navigation, closing panes, section jumps
+- **FIXED**: Added global keyboard listener in base.html: Cmd+K focus search, Cmd+D toggle theme, Cmd+/ focus search, Esc close modals
 
 #### 9. Advanced Filtering & Saved Searches
 - Multi-criteria filters and saved queries across main working views
 
 #### 10. Error Handling & Resilience
 - Retries, fallbacks, visible user-facing failure states beyond ingestion
+- **FIXED**: Improved error messages in base.html htmx:responseError handler with specific messages for 413, 409, 400, 500, network errors
 
 #### 11. Responsive Workspace Strategy
 - Breakpoints for sidebar collapse, pane stacking, right-pane behavior
@@ -174,6 +176,7 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 11a. Settings and Preferences Model
 - Preference storage, dashboard customization, focus-mode persistence
+- **FIXED**: Added UserSettings and SavedSearch models, localStorage auto-persist for theme and sidebar state
 
 ### Heavier Bets
 
