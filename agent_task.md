@@ -13,7 +13,7 @@
 - Frontend: HTMX (server comms) + Alpine.js (local UI state)
 - Styling: Tailwind CSS v4 with dual light/dark token system (`static/input.css`)
 - Database: SQLite + Alembic migrations + `sqlite-vec` extension (column ready, integration pending)
-- AI: Local Ollama — **qwen2.5:7b** for summaries/extraction
+- AI: Local Ollama — **qwen3.5:9b** for summaries/extraction
 - PDF Ingestion: **Docling** → Markdown
 
 ---
@@ -21,9 +21,9 @@
 ## Layout Architecture
 
 Three-pane split view — never break this structure:
-- **18% left:** Sidebar navigation (collapsible to icon strip via Focus Mode)
-- **47% center:** Document stream / case timeline
-- **35% right:** Contextual workspace (AI summaries, metadata, PDF preview)
+- **Left:** Sidebar navigation (collapsible to icon strip via Focus Mode)
+- **Center:** Document stream / case timeline (47% when doc selected, otherwise flex-1)
+- **Right:** Contextual workspace (AI summaries, metadata, PDF preview, 53% when doc selected)
 
 Three states: `DEFAULT` (all visible), `FOCUS` (sidebar collapsed to icons), `STREAM_ONLY` (right pane hidden).
 
@@ -33,13 +33,19 @@ Three states: `DEFAULT` (all visible), `FOCUS` (sidebar collapsed to icons), `ST
 
 | Route | Purpose |
 |---|---|
-| `/` or `/dashboard` | Global cross-case overview |
-| `/triage` | Unlinked documents inbox (split-pane: card list + detail) |
+| `/` | Dashboard — global cross-case overview |
+| `/triage` | Unlinked documents inbox (split-pane: card list + detail). Supports `?limit=50&offset=0` pagination |
 | `/cases` | Case directory (Active / Closed grouping) |
 | `/cases/{id}` | Case stream (Russian Doll chronology, Calendar, Costs tabs) |
 | `/timeline` | Master timeline across all cases |
 | `/costs` | Legal cost overview with alerts, manual entry, per-case tables |
+| `/costs/new` | Cost creation form (global) |
+| `/cases/{id}/costs/new` | Cost creation form (pre-selected for case) |
 | `/contacts` | Relationship Intelligence Hub (aggregated from Document.sender) |
+| `/contacts/{sender_name}` | Contact detail panel |
+| `/document/{doc_id}` | Document detail page |
+| `/document/{doc_id}/extractions` | Extraction panel for a document |
+| `/upload` | Upload form (partial) |
 
 ---
 
@@ -57,14 +63,14 @@ Every instance of "H&M" (retail clothing expenses) must be rendered in **ALL CAP
 Any document without `case_id` or `parent_id` defaults to Triage Inbox.
 
 ### Management Summary
-Every document in the right pane has a 3-bullet AI summary (Legal Significance, Required Action, Financial Impact). Generated post-ingestion (fire-and-forget) with status tracking (`pending`/`generated`/`failed`/`stale`). Re-trigger via `POST /document/{doc_id}/summarize`.
+Every document in the right pane has a 3-bullet AI summary (Legal Significance, Required Action, Financial Impact). Generated post-ingestion via FastAPI `BackgroundTasks` with status tracking (`pending`/`generated`/`failed`/`stale`). Re-trigger via `POST /document/{doc_id}/summarize`.
 
 ### Vertical Identity Header
 Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) → Internal ID (Mono). Status badge anchored far right.
 
 ---
 
-## What Has Been Built (as of Apr 5, 2026)
+## What Has Been Built (as of Apr 6, 2026)
 
 ### Python Upgrade (Apr 5, 2026)
 - **Upgraded from Python 3.9 to 3.12** — Project now uses Python 3.12.13 (Homebrew)
@@ -72,6 +78,15 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 - **Fixed regex compatibility** — Fixed inline `(?i)` flag in `normalization.py` to use compiled regex pattern for Python 3.12+
 - **Added httpx dependency** — Required for AI summary service, was missing from requirements.txt
 - **Fixed timezone-aware/naive datetime mismatch** — SQLite stores naive datetimes, all code now uses naive `datetime.now()` consistently
+
+### Phase 1 — Production-Ready Foundations (Apr 6, 2026)
+- **Environment variable for database URL** — `DATABASE_URL` env-var in `app/config.py` with fallback to `data/sanctuary.db`
+- **Rate limiting middleware** — `slowapi` added; all POST routes limited to 20 req/min
+- **Pagination on `/triage`** — `?limit=50&offset=0` query params added
+- **Template safety** — `safe_markdown` Jinja filter registered (`app/main.py`); applied to `document_details.html`; `striptags` added to `timeline.html`
+- **AI summary refactor** — Fire-and-forget `asyncio.create_task` replaced with FastAPI `BackgroundTasks`; model updated `qwen2.5:7b` → `qwen3.5:9b`
+- **Code quality fixes** — Removed duplicate imports in `pages.py`; removed duplicate `resolved_by_month` computation in `case_stream`; removed dead code in `upload_form`; removed duplicate `htmx:afterSwap` listener in `base.html`; removed duplicate `trigger_summary_background` definition in `ai_summary.py`; added missing `templates` import in `actions.py`
+- **Code quality fixes** — Removed duplicate imports in `pages.py`; removed duplicate `resolved_by_month` computation in `case_stream`; removed dead code in `upload_form`; removed duplicate `htmx:afterSwap` listener in `base.html`; removed duplicate `trigger_summary_background` definition in `ai_summary.py`; added missing `templates` import in `actions.py`
 
 ### Structure & Infrastructure
 - Modular FastAPI: `routers/pages.py` (GET), `routers/actions.py` (POST), `helpers.py`, `constants.py`, `config.py`, `dependencies.py`
@@ -87,12 +102,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 ### Pages & Features
 - **Dashboard** — data-driven metrics, upcoming deadlines/hearings, overdue costs card, recent documents
 - **Triage** — split-pane (38% card list + 62% detail), originator filter, promote-to-deadline/hearing, inline metadata editor
-### Case Stream Improvements
-### Case Stream Improvements
-- **Case Stream** — Russian Doll chronology, Calendar (CRUD deadlines/hearings), Costs tab (4-metric strip + table), section scroll tracking with active highlighting
-- **Review cards** — extracted to reusable `partials/review_card.html` partial with explicit IDs for HTMX targeting. Full card re-render on mark reviewed, link parent, unlink parent. Parent picker groups resolved docs by month, filters to `needs_review=False` only, shows "Child of: [parent title]" badge.
-- **Chronology** — document count badge in header matching Review/Calendar pattern. Content previews use `| striptags` for safe rendering.
-- **Upload modal** — per-file-type icons, HTMX loading spinner, backdrop blur + transitions
+- **Case Stream** — Five tabs (Review, Chronology, Calendar, Costs, Entities), Russian Doll chronology, Calendar (CRUD deadlines/hearings), Costs tab (4-metric strip + table), section scroll tracking with active highlighting
 - **Review cards** — extracted to reusable `partials/review_card.html` partial with explicit IDs for HTMX targeting. Full card re-render on mark reviewed, link parent, unlink parent. Parent picker groups resolved docs by month, filters to `needs_review=False` only, shows "Child of: [parent title]" badge.
 - **Chronology** — document count badge in header matching Review/Calendar pattern. Content previews use `| striptags` for safe rendering.
 - **Upload modal** — per-file-type icons, HTMX loading spinner, backdrop blur + transitions
@@ -107,7 +117,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 - **Smarter extraction windows** — case_id scans full content, originator/sender scan 8000 chars, date extraction prefers header region (first 1000 chars) over deeper content
 - **Self-contained title extraction** — `extract_clean_title()` applies `normalize_hm()` internally
 - Expanded deadline extraction: "within X days", "by [date]", "deadline:" patterns with relative date calculation
-- Ollama-powered 3-bullet summaries via `qwen2.5:7b`, fire-and-forget post-ingestion trigger
+- Ollama-powered 3-bullet summaries via `qwen3.5:9b`, `BackgroundTasks` post-ingestion trigger
 - **`missing_parent` review reason** — auto-computed during ingestion when `parent_id` is None
 - **Real triage case** — `_TRIAGE` case record seeded on startup, unassigned docs get `case_id = "_TRIAGE"`, promotion reassigns to target case
 
@@ -149,21 +159,10 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 #### Ingestion Pipeline Hardening
 
 1. 🔴 **Docling conversion timeout** — `ingest_file()` calls `asyncio.to_thread(convert_to_md)` with no timeout. A corrupt or complex PDF could hang indefinitely. Fix: wrap in `asyncio.wait_for(..., timeout=120)`.
-2. 🔴 **Fire-and-forget AI summary is fragile** — `ai_summary.py:126` uses `asyncio.create_task(asyncio.to_thread(_run))`. If the request finishes and the event loop cleans up, the task may be cancelled. Fix: use FastAPI `BackgroundTasks` instead.
+2. ~~🔴 **Fire-and-forget AI summary is fragile**~~ — **FIXED (Phase 1)**: Replaced `asyncio.create_task` with FastAPI `BackgroundTasks` via `trigger_summary_background()` (`ai_summary.py`, `actions.py`).
 3. 🟡 **No case_id existence validation** — `ingest_file()` accepts any string as `final_case_id` (line 848). If extraction produces a bogus case ID, document gets orphaned. Fix: query `Case` table; if not found, default to `_TRIAGE`.
 4. 🟡 **File path vs DB case_id inconsistency** — Directory uses `case_id or "_triage"` (lowercase, line 792) but DB uses `"_TRIAGE"` (uppercase, line 848). Fix: use `final_case_id` for directory path too.
-5. 🟡 **AI summary model mismatch** — `ai_summary.py:10` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Fix: update `MODEL` constant.
-6. 🟡 **Case_id scan limit on large files** — `extract_case_id()` scans full content with no limit. A 50MB PDF → 10MB+ markdown × 6 regex patterns could be slow. Fix: add reasonable cap (e.g., 20000 chars).
-7. 🟡 **Upload success response is generic** — Just "File ingested successfully" with no link to case stream. Fix: return case link and document ID.
-8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
-
-#### Ingestion Pipeline Hardening
-
-1. 🔴 **Docling conversion timeout** — `ingest_file()` calls `asyncio.to_thread(convert_to_md)` with no timeout. A corrupt or complex PDF could hang indefinitely. Fix: wrap in `asyncio.wait_for(..., timeout=120)`.
-2. 🔴 **Fire-and-forget AI summary is fragile** — `ai_summary.py:126` uses `asyncio.create_task(asyncio.to_thread(_run))`. If the request finishes and the event loop cleans up, the task may be cancelled. Fix: use FastAPI `BackgroundTasks` instead.
-3. 🟡 **No case_id existence validation** — `ingest_file()` accepts any string as `final_case_id` (line 848). If extraction produces a bogus case ID, document gets orphaned. Fix: query `Case` table; if not found, default to `_TRIAGE`.
-4. 🟡 **File path vs DB case_id inconsistency** — Directory uses `case_id or "_triage"` (lowercase, line 792) but DB uses `"_TRIAGE"` (uppercase, line 848). Fix: use `final_case_id` for directory path too.
-5. 🟡 **AI summary model mismatch** — `ai_summary.py:10` uses `qwen2.5:7b` but CLAUDE.md specifies `Qwen 3.5 9B`. Fix: update `MODEL` constant.
+5. ~~🟡 **AI summary model mismatch**~~ — **FIXED (Phase 1)**: Updated `MODEL` constant from `qwen2.5:7b` to `qwen3.5:9b` (`ai_summary.py:10`).
 6. 🟡 **Case_id scan limit on large files** — `extract_case_id()` scans full content with no limit. A 50MB PDF → 10MB+ markdown × 6 regex patterns could be slow. Fix: add reasonable cap (e.g., 20000 chars).
 7. 🟡 **Upload success response is generic** — Just "File ingested successfully" with no link to case stream. Fix: return case link and document ID.
 8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
@@ -282,28 +281,6 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - Show document preview or metadata summary
 - Option to immediately promote to deadline/hearing from upload result
 
-#### 19b. Batch Upload
-- Upload multiple files at once, each processed independently with individual success/error reporting
-- Progress indicator for batch operations
-
-#### 19c. Re-ingestion Pipeline
-- Ability to re-run extraction on existing documents (e.g., after Docling update or extraction improvements)
-- Bulk re-ingest by case or by date range
-
-#### 19d. Extraction Confidence Scores
-- Store confidence per extracted field (sender: 0.95, date: 0.7) instead of binary extracted/not-extracted
-- Use confidence to prioritize review queue
-
-#### 19e. Content Embedding Pipeline
-- `content_embedding` column exists on `Document` but is never populated
-- Generate embeddings via Ollama (`nomic-embed-text`) on ingestion
-- Enable semantic search across documents
-
-#### 19f. Upload Success UX
-- Return case stream link after successful upload
-- Show document preview or metadata summary
-- Option to immediately promote to deadline/hearing from upload result
-
 #### 20. Test Suite
 - Unit, integration, and UI/E2E coverage
 - Priority: ingestion pipeline (extraction functions, normalization, review reasons), route dedup validation, HTMX target correctness
@@ -318,8 +295,8 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - Safe delete/archive behavior, lightweight undo/recovery patterns
 
 #### 21c. Template Safety Filters
-- Add `| striptags` or markdown-to-text Jinja filter for Docling content previews (prevents unescaped HTML rendering) — `case_stream.html:110, 200, 250`
-- Add HTMX loading indicators to upload form (`hx-indicator` or CSS spinner)
+- ~~Add `| striptags` or markdown-to-text Jinja filter~~ — **FIXED (Phase 1)**: `safe_markdown` filter registered in `app/main.py`. Applied to `document_details.html:20` and `timeline.html:140`. Existing `striptags` on `case_stream.html:136, 185` and `review_card.html:15` confirmed.
+- ~~Add HTMX loading indicators to upload form~~ — Already implemented (`hx-indicator="#upload-spinner"`)
 
 ---
 
@@ -334,25 +311,25 @@ alembic/
     9f86d081884c_add_content_hash_to_documents.py  — Adds SHA-256 dedup column (idempotent)
 app/
   __init__.py                    — Package marker
-  main.py                        — FastAPI app creation, lifespan (DB init + seed), router registration
-  config.py                      — DB URL, engine, SessionLocal, Jinja2Templates
+  main.py                        — FastAPI app creation, lifespan (DB init + seed), router registration, rate limiter, Jinja filters
+  config.py                      — DB URL (env-var), engine, SessionLocal, Jinja2Templates
   dependencies.py                — get_db() FastAPI dependency
   constants.py                   — Meta dicts: ORIGINATOR_COLORS/ICONS, CASE/COST status meta, REVIEW_FIELD_LABELS
   helpers.py                     — Shared utilities: render_page, build_sidebar_counts, build_notifications, formatters, cost summary
   routers/
     __init__.py                  — Package marker
-    pages.py                     — All GET page routes
-    actions.py                   — All POST mutation routes
+    pages.py                     — All GET page routes (triage has pagination)
+    actions.py                   — All POST mutation routes (rate-limited 20/min)
   models/
     __init__.py                  — Re-exports all models and enums
     database.py                  — SQLAlchemy models: Case, Document, Deadline, Hearing, LegalCost, enums
   services/
     __init__.py                  — Package marker
-    ai_summary.py                — Ollama-powered 3-bullet summaries
+    ai_summary.py                — Ollama-powered 3-bullet summaries (qwen3.5:9b, BackgroundTasks)
     ingestion.py                 — Docling ingestion pipeline (hardened, enhanced extraction)
     normalization.py             — H&M normalization utility
   templates/
-    base.html                    — Root layout; .dark class toggle, notifications panel, localStorage
+    base.html                    — Root layout; .dark class toggle, notifications panel, localStorage, toast system
     partials/
       sidebar.html               — Animated collapsible sidebar
       page_header.html           — Shared sticky page header
@@ -361,7 +338,7 @@ app/
       empty_state.html           — Shared empty-state renderer
       review_card.html           — Reusable review card with HTMX targeting, parent picker, status badges
       triage_card.html           — Triage card with metadata editor + promote buttons
-      document_details.html      — Right-pane document view with dynamic AI summary
+      document_details.html      — Right-pane document view with dynamic AI summary (safe_markdown filter)
       document_extraction_panel.html — Schedule candidates + linked deadlines/hearings
       case_schedule_panel.html   — Deadlines + hearings CRUD panel
       cost_row.html              — Reusable HTMX cost row
@@ -369,18 +346,15 @@ app/
       contact_detail.html        — Contact detail panel: stats, timeline, case links
     pages/
       dashboard.html             — Data-driven: cases, deadlines, hearings, documents, overdue costs
-      triage.html                — Split-pane triage inbox
+      triage.html                — Split-pane triage inbox (paginated)
       case_directory.html        — Active / Closed case grid
       case_stream.html           — Russian Doll timeline + Calendar + Costs tabs + split doc pane
-      timeline.html              — Cross-case chronology
+      timeline.html              — Cross-case chronology (striptags on content)
       costs.html                 — Legal costs: metrics, alerts, tables, add cost form
       contacts.html              — Relationship Intelligence Hub
 static/
   input.css                      — Tailwind source: light @theme + .dark overrides
   styles.css                     — Compiled output (regenerate with npx tailwindcss ...)
-templates/
-  quiet_authority/DESIGN.md      — Light mode design spec
-  stitch_case_organizer_dark/    — Dark mode design spec + Tailwind color config reference
 seed_dummy_data.py               — Dev seed script: ~100 docs across 4 cases
 agent_task.md                    — This file
 ```
@@ -395,6 +369,12 @@ agent_task.md                    — This file
 - SQLite DB at `data/sanctuary.db`; seed data runs on every startup (idempotent per-case)
 - Ollama must be running locally at `http://localhost:11434` for AI features
 - Index a file after editing: `index_file { "path": "/abs/path" }` (jCodemunch MCP)
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///./data/sanctuary.db` | Database connection string |
 
 ### Dummy Data Seed Script
 

@@ -137,7 +137,7 @@
 
                                 <!-- Content Preview -->
                                 <p class="text-xs text-on-surface-variant leading-relaxed line-clamp-2 mb-3">
-                                    {{ (doc.content or 'No content available')[:200] }}{% if (doc.content or '')|length > 200 %}…{% endif %}
+                                    {{ (doc.content or 'No content available')[:200] | striptags }}{% if (doc.content or '')|length > 200 %}…{% endif %}
                                 </p>
 
                                 <!-- Footer: Provenance + Status -->

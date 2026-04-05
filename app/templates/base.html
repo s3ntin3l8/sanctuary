@@ -203,12 +203,6 @@
                 }
             });
 
-            document.body.addEventListener('htmx:afterSwap', (event) => {
-                if (typeof Alpine !== 'undefined' && event.detail && event.detail.target) {
-                    Alpine.scan(event.detail.target);
-                }
-            });
-
             window.syncHeaderThemeControls();
             window.addEventListener('site-theme-changed', window.syncHeaderThemeControls);
         })();

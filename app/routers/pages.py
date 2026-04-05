@@ -3,10 +3,8 @@ from itertools import groupby
 from urllib.parse import unquote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.config import templates
 from app.config import templates
 from app.constants import (
     CASE_STATUS_META,
@@ -55,28 +53,6 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         1
         for case in active_cases
         if case.created_at and case.created_at.replace(tzinfo=None) >= week_ago
-    )
-
-    pending_docs = (
-        db.query(Document)
-        .filter(Document.needs_review == True)
-        .order_by(Document.created_at.desc())
-        .all()
-    )
-    pending_review_count = len(pending_docs)
-    pending_added_this_week = sum(
-        1
-        for doc in pending_docs
-        if doc.created_at and doc.created_at.replace(tzinfo=None) >= week_ago
-    )
-
-    court_doc_count = (
-        db.query(Document)
-        .filter(Document.originator_type == OriginatorType.COURT)
-        .count()
-    )
-    new_documents_this_week = (
-        db.query(Document).filter(Document.created_at >= week_ago).count()
     )
 
     pending_docs = (
@@ -249,31 +225,6 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         )
     )
 
-    # Group resolved top-level docs by month for the parent picker
-    resolved_docs = [d for d in top_level_docs if not d.needs_review]
-    resolved_by_month = {}
-    for doc in resolved_docs:
-        dt = doc.created_at or doc.received_date
-        month_key = dt.strftime("%B %Y") if dt else "Unknown"
-        if month_key not in resolved_by_month:
-            resolved_by_month[month_key] = []
-        resolved_by_month[month_key].append(doc)
-
-    # Sort months chronologically
-    def _month_sort_key(m):
-        if m == "Unknown":
-            return datetime.min
-        try:
-            return datetime.strptime(m, "%B %Y")
-        except ValueError:
-            return datetime.min
-
-    resolved_by_month = dict(
-        sorted(
-            resolved_by_month.items(), key=lambda x: _month_sort_key(x[0]), reverse=True
-        )
-    )
-
     # Load case costs
     case_costs_list = (
         db.query(LegalCost)
@@ -316,11 +267,18 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
 
 
 @router.get("/triage")
-async def triage_center(request: Request, db: Session = Depends(get_db)):
+async def triage_center(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
     documents = (
         db.query(Document)
         .filter(Document.case_id == "_TRIAGE")
         .order_by(Document.created_at.desc())
+        .limit(limit)
+        .offset(offset)
         .all()
     )
     return render_page(
@@ -640,20 +598,6 @@ async def upload_form(
                 .order_by(Document.created_at.desc())
                 .all()
             )
-        return templates.TemplateResponse(
-            "partials/upload_form.html",
-            {
-                "request": request,
-                "case_id": case_id,
-                "case_title": case_title,
-                "top_level_docs": top_level_docs,
-            },
-        )
-    except Exception as e:
-        return HTMLResponse(
-            f'<div class="p-6 text-sm text-error">Failed to load upload form: {e}</div>',
-            status_code=500,
-        )
         return templates.TemplateResponse(
             "partials/upload_form.html",
             {

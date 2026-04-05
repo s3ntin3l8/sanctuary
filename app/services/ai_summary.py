@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Document
 
 OLLAMA_URL = "http://localhost:11434"
-MODEL = "qwen2.5:7b"
+MODEL = "qwen3.5:9b"
 
 SYSTEM_PROMPT = """You are a legal document analyst. Analyze the provided document and return a JSON object with exactly these three keys:
 - legal_significance: What does this document mean for our legal position? (1-2 sentences)
@@ -124,3 +124,17 @@ def trigger_summary_async(doc_id: int):
             db.close()
 
     asyncio.create_task(asyncio.to_thread(_run))
+
+
+def trigger_summary_background(doc_id: int, background_tasks) -> None:
+    """Background task-based summary generation. Safer than fire-and-forget."""
+    from app.config import SessionLocal
+
+    def _run():
+        db = SessionLocal()
+        try:
+            _summarize_document_sync(doc_id, db)
+        finally:
+            db.close()
+
+    background_tasks.add_task(_run)

@@ -17,7 +17,7 @@
                 {% if doc %}
                 <div class="prose prose-sm max-w-none text-on-surface-variant">
                     <h1 class="text-2xl font-black text-on-surface mb-4">{{ doc.title }}</h1>
-                    <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content }}</div>
+                    <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content | safe_markdown }}</div>
                 </div>
                 {% else %}
                 <div class="mt-12 w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">

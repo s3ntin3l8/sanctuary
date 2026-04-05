@@ -1,9 +1,14 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import quote
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
 from app.config import engine, SessionLocal, templates
@@ -336,9 +341,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
+PROJECT_ROOT = Path(__file__).parent.parent
+
 app = FastAPI(title="The Sanctuary", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
 templates.env.filters["hm"] = normalize_hm
@@ -346,5 +353,21 @@ templates.env.globals["format_eur"] = format_eur
 templates.env.filters["format_relative_time"] = format_relative_time
 templates.env.filters["urlencode"] = quote
 
+# Safe markdown filter to strip tags
+from markupsafe import Markup
+
+
+def safe_markdown(value: str) -> Markup:
+    """Return a safe string with HTML tags stripped."""
+    return Markup(str(value).replace("<", "&lt;").replace(">", "&gt;"))
+
+
+templates.env.filters["safe_markdown"] = safe_markdown
+
+# Rate limiter setup
+limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.include_router(pages.router)
-app.include_router(actions.router)
+app.include_router(actions.router, dependencies=[Depends(limiter.limit("20/minute"))])

@@ -1,7 +1,16 @@
 import os
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    BackgroundTasks,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -12,6 +21,7 @@ from app.constants import (
     COST_STATUS_META,
 )
 from app.dependencies import get_db
+from app.config import templates
 from app.helpers import (
     render_page,
     parse_form_datetime,
@@ -34,7 +44,7 @@ from app.services.ingestion import (
     ALLOWED_EXTENSIONS,
     compute_review_reasons,
 )
-from app.services.ai_summary import summarize_document, trigger_summary_async
+from app.services.ai_summary import summarize_document, trigger_summary_background
 
 router = APIRouter()
 
@@ -430,6 +440,7 @@ async def mark_cost_reimbursed(
 @router.post("/upload")
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     case_id: Optional[str] = Form(None),
     parent_id: Optional[int] = Form(None),
@@ -471,11 +482,9 @@ async def upload_document(
             )
         return {"error": "An unexpected error occurred during upload."}, 500
 
-    # Trigger AI summary (fire-and-forget)
+    # Trigger AI summary via BackgroundTasks (safer)
     try:
-        from app.services.ai_summary import trigger_summary_async
-
-        trigger_summary_async(doc.id)
+        trigger_summary_background(doc.id, background_tasks)
     except Exception:
         pass
 
