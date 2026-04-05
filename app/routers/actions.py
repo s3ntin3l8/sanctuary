@@ -515,7 +515,31 @@ async def promote_document_deadline(
 ):
     form = await request.form()
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc or not doc.case_id:
+    if not doc:
+        return HTMLResponse(
+            '<div class="text-xs text-error">Document not found.</div>',
+            status_code=404,
+        )
+
+    # If doc is in triage, reassign it to the target case
+    target_case_id = (form.get("case_id") or "").strip() or None
+    if doc.case_id == "_TRIAGE" and target_case_id:
+        doc.case_id = target_case_id
+        db.commit()
+
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        return HTMLResponse(
+            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
+            status_code=400,
+        )
+
+    # If doc is in triage, reassign it to the target case
+    target_case_id = (form.get("case_id") or "").strip() or None
+    if doc.case_id == "_TRIAGE" and target_case_id:
+        doc.case_id = target_case_id
+        db.commit()
+
+    if not doc.case_id or doc.case_id == "_TRIAGE":
         return HTMLResponse(
             '<div class="text-xs text-error">Document must be linked to a case first.</div>',
             status_code=400,
@@ -558,7 +582,31 @@ async def promote_document_hearing(
 ):
     form = await request.form()
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc or not doc.case_id:
+    if not doc:
+        return HTMLResponse(
+            '<div class="text-xs text-error">Document not found.</div>',
+            status_code=404,
+        )
+
+    # If doc is in triage, reassign it to the target case
+    target_case_id = (form.get("case_id") or "").strip() or None
+    if doc.case_id == "_TRIAGE" and target_case_id:
+        doc.case_id = target_case_id
+        db.commit()
+
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        return HTMLResponse(
+            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
+            status_code=400,
+        )
+
+    # If doc is in triage, reassign it to the target case
+    target_case_id = (form.get("case_id") or "").strip() or None
+    if doc.case_id == "_TRIAGE" and target_case_id:
+        doc.case_id = target_case_id
+        db.commit()
+
+    if not doc.case_id or doc.case_id == "_TRIAGE":
         return HTMLResponse(
             '<div class="text-xs text-error">Document must be linked to a case first.</div>',
             status_code=400,

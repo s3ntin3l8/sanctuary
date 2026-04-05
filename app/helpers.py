@@ -9,7 +9,7 @@ from app.models.database import Case, CaseStatus, Deadline, Document, Hearing
 
 def build_sidebar_counts(db: Session) -> dict:
     """Computes sidebar badge counts using the active request session."""
-    triage_count = db.query(Document).filter(Document.needs_review == True).count()
+    triage_count = db.query(Document).filter(Document.case_id == "_TRIAGE").count()
     total_docs = db.query(Document).count()
     case_count = db.query(Case).filter(Case.status != CaseStatus.CLOSED).count()
     return {
@@ -77,7 +77,7 @@ def _build_notifications(db: Session) -> dict:
     )
     pending_docs = (
         db.query(Document)
-        .filter(Document.needs_review == True)
+        .filter(Document.case_id == "_TRIAGE")
         .order_by(Document.created_at.desc())
         .limit(5)
         .all()

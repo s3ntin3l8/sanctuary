@@ -24,6 +24,12 @@ from app.services.normalization import normalize_hm
 
 _SEED_CASES = [
     {
+        "id": "_TRIAGE",
+        "title": "Triage Inbox",
+        "court_id": "",
+        "status": CaseStatus.INTAKE,
+    },
+    {
         "id": "ADV-992-K",
         "title": "Vane vs. Vane: Divorce & Assets",
         "court_id": "2024-FL-DR-00992",

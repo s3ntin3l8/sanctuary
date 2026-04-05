@@ -102,6 +102,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 - Expanded deadline extraction: "within X days", "by [date]", "deadline:" patterns with relative date calculation
 - Ollama-powered 3-bullet summaries via `qwen2.5:7b`, fire-and-forget post-ingestion trigger
 - **`missing_parent` review reason** — auto-computed during ingestion when `parent_id` is None
+- **Real triage case** — `_TRIAGE` case record seeded on startup, unassigned docs get `case_id = "_TRIAGE"`, promotion reassigns to target case
 
 ### Styling
 - Dual light/dark mode via CSS cascade from `input.css` (no hardcoded JS theme objects)
@@ -136,7 +137,7 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 8. ~~🟡 **Content snippet limits are arbitrary**~~ — **FIXED**: `extract_case_id()` scans full content (no limit), `extract_originator()` 8000 chars, `extract_sender()` 8000 chars, `extract_schedule_candidates()` 5000 chars. Named constants at module level.
 9. ~~🟡 **Date extraction is greedy**~~ — **FIXED**: `extract_received_date()` scans header region (first 1000 chars) first, falls back to broader 3000-char scan. Dates in quoted correspondence no longer win over actual document dates.
 10. ~~🟢 **`extract_clean_title()` bypasses H&M normalization**~~ — **FIXED**: All 4 return paths now apply `normalize_hm()` internally.
-11. 🟢 **Triage uses `"_triage"` as case_id** — `case_id` column is nullable, promotion endpoints reject docs without `case_id` (actions.py:384, 427). The `"_triage"` string is only a filesystem directory, not a DB value. Lower severity than originally described. Consider: create a real "triage" case record so `case_id` can be non-nullable.
+11. ~~🟢 **Triage uses `"_triage"` as case_id**~~ — **FIXED**: Real `_TRIAGE` case record seeded on startup. Unassigned docs get `case_id = "_TRIAGE"` instead of `None`. Sidebar/notification counts and triage page filter by `case_id == '_TRIAGE'`. Promotion endpoints reassign from `_TRIAGE` to target case.
 
 #### Case Stream Improvements
 

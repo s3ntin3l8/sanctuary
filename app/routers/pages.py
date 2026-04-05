@@ -293,7 +293,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
 async def triage_center(request: Request, db: Session = Depends(get_db)):
     documents = (
         db.query(Document)
-        .filter(Document.needs_review == True)
+        .filter(Document.case_id == "_TRIAGE")
         .order_by(Document.created_at.desc())
         .all()
     )

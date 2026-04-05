@@ -63,3 +63,27 @@ alembic upgrade head
 
 - `CLAUDE.md` — design system, Russian Doll protocol, H&M rule, navigation structure
 - `agent_task.md` — roadmap, completed items, open issues
+
+## Workflow (Non-Negotiable)
+
+For every task, follow this sequence strictly:
+
+1. **Check `agent_task.md`** — read current state, identify target items
+2. **Plan** — write implementation plan to `.opencode/plans/`
+3. **Implement** — execute per plan
+4. **Verify** — check each implementation item individually (syntax, imports, behavior)
+5. **Final verification** — cross-file consistency, route uniqueness, integration checks
+6. **Update `agent_task.md`** — mark items FIXED, update "What Has Been Built" and "Key Files"
+7. **Commit** — descriptive commit message, one commit per logical package
+
+## Workflow (Non-Negotiable)
+
+For every task, follow this sequence strictly:
+
+1. **Check `agent_task.md`** — read current state, identify target items
+2. **Plan** — write implementation plan to `.opencode/plans/`
+3. **Implement** — execute per plan
+4. **Verify** — check each implementation item individually (syntax, imports, behavior)
+5. **Final verification** — cross-file consistency, route uniqueness, integration checks
+6. **Update `agent_task.md`** — mark items FIXED, update "What Has Been Built" and "Key Files"
+7. **Commit** — descriptive commit message, one commit per logical package

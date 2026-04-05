@@ -844,8 +844,8 @@ async def ingest_file(
     extracted_sender = extract_sender(markdown_content)
     extracted_title = extract_clean_title(safe_filename, markdown_content)
 
-    # Prefer the explicitly provided case_id, fall back to extraction
-    final_case_id = case_id if case_id else extracted_case_id
+    # Prefer the explicitly provided case_id, fall back to extraction, default to triage
+    final_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
 
     # 4b. Validate parent_id exists before building the document
     if parent_id is not None:
