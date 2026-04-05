@@ -137,12 +137,18 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/cases")
 async def case_directory(request: Request, db: Session = Depends(get_db)):
-    all_cases = db.query(Case).order_by(Case.created_at.desc()).all()
+    # Exclude _TRIAGE from case directory - it's a virtual inbox, not a real case
+    all_cases = (
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE")
+        .order_by(Case.created_at.desc())
+        .all()
+    )
 
     doc_case_ids = {
         r[0]
         for r in db.query(Document.case_id)
-        .filter(Document.case_id != None)
+        .filter(Document.case_id != None, Document.case_id != "_TRIAGE")
         .distinct()
         .all()
     }
