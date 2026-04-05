@@ -278,14 +278,34 @@ async def triage_center(
     db: Session = Depends(get_db),
     limit: int = 50,
     offset: int = 0,
+    originator: str | None = None,
+    needs_review: bool | None = None,
+    search: str | None = None,
 ):
+    query = db.query(Document).filter(Document.case_id == "_TRIAGE")
+
+    if originator:
+        try:
+            orig_type = OriginatorType(originator)
+            query = query.filter(Document.originator_type == orig_type)
+        except ValueError:
+            pass
+
+    if needs_review is not None:
+        query = query.filter(Document.needs_review == needs_review)
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            db.or_(
+                Document.title.ilike(search_term),
+                Document.sender.ilike(search_term),
+                Document.content.ilike(search_term),
+            )
+        )
+
     documents = (
-        db.query(Document)
-        .filter(Document.case_id == "_TRIAGE")
-        .order_by(Document.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-        .all()
+        query.order_by(Document.created_at.desc()).limit(limit).offset(offset).all()
     )
     return render_page(
         request,

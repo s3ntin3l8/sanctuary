@@ -165,6 +165,7 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 9. Advanced Filtering & Saved Searches
 - Multi-criteria filters and saved queries across main working views
+- **PARTIALLY FIXED**: Added URL filter params to triage (?originator, ?needs_review, ?search), client-side filtering already works in triage page. Saved searches pending DB integration.
 
 #### 10. Error Handling & Resilience
 - Retries, fallbacks, visible user-facing failure states beyond ingestion
