@@ -70,7 +70,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 
 ---
 
-## What Has Been Built (as of Apr 6, 2026)
+## What Has Been Built (as of Apr 7, 2026)
 
 ### Python Upgrade (Apr 5, 2026)
 - **Upgraded from Python 3.9 to 3.12** — Project now uses Python 3.12.13 (Homebrew)
@@ -86,7 +86,10 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 - **Template safety** — `safe_markdown` Jinja filter registered (`app/main.py`); applied to `document_details.html`; `striptags` added to `timeline.html`
 - **AI summary refactor** — Fire-and-forget `asyncio.create_task` replaced with FastAPI `BackgroundTasks`; model updated `qwen2.5:7b` → `qwen3.5:9b`
 - **Code quality fixes** — Removed duplicate imports in `pages.py`; removed duplicate `resolved_by_month` computation in `case_stream`; removed dead code in `upload_form`; removed duplicate `htmx:afterSwap` listener in `base.html`; removed duplicate `trigger_summary_background` definition in `ai_summary.py`; added missing `templates` import in `actions.py`
-- **Code quality fixes** — Removed duplicate imports in `pages.py`; removed duplicate `resolved_by_month` computation in `case_stream`; removed dead code in `upload_form`; removed duplicate `htmx:afterSwap` listener in `base.html`; removed duplicate `trigger_summary_background` definition in `ai_summary.py`; added missing `templates` import in `actions.py`
+
+### Post-Phase 1 Fixes
+- **Hide _TRIAGE from case directory** — Filtered from `/cases` route to exclude virtual inbox from case list
+- **Deadlines/hearings side-by-side** — Grid changed to `lg:grid-cols-2` for screens ≥1024px
 
 ### Structure & Infrastructure
 - Modular FastAPI: `routers/pages.py` (GET), `routers/actions.py` (POST), `helpers.py`, `constants.py`, `config.py`, `dependencies.py`
@@ -102,7 +105,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 ### Pages & Features
 - **Dashboard** — data-driven metrics, upcoming deadlines/hearings, overdue costs card, recent documents
 - **Triage** — split-pane (38% card list + 62% detail), originator filter, promote-to-deadline/hearing, inline metadata editor
-- **Case Stream** — Five tabs (Review, Chronology, Calendar, Costs, Entities), Russian Doll chronology, Calendar (CRUD deadlines/hearings), Costs tab (4-metric strip + table), section scroll tracking with active highlighting
+- **Case Stream** — Five tabs (Review, Chronology, Calendar, Costs, Entities stub), Russian Doll chronology, Calendar (CRUD deadlines/hearings), Costs tab (4-metric strip + table), section scroll tracking with active highlighting
 - **Review cards** — extracted to reusable `partials/review_card.html` partial with explicit IDs for HTMX targeting. Full card re-render on mark reviewed, link parent, unlink parent. Parent picker groups resolved docs by month, filters to `needs_review=False` only, shows "Child of: [parent title]" badge.
 - **Chronology** — document count badge in header matching Review/Calendar pattern. Content previews use `| striptags` for safe rendering.
 - **Upload modal** — per-file-type icons, HTMX loading spinner, backdrop blur + transitions
@@ -134,50 +137,13 @@ All complete except: **self-host frontend assets** — `base.html` still loads G
 
 ---
 
-## Roadmap
+## Roadmap (Open Items Only)
 
 Prioritization rule: prefer low-effort / low-complexity items with clear user impact first.
 
-### Quick Wins
+### Ingestion Pipeline
 
-#### Improve Ingestion
-
-> **Status key:** 🔴 Bug fix (can cause runtime errors) · 🟡 Improvement (robustness/UX) · 🟢 Partially fixed
-
-1. ~~🔴 **Duplicate route definitions in `actions.py`**~~ — **FIXED**: Removed duplicate `update_case_deadline` (was lines 556-579). Fixed buggy `create_case_hearing`: `Deadline` → `Hearing`, `due_at` → `scheduled_for`, added `location` field, `deadline_errors` → `hearing_errors`.
-2. ~~🔴 **Docling converter race condition**~~ — **FIXED**: `_get_converter()` now uses double-checked locking with `threading.Lock` (`ingestion.py:22-41`).
-3. ~~🔴 **`missing_parent` never computed**~~ — **FIXED**: `compute_review_reasons()` now checks `if not doc.parent_id` and appends `"missing_parent"` (`ingestion.py:721-722`).
-4. ~~🔴 **No `parent_id` existence validation**~~ — **FIXED**: `ingest_file()` queries parent exists before Document creation, returns `HTTPException(400)` if not found (`ingestion.py:850-854`).
-5. ~~🟡 **H&M normalization too aggressive**~~ — **FIXED**: Added word boundary anchors `r"\b(?i)h\s*&\s*m\b|\bh\s+and\s+m\b"` (`normalization.py:9`).
-6. ~~🟡 **No file size validation**~~ — **FIXED**: `MAX_FILE_SIZE = 50MB` constant, tracks bytes during chunked read, returns `413` if exceeded, cleans up partial file (`ingestion.py:16, 778-786`).
-7. ~~🟡 **No deduplication**~~ — **FIXED**: `content_hash` column (`String(64)`, indexed) added to `Document` model. SHA-256 computed during save loop. Duplicate check: same hash + same `case_id` → `HTTPException(409)` with cleanup. Alembic migration `9f86d081884c` (idempotent).
-8. ~~🟡 **Content snippet limits are arbitrary**~~ — **FIXED**: `extract_case_id()` scans full content (no limit), `extract_originator()` 8000 chars, `extract_sender()` 8000 chars, `extract_schedule_candidates()` 5000 chars. Named constants at module level.
-9. ~~🟡 **Date extraction is greedy**~~ — **FIXED**: `extract_received_date()` scans header region (first 1000 chars) first, falls back to broader 3000-char scan. Dates in quoted correspondence no longer win over actual document dates.
-10. ~~🟢 **`extract_clean_title()` bypasses H&M normalization**~~ — **FIXED**: All 4 return paths now apply `normalize_hm()` internally.
-11. ~~🟢 **Triage uses `"_triage"` as case_id**~~ — **FIXED**: Real `_TRIAGE` case record seeded on startup. Unassigned docs get `case_id = "_TRIAGE"` instead of `None`. Sidebar/notification counts and triage page filter by `case_id == '_TRIAGE'`. Promotion endpoints reassign from `_TRIAGE` to target case.
-
-#### Ingestion Pipeline Hardening
-
-1. ~~🔴 **Docling conversion timeout**~~ — **FIXED**: Wrapped `asyncio.to_thread(convert_to_md)` in `asyncio.wait_for(..., timeout=60)` (`ingestion.py:834-839`).
-2. ~~🔴 **Fire-and-forget AI summary is fragile**~~ — **FIXED (Phase 1)**: Replaced `asyncio.create_task` with FastAPI `BackgroundTasks` via `trigger_summary_background()` (`ai_summary.py`, `actions.py`).
-3. ~~🟡 **No case_id existence validation**~~ — **FIXED**: Added validation that queries Case table; if not found, creates new case with INTAKE status (`ingestion.py:856-862`).
-4. ~~🟡 **File path vs DB case_id inconsistency**~~ — **FIXED**: Uses `extract_case_id()` for preliminary path to match final_case_id logic (`ingestion.py:791-794`).
-5. ~~🟡 **AI summary model mismatch**~~ — **FIXED (Phase 1)**: Updated `MODEL` constant from `qwen2.5:7b` to `qwen3.5:9b` (`ai_summary.py:10`).
-6. ~~🟡 **Case_id scan limit on large files**~~ — **FIXED**: Added `CASE_ID_SCAN_LIMIT = 20000` and applies truncation in `extract_case_id()` (`ingestion.py:324, 333`).
-7. ~~🟡 **Upload success response is generic**~~ — **FIXED**: Returns `case_url` and `doc_url` in JSON response (`actions.py:511-512`).
-8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
-
-#### Case Stream Improvements
-
-1. ~~**"Link to Parent" button is dead**~~ — Implemented: Alpine.js dropdown lists top-level docs, `POST /document/{doc_id}/link-parent` and `POST /document/{doc_id}/unlink-parent` endpoints with validation (same case, not self, no circular refs). Button toggles between `link` and `link_off` icons.
-2. ~~🔴 **"Mark Reviewed" broken target"~~ — **FIXED**: `hx-target="closest div"` → `hx-target="closest .bg-surface-container"` — targets the card root, not the inner action-buttons div. Card also now has explicit `id="review-card-{id}"` for HTMX targeting from link/unlink endpoints.
-3. ~~🔴 **Raw markdown in card previews**~~ — **FIXED**: Added `| striptags` filter to all 3 content slice locations: review card (line 110), chronology (line 200), child docs (line 250). Replaced dangerous `\| safe` with `\| striptags`.
-4. ~~🟡 **No document count badge on Chronology**~~ — **FIXED**: Added `{{ documents|length }} DOCS` badge to Chronology header, matching Review/Calendar pattern.
-
-#### Upload Modal Polish
-
-1. ~~🟡 **Visual polish**~~ — **FIXED**: Added per-file-type icons (PDF→`picture_as_pdf`, DOCX→`description`, etc.) via Alpine.js `setFileIcon()`. Added HTMX loading spinner (`hx-indicator="#upload-spinner"`) inside Upload button. Upload button shows spinner during request.
-2. ~~🟡 **Parent link logic**~~ — **FIXED**: Review card extracted to reusable `partials/review_card.html` partial. Parent picker now: (a) groups resolved docs by month with sticky headers, (b) filters to `needs_review=False` only, (c) returns full card HTML after link/unlink with "Child of: [parent title]" badge and updated review status. `resolve_triage`, `link-parent`, and `unlink-parent` all return full card re-renders via `hx-target="#review-card-{id}"`.
+1. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
 
 ### Next Layer: Medium Effort / High Value
 
@@ -293,10 +259,6 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### 21b. Delete, Archive, and Undo Flows
 - Safe delete/archive behavior, lightweight undo/recovery patterns
-
-#### 21c. Template Safety Filters
-- ~~Add `| striptags` or markdown-to-text Jinja filter~~ — **FIXED (Phase 1)**: `safe_markdown` filter registered in `app/main.py`. Applied to `document_details.html:20` and `timeline.html:140`. Existing `striptags` on `case_stream.html:136, 185` and `review_card.html:15` confirmed.
-- ~~Add HTMX loading indicators to upload form~~ — Already implemented (`hx-indicator="#upload-spinner"`)
 
 ---
 
