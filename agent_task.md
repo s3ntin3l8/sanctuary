@@ -143,7 +143,9 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 ### Ingestion Pipeline
 
-1. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
+1. ~~🟢 **No Docling output quality check**~~ — **FIXED**: Added `is_valid_docling_output()` function that rejects empty/whitespace/repetitive content (`ingestion.py:736-746`).
+2. ~~🟢 **Cost Extraction**~~ — **FIXED**: Added `extract_cost_candidates()` with RVG/GKG/EUR/Streitwert detection, stored in `cost_candidates` JSON column (`ingestion.py:749-793`, `database.py`).
+3. ~~🟢 **Email Ingestion**~~ — **FIXED**: Added `.eml` support with header parsing and thread detection via `parse_eml_file()` (`ingestion.py:796-838`).
 
 ### Next Layer: Medium Effort / High Value
 

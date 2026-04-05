@@ -70,6 +70,11 @@ class Document(Base):
         String, default="pending", nullable=False
     )  # pending, generated, failed, stale
 
+    # Extracted cost candidates (RVG, GKG, EUR amounts, Streitwert)
+    cost_candidates = Column(
+        JSON, nullable=True
+    )  # [{"type": "rvg_position", "value": "...", ...}]
+
     # Self-referential relationship for 'Russian Doll' nesting
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
 

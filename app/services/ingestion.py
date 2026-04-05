@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Document, OriginatorType, Case, CaseStatus
 from app.services.normalization import normalize_hm
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 # ---------------------------------------------------------------------------
@@ -325,6 +325,7 @@ CASE_ID_SCAN_LIMIT = 20000  # 20k chars max for case ID extraction
 ORIGINATOR_SCAN_LIMIT = 8000
 SENDER_SCAN_LIMIT = 8000
 SCHEDULE_SCAN_LIMIT = 5000
+COST_SCAN_LIMIT = 5000
 
 
 def extract_case_id(filename: str, content: str) -> str | None:
@@ -732,6 +733,105 @@ def extract_clean_title(filename: str, content: str = "") -> str:
     return normalize_hm(filename[:120])
 
 
+def is_valid_docling_output(content: str) -> bool:
+    """Check if Docling output is valid (not empty or overly repetitive)."""
+    if not content or not content.strip():
+        return False
+    non_whitespace = sum(1 for c in content if c not in " \t\n")
+    if non_whitespace < 10:
+        return False
+    lines = [l.strip() for l in content.split("\n") if l.strip()]
+    if len(lines) < 2:
+        return False
+    return True
+
+
+def extract_cost_candidates(content: str) -> list[dict]:
+    """Extract legal cost candidates from document content."""
+    candidates = []
+    snippet = (content or "")[:COST_SCAN_LIMIT]
+
+    rvg_pattern = re.compile(
+        r"\b(?:Nr?\.\s*\d+[A-Z]?\s+(?:VV\s+)?RVG|KV\s+GKG\s+Nr?\.\s*\d+)\b",
+        re.IGNORECASE,
+    )
+    for match in rvg_pattern.finditer(snippet):
+        candidates.append(
+            {
+                "type": "rvg_position",
+                "value": match.group(0),
+                "location": match.start(),
+            }
+        )
+
+    eur_pattern = re.compile(
+        r"(?:EUR|€)\s*([\d.]+,\d{2}|\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", re.IGNORECASE
+    )
+    for match in eur_pattern.finditer(snippet):
+        value = match.group(0)
+        if value.lower() not in ["eur", "€"]:
+            candidates.append(
+                {
+                    "type": "amount",
+                    "value": value,
+                    "location": match.start(),
+                }
+            )
+
+    streitwert_pattern = re.compile(
+        r"Streitwert[:\s]+(?:EUR|€)?\s*([\d.]+,\d{2}|\d+)\s*,?\s*[,.]", re.IGNORECASE
+    )
+    for match in streitwert_pattern.finditer(snippet):
+        candidates.append(
+            {
+                "type": "streitwert",
+                "value": match.group(0).rstrip(",. "),
+                "location": match.start(),
+            }
+        )
+
+    return candidates
+
+
+def parse_eml_file(file_path: str) -> str:
+    """Parse .eml file and convert to markdown."""
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+    except Exception:
+        return "# Email\n\nUnable to parse email file."
+
+    parts = content.split("\n\n", 1)
+    headers = parts[0] if parts else ""
+    body = parts[1] if len(parts) > 1 else ""
+
+    from_email = re.search(r"^From:\s*(.+)$", headers, re.MULTILINE)
+    to_email = re.search(r"^To:\s*(.+)$", headers, re.MULTILINE)
+    subject = re.search(r"^Subject:\s*(.+)$", headers, re.MULTILINE)
+    date = re.search(r"^Date:\s*(.+)$", headers, re.MULTILINE)
+
+    in_reply_to = re.search(r"^In-Reply-To:\s*(.+)$", headers, re.MULTILINE)
+    references = re.search(r"^References:\s*(.+)$", headers, re.MULTILINE)
+
+    header_lines = []
+    if from_email:
+        header_lines.append(f"**From:** {from_email.group(1).strip()}")
+    if to_email:
+        header_lines.append(f"**To:** {to_email.group(1).strip()}")
+    if date:
+        header_lines.append(f"**Date:** {date.group(1).strip()}")
+    if subject:
+        header_lines.append(f"**Subject:** {subject.group(1).strip()}")
+
+    header_md = "\n".join(header_lines)
+
+    thread_info = ""
+    if in_reply_to or references:
+        thread_info = "\n\n---\n*This email is part of a thread*"
+
+    return f"# Email\n\n{header_md}\n\n---\n\n{body.strip()}{thread_info}"
+
+
 def compute_review_reasons(doc: Document) -> list[str]:
     """
     Compute a list of review reason codes based on which metadata fields
@@ -829,25 +929,40 @@ async def ingest_file(
 
     content_hash = sha256.hexdigest()
 
-    # 3. Convert to markdown with docling
+    # 3. Convert to markdown with docling (or parse .eml directly)
     markdown_content: str | None = None
     conversion_error: str | None = None
 
-    def convert_to_md(path: str) -> str:
-        conv = _get_converter()
-        result = conv.convert(path)
-        return result.document.export_to_markdown()
+    if ext == ".eml":
+        markdown_content = parse_eml_file(file_path)
+        conversion_error = None
+    else:
 
-    try:
-        markdown_content = await asyncio.wait_for(
-            asyncio.to_thread(convert_to_md, file_path), timeout=60.0
-        )
-        markdown_content = normalize_hm(markdown_content)
-    except asyncio.TimeoutError:
-        conversion_error = "Conversion timed out after 60 seconds"
-        markdown_content = f"Conversion failed: {conversion_error}"
-    except Exception as e:
-        conversion_error = str(e)
+        def convert_to_md(path: str) -> str:
+            conv = _get_converter()
+            result = conv.convert(path)
+            return result.document.export_to_markdown()
+
+        try:
+            markdown_content = await asyncio.wait_for(
+                asyncio.to_thread(convert_to_md, file_path), timeout=60.0
+            )
+            markdown_content = normalize_hm(markdown_content)
+        except asyncio.TimeoutError:
+            conversion_error = "Conversion timed out after 60 seconds"
+            markdown_content = f"Conversion failed: {conversion_error}"
+        except Exception as e:
+            conversion_error = str(e)
+            markdown_content = f"Conversion failed: {conversion_error}"
+
+        # 3b. Quality check: reject whitespace-only or repetitive content (skip for .eml)
+        if not is_valid_docling_output(markdown_content):
+            conversion_error = "Conversion produced invalid/empty content"
+            markdown_content = f"Conversion failed: {conversion_error}"
+
+    # 4. Heuristic metadata extraction
+    if not is_valid_docling_output(markdown_content):
+        conversion_error = "Conversion produced invalid/empty content"
         markdown_content = f"Conversion failed: {conversion_error}"
 
     # 4. Heuristic metadata extraction
@@ -856,6 +971,7 @@ async def ingest_file(
     extracted_date = extract_received_date(markdown_content, safe_filename)
     extracted_sender = extract_sender(markdown_content)
     extracted_title = extract_clean_title(safe_filename, markdown_content)
+    extracted_cost_candidates = extract_cost_candidates(markdown_content)
 
     # Prefer the explicitly provided case_id, fall back to extraction, default to triage
     final_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
@@ -907,6 +1023,9 @@ async def ingest_file(
         originator_type=extracted_originator,
         sender=extracted_sender,
         received_date=extracted_date,
+        cost_candidates=extracted_cost_candidates
+        if extracted_cost_candidates
+        else None,
     )
 
     # 6. Compute review reasons BEFORE persisting
