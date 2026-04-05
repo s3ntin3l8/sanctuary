@@ -513,6 +513,8 @@ async def upload_document(
         "case_id": doc.case_id,
         "parent_id": doc.parent_id,
         "title": doc.title,
+        "case_url": f"/cases/{doc.case_id}",
+        "doc_url": f"/document/{doc.id}",
     }
 
 

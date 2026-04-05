@@ -158,13 +158,13 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 
 #### Ingestion Pipeline Hardening
 
-1. 🔴 **Docling conversion timeout** — `ingest_file()` calls `asyncio.to_thread(convert_to_md)` with no timeout. A corrupt or complex PDF could hang indefinitely. Fix: wrap in `asyncio.wait_for(..., timeout=120)`.
+1. ~~🔴 **Docling conversion timeout**~~ — **FIXED**: Wrapped `asyncio.to_thread(convert_to_md)` in `asyncio.wait_for(..., timeout=60)` (`ingestion.py:834-839`).
 2. ~~🔴 **Fire-and-forget AI summary is fragile**~~ — **FIXED (Phase 1)**: Replaced `asyncio.create_task` with FastAPI `BackgroundTasks` via `trigger_summary_background()` (`ai_summary.py`, `actions.py`).
-3. 🟡 **No case_id existence validation** — `ingest_file()` accepts any string as `final_case_id` (line 848). If extraction produces a bogus case ID, document gets orphaned. Fix: query `Case` table; if not found, default to `_TRIAGE`.
-4. 🟡 **File path vs DB case_id inconsistency** — Directory uses `case_id or "_triage"` (lowercase, line 792) but DB uses `"_TRIAGE"` (uppercase, line 848). Fix: use `final_case_id` for directory path too.
+3. ~~🟡 **No case_id existence validation**~~ — **FIXED**: Added validation that queries Case table; if not found, creates new case with INTAKE status (`ingestion.py:856-862`).
+4. ~~🟡 **File path vs DB case_id inconsistency**~~ — **FIXED**: Uses `extract_case_id()` for preliminary path to match final_case_id logic (`ingestion.py:791-794`).
 5. ~~🟡 **AI summary model mismatch**~~ — **FIXED (Phase 1)**: Updated `MODEL` constant from `qwen2.5:7b` to `qwen3.5:9b` (`ai_summary.py:10`).
-6. 🟡 **Case_id scan limit on large files** — `extract_case_id()` scans full content with no limit. A 50MB PDF → 10MB+ markdown × 6 regex patterns could be slow. Fix: add reasonable cap (e.g., 20000 chars).
-7. 🟡 **Upload success response is generic** — Just "File ingested successfully" with no link to case stream. Fix: return case link and document ID.
+6. ~~🟡 **Case_id scan limit on large files**~~ — **FIXED**: Added `CASE_ID_SCAN_LIMIT = 20000` and applies truncation in `extract_case_id()` (`ingestion.py:324, 333`).
+7. ~~🟡 **Upload success response is generic**~~ — **FIXED**: Returns `case_url` and `doc_url` in JSON response (`actions.py:511-512`).
 8. 🟢 **No Docling output quality check** — If Docling returns mostly whitespace or repeated patterns, it's saved as valid content. Fix: add heuristic check (e.g., unique line ratio, minimum non-whitespace chars).
 
 #### Case Stream Improvements

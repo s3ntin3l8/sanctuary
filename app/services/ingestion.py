@@ -10,7 +10,7 @@ from typing import Optional
 from datetime import timedelta
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
-from app.models.database import Document, OriginatorType
+from app.models.database import Document, OriginatorType, Case, CaseStatus
 from app.services.normalization import normalize_hm
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx"}
@@ -318,10 +318,10 @@ HEADER_PREFIXES = (
 MAX_TITLE_LENGTH = 120
 
 # Snippet scan limits for heuristic extraction.
-# case_id scans full content (IDs can appear in headers, footers, or signatures).
+# case_id scans with a limit to prevent slow scans on large files.
 # originator/sender scan generous windows to catch metadata in longer docs.
 # schedule candidates already use a generous 5000-char window.
-CASE_ID_SCAN_LIMIT = 0  # 0 = no limit, scan full content
+CASE_ID_SCAN_LIMIT = 20000  # 20k chars max for case ID extraction
 ORIGINATOR_SCAN_LIMIT = 8000
 SENDER_SCAN_LIMIT = 8000
 SCHEDULE_SCAN_LIMIT = 5000
@@ -329,8 +329,12 @@ SCHEDULE_SCAN_LIMIT = 5000
 
 def extract_case_id(filename: str, content: str) -> str | None:
     """Try to extract a case ID from content first, then from filename as fallback."""
-    # Scan full content — case IDs can appear in headers, footers, or signatures
-    snippet = content or ""
+    # Scan with limit to prevent slow scans on large files
+    snippet = (
+        (content or "")[:CASE_ID_SCAN_LIMIT]
+        if CASE_ID_SCAN_LIMIT > 0
+        else (content or "")
+    )
     for pattern in CASE_ID_PATTERNS:
         match = pattern.search(snippet)
         if match:
@@ -789,7 +793,11 @@ async def ingest_file(
         )
 
     # 1. Ensure the destination directory exists
-    case_dir = os.path.join("./data", case_id or "_triage")
+    # Use case_id if provided, otherwise extract from content, default to _TRIAGE (matching final_case_id logic)
+    preliminary_case_id = (
+        case_id if case_id else (extract_case_id(safe_filename, "") or "_TRIAGE")
+    )
+    case_dir = os.path.join("./data", preliminary_case_id)
     os.makedirs(case_dir, exist_ok=True)
 
     # Secure the filename (basic safety)
@@ -831,8 +839,13 @@ async def ingest_file(
         return result.document.export_to_markdown()
 
     try:
-        markdown_content = await asyncio.to_thread(convert_to_md, file_path)
+        markdown_content = await asyncio.wait_for(
+            asyncio.to_thread(convert_to_md, file_path), timeout=60.0
+        )
         markdown_content = normalize_hm(markdown_content)
+    except asyncio.TimeoutError:
+        conversion_error = "Conversion timed out after 60 seconds"
+        markdown_content = f"Conversion failed: {conversion_error}"
     except Exception as e:
         conversion_error = str(e)
         markdown_content = f"Conversion failed: {conversion_error}"
@@ -846,6 +859,19 @@ async def ingest_file(
 
     # Prefer the explicitly provided case_id, fall back to extraction, default to triage
     final_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
+
+    # 4a. Validate case_id exists, create if not found
+    existing_case = db.get(Case, final_case_id)
+    if not existing_case:
+        db.add(
+            Case(
+                id=final_case_id,
+                title=f"Case {final_case_id}",
+                court_id="",
+                status=CaseStatus.INTAKE,
+            )
+        )
+        db.commit()
 
     # 4b. Validate parent_id exists before building the document
     if parent_id is not None:
