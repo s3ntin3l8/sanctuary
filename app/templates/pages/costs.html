@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}Legal Costs | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set header_title = "Legal Costs" %}
+{% set header_subtitle %}{{ costs_by_case|length }} Cases &middot; Total {{ format_eur(global_summary.total_gross) }}{% endset %}
+{% set header_actions %}
+<button
+    hx-get="/costs/new"
+    hx-target="#cost-form-container"
+    hx-swap="innerHTML"
+    class="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded transition-colors cursor-pointer">
+    + Add Cost
+</button>
+{% include "partials/header_controls.html" %}
+{% endset %}
+<section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+    {% include "partials/page_header.html" %}
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface pb-12">
+        <div class="p-8 max-w-7xl mx-auto space-y-8">
+
+            {# ── Cost Form Container ──────────────────────────────────────── #}
+            <div id="cost-form-container"></div>
+
+            {# ── Global Summary Strip ─────────────────────────────────────── #}
+            <div class="grid grid-cols-4 gap-4">
+                {# Total Costs #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-on-surface-variant/20"></div>
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Total Costs</p>
+                    <p class="text-2xl font-black text-on-surface font-mono">{{ format_eur(global_summary.total_gross) }}</p>
+                    <p class="text-[10px] text-on-surface-variant mt-1">Gross incl. VAT</p>
+                </div>
+
+                {# Paid #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-own"></div>
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Already Paid</p>
+                    <p class="text-2xl font-black text-originator-own font-mono">{{ format_eur(global_summary.total_paid) }}</p>
+                    <p class="text-[10px] text-on-surface-variant mt-1">Paid by us</p>
+                </div>
+
+                {# Outstanding #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-opposing"></div>
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Outstanding</p>
+                    <p class="text-2xl font-black text-originator-opposing font-mono">{{ format_eur(global_summary.total_outstanding) }}</p>
+                    <p class="text-[10px] text-on-surface-variant mt-1">Unpaid positions</p>
+                </div>
+
+                {# Reimbursable §91 ZPO #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Reimbursable</p>
+                    <p class="text-2xl font-black text-primary font-mono">{{ format_eur(global_summary.total_reimbursable) }}</p>
+                    <p class="text-[10px] text-on-surface-variant mt-1">Recoverable §91 ZPO</p>
+                </div>
+            </div>
+
+            {# ── Cost Alerts ───────────────────────────────────────────────── #}
+            {% if overdue_costs or upcoming_costs %}
+            <div class="space-y-4">
+                {% if overdue_costs %}
+                <div class="bg-error-container/20 border border-error/30 rounded-2xl p-5">
+                    <h3 class="text-[10px] font-bold text-error uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">warning</span>
+                        Overdue — {{ overdue_costs|length }} Position{{ 's' if overdue_costs|length != 1 }}
+                    </h3>
+                    <div class="space-y-2">
+                        {% for cost in overdue_costs %}
+                        <div class="flex items-center justify-between bg-surface-container/50 rounded-lg px-3 py-2">
+                            <div>
+                                <p class="text-xs font-bold text-on-surface">{{ cost.title }}</p>
+                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at.strftime('%b %d, %Y') }}</p>
+                            </div>
+                            <p class="text-sm font-black font-mono text-error">{{ format_eur(cost.amount_gross - cost.amount_paid) }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if upcoming_costs %}
+                <div class="bg-originator-opposing/10 border border-originator-opposing/20 rounded-2xl p-5">
+                    <h3 class="text-[10px] font-bold text-originator-opposing uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">schedule</span>
+                        Due Soon — {{ upcoming_costs|length }} Position{{ 's' if upcoming_costs|length != 1 }}
+                    </h3>
+                    <div class="space-y-2">
+                        {% for cost in upcoming_costs %}
+                        <div class="flex items-center justify-between bg-surface-container/50 rounded-lg px-3 py-2">
+                            <div>
+                                <p class="text-xs font-bold text-on-surface">{{ cost.title }}</p>
+                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at.strftime('%b %d, %Y') }}</p>
+                            </div>
+                            <p class="text-sm font-black font-mono text-originator-opposing">{{ format_eur(cost.amount_gross - cost.amount_paid) }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {# ── Per-Case Sections ─────────────────────────────────────────── #}
+            {% if costs_by_case %}
+            {% for case_id, data in costs_by_case.items() %}
+            {% set case    = data.case    %}
+            {% set costs   = data.costs   %}
+            {% set summary = data.summary %}
+            {% set sw      = data.streitwert %}
+            {% set meta    = status_meta[case.status] %}
+
+            <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
+                {# Case header bar #}
+                <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container-low flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <div>
+                            <a href="/cases/{{ case.id }}" class="text-sm font-black text-on-surface hover:text-primary transition-colors">{{ case.title }}</a>
+                            <p class="text-[10px] font-mono text-on-surface-variant">{{ case.id }}{% if case.court_id %} &middot; {{ case.court_id }}{% endif %}</p>
+                        </div>
+                        <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ meta.color }}">{{ meta.label }}</span>
+                    </div>
+                    <div class="flex items-center gap-6">
+                        {% if sw %}
+                        <div class="text-right">
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Value in Dispute</p>
+                            <p class="text-sm font-black font-mono text-on-surface">{{ format_eur(sw) }}</p>
+                        </div>
+                        {% endif %}
+                        <div class="text-right">
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Total</p>
+                            <p class="text-sm font-black font-mono text-on-surface">{{ format_eur(summary.total_gross) }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Outstanding</p>
+                            <p class="text-sm font-black font-mono {% if summary.total_outstanding > 0 %}text-originator-opposing{% else %}text-originator-own{% endif %}">{{ format_eur(summary.total_outstanding) }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">§91 ZPO</p>
+                            <p class="text-sm font-black font-mono text-primary">{{ format_eur(summary.total_reimbursable) }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {# Cost table #}
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="border-b border-outline-variant/10 bg-surface-container-low/50">
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Description / Position</th>
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Value in Dispute</th>
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
+                                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Status</th>
+                                <th class="px-4 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cost in costs %}
+                            {% include "partials/cost_row.html" %}
+                            {% endfor %}
+                        </tbody>
+                        {# Case subtotal row #}
+                        <tfoot>
+                            <tr class="border-t border-outline-variant/20 bg-surface-container-low/30">
+                                <td colspan="3" class="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Subtotal {{ case.id }}</td>
+                                <td class="px-4 py-3 text-right">
+                                    <p class="text-sm font-black font-mono text-on-surface">{{ format_eur(summary.total_gross) }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-right">
+                                    <p class="text-xs font-bold font-mono text-originator-own">{{ format_eur(summary.total_paid) }}</p>
+                                </td>
+                                <td colspan="2" class="px-4 py-3">
+                                    <span class="text-[10px] text-on-surface-variant">Reimbursable: <span class="text-primary font-bold">{{ format_eur(summary.total_reimbursable) }}</span></span>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+
+            {# ── Legal Cost Reference ─────────────────────────────────────── #}
+            <div class="bg-surface-container-low rounded-2xl border border-outline-variant/10 p-6">
+                <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">menu_book</span>
+                    Legal Cost Framework — Statutory Basis
+                </h3>
+                <div class="grid grid-cols-4 gap-4">
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold text-primary uppercase tracking-wider">RVG</p>
+                        <p class="text-xs text-on-surface-variant">Rechtsanwaltsvergütungsgesetz — Lawyer fees based on value in dispute and fee factor</p>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold text-originator-court uppercase tracking-wider">GKG</p>
+                        <p class="text-xs text-on-surface-variant">Gerichtskostengesetz — Court fees including advance court costs (KV 1210)</p>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">JVEG</p>
+                        <p class="text-xs text-on-surface-variant">Justizvergütungs- und -entschädigungsgesetz — Expert witnesses and witness compensation</p>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold text-originator-own uppercase tracking-wider">§91 ZPO</p>
+                        <p class="text-xs text-on-surface-variant">Cost allocation — Prevailing party is entitled to cost recovery (loser pays)</p>
+                    </div>
+                </div>
+            </div>
+
+            {% else %}
+            {% with
+                icon='payments',
+                title='No Cost Positions',
+                body='Cost positions will appear here once they are recorded via documents or manual entry.',
+                icon_wrapper_class='w-20 h-20 rounded-2xl bg-surface-container-high flex items-center justify-center mb-6',
+                icon_class='text-4xl text-outline'
+            %}
+                {% include "partials/empty_state.html" %}
+            {% endwith %}
+            {% endif %}
+
+        </div>
+    </div>
+</section>
+{% endblock %}

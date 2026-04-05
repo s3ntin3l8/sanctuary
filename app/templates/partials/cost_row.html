@@ -1,0 +1,86 @@
+{% set cat_meta = cost_category_meta[cost.category] %}
+{% set st_meta  = cost_status_meta[cost.status]    %}
+<tr id="cost-row-{{ cost.id }}" class="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors group">
+    {# Category #}
+    <td class="px-4 py-3 align-top">
+        <span class="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ cat_meta.color }}">{{ cat_meta.short }}</span>
+    </td>
+
+    {# Title + RVG position #}
+    <td class="px-4 py-3 align-top min-w-[200px]">
+        <p class="text-sm font-bold text-on-surface">{{ cost.title }}</p>
+        {% if cost.rvg_position %}
+        <p class="text-[10px] font-mono text-on-surface-variant mt-0.5">{{ cost.rvg_position }}</p>
+        {% endif %}
+        {% if cost.notes %}
+        <p class="text-[10px] text-on-surface-variant italic mt-1 max-w-xs">{{ cost.notes }}</p>
+        {% endif %}
+    </td>
+
+    {# Value in Dispute + Factor #}
+    <td class="px-4 py-3 align-top text-right whitespace-nowrap">
+        {% if cost.streitwert %}
+        <p class="text-xs font-mono text-on-surface-variant">{{ format_eur(cost.streitwert) }}</p>
+        {% if cost.gebuehren_faktor %}
+        <p class="text-[10px] text-on-surface-variant">× {{ "%.1f"|format(cost.gebuehren_faktor) }}</p>
+        {% endif %}
+        {% else %}
+        <span class="text-[10px] text-on-surface-variant">—</span>
+        {% endif %}
+    </td>
+
+    {# Net / VAT / Gross #}
+    <td class="px-4 py-3 align-top text-right whitespace-nowrap">
+        <p class="text-xs font-mono text-on-surface">{{ format_eur(cost.amount_gross) }}</p>
+        {% if cost.vat_rate > 0 %}
+        <p class="text-[10px] text-on-surface-variant">{{ format_eur(cost.amount_net) }} + {{ (cost.vat_rate * 100)|int }}% VAT</p>
+        {% else %}
+        <p class="text-[10px] text-on-surface-variant">no VAT</p>
+        {% endif %}
+    </td>
+
+    {# Paid / Reimbursed #}
+    <td class="px-4 py-3 align-top text-right whitespace-nowrap">
+        {% if cost.amount_paid > 0 %}
+        <p class="text-xs font-mono text-originator-own">{{ format_eur(cost.amount_paid) }}</p>
+        <p class="text-[10px] text-on-surface-variant">paid</p>
+        {% elif cost.amount_reimbursed > 0 %}
+        <p class="text-xs font-mono text-primary">{{ format_eur(cost.amount_reimbursed) }}</p>
+        <p class="text-[10px] text-on-surface-variant">reimbursed</p>
+        {% else %}
+        <span class="text-[10px] text-on-surface-variant">—</span>
+        {% endif %}
+    </td>
+
+    {# Status #}
+    <td class="px-4 py-3 align-top">
+        <span class="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ st_meta.color }}">{{ st_meta.label }}</span>
+        {% if not cost.is_reimbursable %}
+        <p class="text-[9px] text-on-surface-variant mt-1">not reimbursable</p>
+        {% endif %}
+    </td>
+
+    {# Actions #}
+    <td class="px-4 py-3 align-top">
+        <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            {% if cost.status == 'offen' or cost.status == 'teilweise' %}
+            <button
+                hx-post="/costs/{{ cost.id }}/pay"
+                hx-target="#cost-row-{{ cost.id }}"
+                hx-swap="outerHTML"
+                class="text-[10px] font-bold text-originator-own bg-originator-own/10 hover:bg-originator-own/20 px-2 py-1 rounded transition-colors">
+                Mark Paid
+            </button>
+            {% endif %}
+            {% if cost.is_reimbursable and cost.status not in ('erstattet',) %}
+            <button
+                hx-post="/costs/{{ cost.id }}/reimburse"
+                hx-target="#cost-row-{{ cost.id }}"
+                hx-swap="outerHTML"
+                class="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors">
+                Mark Reimbursed
+            </button>
+            {% endif %}
+        </div>
+    </td>
+</tr>

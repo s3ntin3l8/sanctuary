@@ -1,0 +1,29 @@
+<div class="flex items-center gap-3">
+    <button
+        type="button"
+        class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
+        onclick="window.showShellPlaceholder && window.showShellPlaceholder('Search')"
+        title="Search">
+        search
+    </button>
+    <div class="relative flex items-center">
+        <button
+            type="button"
+            class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
+            onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))"
+            title="Notifications">
+            notifications
+        </button>
+        {% if notification_count > 0 %}
+        <span class="absolute -top-1 -right-1 w-2 h-2 bg-error rounded-full border border-surface"></span>
+        {% endif %}
+    </div>
+    <button
+        type="button"
+        data-theme-toggle
+        class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"
+        onclick="window.toggleSiteTheme && window.toggleSiteTheme()"
+        title="Toggle theme">
+        <span data-theme-icon>dark_mode</span>
+    </button>
+</div>

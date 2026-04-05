@@ -1,0 +1,42 @@
+{# Condensed Triage Card — 2-row compact design #}
+<div id="triage-card-{{ doc.id }}"
+     class="bg-surface-container rounded-2xl shadow-sm border border-l-4 overflow-hidden group cursor-pointer transition-all border-outline-variant/10 hover:bg-surface-container-low"
+     style="border-left-color: {{ stripe_color }};">
+
+    {# Clickable summary row #}
+    <div class="px-4 py-3"
+         hx-get="/document/{{ doc.id }}"
+         hx-target="#triage-doc-pane"
+         hx-swap="innerHTML">
+        {# Row 1: Title + Date + Resolve #}
+        <div class="flex items-center justify-between gap-3 mb-2">
+            <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-[{{ stripe_color }}] transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
+            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
+            <button class="inline-flex items-center justify-center text-[14px] text-outline hover:text-primary transition-colors shrink-0"
+                    title="Mark as resolved"
+                    hx-post="/triage/resolve/{{ doc.id }}"
+                    hx-target="#triage-wrapper-{{ doc.id }}"
+                    hx-swap="outerHTML"
+                    @click.stop="">
+                <span class="material-symbols-outlined" data-loading-idle>check_circle</span>
+                <span class="material-symbols-outlined htmx-indicator animate-spin" data-loading-active>progress_activity</span>
+            </button>
+        </div>
+
+        {# Row 2: Review chips + Provenance #}
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-1">
+                {% for reason in (doc.review_reasons or []) %}
+                {% set fm = review_field_labels.get(reason, {}) %}
+                <span class="inline-flex items-center gap-0.5 text-[8px] bg-warning-container/30 text-warning px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight">
+                    <span class="material-symbols-outlined text-[9px]">{{ fm.icon or 'warning' }}</span>
+                    {{ fm.label or reason }}
+                </span>
+                {% endfor %}
+            </div>
+            <p class="text-[9px] text-on-surface-variant font-medium truncate whitespace-nowrap text-right">
+                {% if doc.sender %}{{ doc.sender }}{% else %}{{ doc.case_id or 'Unassigned' }}{% endif %}
+            </p>
+        </div>
+    </div>
+</div>

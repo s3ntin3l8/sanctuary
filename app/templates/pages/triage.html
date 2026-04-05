@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Triage Center | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set counts_by_type = namespace(court=0, opposing=0, own=0, unknown=0) %}
+{% for doc in documents %}
+    {% if doc.originator_type and doc.originator_type.value == 'court' %}{% set counts_by_type.court = counts_by_type.court + 1 %}
+    {% elif doc.originator_type and doc.originator_type.value == 'opposing' %}{% set counts_by_type.opposing = counts_by_type.opposing + 1 %}
+    {% elif doc.originator_type and doc.originator_type.value == 'own' %}{% set counts_by_type.own = counts_by_type.own + 1 %}
+    {% else %}{% set counts_by_type.unknown = counts_by_type.unknown + 1 %}
+    {% endif %}
+{% endfor %}
+{% set header_title = "Triage Center" %}
+{% set header_subtitle = "Global Inbox &mdash; Documents Requiring Review" %}
+{% set header_actions %}
+    {% if documents %}
+    <span class="bg-error-container/30 text-error text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+        {{ documents|length }} Pending
+    </span>
+    {% else %}
+    <span class="bg-primary-container/20 text-on-primary-container text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+        All Clear
+    </span>
+    {% endif %}
+    {% include "partials/header_controls.html" %}
+{% endset %}
+
+<div x-data="{ filter: 'all' }" class="flex-1 flex flex-col overflow-hidden">
+
+    {% include "partials/page_header.html" %}
+
+    {# Top Bar: Stats + Filter (full width) #}
+    <div class="border-b border-outline-variant/10 bg-surface-container-low">
+        <div class="px-8 py-4 border-b border-outline-variant/10">
+            <div class="grid grid-cols-5 gap-4">
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total Pending</span>
+                    <span class="text-2xl font-black font-mono text-on-surface tracking-tighter">{{ documents|length }}</span>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-originator-court inline-block"></span>Court
+                    </span>
+                    <span class="text-2xl font-black font-mono text-originator-court tracking-tighter">{{ counts_by_type.court }}</span>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-originator-opposing inline-block"></span>Opposing
+                    </span>
+                    <span class="text-2xl font-black font-mono text-originator-opposing tracking-tighter">{{ counts_by_type.opposing }}</span>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-originator-own inline-block"></span>Own Counsel
+                    </span>
+                    <span class="text-2xl font-black font-mono text-originator-own tracking-tighter">{{ counts_by_type.own }}</span>
+                </div>
+                <div class="flex flex-col gap-0.5">
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-outline inline-block"></span>Unknown
+                    </span>
+                    <span class="text-2xl font-black font-mono text-on-surface-variant tracking-tighter">{{ counts_by_type.unknown }}</span>
+                </div>
+            </div>
+        </div>
+
+        {# Filter Controls #}
+        <div class="px-8 py-3 flex items-center gap-2 flex-wrap">
+            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mr-1">Filter:</span>
+
+            <button @click="filter = 'all'"
+                    :class="filter === 'all' ? 'bg-primary text-on-primary shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">inbox</span>All
+            </button>
+
+            {% if counts_by_type.court > 0 %}
+            <button @click="filter = 'court'"
+                    :class="filter === 'court' ? 'bg-originator-court text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">gavel</span>Court
+            </button>
+            {% endif %}
+
+            {% if counts_by_type.opposing > 0 %}
+            <button @click="filter = 'opposing'"
+                    :class="filter === 'opposing' ? 'bg-originator-opposing text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">warning</span>Opposing
+            </button>
+            {% endif %}
+
+            {% if counts_by_type.own > 0 %}
+            <button @click="filter = 'own'"
+                    :class="filter === 'own' ? 'bg-originator-own text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">shield</span>Own Counsel
+            </button>
+            {% endif %}
+
+            {% if counts_by_type.unknown > 0 %}
+            <button @click="filter = 'unknown'"
+                    :class="filter === 'unknown' ? 'bg-surface-container-highest text-on-surface shadow-sm ring-1 ring-outline-variant/20' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">help_outline</span>Unknown
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if documents %}
+    {# Two-Column Split: List (38%) + Detail (62%) #}
+    <div class="flex-1 flex overflow-hidden bg-surface">
+        {# Left: Card List #}
+        <div class="w-[38%] min-w-[340px] border-r border-outline-variant/10 overflow-y-auto custom-scrollbar">
+            <div id="triage-feed" class="p-4 space-y-2">
+                {% for doc in documents %}
+                {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+                {% set stripe_icon  = originator_icons.get(doc.originator_type, 'help_outline') %}
+                {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
+
+                <div id="triage-wrapper-{{ doc.id }}" x-show="filter === 'all' || filter === '{{ doc_type }}'">
+                    {% include "partials/triage_card.html" %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        {# Right: Document Detail Pane #}
+        <div class="flex-1 bg-surface-container-low/40 overflow-hidden">
+            <div id="triage-doc-pane" class="h-full overflow-y-auto custom-scrollbar flex items-center justify-center">
+                {% with
+                    icon='description',
+                    title='Select a Document',
+                    body='Click a document in the list to view its details, AI summary, and promotion options.',
+                    icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
+                    icon_class='text-2xl text-outline'
+                %}
+                    {% include "partials/empty_state.html" %}
+                {% endwith %}
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+
+            {# Empty State — Full Width #}
+            <div class="flex-1 flex items-center justify-center">
+                {% with
+                    icon='check_circle',
+                    title='Triage Queue Is Clear',
+                    body='All ingested documents have complete metadata. New documents flagged during ingestion will appear here.',
+                    icon_wrapper_class='w-16 h-16 bg-primary-container/20 rounded-2xl flex items-center justify-center mb-5',
+                    icon_class='text-primary text-3xl'
+                %}
+                    {% include "partials/empty_state.html" %}
+                {% endwith %}
+            </div>
+
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

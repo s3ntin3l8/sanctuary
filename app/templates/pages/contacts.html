@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Contacts | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set header_title = "Contacts" %}
+{% set header_subtitle = "Relationship Intelligence Hub" %}
+{% set header_actions %}{% include "partials/header_controls.html" %}{% endset %}
+<section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+    {% include "partials/page_header.html" %}
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface">
+        <div class="p-8 max-w-7xl mx-auto space-y-8">
+            {# Summary Strip: 4 Metrics #}
+            <div class="grid grid-cols-4 gap-4">
+                {# Total Contacts #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-court"></div>
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Total Contacts</div>
+                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.total }}</div>
+                </div>
+
+                {# Court Contacts #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-court"></div>
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Court / Judges</div>
+                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.court }}</div>
+                </div>
+
+                {# Opposing Counsel #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-opposing"></div>
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Opposing Parties</div>
+                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.opposing }}</div>
+                </div>
+
+                {# Own Counsel #}
+                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-own"></div>
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Own Counsel</div>
+                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.own }}</div>
+                </div>
+            </div>
+
+            {# Two-Column Layout: Contacts List + Detail Panel #}
+            <div class="grid grid-cols-12 gap-6" x-data="{ filter: 'all', search: '', activeContact: null }" @hx:load="$watch('activeContact', () => {})">
+                {# Left Panel: Contact List #}
+                <div class="col-span-5">
+                    <div class="bg-surface-container rounded-2xl border border-outline-variant/10 shadow-sm overflow-hidden flex flex-col h-full">
+                        {# Search and Filter Bar #}
+                        <div class="px-6 py-4 border-b border-outline-variant/10 space-y-4">
+                            {# Search Input #}
+                            <input
+                                type="text"
+                                x-model="search"
+                                placeholder="Search contacts..."
+                                class="w-full px-4 py-2 bg-surface rounded-lg border border-outline-variant/20 text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary"
+                            />
+
+                            {# Filter Tabs #}
+                            <div class="flex gap-2">
+                                <button
+                                    @click="filter = 'all'"
+                                    :class="filter === 'all' ? 'bg-primary text-on-primary' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
+                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
+                                >
+                                    All
+                                </button>
+                                <button
+                                    @click="filter = 'court'"
+                                    :class="filter === 'court' ? 'bg-originator-court text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
+                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
+                                >
+                                    Court
+                                </button>
+                                <button
+                                    @click="filter = 'opposing'"
+                                    :class="filter === 'opposing' ? 'bg-originator-opposing text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
+                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
+                                >
+                                    Opposing
+                                </button>
+                                <button
+                                    @click="filter = 'own'"
+                                    :class="filter === 'own' ? 'bg-originator-own text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
+                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
+                                >
+                                    Own Counsel
+                                </button>
+                            </div>
+                        </div>
+
+                        {# Contact List #}
+                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                            {% if contacts %}
+                                <div class="divide-y divide-outline-variant/10">
+                                    {% for contact in contacts %}
+                                        {% set filter_type = 'court' if contact.originator_type == 'COURT' else ('opposing' if contact.originator_type == 'OPPOSING' else ('own' if contact.originator_type == 'OWN' else 'unknown')) %}
+                                        {% set show = (filter == 'all' or filter == filter_type) and (contact.name|lower).find(search|lower) >= 0 %}
+                                        <div
+                                            x-show="{{ show|lower }}"
+                                            x-transition
+                                            @click="activeContact = '{{ contact.name|e }}';"
+                                            hx-get="/contacts/{{ contact.name|urlencode }}"
+                                            hx-target="#contact-detail"
+                                            hx-swap="innerHTML"
+                                            :class="activeContact === '{{ contact.name|e }}' ? 'bg-primary/10 border-l-2 border-primary' : 'hover:bg-surface-bright'"
+                                            class="px-6 py-4 cursor-pointer border-l-2 border-transparent transition-all relative overflow-hidden"
+                                        >
+                                            <div class="absolute top-0 left-0 w-1 h-full" :style="'background-color: ' + (activeContact === '{{ contact.name|e }}' ? '' : '{{ originator_colors.get(contact.originator_type, '#64748b') }}')"></div>
+                                            <div class="flex items-start justify-between">
+                                                <div class="flex-1 min-w-0">
+                                                    <h3 class="font-bold text-on-surface truncate">{{ contact.name }}</h3>
+                                                    <div class="flex gap-2 mt-2 flex-wrap">
+                                                        {% if contact.originator_type == 'COURT' %}
+                                                            <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-originator-court/20 text-originator-court">Court</span>
+                                                        {% elif contact.originator_type == 'OPPOSING' %}
+                                                            <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-originator-opposing/20 text-originator-opposing">Opposing</span>
+                                                        {% elif contact.originator_type == 'OWN' %}
+                                                            <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-originator-own/20 text-originator-own">Own Counsel</span>
+                                                        {% endif %}
+                                                        {% if contact.needs_review_count > 0 %}
+                                                            <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-warning/20 text-warning">{{ contact.needs_review_count }} Review</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="text-[11px] text-on-surface-variant mt-2 space-y-1">
+                                                <div>{{ contact.doc_count }} document{{ 's' if contact.doc_count != 1 else '' }} · {{ contact.case_ids|length }} case{{ 's' if contact.case_ids|length != 1 else '' }}</div>
+                                                <div class="text-[9px]">Last: {{ contact.last_contact|format_relative_time }}</div>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {% with
+                                    icon='person',
+                                    title='No Contacts Yet',
+                                    body='Contacts will appear here once documents are ingested.',
+                                    icon_wrapper_class='w-16 h-16 rounded-2xl bg-surface-container-high flex items-center justify-center mb-4',
+                                    icon_class='text-3xl text-outline'
+                                %}
+                                    {% include "partials/empty_state.html" %}
+                                {% endwith %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                {# Right Panel: Contact Detail #}
+                <div class="col-span-7">
+                    <div id="contact-detail" class="bg-surface-container rounded-2xl border border-outline-variant/10 shadow-sm overflow-hidden h-full">
+                        {% with
+                            icon='person',
+                            title='Select a Contact',
+                            body='Click a contact to view their document history and relationship details.',
+                            icon_wrapper_class='w-20 h-20 rounded-2xl bg-surface-container-high flex items-center justify-center mb-6',
+                            icon_class='text-4xl text-outline'
+                        %}
+                            {% include "partials/empty_state.html" %}
+                        {% endwith %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
