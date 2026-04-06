@@ -9,6 +9,30 @@
 {% set header_back_title = "Back to Case Directory" %}
 {% set header_class = "relative" %}
 {% set header_actions %}{% include "partials/header_controls.html" %}{% endset %}
+{% set case_status_meta = status_meta[case_status] %}
+{% set secondary_status %}
+    <div class="flex items-center gap-4 text-[10px]">
+        <div class="flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full {{ case_status_meta.dot }}"></span>
+            <span class="font-semibold {{ case_status_meta.color }}">{{ case_status_meta.label }}</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-1.5">
+            <span class="text-originator-opposing font-bold">{{ review_docs|length }}</span>
+            <span class="text-on-surface-variant">Pending</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-1.5">
+            <span class="text-on-surface font-bold">{{ documents|length }}</span>
+            <span class="text-on-surface-variant">Docs</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-1.5">
+            <span class="text-originator-court font-bold">{{ upcoming_deadlines|length + upcoming_hearings|length }}</span>
+            <span class="text-on-surface-variant">Upcoming</span>
+        </div>
+    </div>
+{% endset %}
 {% set secondary_identity %}
     {% if court_id %}
     <p class="text-xs font-mono text-on-surface-variant uppercase tracking-tight">COURT ID: <span class="text-on-surface font-bold">{{ court_id }}</span></p>
@@ -32,10 +56,6 @@
     <a :class="activeSection === 'entities' ? 'text-primary border-b-2 border-primary pb-1' : 'hover:text-primary'"
        href="#section-entities"
        @click.prevent="scrollToSection('entities')">Entities</a>
-{% endset %}
-{% set case_status_meta = status_meta[case_status] %}
-{% set secondary_status %}
-    <span class="{{ case_status_meta.color }} text-[10px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider">{{ case_status_meta.label }}</span>
 {% endset %}
 <div x-data="{
         activeDoc: null,
@@ -68,14 +88,17 @@
 
             this.activeSection = current;
         }
-    }" class="flex-1 flex overflow-hidden w-full relative">
+    }" class="flex-1 flex flex-col overflow-hidden w-full relative">
+    {% include "partials/page_header.html" %}
+
+    {% include "partials/secondary_header.html" %}
+
+    <div class="flex flex-1 overflow-hidden">
     <section :class="activeDoc ? 'w-[47%] min-w-[500px]' : 'flex-1'"
         class="border-r border-outline-variant/10 flex flex-col overflow-hidden flex-1"
         x-init="$nextTick(() => { $el.classList.add('transition-[width]', 'duration-300', 'ease-in-out'); updateActiveSection(); })">
-        {% include "partials/page_header.html" %}
 
         <div id="stream-scroll" @scroll.throttle.100ms="updateActiveSection()" class="flex-1 overflow-y-auto custom-scrollbar bg-surface relative scroll-smooth">
-            {% include "partials/secondary_header.html" %}
 
             <!-- Review Section (DB-driven) -->
             <div id="section-review" class="p-8 bg-surface-container-low/40 border-b border-outline-variant/10 border-l-4 border-l-transparent transition-colors duration-300" style="scroll-margin-top: 48px;"
@@ -118,11 +141,12 @@
                     {% set doc_stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set doc_stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
                     {% set is_last = loop.last %}
-                    <div class="relative mb-8 cursor-pointer group" @click="activeDoc = '{{ doc.id }}'"
+                    <div class="relative mb-8 cursor-pointer group" 
+                        @click="activeDoc = '{{ doc.id }}'; $el.classList.add('border-primary', 'bg-primary/10'); document.querySelectorAll('[id^=doc-card-]').forEach(c => { if (c !== $el) c.classList.remove('border-primary', 'bg-primary/10') })"
                         hx-get="/document/{{ doc.id }}" hx-target="#document-pane" hx-swap="innerHTML">
                         <div class="absolute left-0 translate-x-[-8px] top-6 w-[1px] bg-outline-variant/30"
                              {% if is_last %}style="bottom: 0;"{% else %}style="bottom: -32px;"{% endif %}></div>
-                        <div class="bg-surface-container p-5 rounded-2xl border transition-all shadow-sm border-l-4"
+                        <div id="doc-card-{{ doc.id }}" class="bg-surface-container p-5 rounded-2xl border transition-all shadow-sm border-l-4"
                             style="border-left-color: {{ doc_stripe_color }};"
                             :class="activeDoc === '{{ doc.id }}' ? 'border-primary bg-primary/10' : 'border-outline-variant/10 hover:bg-surface-container-low'">
                             <div class="flex justify-between items-start mb-2">
@@ -164,12 +188,13 @@
                         {% if doc.children %}
                         {% for child in doc.children %}
                         {% set child_stripe_color = originator_colors.get(child.originator_type, '#64748b') %}
-                        <div class="ml-12 mt-6 relative cursor-pointer group" @click.stop="activeDoc = '{{ child.id }}'"
+                        <div class="ml-12 mt-6 relative cursor-pointer group" 
+                            @click.stop="activeDoc = '{{ child.id }}'; document.querySelectorAll('[id^=doc-card-]').forEach(c => c.classList.remove('border-primary', 'bg-primary/10')); $el.querySelector('[id^=doc-card-]').classList.add('border-primary', 'bg-primary/10')"
                             hx-get="/document/{{ child.id }}" hx-target="#document-pane" hx-swap="innerHTML">
                             <svg class="absolute left-[-32px] top-[-30px] w-8 h-8" viewBox="0 0 32 32" fill="none">
                                 <path d="M0 0 L0 24 L24 24" stroke="currentColor" stroke-width="1" class="text-outline-variant/30" fill="none"/>
                             </svg>
-                            <div class="bg-surface-container p-5 rounded-2xl border border-outline-variant/10 transition-all shadow-sm border-l-4"
+                            <div id="doc-card-{{ child.id }}" class="bg-surface-container p-5 rounded-2xl border transition-all shadow-sm border-l-4"
                                 style="border-left-color: {{ child_stripe_color }};"
                                 :class="activeDoc === '{{ child.id }}' ? 'border-primary bg-primary/10' : 'hover:bg-surface-container-low'">
                                 <div class="flex justify-between items-start mb-2">
@@ -434,6 +459,7 @@
                 {% include "partials/empty_state.html" %}
             {% endwith %}
         </div>
+    </div>
     </div>
 </div>
 {% endblock %}

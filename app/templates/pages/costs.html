@@ -18,46 +18,38 @@
 <section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
+    {# Secondary Status Bar #}
+    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm text-on-surface">payments</span>
+            <span class="text-[10px] font-bold text-on-surface">{{ format_eur(global_summary.total_gross) }}</span>
+            <span class="text-[10px] text-on-surface-variant font-medium">Total</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-own"></span>
+            <span class="text-[10px] font-bold text-originator-own">{{ format_eur(global_summary.total_paid) }}</span>
+            <span class="text-[10px] text-on-surface-variant">Paid</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
+            <span class="text-[10px] font-bold text-originator-opposing">{{ format_eur(global_summary.total_outstanding) }}</span>
+            <span class="text-[10px] text-on-surface-variant">Outstanding</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-primary"></span>
+            <span class="text-[10px] font-bold text-primary">{{ format_eur(global_summary.total_reimbursable) }}</span>
+            <span class="text-[10px] text-on-surface-variant">Reimbursable</span>
+        </div>
+    </div>
+
     <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface pb-12">
         <div class="p-8 max-w-7xl mx-auto space-y-8">
 
             {# ── Cost Form Container ──────────────────────────────────────── #}
             <div id="cost-form-container"></div>
-
-            {# ── Global Summary Strip ─────────────────────────────────────── #}
-            <div class="grid grid-cols-4 gap-4">
-                {# Total Costs #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-on-surface-variant/20"></div>
-                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Total Costs</p>
-                    <p class="text-2xl font-black text-on-surface font-mono">{{ format_eur(global_summary.total_gross) }}</p>
-                    <p class="text-[10px] text-on-surface-variant mt-1">Gross incl. VAT</p>
-                </div>
-
-                {# Paid #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-own"></div>
-                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Already Paid</p>
-                    <p class="text-2xl font-black text-originator-own font-mono">{{ format_eur(global_summary.total_paid) }}</p>
-                    <p class="text-[10px] text-on-surface-variant mt-1">Paid by us</p>
-                </div>
-
-                {# Outstanding #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-opposing"></div>
-                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Outstanding</p>
-                    <p class="text-2xl font-black text-originator-opposing font-mono">{{ format_eur(global_summary.total_outstanding) }}</p>
-                    <p class="text-[10px] text-on-surface-variant mt-1">Unpaid positions</p>
-                </div>
-
-                {# Reimbursable §91 ZPO #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
-                    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Reimbursable</p>
-                    <p class="text-2xl font-black text-primary font-mono">{{ format_eur(global_summary.total_reimbursable) }}</p>
-                    <p class="text-[10px] text-on-surface-variant mt-1">Recoverable §91 ZPO</p>
-                </div>
-            </div>
 
             {# ── Cost Alerts ───────────────────────────────────────────────── #}
             {% if overdue_costs or upcoming_costs %}

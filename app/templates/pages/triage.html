@@ -48,15 +48,6 @@
             </label>
         </div>
     </div>
-    {% if documents %}
-    <span class="bg-error-container/30 text-error text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-        {{ documents|length }} Pending
-    </span>
-    {% else %}
-    <span class="bg-primary-container/20 text-on-primary-container text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-        All Clear
-    </span>
-    {% endif %}
     {% include "partials/header_controls.html" %}
 {% endset %}
 
