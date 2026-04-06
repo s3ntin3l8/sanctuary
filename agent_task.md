@@ -95,6 +95,7 @@ Must remain `sticky top-0`. Hierarchy: Case Title (XL Bold) → Court ID (Mono) 
 - **Code quality fixes** — Removed duplicate imports in `pages.py`; removed duplicate `resolved_by_month` computation in `case_stream`; removed dead code in `upload_form`; removed duplicate `htmx:afterSwap` listener in `base.html`; removed duplicate `trigger_summary_background` definition in `ai_summary.py`; added missing `templates` import in `actions.py`
 
 ### Post-Phase 1 Fixes
+- **UI Standardization** — Fixed Jinja scoping bugs in `search.html` and `entities.html` where header variables were ignored. Added uniform Secondary Status Bars to these pages. Standardized `p-8 max-w-7xl mx-auto space-y-6` content wrappers across list pages.
 - **Hide _TRIAGE from case directory** — Filtered from `/cases` route to exclude virtual inbox from case list
 - **Deadlines/hearings side-by-side** — Grid changed to `lg:grid-cols-2` for screens ≥1024px
 
