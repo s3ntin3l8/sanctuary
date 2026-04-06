@@ -14,6 +14,40 @@
 {% set header_title = "Triage Center" %}
 {% set header_subtitle = "Global Inbox &mdash; Documents Requiring Review" %}
 {% set header_actions %}
+    <div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="relative">
+        <button @click="filterOpen = !filterOpen"
+            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg border border-outline-variant/20 hover:border-primary/40">
+            <span class="material-symbols-outlined text-sm">filter_list</span>
+            <span>Filter</span>
+        </button>
+        <div x-show="filterOpen" @click.outside="filterOpen = false"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 translate-y-1"
+            x-transition:enter-end="opacity-100 translate-y-0"
+            class="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/10 p-3 z-50">
+            <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Originator</p>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="court" class="accent-originator-court rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-court"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Court</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="opposing" class="accent-originator-opposing rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Opposing Counsel</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="own" class="accent-originator-own rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-own"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Own Counsel</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="unknown" class="accent-outline rounded">
+                <span class="w-2 h-2 rounded-full bg-outline"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Unknown</span>
+            </label>
+        </div>
+    </div>
     {% if documents %}
     <span class="bg-error-container/30 text-error text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
         {{ documents|length }} Pending
@@ -26,86 +60,36 @@
     {% include "partials/header_controls.html" %}
 {% endset %}
 
-<div x-data="{ filter: 'all' }" class="flex-1 flex flex-col overflow-hidden">
-
+<div class="flex-1 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
-    {# Top Bar: Stats + Filter (full width) #}
-    <div class="border-b border-outline-variant/10 bg-surface-container-low">
-        <div class="px-8 py-4 border-b border-outline-variant/10">
-            <div class="grid grid-cols-5 gap-4">
-                <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total Pending</span>
-                    <span class="text-2xl font-black font-mono text-on-surface tracking-tighter">{{ documents|length }}</span>
-                </div>
-                <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-originator-court inline-block"></span>Court
-                    </span>
-                    <span class="text-2xl font-black font-mono text-originator-court tracking-tighter">{{ counts_by_type.court }}</span>
-                </div>
-                <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-originator-opposing inline-block"></span>Opposing
-                    </span>
-                    <span class="text-2xl font-black font-mono text-originator-opposing tracking-tighter">{{ counts_by_type.opposing }}</span>
-                </div>
-                <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-originator-own inline-block"></span>Own Counsel
-                    </span>
-                    <span class="text-2xl font-black font-mono text-originator-own tracking-tighter">{{ counts_by_type.own }}</span>
-                </div>
-                <div class="flex flex-col gap-0.5">
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-outline inline-block"></span>Unknown
-                    </span>
-                    <span class="text-2xl font-black font-mono text-on-surface-variant tracking-tighter">{{ counts_by_type.unknown }}</span>
-                </div>
-            </div>
+    {# Secondary Status Bar (like timeline) #}
+    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm text-error">pending_actions</span>
+            <span class="text-[10px] font-bold text-on-surface">{{ documents|length }}</span>
+            <span class="text-[10px] text-on-surface-variant font-medium">Pending Review</span>
         </div>
-
-        {# Filter Controls #}
-        <div class="px-8 py-3 flex items-center gap-2 flex-wrap">
-            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mr-1">Filter:</span>
-
-            <button @click="filter = 'all'"
-                    :class="filter === 'all' ? 'bg-primary text-on-primary shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
-                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
-                <span class="material-symbols-outlined text-[11px]">inbox</span>All
-            </button>
-
-            {% if counts_by_type.court > 0 %}
-            <button @click="filter = 'court'"
-                    :class="filter === 'court' ? 'bg-originator-court text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
-                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
-                <span class="material-symbols-outlined text-[11px]">gavel</span>Court
-            </button>
-            {% endif %}
-
-            {% if counts_by_type.opposing > 0 %}
-            <button @click="filter = 'opposing'"
-                    :class="filter === 'opposing' ? 'bg-originator-opposing text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
-                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
-                <span class="material-symbols-outlined text-[11px]">warning</span>Opposing
-            </button>
-            {% endif %}
-
-            {% if counts_by_type.own > 0 %}
-            <button @click="filter = 'own'"
-                    :class="filter === 'own' ? 'bg-originator-own text-white shadow-sm' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
-                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
-                <span class="material-symbols-outlined text-[11px]">shield</span>Own Counsel
-            </button>
-            {% endif %}
-
-            {% if counts_by_type.unknown > 0 %}
-            <button @click="filter = 'unknown'"
-                    :class="filter === 'unknown' ? 'bg-surface-container-highest text-on-surface shadow-sm ring-1 ring-outline-variant/20' : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant'"
-                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full transition-colors cursor-pointer flex items-center gap-1">
-                <span class="material-symbols-outlined text-[11px]">help_outline</span>Unknown
-            </button>
-            {% endif %}
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-court"></span>
+            <span class="text-[10px] font-bold text-originator-court">{{ counts_by_type.court }}</span>
+            <span class="text-[10px] text-on-surface-variant">Court</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
+            <span class="text-[10px] font-bold text-originator-opposing">{{ counts_by_type.opposing }}</span>
+            <span class="text-[10px] text-on-surface-variant">Opposing</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-own"></span>
+            <span class="text-[10px] font-bold text-originator-own">{{ counts_by_type.own }}</span>
+            <span class="text-[10px] text-on-surface-variant">Own Counsel</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-outline"></span>
+            <span class="text-[10px] font-bold text-on-surface-variant">{{ counts_by_type.unknown }}</span>
+            <span class="text-[10px] text-on-surface-variant">Unknown</span>
         </div>
     </div>
 
@@ -120,7 +104,8 @@
                 {% set stripe_icon  = originator_icons.get(doc.originator_type, 'help_outline') %}
                 {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
 
-                <div id="triage-wrapper-{{ doc.id }}" x-show="filter === 'all' || filter === '{{ doc_type }}'">
+                <div id="triage-wrapper-{{ doc.id }}" 
+                     x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (unknown && '{{ doc_type }}' === 'unknown')">
                     {% include "partials/triage_card.html" %}
                 </div>
                 {% endfor %}
