@@ -45,6 +45,7 @@ from app.services.ingestion import (
     compute_review_reasons,
 )
 from app.services.ai_summary import summarize_document, trigger_summary_background
+from app.services.embeddings import trigger_embedding_background
 
 router = APIRouter()
 
@@ -476,6 +477,7 @@ async def upload_document(
 
             try:
                 trigger_summary_background(doc.id, background_tasks)
+                trigger_embedding_background(doc.id, background_tasks)
             except Exception:
                 pass
 

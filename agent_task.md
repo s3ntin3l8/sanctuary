@@ -175,8 +175,9 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 ### Heavier Bets
 
 #### 12. Semantic Search with SQLite-Vec
-- `content_embedding` column exists on `Document` — generate embeddings via Ollama (`nomic-embed-text`)
-- `/search?q=...` with similarity ranking, highlights/context
+- ~~`content_embedding` column exists on `Document` — generate embeddings via Ollama (`nomic-embed-text`)~~
+- ~~`/search?q=...` with similarity ranking, highlights/context~~
+- **FIXED**: Added background task to generate Ollama embeddings and configured `/api/search` and `/search` to use `sqlite-vec` similarity search with a graceful fallback to text search.
 
 #### 12a. Global Search Experience
 - **FIXED**: Basic search with `/api/search` JSON endpoint, `/search` results page, header autocomplete dropdown
@@ -185,10 +186,11 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - PDF viewer in document detail page, `/api/documents/{id}/pdf`, PDF.js with text-layer highlighting
 
 #### 14. Global Entity Pivot
-- Cross-document aggregation for people, deadlines, expenses
-- Extraction pipeline, entity index table, `/entities` with filtering
+- ~~Cross-document aggregation for people, deadlines, expenses~~
+- ~~Extraction pipeline, entity index table, `/entities` with filtering~~
 - **IMPLEMENTED (per-case)**: Entity table in database, extraction on ingestion (persons, financial, legal categories), Entities tab in case stream shows grouped entities
-- **INVESTIGATE**: Global `/entities` page across all cases — aggregation, filtering, search
+- ~~**INVESTIGATE**: Global `/entities` page across all cases — aggregation, filtering, search~~
+- **FIXED**: Implemented Global `/entities` pivot page to aggregate and rank extracted persons, organizations, and legal categories across all cases.
 
 #### 14a. Jurisdiction-Agnostic Cost System
 - `jurisdiction` field on `Case` (`DE`, `UK`, `US`, `OTHER`)
@@ -202,9 +204,10 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 - Preference storage in SQLite, show/hide controls for cards and panels
 
 #### 16b. Configurable Review Triggers
-- Make confidence threshold configurable (low only vs low+medium)
-- Store preference in UserSettings
-- Add UI toggle in triage for users to control
+- ~~Make confidence threshold configurable (low only vs low+medium)~~
+- ~~Store preference in UserSettings~~
+- ~~Add UI toggle in triage for users to control~~
+- **FIXED**: Added `min_review_confidence` to `UserSettings` JSON and updated `compute_review_reasons` to respect this setting during triage evaluation.
 
 #### 16a. AI Review and Approval States
 - Track `generated`, `reviewed`, `stale`, `failed`
@@ -294,6 +297,7 @@ app/
   services/
     __init__.py                  — Package marker
     ai_summary.py                — Ollama-powered 3-bullet summaries (qwen3.5:9b, BackgroundTasks)
+    embeddings.py                — Background semantic embeddings via Ollama (nomic-embed-text)
     ingestion.py                 — Docling ingestion pipeline (hardened, enhanced extraction)
     normalization.py             — H&M normalization utility
   templates/
@@ -320,6 +324,7 @@ app/
       timeline.html              — Cross-case chronology (striptags on content)
       costs.html                 — Legal costs: metrics, alerts, tables, add cost form
       contacts.html              — Relationship Intelligence Hub
+      entities.html              — Global entities pivot (Persons, Organizations, Legal Categories)
       search.html                — Full-page search results (documents, cases, contacts)
 static/
   input.css                      — Tailwind source: light @theme + .dark overrides

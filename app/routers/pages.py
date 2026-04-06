@@ -459,6 +459,29 @@ async def case_cost_form(request: Request, case_id: str, db: Session = Depends(g
     )
 
 
+@router.get("/entities")
+async def global_entities(request: Request, db: Session = Depends(get_db)):
+    all_entities = db.query(Entity).all()
+    grouped_entities = {}
+    for entity in all_entities:
+        if entity.type not in grouped_entities:
+            grouped_entities[entity.type] = {}
+        if entity.name not in grouped_entities[entity.type]:
+            grouped_entities[entity.type][entity.name] = 0
+        grouped_entities[entity.type][entity.name] += 1
+    
+    # Sort groups by count descending
+    for type_key in grouped_entities:
+        grouped_entities[type_key] = dict(sorted(grouped_entities[type_key].items(), key=lambda item: item[1], reverse=True))
+    
+    return render_page(
+        request,
+        "pages/entities.html",
+        db=db,
+        grouped_entities=grouped_entities,
+    )
+
+
 @router.get("/contacts")
 async def contacts(request: Request, db: Session = Depends(get_db)):
     # Fetch all documents with non-null sender
@@ -676,22 +699,51 @@ async def search_api(
     if not q or len(q) < 2:
         return {"documents": [], "cases": [], "contacts": [], "total": 0}
 
-    from sqlalchemy import or_
+    from sqlalchemy import or_, text
 
     q_like = f"%{q}%"
 
-    docs = (
-        db.query(Document)
-        .filter(
-            or_(
-                Document.title.ilike(q_like),
-                Document.sender.ilike(q_like),
-                Document.content.ilike(q_like),
+    docs = None
+    try:
+        import httpx
+        import json
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.post(
+                "http://localhost:11434/api/embeddings",
+                json={"model": "nomic-embed-text", "prompt": q}
             )
+            resp.raise_for_status()
+            emb = resp.json().get("embedding")
+            if emb:
+                stmt = text("""
+                    SELECT id FROM documents 
+                    WHERE content_embedding IS NOT NULL 
+                    ORDER BY vec_distance_L2(vec_f32(json_extract(content_embedding, '$')), vec_f32(:emb))
+                    LIMIT :limit
+                """)
+                res = db.execute(stmt, {"emb": json.dumps(emb), "limit": limit}).fetchall()
+                doc_ids = [r[0] for r in res]
+                if doc_ids:
+                    # Maintain distance order
+                    docs_unordered = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    doc_map = {d.id: d for d in docs_unordered}
+                    docs = [doc_map[i] for i in doc_ids if i in doc_map]
+    except Exception:
+        pass
+
+    if docs is None:
+        docs = (
+            db.query(Document)
+            .filter(
+                or_(
+                    Document.title.ilike(q_like),
+                    Document.sender.ilike(q_like),
+                    Document.content.ilike(q_like),
+                )
+            )
+            .limit(limit)
+            .all()
         )
-        .limit(limit)
-        .all()
-    )
 
     cases = (
         db.query(Case)
@@ -733,7 +785,7 @@ async def search_page(
     db: Session = Depends(get_db),
 ):
     """Full search results page."""
-    from sqlalchemy import or_
+    from sqlalchemy import or_, text
 
     if not q or len(q) < 2:
         return render_page(
@@ -749,17 +801,46 @@ async def search_page(
 
     q_like = f"%{q}%"
 
-    docs = (
-        db.query(Document)
-        .filter(
-            or_(
-                Document.title.ilike(q_like),
-                Document.sender.ilike(q_like),
-                Document.content.ilike(q_like),
+    docs = None
+    try:
+        import httpx
+        import json
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.post(
+                "http://localhost:11434/api/embeddings",
+                json={"model": "nomic-embed-text", "prompt": q}
             )
+            resp.raise_for_status()
+            emb = resp.json().get("embedding")
+            if emb:
+                stmt = text("""
+                    SELECT id FROM documents 
+                    WHERE content_embedding IS NOT NULL 
+                    ORDER BY vec_distance_L2(vec_f32(json_extract(content_embedding, '$')), vec_f32(:emb))
+                    LIMIT 50
+                """)
+                res = db.execute(stmt, {"emb": json.dumps(emb)}).fetchall()
+                doc_ids = [r[0] for r in res]
+                if doc_ids:
+                    # Maintain distance order
+                    docs_unordered = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    doc_map = {d.id: d for d in docs_unordered}
+                    docs = [doc_map[i] for i in doc_ids if i in doc_map]
+    except Exception:
+        pass
+
+    if docs is None:
+        docs = (
+            db.query(Document)
+            .filter(
+                or_(
+                    Document.title.ilike(q_like),
+                    Document.sender.ilike(q_like),
+                    Document.content.ilike(q_like),
+                )
+            )
+            .all()
         )
-        .all()
-    )
 
     cases = (
         db.query(Case)

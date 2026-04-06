@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}The Sanctuary | Global Entities{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col h-full overflow-hidden">
+    {% include 'partials/page_header.html' with context %}
+    
+    <div class="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div class="max-w-7xl mx-auto space-y-8">
+            <header class="mb-8">
+                <h1 class="text-3xl font-black tracking-tighter text-on-surface uppercase mb-2">Global Entity Pivot</h1>
+                <p class="text-sm font-medium text-on-surface-variant">Cross-case aggregation of extracted persons, organizations, and legal concepts.</p>
+            </header>
+
+            {% if grouped_entities %}
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {% for type, items in grouped_entities.items() %}
+                        <div class="bg-surface-container rounded-2xl border border-outline-variant/20 p-6 shadow-sm">
+                            <h3 class="text-xs font-black tracking-widest text-primary uppercase mb-4">{{ type.value|replace('_', ' ') }}</h3>
+                            <ul class="space-y-3">
+                                {% for entity, count in items.items() %}
+                                    <li class="flex items-center justify-between text-sm">
+                                        <span class="font-bold text-on-surface">{{ entity }}</span>
+                                        <span class="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded bg-surface-container-high text-[10px] font-bold text-on-surface-variant">{{ count }}</span>
+                                    </li>
+                                {% endfor %}
+                                {% if items|length == 0 %}
+                                    <li class="text-xs text-on-surface-variant italic">No entities extracted.</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                {% include 'partials/empty_state.html' with context %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
