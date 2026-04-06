@@ -907,6 +907,11 @@ def compute_review_reasons(doc: Document) -> list[str]:
     # Title is the raw filename — still counts as "needs review" for renaming
     if doc.title and len(doc.title) < 10:
         reasons.append("title_too_short")
+    # Check extraction confidence - medium or low confidence triggers review
+    if doc.extraction_confidence:
+        for field, conf in doc.extraction_confidence.items():
+            if conf in ("low", "medium"):
+                reasons.append(f"low_confidence_{field}")
     return reasons
 
 

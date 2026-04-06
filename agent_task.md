@@ -201,6 +201,11 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 #### 16. Customizable Dashboard
 - Preference storage in SQLite, show/hide controls for cards and panels
 
+#### 16b. Configurable Review Triggers
+- Make confidence threshold configurable (low only vs low+medium)
+- Store preference in UserSettings
+- Add UI toggle in triage for users to control
+
 #### 16a. AI Review and Approval States
 - Track `generated`, `reviewed`, `stale`, `failed`
 - Human approval visible before AI output treated as accepted work

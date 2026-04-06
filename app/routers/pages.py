@@ -307,7 +307,8 @@ async def triage_center(
     needs_review: bool | None = None,
     search: str | None = None,
 ):
-    query = db.query(Document).filter(Document.case_id == "_TRIAGE")
+    # Show all docs that need review (not just _TRIAGE)
+    query = db.query(Document).filter(Document.needs_review == True)
 
     if originator:
         try:
