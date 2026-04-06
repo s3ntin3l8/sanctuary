@@ -441,81 +441,82 @@ async def mark_cost_reimbursed(
 async def upload_document(
     request: Request,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     case_id: Optional[str] = Form(None),
     parent_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
-    if file.filename:
+    if not files or all(not f.filename for f in files):
+        if request.headers.get("hx-request"):
+            return HTMLResponse(
+                '<div class="p-3 text-sm text-error">No files selected.</div>',
+                status_code=400,
+            )
+        return {"error": "No files selected."}, 400
+
+    results = []
+    success_count = 0
+    error_count = 0
+
+    for file in files:
+        if not file.filename:
+            continue
+
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            if request.headers.get("hx-request"):
-                return HTMLResponse(
-                    f"<div class=\"p-3 text-sm text-error\">Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}</div>",
-                    status_code=400,
+            error_count += 1
+            results.append(
+                f"<div class=\"p-2 text-xs text-error\">'{file.filename}': Unsupported file type '{ext}'</div>"
+            )
+            continue
+
+        try:
+            doc = await ingest_file(file, case_id, db, parent_id)
+            success_count += 1
+
+            try:
+                trigger_summary_background(doc.id, background_tasks)
+            except Exception:
+                pass
+
+            if doc.content and "Conversion failed:" in doc.content:
+                results.append(
+                    f'<div class="p-2 text-xs text-warning">⚠️ {file.filename}: conversion had issues</div>'
                 )
-            return {
-                "error": f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-            }, 400
+            else:
+                results.append(
+                    f'<div class="p-2 text-xs text-green-400">✓ {file.filename}</div>'
+                )
 
-    try:
-        doc = await ingest_file(file, case_id, db, parent_id)
-    except HTTPException as e:
-        if request.headers.get("hx-request"):
-            return HTMLResponse(
-                f'<div class="p-3 text-sm text-error">{e.detail}</div>',
-                status_code=e.status_code,
+        except HTTPException as e:
+            error_count += 1
+            results.append(
+                f'<div class="p-2 text-xs text-error">✗ {file.filename}: {e.detail}</div>'
             )
-        return {"error": e.detail}, e.status_code
-    except IngestionError as e:
-        if request.headers.get("hx-request"):
-            return HTMLResponse(
-                f'<div class="p-3 text-sm text-error">{e.message}</div>',
-                status_code=500,
+        except Exception as e:
+            error_count += 1
+            results.append(
+                f'<div class="p-2 text-xs text-error">✗ {file.filename}: Upload failed</div>'
             )
-        return {"error": e.message}, 500
-    except Exception:
-        if request.headers.get("hx-request"):
-            return HTMLResponse(
-                '<div class="p-3 text-sm text-error">An unexpected error occurred during upload.</div>',
-                status_code=500,
-            )
-        return {"error": "An unexpected error occurred during upload."}, 500
 
-    # Trigger AI summary via BackgroundTasks (safer)
-    try:
-        trigger_summary_background(doc.id, background_tasks)
-    except Exception:
-        pass
-
-    if doc.content and "Conversion failed:" in doc.content:
-        warning_msg = f"File saved but conversion failed: {doc.content}"
-        if request.headers.get("hx-request"):
-            return HTMLResponse(
-                f'<div class="p-3 text-sm text-warning">{warning_msg}</div>',
-                status_code=200,
-            )
-        return {
-            "message": warning_msg,
-            "doc_id": doc.id,
-            "case_id": doc.case_id,
-            "parent_id": doc.parent_id,
-            "title": doc.title,
-        }
+    if success_count == 0 and error_count > 0:
+        return HTMLResponse(
+            f"<div class='space-y-1'>{''.join(results)}</div>",
+            status_code=400,
+        )
 
     if request.headers.get("hx-request"):
+        summary = f"<div class='p-2 text-xs font-bold text-on-surface'>{success_count} uploaded, {error_count} failed</div>"
         return HTMLResponse(
-            '<div class="p-3 text-sm text-on-surface-variant">File ingested successfully</div>',
+            f"<div class='space-y-1'>{summary}{''.join(results)}</div>",
+            status_code=200 if success_count > 0 else 400,
         )
+
     return {
-        "message": "File ingested successfully",
-        "doc_id": doc.id,
-        "case_id": doc.case_id,
-        "parent_id": doc.parent_id,
-        "title": doc.title,
-        "case_url": f"/cases/{doc.case_id}",
-        "doc_url": f"/document/{doc.id}",
-    }
+        "success": success_count,
+        "errors": error_count,
+        "results": results,
+    }, 200 if success_count > 0 else 400
 
 
 @router.post("/document/{doc_id}/promote/deadline")
@@ -792,6 +793,45 @@ async def regenerate_summary(
     )
 
 
+@router.post("/document/{doc_id}/approve-summary")
+async def approve_summary(
+    request: Request,
+    doc_id: int,
+    action: str = "approve",
+    db: Session = Depends(get_db),
+):
+    """Approve or reject an AI summary. Action: 'approve' or 'reject'."""
+    from datetime import datetime
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if action == "approve":
+        doc.ai_summary_status = "approved"
+        doc.ai_summary_approved_at = datetime.now()
+    elif action == "reject":
+        doc.ai_summary_status = "pending"
+        doc.ai_summary_approved_at = None
+    else:
+        raise HTTPException(
+            status_code=400, detail="Invalid action. Use 'approve' or 'reject'"
+        )
+
+    db.commit()
+
+    extraction_context = build_document_extraction_context(db, doc)
+    return render_page(
+        request,
+        "partials/document_details.html",
+        db=db,
+        doc_id=doc_id,
+        doc=doc,
+        format_upcoming_datetime=format_upcoming_datetime,
+        **extraction_context,
+    )
+
+
 async def render_document_extraction_panel(request: Request, doc_id: int, db: Session):
     from app.helpers import format_form_datetime, format_upcoming_datetime
 
@@ -805,4 +845,136 @@ async def render_document_extraction_panel(request: Request, doc_id: int, db: Se
         format_upcoming_datetime=format_upcoming_datetime,
         format_form_datetime=format_form_datetime,
         **extraction_context,
+    )
+
+
+@router.post("/document/{doc_id}/reingest")
+async def reingest_document(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Re-run extraction on an existing document."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=400, detail="Original file not found")
+
+    from app.services.ingestion import (
+        extract_case_id,
+        extract_originator,
+        extract_received_date,
+        extract_sender,
+        extract_cost_candidates,
+        extract_legal_categories,
+    )
+    from app.services.normalization import normalize_hm
+
+    try:
+        with open(doc.file_path, "rb") as f:
+            content = f.read()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Cannot read original file")
+
+    markdown_content = content.decode("utf-8", errors="ignore")
+
+    (case_id, case_id_conf) = extract_case_id(doc.title, markdown_content)
+    (originator_type, originator_conf) = extract_originator(doc.title, markdown_content)
+    (received_date, date_conf) = extract_received_date(markdown_content, doc.title)
+    (sender, sender_conf) = extract_sender(markdown_content)
+    cost_candidates = extract_cost_candidates(markdown_content)
+    legal_cats = extract_legal_categories(markdown_content)
+
+    doc.originator_type = originator_type
+    doc.sender = sender
+    doc.received_date = received_date
+    doc.cost_candidates = cost_candidates if cost_candidates else None
+
+    doc.extraction_confidence = {
+        "sender": sender_conf,
+        "date": date_conf,
+        "case_id": case_id_conf,
+        "originator": originator_conf,
+    }
+
+    doc.ai_summary_status = "pending"
+    doc.ai_summary = None
+    doc.ai_summary_created_at = None
+
+    db.commit()
+
+    extraction_context = build_document_extraction_context(db, doc)
+    return render_page(
+        request,
+        "partials/document_details.html",
+        db=db,
+        doc_id=doc_id,
+        doc=doc,
+        format_upcoming_datetime=format_upcoming_datetime,
+        **extraction_context,
+    )
+
+
+@router.post("/cases/{case_id}/reingest-all")
+async def reingest_case_documents(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Re-run extraction on all documents in a case."""
+    docs = db.query(Document).filter(Document.case_id == case_id).all()
+    if not docs:
+        raise HTTPException(status_code=404, detail="No documents found for case")
+
+    from app.services.ingestion import (
+        extract_case_id,
+        extract_originator,
+        extract_received_date,
+        extract_sender,
+        extract_cost_candidates,
+    )
+
+    reingested_count = 0
+    for doc in docs:
+        if not doc.file_path or not os.path.exists(doc.file_path):
+            continue
+
+        try:
+            with open(doc.file_path, "rb") as f:
+                content = f.read()
+            markdown_content = content.decode("utf-8", errors="ignore")
+
+            (case_id, case_id_conf) = extract_case_id(doc.title, markdown_content)
+            (originator_type, originator_conf) = extract_originator(
+                doc.title, markdown_content
+            )
+            (received_date, date_conf) = extract_received_date(
+                markdown_content, doc.title
+            )
+            (sender, sender_conf) = extract_sender(markdown_content)
+            cost_candidates = extract_cost_candidates(markdown_content)
+
+            doc.originator_type = originator_type
+            doc.sender = sender
+            doc.received_date = received_date
+            doc.cost_candidates = cost_candidates if cost_candidates else None
+
+            doc.extraction_confidence = {
+                "sender": sender_conf,
+                "date": date_conf,
+                "case_id": case_id_conf,
+                "originator": originator_conf,
+            }
+
+            doc.ai_summary_status = "pending"
+            reingested_count += 1
+        except Exception:
+            continue
+
+    db.commit()
+
+    return HTMLResponse(
+        f"<div class='p-3 text-sm text-on-surface'>Re-ingested {reingested_count} documents</div>",
     )

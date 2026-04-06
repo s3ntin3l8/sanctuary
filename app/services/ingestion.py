@@ -335,33 +335,33 @@ SCHEDULE_SCAN_LIMIT = 5000
 COST_SCAN_LIMIT = 5000
 
 
-def extract_case_id(filename: str, content: str) -> str | None:
-    """Try to extract a case ID from content first, then from filename as fallback."""
-    # Scan with limit to prevent slow scans on large files
-    snippet = (
-        (content or "")[:CASE_ID_SCAN_LIMIT]
-        if CASE_ID_SCAN_LIMIT > 0
-        else (content or "")
-    )
+def extract_case_id(filename: str, content: str) -> tuple[str | None, str]:
+    """Try to extract a case ID from content first, then from filename as fallback. Returns (case_id, confidence)."""
+    snippet = (content or "")[:CASE_ID_SCAN_LIMIT]
+
+    # 1. Try content first - HIGH confidence if found
     for pattern in CASE_ID_PATTERNS:
         match = pattern.search(snippet)
         if match:
-            return match.group(1).upper()
-    # Fallback: check filename with primary patterns
+            return (match.group(1).upper(), "high")
+
+    # 2. Fallback: check filename with primary patterns - MEDIUM confidence
     for pattern in CASE_ID_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return match.group(1).upper()
-    # Final fallback: check filename with broader patterns
+            return (match.group(1).upper(), "medium")
+
+    # 3. Final fallback: check filename with broader patterns - LOW confidence
     for pattern in FILENAME_CASE_ID_PATTERNS:
         match = pattern.search(filename)
         if match:
-            return match.group(1).upper()
-    return None
+            return (match.group(1).upper(), "low")
+
+    return (None, "low")
 
 
-def extract_originator(filename: str, content: str) -> OriginatorType:
-    """Classify originator based on weighted keyword matching."""
+def extract_originator(filename: str, content: str) -> tuple[OriginatorType, str]:
+    """Classify originator based on weighted keyword matching. Returns (type, confidence)."""
     combined = (filename + " " + (content or "")[:ORIGINATOR_SCAN_LIMIT]).lower()
     court_score = sum(weight for kw, weight in COURT_KEYWORDS.items() if kw in combined)
     opposing_score = sum(
@@ -371,12 +371,21 @@ def extract_originator(filename: str, content: str) -> OriginatorType:
 
     best = max(court_score, opposing_score, own_score)
     if best == 0:
-        return OriginatorType.UNKNOWN
+        return (OriginatorType.UNKNOWN, "low")
     if court_score == best:
-        return OriginatorType.COURT
+        confidence = (
+            "high" if court_score > 3 else ("medium" if court_score > 1 else "low")
+        )
+        return (OriginatorType.COURT, confidence)
     if opposing_score == best:
-        return OriginatorType.OPPOSING
-    return OriginatorType.OWN
+        confidence = (
+            "high"
+            if opposing_score > 3
+            else ("medium" if opposing_score > 1 else "low")
+        )
+        return (OriginatorType.OPPOSING, confidence)
+    confidence = "high" if own_score > 3 else ("medium" if own_score > 1 else "low")
+    return (OriginatorType.OWN, confidence)
 
 
 def _parse_date_string(date_str: str):
@@ -422,36 +431,37 @@ def _parse_date_string(date_str: str):
     return None
 
 
-def extract_received_date(content: str, filename: str = ""):
+def extract_received_date(
+    content: str, filename: str = ""
+) -> tuple[datetime | None, str]:
     """Try to extract a date from document content, with filename fallback.
 
-    Prefers dates found in the first 1000 characters (header region) over
-    dates deeper in the document, which are more likely to be from quoted
-    prior correspondence or referenced cases.
+    Returns (date, confidence). Prefers dates found in the first 1000 characters
+    (header region) over dates deeper in the document.
     """
     from datetime import datetime as dt
 
     snippet = content or ""
 
-    # 1. Try header region first (first 1000 chars) — most likely the actual document date
+    # 1. Try header region first (first 1000 chars) — HIGH confidence
     header_snippet = snippet[:1000]
     for pattern in DATE_PATTERNS:
         match = pattern.search(header_snippet)
         if match:
             parsed = _parse_date_string(match.group(1))
             if parsed:
-                return parsed
+                return (parsed, "high")
 
-    # 2. Fall back to broader scan if nothing found in header
+    # 2. Fall back to broader scan — MEDIUM confidence
     full_snippet = snippet[:3000]
     for pattern in DATE_PATTERNS:
         match = pattern.search(full_snippet)
         if match:
             parsed = _parse_date_string(match.group(1))
             if parsed:
-                return parsed
+                return (parsed, "medium")
 
-    # 3. Try German long form: DD. Month YYYY (e.g. "5. Januar 2024")
+    # 3. Try German long form — MEDIUM confidence
     german_match = GERMAN_LONG_DATE_PATTERN.search(full_snippet)
     if german_match:
         day = int(german_match.group(1))
@@ -460,59 +470,57 @@ def extract_received_date(content: str, filename: str = ""):
         month = GERMAN_MONTHS.get(month_name)
         if month:
             try:
-                return dt(year, month, day)
+                return (dt(year, month, day), "medium")
             except ValueError:
                 pass
 
-    # 4. Try absolute date pattern as fallback
+    # 4. Try absolute date pattern as fallback — LOW confidence
     absolute_match = ABSOLUTE_DATE_PATTERN.search(full_snippet)
     if absolute_match:
         parsed = _parse_candidate_date(absolute_match.group(1))
         if parsed:
-            return parsed
+            return (parsed, "low")
 
-    # 5. Fallback: check filename for date patterns
+    # 5. Fallback: check filename for date patterns — LOW confidence
     if filename:
         for pattern in FILENAME_DATE_PATTERNS:
             match = pattern.search(filename)
             if match:
                 date_str = match.group(1)
-                # Handle YYYYMMDD compact format
                 if re.match(r"^\d{8}$", date_str):
                     try:
-                        return dt.strptime(date_str, "%Y%m%d")
+                        return (dt.strptime(date_str, "%Y%m%d"), "low")
                     except ValueError:
                         pass
                 parsed = _parse_date_string(date_str)
                 if parsed:
-                    return parsed
+                    return (parsed, "low")
 
-    return None
+    return (None, "low")
 
 
-def extract_sender(content: str) -> str | None:
-    """Try to extract a sender name from content."""
+def extract_sender(content: str) -> tuple[str | None, str]:
+    """Try to extract a sender name from content. Returns (sender, confidence)."""
     snippet = (content or "")[:SENDER_SCAN_LIMIT]
 
-    # 1. Try explicit sender patterns first (From:, Von:, etc.)
+    # 1. Try explicit sender patterns first (From:, Von:, etc.) - HIGH confidence
     for pattern in SENDER_PATTERNS:
         match = pattern.search(snippet)
         if match:
             sender = match.group(1).strip()
-            # Filter out empty or too-short matches
             if len(sender) >= 3:
-                return sender
+                return (sender, "high")
 
-    # 2. Try signature block patterns at end of document
+    # 2. Try signature block patterns at end of document - MEDIUM confidence
     tail = (content or "")[-2000:]
     for pattern in SIGNATURE_PATTERNS:
         match = pattern.search(tail)
         if match:
             sender = match.group(1).strip()
             if len(sender) >= 3:
-                return sender
+                return (sender, "medium")
 
-    return None
+    return (None, "low")
 
 
 def _parse_candidate_date(raw_value: str):
@@ -1093,12 +1101,22 @@ async def ingest_file(
         markdown_content = f"Conversion failed: {conversion_error}"
 
     # 4. Heuristic metadata extraction
-    extracted_case_id = extract_case_id(safe_filename, markdown_content)
-    extracted_originator = extract_originator(safe_filename, markdown_content)
-    extracted_date = extract_received_date(markdown_content, safe_filename)
-    extracted_sender = extract_sender(markdown_content)
+    extracted_case_id, case_id_conf = extract_case_id(safe_filename, markdown_content)
+    extracted_originator, originator_conf = extract_originator(
+        safe_filename, markdown_content
+    )
+    extracted_date, date_conf = extract_received_date(markdown_content, safe_filename)
+    extracted_sender, sender_conf = extract_sender(markdown_content)
     extracted_title = extract_clean_title(safe_filename, markdown_content)
     extracted_cost_candidates = extract_cost_candidates(markdown_content)
+
+    # Build confidence dict
+    extraction_confidence = {
+        "sender": sender_conf,
+        "date": date_conf,
+        "case_id": case_id_conf,
+        "originator": originator_conf,
+    }
 
     # Prefer the explicitly provided case_id, fall back to extraction, default to triage
     final_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
@@ -1153,6 +1171,7 @@ async def ingest_file(
         cost_candidates=extracted_cost_candidates
         if extracted_cost_candidates
         else None,
+        extraction_confidence=extraction_confidence,
     )
 
     # 6. Compute review reasons BEFORE persisting

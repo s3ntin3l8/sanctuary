@@ -24,6 +24,15 @@ class CaseStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
+class Jurisdiction(str, enum.Enum):
+    """Case jurisdiction for cost system."""
+
+    DE = "de"  # German (RVG/GKG)
+    UK = "uk"  # UK
+    US = "us"  # US
+    OTHER = "other"
+
+
 class OriginatorType(str, enum.Enum):
     """Maps to the border-l-4 originator stripes from GEMINI.md §4."""
 
@@ -68,12 +77,20 @@ class Document(Base):
     ai_summary_created_at = Column(DateTime, nullable=True)
     ai_summary_status = Column(
         String, default="pending", nullable=False
-    )  # pending, generated, failed, stale
+    )  # pending, generated, failed, stale, approved
+    ai_summary_approved_at = Column(
+        DateTime, nullable=True
+    )  # timestamp when human approved
 
     # Extracted cost candidates (RVG, GKG, EUR amounts, Streitwert)
     cost_candidates = Column(
         JSON, nullable=True
     )  # [{"type": "rvg_position", "value": "...", ...}]
+
+    # Extraction confidence scores (high/medium/low per field)
+    extraction_confidence = Column(
+        JSON, nullable=True
+    )  # {"sender": "high", "date": "medium", "case_id": "high", "originator": "low"}
 
     # Self-referential relationship for 'Russian Doll' nesting
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
@@ -91,6 +108,7 @@ class Case(Base):
     title = Column(String, nullable=False)
     court_id = Column(String, nullable=True)  # Official docket ID
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
+    jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
 
