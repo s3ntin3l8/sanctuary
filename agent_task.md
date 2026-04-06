@@ -187,6 +187,8 @@ Prioritization rule: prefer low-effort / low-complexity items with clear user im
 #### 14. Global Entity Pivot
 - Cross-document aggregation for people, deadlines, expenses
 - Extraction pipeline, entity index table, `/entities` with filtering
+- **IMPLEMENTED (per-case)**: Entity table in database, extraction on ingestion (persons, financial, legal categories), Entities tab in case stream shows grouped entities
+- **INVESTIGATE**: Global `/entities` page across all cases — aggregation, filtering, search
 
 #### 14a. Jurisdiction-Agnostic Cost System
 - `jurisdiction` field on `Case` (`DE`, `UK`, `US`, `OTHER`)

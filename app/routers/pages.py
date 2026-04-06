@@ -32,6 +32,8 @@ from app.models.database import (
     CostStatus,
     Deadline,
     Document,
+    Entity,
+    EntityType,
     Hearing,
     LegalCost,
     OriginatorType,
@@ -246,6 +248,27 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
             "summary": build_cost_summary(case_costs_list, CostStatus),
         }
 
+    # Load case entities grouped by type
+    entities_raw = db.query(Entity).filter(Entity.case_id == case_id).all()
+    entities = {
+        "persons": [],
+        "organizations": [],
+        "dates": [],
+        "financial": [],
+        "legal_categories": [],
+    }
+    for e in entities_raw:
+        if e.type == EntityType.PERSON:
+            entities["persons"].append(e)
+        elif e.type == EntityType.ORGANIZATION:
+            entities["organizations"].append(e)
+        elif e.type == EntityType.DATE:
+            entities["dates"].append(e)
+        elif e.type == EntityType.FINANCIAL:
+            entities["financial"].append(e)
+        elif e.type == EntityType.LEGAL_CATEGORY:
+            entities["legal_categories"].append(e)
+
     return render_page(
         request,
         "pages/case_stream.html",
@@ -261,6 +284,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         upcoming_hearings=schedule["upcoming_hearings"],
         past_hearings=schedule["past_hearings"],
         case_costs=case_costs,
+        entities=entities,
         top_level_docs=top_level_docs,
         resolved_by_month=resolved_by_month,
         originator_colors=ORIGINATOR_COLORS,

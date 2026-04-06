@@ -10,7 +10,14 @@ from typing import Optional
 from datetime import timedelta
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
-from app.models.database import Document, OriginatorType, Case, CaseStatus
+from app.models.database import (
+    Document,
+    Entity,
+    EntityType,
+    OriginatorType,
+    Case,
+    CaseStatus,
+)
 from app.services.normalization import normalize_hm
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
@@ -793,6 +800,46 @@ def extract_cost_candidates(content: str) -> list[dict]:
     return candidates
 
 
+def extract_legal_categories(content: str) -> list[dict]:
+    """Extract legal category mentions from document content."""
+    categories = []
+    snippet = (content or "")[:10000]
+
+    legal_category_keywords = {
+        "custody": [
+            "Sorgerecht",
+            "Sorge",
+            "Umgang",
+            "Kindeswohl",
+            "Unterhalt",
+            "Betreuung",
+        ],
+        "divorce": ["Scheidung", "Ehe", "Trennung", "Eheauflösung"],
+        "inheritance": ["Erbe", "Erbschaft", "Nachlass", "Testament", "Erbrecht"],
+        "contract": ["Vertrag", "Kaufvertrag", "Mietvertrag", "Werkvertrag", "Leasing"],
+        "employment": ["Arbeitsvertrag", "Kündigung", "Arbeitsrecht", "Lohn", "Gehalt"],
+        "property": ["Grundstück", "Immobilie", "Eigentum", "Wohnung", "Haus"],
+        "debt": ["Forderung", "Schulden", "Insolvenz", "Gläubiger", "Schuldner"],
+        "criminal": ["Straftat", "Verurteilung", "Strafverfahren", "Bußgeld"],
+    }
+
+    for category, keywords in legal_category_keywords.items():
+        for keyword in keywords:
+            if re.search(rf"\b{re.escape(keyword)}\b", snippet, re.IGNORECASE):
+                match = re.search(rf"{re.escape(keyword)}", snippet, re.IGNORECASE)
+                categories.append(
+                    {
+                        "type": "legal_category",
+                        "value": keyword,
+                        "category": category,
+                        "location": match.start() if match else 0,
+                    }
+                )
+                break
+
+    return categories
+
+
 def parse_eml_file(file_path: str) -> str:
     """Parse .eml file and convert to markdown."""
     try:
@@ -850,22 +897,102 @@ def compute_review_reasons(doc: Document) -> list[str]:
     if not doc.parent_id:
         reasons.append("missing_parent")
     # Title is the raw filename — still counts as "needs review" for renaming
-    if (
-        doc.title
-        and "." in doc.title
-        and doc.title == os.path.basename(doc.file_path or "")
-    ):
-        reasons.append("missing_title")
-    if not doc.content or len(doc.content.strip()) < 20:
-        reasons.append("missing_content")
-    if doc.content and "Conversion failed:" in doc.content:
-        reasons.append("conversion_failed")
+    if doc.title and len(doc.title) < 10:
+        reasons.append("title_too_short")
     return reasons
 
 
-# ---------------------------------------------------------------------------
-# Main ingestion pipeline
-# ---------------------------------------------------------------------------
+def _extract_and_save_entities(db: Session, doc: Document, content: str) -> None:
+    """
+    Extract entities from a document and persist to the database.
+    Called after document creation.
+    """
+    if not content or doc.case_id == "_TRIAGE":
+        return
+
+    # PERSON: from sender field
+    if doc.sender:
+        existing = (
+            db.query(Entity)
+            .filter(
+                Entity.case_id == doc.case_id,
+                Entity.type == EntityType.PERSON,
+                Entity.name == doc.sender,
+            )
+            .first()
+        )
+        if not existing:
+            db.add(
+                Entity(
+                    case_id=doc.case_id,
+                    type=EntityType.PERSON,
+                    name=doc.sender,
+                    source_document_id=doc.id,
+                    extra_data={"confidence": 0.9, "source": "sender_field"},
+                )
+            )
+
+    # FINANCIAL: from cost_candidates
+    if doc.cost_candidates:
+        for cand in doc.cost_candidates:
+            if cand.get("type") in ("amount", "streitwert"):
+                existing = (
+                    db.query(Entity)
+                    .filter(
+                        Entity.case_id == doc.case_id,
+                        Entity.type == EntityType.FINANCIAL,
+                        Entity.name == cand.get("value", ""),
+                    )
+                    .first()
+                )
+                if not existing:
+                    db.add(
+                        Entity(
+                            case_id=doc.case_id,
+                            type=EntityType.FINANCIAL,
+                            name=cand.get("value", ""),
+                            source_document_id=doc.id,
+                            extra_data={
+                                "cand_type": cand.get("type"),
+                                "confidence": 0.7,
+                            },
+                        )
+                    )
+
+    # LEGAL_CATEGORY: from extracted categories
+    legal_cats = extract_legal_categories(content)
+    seen_cats = set()
+    for cat in legal_cats:
+        cat_val = cat.get("category", "")
+        if cat_val and cat_val not in seen_cats:
+            existing = (
+                db.query(Entity)
+                .filter(
+                    Entity.case_id == doc.case_id,
+                    Entity.type == EntityType.LEGAL_CATEGORY,
+                    Entity.name == cat_val,
+                )
+                .first()
+            )
+            if not existing:
+                db.add(
+                    Entity(
+                        case_id=doc.case_id,
+                        type=EntityType.LEGAL_CATEGORY,
+                        name=cat_val,
+                        source_document_id=doc.id,
+                        extra_data={
+                            "keyword": cat.get("value"),
+                            "confidence": 0.6,
+                        },
+                    )
+                )
+            seen_cats.add(cat_val)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 async def ingest_file(
@@ -1044,5 +1171,8 @@ async def ingest_file(
             status_code=500,
             detail=f"Database error while saving document: {e}",
         )
+
+    # 8. Extract and persist entities
+    _extract_and_save_entities(db, new_doc, markdown_content)
 
     return new_doc

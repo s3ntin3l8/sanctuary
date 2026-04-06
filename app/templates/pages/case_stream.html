@@ -297,27 +297,125 @@
                 {% endif %}
             </div>
 
-            <!-- Entities (stub) -->
+            <!-- Entities -->
             <div id="section-entities" class="p-8 border-t border-outline-variant/10" style="scroll-margin-top: 48px;">
                 <div class="flex items-center justify-between mb-6">
                     <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest flex items-center gap-2 border-l-2 border-primary pl-3">
-                        <span class="material-symbols-outlined text-sm">history</span>
-                        Legal Chronology
+                        <span class="material-symbols-outlined text-sm">hub</span>
+                        Entities
                     </h3>
-                    <span class="text-[10px] font-bold text-primary">{{ documents|length }} DOCS</span>
                 </div>
-                {% with
-                    icon='people',
-                    title='Coming Soon',
-                    body='Entity extraction is under development. Soon you will be able to see people, organizations, and key dates pulled automatically from your case documents.',
-                    container_class='flex flex-col items-center justify-center py-12 px-4 text-center',
-                    icon_wrapper_class='w-14 h-14 bg-surface-container-high rounded-xl flex items-center justify-center mb-4',
-                    icon_class='text-2xl text-outline',
-                    title_class='text-base font-black text-on-surface tracking-tight mb-2',
-                    body_class='text-sm text-on-surface-variant max-w-sm leading-relaxed'
-                %}
-                    {% include "partials/empty_state.html" %}
-                {% endwith %}
+                
+                {% set total_entities = entities.persons|length + entities.organizations|length + entities.dates|length + entities.financial|length + entities.legal_categories|length %}
+                
+                {% if total_entities == 0 %}
+                    {% with
+                        icon='hub',
+                        title='No Entities Yet',
+                        body='Upload documents to extract people, organizations, dates, financial amounts, and legal categories.',
+                        container_class='flex flex-col items-center justify-center py-12 px-4 text-center',
+                        icon_wrapper_class='w-14 h-14 bg-surface-container-high rounded-xl flex items-center justify-center mb-4',
+                        icon_class='text-2xl text-outline',
+                        title_class='text-base font-black text-on-surface tracking-tight mb-2',
+                        body_class='text-sm text-on-surface-variant max-w-sm leading-relaxed'
+                    %}
+                        {% include "partials/empty_state.html" %}
+                    {% endwith %}
+                {% else %}
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        
+                        <!-- People -->
+                        {% if entities.persons %}
+                        <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
+                            <h4 class="text-[10px] font-bold text-originator-own uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">person</span>
+                                People ({{ entities.persons|length }})
+                            </h4>
+                            <ul class="space-y-2">
+                                {% for person in entities.persons %}
+                                <li class="text-sm text-on-surface flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-originator-own"></span>
+                                    {{ person.name }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Organizations -->
+                        {% if entities.organizations %}
+                        <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
+                            <h4 class="text-[10px] font-bold text-originator-court uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">account_balance</span>
+                                Organizations ({{ entities.organizations|length }})
+                            </h4>
+                            <ul class="space-y-2">
+                                {% for org in entities.organizations %}
+                                <li class="text-sm text-on-surface flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-originator-court"></span>
+                                    {{ org.name }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Dates -->
+                        {% if entities.dates %}
+                        <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
+                            <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">event</span>
+                                Dates ({{ entities.dates|length }})
+                            </h4>
+                            <ul class="space-y-2">
+                                {% for d in entities.dates %}
+                                <li class="text-sm text-on-surface flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                                    {{ d.name }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Financial -->
+                        {% if entities.financial %}
+                        <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
+                            <h4 class="text-[10px] font-bold text-originator-opposing uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">payments</span>
+                                Financial ({{ entities.financial|length }})
+                            </h4>
+                            <ul class="space-y-2">
+                                {% for fin in entities.financial %}
+                                <li class="text-sm text-on-surface font-mono flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-originator-opposing"></span>
+                                    {{ fin.name }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Legal Categories -->
+                        {% if entities.legal_categories %}
+                        <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
+                            <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
+                                <span class="material-symbols-outlined text-sm">category</span>
+                                Legal Categories ({{ entities.legal_categories|length }})
+                            </h4>
+                            <ul class="space-y-2">
+                                {% for cat in entities.legal_categories %}
+                                <li class="text-sm text-on-surface flex items-center gap-2">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+                                    {{ cat.name }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                    </div>
+                {% endif %}
             </div>
 
     </section>

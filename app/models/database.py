@@ -241,3 +241,41 @@ class LegalCost(Base):
 
     case = relationship("Case")
     source_document = relationship("Document")
+
+
+class EntityType(str, enum.Enum):
+    """Types of entities extracted from documents."""
+
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    DATE = "date"
+    FINANCIAL = "financial"
+    LEGAL_CATEGORY = "legal_category"
+
+
+class Entity(Base):
+    """
+    Extracted entities from documents, aggregated per case.
+
+    Enables quick pivot from case to key people, organizations,
+    dates, financial amounts, and legal categories.
+    """
+
+    __tablename__ = "entities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+
+    type = Column(SAEnum(EntityType), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+
+    # Source tracking
+    source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+
+    # Additional metadata (confidence, positions, extracted context)
+    extra_data = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    case = relationship("Case")
+    source_document = relationship("Document")
