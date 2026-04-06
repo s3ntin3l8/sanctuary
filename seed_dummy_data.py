@@ -19,8 +19,10 @@ from app.models.database import (
     Hearing,
     LegalCost,
     OriginatorType,
+    Entity,
 )
 from app.services.normalization import normalize_hm
+from app.services.ingestion import _extract_and_save_entities
 
 # Use checkfirst=True to avoid "table already exists" errors
 Base.metadata.create_all(bind=engine, checkfirst=True)
@@ -464,6 +466,7 @@ for case_seed in SEED_CASES:
         )
         db.add(doc)
         db.flush()
+        _extract_and_save_entities(db, doc, doc.content)
         doc_counter += 1
 
         # ~30% of docs become parents for child documents
@@ -504,6 +507,7 @@ for case_seed in SEED_CASES:
                 )
                 db.add(child)
                 db.flush()
+                _extract_and_save_entities(db, child, child.content)
                 doc_counter += 1
 
     db.commit()
@@ -584,6 +588,7 @@ total_deadlines = db.query(Deadline).count()
 total_hearings = db.query(Hearing).count()
 total_costs = db.query(LegalCost).count()
 parent_count = db.query(Document).filter(Document.parent_id.isnot(None)).count()
+total_entities = db.query(Entity).count()
 
 print(f"Seed complete:")
 print(f"  Cases:      {total_cases}")
@@ -592,5 +597,6 @@ print(f"  Children:   {parent_count}")
 print(f"  Deadlines:  {total_deadlines}")
 print(f"  Hearings:   {total_hearings}")
 print(f"  Costs:      {total_costs}")
+print(f"  Entities:   {total_entities}")
 
 db.close()
