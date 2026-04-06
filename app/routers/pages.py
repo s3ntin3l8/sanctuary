@@ -42,8 +42,59 @@ from app.models.database import (
 router = APIRouter()
 
 
-@router.get("/")
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+@router.get("/activity")
+async def activity_log(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    # Get total counts
+    total_count = db.query(Document).count()
+    court_count = (
+        db.query(Document)
+        .filter(Document.originator_type == OriginatorType.COURT)
+        .count()
+    )
+    pending_count = db.query(Document).filter(Document.needs_review == True).count()
+    case_count = (
+        db.query(Document.case_id)
+        .filter(Document.case_id != None, Document.case_id != "_TRIAGE")
+        .distinct()
+        .count()
+    )
+
+    # Get paginated documents
+    documents = (
+        db.query(Document)
+        .order_by(Document.created_at.desc())
+        .limit(limit + 1)  # Fetch one extra to check if there's more
+        .offset(offset)
+        .all()
+    )
+
+    has_more = len(documents) > limit
+    if has_more:
+        documents = documents[:limit]
+
+    case_titles = {case.id: case.title for case in db.query(Case).all()}
+
+    return render_page(
+        request,
+        "pages/activity_log.html",
+        db=db,
+        documents=documents,
+        total_count=total_count,
+        court_count=court_count,
+        pending_count=pending_count,
+        case_count=case_count,
+        case_titles=case_titles,
+        has_more=has_more,
+        per_page=limit,
+        offset=offset,
+        originator_colors=ORIGINATOR_COLORS,
+        originator_icons=ORIGINATOR_ICONS,
+    )
     now = datetime.now()
     week_ago = now - timedelta(days=7)
 
@@ -469,11 +520,17 @@ async def global_entities(request: Request, db: Session = Depends(get_db)):
         if entity.name not in grouped_entities[entity.type]:
             grouped_entities[entity.type][entity.name] = 0
         grouped_entities[entity.type][entity.name] += 1
-    
+
     # Sort groups by count descending
     for type_key in grouped_entities:
-        grouped_entities[type_key] = dict(sorted(grouped_entities[type_key].items(), key=lambda item: item[1], reverse=True))
-    
+        grouped_entities[type_key] = dict(
+            sorted(
+                grouped_entities[type_key].items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        )
+
     return render_page(
         request,
         "pages/entities.html",
@@ -630,7 +687,7 @@ async def get_document_details(
     doc = db.query(Document).filter(Document.id == doc_id).first()
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     extraction_context = build_document_extraction_context(db, doc)
-    
+
     return render_page(
         request,
         "partials/document_details.html",
@@ -715,10 +772,11 @@ async def search_api(
     try:
         import httpx
         import json
+
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
                 f"{OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": OLLAMA_EMBED_MODEL, "prompt": q}
+                json={"model": OLLAMA_EMBED_MODEL, "prompt": q},
             )
             resp.raise_for_status()
             emb = resp.json().get("embedding")
@@ -729,11 +787,15 @@ async def search_api(
                     ORDER BY vec_distance_L2(vec_f32(json_extract(content_embedding, '$')), vec_f32(:emb))
                     LIMIT :limit
                 """)
-                res = db.execute(stmt, {"emb": json.dumps(emb), "limit": limit}).fetchall()
+                res = db.execute(
+                    stmt, {"emb": json.dumps(emb), "limit": limit}
+                ).fetchall()
                 doc_ids = [r[0] for r in res]
                 if doc_ids:
                     # Maintain distance order
-                    docs_unordered = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    docs_unordered = (
+                        db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    )
                     doc_map = {d.id: d for d in docs_unordered}
                     docs = [doc_map[i] for i in doc_ids if i in doc_map]
     except Exception:
@@ -813,10 +875,11 @@ async def search_page(
     try:
         import httpx
         import json
+
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
                 f"{OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": OLLAMA_EMBED_MODEL, "prompt": q}
+                json={"model": OLLAMA_EMBED_MODEL, "prompt": q},
             )
             resp.raise_for_status()
             emb = resp.json().get("embedding")
@@ -831,7 +894,9 @@ async def search_page(
                 doc_ids = [r[0] for r in res]
                 if doc_ids:
                     # Maintain distance order
-                    docs_unordered = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    docs_unordered = (
+                        db.query(Document).filter(Document.id.in_(doc_ids)).all()
+                    )
                     doc_map = {d.id: d for d in docs_unordered}
                     docs = [doc_map[i] for i in doc_ids if i in doc_map]
     except Exception:
@@ -872,3 +937,103 @@ async def search_page(
         contacts=[c[0] for c in contacts if c[0]],
         total=total,
     )
+
+
+@router.get("/activity-log")
+async def activity_log_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    documents = (
+        db.query(Document)
+        .order_by(Document.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    total_docs = db.query(Document).count()
+    cases = {c.id: c.title for c in db.query(Case).all()}
+
+    return render_page(
+        request,
+        "pages/activity_log.html",
+        db=db,
+        documents=documents,
+        total_docs=total_docs,
+        case_titles=cases,
+        originator_colors=ORIGINATOR_COLORS,
+        originator_icons=ORIGINATOR_ICONS,
+    )
+
+
+@router.get("/api/activity-feed")
+async def activity_feed(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    """HTMX endpoint for infinite scroll activity feed."""
+    from fastapi.responses import HTMLResponse
+
+    documents = (
+        db.query(Document)
+        .order_by(Document.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    cases = {c.id: c.title for c in db.query(Case).all()}
+    total_docs = db.query(Document).count()
+    has_more = offset + limit < total_docs
+
+    html_parts = []
+    for doc in documents:
+        stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
+        stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
+        doc_type = doc.originator_type.value if doc.originator_type else "unknown"
+
+        case_badge = ""
+        if doc.case_id and cases.get(doc.case_id):
+            case_badge = f"""<a href="/cases/{doc.case_id}" onclick="event.stopPropagation()" 
+                class="inline-flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider transition-colors">
+                <span class="material-symbols-outlined text-[10px]">folder</span>
+                {cases.get(doc.case_id, doc.case_id)}
+            </a>"""
+        else:
+            case_badge = """<span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Unlinked</span>"""
+
+        sender_text = f"Via: {doc.sender}" if doc.sender else "Manual upload"
+
+        card_html = f"""<div class="group relative rounded-lg border border-outline-variant/10 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container transition-all duration-200 cursor-pointer overflow-hidden"
+                 style="border-left: 4px solid {stripe_color};"
+                 hx-get="/document/{doc.id}"
+                 hx-target="#activity-doc-pane"
+                 hx-swap="innerHTML"
+                 @click="activeDoc = '{doc.id}'">
+                <div class="p-4 flex items-start gap-4">
+                    <div class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {stripe_color}20;">
+                        <span class="material-symbols-outlined text-lg" style="color: {stripe_color};">{stripe_icon}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between gap-3 mb-1">
+                            <h3 class="text-sm font-bold text-on-surface truncate group-hover:text-primary transition-colors">{doc.title}</h3>
+                            <span class="text-[10px] font-mono text-on-surface-variant shrink-0">{doc.created_at.strftime("%Y-%m-%d %H:%M")}</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            {case_badge}
+                            <span class="text-[9px] text-on-surface-variant">{sender_text}</span>
+                        </div>
+                    </div>
+                    <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+                    </div>
+                </div>
+            </div>"""
+        html_parts.append(card_html)
+
+    return HTMLResponse(content="".join(html_parts))

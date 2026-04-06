@@ -1,3 +1,51 @@
+{% macro inline_edit(field, value, format_fn=none) %}
+<div
+    x-data="{ editing: false, value: '{{ value }}', original: '{{ value }}' }"
+    @click="editing = true; $nextTick(() => $refs.input.focus())"
+    class="cursor-pointer hover:bg-primary/10 rounded px-1 -mx-1 transition-colors"
+    :class="{ 'cursor-text': editing }"
+>
+    <template x-if="!editing">
+        <span class="font-mono text-xs">{{ format_fn(value) if format_fn else value }}</span>
+    </template>
+    <template x-if="editing">
+        <form
+            hx-post="/costs/{{ cost.id }}/update-field"
+            hx-vars='{"field": "{{ field }}"}'
+            hx-target="#cost-row-{{ cost.id }}"
+            hx-swap="outerHTML"
+            @submit.prevent="
+                fetch('', {
+                    method: 'POST',
+                    body: new FormData($event.target)
+                }).then(r => r.text()).then(html => {
+                    document.getElementById('cost-row-{{ cost.id }}').outerHTML = html;
+                });
+                editing = false;
+            "
+            @blur.debounce.200ms="
+                if ($refs.input.value !== original) {
+                    $event.target.form.dispatchEvent(new Event('submit'));
+                } else {
+                    editing = false;
+                }
+            "
+            @keydown.escape="editing = false; value = original"
+        >
+            <input
+                x-ref="input"
+                type="text"
+                name="value"
+                x-model="value"
+                class="w-20 text-xs font-mono bg-surface-container-high border border-primary/50 rounded px-1 py-0.5"
+                @click.stop
+            />
+            <input type="hidden" name="field" value="{{ field }}" />
+        </form>
+    </template>
+</div>
+{% endmacro %}
+
 {% set cat_meta = cost_category_meta[cost.category] %}
 {% set st_meta  = cost_status_meta[cost.status]    %}
 <tr id="cost-row-{{ cost.id }}" class="border-b border-outline-variant/10 hover:bg-surface-container-low/50 transition-colors group">
@@ -20,7 +68,7 @@
     {# Value in Dispute + Factor #}
     <td class="px-4 py-3 align-top text-right whitespace-nowrap">
         {% if cost.streitwert %}
-        <p class="text-xs font-mono text-on-surface-variant">{{ format_eur(cost.streitwert) }}</p>
+        {{ inline_edit("streitwert", cost.streitwert, format_eur) }}
         {% if cost.gebuehren_faktor %}
         <p class="text-[10px] text-on-surface-variant">× {{ "%.1f"|format(cost.gebuehren_faktor) }}</p>
         {% endif %}
@@ -31,7 +79,7 @@
 
     {# Net / VAT / Gross #}
     <td class="px-4 py-3 align-top text-right whitespace-nowrap">
-        <p class="text-xs font-mono text-on-surface">{{ format_eur(cost.amount_gross) }}</p>
+        {{ inline_edit("amount_gross", cost.amount_gross, format_eur) }}
         {% if cost.vat_rate > 0 %}
         <p class="text-[10px] text-on-surface-variant">{{ format_eur(cost.amount_net) }} + {{ (cost.vat_rate * 100)|int }}% VAT</p>
         {% else %}
@@ -42,10 +90,10 @@
     {# Paid / Reimbursed #}
     <td class="px-4 py-3 align-top text-right whitespace-nowrap">
         {% if cost.amount_paid > 0 %}
-        <p class="text-xs font-mono text-originator-own">{{ format_eur(cost.amount_paid) }}</p>
+        {{ inline_edit("amount_paid", cost.amount_paid, format_eur) }}
         <p class="text-[10px] text-on-surface-variant">paid</p>
         {% elif cost.amount_reimbursed > 0 %}
-        <p class="text-xs font-mono text-primary">{{ format_eur(cost.amount_reimbursed) }}</p>
+        {{ inline_edit("amount_reimbursed", cost.amount_reimbursed, format_eur) }}
         <p class="text-[10px] text-on-surface-variant">reimbursed</p>
         {% else %}
         <span class="text-[10px] text-on-surface-variant">—</span>

@@ -123,7 +123,7 @@ async def update_triage_document(
         return HTMLResponse("Document not found", status_code=404)
 
     form = await request.form()
-    
+
     # Update fields
     if "title" in form:
         doc.title = form.get("title").strip()
@@ -144,7 +144,7 @@ async def update_triage_document(
                 doc.received_date = datetime.fromisoformat(date_str)
             except ValueError:
                 pass
-    
+
     # Manual resolve toggle
     if form.get("mark_resolved") == "true":
         doc.needs_review = False
@@ -169,27 +169,31 @@ async def update_triage_document(
         oob_card = f'<div id="triage-wrapper-{doc.id}" hx-swap-oob="delete"></div>'
     else:
         # Otherwise, update the triage card in the list
-        oob_card = templates.get_template("partials/triage_card.html").render({
+        oob_card = templates.get_template("partials/triage_card.html").render(
+            {
+                "request": request,
+                "doc": doc,
+                "stripe_color": stripe_color,
+                "stripe_icon": stripe_icon,
+                "review_field_labels": REVIEW_FIELD_LABELS,
+                "activeDoc": str(doc.id),
+                "hx_swap_oob": "true",
+            }
+        )
+
+    main_response = templates.get_template("partials/document_details.html").render(
+        {
             "request": request,
             "doc": doc,
-            "stripe_color": stripe_color,
-            "stripe_icon": stripe_icon,
+            "doc_id": doc.id,
+            "cases": cases,
+            "OriginatorType": OriginatorType,
             "review_field_labels": REVIEW_FIELD_LABELS,
-            "activeDoc": str(doc.id),
-            "hx_swap_oob": "true"
-        })
-
-    main_response = templates.get_template("partials/document_details.html").render({
-        "request": request,
-        "doc": doc,
-        "doc_id": doc.id,
-        "cases": cases,
-        "OriginatorType": OriginatorType,
-        "review_field_labels": REVIEW_FIELD_LABELS,
-        "format_upcoming_datetime": format_upcoming_datetime,
-        "format_form_datetime": format_form_datetime,
-        **extraction_context,
-    })
+            "format_upcoming_datetime": format_upcoming_datetime,
+            "format_form_datetime": format_form_datetime,
+            **extraction_context,
+        }
+    )
 
     return HTMLResponse(content=main_response + oob_card)
 
@@ -467,6 +471,53 @@ async def create_cost(
 
     # Redirect back to costs page
     return RedirectResponse(url="/costs", status_code=303)
+
+
+@router.post("/costs/{cost_id}/update-field")
+async def update_cost_field(
+    request: Request,
+    cost_id: int,
+    field: str = Form(...),
+    value: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    cost = db.get(LegalCost, cost_id)
+    if not cost:
+        return HTMLResponse(
+            '<div class="text-red-500 text-xs">Cost not found</div>',
+            status_code=404,
+        )
+
+    try:
+        if field == "amount_gross":
+            cost.amount_gross = float(value.replace(",", "."))
+        elif field == "amount_paid":
+            cost.amount_paid = float(value.replace(",", "."))
+        elif field == "amount_reimbursed":
+            cost.amount_reimbursed = float(value.replace(",", "."))
+        elif field == "streitwert":
+            cost.streitwert = float(value.replace(",", ".")) if value else None
+        else:
+            return HTMLResponse(
+                f'<div class="text-red-500 text-xs">Unknown field: {field}</div>',
+                status_code=400,
+            )
+        db.commit()
+        db.refresh(cost)
+    except ValueError:
+        return HTMLResponse(
+            '<div class="text-red-500 text-xs">Invalid number format</div>',
+            status_code=400,
+        )
+
+    return render_page(
+        request,
+        "partials/cost_row.html",
+        db=db,
+        cost=cost,
+        cost_category_meta=COST_CATEGORY_META,
+        cost_status_meta=COST_STATUS_META,
+    )
 
 
 @router.post("/costs/{cost_id}/pay")

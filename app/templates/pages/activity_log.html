@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Log | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set header_title = "Activity Log" %}
+{% set header_subtitle = "Recent Document Uploads Across All Cases" %}
+{% set header_actions %}
+    <div class="flex items-center gap-2">
+        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Show:</span>
+        <select x-model="limit"
+            @change="refreshFeed()"
+            class="bg-surface-container-high border border-outline-variant/20 text-on-surface text-[10px] font-bold px-3 py-1.5 rounded-lg focus:border-primary focus:outline-none">
+            <option value="20">20 items</option>
+            <option value="50">50 items</option>
+            <option value="100">100 items</option>
+        </select>
+    </div>
+    {% include "partials/header_controls.html" %}
+{% endset %}
+
+<section x-data="{ 
+    limit: 20,
+    offset: 0,
+    hasMore: true,
+    loading: false,
+    refreshFeed() {
+        offset = 0;
+        this.$refs.feedContainer.innerHTML = '';
+        this.loadMore();
+    },
+    loadMore() {
+        if (this.loading || !this.hasMore) return;
+        this.loading = true;
+        const container = this.$refs.feedContainer;
+        htmx.ajax('GET', '/api/activity-feed', {
+            target: container,
+            swap: 'beforeend',
+            values: { limit: this.limit, offset: this.offset }
+        }).then(() => {
+            this.offset += this.limit;
+            this.loading = false;
+            const sentinel = this.$refs.loadSentinel;
+            if (sentinel) {
+                sentinel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    }
+}" 
+x-init="$watch('limit', () => { offset = 0; hasMore = true; })"
+class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+    {% include "partials/page_header.html" %}
+
+    {# Stats Bar #}
+    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6 shrink-0">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm text-primary">description</span>
+            <span class="text-[10px] font-bold text-on-surface">{{ total_docs }}</span>
+            <span class="text-[10px] text-on-surface-variant font-medium">Total Documents</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm text-primary">upload</span>
+            <span class="text-[10px] font-bold text-on-surface">{{ sidebar_counts.total_docs }}</span>
+            <span class="text-[10px] text-on-surface-variant font-medium">Indexed</span>
+        </div>
+    </div>
+
+    {# Activity Feed #}
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface"
+         @scroll.window.throttle.50ms="
+            const scrollY = window.scrollY;
+            const winHeight = window.innerHeight;
+            const docHeight = document.body.scrollHeight;
+            if (scrollY + winHeight >= docHeight - 400 && !loading && hasMore) {
+                loadMore();
+            }
+         ">
+        <div id="activity-feed" class="p-8 space-y-3" x-ref="feedContainer">
+            {% for doc in documents %}
+            {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+            {% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
+            {% set doc_type = doc.originator_type.value if doc.originator_type else 'unknown' %}
+
+            <div class="group relative rounded-lg border border-outline-variant/10 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container transition-all duration-200 cursor-pointer overflow-hidden"
+                 style="border-left: 4px solid {{ stripe_color }};"
+                 hx-get="/document/{{ doc.id }}"
+                 hx-target="#activity-doc-pane"
+                 hx-swap="innerHTML"
+                 @click="activeDoc = '{{ doc.id }}'">
+                <div class="p-4 flex items-start gap-4">
+                    {# Icon #}
+                    <div class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {{ stripe_color }}20;">
+                        <span class="material-symbols-outlined text-lg" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
+                    </div>
+
+                    {# Content #}
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between gap-3 mb-1">
+                            <h3 class="text-sm font-bold text-on-surface truncate group-hover:text-primary transition-colors">{{ doc.title }}</h3>
+                            <span class="text-[10px] font-mono text-on-surface-variant shrink-0">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            {% if doc.case_id and case_titles.get(doc.case_id) %}
+                            <a href="/cases/{{ doc.case_id }}" @click.stop="" 
+                                class="inline-flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider transition-colors">
+                                <span class="material-symbols-outlined text-[10px]">folder</span>
+                                {{ case_titles.get(doc.case_id, doc.case_id) }}
+                            </a>
+                            {% else %}
+                            <span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Unlinked</span>
+                            {% endif %}
+                            <span class="text-[9px] text-on-surface-variant">
+                                {% if doc.sender %}Via: {{ doc.sender }}{% else %}Manual upload{% endif %}
+                            </span>
+                        </div>
+                    </div>
+
+                    {# Arrow #}
+                    <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# Load More Trigger / Loading State #}
+        <div x-ref="loadSentinel" class="p-8 text-center" 
+             @Inbox(
+                 if (hasMore && !loading) loadMore();
+             )>
+            <div x-show="loading" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-primary animate-spin">sync</span>
+                <span class="text-sm text-on-surface-variant">Loading more...</span>
+            </div>
+            <div x-show="!hasMore && {{ documents|length }} > 0" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant">check_circle</span>
+                <span class="text-sm text-on-surface-variant">All documents loaded</span>
+            </div>
+            <div x-show="{{ documents|length }} === 0" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant">inbox</span>
+                <span class="text-sm text-on-surface-variant">No documents yet</span>
+            </div>
+        </div>
+    </div>
+
+    {# Document Detail Pane #}
+    <div id="activity-doc-pane" class="hidden lg:flex lg:flex-col w-[35%] border-l border-outline-variant/10 bg-surface-container-low/40 overflow-hidden"
+         :class="activeDoc ? 'flex' : ''">
+        <div class="flex items-center justify-center h-full">
+            {% with
+                icon='description',
+                title='Select a Document',
+                body='Click on any document to view its details.',
+                icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
+                icon_class='text-xl text-outline'
+            %}
+                {% include "partials/empty_state.html" %}
+            {% endwith %}
+        </div>
+    </div>
+</section>
+{% endblock %}
