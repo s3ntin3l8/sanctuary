@@ -13,7 +13,10 @@
 - Frontend: HTMX (server comms) + Alpine.js (local UI state)
 - Styling: Tailwind CSS v4 with dual light/dark token system (`static/input.css`)
 - Database: SQLite + Alembic migrations + `sqlite-vec` extension
-- AI: Local Ollama — **qwen3.5:9b** for summaries/extraction, **nomic-embed-text** for search. Base URL configurable via `OLLAMA_BASE_URL` (default: `http://localhost:11434`).
+- AI: Local Ollama. Configuration via environment variables:
+  - `OLLAMA_BASE_URL` (default: `http://localhost:11434`)
+  - `OLLAMA_SUMMARY_MODEL` (default: `qwen3.5:9b`)
+  - `OLLAMA_EMBED_MODEL` (default: `nomic-embed-text`)
 - PDF Ingestion: **Docling** → Markdown
 
 ---

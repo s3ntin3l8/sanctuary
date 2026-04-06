@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-from app.config import templates, OLLAMA_BASE_URL
+from app.config import templates, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL
 from app.constants import (
     CASE_STATUS_META,
     COST_CATEGORY_META,
@@ -718,7 +718,7 @@ async def search_api(
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
                 f"{OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": "nomic-embed-text", "prompt": q}
+                json={"model": OLLAMA_EMBED_MODEL, "prompt": q}
             )
             resp.raise_for_status()
             emb = resp.json().get("embedding")
@@ -816,7 +816,7 @@ async def search_page(
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
                 f"{OLLAMA_BASE_URL}/api/embeddings",
-                json={"model": "nomic-embed-text", "prompt": q}
+                json={"model": OLLAMA_EMBED_MODEL, "prompt": q}
             )
             resp.raise_for_status()
             emb = resp.json().get("embedding")

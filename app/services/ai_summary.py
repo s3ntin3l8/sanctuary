@@ -5,9 +5,7 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.database import Document
-from app.config import OLLAMA_BASE_URL
-
-MODEL = "qwen3.5:9b"
+from app.config import OLLAMA_BASE_URL, OLLAMA_SUMMARY_MODEL
 
 SYSTEM_PROMPT = """You are a legal document analyst. Analyze the provided document and return a JSON object with exactly these three keys:
 - legal_significance: What does this document mean for our legal position? (1-2 sentences)
@@ -35,7 +33,7 @@ async def generate_summary(doc_content: str, doc_title: str = "") -> dict:
         response = await client.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={
-                "model": MODEL,
+                "model": OLLAMA_SUMMARY_MODEL,
                 "prompt": SYSTEM_PROMPT + "\n\n" + prompt,
                 "stream": False,
                 "format": "json",
@@ -88,7 +86,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
             response = client.post(
                 f"{OLLAMA_BASE_URL}/api/generate",
                 json={
-                    "model": MODEL,
+                    "model": OLLAMA_SUMMARY_MODEL,
                     "prompt": SYSTEM_PROMPT + "\n\n" + prompt,
                     "stream": False,
                     "format": "json",

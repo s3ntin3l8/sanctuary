@@ -15,6 +15,8 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
 
 # Ollama configuration
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_SUMMARY_MODEL = os.getenv("OLLAMA_SUMMARY_MODEL", "qwen3.5:9b")
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
