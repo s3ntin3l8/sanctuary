@@ -5,89 +5,82 @@
 {% block content %}
 {% set header_title = "Contacts" %}
 {% set header_subtitle = "Relationship Intelligence Hub" %}
-{% set header_actions %}{% include "partials/header_controls.html" %}{% endset %}
+{% set header_actions %}
+    <div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="relative">
+        <button @click="filterOpen = !filterOpen"
+            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg border border-outline-variant/20 hover:border-primary/40">
+            <span class="material-symbols-outlined text-sm">filter_list</span>
+            <span>Filter</span>
+        </button>
+        <div x-show="filterOpen" @click.outside="filterOpen = false"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 translate-y-1"
+            x-transition:enter-end="opacity-100 translate-y-0"
+            class="absolute right-0 top-full mt-2 w-56 bg-surface-container-lowest rounded-xl shadow-xl border border-outline-variant/10 p-3 z-50">
+            <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">Originator</p>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="court" class="accent-originator-court rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-court"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Court / Judges</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="opposing" class="accent-originator-opposing rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Opposing Parties</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="own" class="accent-originator-own rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-own"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Own Counsel</span>
+            </label>
+        </div>
+    </div>
+    {% include "partials/header_controls.html" %}
+{% endset %}
 <section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
+    {# Secondary Status Bar #}
+    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm text-primary">contacts</span>
+            <span class="text-[10px] font-bold text-on-surface">{{ summary.total }}</span>
+            <span class="text-[10px] text-on-surface-variant font-medium">Contacts</span>
+        </div>
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-court"></span>
+            <span class="text-[10px] font-bold text-originator-court">{{ summary.court }}</span>
+            <span class="text-[10px] text-on-surface-variant">Court</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
+            <span class="text-[10px] font-bold text-originator-opposing">{{ summary.opposing }}</span>
+            <span class="text-[10px] text-on-surface-variant">Opposing</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-own"></span>
+            <span class="text-[10px] font-bold text-originator-own">{{ summary.own }}</span>
+            <span class="text-[10px] text-on-surface-variant">Own Counsel</span>
+        </div>
+    </div>
+
     <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface">
-        <div class="p-8 max-w-7xl mx-auto space-y-8">
-            {# Summary Strip: 4 Metrics #}
-            <div class="grid grid-cols-4 gap-4">
-                {# Total Contacts #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-court"></div>
-                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Total Contacts</div>
-                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.total }}</div>
-                </div>
-
-                {# Court Contacts #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-court"></div>
-                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Court / Judges</div>
-                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.court }}</div>
-                </div>
-
-                {# Opposing Counsel #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-opposing"></div>
-                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Opposing Parties</div>
-                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.opposing }}</div>
-                </div>
-
-                {# Own Counsel #}
-                <div class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-sm relative overflow-hidden">
-                    <div class="absolute top-0 left-0 w-1 h-full bg-originator-own"></div>
-                    <div class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Own Counsel</div>
-                    <div class="text-3xl font-black font-mono text-on-surface">{{ summary.own }}</div>
-                </div>
-            </div>
+        <div class="p-8 max-w-7xl mx-auto space-y-6">
 
             {# Two-Column Layout: Contacts List + Detail Panel #}
-            <div class="grid grid-cols-12 gap-6" x-data="{ filter: 'all', search: '', activeContact: null }" @hx:load="$watch('activeContact', () => {})">
+            <div class="grid grid-cols-12 gap-6" x-data="{ search: '', activeContact: null }" @hx:load="$watch('activeContact', () => {})">
                 {# Left Panel: Contact List #}
                 <div class="col-span-5">
                     <div class="bg-surface-container rounded-2xl border border-outline-variant/10 shadow-sm overflow-hidden flex flex-col h-full">
-                        {# Search and Filter Bar #}
-                        <div class="px-6 py-4 border-b border-outline-variant/10 space-y-4">
-                            {# Search Input #}
+                        {# Search Bar #}
+                        <div class="px-6 py-4 border-b border-outline-variant/10">
                             <input
                                 type="text"
                                 x-model="search"
                                 placeholder="Search contacts..."
                                 class="w-full px-4 py-2 bg-surface rounded-lg border border-outline-variant/20 text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:border-primary"
                             />
-
-                            {# Filter Tabs #}
-                            <div class="flex gap-2">
-                                <button
-                                    @click="filter = 'all'"
-                                    :class="filter === 'all' ? 'bg-primary text-on-primary' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
-                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
-                                >
-                                    All
-                                </button>
-                                <button
-                                    @click="filter = 'court'"
-                                    :class="filter === 'court' ? 'bg-originator-court text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
-                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
-                                >
-                                    Court
-                                </button>
-                                <button
-                                    @click="filter = 'opposing'"
-                                    :class="filter === 'opposing' ? 'bg-originator-opposing text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
-                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
-                                >
-                                    Opposing
-                                </button>
-                                <button
-                                    @click="filter = 'own'"
-                                    :class="filter === 'own' ? 'bg-originator-own text-white' : 'bg-surface text-on-surface-variant border border-outline-variant/20'"
-                                    class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide transition-colors"
-                                >
-                                    Own Counsel
-                                </button>
-                            </div>
                         </div>
 
                         {# Contact List #}
@@ -96,9 +89,8 @@
                                 <div class="divide-y divide-outline-variant/10">
                                     {% for contact in contacts %}
                                         {% set filter_type = 'court' if contact.originator_type == 'COURT' else ('opposing' if contact.originator_type == 'OPPOSING' else ('own' if contact.originator_type == 'OWN' else 'unknown')) %}
-                                        {% set show = (filter == 'all' or filter == filter_type) and (contact.name|lower).find(search|lower) >= 0 %}
                                         <div
-                                            x-show="{{ show|lower }}"
+                                            x-show="(court && '{{ filter_type }}' === 'court') || (opposing && '{{ filter_type }}' === 'opposing') || (own && '{{ filter_type }}' === 'own') || (unknown && '{{ filter_type }}' === 'unknown')"
                                             x-transition
                                             @click="activeContact = '{{ contact.name|e }}';"
                                             hx-get="/contacts/{{ contact.name|urlencode }}"
