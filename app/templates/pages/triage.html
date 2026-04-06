@@ -51,11 +51,12 @@
     {% include "partials/header_controls.html" %}
 {% endset %}
 
-<div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true, activeDoc: '{{ documents[0].id if documents else '' }}' }" class="flex-1 flex flex-col overflow-hidden">
+<section x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true, activeDoc: '{{ documents[0].id if documents else '' }}' }" 
+         class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
-    {# Secondary Status Bar (like timeline) #}
-    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
+    {# Secondary Status Bar #}
+    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6 shrink-0">
         <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-sm text-error">pending_actions</span>
             <span class="text-[10px] font-bold text-on-surface">{{ documents|length }}</span>
@@ -106,16 +107,14 @@
         {# Right: Document Detail Pane #}
         <div class="flex-1 bg-surface-container-low/40 overflow-hidden">
             <div id="triage-doc-pane" class="h-full overflow-y-auto custom-scrollbar flex flex-col"
-                 {% if documents %}
                  hx-get="/document/{{ documents[0].id }}"
                  hx-trigger="load"
-                 hx-swap="innerHTML"
-                 {% endif %}>
+                 hx-swap="innerHTML">
                 <div class="flex items-center justify-center flex-1">
                     {% with
                         icon='description',
-                        title='Select a Document',
-                        body='Click a document in the list to view its details, AI summary, and promotion options.',
+                        title='Loading First Document...',
+                        body='Fetching details from local AI instance.',
                         icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
                         icon_class='text-2xl text-outline'
                     %}
@@ -127,21 +126,17 @@
     </div>
 
     {% else %}
-
-            {# Empty State — Full Width #}
-            <div class="flex-1 flex items-center justify-center">
-                {% with
-                    icon='check_circle',
-                    title='Triage Queue Is Clear',
-                    body='All ingested documents have complete metadata. New documents flagged during ingestion will appear here.',
-                    icon_wrapper_class='w-16 h-16 bg-primary-container/20 rounded-2xl flex items-center justify-center mb-5',
-                    icon_class='text-primary text-3xl'
-                %}
-                    {% include "partials/empty_state.html" %}
-                {% endwith %}
-            </div>
-
-        {% endif %}
+    <div class="flex-1 flex items-center justify-center bg-surface">
+        {% with
+            icon='check_circle',
+            title='Triage Queue Is Clear',
+            body='All ingested documents have complete metadata. New documents flagged during ingestion will appear here.',
+            icon_wrapper_class='w-16 h-16 bg-primary-container/20 rounded-2xl flex items-center justify-center mb-5',
+            icon_class='text-primary text-3xl'
+        %}
+            {% include "partials/empty_state.html" %}
+        {% endwith %}
     </div>
-</div>
+    {% endif %}
+</section>
 {% endblock %}

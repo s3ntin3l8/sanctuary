@@ -624,14 +624,22 @@ async def contact_detail(
 async def get_document_details(
     request: Request, doc_id: int, db: Session = Depends(get_db)
 ):
+    from app.models.database import Case, OriginatorType
+    from app.constants import REVIEW_FIELD_LABELS
+
     doc = db.query(Document).filter(Document.id == doc_id).first()
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     extraction_context = build_document_extraction_context(db, doc)
+    
     return render_page(
         request,
         "partials/document_details.html",
         db=db,
         doc_id=doc_id,
         doc=doc,
+        cases=cases,
+        OriginatorType=OriginatorType,
+        review_field_labels=REVIEW_FIELD_LABELS,
         format_upcoming_datetime=format_upcoming_datetime,
         format_form_datetime=format_form_datetime,
         **extraction_context,

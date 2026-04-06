@@ -53,6 +53,10 @@
     </div>
     
     <!-- AI Management Summary -->
+    {% if doc and doc.needs_review %}
+        {% include "partials/triage_metadata_form.html" %}
+    {% endif %}
+    
     <div class="p-6 bg-primary-container/10 border-b border-outline-variant/10 flex-shrink-0">
         <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
             <span class="material-symbols-outlined text-sm">smart_toy</span>

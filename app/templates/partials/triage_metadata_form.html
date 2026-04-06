@@ -1,0 +1,79 @@
+<div id="triage-metadata-form" class="bg-surface-container-high/50 p-6 border-b border-outline-variant/10">
+    <div class="flex items-center justify-between mb-6">
+        <h4 class="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm">edit_note</span>
+            Triage Metadata Editor
+        </h4>
+        <div class="flex items-center gap-2">
+            {% if doc.review_reasons %}
+            <span class="text-[9px] font-bold text-warning uppercase bg-warning-container/20 px-2 py-0.5 rounded-full">
+                {{ doc.review_reasons|length }} Issues Remaining
+            </span>
+            {% else %}
+            <span class="text-[9px] font-bold text-green-400 uppercase bg-green-500/10 px-2 py-0.5 rounded-full">
+                All Issues Resolved
+            </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <form hx-post="/document/{{ doc.id }}/update-triage" 
+          hx-target="#triage-doc-pane" 
+          hx-swap="innerHTML"
+          class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Row 1: Title (Full Width) -->
+        <div class="md:col-span-2 space-y-1.5">
+            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Document Title</label>
+            <input type="text" name="title" value="{{ doc.title }}" 
+                   class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
+        </div>
+
+        <!-- Row 2: Case & Originator -->
+        <div class="space-y-1.5">
+            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Assign to Case</label>
+            <select name="case_id" class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
+                <option value="">Unassigned (Triage)</option>
+                {% for case in cases %}
+                <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="space-y-1.5">
+            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Originator Type</label>
+            <select name="originator_type" class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
+                {% for type in OriginatorType %}
+                <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Row 3: Sender & Received Date -->
+        <div class="space-y-1.5">
+            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Sender / Source</label>
+            <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="e.g. Attorney Name"
+                   class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
+        </div>
+
+        <div class="space-y-1.5">
+            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Received Date</label>
+            <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
+                   class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="md:col-span-2 pt-4 flex items-center justify-between border-t border-outline-variant/5 mt-2">
+            <label class="flex items-center gap-2 cursor-pointer group">
+                <input type="checkbox" name="mark_resolved" value="true" class="accent-primary rounded">
+                <span class="text-[10px] font-bold text-on-surface-variant group-hover:text-primary transition-colors uppercase tracking-wider">Finalize & Remove from Triage</span>
+            </label>
+            
+            <button type="submit" class="bg-primary hover:bg-primary/90 text-on-primary px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/10 active:scale-95 transition-all flex items-center gap-2">
+                <span data-loading-idle>Update & Re-evaluate</span>
+                <span class="material-symbols-outlined text-sm htmx-indicator animate-spin" data-loading-active>progress_activity</span>
+                <span data-loading-active>Saving...</span>
+            </button>
+        </div>
+    </form>
+</div>

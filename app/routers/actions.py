@@ -30,6 +30,7 @@ from app.helpers import (
     format_upcoming_datetime,
 )
 from app.models.database import (
+    Case,
     CostCategory,
     CostStatus,
     Deadline,
@@ -108,6 +109,89 @@ async def resolve_triage(doc_id: int, request: Request, db: Session = Depends(ge
             "originator_icons": ORIGINATOR_ICONS,
         },
     )
+
+
+@router.post("/document/{doc_id}/update-triage")
+async def update_triage_document(
+    doc_id: int, request: Request, db: Session = Depends(get_db)
+):
+    from app.constants import REVIEW_FIELD_LABELS, ORIGINATOR_COLORS, ORIGINATOR_ICONS
+    from app.helpers import build_document_extraction_context, format_form_datetime
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return HTMLResponse("Document not found", status_code=404)
+
+    form = await request.form()
+    
+    # Update fields
+    if "title" in form:
+        doc.title = form.get("title").strip()
+    if "case_id" in form:
+        case_id = form.get("case_id")
+        doc.case_id = case_id if case_id else None
+    if "sender" in form:
+        doc.sender = form.get("sender").strip()
+    if "originator_type" in form:
+        try:
+            doc.originator_type = OriginatorType(form.get("originator_type"))
+        except ValueError:
+            pass
+    if "received_date" in form:
+        date_str = form.get("received_date")
+        if date_str:
+            try:
+                doc.received_date = datetime.fromisoformat(date_str)
+            except ValueError:
+                pass
+    
+    # Manual resolve toggle
+    if form.get("mark_resolved") == "true":
+        doc.needs_review = False
+        doc.review_reasons = []
+    else:
+        # Re-evaluate reasons
+        doc.review_reasons = compute_review_reasons(doc, db)
+        doc.needs_review = len(doc.review_reasons) > 0
+
+    db.commit()
+    db.refresh(doc)
+
+    # Response prep
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    extraction_context = build_document_extraction_context(db, doc)
+    stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
+    stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
+
+    # If resolved, send an OOB swap to delete the card from the triage list
+    oob_card = ""
+    if not doc.needs_review:
+        oob_card = f'<div id="triage-wrapper-{doc.id}" hx-swap-oob="delete"></div>'
+    else:
+        # Otherwise, update the triage card in the list
+        oob_card = templates.get_template("partials/triage_card.html").render({
+            "request": request,
+            "doc": doc,
+            "stripe_color": stripe_color,
+            "stripe_icon": stripe_icon,
+            "review_field_labels": REVIEW_FIELD_LABELS,
+            "activeDoc": str(doc.id),
+            "hx_swap_oob": "true"
+        })
+
+    main_response = templates.get_template("partials/document_details.html").render({
+        "request": request,
+        "doc": doc,
+        "doc_id": doc.id,
+        "cases": cases,
+        "OriginatorType": OriginatorType,
+        "review_field_labels": REVIEW_FIELD_LABELS,
+        "format_upcoming_datetime": format_upcoming_datetime,
+        "format_form_datetime": format_form_datetime,
+        **extraction_context,
+    })
+
+    return HTMLResponse(content=main_response + oob_card)
 
 
 @router.post("/document/{doc_id}/link-parent")

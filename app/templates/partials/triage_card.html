@@ -2,7 +2,8 @@
 <div id="triage-card-{{ doc.id }}"
      class="bg-surface-container rounded-2xl shadow-sm border border-l-4 overflow-hidden group cursor-pointer transition-all border-outline-variant/10 hover:bg-surface-container-low"
      :class="activeDoc === '{{ doc.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'hover:bg-surface-container-low'"
-     style="border-left-color: {{ stripe_color }};">
+     style="border-left-color: {{ stripe_color }};"
+     {% if hx_swap_oob %}hx-swap-oob="true"{% endif %}>
 
     {# Clickable summary row #}
     <div class="px-4 py-3"
@@ -10,19 +11,21 @@
          hx-get="/document/{{ doc.id }}"
          hx-target="#triage-doc-pane"
          hx-swap="innerHTML">
-        {# Row 1: Title + Date + Resolve #}
+        {# Row 1: Title + Date + Status #}
         <div class="flex items-center justify-between gap-3 mb-2">
-            <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-[{{ stripe_color }}] transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
-            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
-            <button class="inline-flex items-center justify-center text-[14px] text-outline hover:text-primary transition-colors shrink-0"
-                    title="Mark as resolved"
-                    hx-post="/triage/resolve/{{ doc.id }}"
-                    hx-target="#triage-wrapper-{{ doc.id }}"
-                    hx-swap="outerHTML"
-                    @click.stop="">
-                <span class="material-symbols-outlined" data-loading-idle>check_circle</span>
-                <span class="material-symbols-outlined htmx-indicator animate-spin" data-loading-active>progress_activity</span>
-            </button>
+            <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
+            <div class="flex items-center gap-2 shrink-0">
+                <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
+                {% if doc.review_reasons %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-warning-container/20 text-warning" title="{{ doc.review_reasons|length }} issues pending">
+                    <span class="material-symbols-outlined text-sm">priority_high</span>
+                </span>
+                {% else %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-green-500/10 text-green-400" title="Metadata complete">
+                    <span class="material-symbols-outlined text-sm">done_all</span>
+                </span>
+                {% endif %}
+            </div>
         </div>
 
         {# Row 2: Review chips + Provenance #}
