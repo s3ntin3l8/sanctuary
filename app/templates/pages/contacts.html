@@ -6,7 +6,7 @@
 {% set header_title = "Contacts" %}
 {% set header_subtitle = "Relationship Intelligence Hub" %}
 {% set header_actions %}
-    <div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="relative">
+    <div class="relative">
         <button @click="filterOpen = !filterOpen"
             class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg border border-outline-variant/20 hover:border-primary/40">
             <span class="material-symbols-outlined text-sm">filter_list</span>
@@ -37,7 +37,7 @@
     </div>
     {% include "partials/header_controls.html" %}
 {% endset %}
-<section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+<section x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
     {# Secondary Status Bar #}
@@ -88,7 +88,7 @@
                             {% if contacts %}
                                 <div class="divide-y divide-outline-variant/10">
                                     {% for contact in contacts %}
-                                        {% set filter_type = 'court' if contact.originator_type == 'COURT' else ('opposing' if contact.originator_type == 'OPPOSING' else ('own' if contact.originator_type == 'OWN' else 'unknown')) %}
+                                        {% set filter_type = 'court' if contact.originator_type and contact.originator_type.name == 'COURT' else ('opposing' if contact.originator_type and contact.originator_type.name == 'OPPOSING' else ('own' if contact.originator_type and contact.originator_type.name == 'OWN' else 'unknown')) %}
                                         <div
                                             x-show="(court && '{{ filter_type }}' === 'court') || (opposing && '{{ filter_type }}' === 'opposing') || (own && '{{ filter_type }}' === 'own') || (unknown && '{{ filter_type }}' === 'unknown')"
                                             x-transition

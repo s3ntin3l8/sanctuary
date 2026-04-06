@@ -14,7 +14,7 @@
 {% set header_title = "Triage Center" %}
 {% set header_subtitle = "Global Inbox &mdash; Documents Requiring Review" %}
 {% set header_actions %}
-    <div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="relative">
+    <div class="relative">
         <button @click="filterOpen = !filterOpen"
             class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-primary transition-colors px-3 py-1.5 rounded-lg border border-outline-variant/20 hover:border-primary/40">
             <span class="material-symbols-outlined text-sm">filter_list</span>
@@ -51,7 +51,7 @@
     {% include "partials/header_controls.html" %}
 {% endset %}
 
-<div class="flex-1 flex flex-col overflow-hidden">
+<div x-data="{ filterOpen: false, court: true, opposing: true, own: true, unknown: true }" class="flex-1 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
     {# Secondary Status Bar (like timeline) #}
