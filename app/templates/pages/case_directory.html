@@ -6,12 +6,6 @@
 {% set header_title = "Case Directory" %}
 {% set header_subtitle %}{{ active_cases|length }} Active &middot; {{ closed_cases|length }} Closed{% endset %}
 {% set header_actions %}
-    <button
-        onclick="window.showShellPlaceholder && window.showShellPlaceholder('New Case — coming soon')"
-        class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1 rounded text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer">
-        <span class="material-symbols-outlined text-[14px]">add</span>
-        New Case
-    </button>
     {% include "partials/header_controls.html" %}
 {% endset %}
 <section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">

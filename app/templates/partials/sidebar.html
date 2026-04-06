@@ -121,8 +121,8 @@
     
     <!-- Profile & CTA -->
     <div class="p-4 mt-auto border-t border-outline-variant/20 flex flex-col items-center">
-        <button class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors active:scale-95 mb-4 px-0" title="New Case File">
-            <span class="material-symbols-outlined text-lg">add_circle</span>
+        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors active:scale-95 mb-4 px-0" title="Upload Document">
+            <span class="material-symbols-outlined text-lg">upload_file</span>
             <span class="whitespace-nowrap"
                   x-show="expanded"
                   x-transition:enter="sb-label-enter"
@@ -130,7 +130,7 @@
                   x-transition:enter-end="opacity-100"
                   x-transition:leave="sb-label-leave"
                   x-transition:leave-start="opacity-100"
-                  x-transition:leave-end="opacity-0">New Case File</span>
+                  x-transition:leave-end="opacity-0">Upload Document</span>
         </button>
         
         <div class="flex items-center gap-3 px-2 w-full" :class="expanded ? '' : 'justify-center'">
