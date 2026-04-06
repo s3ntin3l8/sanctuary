@@ -12,6 +12,10 @@ DATA_DIR.mkdir(exist_ok=True)
 SQLALCHEMY_DATABASE_URL = os.getenv(
     "DATABASE_URL", f"sqlite:///{DATA_DIR / 'sanctuary.db'}"
 )
+
+# Ollama configuration
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},

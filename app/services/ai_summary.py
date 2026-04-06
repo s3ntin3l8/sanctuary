@@ -5,8 +5,8 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.database import Document
+from app.config import OLLAMA_BASE_URL
 
-OLLAMA_URL = "http://localhost:11434"
 MODEL = "qwen3.5:9b"
 
 SYSTEM_PROMPT = """You are a legal document analyst. Analyze the provided document and return a JSON object with exactly these three keys:
@@ -33,7 +33,7 @@ async def generate_summary(doc_content: str, doc_title: str = "") -> dict:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
-            f"{OLLAMA_URL}/api/generate",
+            f"{OLLAMA_BASE_URL}/api/generate",
             json={
                 "model": MODEL,
                 "prompt": SYSTEM_PROMPT + "\n\n" + prompt,
@@ -86,7 +86,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
 
         with httpx.Client(timeout=60.0) as client:
             response = client.post(
-                f"{OLLAMA_URL}/api/generate",
+                f"{OLLAMA_BASE_URL}/api/generate",
                 json={
                     "model": MODEL,
                     "prompt": SYSTEM_PROMPT + "\n\n" + prompt,

@@ -50,6 +50,7 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 | Environment Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///./data/sanctuary.db` | Database connection string |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for local Ollama instance |
 
 Alembic migrations run automatically on server startup. AI features require [Ollama](https://ollama.com/) running locally.
 

@@ -4,7 +4,7 @@ import httpx
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
 from app.models.database import Document
-from app.config import SessionLocal
+from app.config import SessionLocal, OLLAMA_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ async def generate_embedding(doc_id: int):
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "http://localhost:11434/api/embeddings",
+                f"{OLLAMA_BASE_URL}/api/embeddings",
                 json={
                     "model": "nomic-embed-text",
                     "prompt": content_snippet
