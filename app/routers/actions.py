@@ -1,33 +1,36 @@
+import contextlib
 import os
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
+
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
-    File,
     Form,
     HTTPException,
     Request,
-    UploadFile,
-    BackgroundTasks,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
+from app.config import OLLAMA_BASE_URL, templates
+
+limiter = Limiter(key_func=get_remote_address)
 from app.constants import (
-    ORIGINATOR_COLORS,
-    ORIGINATOR_ICONS,
     COST_CATEGORY_META,
     COST_STATUS_META,
+    ORIGINATOR_COLORS,
+    ORIGINATOR_ICONS,
 )
 from app.dependencies import get_db
-from app.config import templates
 from app.helpers import (
-    render_page,
-    parse_form_datetime,
-    render_case_schedule_panel,
     build_document_extraction_context,
     format_upcoming_datetime,
+    parse_form_datetime,
+    render_case_schedule_panel,
+    render_page,
 )
 from app.models.database import (
     Case,
@@ -36,17 +39,20 @@ from app.models.database import (
     Deadline,
     Document,
     Hearing,
+    IngestStatus,
     LegalCost,
     OriginatorType,
 )
+from app.services.ai_summary import (
+    check_ollama_status,
+    summarize_document,
+)
+from app.services.embeddings import check_embedding_status
 from app.services.ingestion import (
-    ingest_file,
-    IngestionError,
     ALLOWED_EXTENSIONS,
     compute_review_reasons,
+    ingest_file,
 )
-from app.services.ai_summary import summarize_document, trigger_summary_background
-from app.services.embeddings import trigger_embedding_background
 
 router = APIRouter()
 
@@ -63,12 +69,11 @@ async def resolve_triage(doc_id: int, request: Request, db: Session = Depends(ge
     db.refresh(doc)
 
     # Re-render the full review card with updated state
-    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
     from collections import defaultdict
 
     top_level_docs = (
         db.query(Document)
-        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id is None)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -97,6 +102,7 @@ async def resolve_triage(doc_id: int, request: Request, db: Session = Depends(ge
     stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
 
     return templates.TemplateResponse(
+        request,
         "partials/review_card.html",
         {
             "request": request,
@@ -115,7 +121,7 @@ async def resolve_triage(doc_id: int, request: Request, db: Session = Depends(ge
 async def update_triage_document(
     doc_id: int, request: Request, db: Session = Depends(get_db)
 ):
-    from app.constants import REVIEW_FIELD_LABELS, ORIGINATOR_COLORS, ORIGINATOR_ICONS
+    from app.constants import REVIEW_FIELD_LABELS
     from app.helpers import build_document_extraction_context, format_form_datetime
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -133,17 +139,13 @@ async def update_triage_document(
     if "sender" in form:
         doc.sender = form.get("sender").strip()
     if "originator_type" in form:
-        try:
+        with contextlib.suppress(ValueError):
             doc.originator_type = OriginatorType(form.get("originator_type"))
-        except ValueError:
-            pass
     if "received_date" in form:
         date_str = form.get("received_date")
         if date_str:
-            try:
+            with contextlib.suppress(ValueError):
                 doc.received_date = datetime.fromisoformat(date_str)
-            except ValueError:
-                pass
 
     # Manual resolve toggle
     if form.get("mark_resolved") == "true":
@@ -264,13 +266,12 @@ async def link_document_to_parent(
     db.refresh(doc)
 
     # Re-render the full review card with updated state
-    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
     from collections import defaultdict
 
     # Get resolved docs grouped by month for the picker
     top_level_docs = (
         db.query(Document)
-        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id is None)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -283,11 +284,11 @@ async def link_document_to_parent(
 
     def _month_sort_key(m):
         if m == "Unknown":
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
         try:
-            return datetime.strptime(m, "%B %Y")
+            return datetime.strptime(m, "%B %Y").replace(tzinfo=UTC)
         except ValueError:
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
 
     resolved_by_month = dict(
         sorted(
@@ -299,6 +300,7 @@ async def link_document_to_parent(
     stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
 
     return templates.TemplateResponse(
+        request,
         "partials/review_card.html",
         {
             "request": request,
@@ -338,12 +340,11 @@ async def unlink_document_from_parent(
     db.refresh(doc)
 
     # Re-render the full review card with updated state
-    from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
     from collections import defaultdict
 
     top_level_docs = (
         db.query(Document)
-        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id == None)
+        .filter(Document.case_id == (doc.case_id or ""), Document.parent_id is None)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -356,11 +357,11 @@ async def unlink_document_from_parent(
 
     def _month_sort_key(m):
         if m == "Unknown":
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
         try:
-            return datetime.strptime(m, "%B %Y")
+            return datetime.strptime(m, "%B %Y").replace(tzinfo=UTC)
         except ValueError:
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
 
     resolved_by_month = dict(
         sorted(
@@ -372,6 +373,7 @@ async def unlink_document_from_parent(
     stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
 
     return templates.TemplateResponse(
+        request,
         "partials/review_card.html",
         {
             "request": request,
@@ -533,7 +535,7 @@ async def mark_cost_paid(
             status_code=404,
         )
     cost.amount_paid = cost.amount_gross
-    cost.paid_at = datetime.now()
+    cost.paid_at = datetime.now(UTC)
     cost.status = CostStatus.BEZAHLT
     db.commit()
     db.refresh(cost)
@@ -577,11 +579,15 @@ async def mark_cost_reimbursed(
 async def upload_document(
     request: Request,
     background_tasks: BackgroundTasks,
-    files: list[UploadFile] = File(...),
-    case_id: Optional[str] = Form(None),
-    parent_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
+    form = await request.form()
+    files = form.getlist("files")
+    case_id_raw = form.get("case_id")
+    case_id = case_id_raw if case_id_raw else None
+    parent_id_raw = form.get("parent_id")
+    parent_id = int(parent_id_raw) if parent_id_raw else None
+
     if not files or all(not f.filename for f in files):
         if request.headers.get("hx-request"):
             return HTMLResponse(
@@ -601,40 +607,41 @@ async def upload_document(
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             error_count += 1
-            results.append(
-                f"<div class=\"p-2 text-xs text-error\">'{file.filename}': Unsupported file type '{ext}'</div>"
+            err_msg = (
+                f'<div class="p-2 text-xs text-error">'
+                f"'{file.filename}': Unsupported file type '{ext}'</div>"
             )
+            results.append(err_msg)
             continue
 
         try:
-            doc = await ingest_file(file, case_id, db, parent_id)
+            doc = await ingest_file(file, case_id, db, parent_id, skip_processing=True)
             success_count += 1
 
             try:
-                trigger_summary_background(doc.id, background_tasks)
-                trigger_embedding_background(doc.id, background_tasks)
-            except Exception:
-                pass
+                background_tasks.add_task(process_document_background, doc.id, db)
+            except Exception as e:
+                print(f"Background task error: {e}")
 
-            if doc.content and "Conversion failed:" in doc.content:
-                results.append(
-                    f'<div class="p-2 text-xs text-warning">⚠️ {file.filename}: conversion had issues</div>'
-                )
-            else:
-                results.append(
-                    f'<div class="p-2 text-xs text-green-400">✓ {file.filename}</div>'
-                )
+            results.append(
+                f'<div class="p-2 text-xs text-green-400">✓ {file.filename} queued for processing</div>'
+            )
 
         except HTTPException as e:
             error_count += 1
             results.append(
-                f'<div class="p-2 text-xs text-error">✗ {file.filename}: {e.detail}</div>'
+                f'<div class="p-2 text-xs text-error">'
+                f"✗ {file.filename}: {e.detail}</div>"
             )
         except Exception as e:
+            import traceback
+
             error_count += 1
             results.append(
-                f'<div class="p-2 text-xs text-error">✗ {file.filename}: Upload failed</div>'
+                f'<div class="p-2 text-xs text-error">'
+                f"✗ {file.filename}: Upload failed: {e}</div>"
             )
+            traceback.print_exc()
 
     if success_count == 0 and error_count > 0:
         return HTMLResponse(
@@ -654,6 +661,31 @@ async def upload_document(
         "errors": error_count,
         "results": results,
     }, 200 if success_count > 0 else 400
+
+
+def process_document_background(doc_id: int, db: Session):
+    """Background task to process document after upload."""
+    from datetime import UTC, datetime
+
+    from app.services.ingestion import process_uploaded_document
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return
+
+    doc.ingest_status = IngestStatus.PROCESSING
+    doc.ingest_started_at = datetime.now(UTC)
+    db.commit()
+
+    try:
+        process_uploaded_document(doc, db)
+        doc.ingest_status = IngestStatus.COMPLETED
+    except Exception as e:
+        doc.ingest_status = IngestStatus.FAILED
+        doc.ingest_error = str(e)
+
+    doc.ingest_completed_at = datetime.now(UTC)
+    db.commit()
 
 
 @router.post("/document/{doc_id}/promote/deadline")
@@ -678,19 +710,8 @@ async def promote_document_deadline(
 
     if not doc.case_id or doc.case_id == "_TRIAGE":
         return HTMLResponse(
-            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
-            status_code=400,
-        )
-
-    # If doc is in triage, reassign it to the target case
-    target_case_id = (form.get("case_id") or "").strip() or None
-    if doc.case_id == "_TRIAGE" and target_case_id:
-        doc.case_id = target_case_id
-        db.commit()
-
-    if not doc.case_id or doc.case_id == "_TRIAGE":
-        return HTMLResponse(
-            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
+            '<div class="text-xs text-error">'
+            "Document must be linked to a case first.</div>",
             status_code=400,
         )
 
@@ -745,19 +766,8 @@ async def promote_document_hearing(
 
     if not doc.case_id or doc.case_id == "_TRIAGE":
         return HTMLResponse(
-            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
-            status_code=400,
-        )
-
-    # If doc is in triage, reassign it to the target case
-    target_case_id = (form.get("case_id") or "").strip() or None
-    if doc.case_id == "_TRIAGE" and target_case_id:
-        doc.case_id = target_case_id
-        db.commit()
-
-    if not doc.case_id or doc.case_id == "_TRIAGE":
-        return HTMLResponse(
-            '<div class="text-xs text-error">Document must be linked to a case first.</div>',
+            '<div class="text-xs text-error">'
+            "Document must be linked to a case first.</div>",
             status_code=400,
         )
 
@@ -946,7 +956,7 @@ async def approve_summary(
 
     if action == "approve":
         doc.ai_summary_status = "approved"
-        doc.ai_summary_approved_at = datetime.now()
+        doc.ai_summary_approved_at = datetime.now(UTC)
     elif action == "reject":
         doc.ai_summary_status = "pending"
         doc.ai_summary_approved_at = None
@@ -1001,19 +1011,18 @@ async def reingest_document(
 
     from app.services.ingestion import (
         extract_case_id,
+        extract_cost_candidates,
+        extract_legal_categories,
         extract_originator,
         extract_received_date,
         extract_sender,
-        extract_cost_candidates,
-        extract_legal_categories,
     )
-    from app.services.normalization import normalize_hm
 
     try:
         with open(doc.file_path, "rb") as f:
             content = f.read()
-    except Exception:
-        raise HTTPException(status_code=500, detail="Cannot read original file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Cannot read original file") from e
 
     markdown_content = content.decode("utf-8", errors="ignore")
 
@@ -1022,7 +1031,7 @@ async def reingest_document(
     (received_date, date_conf) = extract_received_date(markdown_content, doc.title)
     (sender, sender_conf) = extract_sender(markdown_content)
     cost_candidates = extract_cost_candidates(markdown_content)
-    legal_cats = extract_legal_categories(markdown_content)
+    extract_legal_categories(markdown_content)
 
     doc.originator_type = originator_type
     doc.sender = sender
@@ -1067,10 +1076,10 @@ async def reingest_case_documents(
 
     from app.services.ingestion import (
         extract_case_id,
+        extract_cost_candidates,
         extract_originator,
         extract_received_date,
         extract_sender,
-        extract_cost_candidates,
     )
 
     reingested_count = 0
@@ -1112,6 +1121,29 @@ async def reingest_case_documents(
 
     db.commit()
 
-    return HTMLResponse(
-        f"<div class='p-3 text-sm text-on-surface'>Re-ingested {reingested_count} documents</div>",
+    msg = (
+        f"<div class='p-3 text-sm text-on-surface'>"
+        f"Re-ingested {reingested_count} documents</div>"
+    )
+    return HTMLResponse(msg)
+
+
+@router.get("/api/ai-status")
+async def get_ai_status(request: Request):
+    """API endpoint for AI status check."""
+    status_summary = await check_ollama_status()
+    embed_status = await check_embedding_status()
+
+    # Merge status
+    status = {
+        "reachable": status_summary["reachable"],
+        "summary_model": status_summary["summary_model"],
+        "embedding_model": embed_status["embedding_model"],
+        "error": status_summary["error"] or embed_status["error"],
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "partials/ai_status.html",
+        {"request": request, "status": status, "base_url": OLLAMA_BASE_URL},
     )

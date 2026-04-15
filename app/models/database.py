@@ -1,21 +1,24 @@
 import enum
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    ForeignKey,
-    DateTime,
-    Text,
-    Boolean,
-    Enum as SAEnum,
-    JSON,
-)
-from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
+)
+from sqlalchemy.orm import declarative_base, relationship
 
-class CaseStatus(str, enum.Enum):
+
+class CaseStatus(enum.StrEnum):
     INTAKE = "intake"
     DISCOVERY = "discovery"
     PRE_TRIAL = "pre_trial"
@@ -24,7 +27,7 @@ class CaseStatus(str, enum.Enum):
     CLOSED = "closed"
 
 
-class Jurisdiction(str, enum.Enum):
+class Jurisdiction(enum.StrEnum):
     """Case jurisdiction for cost system."""
 
     DE = "de"  # German (RVG/GKG)
@@ -33,13 +36,20 @@ class Jurisdiction(str, enum.Enum):
     OTHER = "other"
 
 
-class OriginatorType(str, enum.Enum):
+class OriginatorType(enum.StrEnum):
     """Maps to the border-l-4 originator stripes from GEMINI.md §4."""
 
     COURT = "court"  # Blue #0369A1 — Gavel icon
     OPPOSING = "opposing"  # Red  #B91C1C — Warning icon
     OWN = "own"  # Green #047857 — Shield icon
     UNKNOWN = "unknown"  # Neutral — for unclassified docs
+
+
+class IngestStatus(enum.StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 Base = declarative_base()
@@ -60,7 +70,9 @@ class Document(Base):
     originator_type = Column(
         SAEnum(OriginatorType), default=OriginatorType.UNKNOWN, nullable=False
     )
-    sender = Column(String, nullable=True)  # "Via: Email from [Sender] on [Date]"
+    sender = Column(
+        String, nullable=True, index=True
+    )  # "Via: Email from [Sender] on [Date]"
     received_date = Column(
         DateTime, nullable=True
     )  # When the physical document was received
@@ -69,6 +81,14 @@ class Document(Base):
     review_reasons = Column(
         JSON, default=list
     )  # e.g. ["missing_case_id", "missing_sender"]
+
+    # Ingest pipeline status fields
+    ingest_status = Column(
+        SAEnum(IngestStatus), default=IngestStatus.PENDING, nullable=False
+    )
+    ingest_error = Column(Text, nullable=True)
+    ingest_started_at = Column(DateTime, nullable=True)
+    ingest_completed_at = Column(DateTime, nullable=True)
 
     # AI Management Summary fields
     ai_summary = Column(
@@ -93,7 +113,7 @@ class Document(Base):
     )  # {"sender": "high", "date": "medium", "case_id": "high", "originator": "low"}
 
     # Self-referential relationship for 'Russian Doll' nesting
-    parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
 
     children = relationship(
         "Document", back_populates="parent", cascade="all, delete-orphan"
@@ -181,7 +201,7 @@ class Hearing(Base):
     source_document = relationship("Document")
 
 
-class CostCategory(str, enum.Enum):
+class CostCategory(enum.StrEnum):
     """German legal cost categories (Kostenkategorien)."""
 
     GERICHTSKOSTEN = "gerichtskosten"  # Court fees — GKG
@@ -196,7 +216,7 @@ class CostCategory(str, enum.Enum):
     SONSTIGES = "sonstiges"  # Other
 
 
-class CostStatus(str, enum.Enum):
+class CostStatus(enum.StrEnum):
     """Payment/reimbursement status of a cost position."""
 
     OFFEN = "offen"  # Due but unpaid (ausstehend)
@@ -249,9 +269,11 @@ class LegalCost(Base):
     is_reimbursable = Column(Boolean, default=True)  # Erstattungsfähig nach §91 ZPO
 
     # Dates
-    issued_at = Column(DateTime, nullable=True)  # Rechnung / Kostenfestsetzung
-    due_at = Column(DateTime, nullable=True)  # Fälligkeitsdatum
-    paid_at = Column(DateTime, nullable=True)  # Bezahlt am
+    issued_at = Column(
+        DateTime, nullable=True, index=True
+    )  # Rechnung / Kostenfestsetzung
+    due_at = Column(DateTime, nullable=True, index=True)  # Fälligkeitsdatum
+    paid_at = Column(DateTime, nullable=True, index=True)  # Bezahlt am
 
     source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     notes = Column(Text, nullable=True)
@@ -261,7 +283,7 @@ class LegalCost(Base):
     source_document = relationship("Document")
 
 
-class EntityType(str, enum.Enum):
+class EntityType(enum.StrEnum):
     """Types of entities extracted from documents."""
 
     PERSON = "person"

@@ -17,15 +17,15 @@
         </div>
     </div>
 
-    <form hx-post="/document/{{ doc.id }}/update-triage" 
-          hx-target="#triage-doc-pane" 
+    <form hx-post="/document/{{ doc.id }}/update-triage"
+          hx-target="#triage-doc-pane"
           hx-swap="innerHTML"
           class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
+
         <!-- Row 1: Title (Full Width) -->
         <div class="md:col-span-2 space-y-1.5">
             <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1">Document Title</label>
-            <input type="text" name="title" value="{{ doc.title }}" 
+            <input type="text" name="title" value="{{ doc.title }}"
                    class="w-full px-4 py-2.5 bg-surface rounded-xl border border-outline-variant/20 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all">
         </div>
 
@@ -68,7 +68,7 @@
                 <input type="checkbox" name="mark_resolved" value="true" class="accent-primary rounded">
                 <span class="text-[10px] font-bold text-on-surface-variant group-hover:text-primary transition-colors uppercase tracking-wider">Finalize & Remove from Triage</span>
             </label>
-            
+
             <button type="submit" class="bg-primary hover:bg-primary/90 text-on-primary px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/10 active:scale-95 transition-all flex items-center gap-2">
                 <span data-loading-idle>Update & Re-evaluate</span>
                 <span class="material-symbols-outlined text-sm htmx-indicator animate-spin" data-loading-active>progress_activity</span>

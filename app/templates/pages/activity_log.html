@@ -19,7 +19,7 @@
     {% include "partials/header_controls.html" %}
 {% endset %}
 
-<section x-data="{ 
+<section x-data="{
     limit: 20,
     offset: 0,
     hasMore: true,
@@ -46,7 +46,7 @@
             }
         });
     }
-}" 
+}"
 x-init="$watch('limit', () => { offset = 0; hasMore = true; })"
 class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
@@ -102,7 +102,7 @@ class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
                             {% if doc.case_id and case_titles.get(doc.case_id) %}
-                            <a href="/cases/{{ doc.case_id }}" @click.stop="" 
+                            <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
                                 class="inline-flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider transition-colors">
                                 <span class="material-symbols-outlined text-[10px]">folder</span>
                                 {{ case_titles.get(doc.case_id, doc.case_id) }}
@@ -112,6 +112,27 @@ class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
                             {% endif %}
                             <span class="text-[9px] text-on-surface-variant">
                                 {% if doc.sender %}Via: {{ doc.sender }}{% else %}Manual upload{% endif %}
+                            </span>
+                            {# Status indicators for processing pipeline #}
+                            <span class="flex items-center gap-0.5 ml-1" title="Ingest: {{ doc.ingest_status.value if doc.ingest_status else 'unknown' }}">
+                                {% if doc.ingest_status and doc.ingest_status.value == 'pending' %}
+                                <span class="material-symbols-outlined text-[12px] text-yellow-500">hourglass_empty</span>
+                                {% elif doc.ingest_status and doc.ingest_status.value == 'processing' %}
+                                <span class="material-symbols-outlined text-[12px] text-blue-500 animate-spin">sync</span>
+                                {% elif doc.ingest_status and doc.ingest_status.value == 'failed' %}
+                                <span class="material-symbols-outlined text-[12px] text-red-500" title="{{ doc.ingest_error }}">error</span>
+                                {% else %}
+                                <span class="material-symbols-outlined text-[12px] text-green-500">check_circle</span>
+                                {% endif %}
+                            </span>
+                            <span class="flex items-center gap-0.5" title="AI Summary: {{ doc.ai_summary_status }}">
+                                {% if doc.ai_summary_status == 'pending' %}
+                                <span class="material-symbols-outlined text-[12px] text-yellow-500">smart_toy</span>
+                                {% elif doc.ai_summary_status == 'generated' %}
+                                <span class="material-symbols-outlined text-[12px] text-green-500">smart_toy</span>
+                                {% elif doc.ai_summary_status == 'failed' %}
+                                <span class="material-symbols-outlined text-[12px] text-red-500">smart_toy</span>
+                                {% endif %}
                             </span>
                         </div>
                     </div>
@@ -126,7 +147,7 @@ class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
         </div>
 
         {# Load More Trigger / Loading State #}
-        <div x-ref="loadSentinel" class="p-8 text-center" 
+        <div x-ref="loadSentinel" class="p-8 text-center"
              @Inbox(
                  if (hasMore && !loading) loadMore();
              )>

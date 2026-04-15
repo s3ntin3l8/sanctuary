@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import os
 import re
-import hashlib
 import threading
+from datetime import UTC, datetime, timedelta
+
 import aiofiles
-import asyncio
-from typing import Optional
-from datetime import timedelta
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
+
+from app.config import DATA_DIR
 from app.models.database import (
+    Case,
+    CaseStatus,
     Document,
     Entity,
     EntityType,
+    IngestStatus,
     OriginatorType,
-    Case,
-    CaseStatus,
 )
 from app.services.normalization import normalize_hm
 
@@ -27,12 +30,16 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 # Lazy converter initialization
 # ---------------------------------------------------------------------------
 
-_converter: Optional[object] = None
+_converter: object | None = None
 _converter_lock = threading.Lock()
 
 
 def _get_converter():
-    """Lazy-init the Docling DocumentConverter on first use (thread-safe)."""
+    """Lazy-init the Docling DocumentConverter on first use (thread-safe).
+
+    Note: Docling v2.69+ handles OCR automatically - it will use OCR for
+    scanned PDFs when needed without explicit configuration.
+    """
     global _converter
     if _converter is None:
         with _converter_lock:
@@ -45,14 +52,14 @@ def _get_converter():
                     raise RuntimeError(
                         f"Failed to initialize Docling converter: {e}. "
                         "Ensure Docling is installed and system dependencies are met."
-                    )
+                    ) from e
     return _converter
 
 
 class IngestionError(Exception):
     """Structured error for ingestion pipeline failures."""
 
-    def __init__(self, message: str, detail: str | None = None):
+    def __init__(self, message: str, detail: str | None = None) -> None:
         self.message = message
         self.detail = detail
         super().__init__(self.message)
@@ -62,7 +69,8 @@ class IngestionError(Exception):
 # Heuristic metadata extraction from filename + content
 # ---------------------------------------------------------------------------
 
-# Common case-ID patterns: ADV-992-K, REF-441-22, 2023-CV-01234, German court file numbers
+# Common case-ID patterns: ADV-992-K, REF-441-22, 2023-CV-01234
+# Also includes German court file numbers
 CASE_ID_PATTERNS = [
     re.compile(r"\b(ADV-\d{3,4}-[A-Z]{1,3})\b", re.IGNORECASE),
     re.compile(r"\b(REF-\d{3,4}-\d{1,3})\b", re.IGNORECASE),
@@ -153,10 +161,11 @@ OWN_KEYWORDS = {
     "rechtsanwalt": 1,
 }
 
-# Date patterns in content (ordered by specificity: contextual first, then absolute)
+# Date patterns in content (ordered by specificity)
 DATE_PATTERNS = [
     re.compile(
-        r"(?:received|dated|filed|sent|vom|eingegangen)\s+(?:on\s+|am\s+|vom\s+)?(\w+ \d{1,2},? \d{4})",
+        r"(?:received|dated|filed|sent|vom|eingegangen)\s+"
+        r"(?:on\s+|am\s+|vom\s+)?(\w+ \d{1,2},? \d{4})",
         re.IGNORECASE,
     ),
     re.compile(r"(\d{4}-\d{2}-\d{2})"),
@@ -205,7 +214,8 @@ GERMAN_MONTHS = {
 # Pattern for DD. Month YYYY (German long form)
 GERMAN_LONG_DATE_PATTERN = re.compile(
     r"\b(\d{1,2})\.\s+"
-    r"(Januar|Februar|Marz|Mrz|Mars|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember|"
+    r"(Januar|Februar|Marz|Mrz|Mars|April|Mai|Juni|Juli|August|"
+    r"September|Oktober|November|Dezember|"
     r"Jan|Feb|Mrz|Mar|Apr|Mai|Jun|Jul|Aug|Sep|Sept|Okt|Nov|Dez)"
     r"\s+(\d{4})\b",
     re.IGNORECASE,
@@ -219,12 +229,15 @@ SENDER_PATTERNS = [
     re.compile(r"^[Vv]on:\s*(.+)$", re.MULTILINE),
     # From/Sender/By/Signed/Von/Absender with name
     re.compile(
-        r"(?:from|sender|by|signed|submitted by|von|absender)[:\s]+([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        r"(?:from|sender|by|signed|submitted by|von|absender)[:\s]+"
+        r"([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
         re.IGNORECASE,
     ),
     # From/Sender with firm name
     re.compile(
-        r"(?:from|sender|von|absender)[:\s]+([A-Z][a-z]+ (?:&|and) [A-Z][a-z]+ (?:LLP|LLC|PC|PLLC|GmbH|AG|KG|e\.K\.))",
+        r"(?:from|sender|von|absender)[:\s]+"
+        r"([A-Z][a-z]+ (?:&|and) [A-Z][a-z]+ "
+        r"(?:LLP|LLC|PC|PLLC|GmbH|AG|KG|e\.K\.))",
         re.IGNORECASE,
     ),
     # Sehr geehrte(r) followed by name
@@ -237,19 +250,24 @@ SENDER_PATTERNS = [
 # Signature block patterns (look at end of document)
 SIGNATURE_PATTERNS = [
     re.compile(
-        r"(?:Mit freundlichen Grüßen|Mit freundlichen Grüssen|Kind regards|Best regards|Sincerely|Yours faithfully)\s*\n\s*([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        r"(?:Mit freundlichen Grüßen|Mit freundlichen Grüssen|"
+        r"Kind regards|Best regards|Sincerely|Yours faithfully)\s*\n\s*"
+        r"([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
         re.IGNORECASE,
     ),
     re.compile(
-        r"(?:Rechtsanwalt|Rechtsanwältin|Attorney|Counsel|Lawyer)\s+([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
+        r"(?:Rechtsanwalt|Rechtsanwältin|Attorney|Counsel|Lawyer)\s+"
+        r"([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
         re.IGNORECASE,
     ),
 ]
 
 ABSOLUTE_DATE_PATTERN = re.compile(
     r"\b("
-    r"(?:Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|Mar(?:ch|z)?|Apr(?:il)?|May|Mai|Jun(?:e|i)?|Jul(?:y|i)?|Aug(?:ust)?|"
-    r"Sep(?:tember)?|Okt(?:ober)?|Oct(?:ober)?|Nov(?:ember)?|Dez(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}"
+    r"(?:Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|Mar(?:ch|z)?|Apr(?:il)?|May|Mai|"
+    r"Jun(?:e|i)?|Jul(?:y|i)?|Aug(?:ust)?|"
+    r"Sep(?:tember)?|Okt(?:ober)?|Oct(?:ober)?|Nov(?:ember)?|Dez(?:ember)?|"
+    r"Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}"
     r"|\d{4}-\d{2}-\d{2}"
     r"|\d{1,2}/\d{1,2}/\d{4}"
     r"|\d{1,2}\.\d{1,2}\.\d{4}"
@@ -276,7 +294,9 @@ DEADLINE_KEYWORDS = (
     "production",
 )
 RELATIVE_DEADLINE_PATTERN = re.compile(
-    r"(?:within|no later than)\s+(\d{1,3})\s+days?\s+(?:of|after|from)\s+(?:receipt|service|receipt of this notice|the order|this order|filing)",
+    r"(?:within|no later than)\s+(\d{1,3})\s+days?\s+"
+    r"(?:of|after|from)\s+(?:receipt|service|receipt of this notice|"
+    r"the order|this order|filing)",
     re.IGNORECASE,
 )
 
@@ -336,7 +356,10 @@ COST_SCAN_LIMIT = 5000
 
 
 def extract_case_id(filename: str, content: str) -> tuple[str | None, str]:
-    """Try to extract a case ID from content first, then from filename as fallback. Returns (case_id, confidence)."""
+    """
+    Try to extract a case ID from content first, then filename.
+    Returns (case_id, confidence).
+    """
     snippet = (content or "")[:CASE_ID_SCAN_LIMIT]
 
     # 1. Try content first - HIGH confidence if found
@@ -361,7 +384,10 @@ def extract_case_id(filename: str, content: str) -> tuple[str | None, str]:
 
 
 def extract_originator(filename: str, content: str) -> tuple[OriginatorType, str]:
-    """Classify originator based on weighted keyword matching. Returns (type, confidence)."""
+    """
+    Classify originator based on weighted keyword matching.
+    Returns (type, confidence).
+    """
     combined = (filename + " " + (content or "")[:ORIGINATOR_SCAN_LIMIT]).lower()
     court_score = sum(weight for kw, weight in COURT_KEYWORDS.items() if kw in combined)
     opposing_score = sum(
@@ -390,14 +416,12 @@ def extract_originator(filename: str, content: str) -> tuple[OriginatorType, str
 
 def _parse_date_string(date_str: str):
     """Parse a date string in various formats including German."""
-    from datetime import datetime as dt
-
     cleaned = date_str.strip().replace(",", "")
 
     # Try standard formats first
     for fmt in ("%B %d %Y", "%b %d %Y", "%Y-%m-%d", "%m/%d/%Y", "%d %B %Y", "%d %b %Y"):
         try:
-            return dt.strptime(cleaned, fmt)
+            return datetime.strptime(cleaned, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
 
@@ -410,7 +434,7 @@ def _parse_date_string(date_str: str):
             int(german_short.group(3)),
         )
         try:
-            return dt(year, month, day)
+            return datetime(year, month, day, tzinfo=UTC)
         except ValueError:
             pass
 
@@ -424,7 +448,7 @@ def _parse_date_string(date_str: str):
         )
         year = 2000 + year if year < 100 else year
         try:
-            return dt(year, month, day)
+            return datetime(year, month, day, tzinfo=UTC)
         except ValueError:
             pass
 
@@ -439,8 +463,6 @@ def extract_received_date(
     Returns (date, confidence). Prefers dates found in the first 1000 characters
     (header region) over dates deeper in the document.
     """
-    from datetime import datetime as dt
-
     snippet = content or ""
 
     # 1. Try header region first (first 1000 chars) — HIGH confidence
@@ -470,7 +492,7 @@ def extract_received_date(
         month = GERMAN_MONTHS.get(month_name)
         if month:
             try:
-                return (dt(year, month, day), "medium")
+                return (datetime(year, month, day, tzinfo=UTC), "medium")
             except ValueError:
                 pass
 
@@ -489,7 +511,10 @@ def extract_received_date(
                 date_str = match.group(1)
                 if re.match(r"^\d{8}$", date_str):
                     try:
-                        return (dt.strptime(date_str, "%Y%m%d"), "low")
+                        return (
+                            datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=UTC),
+                            "low",
+                        )
                     except ValueError:
                         pass
                 parsed = _parse_date_string(date_str)
@@ -525,12 +550,11 @@ def extract_sender(content: str) -> tuple[str | None, str]:
 
 def _parse_candidate_date(raw_value: str):
     """Parse a single absolute date string into a datetime."""
-    from datetime import datetime as dt
 
     cleaned = raw_value.strip().replace(",", "")
     for fmt in ("%B %d %Y", "%b %d %Y", "%Y-%m-%d", "%m/%d/%Y", "%d.%m.%Y", "%d.%m.%y"):
         try:
-            return dt.strptime(cleaned, fmt)
+            return datetime.strptime(cleaned, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     # Try German month names: "5. Januar 2024"
@@ -542,7 +566,7 @@ def _parse_candidate_date(raw_value: str):
         month = GERMAN_MONTHS.get(month_str)
         if month:
             try:
-                return dt(year, month, day)
+                return datetime(year, month, day, tzinfo=UTC)
             except ValueError:
                 pass
     return None
@@ -553,7 +577,6 @@ def extract_schedule_candidates(content: str, base_date=None) -> list[dict]:
     Extract likely hearing/deadline candidates from document content.
     This is heuristic on purpose: we want promotion hooks, not full AI extraction yet.
     """
-    from datetime import datetime as dt
 
     candidates: list[dict] = []
     seen: set[tuple] = set()
@@ -633,7 +656,7 @@ def extract_schedule_candidates(content: str, base_date=None) -> list[dict]:
                 days = int(relative_match.group(1))
                 if "wochen" in lowered:
                     days *= 7
-                ref_date = base_date if base_date else dt.now()
+                ref_date = base_date if base_date else datetime.now(UTC)
                 due_at = ref_date + timedelta(days=days)
                 title = "Response deadline"
                 key = ("deadline", title, due_at.isoformat())
@@ -755,10 +778,8 @@ def is_valid_docling_output(content: str) -> bool:
     non_whitespace = sum(1 for c in content if c not in " \t\n")
     if non_whitespace < 10:
         return False
-    lines = [l.strip() for l in content.split("\n") if l.strip()]
-    if len(lines) < 2:
-        return False
-    return True
+    lines = [line.strip() for line in content.split("\n") if line.strip()]
+    return len(lines) >= 2
 
 
 def extract_cost_candidates(content: str) -> list[dict]:
@@ -851,7 +872,7 @@ def extract_legal_categories(content: str) -> list[dict]:
 def parse_eml_file(file_path: str) -> str:
     """Parse .eml file and convert to markdown."""
     try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             content = f.read()
     except Exception:
         return "# Email\n\nUnable to parse email file."
@@ -1010,39 +1031,37 @@ def _extract_and_save_entities(db: Session, doc: Document, content: str) -> None
 
 async def ingest_file(
     file: UploadFile,
-    case_id: Optional[str] = None,
+    case_id: str | None = None,
     db: Session = None,
     parent_id: int = None,
+    skip_processing: bool = False,
 ) -> Document:
     """
     Saves an uploaded file to a local directory grouped by case_id,
     converts it to Markdown using Docling, runs heuristic metadata
     extraction, and stores the result in the database.
 
-    Documents with incomplete metadata are flagged for triage review.
-    Corrupt or unsupported files are stored with a failure marker for review.
+    If skip_processing=True, creates a pending document and returns immediately
+    without doing the expensive conversion. Use with background processing.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
 
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
+        allowed_ext_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            detail=f"Unsupported file type '{ext}'. Allowed: {allowed_ext_str}",
         )
 
-    # 1. Ensure the destination directory exists
-    # Use case_id if provided, otherwise extract from content, default to _TRIAGE (matching final_case_id logic)
-    preliminary_case_id = (
-        case_id if case_id else (extract_case_id(safe_filename, "") or "_TRIAGE")
-    )
-    case_dir = os.path.join("./data", preliminary_case_id)
-    os.makedirs(case_dir, exist_ok=True)
-
-    # Secure the filename (basic safety)
+    # 1. Secure the filename and set initial case ID logic
     safe_filename = os.path.basename(file.filename)
-    file_path = os.path.join(case_dir, safe_filename)
+    extracted_case_id, _ = extract_case_id(safe_filename, "")
+    preliminary_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
+    case_dir = DATA_DIR / preliminary_case_id
+    case_dir.mkdir(parents=True, exist_ok=True)
+    file_path = str(case_dir / safe_filename)
 
     # 2. Save the file to disk asynchronously, computing SHA-256 hash in the process
     sha256 = hashlib.sha256()
@@ -1052,10 +1071,10 @@ async def ingest_file(
             while content := await file.read(1024 * 1024):  # 1MB chunks
                 total_size += len(content)
                 if total_size > MAX_FILE_SIZE:
-                    os.remove(file_path)
+                    max_mb = MAX_FILE_SIZE // (1024 * 1024)
                     raise HTTPException(
                         status_code=413,
-                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB",
+                        detail=f"File too large. Maximum size: {max_mb}MB",
                     )
                 sha256.update(content)
                 await out_file.write(content)
@@ -1065,11 +1084,56 @@ async def ingest_file(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to save uploaded file: {e}",
+        ) from e
+
+    content_hash = sha256.hexdigest()
+
+    # If skipping processing, create pending document and return
+    if skip_processing:
+        extracted_title = extract_clean_title(safe_filename, "")
+
+        # Check for duplicate
+        existing = (
+            db.query(Document)
+            .filter(
+                Document.content_hash == content_hash,
+                Document.case_id == preliminary_case_id,
+            )
+            .first()
         )
+        if existing:
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Duplicate document: '{existing.title}' (ID: {existing.id})",
+            )
+
+        new_doc = Document(
+            title=extracted_title
+            if extracted_title != safe_filename
+            else safe_filename,
+            content=None,
+            case_id=preliminary_case_id,
+            file_path=file_path,
+            content_hash=content_hash,
+            parent_id=parent_id,
+            originator_type=OriginatorType.UNKNOWN,
+            sender=None,
+            received_date=None,
+            ingest_status=IngestStatus.PENDING,
+        )
+
+        db.add(new_doc)
+        db.commit()
+        db.refresh(new_doc)
+        return new_doc
+
+    # Full processing path (existing logic)
 
     content_hash = sha256.hexdigest()
 
     # 3. Convert to markdown with docling (or parse .eml directly)
+    # Note: Docling v2.69+ automatically handles OCR for scanned PDFs
     markdown_content: str | None = None
     conversion_error: str | None = None
 
@@ -1088,14 +1152,28 @@ async def ingest_file(
                 asyncio.to_thread(convert_to_md, file_path), timeout=60.0
             )
             markdown_content = normalize_hm(markdown_content)
-        except asyncio.TimeoutError:
+
+            # Log detection for potential scanned documents
+            if ext == ".pdf" and markdown_content:
+                text_only = re.sub(r"[#*_\[\]()]|!\[.*?\]\(.*?\)", "", markdown_content)
+                text_only = re.sub(r"\n+", "\n", text_only).strip()
+                if len(text_only) < 100:
+                    # This might be a scanned document that needs review
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        f"Document '{safe_filename}' extracted to only {len(text_only)} chars - possible scanned document"
+                    )
+
+        except TimeoutError:
             conversion_error = "Conversion timed out after 60 seconds"
             markdown_content = f"Conversion failed: {conversion_error}"
         except Exception as e:
             conversion_error = str(e)
             markdown_content = f"Conversion failed: {conversion_error}"
 
-        # 3b. Quality check: reject whitespace-only or repetitive content (skip for .eml)
+        # 3b. Quality check: reject whitespace-only or repetitive content
+        # (skip for .eml)
         if not is_valid_docling_output(markdown_content):
             conversion_error = "Conversion produced invalid/empty content"
             markdown_content = f"Conversion failed: {conversion_error}"
@@ -1194,9 +1272,111 @@ async def ingest_file(
         raise HTTPException(
             status_code=500,
             detail=f"Database error while saving document: {e}",
-        )
+        ) from e
 
     # 8. Extract and persist entities
     _extract_and_save_entities(db, new_doc, markdown_content)
 
     return new_doc
+
+
+def process_uploaded_document(doc: Document, db: Session):
+    """
+    Process a pending document in the background.
+    This runs after the initial upload returns quickly.
+    """
+    from app.services.normalization import normalize_hm
+
+    file_path = doc.file_path
+    if not file_path or not os.path.exists(file_path):
+        raise Exception(f"File not found: {file_path}")
+
+    ext = os.path.splitext(file_path)[1].lower()
+    safe_filename = os.path.basename(file_path)
+
+    # Convert to markdown (Docling handles OCR automatically for scanned PDFs)
+    markdown_content: str | None = None
+    conversion_error: str | None = None
+
+    if ext == ".eml":
+        markdown_content = parse_eml_file(file_path)
+    else:
+
+        def convert_to_md(path: str) -> str:
+            conv = _get_converter()
+            result = conv.convert(path)
+            return result.document.export_to_markdown()
+
+        try:
+            markdown_content = convert_to_md(file_path)
+            markdown_content = normalize_hm(markdown_content)
+
+            # Log detection for potential scanned documents
+            if ext == ".pdf" and markdown_content:
+                text_only = re.sub(r"[#*_\[\]()]|!\[.*?\]\(.*?\)", "", markdown_content)
+                text_only = re.sub(r"\n+", "\n", text_only).strip()
+                if len(text_only) < 100:
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        f"Document '{safe_filename}' extracted to only {len(text_only)} chars - possible scanned document"
+                    )
+
+        except TimeoutError:
+            conversion_error = "Conversion timed out after 60 seconds"
+            markdown_content = f"Conversion failed: {conversion_error}"
+        except Exception as e:
+            conversion_error = str(e)
+            markdown_content = f"Conversion failed: {conversion_error}"
+
+    if not is_valid_docling_output(markdown_content):
+        conversion_error = "Conversion produced invalid/empty content"
+        markdown_content = f"Conversion failed: {conversion_error}"
+
+    # Extract metadata
+    extracted_case_id, case_id_conf = extract_case_id(
+        safe_filename, markdown_content or ""
+    )
+    extracted_originator, originator_conf = extract_originator(
+        safe_filename, markdown_content or ""
+    )
+    extracted_date, date_conf = extract_received_date(
+        markdown_content or "", safe_filename
+    )
+    extracted_sender, sender_conf = extract_sender(markdown_content or "")
+    extracted_title = extract_clean_title(safe_filename, markdown_content or "")
+    extracted_cost_candidates = extract_cost_candidates(markdown_content or "")
+
+    extraction_confidence = {
+        "sender": sender_conf,
+        "date": date_conf,
+        "case_id": case_id_conf,
+        "originator": originator_conf,
+    }
+
+    # Update the document
+    doc.content = markdown_content
+    doc.title = extracted_title if extracted_title != safe_filename else safe_filename
+
+    if extracted_case_id:
+        doc.case_id = extracted_case_id
+
+    doc.originator_type = extracted_originator
+    doc.sender = extracted_sender
+    doc.received_date = extracted_date
+    doc.cost_candidates = (
+        extracted_cost_candidates if extracted_cost_candidates else None
+    )
+    doc.extraction_confidence = extraction_confidence
+
+    # Compute review reasons
+    from app.services.ingestion import compute_review_reasons
+
+    reasons = compute_review_reasons(doc)
+    doc.review_reasons = reasons
+    doc.needs_review = len(reasons) > 0
+
+    db.commit()
+
+    # Extract entities
+    _extract_and_save_entities(db, doc, markdown_content)

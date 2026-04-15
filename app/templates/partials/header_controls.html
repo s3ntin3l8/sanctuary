@@ -1,11 +1,11 @@
-<div class="flex items-center gap-3" x-data="{ 
-    searchOpen: false, 
-    searchQuery: '', 
+<div class="flex items-center gap-3" x-data="{
+    searchOpen: false,
+    searchQuery: '',
     searchResults: {documents: [], cases: [], contacts: [], total: 0},
     async doSearch() {
-        if (this.searchQuery.length < 2) { 
-            this.searchResults = {documents:[], cases:[], contacts:[], total:0}; 
-            return; 
+        if (this.searchQuery.length < 2) {
+            this.searchResults = {documents:[], cases:[], contacts:[], total:0};
+            return;
         }
         try {
             const r = await fetch('/api/search?q=' + encodeURIComponent(this.searchQuery));
@@ -13,7 +13,7 @@
         } catch (e) { console.error(e); }
     }
 }" @click.outside="searchOpen = false">
-    
+
     <!-- Search Input -->
     <div x-show="searchOpen"
          x-transition:enter="transition ease-out duration-100"
@@ -24,17 +24,17 @@
          x-transition:leave-end="opacity-0 -translate-x-2"
          class="relative"
          style="display: none;">
-        <input type="text" 
+        <input type="text"
                x-ref="searchInput"
                x-model="searchQuery"
                @focus="searchOpen = true"
                @input.debounce.300ms="doSearch()"
                @keydown.escape="searchOpen = false; searchQuery = ''"
-               @keydown.enter="if(searchResults.total > 10) window.location.href='/search?q=' + encodeURIComponent(searchQuery)"
+                @keydown.enter="window.location.href='/search?q=' + encodeURIComponent(searchQuery)"
                placeholder="Search... (⌘K)"
                class="bg-surface-container-low text-xs px-3 py-1.5 rounded-lg border border-outline-variant/30 focus:border-primary focus:outline-none w-96 placeholder:text-on-surface-variant/50"
                data-search-input>
-        
+
         <!-- Autocomplete Dropdown -->
         <div x-show="searchOpen && (searchResults.total > 0)"
              x-transition:enter="transition ease-out duration-100"
@@ -45,7 +45,7 @@
              x-transition:leave-end="opacity-0 translate-y-1"
              class="absolute top-full right-0 mt-2 w-96 bg-surface-container border border-outline-variant/20 rounded-xl shadow-2xl z-[9999] overflow-hidden max-h-[60vh] overflow-y-auto"
              style="display: none;">
-            
+
             <!-- Documents Section -->
             <template x-if="searchResults.documents?.length">
                 <div class="border-b border-outline-variant/10">
@@ -58,7 +58,7 @@
                     </template>
                 </div>
             </template>
-            
+
             <!-- Cases Section -->
             <template x-if="searchResults.cases?.length">
                 <div class="border-b border-outline-variant/10">
@@ -71,7 +71,7 @@
                     </template>
                 </div>
             </template>
-            
+
             <!-- Contacts Section -->
             <template x-if="searchResults.contacts?.length">
                 <div class="border-b border-outline-variant/10">
@@ -83,24 +83,24 @@
                     </template>
                 </div>
             </template>
-            
+
             <!-- More Results Link -->
             <template x-if="searchResults.total > 10">
-                <a :href="'/search?q=' + encodeURIComponent(searchQuery)" @click="searchOpen = false" 
+                <a :href="'/search?q=' + encodeURIComponent(searchQuery)" @click="searchOpen = false"
                    class="block px-3 py-2 text-center text-xs text-primary hover:bg-surface-container-high transition-colors font-bold">
                     View all <span x-text="searchResults.total"></span> results →
                 </a>
             </template>
         </div>
     </div>
-    
+
     <button type="button"
             @click="searchOpen = true; $nextTick(() => $refs.searchInput.focus())"
             class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
             title="Search">
         search
     </button>
-    
+
     <div class="relative flex items-center">
         <button type="button"
             class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors leading-none align-middle"

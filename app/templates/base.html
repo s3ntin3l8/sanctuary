@@ -12,16 +12,16 @@
             }
         })();
     </script>
-    
+
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@300..700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    
+
     <!-- Alpine.js -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    
+
     <!-- Tailwind CSS Compiled Styles -->
     <link href="/static/styles.css" rel="stylesheet"/>
     <script>
@@ -137,7 +137,7 @@
 </head>
 <body class="bg-background font-body text-on-surface flex h-screen overflow-hidden">
     {% include 'partials/sidebar.html' %}
-    
+
     <!-- Main Workspace Container -->
     <main class="flex-1 flex overflow-hidden">
         {% block content %}{% endblock %}
@@ -403,7 +403,7 @@
                     const displayValue = input.dataset.format === 'eur' ? (parseFloat(newValue) || 0).toFixed(2) : newValue;
                     field.innerHTML = '';
                     const p = document.createElement('p');
-                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' : 
+                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
                                   input.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
                                   input.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
                                   'text-xs font-mono text-on-surface-variant';
@@ -431,7 +431,7 @@
                     // Restore original
                     field.dataset.value = originalValue;
                     const p = document.createElement('p');
-                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' : 
+                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
                                   input.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
                                   input.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
                                   'text-xs font-mono text-on-surface-variant';
@@ -454,7 +454,7 @@
                     const format = e.target.dataset.format;
                     field.innerHTML = '';
                     const p = document.createElement('p');
-                    p.className = e.target.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' : 
+                    p.className = e.target.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
                                   e.target.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
                                   e.target.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
                                   'text-xs font-mono text-on-surface-variant';
@@ -494,7 +494,7 @@
             <div class="px-4 py-2 bg-error-container/10 border-b border-error/10">
                 <p class="text-[9px] font-bold text-error uppercase tracking-wider mb-2">Overdue Deadlines — {{ overdue_deadlines|length }}</p>
                 {% for dl in overdue_deadlines %}
-                <a href="/cases/{{ dl.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                <a href="/cases/{{ dl.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
                     <span class="material-symbols-outlined text-error text-sm shrink-0 mt-0.5">event_busy</span>
                     <div class="min-w-0">
                         <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
@@ -509,7 +509,7 @@
             <div class="px-4 py-2 border-b border-outline-variant/10">
                 <p class="text-[9px] font-bold text-originator-opposing uppercase tracking-wider mb-2">Upcoming Deadlines — {{ upcoming_deadlines_notif|length }}</p>
                 {% for dl in upcoming_deadlines_notif %}
-                <a href="/cases/{{ dl.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                <a href="/cases/{{ dl.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
                     <span class="material-symbols-outlined text-originator-opposing text-sm shrink-0 mt-0.5">event</span>
                     <div class="min-w-0">
                         <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
@@ -524,7 +524,7 @@
             <div class="px-4 py-2 border-b border-outline-variant/10">
                 <p class="text-[9px] font-bold text-originator-court uppercase tracking-wider mb-2">Upcoming Hearings — {{ upcoming_hearings_notif|length }}</p>
                 {% for h in upcoming_hearings_notif %}
-                <a href="/cases/{{ h.case_id }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
+                <a href="/cases/{{ h.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
                     <span class="material-symbols-outlined text-originator-court text-sm shrink-0 mt-0.5">gavel</span>
                     <div class="min-w-0">
                         <p class="text-xs font-bold text-on-surface truncate">{{ h.title }}</p>

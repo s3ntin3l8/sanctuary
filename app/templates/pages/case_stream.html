@@ -141,7 +141,7 @@
                     {% set doc_stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set doc_stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
                     {% set is_last = loop.last %}
-                    <div class="relative mb-8 cursor-pointer group" 
+                    <div class="relative mb-8 cursor-pointer group"
                         @click="activeDoc = '{{ doc.id }}'; $el.classList.add('border-primary', 'bg-primary/10'); document.querySelectorAll('[id^=doc-card-]').forEach(c => { if (c !== $el) c.classList.remove('border-primary', 'bg-primary/10') })"
                         hx-get="/document/{{ doc.id }}" hx-target="#document-pane" hx-swap="innerHTML">
                         <div class="absolute left-0 translate-x-[-8px] top-6 w-[1px] bg-outline-variant/30"
@@ -188,7 +188,7 @@
                         {% if doc.children %}
                         {% for child in doc.children %}
                         {% set child_stripe_color = originator_colors.get(child.originator_type, '#64748b') %}
-                        <div class="ml-12 mt-6 relative cursor-pointer group" 
+                        <div class="ml-12 mt-6 relative cursor-pointer group"
                             @click.stop="activeDoc = '{{ child.id }}'; document.querySelectorAll('[id^=doc-card-]').forEach(c => c.classList.remove('border-primary', 'bg-primary/10')); $el.querySelector('[id^=doc-card-]').classList.add('border-primary', 'bg-primary/10')"
                             hx-get="/document/{{ child.id }}" hx-target="#document-pane" hx-swap="innerHTML">
                             <svg class="absolute left-[-32px] top-[-30px] w-8 h-8" viewBox="0 0 32 32" fill="none">
@@ -327,9 +327,9 @@
                         Entities
                     </h3>
                 </div>
-                
+
                 {% set total_entities = entities.persons|length + entities.organizations|length + entities.dates|length + entities.financial|length + entities.legal_categories|length %}
-                
+
                 {% if total_entities == 0 %}
                     {% with
                         icon='hub',
@@ -345,7 +345,7 @@
                     {% endwith %}
                 {% else %}
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        
+
                         <!-- People -->
                         {% if entities.persons %}
                         <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
@@ -363,7 +363,7 @@
                             </ul>
                         </div>
                         {% endif %}
-                        
+
                         <!-- Organizations -->
                         {% if entities.organizations %}
                         <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
@@ -381,7 +381,7 @@
                             </ul>
                         </div>
                         {% endif %}
-                        
+
                         <!-- Dates -->
                         {% if entities.dates %}
                         <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
@@ -399,7 +399,7 @@
                             </ul>
                         </div>
                         {% endif %}
-                        
+
                         <!-- Financial -->
                         {% if entities.financial %}
                         <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
@@ -417,7 +417,7 @@
                             </ul>
                         </div>
                         {% endif %}
-                        
+
                         <!-- Legal Categories -->
                         {% if entities.legal_categories %}
                         <div class="bg-surface-container rounded-xl p-4 border border-outline-variant/10">
@@ -435,7 +435,7 @@
                             </ul>
                         </div>
                         {% endif %}
-                        
+
                     </div>
                 {% endif %}
             </div>

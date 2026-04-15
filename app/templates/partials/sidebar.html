@@ -25,7 +25,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Navigation Links -->
     <nav class="flex-1 px-4 space-y-1">
         <!-- Focus Mode Toggle -->
@@ -41,12 +41,12 @@
                 </div>
             </button>
         </div>
-        
+
         <div class="mb-6">
             <div class="h-5 mb-2">
                 <p class="px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Workspace</p>
             </div>
-            
+
             <!-- 1. Dashboard -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/" title="Dashboard">
                 {% if request.url.path == '/' %}
@@ -57,7 +57,7 @@
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Dashboard</span>
                 </div>
             </a>
-            
+
             <!-- 2. Triage Center -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage" title="Triage Center">
                 {% if request.url.path == '/triage' %}
@@ -71,7 +71,7 @@
                 <span class="bg-error-container/30 text-error text-[10px] px-2 py-0.5 rounded-full group-hover:bg-error-container/50 transition-opacity duration-300 font-bold" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.triage_count }}</span>
                 {% endif %}
             </a>
-            
+
             <!-- 3. Case Files -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases" title="Case Files">
                 {% if request.url.path.startswith('/cases') %}
@@ -83,7 +83,7 @@
                 </div>
                 <span class="bg-primary-container/20 text-primary text-[10px] px-2 py-0.5 rounded-full transition-opacity duration-300" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.case_count }}</span>
             </a>
-            
+
             <!-- 4. Master Timeline -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/timeline' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/timeline" title="Master Timeline">
                 {% if request.url.path == '/timeline' %}
@@ -94,7 +94,7 @@
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Master Timeline</span>
                 </div>
             </a>
-            
+
             <!-- 5. Legal Costs -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/costs' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/costs" title="Legal Costs">
                 {% if request.url.path == '/costs' %}
@@ -105,7 +105,7 @@
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Legal Costs</span>
                 </div>
             </a>
-            
+
             <!-- 6. Contacts -->
             <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/contacts' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/contacts" title="Contacts">
                 {% if request.url.path == '/contacts' %}
@@ -118,12 +118,12 @@
             </a>
 
             <!-- 7. Activity Log -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/activity-log' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/activity-log" title="Activity Log">
-                {% if request.url.path == '/activity-log' %}
+            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/activity' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/activity" title="Activity Log">
+                {% if request.url.path == '/activity' %}
                 <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
                 {% endif %}
                 <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/activity-log' %}group-hover:text-primary{% endif %}">history</span>
+                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/activity' %}group-hover:text-primary{% endif %}">history</span>
                     <span class="text-sm whitespace-nowrap" x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Activity Log</span>
                 </div>
             </a>
@@ -140,7 +140,7 @@
             </a>
         </div>
     </nav>
-    
+
     <!-- Profile & CTA -->
     <div class="p-4 mt-auto border-t border-outline-variant/20 flex flex-col items-center">
         <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors active:scale-95 mb-4 px-0" title="Upload Document">
@@ -154,7 +154,7 @@
                   x-transition:leave-start="opacity-100"
                   x-transition:leave-end="opacity-0">Upload Document</span>
         </button>
-        
+
         <div class="flex items-center gap-3 px-2 w-full" :class="expanded ? '' : 'justify-center'">
             <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 shrink-0 flex items-center justify-center">
                 <span class="material-symbols-outlined text-sm text-primary">person</span>

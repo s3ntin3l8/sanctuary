@@ -110,7 +110,7 @@
                         {% if upcoming_deadlines %}
                         {% for deadline in upcoming_deadlines %}
                         {% set badge = format_deadline_badge(deadline.due_at) %}
-                        <a href="/cases/{{ deadline.case_id }}" class="flex h-full min-h-[190px] flex-col group rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 hover:border-originator-opposing/40 transition-colors">
+                        <a href="/cases/{{ deadline.case_id|urlencode }}" class="flex h-full min-h-[190px] flex-col group rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 hover:border-originator-opposing/40 transition-colors">
                             <div class="flex items-start justify-between gap-3 mb-2">
                                 <div>
                                     <p class="text-sm font-bold text-on-surface group-hover:text-originator-opposing transition-colors line-clamp-2">{{ deadline.title }}</p>
@@ -153,7 +153,7 @@
                     {% if upcoming_hearings %}
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                         {% for hearing in upcoming_hearings %}
-                        <a href="/cases/{{ hearing.case_id }}" class="flex h-full min-h-[190px] flex-col rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 group hover:border-primary/30 transition-colors">
+                        <a href="/cases/{{ hearing.case_id|urlencode }}" class="flex h-full min-h-[190px] flex-col rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 group hover:border-primary/30 transition-colors">
                             <div class="flex items-start justify-between gap-3 mb-2">
                                 <div>
                                     <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors line-clamp-2">{{ hearing.title }}</p>
@@ -209,7 +209,7 @@
                                     <div class="flex gap-2">
                                         <a href="/triage" class="text-xs font-bold text-on-primary-container bg-primary-container/20 hover:bg-primary-container/30 px-3 py-1.5 rounded-lg transition-colors">Open Triage</a>
                                         {% if doc.case_id %}
-                                        <a href="/cases/{{ doc.case_id }}" class="text-xs font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-3 py-1.5 rounded-lg transition-colors">Open Case</a>
+                                        <a href="/cases/{{ doc.case_id|urlencode }}" class="text-xs font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-3 py-1.5 rounded-lg transition-colors">Open Case</a>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -253,6 +253,13 @@
                 </div>
 
                 <div class="space-y-8">
+                    <!-- AI Status Widget -->
+                    {% if ai_status %}
+                    {% set status = ai_status %}
+                    {% set base_url = ollama_base_url %}
+                    {% include "partials/ai_status.html" %}
+                    {% endif %}
+
                     <!-- Active Cases -->
                     <div class="bg-surface-container rounded-2xl border border-outline-variant/10 p-6 shadow-sm">
                         <div class="flex items-center justify-between gap-3 mb-4">
@@ -267,7 +274,7 @@
                             {% if active_case_snapshot %}
                             {% for case in active_case_snapshot %}
                             {% set meta = status_meta[case.status] %}
-                            <a href="/cases/{{ case.id }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-high/50 group cursor-pointer transition-colors">
+                            <a href="/cases/{{ case.id|urlencode }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-high/50 group cursor-pointer transition-colors">
                                 <div class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden flex items-center justify-center text-xs font-bold text-on-surface-variant">
                                         {{ case.id[:2] }}

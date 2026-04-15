@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Ingest Status - The Sanctuary{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-xl font-bold text-on-surface">Document Ingest Queue</h1>
+            <p class="text-sm text-on-surface-variant mt-1">Monitor document processing status</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button
+                hx-get="/api/ingest-status"
+                hx-target="#ingest-list"
+                hx-swap="innerHTML"
+                hx-trigger="every 5s"
+                class="text-sm text-on-surface-variant hover:text-primary flex items-center gap-1"
+            >
+                <span class="material-symbols-outlined text-sm">refresh</span>
+                Auto-refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Pending / Processing Section -->
+    <div class="mb-8">
+        <h2 class="text-sm font-bold text-on-surface-variant uppercase tracking-wider mb-3">
+            Processing Queue
+            <span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high text-xs">{{ pending_docs|length }}</span>
+        </h2>
+
+        <div id="ingest-list" class="space-y-2">
+            {% if pending_docs %}
+                {% for doc in pending_docs %}
+                <div class="flex items-center gap-3 p-4 rounded-lg bg-surface-container-low border border-outline-variant/10">
+                    <div class="w-3 h-3 rounded-full
+                        {% if doc.ingest_status.value == 'pending' %}bg-yellow-500
+                        {% elif doc.ingest_status.value == 'processing' %}bg-blue-500 animate-pulse{% endif %}">
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-on-surface truncate">{{ doc.title }}</p>
+                        <p class="text-xs text-on-surface-variant">
+                            {% if doc.case_id and case_titles.get(doc.case_id) %}
+                                {{ case_titles[doc.case_id] }}
+                            {% else %}
+                                Unlinked
+                            {% endif %}
+                            • {{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </p>
+                    </div>
+                    <span class="text-xs font-medium px-2 py-1 rounded
+                        {% if doc.ingest_status.value == 'pending' %}bg-yellow-500/20 text-yellow-700
+                        {% elif doc.ingest_status.value == 'processing' %}bg-blue-500/20 text-blue-700{% endif %}">
+                        {{ doc.ingest_status.value|title }}
+                    </span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="p-8 text-center rounded-lg bg-surface-container-low border border-outline-variant/10">
+                    <span class="material-symbols-outlined text-4xl text-outline mb-2">check_circle</span>
+                    <p class="text-sm text-on-surface">No pending documents</p>
+                    <p class="text-xs text-on-surface-variant mt-1">All documents have been processed</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recently Completed -->
+    {% if recent_completed %}
+    <div class="mb-8">
+        <h2 class="text-sm font-bold text-on-surface-variant uppercase tracking-wider mb-3">
+            Recently Completed
+        </h2>
+
+        <div class="space-y-2">
+            {% for doc in recent_completed %}
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-low border border-outline-variant/10 opacity-75">
+                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-on-surface truncate">{{ doc.title }}</p>
+                    <p class="text-xs text-on-surface-variant">
+                        {% if doc.case_id and case_titles.get(doc.case_id) %}
+                            {{ case_titles[doc.case_id] }}
+                        {% endif %}
+                        • {{ doc.ingest_completed_at.strftime('%Y-%m-%d %H:%M') if doc.ingest_completed_at else '' }}
+                    </p>
+                </div>
+                <a href="/document/{{ doc.id }}" class="text-xs text-primary hover:underline">View</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Failed Documents -->
+    {% if recent_failed %}
+    <div>
+        <h2 class="text-sm font-bold text-on-surface-variant uppercase tracking-wider mb-3 text-error">
+            Failed
+        </h2>
+
+        <div class="space-y-2">
+            {% for doc in recent_failed %}
+            <div class="flex items-center gap-3 p-3 rounded-lg bg-error-container/20 border border-error/20">
+                <div class="w-2 h-2 rounded-full bg-error"></div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm text-on-surface truncate">{{ doc.title }}</p>
+                    <p class="text-xs text-error">{{ doc.ingest_error or 'Unknown error' }}</p>
+                </div>
+                <button
+                    hx-post="/document/{{ doc.id }}/reingest"
+                    hx-target="closest .bg-error-container\\/20"
+                    class="text-xs text-primary hover:underline"
+                >
+                    Retry
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

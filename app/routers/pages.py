@@ -1,12 +1,16 @@
-from datetime import datetime, timedelta
+import logging
+from datetime import UTC, datetime, timedelta
 from itertools import groupby
 from urllib.parse import unquote
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
-from app.config import templates, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL
+logger = logging.getLogger(__name__)
+
+from app.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, templates
 from app.constants import (
     CASE_STATUS_META,
     COST_CATEGORY_META,
@@ -16,19 +20,18 @@ from app.constants import (
 )
 from app.dependencies import get_db
 from app.helpers import (
-    render_page,
-    format_relative_time,
-    format_upcoming_datetime,
+    build_cost_summary,
+    build_document_extraction_context,
     format_deadline_badge,
     format_form_datetime,
+    format_relative_time,
+    format_upcoming_datetime,
     load_case_schedule,
-    build_document_extraction_context,
-    build_cost_summary,
+    render_page,
 )
 from app.models.database import (
     Case,
     CaseStatus,
-    CostCategory,
     CostStatus,
     Deadline,
     Document,
@@ -38,80 +41,37 @@ from app.models.database import (
     LegalCost,
     OriginatorType,
 )
+from app.services.ai_summary import check_ollama_status
+from app.services.embeddings import check_embedding_status
 
 router = APIRouter()
 
 
-@router.get("/activity")
-async def activity_log(
-    request: Request,
-    db: Session = Depends(get_db),
-    limit: int = 20,
-    offset: int = 0,
-):
-    # Get total counts
-    total_count = db.query(Document).count()
-    court_count = (
-        db.query(Document)
-        .filter(Document.originator_type == OriginatorType.COURT)
-        .count()
-    )
-    pending_count = db.query(Document).filter(Document.needs_review == True).count()
-    case_count = (
-        db.query(Document.case_id)
-        .filter(Document.case_id != None, Document.case_id != "_TRIAGE")
-        .distinct()
-        .count()
-    )
-
-    # Get paginated documents
-    documents = (
-        db.query(Document)
-        .order_by(Document.created_at.desc())
-        .limit(limit + 1)  # Fetch one extra to check if there's more
-        .offset(offset)
-        .all()
-    )
-
-    has_more = len(documents) > limit
-    if has_more:
-        documents = documents[:limit]
-
-    case_titles = {case.id: case.title for case in db.query(Case).all()}
-
-    return render_page(
-        request,
-        "pages/activity_log.html",
-        db=db,
-        documents=documents,
-        total_count=total_count,
-        court_count=court_count,
-        pending_count=pending_count,
-        case_count=case_count,
-        case_titles=case_titles,
-        has_more=has_more,
-        per_page=limit,
-        offset=offset,
-        originator_colors=ORIGINATOR_COLORS,
-        originator_icons=ORIGINATOR_ICONS,
-    )
-    now = datetime.now()
+@router.get("/")
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
 
+    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
     all_cases = db.query(Case).order_by(Case.created_at.desc()).all()
-    case_titles = {case.id: case.title for case in all_cases}
 
     active_cases = [case for case in all_cases if case.status != CaseStatus.CLOSED]
     active_case_count = len(active_cases)
     new_active_cases_this_week = sum(
         1
         for case in active_cases
-        if case.created_at and case.created_at.replace(tzinfo=None) >= week_ago
+        if case.created_at
+        and (
+            case.created_at.replace(tzinfo=UTC)
+            if case.created_at.tzinfo is None
+            else case.created_at
+        )
+        >= week_ago.replace(tzinfo=UTC)
     )
 
     pending_docs = (
         db.query(Document)
-        .filter(Document.needs_review == True)
+        .filter(Document.needs_review)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -119,7 +79,13 @@ async def activity_log(
     pending_added_this_week = sum(
         1
         for doc in pending_docs
-        if doc.created_at and doc.created_at.replace(tzinfo=None) >= week_ago
+        if doc.created_at
+        and (
+            doc.created_at.replace(tzinfo=UTC)
+            if doc.created_at.tzinfo is None
+            else doc.created_at
+        )
+        >= week_ago.replace(tzinfo=UTC)
     )
 
     court_doc_count = (
@@ -138,7 +104,7 @@ async def activity_log(
     active_case_snapshot = active_cases[:4]
     upcoming_deadlines = (
         db.query(Deadline)
-        .filter(Deadline.completed == False, Deadline.due_at >= now)
+        .filter(~Deadline.completed, Deadline.due_at >= now)
         .order_by(Deadline.due_at.asc())
         .limit(4)
         .all()
@@ -151,7 +117,6 @@ async def activity_log(
         .all()
     )
 
-    # Overdue costs
     overdue_costs = (
         db.query(LegalCost)
         .filter(
@@ -163,10 +128,21 @@ async def activity_log(
         .all()
     )
 
+    status_summary = await check_ollama_status()
+    embed_status = await check_embedding_status()
+    ai_status = {
+        "reachable": status_summary["reachable"],
+        "summary_model": status_summary["summary_model"],
+        "embedding_model": embed_status["embedding_model"],
+        "error": status_summary["error"] or embed_status["error"],
+    }
+
     return render_page(
         request,
         "pages/dashboard.html",
         db=db,
+        ai_status=ai_status,
+        ollama_base_url=OLLAMA_BASE_URL,
         active_case_count=active_case_count,
         new_active_cases_this_week=new_active_cases_this_week,
         pending_review_count=pending_review_count,
@@ -189,6 +165,61 @@ async def activity_log(
     )
 
 
+@router.get("/activity")
+async def activity_log(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    # Get total counts
+    total_count = db.query(Document).count()
+    court_count = (
+        db.query(Document)
+        .filter(Document.originator_type == OriginatorType.COURT)
+        .count()
+    )
+    pending_count = db.query(Document).filter(Document.needs_review).count()
+    case_count = (
+        db.query(Document.case_id)
+        .filter(Document.case_id is not None, Document.case_id != "_TRIAGE")
+        .distinct()
+        .count()
+    )
+
+    # Get paginated documents
+    documents = (
+        db.query(Document)
+        .order_by(Document.created_at.desc())
+        .limit(limit + 1)  # Fetch one extra to check if there's more
+        .offset(offset)
+        .all()
+    )
+
+    has_more = len(documents) > limit
+    if has_more:
+        documents = documents[:limit]
+
+    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
+
+    return render_page(
+        request,
+        "pages/activity_log.html",
+        db=db,
+        documents=documents,
+        total_count=total_count,
+        court_count=court_count,
+        pending_count=pending_count,
+        case_count=case_count,
+        case_titles=case_titles,
+        has_more=has_more,
+        per_page=limit,
+        offset=offset,
+        originator_colors=ORIGINATOR_COLORS,
+        originator_icons=ORIGINATOR_ICONS,
+    )
+
+
 @router.get("/cases")
 async def case_directory(request: Request, db: Session = Depends(get_db)):
     # Exclude _TRIAGE from case directory - it's a virtual inbox, not a real case
@@ -202,7 +233,7 @@ async def case_directory(request: Request, db: Session = Depends(get_db)):
     doc_case_ids = {
         r[0]
         for r in db.query(Document.case_id)
-        .filter(Document.case_id != None, Document.case_id != "_TRIAGE")
+        .filter(Document.case_id is not None, Document.case_id != "_TRIAGE")
         .distinct()
         .all()
     }
@@ -227,11 +258,11 @@ async def case_directory(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/cases/{case_id}")
+@router.get("/cases/{case_id:path}")
 async def case_stream(request: Request, case_id: str, db: Session = Depends(get_db)):
     review_docs = (
         db.query(Document)
-        .filter(Document.case_id == case_id, Document.needs_review == True)
+        .filter(Document.case_id == case_id, Document.needs_review)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -240,8 +271,8 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
         db.query(Document)
         .filter(
             Document.case_id == case_id,
-            Document.parent_id == None,
-            Document.needs_review == False,
+            Document.parent_id is None,
+            not Document.needs_review,
         )
         .order_by(Document.created_at.desc())
         .all()
@@ -255,7 +286,7 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
 
     top_level_docs = (
         db.query(Document)
-        .filter(Document.case_id == case_id, Document.parent_id == None)
+        .filter(Document.case_id == case_id, Document.parent_id is None)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -273,11 +304,11 @@ async def case_stream(request: Request, case_id: str, db: Session = Depends(get_
     # Sort months chronologically
     def _month_sort_key(m):
         if m == "Unknown":
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
         try:
-            return datetime.strptime(m, "%B %Y")
+            return datetime.strptime(m, "%B %Y").replace(tzinfo=UTC)
         except ValueError:
-            return datetime.min
+            return datetime.min.replace(tzinfo=UTC)
 
     resolved_by_month = dict(
         sorted(
@@ -359,7 +390,7 @@ async def triage_center(
     search: str | None = None,
 ):
     # Show all docs that need review (not just _TRIAGE)
-    query = db.query(Document).filter(Document.needs_review == True)
+    query = db.query(Document).filter(Document.needs_review)
 
     if originator:
         try:
@@ -398,7 +429,7 @@ async def triage_center(
 async def master_timeline(request: Request, db: Session = Depends(get_db)):
     all_docs = (
         db.query(Document)
-        .filter(Document.parent_id == None)
+        .filter(Document.parent_id is None)
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -411,7 +442,7 @@ async def master_timeline(request: Request, db: Session = Depends(get_db)):
         grouped.append((key, list(group)))
 
     total_docs = db.query(Document).count()
-    pending_count = db.query(Document).filter(Document.needs_review == True).count()
+    pending_count = db.query(Document).filter(Document.needs_review).count()
 
     cases = {c.id: c.title for c in db.query(Case).all()}
 
@@ -435,22 +466,37 @@ async def legal_costs(request: Request, db: Session = Depends(get_db)):
         db.query(LegalCost).order_by(LegalCost.case_id, LegalCost.issued_at.asc()).all()
     )
 
-    now = datetime.now()
+    now = datetime.now(UTC)
     seven_days = timedelta(days=7)
+
+    def _make_aware(dt):
+        if dt and dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt
+
     overdue_costs = [
         c
         for c in all_costs
         if c.due_at
-        and c.due_at < now
+        and _make_aware(c.due_at) < now
         and c.status not in (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
     ]
     upcoming_costs = [
-        c for c in all_costs if c.due_at and now <= c.due_at <= now + seven_days
+        c
+        for c in all_costs
+        if c.due_at and now <= _make_aware(c.due_at) <= now + seven_days
     ]
+
+    costs_by_case_id = {}
+    for c in all_costs:
+        cid = c.case_id
+        if cid not in costs_by_case_id:
+            costs_by_case_id[cid] = []
+        costs_by_case_id[cid].append(c)
 
     costs_by_case = {}
     for case in all_cases:
-        case_costs = [c for c in all_costs if c.case_id == case.id]
+        case_costs = costs_by_case_id.get(case.id, [])
         if not case_costs:
             continue
         costs_by_case[case.id] = {
@@ -548,6 +594,10 @@ async def contacts(request: Request, db: Session = Depends(get_db)):
     contacts_dict = {}
     for doc in docs:
         sender = doc.sender.strip()
+        initial_date = doc.received_date or doc.created_at
+        if initial_date and initial_date.tzinfo is None:
+            initial_date = initial_date.replace(tzinfo=UTC)
+
         if sender not in contacts_dict:
             contacts_dict[sender] = {
                 "name": sender,
@@ -555,8 +605,8 @@ async def contacts(request: Request, db: Session = Depends(get_db)):
                 "doc_count": 0,
                 "case_ids": set(),
                 "needs_review_count": 0,
-                "first_contact": doc.received_date or doc.created_at,
-                "last_contact": doc.received_date or doc.created_at,
+                "first_contact": initial_date,
+                "last_contact": initial_date,
                 "recent_docs": [],
             }
 
@@ -568,10 +618,11 @@ async def contacts(request: Request, db: Session = Depends(get_db)):
             contact["needs_review_count"] += 1
 
         # Track first and last contact
-        contact_date = doc.received_date or doc.created_at
-        if contact_date < contact["first_contact"]:
+        contact_date = initial_date
+
+        if contact_date and contact_date < contact["first_contact"]:
             contact["first_contact"] = contact_date
-        if contact_date > contact["last_contact"]:
+        if contact_date and contact_date > contact["last_contact"]:
             contact["last_contact"] = contact_date
 
         # Keep recent docs (most recent first)
@@ -585,14 +636,21 @@ async def contacts(request: Request, db: Session = Depends(get_db)):
         )
 
     # Sort recent docs and keep top 3
+    from datetime import datetime
+
     for contact in contacts_dict.values():
-        contact["recent_docs"].sort(key=lambda x: x["date"], reverse=True)
+        for doc in contact["recent_docs"]:
+            if doc["date"] and doc["date"].tzinfo is None:
+                doc["date"] = doc["date"].replace(tzinfo=UTC)
+        contact["recent_docs"].sort(
+            key=lambda x: x["date"] or datetime.min, reverse=True
+        )
         contact["recent_docs"] = contact["recent_docs"][:3]
 
     # Convert to sorted list
     contacts_list = sorted(
         contacts_dict.values(),
-        key=lambda x: x["last_contact"],
+        key=lambda x: x["last_contact"] or datetime.min,
         reverse=True,
     )
 
@@ -664,7 +722,7 @@ async def contact_detail(
         if doc.needs_review:
             contact["needs_review_count"] += 1
 
-    case_titles = {case.id: case.title for case in db.query(Case).all()}
+    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
 
     return render_page(
         request,
@@ -681,8 +739,8 @@ async def contact_detail(
 async def get_document_details(
     request: Request, doc_id: int, db: Session = Depends(get_db)
 ):
-    from app.models.database import Case, OriginatorType
     from app.constants import REVIEW_FIELD_LABELS
+    from app.models.database import Case, OriginatorType
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
@@ -734,11 +792,12 @@ async def upload_form(
             case_title = case.title if case else case_id
             top_level_docs = (
                 db.query(Document)
-                .filter(Document.case_id == case_id, Document.parent_id == None)
+                .filter(Document.case_id == case_id, Document.parent_id.is_(None))
                 .order_by(Document.created_at.desc())
                 .all()
             )
         return templates.TemplateResponse(
+            request,
             "partials/upload_form.html",
             {
                 "request": request,
@@ -748,8 +807,9 @@ async def upload_form(
             },
         )
     except Exception as e:
+        error_msg = f"Failed to load upload form: {e}"
         return HTMLResponse(
-            f'<div class="p-6 text-sm text-error">Failed to load upload form: {e}</div>',
+            f'<div class="p-6 text-sm text-error">{error_msg}</div>',
             status_code=500,
         )
 
@@ -770,8 +830,9 @@ async def search_api(
 
     docs = None
     try:
-        import httpx
         import json
+
+        import httpx
 
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
@@ -782,9 +843,12 @@ async def search_api(
             emb = resp.json().get("embedding")
             if emb:
                 stmt = text("""
-                    SELECT id FROM documents 
-                    WHERE content_embedding IS NOT NULL 
-                    ORDER BY vec_distance_L2(vec_f32(json_extract(content_embedding, '$')), vec_f32(:emb))
+                    SELECT id FROM documents
+                    WHERE content_embedding IS NOT NULL
+            ORDER BY vec_distance_L2(
+                vec_f32(json_extract(content_embedding, "$")),
+                vec_f32(:emb)
+            )
                     LIMIT :limit
                 """)
                 res = db.execute(
@@ -792,14 +856,13 @@ async def search_api(
                 ).fetchall()
                 doc_ids = [r[0] for r in res]
                 if doc_ids:
-                    # Maintain distance order
                     docs_unordered = (
                         db.query(Document).filter(Document.id.in_(doc_ids)).all()
                     )
                     doc_map = {d.id: d for d in docs_unordered}
                     docs = [doc_map[i] for i in doc_ids if i in doc_map]
     except Exception:
-        pass
+        logger.exception("Semantic search failed, falling back to LIKE")
 
     if docs is None:
         docs = (
@@ -873,8 +936,9 @@ async def search_page(
 
     docs = None
     try:
-        import httpx
         import json
+
+        import httpx
 
         with httpx.Client(timeout=2.0) as client:
             resp = client.post(
@@ -885,22 +949,24 @@ async def search_page(
             emb = resp.json().get("embedding")
             if emb:
                 stmt = text("""
-                    SELECT id FROM documents 
-                    WHERE content_embedding IS NOT NULL 
-                    ORDER BY vec_distance_L2(vec_f32(json_extract(content_embedding, '$')), vec_f32(:emb))
+                    SELECT id FROM documents
+                    WHERE content_embedding IS NOT NULL
+            ORDER BY vec_distance_L2(
+                vec_f32(json_extract(content_embedding, "$")),
+                vec_f32(:emb)
+            )
                     LIMIT 50
                 """)
                 res = db.execute(stmt, {"emb": json.dumps(emb)}).fetchall()
                 doc_ids = [r[0] for r in res]
                 if doc_ids:
-                    # Maintain distance order
                     docs_unordered = (
                         db.query(Document).filter(Document.id.in_(doc_ids)).all()
                     )
                     doc_map = {d.id: d for d in docs_unordered}
                     docs = [doc_map[i] for i in doc_ids if i in doc_map]
     except Exception:
-        pass
+        logger.exception("Semantic search failed, falling back to LIKE")
 
     if docs is None:
         docs = (
@@ -939,36 +1005,6 @@ async def search_page(
     )
 
 
-@router.get("/activity-log")
-async def activity_log_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    limit: int = 20,
-    offset: int = 0,
-):
-    documents = (
-        db.query(Document)
-        .order_by(Document.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-        .all()
-    )
-
-    total_docs = db.query(Document).count()
-    cases = {c.id: c.title for c in db.query(Case).all()}
-
-    return render_page(
-        request,
-        "pages/activity_log.html",
-        db=db,
-        documents=documents,
-        total_docs=total_docs,
-        case_titles=cases,
-        originator_colors=ORIGINATOR_COLORS,
-        originator_icons=ORIGINATOR_ICONS,
-    )
-
-
 @router.get("/api/activity-feed")
 async def activity_feed(
     request: Request,
@@ -988,52 +1024,163 @@ async def activity_feed(
     )
 
     cases = {c.id: c.title for c in db.query(Case).all()}
-    total_docs = db.query(Document).count()
-    has_more = offset + limit < total_docs
-
     html_parts = []
     for doc in documents:
         stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
         stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
-        doc_type = doc.originator_type.value if doc.originator_type else "unknown"
 
         case_badge = ""
         if doc.case_id and cases.get(doc.case_id):
-            case_badge = f"""<a href="/cases/{doc.case_id}" onclick="event.stopPropagation()" 
-                class="inline-flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider transition-colors">
-                <span class="material-symbols-outlined text-[10px]">folder</span>
-                {cases.get(doc.case_id, doc.case_id)}
-            </a>"""
+            title = cases.get(doc.case_id, doc.case_id)
+            case_badge = (
+                f'<a href="/cases/{doc.case_id}" onclick="event.stopPropagation()" '
+                'class="inline-flex items-center gap-1 bg-surface-container-high '
+                "hover:bg-primary-container/20 text-on-surface-variant "
+                "hover:text-primary text-[9px] font-bold px-2 py-0.5 "
+                'rounded-full uppercase tracking-wider transition-colors">'
+                '<span class="material-symbols-outlined text-[10px]">folder</span>'
+                f"{title}</a>"
+            )
         else:
-            case_badge = """<span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Unlinked</span>"""
+            case_badge = (
+                '<span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 '
+                'rounded-full font-bold uppercase tracking-wider">Unlinked</span>'
+            )
 
         sender_text = f"Via: {doc.sender}" if doc.sender else "Manual upload"
 
-        card_html = f"""<div class="group relative rounded-lg border border-outline-variant/10 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container transition-all duration-200 cursor-pointer overflow-hidden"
-                 style="border-left: 4px solid {stripe_color};"
-                 hx-get="/document/{doc.id}"
-                 hx-target="#activity-doc-pane"
-                 hx-swap="innerHTML"
-                 @click="activeDoc = '{doc.id}'">
-                <div class="p-4 flex items-start gap-4">
-                    <div class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {stripe_color}20;">
-                        <span class="material-symbols-outlined text-lg" style="color: {stripe_color};">{stripe_icon}</span>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center justify-between gap-3 mb-1">
-                            <h3 class="text-sm font-bold text-on-surface truncate group-hover:text-primary transition-colors">{doc.title}</h3>
-                            <span class="text-[10px] font-mono text-on-surface-variant shrink-0">{doc.created_at.strftime("%Y-%m-%d %H:%M")}</span>
-                        </div>
-                        <div class="flex items-center gap-2 flex-wrap">
-                            {case_badge}
-                            <span class="text-[9px] text-on-surface-variant">{sender_text}</span>
-                        </div>
-                    </div>
-                    <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
-                    </div>
-                </div>
-            </div>"""
+        card_html = (
+            f'<div class="group relative rounded-lg border border-outline-variant/10 '
+            "bg-surface-container-lowest hover:border-primary/20 "
+            "hover:bg-surface-container transition-all duration-200 "
+            f'cursor-pointer overflow-hidden" '
+            f'style="border-left: 4px solid {stripe_color};" '
+            f'hx-get="/document/{doc.id}" hx-target="#activity-doc-pane" '
+            f'hx-swap="innerHTML" @click="activeDoc = \'{doc.id}\'">'
+            '<div class="p-4 flex items-start gap-4">'
+            f'<div class="shrink-0 w-10 h-10 rounded-lg flex items-center '
+            f'justify-center" style="background-color: {stripe_color}20;">'
+            f'<span class="material-symbols-outlined text-lg" '
+            f'style="color: {stripe_color};">{stripe_icon}</span></div>'
+            '<div class="flex-1 min-w-0">'
+            '<div class="flex items-center justify-between gap-3 mb-1">'
+            f'<h3 class="text-sm font-bold text-on-surface truncate '
+            'group-hover:text-primary transition-colors">'
+            f'{doc.title}</h3><span class="text-[10px] font-mono '
+            'text-on-surface-variant shrink-0">'
+            f"{doc.created_at.strftime('%Y-%m-%d %H:%M')}</span></div>"
+            '<div class="flex items-center gap-2 flex-wrap">'
+            f'{case_badge}<span class="text-[9px] text-on-surface-variant">'
+            f"{sender_text}</span></div></div>"
+            '<div class="shrink-0 opacity-0 group-hover:opacity-100 '
+            'transition-opacity"><span class="material-symbols-outlined '
+            'text-on-surface-variant">chevron_right</span>'
+            "</div></div></div>"
+        )
         html_parts.append(card_html)
 
     return HTMLResponse(content="".join(html_parts))
+
+
+@router.get("/ingest")
+async def ingest_status(request: Request, db: Session = Depends(get_db)):
+    """Page showing document ingest queue status."""
+    from app.models.database import IngestStatus
+
+    pending_docs = (
+        db.query(Document)
+        .filter(
+            Document.ingest_status.in_([IngestStatus.PENDING, IngestStatus.PROCESSING])
+        )
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
+    recent_completed = (
+        db.query(Document)
+        .filter(
+            Document.ingest_status == IngestStatus.COMPLETED,
+            Document.ingest_completed_at.isnot(None),
+        )
+        .order_by(Document.ingest_completed_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    recent_failed = (
+        db.query(Document)
+        .filter(Document.ingest_status == IngestStatus.FAILED)
+        .order_by(Document.ingest_completed_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
+
+    return render_page(
+        request,
+        "pages/ingest_status.html",
+        db=db,
+        pending_docs=pending_docs,
+        recent_completed=recent_completed,
+        recent_failed=recent_failed,
+        case_titles=case_titles,
+    )
+
+
+@router.get("/api/ingest-status")
+async def api_ingest_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    limit: int = 20,
+):
+    """HTMX endpoint for ingest status updates."""
+    from fastapi.responses import HTMLResponse
+
+    from app.models.database import IngestStatus
+
+    docs = (
+        db.query(Document)
+        .filter(
+            Document.ingest_status.in_([IngestStatus.PENDING, IngestStatus.PROCESSING])
+        )
+        .order_by(Document.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
+
+    html_parts = []
+    for doc in docs:
+        status_color = {
+            IngestStatus.PENDING: "bg-yellow-500",
+            IngestStatus.PROCESSING: "bg-blue-500",
+        }.get(doc.ingest_status, "bg-gray-500")
+
+        status_label = {
+            IngestStatus.PENDING: "Pending",
+            IngestStatus.PROCESSING: "Processing",
+        }.get(doc.ingest_status, "Unknown")
+
+        case_name = case_titles.get(doc.case_id, doc.case_id or "Unlinked")
+
+        html = f"""
+        <div class="flex items-center gap-3 p-3 rounded-lg bg-surface-container-low border border-outline-variant/10">
+            <div class="w-2 h-2 rounded-full {status_color} animate-pulse"></div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-on-surface truncate">{doc.title}</p>
+                <p class="text-[10px] text-on-surface-variant">{case_name}</p>
+            </div>
+            <span class="text-[10px] font-medium px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant">
+                {status_label}
+            </span>
+        </div>
+        """
+        html_parts.append(html)
+
+    return HTMLResponse(
+        content="".join(html_parts)
+        if html_parts
+        else '<p class="text-sm text-on-surface-variant p-3">No pending documents</p>'
+    )

@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*.so
+**/.venv/
+**/venv/
+**/ENV/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.coverage
+**/.coverage.*
+
+# Node
+**/node_modules/
+**/npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environments and Data
+.env
+.env.*
+*.db
+*.sqlite3
+data/
+
+# Documentation and AI
+CLAUDE.md
+README.md
+agent_task.md
+competitor_analysis.md
+gemini.md
+.claude/
+.opencode/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore

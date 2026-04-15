@@ -28,22 +28,27 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 | AI | Local Ollama — Qwen 3.5 9B & Nomic Embed Text |
 | Ingestion | Docling & EML Parser |
 
-## Running
+## Quick Start
+
+You can use the provided `Makefile` for common development tasks:
 
 ```bash
-# 1. Create virtual environment
-python3.12 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Start backend
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-
-# 3. Tailwind (watch mode, separate terminal)
-npx tailwindcss -i static/input.css -o static/styles.css --watch
+make setup      # Install dependencies and hooks
+make run        # Start FastAPI server (http://127.0.0.1:8000)
+make watch-css  # Watch/build Tailwind CSS
+make test       # Run all tests
+make seed       # Reset and seed database
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+## Docker Deployment
+
+The fastest way to deploy the full stack:
+
+```bash
+cp .env.example .env
+# Note: Update OLLAMA_BASE_URL to http://host.docker.internal:11434 if using local Ollama
+docker-compose up -d
+```
 
 ## Configuration
 
@@ -61,8 +66,7 @@ Alembic migrations run automatically on server startup. AI features require [Oll
 Populate the database with ~100 realistic documents, parent-child links, costs, and extracted entities:
 
 ```bash
-rm -f data/sanctuary.db
-venv/bin/python seed_dummy_data.py
+make seed
 ```
 
 ## Design System

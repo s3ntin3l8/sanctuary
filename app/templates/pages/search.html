@@ -14,7 +14,7 @@
 
 <section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
-    
+
     {# Secondary Status Bar #}
     <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
         <div class="flex items-center gap-2">
@@ -68,7 +68,7 @@
                     </div>
                 </div>
                 {% endif %}
-                
+
                 {% if cases %}
                 <div class="mb-8">
                     <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -77,13 +77,13 @@
                     </h3>
                     <div class="space-y-2">
                         {% for case in cases %}
-                        <a href="/cases/{{ case.id }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
+                        <a href="/cases/{{ case.id|urlencode }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
                             <div class="flex items-center justify-between">
                                 <div>
                                     <p class="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{{ case.title }}</p>
                                     <p class="text-xs text-on-surface-variant mt-1 font-mono">{{ case.id }}</p>
                                 </div>
-                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full 
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full
                                     {% if case.status.value == 'active' %}bg-primary-container text-on-primary-container
                                     {% elif case.status.value == 'closed' %}bg-surface-container-highest text-on-surface-variant
                                     {% else %}bg-warning-container text-warning{% endif %}">
@@ -95,7 +95,7 @@
                     </div>
                 </div>
                 {% endif %}
-                
+
                 {% if contacts %}
                 <div class="mb-8">
                     <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-4 flex items-center gap-2">

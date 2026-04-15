@@ -1,4 +1,4 @@
-<div id="upload-modal" x-data="{ open: true, fileNames: [], dragOver: false, fileIcon: '', setFileIcon(name) { const ext = name.split('.').pop()?.toLowerCase(); this.fileIcon = {pdf:'picture_as_pdf',docx:'description',txt:'description',md:'code',pptx:'slideshow',xlsx:'table_chart',eml:'email'}[ext] || 'insert_drive_file'; } }" x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-[9999] flex items-center justify-center" @keydown.escape.window="open = false">
+<div id="upload-modal" x-data="{ open: true, fileNames: [], dragOver: false, fileIcon: '', setFileIcon(name) { const ext = name.split('.').pop()?.toLowerCase(); this.fileIcon = {pdf:'picture_as_pdf',docx:'description',txt:'description',md:'code',pptx:'slideshow',xlsx:'table_chart',eml:'email'}[ext] || 'insert_drive_file'; } }" x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-[9999] flex items-center justify-center" @keydown.escape.window="open = false" @close-upload-modal.window="open = false">
     <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="open = false"></div>
 
     <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95 translate-y-4" x-transition:enter-end="opacity-100 scale-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100 translate-y-0" x-transition:leave-end="opacity-0 scale-95 translate-y-4" class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
@@ -7,7 +7,14 @@
             <button @click="open = false" class="material-symbols-outlined text-on-surface-variant hover:text-error cursor-pointer text-sm">close</button>
         </div>
 
-        <form hx-post="/upload" hx-encoding="multipart/form-data" hx-target="#upload-result" hx-swap="innerHTML" hx-indicator="#upload-spinner" class="p-6 space-y-4">
+        <form
+            hx-post="/upload"
+            hx-encoding="multipart/form-data"
+            hx-target="#upload-result"
+            hx-swap="innerHTML"
+            hx-indicator="#upload-spinner"
+            hx-on::after-request="if(event.detail.successful) { setTimeout(() => { window.dispatchEvent(new CustomEvent('close-upload-modal')) }, 1000); }"
+            class="p-6 space-y-4">
             {% if case_id %}
             <input type="hidden" name="case_id" value="{{ case_id }}">
             <div class="flex items-center gap-2 text-xs text-on-surface-variant">

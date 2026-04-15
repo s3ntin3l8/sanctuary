@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+
 from fastapi import Request
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ def build_sidebar_counts(db: Session) -> dict:
 def render_page(
     request: Request,
     template_name: str,
-    db: Optional[Session] = None,
+    db: Session | None = None,
     **context,
 ):
     base_context = {"request": request}
@@ -30,29 +30,23 @@ def render_page(
         base_context["sidebar_counts"] = build_sidebar_counts(db)
         base_context.update(_build_notifications(db))
     base_context.update(context)
-    return templates.TemplateResponse(template_name, base_context)
+    return templates.TemplateResponse(request, template_name, base_context)
 
 
 from app.models.database import (
-    Case,
-    CaseStatus,
     CostStatus,
-    Deadline,
-    Document,
-    Hearing,
     LegalCost,
 )
-from datetime import timedelta
 
 
 def _build_notifications(db: Session) -> dict:
     """Build notification data for the header notifications panel."""
-    now = datetime.now()
+    now = datetime.utcnow()
     seven_days = timedelta(days=7)
 
     overdue_deadlines = (
         db.query(Deadline)
-        .filter(Deadline.completed == False, Deadline.due_at < now)
+        .filter(~Deadline.completed, Deadline.due_at < now)
         .order_by(Deadline.due_at.asc())
         .limit(5)
         .all()
@@ -60,7 +54,7 @@ def _build_notifications(db: Session) -> dict:
     upcoming_deadlines = (
         db.query(Deadline)
         .filter(
-            Deadline.completed == False,
+            ~Deadline.completed,
             Deadline.due_at >= now,
             Deadline.due_at <= now + seven_days,
         )
@@ -119,9 +113,10 @@ def format_relative_time(value: datetime) -> str:
     """Returns a compact human-readable relative timestamp."""
     if value is None:
         return "unknown"
-    now = datetime.now()
-    if value.tzinfo is not None:
-        value = value.replace(tzinfo=None)
+    now = datetime.now(UTC)
+    if value.tzinfo is None:
+        # If DB handed us naive, treat as UTC
+        value = value.replace(tzinfo=UTC)
     delta = now - value
     total_seconds = max(int(delta.total_seconds()), 0)
     if total_seconds < 60:
@@ -142,7 +137,10 @@ def format_relative_time(value: datetime) -> str:
 
 def format_upcoming_datetime(value: datetime) -> str:
     """Formats upcoming deadlines/hearings for compact dashboard display."""
-    now = datetime.now()
+    now = datetime.now(UTC)
+    # Ensure value is comparable
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
     delta_days = (value.date() - now.date()).days
     if delta_days == 0:
         day_label = "Today"
@@ -155,7 +153,9 @@ def format_upcoming_datetime(value: datetime) -> str:
 
 def format_deadline_badge(value: datetime) -> dict:
     """Returns a compact urgency label + tone for dashboard deadline cards."""
-    now = datetime.now()
+    now = datetime.now(UTC)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
     day_delta = (value.date() - now.date()).days
     if day_delta < 0:
         return {"label": "Overdue", "tone": "bg-error-container/30 text-error"}
@@ -177,14 +177,14 @@ def format_deadline_badge(value: datetime) -> dict:
     }
 
 
-def format_form_datetime(value: Optional[datetime]) -> str:
+def format_form_datetime(value: datetime | None) -> str:
     """Formats datetimes for datetime-local form fields."""
     if value is None:
         return ""
     return value.strftime("%Y-%m-%dT%H:%M")
 
 
-def parse_form_datetime(raw_value: Optional[str]) -> Optional[datetime]:
+def parse_form_datetime(raw_value: str | None) -> datetime | None:
     """Parses datetime-local input values, tolerating blanks."""
     if not raw_value:
         return None
@@ -196,7 +196,7 @@ def parse_form_datetime(raw_value: Optional[str]) -> Optional[datetime]:
 
 def load_case_schedule(db: Session, case_id: str) -> dict:
     """Loads schedule data for the case calendar panel."""
-    now = datetime.now()
+    now = datetime.now(UTC)
     deadlines = (
         db.query(Deadline)
         .filter(Deadline.case_id == case_id)
@@ -211,13 +211,47 @@ def load_case_schedule(db: Session, case_id: str) -> dict:
     )
     return {
         "upcoming_deadlines": [
-            item for item in deadlines if not item.completed and item.due_at >= now
+            item
+            for item in deadlines
+            if not item.completed
+            and (
+                item.due_at.replace(tzinfo=UTC)
+                if item.due_at.tzinfo is None
+                else item.due_at
+            )
+            >= now
         ],
         "completed_deadlines": [
-            item for item in deadlines if item.completed or item.due_at < now
+            item
+            for item in deadlines
+            if item.completed
+            or (
+                item.due_at.replace(tzinfo=UTC)
+                if item.due_at.tzinfo is None
+                else item.due_at
+            )
+            < now
         ],
-        "upcoming_hearings": [item for item in hearings if item.scheduled_for >= now],
-        "past_hearings": [item for item in hearings if item.scheduled_for < now],
+        "upcoming_hearings": [
+            item
+            for item in hearings
+            if (
+                item.scheduled_for.replace(tzinfo=UTC)
+                if item.scheduled_for.tzinfo is None
+                else item.scheduled_for
+            )
+            >= now
+        ],
+        "past_hearings": [
+            item
+            for item in hearings
+            if (
+                item.scheduled_for.replace(tzinfo=UTC)
+                if item.scheduled_for.tzinfo is None
+                else item.scheduled_for
+            )
+            < now
+        ],
     }
 
 
@@ -246,7 +280,7 @@ def render_case_schedule_panel(
     )
 
 
-def build_document_extraction_context(db: Session, doc: Optional[Document]) -> dict:
+def build_document_extraction_context(db: Session, doc: Document | None) -> dict:
     """Builds extracted schedule candidates and already-promoted records for a document."""
     if not doc:
         return {
@@ -302,7 +336,7 @@ def build_cost_summary(costs: list, CostStatus) -> dict:
     }
 
 
-def format_eur(value: Optional[float]) -> str:
+def format_eur(value: float | None) -> str:
     """Formats a float as EUR with German-style punctuation: € 1.234,56"""
     if value is None:
         return "—"

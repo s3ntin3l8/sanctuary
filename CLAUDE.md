@@ -16,12 +16,10 @@ Privacy-first legal case management. All AI runs locally via Ollama. "Quiet Sanc
 
 ## Run
 ```bash
-python3.12 -m venv venv && venv/bin/pip install -r requirements.txt
-# Terminal 1
-venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-# Terminal 2
-npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
-# Seed
-rm -f data/sanctuary.db && venv/bin/python seed_dummy_data.py
+make setup      # Install/Update
+make run        # Terminal 1: App
+make watch-css  # Terminal 2: CSS
+make seed       # Seed Data
+make test       # Run Tests
 ```
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`

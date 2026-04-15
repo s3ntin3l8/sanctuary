@@ -122,7 +122,7 @@
                                         <span class="font-mono text-[10px] text-on-surface-variant">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
                                     </div>
                                     {% if doc.case_id %}
-                                    <a href="/cases/{{ doc.case_id }}" @click.stop=""
+                                    <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
                                         class="flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider transition-colors">
                                         <span class="material-symbols-outlined text-[11px]">folder</span>
                                         {{ case_titles.get(doc.case_id, doc.case_id) }}
@@ -173,7 +173,7 @@
                             hx-get="/document/{{ child.id }}"
                             hx-target="#document-pane"
                             hx-swap="innerHTML">
-                            
+
                             <!-- L-connector -->
                             <svg class="absolute left-[-32px] top-[-30px] w-8 h-8" viewBox="0 0 32 32" fill="none">
                                 <path d="M0 0 L0 24 L24 24" stroke="currentColor" stroke-width="1" class="text-outline-variant/30" fill="none"/>

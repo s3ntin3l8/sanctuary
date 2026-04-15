@@ -3,7 +3,12 @@ parent-child relationships, costs, deadlines, and hearings across 4 cases."""
 
 import os
 import random
-from datetime import datetime, timedelta, timezone
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+# Add app to path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db")
 
@@ -16,13 +21,13 @@ from app.models.database import (
     CostStatus,
     Deadline,
     Document,
+    Entity,
     Hearing,
     LegalCost,
     OriginatorType,
-    Entity,
 )
-from app.services.normalization import normalize_hm
 from app.services.ingestion import _extract_and_save_entities
+from app.services.normalization import normalize_hm
 
 # Use checkfirst=True to avoid "table already exists" errors
 Base.metadata.create_all(bind=engine, checkfirst=True)
@@ -417,7 +422,7 @@ HEARING_TEMPLATES = [
 
 # ── Generate Documents ──────────────────────────────────────────────────────
 random.seed(42)
-now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+now = datetime.now(UTC).replace(second=0, microsecond=0)
 doc_counter = 0
 parent_docs = {}  # case_id -> list of doc ids that can be parents
 
@@ -590,7 +595,7 @@ total_costs = db.query(LegalCost).count()
 parent_count = db.query(Document).filter(Document.parent_id.isnot(None)).count()
 total_entities = db.query(Entity).count()
 
-print(f"Seed complete:")
+print("Seed complete:")
 print(f"  Cases:      {total_cases}")
 print(f"  Documents:  {total_docs}")
 print(f"  Children:   {parent_count}")

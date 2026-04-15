@@ -45,7 +45,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {% for case in active_cases %}
                     {% set meta = status_meta[case.status] %}
-                    <a href="/cases/{{ case.id }}" class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_30px_-10px_rgba(87,241,219,0.15)] hover:border-primary/40 transition-all cursor-pointer relative overflow-hidden group flex flex-col h-full">
+                    <a href="/cases/{{ case.id|urlencode }}" class="bg-surface-container rounded-2xl p-5 border border-outline-variant/10 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_8px_30px_-10px_rgba(87,241,219,0.15)] hover:border-primary/40 transition-all cursor-pointer relative overflow-hidden group flex flex-col h-full">
                         <div class="absolute top-0 left-0 w-1 h-full bg-primary group-hover:w-1.5 transition-all"></div>
 
                         <div class="flex justify-between items-start mb-4">
@@ -85,7 +85,7 @@
                 </h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {% for case in closed_cases %}
-                    <a href="/cases/{{ case.id }}" class="bg-surface-container-low rounded-2xl p-5 border border-outline-variant/10 hover:border-outline-variant transition-all cursor-pointer relative overflow-hidden group flex flex-col h-full opacity-70 hover:opacity-100">
+                    <a href="/cases/{{ case.id|urlencode }}" class="bg-surface-container-low rounded-2xl p-5 border border-outline-variant/10 hover:border-outline-variant transition-all cursor-pointer relative overflow-hidden group flex flex-col h-full opacity-70 hover:opacity-100">
                         <div class="absolute top-0 left-0 w-1 h-full bg-outline-variant"></div>
 
                         <div class="flex justify-between items-start mb-4">

@@ -1,7 +1,7 @@
 {# Embeddable Document Panel - for use in triage and case stream #}
 {# Expected context: doc, extraction_confidence, entities, doc_id, format_upcoming_datetime, format_form_datetime #}
 {# Usage: hx-get="/document/{doc_id}?embed=true" hx-target="#target-pane" #}
-<div class="h-full flex flex-col overflow-hidden">
+<div class="h-full flex flex-col min-h-0">
     {# Header with title and actions #}
     <div class="px-4 py-3 border-b border-outline-variant/10 flex items-center justify-between shrink-0 bg-surface-container-low/50">
         <h4 class="text-sm font-black text-on-surface uppercase tracking-tight">Document</h4>
@@ -19,7 +19,7 @@
     </div>
 
     {# Content Area - scrollable #}
-    <div id="doc-panel-content" class="flex-1 overflow-y-auto custom-scrollbar">
+    <div id="doc-panel-content" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar overflow-visible">
         {% if doc %}
         <div class="p-4 space-y-4">
             {# Document Title & Meta #}
@@ -70,9 +70,9 @@
             {% endif %}
 
             {# Document Content Preview #}
-            <div class="p-4 bg-surface-container-lowest border border-outline-variant/10 rounded-lg">
-                <p class="text-xs text-on-surface-variant leading-relaxed">
-                    {{ (doc.content or '')[:500] | striptags }}{% if (doc.content or '')|length > 500 %}...{% endif %}
+            <div class="p-4 bg-surface-container-lowest border border-outline-variant/10 rounded-lg overflow-hidden">
+                <p class="text-xs text-on-surface-variant leading-relaxed whitespace-pre-wrap break-words">
+                    {{ (doc.content or '')[:2000] | striptags }}{% if (doc.content or '')|length > 2000 %}...{% endif %}
                 </p>
             </div>
 

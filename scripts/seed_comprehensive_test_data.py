@@ -4,7 +4,12 @@ originator types, parent-child relationships, cost categories, etc."""
 
 import os
 import random
-from datetime import datetime, timedelta, timezone
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+# Add app to path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db")
 
@@ -18,9 +23,9 @@ from app.models.database import (
     Deadline,
     Document,
     Hearing,
+    Jurisdiction,
     LegalCost,
     OriginatorType,
-    Jurisdiction,
 )
 from app.services.normalization import normalize_hm
 
@@ -156,7 +161,7 @@ def create_test_doc(
 
 # ── Generate Test Documents ───────────────────────────────────────────────────
 random.seed(123)  # Different seed for reproducibility
-now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+now = datetime.now(UTC).replace(second=0, microsecond=0)
 
 # Track parent doc IDs for nesting
 parent_docs_by_case = {case["id"]: [] for case in TEST_CASES}
@@ -500,10 +505,10 @@ print(f"  Deadlines:  {total_deadlines}")
 print(f"  Hearings:   {total_hearings}")
 print(f"  Costs:      {total_costs}")
 print(f"  Needs Review: {needs_review_true}")
-print(f"\nAI Summary Status Breakdown:")
+print("\nAI Summary Status Breakdown:")
 for status, count in ai_status_breakdown.items():
     print(f"  {status}: {count}")
-print(f"\nOriginator Type Breakdown:")
+print("\nOriginator Type Breakdown:")
 for ot, count in originator_breakdown.items():
     print(f"  {ot}: {count}")
 

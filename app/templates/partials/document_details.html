@@ -1,8 +1,8 @@
 <!-- Contextual Workspace (Right Pane) -->
-<section class="flex-1 flex flex-col bg-surface-container-low h-full overflow-hidden w-full">
-    <!-- Top 70%: PDF Previewer placeholder -->
-    <div class="h-[70%] border-b border-outline-variant/10 relative overflow-hidden flex flex-col" id="right-pane">
-        <div class="px-8 py-4 bg-surface-container-low/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10">
+<section class="flex-1 flex flex-col bg-surface-container-low h-full overflow-y-auto w-full">
+    <!-- Document Preview (flexible height) -->
+    <div class="border-b border-outline-variant/10 relative flex flex-col min-h-0" id="right-pane">
+        <div class="px-8 py-4 bg-surface-container-low/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10 shrink-0">
             <h4 class="text-lg font-black tracking-tighter text-on-surface uppercase">Document Preview</h4>
             <div class="flex items-center gap-3">
                 {% if doc and doc.id %}
@@ -23,40 +23,32 @@
                 <button @click="activeDoc = null" class="material-symbols-outlined text-on-surface-variant ml-4 hover:text-error transition-colors cursor-pointer" title="Close Preview">close</button>
             </div>
         </div>
-        
-        <div class="flex-1 p-8 overflow-y-auto bg-surface-container/40 flex items-center justify-center">
-                {% if doc %}
-                <div class="prose prose-sm max-w-none text-on-surface-variant">
-                    <h1 class="text-2xl font-black text-on-surface mb-4">{{ doc.title }}</h1>
-                    <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content | safe_markdown }}</div>
-                </div>
-                {% else %}
-                <div class="mt-12 w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">
-                    <span class="text-[10px] text-outline font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
-                </div>
-                {% endif %}
-                
-                <div class="mt-auto flex justify-between items-end">
-                    <div class="w-24 h-8 border-b border-outline-variant"></div>
-                    <div class="w-12 h-12 rounded-full border-2 border-outline-variant/15 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-outline-variant">approval</span>
-                    </div>
-                </div>
+
+        <div class="p-8 bg-surface-container/40">
+            {% if doc %}
+            <div class="prose prose-sm max-w-none text-on-surface-variant">
+                <h1 class="text-2xl font-black text-on-surface mb-4">{{ doc.title }}</h1>
+                <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content | safe_markdown }}</div>
             </div>
+            {% else %}
+            <div class="mt-12 w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">
+                <span class="text-[10px] text-outline font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
+            </div>
+            {% endif %}
         </div>
-        
+
         <div class="absolute bottom-6 right-6 flex flex-col gap-2">
             <button class="w-12 h-12 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform" title="Edit Document">
                 <span class="material-symbols-outlined">edit</span>
             </button>
         </div>
     </div>
-    
+
     <!-- AI Management Summary -->
     {% if doc and doc.needs_review %}
         {% include "partials/triage_metadata_form.html" %}
     {% endif %}
-    
+
     <div class="p-6 bg-primary-container/10 border-b border-outline-variant/10 flex-shrink-0">
         <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
             <span class="material-symbols-outlined text-sm">smart_toy</span>
@@ -211,8 +203,8 @@
     </div>
     {% endif %}
 
-    <!-- Bottom 30%: Extracted Entities panel -->
-    <div class="h-[30%] min-h-[200px] p-8 overflow-y-auto custom-scrollbar">
+    <!-- Bottom: Extracted Entities panel -->
+    <div class="min-h-[200px] p-8">
         <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6">Extracted Entities</h4>
         {% include "partials/document_extraction_panel.html" %}
     </div>
