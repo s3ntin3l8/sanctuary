@@ -1,0 +1,79 @@
+{# Financial Delta section for the document HUD.
+
+    Vision.md §8: "Every document that contains cost claims or rulings on costs
+    surfaces a financial delta."
+
+    Sources (in priority order):
+      1. doc.cost_delta   — AI-computed single delta this doc introduces (Phase 4).
+      2. doc.cost_candidates — regex-extracted EUR amounts and RVG/ZPO positions
+         (populated at ingest in Phase 1). Factual, not a prediction.
+      3. Empty state if neither.
+
+    Required context: doc
+#}
+<div class="px-6 py-5 bg-surface-container-low/40 border-b border-outline-variant/10">
+    <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
+        <span class="material-symbols-outlined text-sm">euro</span>
+        Financial Delta
+    </h4>
+
+    {% if doc.cost_delta %}
+    {# Phase 4 AI-computed delta (single {amount, direction, description}) #}
+    {% set amount = doc.cost_delta.amount %}
+    {% set direction = doc.cost_delta.direction or 'debit' %}
+    {% set is_debit = direction in ('debit', 'out', '-') %}
+    <div class="flex items-start gap-3">
+        <span class="material-symbols-outlined text-lg {% if is_debit %}text-originator-opposing{% else %}text-originator-own{% endif %} mt-0.5">
+            {% if is_debit %}trending_down{% else %}trending_up{% endif %}
+        </span>
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-black {% if is_debit %}text-originator-opposing{% else %}text-originator-own{% endif %} font-mono">
+                {% if is_debit %}&minus;{% else %}&plus;{% endif %}{{ format_eur(amount) }}
+            </p>
+            {% if doc.cost_delta.description %}
+            <p class="text-[11px] text-on-surface-variant leading-relaxed mt-1">{{ doc.cost_delta.description|hm }}</p>
+            {% endif %}
+        </div>
+    </div>
+    {% elif doc.cost_candidates %}
+    {# Regex-extracted candidates from ingest (Phase 1) #}
+    {% set amount_rows = [] %}
+    {% set rvg_rows    = [] %}
+    {% for c in doc.cost_candidates %}
+        {% if c.type == 'amount' %}{% set _ = amount_rows.append(c) %}
+        {% elif c.type == 'rvg_position' %}{% set _ = rvg_rows.append(c) %}
+        {% endif %}
+    {% endfor %}
+    <div class="space-y-3">
+        <p class="text-[10px] text-outline italic">Detected by regex at ingest. AI delta computation arrives in Phase 4.</p>
+        {% if amount_rows %}
+        <div>
+            <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Amounts</p>
+            <ul class="space-y-1">
+                {% for c in amount_rows[:5] %}
+                <li class="flex items-start gap-2 text-[11px]">
+                    <span class="font-mono font-bold text-on-surface shrink-0">{{ format_eur(c.value) }}</span>
+                    <span class="text-on-surface-variant line-clamp-1 italic">&hellip;{{ c.context|hm }}&hellip;</span>
+                </li>
+                {% endfor %}
+                {% if amount_rows|length > 5 %}
+                <li class="text-[10px] text-outline italic">+ {{ amount_rows|length - 5 }} more</li>
+                {% endif %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if rvg_rows %}
+        <div>
+            <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Statutory Positions</p>
+            <div class="flex flex-wrap gap-1.5">
+                {% for c in rvg_rows[:10] %}
+                <span class="inline-flex items-center text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-surface-container-high text-on-surface">{{ c.value }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <p class="text-[11px] text-outline italic">No cost items detected in this document.</p>
+    {% endif %}
+</div>

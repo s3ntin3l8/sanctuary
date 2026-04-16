@@ -1,211 +1,217 @@
-<!-- Contextual Workspace (Right Pane) -->
-<section class="flex-1 flex flex-col bg-surface-container-low h-full overflow-y-auto w-full">
-    <!-- Document Preview (flexible height) -->
-    <div class="border-b border-outline-variant/10 relative flex flex-col min-h-0" id="right-pane">
-        <div class="px-8 py-4 bg-surface-container-low/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10 shrink-0">
-            <h4 class="text-lg font-black tracking-tighter text-on-surface uppercase">Document Preview</h4>
-            <div class="flex items-center gap-3">
+{# Document HUD — right pane of the triage page, two-column layout (vision §1).
+
+    Required context:
+        doc           : Document (or None)
+        cases         : list[Case]
+        entities      : list[Entity]
+        context       : dict from build_document_extraction_context
+        reactions     : list[UserReaction] sorted desc by created_at
+        action_items  : list[ActionItem] sourced from this doc
+        OriginatorType, UserReactionType : enum classes
+        originator_colors, originator_icons : mappings
+#}
+{% from "components/significance_indicator.html" import significance_indicator %}
+
+<section class="flex-1 flex flex-col bg-surface-container-low h-full min-h-0 w-full">
+
+    {# ── Header strip ───────────────────────────────────────────────────── #}
+    <div class="px-6 py-3 bg-surface-container-low backdrop-blur-xl border-b border-outline-variant/10 shrink-0">
+        <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-black tracking-tight text-on-surface line-clamp-1" title="{{ doc.title if doc else 'Document not found' }}">
+                    {{ doc.title if doc else 'Document not found' }}
+                </h3>
+                {% if doc %}
+                <div class="flex items-center gap-2 mt-1 flex-wrap text-[10px] text-on-surface-variant">
+                    {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-originator-{{ ot }}/15 text-originator-{{ ot }} font-bold uppercase tracking-wider text-[9px]">
+                        <span class="material-symbols-outlined text-[10px]">{{ originator_icons.get(doc.originator_type, 'help_outline') }}</span>
+                        {{ ot }}
+                    </span>
+                    {% if doc.court_relay %}
+                    <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        <span class="material-symbols-outlined text-[10px]">swap_horiz</span>
+                        via court relay{% if doc.attributed_originator %} &middot; {{ doc.attributed_originator }}{% endif %}
+                    </span>
+                    {% endif %}
+                    {% if doc.significance_tier %}
+                    {{ significance_indicator(doc.significance_tier) }}
+                    <span class="text-[9px] uppercase tracking-wider font-bold">{{ doc.significance_tier.value }}</span>
+                    {% endif %}
+                    {% if doc.received_date %}
+                    <span class="text-outline">·</span>
+                    <span class="font-mono">{{ doc.received_date.strftime('%Y-%m-%d') }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
                 {% if doc and doc.id %}
                 <button
                     hx-post="/document/{{ doc.id }}/reingest"
-                    hx-target="#right-pane"
-                    hx-swap="outerHTML"
+                    hx-target="#triage-doc-pane"
+                    hx-swap="innerHTML"
                     class="text-[10px] font-bold text-on-surface-variant hover:text-primary flex items-center gap-1 cursor-pointer"
-                    title="Re-run extraction"
-                >
-                    <span class="material-symbols-outlined text-sm">refresh</span>
+                    title="Re-run extraction"><span class="material-symbols-outlined text-sm">refresh</span></button>
+                {% endif %}
+                <button @click="activeDoc = null" class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors cursor-pointer" title="Close">close</button>
+            </div>
+        </div>
+    </div>
+
+    {% if not doc %}
+    <div class="p-8">
+        <div class="w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">
+            <span class="text-[10px] text-outline font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
+        </div>
+    </div>
+    {% else %}
+
+    {# ── Two-column body ─────────────────────────────────────────────────
+        <lg: stacked (doc on top, sidebar below)
+        ≥lg: side-by-side, each column scrolls independently                  #}
+    <div class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+
+        {# ── Left: document view ───────────────────────────────────────── #}
+        <div class="lg:w-[55%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-surface-container/30">
+            <article class="prose prose-sm max-w-none px-8 py-6
+                            prose-headings:text-on-surface prose-headings:font-black
+                            prose-p:text-on-surface-variant prose-p:leading-relaxed
+                            prose-strong:text-on-surface prose-em:text-on-surface
+                            prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+                            prose-code:text-on-surface prose-code:bg-surface-container-highest prose-code:px-1 prose-code:rounded
+                            prose-blockquote:border-l-primary prose-blockquote:text-on-surface-variant
+                            prose-hr:border-outline-variant/30
+                            prose-table:text-[11px] prose-th:text-on-surface prose-td:text-on-surface-variant prose-td:border-outline-variant/20
+                            prose-li:text-on-surface-variant marker:text-outline">
+                {{ doc.content | safe_markdown }}
+            </article>
+        </div>
+
+        {# ── Right: sidebar ────────────────────────────────────────────── #}
+        <div class="lg:w-[45%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-outline-variant/10">
+
+            {# AI Summary (if generated or approved) #}
+            {% if doc.ai_summary_status in ("generated", "approved") and doc.ai_summary %}
+            <div class="px-6 py-4 bg-primary-container/10 border-b border-outline-variant/10">
+                <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">smart_toy</span>
+                    AI Summary
+                    {% if doc.ai_summary_status == "approved" %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-green-500/15 text-green-400">
+                        <span class="material-symbols-outlined text-[9px]">check_circle</span>approved
+                    </span>
+                    {% endif %}
+                </h4>
+                <ul class="space-y-1.5">
+                    {% for label, key in [('Legal Signif.', 'legal_significance'), ('Action', 'required_action'), ('Financial', 'financial_impact')] %}
+                    <li class="text-[11px] leading-relaxed text-on-surface-variant">
+                        <span class="font-bold text-on-surface">{{ label }}:</span>
+                        {{ doc.ai_summary.get(key, '—')|hm }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% if doc.ai_summary_status == 'generated' %}
+                <div class="mt-3 pt-2 border-t border-primary/10 flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider">
+                    <button hx-post="/document/{{ doc.id }}/approve-summary?action=approve"
+                            hx-target="#triage-doc-pane" hx-swap="innerHTML"
+                            class="text-green-400 hover:text-green-300 flex items-center gap-1 cursor-pointer">
+                        <span class="material-symbols-outlined text-sm">check_circle</span>approve
+                    </button>
+                    <span class="text-outline-variant">|</span>
+                    <button hx-post="/document/{{ doc.id }}/approve-summary?action=reject"
+                            hx-target="#triage-doc-pane" hx-swap="innerHTML"
+                            class="text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer">
+                        <span class="material-symbols-outlined text-sm">cancel</span>reject
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% elif doc.ai_summary_status == 'pending' or doc.ai_summary_status == 'failed' or not doc.ai_summary %}
+            <div class="px-6 py-3 bg-primary-container/5 border-b border-outline-variant/10 flex items-center gap-2 text-[11px]">
+                <span class="material-symbols-outlined text-sm text-primary">smart_toy</span>
+                {% if doc.ai_summary_status == 'pending' %}
+                <span class="text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-sm animate-spin text-primary">autorenew</span>generating summary…</span>
+                {% elif doc.ai_summary_status == 'failed' %}
+                <span class="text-error">summary failed —</span>
+                <button hx-post="/document/{{ doc.id }}/summarize" hx-target="#triage-doc-pane" hx-swap="innerHTML"
+                        class="text-primary underline">retry</button>
+                {% else %}
+                <button hx-post="/document/{{ doc.id }}/summarize" hx-target="#triage-doc-pane" hx-swap="innerHTML"
+                        class="text-primary hover:underline flex items-center gap-1 cursor-pointer">
+                    <span class="material-symbols-outlined text-sm">auto_fix_high</span>generate summary
                 </button>
                 {% endif %}
-                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">zoom_in</span>
-                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">print</span>
-                <span class="material-symbols-outlined text-sm text-on-surface-variant cursor-pointer hover:text-primary">download</span>
-                <!-- Close Button for Mobile/Split -->
-                <button @click="activeDoc = null" class="material-symbols-outlined text-on-surface-variant ml-4 hover:text-error transition-colors cursor-pointer" title="Close Preview">close</button>
-            </div>
-        </div>
-
-        <div class="p-8 bg-surface-container/40 max-h-[45vh] overflow-y-auto custom-scrollbar">
-            {% if doc %}
-            <div class="prose prose-sm max-w-none text-on-surface-variant">
-                <h1 class="text-2xl font-black text-on-surface mb-4">{{ doc.title }}</h1>
-                <div class="p-6 bg-surface-container-lowest border border-outline-variant/10 rounded-lg whitespace-pre-wrap font-mono text-xs text-on-surface">{{ doc.content | safe_markdown }}</div>
-            </div>
-            {% else %}
-            <div class="mt-12 w-full h-48 bg-surface-container-low/50 border border-dashed border-outline-variant/20 flex items-center justify-center">
-                <span class="text-[10px] text-outline font-bold uppercase tracking-[0.2em]">Document Not Found (ID: {{ doc_id }})</span>
             </div>
             {% endif %}
-        </div>
 
-        <div class="absolute bottom-6 right-6 flex flex-col gap-2">
-            <button class="w-12 h-12 bg-primary text-on-primary rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform" title="Edit Document">
-                <span class="material-symbols-outlined">edit</span>
-            </button>
-        </div>
-    </div>
+            {# Reaction Bar #}
+            {% include "partials/triage_reaction_bar.html" %}
 
-    <!-- AI Management Summary -->
-    {% if doc and doc.needs_review %}
-        {% include "partials/triage_metadata_form.html" %}
-    {% endif %}
+            {# Action Items sourced from this document #}
+            {% if action_items %}
+            <div class="px-6 py-4 border-b border-outline-variant/10">
+                <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">event</span>
+                    Action Items
+                    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-originator-opposing/15 text-originator-opposing">{{ action_items|length }}</span>
+                </h4>
+                <ul class="space-y-1.5">
+                    {% for item in action_items %}
+                    <li class="flex items-start gap-2 text-[11px]">
+                        <span class="material-symbols-outlined text-[14px] text-originator-opposing mt-0.5 shrink-0">
+                            {% if item.action_type.value == 'deadline' %}flag
+                            {% elif item.action_type.value == 'court_date' %}gavel
+                            {% else %}checklist{% endif %}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-on-surface font-medium truncate">{{ item.title }}</p>
+                            <p class="text-[9px] text-on-surface-variant font-mono">{{ item.due_date.strftime('%Y-%m-%d') }} &middot; {{ item.action_type.value }} &middot; {{ item.status.value }}</p>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
 
-    <div class="p-6 bg-primary-container/10 border-b border-outline-variant/10 flex-shrink-0">
-        <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm">smart_toy</span>
-            AI Management Summary
-            {% if doc and doc.ai_summary_status == "approved" %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-green-500/15 text-green-400">
-                <span class="material-symbols-outlined text-[10px]">check_circle</span>
-                Approved
-            </span>
-            {% endif %}
-        </h4>
-        {% if doc and doc.ai_summary_status == "generated" and doc.ai_summary %}
-        <ul class="space-y-2">
-            <li class="flex gap-2 items-start">
-                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Legal Significance:</span> {{ doc.ai_summary.legal_significance|default("Not available")|hm }}
-                </p>
-            </li>
-            <li class="flex gap-2 items-start">
-                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Required Action:</span> {{ doc.ai_summary.required_action|default("Not available")|hm }}
-                </p>
-            </li>
-            <li class="flex gap-2 items-start">
-                <span class="text-primary font-bold text-[11px] mt-0.5">•</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Financial Impact:</span> {{ doc.ai_summary.financial_impact|default("Not available")|hm }}
-                </p>
-            </li>
-        </ul>
-        <div class="mt-4 pt-3 border-t border-primary/10 flex items-center gap-2">
-            <button
-                hx-post="/document/{{ doc.id }}/approve-summary?action=approve"
-                hx-target="closest div.bg-primary-container\\/10"
-                hx-swap="outerHTML"
-                class="text-[10px] font-bold uppercase tracking-wider text-green-400 hover:text-green-300 flex items-center gap-1 cursor-pointer"
-            >
-                <span class="material-symbols-outlined text-sm">check_circle</span>
-                Approve
-            </button>
-            <span class="text-outline-variant">|</span>
-            <button
-                hx-post="/document/{{ doc.id }}/approve-summary?action=reject"
-                hx-target="closest div.bg-primary-container\\/10"
-                hx-swap="outerHTML"
-                class="text-[10px] font-bold uppercase tracking-wider text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer"
-            >
-                <span class="material-symbols-outlined text-sm">cancel</span>
-                Reject
-            </button>
-        </div>
-        {% elif doc and doc.ai_summary_status == "approved" and doc.ai_summary %}
-        <ul class="space-y-2">
-            <li class="flex gap-2 items-start">
-                <span class="text-green-400 font-bold text-[11px] mt-0.5">✓</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Legal Significance:</span> {{ doc.ai_summary.legal_significance|default("Not available")|hm }}
-                </p>
-            </li>
-            <li class="flex gap-2 items-start">
-                <span class="text-green-400 font-bold text-[11px] mt-0.5">✓</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Required Action:</span> {{ doc.ai_summary.required_action|default("Not available")|hm }}
-                </p>
-            </li>
-            <li class="flex gap-2 items-start">
-                <span class="text-green-400 font-bold text-[11px] mt-0.5">✓</span>
-                <p class="text-[11px] leading-relaxed text-on-surface-variant">
-                    <span class="font-bold text-on-surface">Financial Impact:</span> {{ doc.ai_summary.financial_impact|default("Not available")|hm }}
-                </p>
-            </li>
-        </ul>
-        {% if doc.ai_summary_approved_at %}
-        <p class="text-[10px] text-on-surface-variant mt-3 pt-2 border-t border-primary/10">
-            Approved on {{ doc.ai_summary_approved_at.strftime('%b %d, %Y at %H:%M') }}
-        </p>
-        {% endif %}
-        {% elif doc and doc.ai_summary_status == "pending" %}
-        <div class="flex items-center gap-2 text-[11px] text-on-surface-variant">
-            <span class="material-symbols-outlined text-sm animate-spin text-primary">autorenew</span>
-            Generating summary...
-        </div>
-        {% elif doc and doc.ai_summary_status == "failed" %}
-        <div class="space-y-2">
-            <p class="text-[11px] text-error">Summary generation failed: {{ doc.ai_summary.error|default("Unknown error") }}</p>
-            <button
-                hx-post="/document/{{ doc.id }}/summarize"
-                hx-target="closest div.bg-primary-container\\/10"
-                hx-swap="outerHTML"
-                class="text-[11px] text-primary underline hover:no-underline cursor-pointer"
-            >
-                Retry
-            </button>
-        </div>
-        {% else %}
-        <button
-            hx-post="/document/{{ doc.id }}/summarize"
-            hx-target="closest div.bg-primary-container\\/10"
-            hx-swap="outerHTML"
-            hx-indicator="this"
-            class="text-[11px] text-primary underline hover:no-underline flex items-center gap-1 cursor-pointer"
-        >
-            <span class="material-symbols-outlined text-sm">auto_fix_high</span>
-            Generate Summary
-        </button>
-        {% endif %}
-    </div>
+            {# Financial Delta #}
+            {% include "partials/triage_financial_delta.html" %}
 
-    <!-- Extraction Confidence -->
-    {% if doc and doc.extraction_confidence %}
-    <div class="px-6 py-4 bg-surface-container border-b border-outline-variant/10 flex-shrink-0">
-        <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm">speed</span>
-            Extraction Confidence
-        </h4>
-        <div class="flex flex-wrap gap-2">
-            {% if doc.extraction_confidence.sender %}
-            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider
-                {% if doc.extraction_confidence.sender == 'high' %}bg-green-500/15 text-green-400
-                {% elif doc.extraction_confidence.sender == 'medium' %}bg-yellow-500/15 text-yellow-400
-                {% else %}bg-red-500/15 text-red-400{% endif %}">
-                Sender: {{ doc.extraction_confidence.sender }}
-            </span>
+            {# Metadata form (confidence-aware) #}
+            {% if doc.needs_review or not doc.case_id or doc.case_id == '_TRIAGE' %}
+                {% include "partials/triage_metadata_form.html" %}
             {% endif %}
-            {% if doc.extraction_confidence.date %}
-            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider
-                {% if doc.extraction_confidence.date == 'high' %}bg-green-500/15 text-green-400
-                {% elif doc.extraction_confidence.date == 'medium' %}bg-yellow-500/15 text-yellow-400
-                {% else %}bg-red-500/15 text-red-400{% endif %}">
-                Date: {{ doc.extraction_confidence.date }}
-            </span>
+
+            {# Schedule Candidates (collapsible) #}
+            {% if context.schedule_candidates or context.linked_deadlines or context.linked_hearings %}
+            <div class="px-6 py-4 border-b border-outline-variant/10" x-data="{ open: false }">
+                <button @click="open = !open" type="button"
+                        class="w-full flex items-center justify-between text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">
+                    <span class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">schedule</span>
+                        Detected Schedule Candidates
+                        <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{{ context.schedule_candidates|length }}</span>
+                    </span>
+                    <span class="material-symbols-outlined text-sm" x-text="open ? 'expand_less' : 'expand_more'"></span>
+                </button>
+                <div x-show="open" x-transition.duration.100ms class="mt-3">
+                    {% include "partials/document_extraction_panel.html" %}
+                </div>
+            </div>
             {% endif %}
-            {% if doc.extraction_confidence.case_id %}
-            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider
-                {% if doc.extraction_confidence.case_id == 'high' %}bg-green-500/15 text-green-400
-                {% elif doc.extraction_confidence.case_id == 'medium' %}bg-yellow-500/15 text-yellow-400
-                {% else %}bg-red-500/15 text-red-400{% endif %}">
-                Case ID: {{ doc.extraction_confidence.case_id }}
-            </span>
-            {% endif %}
-            {% if doc.extraction_confidence.originator %}
-            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider
-                {% if doc.extraction_confidence.originator == 'high' %}bg-green-500/15 text-green-400
-                {% elif doc.extraction_confidence.originator == 'medium' %}bg-yellow-500/15 text-yellow-400
-                {% else %}bg-red-500/15 text-red-400{% endif %}">
-                Originator: {{ doc.extraction_confidence.originator }}
-            </span>
-            {% endif %}
+
+            {# Phase 4 footer — single-line, replaces three placeholder blocks #}
+            <div class="px-6 py-3 bg-surface-container-low/30 border-t border-outline-variant/10 border-dashed flex items-center gap-2 text-[10px] text-on-surface-variant/60 italic">
+                <span class="material-symbols-outlined text-sm">auto_awesome</span>
+                AI enrichment pending:
+                <span class="font-medium">Key passages</span>
+                <span class="text-outline">·</span>
+                <span class="font-medium">Claims</span>
+                <span class="text-outline">·</span>
+                <span class="font-medium">Relationships</span>
+                <span class="ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-surface-container-highest/50 text-outline">Phase 4</span>
+            </div>
         </div>
     </div>
     {% endif %}
-
-    <!-- Bottom: Extracted Entities panel -->
-    <div class="min-h-[200px] p-8">
-        <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-6">Extracted Entities</h4>
-        {% include "partials/document_extraction_panel.html" %}
-    </div>
 </section>

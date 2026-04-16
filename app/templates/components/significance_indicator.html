@@ -1,0 +1,23 @@
+{# Macro: significance_indicator(tier)
+    tier : SignificanceTier enum value — "critical" | "significant" | "informational" | "administrative" | None
+    Renders a 3-dot cluster (● ● ○), filled left-to-right by tier.
+#}
+{% macro significance_indicator(tier) %}
+{% set filled_count = {
+    "critical": 3,
+    "significant": 2,
+    "informational": 1,
+    "administrative": 0,
+}.get(tier.value if tier else None, 0) %}
+{% set tone = {
+    "critical": "error",
+    "significant": "amber-500",
+    "informational": "primary",
+    "administrative": "outline",
+}.get(tier.value if tier else None, "outline") %}
+<span class="inline-flex items-center gap-0.5" title="Significance: {{ tier.value if tier else 'unclassified' }}">
+    {% for i in range(3) %}
+        <span class="w-1.5 h-1.5 rounded-full {% if i < filled_count %}bg-{{ tone }}{% else %}bg-outline-variant/30{% endif %}"></span>
+    {% endfor %}
+</span>
+{% endmacro %}

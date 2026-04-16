@@ -1,0 +1,152 @@
+{# One bundle card — renders a header row + parent/children docs.
+
+    Required context:
+        bundle      : BundleView (key, batch_id, source_type, subject, sender_email,
+                      received_at, documents[], action_items[], is_synthetic,
+                      doc_count, needs_review_count)
+        cases       : list[Case] — for the "Confirm bundle → case" dropdown
+        proceedings : list[Proceeding] — filtered client-side by selected case_id
+        reactions_by_doc : dict[int, set[UserReactionType]]
+#}
+{% set is_email  = bundle.source_type.value == 'email' %}
+{% set is_scan   = bundle.source_type.value == 'scan' %}
+{% set source_icon = 'mail' if is_email else 'scanner' if is_scan else 'upload_file' %}
+{% set source_label = bundle.source_type.value|upper %}
+
+{# Bundle wrapper — expand/collapse state lives on the top-level triagePage
+    factory (via collapsedBundles + toggleBundle), so there is NO nested
+    x-data here. Keeping everything in one Alpine scope eliminates the
+    reactive-write scope-shadow problem that can silently break sibling
+    bindings like `activeDoc` on the cards inside.                          #}
+
+<div class="space-y-2" data-bundle-key="{{ bundle.key }}">
+
+    {# Top summary row (outside the card) — vision-spec layout #}
+    <div class="flex items-center justify-between gap-3 px-1 text-[10px] font-medium text-on-surface-variant">
+        <div class="flex items-center gap-2 min-w-0 flex-1">
+            <span class="material-symbols-outlined text-sm text-on-surface-variant/70">{{ source_icon }}</span>
+            <span class="font-bold uppercase tracking-wider text-on-surface">{{ source_label }}</span>
+            <span class="text-outline">·</span>
+            <span class="font-mono">{{ bundle.received_at.strftime('%b %d, %Y') }}</span>
+            {% if bundle.sender_email %}
+            <span class="text-outline">·</span>
+            <span class="truncate">{{ bundle.sender_email }}</span>
+            {% endif %}
+            <span class="text-outline">·</span>
+            <span>{{ bundle.doc_count }} document{{ 's' if bundle.doc_count != 1 else '' }}</span>
+            {% if bundle.needs_review_count %}
+            <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-warning-container/20 text-warning ml-1">
+                {{ bundle.needs_review_count }} review
+            </span>
+            {% endif %}
+        </div>
+        <button @click="toggleBundle('{{ bundle.key }}')"
+                class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container-highest transition-colors cursor-pointer text-on-surface-variant shrink-0"
+                title="Toggle bundle">
+            <span class="material-symbols-outlined text-sm" x-text="isBundleExpanded('{{ bundle.key }}') ? 'expand_more' : 'chevron_right'"></span>
+        </button>
+    </div>
+
+    {# The bundle card #}
+    <div id="triage-bundle-{{ bundle.key }}"
+         class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden"
+         x-show="isBundleExpanded('{{ bundle.key }}')"
+         x-transition:enter="transition duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100">
+
+        {% if bundle.subject %}
+        <div class="px-4 py-2 bg-surface-container-low/60 border-b border-outline-variant/10">
+            <p class="text-[11px] font-bold text-on-surface truncate" title="{{ bundle.subject }}">{{ bundle.subject }}</p>
+        </div>
+        {% endif %}
+
+        {# Documents #}
+        <div class="px-4 py-3 space-y-2">
+            {% for doc in bundle.documents %}
+                {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+                {% set stripe_icon  = originator_icons.get(doc.originator_type, 'help_outline') %}
+                {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
+                {% set is_enclosure = loop.index > 1 or (doc.role and doc.role.value == 'enclosure') %}
+                <div id="triage-wrapper-{{ doc.id }}"
+                     x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (unknown && '{{ doc_type }}' === 'unknown')"
+                     class="relative {% if is_enclosure and bundle.doc_count > 1 %}pl-6{% endif %}">
+                    {% if is_enclosure and bundle.doc_count > 1 %}
+                    <svg class="absolute left-1 top-0 w-4 h-full text-outline-variant/40" aria-hidden="true">
+                        <path d="M2 0 L2 18 L16 18" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                    </svg>
+                    {% endif %}
+                    {% include "partials/triage_card.html" %}
+                </div>
+            {% endfor %}
+        </div>
+
+        {# Bundle-level action items (G3) #}
+        {% if bundle.action_items %}
+        <ul class="px-4 py-2 bg-surface-container-low/40 border-t border-outline-variant/10 space-y-1">
+            {% for item in bundle.action_items %}
+            <li class="flex items-center gap-2 text-[10px]">
+                <span class="material-symbols-outlined text-[12px] text-originator-opposing">
+                    {% if item.action_type.value == 'deadline' %}flag
+                    {% elif item.action_type.value == 'court_date' %}gavel
+                    {% else %}checklist{% endif %}
+                </span>
+                <span class="font-bold text-originator-opposing font-mono">{{ item.due_date.strftime('%b %d') }}</span>
+                <span class="text-on-surface font-medium truncate">{{ item.title }}</span>
+                {% if item.source_document %}
+                <span class="text-outline">·</span>
+                <span class="text-on-surface-variant italic truncate">from {{ item.source_document.title }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {# Bundle confirm (case + proceeding) — only for real batches.
+            Two-line layout: label + dropdowns on line 1, button right-aligned on line 2. #}
+        {% if not bundle.is_synthetic %}
+        <form hx-post="/triage/bundle/{{ bundle.batch_id }}/confirm"
+              hx-target="#triage-feed"
+              hx-swap="outerHTML"
+              x-data="{ selectedCase: '' }"
+              class="px-4 py-3 bg-surface-container-low/40 border-t border-outline-variant/10 space-y-2">
+            <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant shrink-0">
+                    Bundle &rarr;
+                </span>
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                    <label class="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70 shrink-0">Case</label>
+                    <select name="case_id" required x-model="selectedCase"
+                            class="flex-1 min-w-0 px-2.5 py-1 bg-surface-container-lowest rounded-lg border border-outline-variant/20 text-[11px] text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
+                        <option value="">Select&hellip;</option>
+                        {% for case in cases %}
+                        <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                    <label class="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70 shrink-0">Proc.</label>
+                    <select name="proceeding_id"
+                            :disabled="!selectedCase"
+                            class="flex-1 min-w-0 px-2.5 py-1 bg-surface-container-lowest rounded-lg border border-outline-variant/20 text-[11px] text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none disabled:opacity-50">
+                        <option value="">Optional</option>
+                        {% for p in (proceedings or []) %}
+                        <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
+                                x-show="selectedCase === '{{ p.case_id }}'">
+                            {{ p.court_name }}{% if p.az_court %} &mdash; {{ p.az_court }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex items-center justify-end">
+                <button type="submit"
+                        :disabled="!selectedCase"
+                        class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-40 disabled:cursor-not-allowed">
+                    Confirm &amp; cascade
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>

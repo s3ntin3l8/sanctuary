@@ -1,0 +1,64 @@
+{# Reaction Bar — rendered standalone so POST/DELETE can swap it in place.
+
+    Required context:
+        doc        : object with .id
+        reactions  : list[UserReaction] sorted desc by created_at — the full records
+                     (not just the enum). Empty list if none.
+        UserReactionType : enum class
+#}
+{% from "components/reaction_button.html" import reaction_button %}
+
+{# Build a set of active reaction types for button state, and find the "primary"
+    reaction (most recent) so its notes prefill the textarea. #}
+{% set active = [] %}
+{% for r in reactions %}{% set _ = active.append(r.reaction) %}{% endfor %}
+{% set primary = reactions[0] if reactions else none %}
+
+<div id="reaction-bar-{{ doc.id }}"
+     class="px-6 py-4 bg-surface-container-low/50 border-b border-outline-variant/10 flex-shrink-0"
+     data-triage-reaction-bar
+     data-doc-id="{{ doc.id }}"
+     x-data="{ noteOpen: {{ 'true' if primary and primary.notes else 'false' }} }">
+    <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-3 flex items-center gap-2">
+        <span class="material-symbols-outlined text-sm">bolt</span>
+        React
+        <span class="text-[9px] font-medium text-outline normal-case tracking-normal">&mdash; high-weight AI context</span>
+        {% if primary %}
+        <button type="button"
+                @click="noteOpen = !noteOpen"
+                class="ml-auto text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-outline-variant/20 hover:border-primary/40 hover:text-primary transition-colors cursor-pointer flex items-center gap-1">
+            <span class="material-symbols-outlined text-[11px]" x-text="noteOpen ? 'expand_less' : 'edit_note'"></span>
+            <span x-text="noteOpen ? 'Hide note' : (
+                {% if primary.notes %}'Edit note'{% else %}'+ Note'{% endif %}
+            )"></span>
+        </button>
+        {% endif %}
+    </h4>
+    <div class="flex flex-wrap gap-2">
+        {{ reaction_button(doc.id, 'lies',        'Lies',       '🚩', 'originator-opposing', UserReactionType.LIES in active) }}
+        {{ reaction_button(doc.id, 'true',        'True',       '✅', 'originator-own',      UserReactionType.TRUE in active) }}
+        {{ reaction_button(doc.id, 'needs_proof', 'Needs Proof', '🔍', 'amber-500',           UserReactionType.NEEDS_PROOF in active) }}
+        {{ reaction_button(doc.id, 'precedent',   'Precedent',  '⚖️', 'primary',             UserReactionType.PRECEDENT in active) }}
+    </div>
+
+    {% if primary %}
+    <div x-show="noteOpen" x-transition:enter="transition duration-150" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" class="mt-3">
+        <form hx-post="/triage/document/{{ doc.id }}/reaction"
+              hx-target="#reaction-bar-{{ doc.id }}"
+              hx-swap="outerHTML"
+              class="flex items-start gap-2">
+            <input type="hidden" name="reaction" value="{{ primary.reaction.value }}">
+            <textarea name="notes" rows="2"
+                      placeholder="Annotate your {{ primary.reaction.value|replace('_', ' ') }} reaction (recalled by AI in later queries)..."
+                      class="flex-1 px-3 py-2 bg-surface-container-lowest rounded-lg border border-outline-variant/20 text-[11px] text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none resize-none"
+                      @keydown.meta.enter.prevent="$el.form.requestSubmit()"
+                      @keydown.ctrl.enter.prevent="$el.form.requestSubmit()">{{ primary.notes or '' }}</textarea>
+            <button type="submit"
+                    class="bg-primary hover:bg-primary/90 text-on-primary px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-transform shrink-0">
+                Save
+            </button>
+        </form>
+        <p class="text-[9px] text-outline mt-1 ml-1">Note attaches to the most recent reaction &middot; <kbd class="bg-surface-container px-1 py-0.5 rounded font-mono">⌘↵</kbd> to save</p>
+    </div>
+    {% endif %}
+</div>

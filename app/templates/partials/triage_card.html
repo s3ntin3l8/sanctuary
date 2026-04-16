@@ -1,5 +1,13 @@
-{# Condensed Triage Card — 2-row compact design #}
+{# Condensed Triage Card — 2-row compact design.
+
+    Required context: doc, stripe_color, stripe_icon, review_field_labels (global),
+    reactions_by_doc (optional), UserReactionType (optional).
+#}
+{% set role_value = doc.role.value if doc.role else none %}
+{% set doc_type_value = doc.document_type.value if doc.document_type else none %}
+
 <div id="triage-card-{{ doc.id }}"
+     data-triage-doc-id="{{ doc.id }}"
      class="bg-surface-container rounded-2xl shadow-sm border border-l-4 overflow-hidden group cursor-pointer transition-all border-outline-variant/10 hover:bg-surface-container-low"
      :class="activeDoc === '{{ doc.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'hover:bg-surface-container-low'"
      style="border-left-color: {{ stripe_color }};"
@@ -12,7 +20,7 @@
          hx-target="#triage-doc-pane"
          hx-swap="innerHTML">
         {# Row 1: Title + Date + Status #}
-        <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center justify-between gap-3 mb-1">
             <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
             <div class="flex items-center gap-2 shrink-0">
                 <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
@@ -28,9 +36,42 @@
             </div>
         </div>
 
-        {# Row 2: Review chips + Provenance #}
+        {# Row 2: Role / originator / document-type badges #}
+        {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
+        <div class="flex items-center flex-wrap gap-1 mb-1.5">
+            {# Originator badge (always present) #}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-originator-{{ ot }}/15 text-originator-{{ ot }}">
+                <span class="material-symbols-outlined text-[10px]">{{ stripe_icon }}</span>
+                {{ ot }}
+            </span>
+            {# Court relay marker #}
+            {% if doc.court_relay %}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant" title="Routed via court — true author: {{ doc.attributed_originator or 'unknown' }}">
+                <span class="material-symbols-outlined text-[10px]">swap_horiz</span>
+                relay
+            </span>
+            {% endif %}
+            {# Role badge (cover_letter / enclosure) #}
+            {% if role_value == 'cover_letter' %}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary">
+                cover letter
+            </span>
+            {% elif role_value == 'enclosure' %}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant">
+                enclosure
+            </span>
+            {% endif %}
+            {# Document type (only when AI has classified it) #}
+            {% if doc_type_value %}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400">
+                {{ doc_type_value }}
+            </span>
+            {% endif %}
+        </div>
+
+        {# Row 3: Review chips + Reactions + Provenance #}
         <div class="flex items-center justify-between gap-2">
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap items-center gap-1">
                 {% for reason in (doc.review_reasons or []) %}
                 {% set fm = review_field_labels.get(reason, {}) %}
                 <span class="inline-flex items-center gap-0.5 text-[8px] bg-warning-container/30 text-warning px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight">
@@ -38,6 +79,15 @@
                     {{ fm.label or reason }}
                 </span>
                 {% endfor %}
+                {% set doc_reactions = (reactions_by_doc.get(doc.id) if reactions_by_doc is defined else []) or [] %}
+                {% if doc_reactions %}
+                <span class="inline-flex items-center gap-0.5 text-[11px] px-1 py-0.5">
+                    {% if UserReactionType and UserReactionType.LIES in doc_reactions %}🚩{% endif %}
+                    {% if UserReactionType and UserReactionType.TRUE in doc_reactions %}✅{% endif %}
+                    {% if UserReactionType and UserReactionType.NEEDS_PROOF in doc_reactions %}🔍{% endif %}
+                    {% if UserReactionType and UserReactionType.PRECEDENT in doc_reactions %}⚖️{% endif %}
+                </span>
+                {% endif %}
             </div>
             <p class="text-[9px] text-on-surface-variant font-medium truncate whitespace-nowrap text-right">
                 {% if doc.sender %}{{ doc.sender }}{% else %}{{ doc.case_id or 'Unassigned' }}{% endif %}
