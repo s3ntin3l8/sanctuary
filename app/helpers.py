@@ -31,12 +31,12 @@ def render_page(
     db: Session | None = None,
     **context,
 ):
-    base_context = {"request": request}
+    base_context = {}
     if db is not None:
         base_context["sidebar_counts"] = build_sidebar_counts(db)
         base_context.update(_build_notifications(db))
     base_context.update(context)
-    return templates.TemplateResponse(template_name, base_context)
+    return templates.TemplateResponse(request, template_name, base_context)
 
 
 from app.models.database import (

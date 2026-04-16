@@ -46,7 +46,6 @@ async def sender_detail(
     }
 
     context = {
-        "request": request,
         "sender": sender,
         "documents": docs,
         "cases": cases,
@@ -56,7 +55,7 @@ async def sender_detail(
 
     if request.headers.get("hx-request"):
         return templates.TemplateResponse(
-            "partials/sender_detail_content.html", context
+            request, "partials/sender_detail_content.html", context
         )
 
     return render_page(request, "pages/sender_detail.html", db=db, **context)

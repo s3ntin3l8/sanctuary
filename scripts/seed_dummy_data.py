@@ -14,23 +14,37 @@ os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db"
 
 from app.config import SessionLocal, engine
 from app.models.database import (
+    ActionItem,
     Base,
     Case,
     CaseStatus,
     CostCategory,
     CostStatus,
-    Deadline,
     Document,
+    DocumentRole,
+    DocumentType,
     Entity,
-    Hearing,
+    IngestBatch,
+    IngestBatchSourceType,
+    IngestBatchStatus,
     LegalCost,
     OriginatorType,
+    SignificanceTier,
 )
-from app.services.ingestion import _extract_and_save_entities
+from app.models.enums import ActionItemStatus, ActionItemType
+from app.services.ingestion.service import _extract_and_save_entities
 from app.services.normalization import normalize_hm
 
 # Use checkfirst=True to avoid "table already exists" errors
 Base.metadata.create_all(bind=engine, checkfirst=True)
+
+# Stamp alembic to HEAD so the app's lifespan doesn't try to re-run every
+# migration against already-created tables on next startup.
+from alembic import command as _alembic_command  # noqa: E402
+from alembic.config import Config as _AlembicConfig  # noqa: E402
+
+_alembic_command.stamp(_AlembicConfig("alembic.ini"), "head")
+
 db = SessionLocal()
 
 # ── Seed Cases ──────────────────────────────────────────────────────────────
@@ -517,32 +531,40 @@ for case_seed in SEED_CASES:
 
     db.commit()
 
-    # ── Seed Deadlines ──────────────────────────────────────────────────────
+    # ── Seed Deadlines (as ActionItems) ─────────────────────────────────────
     for title, offset in random.sample(DEADLINE_TEMPLATES, k=random.randint(3, 6)):
         due_date = now + timedelta(days=random.randint(-10, 60))
-        deadline = Deadline(
-            case_id=case_id,
-            title=title,
-            description=f"Deadline for {title.lower()} in case {case_id}.",
-            due_at=due_date,
-            completed=due_date < now and random.random() < 0.3,
+        completed = due_date < now and random.random() < 0.3
+        db.add(
+            ActionItem(
+                case_id=case_id,
+                title=title,
+                description=f"Deadline for {title.lower()} in case {case_id}.",
+                due_date=due_date,
+                action_type=ActionItemType.DEADLINE,
+                status=ActionItemStatus.COMPLETED
+                if completed
+                else ActionItemStatus.OPEN,
+            )
         )
-        db.add(deadline)
 
-    # ── Seed Hearings ───────────────────────────────────────────────────────
+    # ── Seed Hearings (as ActionItems) ──────────────────────────────────────
     for title, location in random.sample(HEARING_TEMPLATES, k=random.randint(2, 4)):
         hearing_date = now + timedelta(days=random.randint(5, 90))
-        hearing = Hearing(
-            case_id=case_id,
-            title=title,
-            description=f"Hearing: {title}",
-            location=location,
-            scheduled_for=hearing_date.replace(
-                hour=random.choice([9, 10, 11, 14, 15]),
-                minute=random.choice([0, 15, 30, 45]),
-            ),
+        db.add(
+            ActionItem(
+                case_id=case_id,
+                title=title,
+                description=f"Hearing: {title}",
+                location=location,
+                due_date=hearing_date.replace(
+                    hour=random.choice([9, 10, 11, 14, 15]),
+                    minute=random.choice([0, 15, 30, 45]),
+                ),
+                action_type=ActionItemType.COURT_DATE,
+                status=ActionItemStatus.OPEN,
+            )
         )
-        db.add(hearing)
 
     # ── Seed Costs ──────────────────────────────────────────────────────────
     for cost_template in random.sample(COST_TEMPLATES, k=random.randint(3, 5)):
@@ -586,22 +608,177 @@ for case_seed in SEED_CASES:
 
     db.commit()
 
+# ── Phase 2 demo: one realistic bundle showcasing cover-letter → enclosures ──
+# Shows the Russian-doll visuals (role badges, L-connector, court-relay pill,
+# significance tiers) that the rest of the seed data leaves at default values.
+demo_case_id = case_ids[0]  # first seed case
+demo_batch = IngestBatch(
+    source_type=IngestBatchSourceType.EMAIL,
+    sender_email="anwalt@kanzlei.de",
+    subject="LG Hamburg — Klageerwiderung + Anlage K1",
+    received_at=now - timedelta(days=2),
+    status=IngestBatchStatus.PENDING,
+    case_id=None,  # intentionally unassigned → lands in triage
+)
+db.add(demo_batch)
+db.flush()
+
+# Parent: court relay cover letter
+cover = Document(
+    title="Begleitschreiben LG Hamburg — Az. 003 F 426/25",
+    content=(
+        "# Landgericht Hamburg\n\n"
+        "**Aktenzeichen:** 003 F 426/25\n\n"
+        "## Begleitschreiben\n\n"
+        "Sehr geehrte Damen und Herren,\n\n"
+        "in der Familiensache der Parteien übersende ich Ihnen in der Anlage "
+        "**die Klageerwiderung des Beklagten** vom 12.04.2026 nebst **Anlage K1**.\n\n"
+        "Die Stellungnahme wird binnen **zwei Wochen ab Zustellung** erwartet, "
+        "spätestens jedoch bis zum **30.04.2026**.\n\n"
+        "Mit freundlichen Grüßen\n\n"
+        "— *Geschäftsstelle*"
+    ),
+    case_id=demo_case_id,
+    ingest_batch_id=demo_batch.id,
+    originator_type=OriginatorType.COURT,
+    sender="Geschäftsstelle LG Hamburg",
+    received_date=now - timedelta(days=2),
+    role=DocumentRole.COVER_LETTER,
+    document_type=DocumentType.RELAY,
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    court_relay=True,
+    attributed_originator="Dr. Müller, Rechtsanwalt (Beklagtenvertreter)",
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "high",
+        "date": "high",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(cover)
+db.flush()
+
+# Enclosure 1: opposing statement
+stmt = Document(
+    title="Klageerwiderung Beklagter — Dr. Müller",
+    content=(
+        "# Klageerwiderung\n\n"
+        "*In der Familiensache 003 F 426/25*\n\n"
+        "## I. Sachverhalt\n\n"
+        "Der Beklagte **bestreitet** die von der Klägerin "
+        "vorgetragenen Tatsachen bezüglich der alleinigen elterlichen Sorge.\n\n"
+        "## II. Rechtliche Würdigung\n\n"
+        "Eine Übertragung der elterlichen Sorge nach §1671 BGB ist nicht gerechtfertigt. "
+        "Die Kostentragung hat nach §91 ZPO die Klägerin zu übernehmen.\n\n"
+        "## III. Kostenantrag\n\n"
+        "Streitwert: **3.000,00 EUR**\n"
+        "Verfahrensgebühr nach RVG Nr. 3100 VV: **261,30 EUR**\n"
+    ),
+    case_id=demo_case_id,
+    ingest_batch_id=demo_batch.id,
+    parent_id=cover.id,
+    originator_type=OriginatorType.OPPOSING,
+    sender="Dr. Müller, Rechtsanwalt",
+    received_date=now - timedelta(days=2),
+    role=DocumentRole.ENCLOSURE,
+    document_type=DocumentType.STATEMENT,
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    cost_candidates=[
+        {"type": "amount", "value": 3000.00, "context": "Streitwert: 3.000,00 EUR"},
+        {"type": "amount", "value": 261.30, "context": "Verfahrensgebühr: 261,30 EUR"},
+        {
+            "type": "rvg_position",
+            "value": "Nr. 3100 VV RVG",
+            "context": "Verfahrensgebühr nach RVG",
+        },
+        {"type": "rvg_position", "value": "§ 91 ZPO", "context": "Kostentragung"},
+    ],
+    extraction_confidence={
+        "sender": "high",
+        "date": "medium",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(stmt)
+db.flush()
+
+# Enclosure 2: annex as proof
+annex = Document(
+    title="Anlage K1 — Rechnung H&M",
+    content=(
+        "# Anlage K1\n\n"
+        "## Rechnung — H&M Hennes & Mauritz GmbH\n\n"
+        "| Position | Betrag |\n"
+        "|----------|--------|\n"
+        "| Bekleidung Kind | 180,00 EUR |\n"
+        "| Schulkleidung | 120,00 EUR |\n"
+        "| **Summe** | **300,00 EUR** |\n\n"
+        "*Vorgelegt als Nachweis der tatsächlichen Bedarfsposition.*"
+    ),
+    case_id=demo_case_id,
+    ingest_batch_id=demo_batch.id,
+    parent_id=cover.id,
+    originator_type=OriginatorType.OPPOSING,
+    sender="Dr. Müller, Rechtsanwalt",
+    received_date=now - timedelta(days=2),
+    role=DocumentRole.ENCLOSURE,
+    document_type=DocumentType.ANNEX,
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    needs_review=True,
+    review_reasons=["missing_parent", "missing_sender"],
+    ai_summary_status="pending",
+    cost_candidates=[
+        {"type": "amount", "value": 180.00, "context": "Bekleidung Kind 180,00 EUR"},
+        {"type": "amount", "value": 120.00, "context": "Schulkleidung 120,00 EUR"},
+        {"type": "amount", "value": 300.00, "context": "Summe 300,00 EUR"},
+    ],
+    extraction_confidence={
+        "sender": "low",
+        "date": "medium",
+        "case_id": "high",
+        "originator": "medium",
+    },
+)
+db.add(annex)
+db.flush()
+
+# Action item sourced from the cover letter (would be AI-extracted in Phase 4)
+db.add(
+    ActionItem(
+        case_id=demo_case_id,
+        source_document_id=cover.id,
+        title="Stellungnahme Klageerwiderung",
+        description="Stellungnahme auf Klageerwiderung binnen zwei Wochen einzureichen.",
+        due_date=now + timedelta(days=14),
+        action_type=ActionItemType.DEADLINE,
+        status=ActionItemStatus.OPEN,
+    )
+)
+
+db.commit()
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 total_docs = db.query(Document).count()
 total_cases = db.query(Case).count()
-total_deadlines = db.query(Deadline).count()
-total_hearings = db.query(Hearing).count()
+total_actions = db.query(ActionItem).count()
 total_costs = db.query(LegalCost).count()
+total_batches = db.query(IngestBatch).count()
 parent_count = db.query(Document).filter(Document.parent_id.isnot(None)).count()
 total_entities = db.query(Entity).count()
 
 print("Seed complete:")
-print(f"  Cases:      {total_cases}")
-print(f"  Documents:  {total_docs}")
-print(f"  Children:   {parent_count}")
-print(f"  Deadlines:  {total_deadlines}")
-print(f"  Hearings:   {total_hearings}")
-print(f"  Costs:      {total_costs}")
-print(f"  Entities:   {total_entities}")
+print(f"  Cases:         {total_cases}")
+print(f"  Documents:     {total_docs}  ({parent_count} as children)")
+print(f"  Ingest batches:{total_batches}")
+print(f"  Action items:  {total_actions}")
+print(f"  Costs:         {total_costs}")
+print(f"  Entities:      {total_entities}")
 
 db.close()

@@ -208,7 +208,13 @@ def mock_converter():
         mock_doc.export_to_markdown.return_value = (
             "# Mocked Document\n\nThis is a test document."
         )
+        # convert_file() builds a metadata dict from result.document.pages (len-able)
+        # and result.input.format.value (string). Without these overrides MagicMock
+        # returns nested mocks that aren't JSON-serialisable and blow up on the
+        # Document.meta commit.
+        mock_doc.pages = []
         mock_res.document = mock_doc
+        mock_res.input.format.value = "PDF"
         mock_conv.convert.return_value = mock_res
         mock_get.return_value = mock_conv
         yield mock_conv

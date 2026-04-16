@@ -81,8 +81,9 @@ async def not_found_handler(request: Request, exc: HTTPException) -> HTMLRespons
     from app.main import templates
 
     return templates.TemplateResponse(
+        request,
         "errors/404.html",
-        {"request": request, "message": exc.detail},
+        {"message": exc.detail},
         status_code=404,
     )
 
@@ -94,8 +95,9 @@ async def validation_error_handler(
     from app.main import templates
 
     return templates.TemplateResponse(
+        request,
         "errors/422.html",
-        {"request": request, "message": exc.detail},
+        {"message": exc.detail},
         status_code=422,
     )
 
@@ -105,7 +107,8 @@ async def server_error_handler(request: Request, exc: HTTPException) -> HTMLResp
     from app.main import templates
 
     return templates.TemplateResponse(
+        request,
         "errors/500.html",
-        {"request": request, "message": exc.detail},
+        {"message": exc.detail},
         status_code=500,
     )

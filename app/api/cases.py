@@ -61,9 +61,9 @@ async def case_detail(request: Request, case_id: str, db: Session = Depends(get_
 
     if not data:
         return templates.TemplateResponse(
+            request,
             "errors/404.html",
             {
-                "request": request,
                 "message": f"Case {case_id} not found",
                 "sidebar_counts": {
                     "triage_count": 0,
