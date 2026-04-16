@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Add Legal Cost | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set header_title = "Add Legal Cost" %}
+{% set header_subtitle = "Record financial impact and fee positions" %}
+{% set header_actions %}
+    {% include "partials/header_controls.html" %}
+{% endset %}
+
+<section class="flex-1 flex flex-col overflow-hidden bg-surface">
+    {% include "partials/page_header.html" %}
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div class="max-w-3xl mx-auto">
+            {% with
+                preselected_case_id = case.id if case else None,
+                preselected_case_title = case.title if case else None
+            %}
+                {% include "partials/cost_form.html" %}
+            {% endwith %}
+        </div>
+    </div>
+</section>
+{% endblock %}

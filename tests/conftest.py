@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,20 +8,23 @@ from sqlalchemy.orm import sessionmaker
 
 from app.dependencies import get_db
 from app.main import app
-from app.models.database import Base
+from app.models.database import ActionItem, Base, Case, Document, LegalCost
+from app.models.enums import (
+    ActionItemType,
+    CaseStatus,
+    CostCategory,
+    CostStatus,
+    Jurisdiction,
+    OriginatorType,
+)
 
-# Use a test database file
 TEST_DB_PATH = "./test_sanctuary.db"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 
-def get_test_engine():
-    return create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-
-
 @pytest.fixture(scope="session")
 def test_engine():
-    engine = get_test_engine()
+    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     yield engine
     if os.path.exists(TEST_DB_PATH):
@@ -32,14 +36,11 @@ def test_engine():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db(test_engine):
+    Base.metadata.create_all(bind=test_engine)
     TestingSessionLocal = sessionmaker(
         autocommit=False, autoflush=False, bind=test_engine
     )
 
-    # Create all tables
-    Base.metadata.create_all(bind=test_engine)
-
-    # Override the dependency
     def override_get_db():
         db = TestingSessionLocal()
         try:
@@ -50,11 +51,21 @@ def setup_test_db(test_engine):
     app.dependency_overrides[get_db] = override_get_db
     yield
     app.dependency_overrides.clear()
+    test_engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_per_test(db_session):
+    """Clean up data after each test."""
+    yield
+    db_session.rollback()
+    for table in reversed(Base.metadata.sorted_tables):
+        db_session.execute(table.delete())
+    db_session.commit()
 
 
 @pytest.fixture
 def db_session(test_engine):
-    """Provide a clean database session for each test."""
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
     session = SessionLocal()
     try:
@@ -63,10 +74,134 @@ def db_session(test_engine):
         session.close()
 
 
+@pytest.fixture
+def db_session_factory(test_engine):
+    def _factory():
+        return sessionmaker(autocommit=False, autoflush=False, bind=test_engine)()
+
+    return _factory
+
+
+@pytest.fixture
+def sample_case(db_session) -> Case:
+    case = Case(
+        id="TEST-001",
+        title="Test Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(case)
+    db_session.commit()
+    db_session.refresh(case)
+    return case
+
+
+@pytest.fixture
+def sample_triage_case(db_session) -> Case:
+    case = Case(
+        id="_TRIAGE",
+        title="Triage Inbox",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(case)
+    db_session.commit()
+    db_session.refresh(case)
+    return case
+
+
+@pytest.fixture
+def sample_document(db_session, sample_case) -> Document:
+    doc = Document(
+        title="Test Document",
+        content="Test content",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        sender="test@example.com",
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+    return doc
+
+
+@pytest.fixture
+def sample_deadline(db_session, sample_case) -> ActionItem:
+    deadline = ActionItem(
+        case_id=sample_case.id,
+        title="Test Deadline",
+        due_date=datetime(2025, 12, 31, 23, 59, tzinfo=UTC),
+        action_type=ActionItemType.DEADLINE,
+    )
+    db_session.add(deadline)
+    db_session.commit()
+    db_session.refresh(deadline)
+    return deadline
+
+
+@pytest.fixture
+def sample_hearing(db_session, sample_case) -> ActionItem:
+    hearing = ActionItem(
+        case_id=sample_case.id,
+        title="Test Hearing",
+        due_date=datetime(2025, 6, 15, 10, 0, tzinfo=UTC),
+        action_type=ActionItemType.COURT_DATE,
+    )
+    db_session.add(hearing)
+    db_session.commit()
+    db_session.refresh(hearing)
+    return hearing
+
+
+@pytest.fixture
+def sample_cost(db_session, sample_case) -> LegalCost:
+    cost = LegalCost(
+        case_id=sample_case.id,
+        category=CostCategory.ANWALTSKOSTEN,
+        status=CostStatus.OFFEN,
+        title="Test Cost",
+        amount_net=500.0,
+        amount_gross=595.0,
+    )
+    db_session.add(cost)
+    db_session.commit()
+    db_session.refresh(cost)
+    return cost
+
+
+@pytest.fixture
+def multiple_cases(db_session) -> list[Case]:
+    cases = [
+        Case(
+            id="TEST-001",
+            title="Alpha Case",
+            status=CaseStatus.INTAKE,
+            jurisdiction=Jurisdiction.DE,
+        ),
+        Case(
+            id="TEST-002",
+            title="Beta Case",
+            status=CaseStatus.DISCOVERY,
+            jurisdiction=Jurisdiction.DE,
+        ),
+        Case(
+            id="TEST-003",
+            title="Gamma Case",
+            status=CaseStatus.CLOSED,
+            jurisdiction=Jurisdiction.UK,
+        ),
+    ]
+    for case in cases:
+        db_session.add(case)
+    db_session.commit()
+    for case in cases:
+        db_session.refresh(case)
+    return cases
+
+
 @pytest.fixture(autouse=True)
 def mock_converter():
-    """Mock the Docling converter to avoid real PDF processing in tests."""
-    with patch("app.services.ingestion._get_converter") as mock_get:
+    with patch("app.services.ingestion.converters._get_converter") as mock_get:
         mock_conv = MagicMock()
         mock_res = MagicMock()
         mock_doc = MagicMock()
@@ -80,15 +215,21 @@ def mock_converter():
 
 
 @pytest.fixture(autouse=True)
+def clear_cache():
+    from app.core.cache import cache
+
+    cache.clear()
+
+
+@pytest.fixture
 def mock_ai_services():
-    """Mock AI-related services to avoid real Ollama calls and long timeouts."""
     with (
         patch("app.services.ai_summary.summarize_document") as mock_sum,
         patch("app.services.embeddings.generate_embedding") as mock_emb,
         patch("app.services.ai_summary.check_ollama_status") as mock_check_sum,
         patch("app.services.embeddings.check_embedding_status") as mock_check_emb,
     ):
-        mock_sum.return_value = MagicMock()  # Return a mock document
+        mock_sum.return_value = MagicMock()
         mock_emb.return_value = [0.1] * 768
         mock_check_sum.return_value = {"status": "ok", "model": "test"}
         mock_check_emb.return_value = {"status": "ok", "model": "test"}
@@ -99,3 +240,12 @@ def mock_ai_services():
             "check_sum": mock_check_sum,
             "check_emb": mock_check_emb,
         }
+
+
+@pytest.fixture
+def app_client():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    return TestClient(app)

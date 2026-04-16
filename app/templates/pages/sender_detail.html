@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Contact Detail: {{ sender }} | The Sanctuary{% endblock %}
+
+{% block content %}
+{% set header_title = sender %}
+{% set header_subtitle = "Contact Detail" %}
+{% set header_actions %}
+    {% include "partials/header_controls.html" %}
+{% endset %}
+
+<section class="flex-1 flex flex-col overflow-hidden bg-surface">
+    {% include "partials/page_header.html" %}
+
+    <div class="flex-1 overflow-hidden">
+        <div class="max-w-4xl mx-auto h-full bg-surface-container/30 border-x border-outline-variant/10">
+            {% include "partials/sender_detail_content.html" %}
+        </div>
+    </div>
+</section>
+{% endblock %}

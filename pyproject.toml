@@ -5,7 +5,8 @@ python_classes = "Test*"
 python_functions = "test_*"
 markers = [
     "unit: Quick unit tests for isolated logic",
-    "integration: Slower tests requiring app setup or DB"
+    "integration: Slower tests requiring app setup or DB",
+    "e2e: End-to-end browser tests with Playwright"
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -17,7 +18,17 @@ src = ["app"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "C4", "DTZ", "SIM", "TID"]
-ignore = []
+ignore = [
+    "B008",   # FastAPI idiom: Depends() in argument defaults is the framework's pattern
+    "E501",   # Line length: many legacy HTML-string templates exceed 88 cols; cleanup is a separate effort
+    "E402",   # Module-level imports at top of file: several modules intentionally defer imports to avoid cycles
+    "SIM105", # try/except/pass vs contextlib.suppress: stylistic preference, both are clear
+    "B007",   # Unused loop variables named for documentation purposes
+    "DTZ001", # datetime() without tzinfo: timezone normalization is a separate effort
+    "DTZ005", # datetime.now() without tz: same
+    "DTZ007", # datetime.strptime() without tz: same
+    "SIM117", # Nested with statements: stylistic preference
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

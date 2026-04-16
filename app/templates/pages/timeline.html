@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'components/document_card.html' import document_card %}
 
 {% block title %}Master Timeline | The Sanctuary{% endblock %}
 
@@ -44,7 +45,7 @@
     </div>
     {% include "partials/header_controls.html" %}
 {% endset %}
-<div x-data="{ activeDoc: null, filterOpen: false, court: true, opposing: true, own: true }" class="flex-1 flex overflow-hidden w-full relative">
+<div x-data="{ activeDoc: null, filterOpen: false, court: true, opposing: true, own: true, currentPage: {{ current_page or 1 }}, hasMore: {{ 'true' if has_more else 'false' }}, loading: false, nextCursor: null }" class="flex-1 flex overflow-hidden w-full relative">
     <section :class="activeDoc ? 'w-[47%] min-w-[500px]' : 'flex-1'"
         class="border-r border-outline-variant/10 flex flex-col overflow-hidden flex-1"
         x-init="$nextTick(() => $el.classList.add('transition-[width]', 'duration-300', 'ease-in-out'))">
@@ -74,8 +75,8 @@
             </div>
 
             {% if grouped_docs %}
-            <div class="px-8 py-6">
-                {% for period, docs_in_period in grouped_docs %}
+            <div class="px-8 py-6" id="timeline-content">
+                {% for period, docs_in_period in grouped_docs.items() %}
                 <!-- Period Header -->
                 <div class="flex items-center gap-4 mb-4 {% if not loop.first %}mt-10{% endif %}">
                     <div class="flex items-center gap-2 bg-surface-container-high px-4 py-1.5 rounded-full">
@@ -87,123 +88,47 @@
                 </div>
 
                 <!-- Timeline Spine -->
-                <div class="relative pl-8">
+                <div class="relative pl-8" id="timeline-documents">
                     <!-- Vertical spine line -->
                     <div class="absolute left-[11px] top-0 bottom-0 w-px bg-gradient-to-b from-primary/50 via-outline-variant/40 to-transparent"></div>
 
                     {% for doc in docs_in_period %}
                     {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                     {% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
-
-                    <div class="relative mb-6 group">
-                        <!-- Timeline Node -->
-                        <div class="absolute left-[-25px] top-5 z-10">
-                            <div class="w-[14px] h-[14px] rounded-full border-2 border-white shadow-sm flex items-center justify-center"
-                                style="background-color: {{ stripe_color }};">
-                                <div class="w-1.5 h-1.5 rounded-full bg-white/80"></div>
-                            </div>
-                        </div>
-
-                        <!-- Document Card -->
-                        <div class="rounded-xl border shadow-sm transition-all duration-200 cursor-pointer overflow-hidden
-                                    hover:shadow-md hover:border-primary/20"
-                            style="border-left: 4px solid {{ stripe_color }};"
-                            :class="activeDoc === '{{ doc.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'bg-surface-container-lowest border-outline-variant/10'"
-                            @click="activeDoc = '{{ doc.id }}'"
-                            hx-get="/document/{{ doc.id }}"
-                            hx-target="#document-pane"
-                            hx-swap="innerHTML">
-
-                            <div class="p-5">
-                                <!-- Top Row: Date & Case Badge -->
-                                <div class="flex items-center justify-between mb-2">
-                                    <div class="flex items-center gap-2">
-                                        <span class="material-symbols-outlined text-sm" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
-                                        <span class="font-mono text-[10px] text-on-surface-variant">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                                    </div>
-                                    {% if doc.case_id %}
-                                    <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
-                                        class="flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider transition-colors">
-                                        <span class="material-symbols-outlined text-[11px]">folder</span>
-                                        {{ case_titles.get(doc.case_id, doc.case_id) }}
-                                    </a>
-                                    {% else %}
-                                    <span class="bg-amber-100 text-amber-700 text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Unlinked</span>
-                                    {% endif %}
-                                </div>
-
-                                <!-- Title -->
-                                <h3 class="text-sm font-bold text-on-surface mb-1 line-clamp-1 group-hover:text-primary transition-colors">{{ doc.title }}</h3>
-
-                                <!-- Content Preview -->
-                                <p class="text-xs text-on-surface-variant leading-relaxed line-clamp-2 mb-3">
-                                    {{ (doc.content or 'No content available')[:200] | striptags }}{% if (doc.content or '')|length > 200 %}…{% endif %}
-                                </p>
-
-                                <!-- Footer: Provenance + Status -->
-                                <div class="flex items-center justify-between pt-3 border-t border-outline-variant/10">
-                                    <p class="text-[9px] text-on-surface-variant font-medium truncate max-w-[70%]">
-                                        {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}
-                                        {% else %}Document ID: {{ doc.id }}{% endif %}
-                                    </p>
-                                    <div class="flex items-center gap-2">
-                                        {% if doc.needs_review %}
-                                        <span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Needs Review</span>
-                                        {% else %}
-                                        <span class="text-[9px] bg-primary-container/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Reviewed</span>
-                                        {% endif %}
-                                        {% if doc.children %}
-                                        <span class="text-[9px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-full font-bold" title="{{ doc.children|length }} nested document(s)">
-                                            <span class="material-symbols-outlined text-[10px] align-middle">account_tree</span>
-                                            {{ doc.children|length }}
-                                        </span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Nested Children (Inline) -->
-                        {% if doc.children %}
-                        {% for child in doc.children %}
-                        {% set child_color = originator_colors.get(child.originator_type, '#64748b') %}
-                        {% set child_icon = originator_icons.get(child.originator_type, 'help_outline') %}
-                        <div class="ml-12 mt-6 relative cursor-pointer group"
-                            @click.stop="activeDoc = '{{ child.id }}'"
-                            hx-get="/document/{{ child.id }}"
-                            hx-target="#document-pane"
-                            hx-swap="innerHTML">
-
-                            <!-- L-connector -->
-                            <svg class="absolute left-[-32px] top-[-30px] w-8 h-8" viewBox="0 0 32 32" fill="none">
-                                <path d="M0 0 L0 24 L24 24" stroke="currentColor" stroke-width="1" class="text-outline-variant/30" fill="none"/>
-                            </svg>
-
-                            <div class="rounded-xl border shadow-sm transition-all duration-200 overflow-hidden hover:shadow-md hover:border-primary/20"
-                                style="border-left: 4px solid {{ child_color }};"
-                                :class="activeDoc === '{{ child.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'bg-surface-container-lowest border-outline-variant/10'">
-                                <div class="p-5">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <div class="flex items-center gap-2">
-                                            <span class="material-symbols-outlined text-xs" style="color: {{ child_color }};">{{ child_icon }}</span>
-                                            <span class="text-[8px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-sm font-bold uppercase tracking-wider">Nested</span>
-                                        </div>
-                                        <span class="font-mono text-[10px] text-on-surface-variant">{{ child.created_at.strftime('%Y-%m-%d') }}</span>
-                                    </div>
-                                    <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors mb-2">{{ child.title }}</p>
-                                    <p class="text-xs text-on-surface-variant font-medium leading-relaxed line-clamp-2">{{ (child.content or '')[:120] | striptags }}...</p>
-                                    <p class="mt-3 text-[9px] text-on-surface-variant font-medium truncate">
-                                        {% if child.sender %}Via: Email from {{ child.sender }}{% if child.received_date %} on {{ child.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}ID: {{ child.id }}{% endif %}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                        {% endif %}
+                    <div class="timeline-doc-item" data-doc-id="{{ doc.id }}">
+                    {{ document_card(doc, stripe_color, stripe_icon, activeDoc, True) }}
                     </div>
                     {% endfor %}
                 </div>
                 {% endfor %}
+
+                <!-- Load More Button -->
+                {% if has_more and grouped_docs %}
+                <div class="text-center py-8" id="load-more-container">
+                    <button
+                        x-data="{ cursor: null }"
+                        x-init="cursor = document.querySelector('.timeline-doc-item:last-child')?.dataset.docId"
+                        hx-get="/api/v1/timeline"
+                        hx-trigger="click"
+                        hx-vars="cursor: cursor"
+                        hx-params="cursor"
+                        hx-swap="beforeend"
+                        hx-target="#timeline-documents"
+                        @click="hasMore = false; loading = true"
+                        @htmx:after-request="const data = JSON.parse(event.detail.xhr.responseText); hasMore = data.has_more; cursor = data.next_cursor; loading = false"
+                        class="px-6 py-3 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+                    >
+                        <span x-show="!loading">Load More Documents</span>
+                        <span x-show="loading" class="inline-flex items-center gap-2">
+                            <span class="material-symbols-outlined animate-spin">progress_activity</span>
+                            Loading...
+                        </span>
+                    </button>
+                </div>
+                {% endif %}
+                <div class="text-center py-4" x-show="loading">
+                    <span class="material-symbols-outlined text-primary animate-spin">progress_activity</span>
+                </div>
             </div>
 
             {% else %}

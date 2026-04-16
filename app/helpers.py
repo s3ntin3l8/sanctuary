@@ -1,15 +1,21 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import templates
-from app.models.database import Case, CaseStatus, Deadline, Document, Hearing
+from app.models.database import ActionItem, Case, CaseStatus, Document
+from app.models.enums import ActionItemStatus, ActionItemType
 
 
 def build_sidebar_counts(db: Session) -> dict:
     """Computes sidebar badge counts using the active request session."""
-    triage_count = db.query(Document).filter(Document.case_id == "_TRIAGE").count()
+    triage_count = (
+        db.query(Document)
+        .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
+        .count()
+    )
     total_docs = db.query(Document).count()
     case_count = db.query(Case).filter(Case.status != CaseStatus.CLOSED).count()
     return {
@@ -30,7 +36,7 @@ def render_page(
         base_context["sidebar_counts"] = build_sidebar_counts(db)
         base_context.update(_build_notifications(db))
     base_context.update(context)
-    return templates.TemplateResponse(request, template_name, base_context)
+    return templates.TemplateResponse(template_name, base_context)
 
 
 from app.models.database import (
@@ -41,37 +47,46 @@ from app.models.database import (
 
 def _build_notifications(db: Session) -> dict:
     """Build notification data for the header notifications panel."""
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     seven_days = timedelta(days=7)
 
     overdue_deadlines = (
-        db.query(Deadline)
-        .filter(~Deadline.completed, Deadline.due_at < now)
-        .order_by(Deadline.due_at.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.action_type == ActionItemType.DEADLINE,
+            ActionItem.status == ActionItemStatus.OPEN,
+            ActionItem.due_date < now,
+        )
+        .order_by(ActionItem.due_date.asc())
         .limit(5)
         .all()
     )
     upcoming_deadlines = (
-        db.query(Deadline)
+        db.query(ActionItem)
         .filter(
-            ~Deadline.completed,
-            Deadline.due_at >= now,
-            Deadline.due_at <= now + seven_days,
+            ActionItem.action_type == ActionItemType.DEADLINE,
+            ActionItem.status == ActionItemStatus.OPEN,
+            ActionItem.due_date >= now,
+            ActionItem.due_date <= now + seven_days,
         )
-        .order_by(Deadline.due_at.asc())
+        .order_by(ActionItem.due_date.asc())
         .limit(5)
         .all()
     )
     upcoming_hearings = (
-        db.query(Hearing)
-        .filter(Hearing.scheduled_for >= now, Hearing.scheduled_for <= now + seven_days)
-        .order_by(Hearing.scheduled_for.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.action_type == ActionItemType.COURT_DATE,
+            ActionItem.due_date >= now,
+            ActionItem.due_date <= now + seven_days,
+        )
+        .order_by(ActionItem.due_date.asc())
         .limit(5)
         .all()
     )
     pending_docs = (
         db.query(Document)
-        .filter(Document.case_id == "_TRIAGE")
+        .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
         .order_by(Document.created_at.desc())
         .limit(5)
         .all()
@@ -194,64 +209,46 @@ def parse_form_datetime(raw_value: str | None) -> datetime | None:
         return None
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
 def load_case_schedule(db: Session, case_id: str) -> dict:
     """Loads schedule data for the case calendar panel."""
     now = datetime.now(UTC)
     deadlines = (
-        db.query(Deadline)
-        .filter(Deadline.case_id == case_id)
-        .order_by(Deadline.completed.asc(), Deadline.due_at.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.case_id == case_id,
+            ActionItem.action_type == ActionItemType.DEADLINE,
+        )
+        .order_by(ActionItem.status.asc(), ActionItem.due_date.asc())
         .all()
     )
     hearings = (
-        db.query(Hearing)
-        .filter(Hearing.case_id == case_id)
-        .order_by(Hearing.scheduled_for.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.case_id == case_id,
+            ActionItem.action_type == ActionItemType.COURT_DATE,
+        )
+        .order_by(ActionItem.due_date.asc())
         .all()
     )
     return {
         "upcoming_deadlines": [
             item
             for item in deadlines
-            if not item.completed
-            and (
-                item.due_at.replace(tzinfo=UTC)
-                if item.due_at.tzinfo is None
-                else item.due_at
-            )
-            >= now
+            if item.status == ActionItemStatus.OPEN and _as_utc(item.due_date) >= now
         ],
         "completed_deadlines": [
             item
             for item in deadlines
-            if item.completed
-            or (
-                item.due_at.replace(tzinfo=UTC)
-                if item.due_at.tzinfo is None
-                else item.due_at
-            )
-            < now
+            if item.status != ActionItemStatus.OPEN or _as_utc(item.due_date) < now
         ],
         "upcoming_hearings": [
-            item
-            for item in hearings
-            if (
-                item.scheduled_for.replace(tzinfo=UTC)
-                if item.scheduled_for.tzinfo is None
-                else item.scheduled_for
-            )
-            >= now
+            item for item in hearings if _as_utc(item.due_date) >= now
         ],
-        "past_hearings": [
-            item
-            for item in hearings
-            if (
-                item.scheduled_for.replace(tzinfo=UTC)
-                if item.scheduled_for.tzinfo is None
-                else item.scheduled_for
-            )
-            < now
-        ],
+        "past_hearings": [item for item in hearings if _as_utc(item.due_date) < now],
     }
 
 
@@ -295,15 +292,21 @@ def build_document_extraction_context(db: Session, doc: Document | None) -> dict
         doc.content or "", base_date=doc.received_date
     )
     linked_deadlines = (
-        db.query(Deadline)
-        .filter(Deadline.source_document_id == doc.id)
-        .order_by(Deadline.due_at.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.source_document_id == doc.id,
+            ActionItem.action_type == ActionItemType.DEADLINE,
+        )
+        .order_by(ActionItem.due_date.asc())
         .all()
     )
     linked_hearings = (
-        db.query(Hearing)
-        .filter(Hearing.source_document_id == doc.id)
-        .order_by(Hearing.scheduled_for.asc())
+        db.query(ActionItem)
+        .filter(
+            ActionItem.source_document_id == doc.id,
+            ActionItem.action_type == ActionItemType.COURT_DATE,
+        )
+        .order_by(ActionItem.due_date.asc())
         .all()
     )
     return {

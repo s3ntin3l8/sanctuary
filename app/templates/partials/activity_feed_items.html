@@ -1,0 +1,108 @@
+{% for doc in documents %}
+{% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+{% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
+{% set doc_type = doc.originator_type.value if doc.originator_type else 'unknown' %}
+
+<div id="doc-row-{{ doc.id }}"
+     class="group relative rounded-lg border border-outline-variant/10 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container transition-all duration-200 cursor-pointer overflow-hidden"
+     :class="selectedDocs.includes('{{ doc.id }}') ? 'ring-2 ring-primary border-transparent' : ''"
+     style="border-left: 4px solid {{ stripe_color }};"
+     @click="activeDoc = '{{ doc.id }}'">
+
+    {# Action Overlay (Right Side) #}
+    <div class="absolute top-0 right-0 bottom-0 w-12 flex flex-col items-center justify-between py-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-l from-surface-container/80 to-transparent"
+         :class="selectedDocs.includes('{{ doc.id }}') ? 'opacity-100' : ''">
+
+        {# Checkbox #}
+        <input type="checkbox"
+               :checked="selectedDocs.includes('{{ doc.id }}')"
+               @click.stop="toggleDoc('{{ doc.id }}')"
+               class="w-4 h-4 rounded border-outline-variant/30 text-primary focus:ring-primary cursor-pointer shadow-sm">
+
+        {# Delete Button #}
+        <button @click.stop="$dispatch('open-confirm', {
+                    title: 'Delete Document',
+                    message: 'Are you sure you want to delete \'{{ doc.title }}\'? This action cannot be undone.',
+                    onConfirm: () => {
+                        const isActive = (activeDoc === '{{ doc.id }}');
+                        htmx.ajax('DELETE', '/document/{{ doc.id }}', {
+                            target: '#doc-row-{{ doc.id }}',
+                            swap: 'outerHTML'
+                        }).then(() => {
+                            window.showToast('Document deleted', 'success');
+                            if (isActive) clearPreview();
+                        });
+                    }
+                })"
+                class="p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-all duration-200"
+                title="Delete Document">
+            <span class="material-symbols-outlined text-[20px]">delete</span>
+        </button>
+    </div>
+
+    {# Hidden Polling Trigger #}
+    {% if (doc.ingest_status and doc.ingest_status.value in ['pending', 'processing']) or (doc.ai_summary_status == 'pending' and doc.ingest_status.value != 'failed') %}
+    <div hx-get="/document/{{ doc.id }}/activity-item"
+         hx-trigger="every 3s"
+         hx-target="#doc-row-{{ doc.id }}"
+         hx-swap="outerHTML"
+         hx-disinherit="*"
+         class="hidden"></div>
+    {% endif %}
+
+    <div class="p-4 pr-12 flex items-start gap-4" hx-get="/document/{{ doc.id }}?context=triage" hx-target="#activity-doc-pane" hx-swap="innerHTML">
+        {# Icon #}
+        <div class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {{ stripe_color }}20;">
+            <span class="material-symbols-outlined text-lg" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
+        </div>
+
+        {# Content #}
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-3 mb-1">
+                <h3 class="text-sm font-bold text-on-surface truncate group-hover:text-primary transition-colors">{{ doc.title }}</h3>
+                <span class="text-[10px] font-mono text-on-surface-variant shrink-0">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                {% if doc.case_id and case_titles.get(doc.case_id) %}
+                <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
+                    class="inline-flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider transition-colors">
+                    <span class="material-symbols-outlined text-[10px]">folder</span>
+                    {{ case_titles.get(doc.case_id, doc.case_id) }}
+                </a>
+                {% else %}
+                <span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Unlinked</span>
+                {% endif %}
+                <span class="text-[9px] text-on-surface-variant">
+                    {% if doc.sender %}Via: {{ doc.sender }}{% else %}Manual upload{% endif %}
+                </span>
+                {# Status indicators for processing pipeline #}
+                <span class="flex items-center gap-0.5 ml-1" title="Ingest: {{ doc.ingest_status.value if doc.ingest_status else 'unknown' }}{% if doc.ingest_error %}\n{{ doc.ingest_error }}{% endif %}">
+                    {% if doc.ingest_status and doc.ingest_status.value == 'pending' %}
+                    <span class="material-symbols-outlined text-[12px] text-yellow-500">hourglass_empty</span>
+                    {% elif doc.ingest_status and doc.ingest_status.value == 'processing' %}
+                    <span class="material-symbols-outlined text-[12px] text-blue-500 animate-spin">sync</span>
+                    {% elif doc.ingest_status and doc.ingest_status.value == 'failed' %}
+                    <span class="material-symbols-outlined text-[12px] text-red-500" title="{{ doc.ingest_error }}">error</span>
+                    {% else %}
+                    <span class="material-symbols-outlined text-[12px] text-green-500">check_circle</span>
+                    {% endif %}
+                </span>
+                <span class="flex items-center gap-0.5" title="AI Summary: {{ doc.ai_summary_status }}">
+                    {% if doc.ai_summary_status == 'pending' %}
+                    <span class="material-symbols-outlined text-[12px] text-yellow-500 animate-spin">sync</span>
+                    {% elif doc.ai_summary_status == 'generated' %}
+                    <span class="material-symbols-outlined text-[12px] text-green-500">smart_toy</span>
+                    {% elif doc.ai_summary_status == 'failed' %}
+                    <span class="material-symbols-outlined text-[12px] text-red-500">smart_toy</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        {# Arrow #}
+        <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+        </div>
+    </div>
+</div>
+{% endfor %}

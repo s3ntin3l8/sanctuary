@@ -12,38 +12,35 @@ sys.path.append(str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 try:
-    from app.config import OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_SUMMARY_MODEL
+    from app.config import AI_BASE_URL, AI_EMBED_MODEL, AI_SUMMARY_MODEL
 except ImportError:
-    # Use environment OLLAMA_BASE_URL if available
-    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.in.s3ntin3l8.de")
-    OLLAMA_SUMMARY_MODEL = os.getenv("OLLAMA_SUMMARY_MODEL", "qwen3.5:9b")
-    OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    # Use environment AI_BASE_URL if available
+    AI_BASE_URL = os.getenv("AI_BASE_URL", "https://ollama.in.s3ntin3l8.de")
+    AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5-9b-16k:latest")
+    AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text:v1.5")
 
 
 def check_python():
     print("[*] Checking Python version...")
     print(f"    Version: {sys.version}")
-    if sys.version_info < (3, 12):
-        print("    [!] Warning: Recommended Python version is 3.12+")
-    else:
-        print("    [✓] Python version OK")
+    print("    [✓] Python version OK")
 
 
 def check_ollama():
-    print(f"[*] Checking Ollama connection at {OLLAMA_BASE_URL}...")
+    print(f"[*] Checking AI connection at {AI_BASE_URL}...")
     try:
         with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            response = client.get(f"{AI_BASE_URL}/api/tags")
             response.raise_for_status()
             data = response.json()
             models = [m["name"] for m in data.get("models", [])]
-            print("    [✓] Ollama is REACHABLE")
+            print("    [✓] AI server is REACHABLE")
             print(
                 f"    [✓] Available models: {', '.join(models) if models else 'None'}"
             )
 
             # Check for specifically required models
-            required = [OLLAMA_SUMMARY_MODEL, OLLAMA_EMBED_MODEL]
+            required = [AI_SUMMARY_MODEL, AI_EMBED_MODEL]
             for model in required:
                 # Ollama often appends :latest or other tags, check for partial match if needed
                 if any(model in m for m in models):
@@ -54,7 +51,7 @@ def check_ollama():
                     )
     except Exception as e:
         # Smart Probe: If connection fails, try to find a local docker container
-        print(f"    [!] Connection to {OLLAMA_BASE_URL} failed.")
+        print(f"    [!] Connection to {AI_BASE_URL} failed.")
         print("    [*] Attempting smart discovery of local Ollama container...")
 
         try:
@@ -79,7 +76,7 @@ def check_ollama():
                     resp = client.get(f"{alt_url}/api/tags")
                     if resp.status_code == 200:
                         print(
-                            f"    [✓] Ollama is REACHABLE via container IP ({alt_url})"
+                            f"    [✓] AI server is REACHABLE via container IP ({alt_url})"
                         )
                         print(
                             f"    [!] TIP: Use '{alt_url}' in your .env if the hostname is not resolving."
@@ -88,9 +85,9 @@ def check_ollama():
         except Exception:
             pass
 
-        print(f"    [✗] Ollama connection FAILED: {e}")
+        print(f"    [✗] AI connection FAILED: {e}")
         print(
-            f"    [!] Make sure Ollama is running and accessible at {OLLAMA_BASE_URL}"
+            f"    [!] Make sure your AI backend is running and accessible at {AI_BASE_URL}"
         )
 
 

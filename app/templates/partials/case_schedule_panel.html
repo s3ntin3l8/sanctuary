@@ -83,7 +83,7 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <p class="text-sm font-bold text-on-surface group-open:text-originator-opposing transition-colors">{{ deadline.title }}</p>
-                                <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(deadline.due_at) }}</p>
+                                <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(deadline.due_date) }}</p>
                             </div>
                             <span class="text-[10px] font-bold uppercase tracking-wider text-originator-opposing bg-originator-opposing/10 px-2 py-1 rounded-full">Open</span>
                         </div>
@@ -95,9 +95,9 @@
                           data-loading-dim>
                         <input type="text" name="title" value="{{ deadline.title }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                         <textarea name="description" rows="2" class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none resize-none">{{ deadline.description or '' }}</textarea>
-                        <input type="datetime-local" name="due_at" value="{{ format_form_datetime(deadline.due_at) }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                        <input type="datetime-local" name="due_at" value="{{ format_form_datetime(deadline.due_date) }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                         <label class="flex items-center gap-2 text-xs text-on-surface-variant font-medium">
-                            <input type="checkbox" name="completed" {% if deadline.completed %}checked{% endif %} class="accent-originator-opposing">
+                            <input type="checkbox" name="completed" {% if deadline.status == 'completed' %}checked{% endif %} class="accent-originator-opposing">
                             Mark as completed
                         </label>
                         <div class="flex items-center justify-between gap-3">
@@ -139,7 +139,7 @@
                     {% for deadline in completed_deadlines %}
                     <div class="rounded-xl bg-surface-container-low px-5 py-4 border border-outline-variant/10">
                         <p class="text-sm font-semibold text-on-surface">{{ deadline.title }}</p>
-                        <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(deadline.due_at) }}</p>
+                        <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(deadline.due_date) }}</p>
                     </div>
                     {% endfor %}
                 </div>
@@ -222,7 +222,7 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <p class="text-sm font-bold text-on-surface group-open:text-primary transition-colors">{{ hearing.title }}</p>
-                                <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(hearing.scheduled_for) }}</p>
+                                <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(hearing.due_date) }}</p>
                                 <p class="text-xs text-on-surface-variant mt-1">{{ hearing.location or "Location pending" }}</p>
                             </div>
                             <span class="text-[10px] font-bold uppercase tracking-wider text-originator-court bg-originator-court/10 px-2 py-1 rounded-full">Court</span>
@@ -236,7 +236,7 @@
                         <input type="text" name="title" value="{{ hearing.title }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                         <input type="text" name="location" value="{{ hearing.location or '' }}" class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                         <textarea name="description" rows="2" class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none resize-none">{{ hearing.description or '' }}</textarea>
-                        <input type="datetime-local" name="scheduled_for" value="{{ format_form_datetime(hearing.scheduled_for) }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                        <input type="datetime-local" name="scheduled_for" value="{{ format_form_datetime(hearing.due_date) }}" required class="w-full rounded-lg border border-outline-variant/20 bg-surface px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                         <div class="flex items-center justify-between gap-3">
                             <div class="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-originator-court htmx-indicator">
                                 <span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>
@@ -276,7 +276,7 @@
                     {% for hearing in past_hearings %}
                     <div class="rounded-xl bg-surface-container-low px-5 py-4 border border-outline-variant/10">
                         <p class="text-sm font-semibold text-on-surface">{{ hearing.title }}</p>
-                        <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(hearing.scheduled_for) }}</p>
+                        <p class="text-xs text-on-surface-variant mt-1">{{ format_upcoming_datetime(hearing.due_date) }}</p>
                     </div>
                     {% endfor %}
                 </div>

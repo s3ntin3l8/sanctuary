@@ -8,7 +8,7 @@
     {# Clickable summary row #}
     <div class="px-4 py-3"
          @click="activeDoc = '{{ doc.id }}'"
-         hx-get="/document/{{ doc.id }}"
+         hx-get="/document/{{ doc.id }}?context=triage"
          hx-target="#triage-doc-pane"
          hx-swap="innerHTML">
         {# Row 1: Title + Date + Status #}

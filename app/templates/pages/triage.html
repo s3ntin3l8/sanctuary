@@ -107,7 +107,7 @@
         {# Right: Document Detail Pane #}
         <div class="flex-1 bg-surface-container-low/40">
             <div id="triage-doc-pane" class="h-full overflow-y-auto custom-scrollbar flex flex-col min-h-0"
-                 hx-get="/document/{{ documents[0].id }}"
+                 hx-get="/document/{{ documents[0].id }}?context=triage"
                  hx-trigger="load"
                  hx-swap="innerHTML">
                 <div class="flex items-center justify-center flex-1">

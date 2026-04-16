@@ -1,38 +1,68 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal, engine, templates
+from app.api import api_router
+from app.config import CORS_ORIGINS, SessionLocal, engine, templates
 from app.constants import REVIEW_FIELD_LABELS
+from app.dependencies import get_db
 from app.helpers import format_eur, format_relative_time
 from app.models.database import (
+    ActionItem,
     Case,
     CaseStatus,
     CostCategory,
     CostStatus,
-    Deadline,
-    Hearing,
     LegalCost,
 )
-from app.routers import actions, pages
+from app.models.enums import ActionItemType
 from app.services.normalization import normalize_hm
 
 # --- Logging Configuration ---
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=getattr(logging, _log_level, logging.INFO),
+    format="%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+
+
+class RequestIDLogRecord(logging.LogRecord):
+    """LogRecord with default request_id."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not hasattr(self, "request_id"):
+            self.request_id = "-"
+
+
+class RequestIDFilter(logging.Filter):
+    """Add request_id to log records."""
+
+    def filter(self, record):
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return True
+
+
+logging.setLogRecordFactory(RequestIDLogRecord)
+logging.getLogger().addFilter(RequestIDFilter())
+
 
 # --- Rate Limiter ---
 limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
@@ -70,41 +100,37 @@ async def lifespan(app: FastAPI):
         db.commit()
 
         if (
-            db.query(Deadline)
-            .filter(Deadline.case_id.in_([s["id"] for s in _SEED_CASES]))
+            db.query(ActionItem)
+            .filter(ActionItem.case_id.in_([s["id"] for s in _SEED_CASES]))
             .count()
             == 0
         ):
             now = datetime.now(UTC).replace(second=0, microsecond=0)
             for seed in _SEED_DEADLINES:
                 db.add(
-                    Deadline(
+                    ActionItem(
                         case_id=seed["case_id"],
                         title=seed["title"],
                         description=seed["description"],
-                        due_at=now + timedelta(days=seed["offset_days"]),
+                        due_date=now + timedelta(days=seed["offset_days"]),
+                        action_type=ActionItemType.DEADLINE,
                     )
                 )
 
-        if (
-            db.query(Hearing)
-            .filter(Hearing.case_id.in_([s["id"] for s in _SEED_CASES]))
-            .count()
-            == 0
-        ):
             base_time = datetime.now(UTC).replace(second=0, microsecond=0)
             for seed in _SEED_HEARINGS:
                 scheduled_day = base_time + timedelta(days=seed["offset_days"])
                 db.add(
-                    Hearing(
+                    ActionItem(
                         case_id=seed["case_id"],
                         title=seed["title"],
                         description=seed["description"],
                         location=seed["location"],
-                        scheduled_for=scheduled_day.replace(
+                        due_date=scheduled_day.replace(
                             hour=seed["hour"],
                             minute=seed["minute"],
                         ),
+                        action_type=ActionItemType.COURT_DATE,
                     )
                 )
 
@@ -148,6 +174,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
+async def add_request_id(request: Request, call_next):
+    """Add unique request ID to each request and log request lifecycle."""
+    request_id = str(uuid4())[:8]
+    request.state.request_id = request_id
+
+    logger.info(f"Request started: {request.method} {request.url.path}")
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+
+    logger.info(
+        f"Request completed: {request.method} {request.url.path} -> {response.status_code}"
+    )
+
+    return response
+
+
 # --- FastAPI App ---
 app = FastAPI(
     title="The Sanctuary",
@@ -155,11 +198,32 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Compression middleware (outermost - processes responses first)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.state.limiter = limiter
+
+app.middleware("http")(add_request_id)
 
 # Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(PROJECT_ROOT / "static" / "favicon.png")
+
 
 # -- Seed Data ---
 _SEED_CASES = [
@@ -267,6 +331,14 @@ async def health_check():
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
 
 
+@app.get("/")
+async def root_page(request: Request, db: Session = Depends(get_db)):
+    """Root page - serves the dashboard."""
+    from app.api.dashboard import dashboard
+
+    return await dashboard(request, db)
+
+
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
 templates.env.filters["hm"] = normalize_hm
 templates.env.globals["format_eur"] = format_eur
@@ -287,6 +359,83 @@ templates.env.filters["safe_markdown"] = safe_markdown
 # Rate limiter setup
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-app.include_router(pages.router)
-# Rate limiter disabled for actions router - causes 422 with multipart forms
-app.include_router(actions.router)
+
+# Error page defaults
+DEFAULT_SIDEBAR_COUNTS = {
+    "triage_count": 0,
+    "pending_count": 0,
+    "case_count": 0,
+    "cost_count": 0,
+}
+
+
+async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse:
+    """Render custom 404 page."""
+    return templates.TemplateResponse(
+        "errors/404.html",
+        {
+            "request": request,
+            "message": str(exc.detail) if hasattr(exc, "detail") else "Page not found",
+            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
+        },
+        status_code=404,
+    )
+
+
+async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse:
+    """Render custom 500 page with logging."""
+    logger = logging.getLogger(__name__)
+    error_msg = str(exc.detail) if hasattr(exc, "detail") else str(exc)
+    logger.error(f"Server error on {request.url.path}: {error_msg}", exc_info=True)
+    return templates.TemplateResponse(
+        "errors/500.html",
+        {
+            "request": request,
+            "message": "An unexpected error occurred.",
+            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
+        },
+        status_code=500,
+    )
+
+
+async def validation_error_handler(request: Request, exc: Exception) -> HTMLResponse:
+    """Render custom 422 page."""
+    return templates.TemplateResponse(
+        "errors/422.html",
+        {
+            "request": request,
+            "message": str(exc.detail)
+            if hasattr(exc, "detail")
+            else "Validation error",
+            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
+        },
+        status_code=422,
+    )
+
+
+# Register exception handlers
+app.add_exception_handler(404, not_found_handler)
+app.add_exception_handler(500, server_error_handler)
+app.add_exception_handler(422, validation_error_handler)
+
+app.include_router(api_router)
+
+from app.api import (
+    cases,
+    contacts,
+    costs_router,
+    dashboard_router,
+    documents_router,
+    entities,
+    search,
+    triage_router,
+)
+
+app.include_router(dashboard_router)
+app.include_router(triage_router)
+app.include_router(costs_router)
+app.include_router(documents_router)
+app.include_router(cases.router)
+app.include_router(contacts.router)
+app.include_router(entities.router)
+app.include_router(search.router)

@@ -1,0 +1,75 @@
+{% from 'components/document_card.html' import document_card %}
+
+{% macro timeline_item(doc, stripe_color, stripe_icon, originator_colors_dict, originator_icons_dict) %}
+{% set colors = originator_colors_dict if originator_colors_dict else originator_colors %}
+{% set icons = originator_icons_dict if originator_icons_dict else originator_icons %}
+<div class="timeline-doc-item" data-doc-id="{{ doc.id }}">
+    {{ document_card(doc, stripe_color, stripe_icon, None, True) }}
+</div>
+{% endmacro %}
+
+{% macro timeline_item_simple(doc, stripe_color, stripe_icon, case_titles_dict) %}
+<div class="timeline-doc-item" data-doc-id="{{ doc.id }}">
+    <div class="relative mb-6 group">
+        <div class="absolute left-[-25px] top-5 z-10">
+            <div class="w-[14px] h-[14px] rounded-full border-2 border-white shadow-sm flex items-center justify-center"
+                style="background-color: {{ stripe_color }};">
+                <div class="w-1.5 h-1.5 rounded-full bg-white/80"></div>
+            </div>
+        </div>
+
+        <div class="rounded-xl border shadow-sm transition-all duration-200 cursor-pointer overflow-hidden hover:shadow-md hover:border-primary/20"
+            style="border-left: 4px solid {{ stripe_color }};"
+            :class="'{{ doc.id }}' === activeDoc ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'bg-surface-container-lowest border-outline-variant/10'"
+            @click="activeDoc = '{{ doc.id }}'"
+            hx-get="/document/{{ doc.id }}"
+            hx-target="#document-pane"
+            hx-swap="innerHTML">
+
+            <div class="p-5">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
+                        <span class="font-mono text-[10px] text-on-surface-variant">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </div>
+                    {% if doc.case_id %}
+                    <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
+                        class="flex items-center gap-1 bg-surface-container-high hover:bg-primary-container/20 text-on-surface-variant hover:text-primary text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider transition-colors">
+                        <span class="material-symbols-outlined text-[11px]">folder</span>
+                        {{ (case_titles_dict or case_titles).get(doc.case_id, doc.case_id) if (case_titles_dict or case_titles) else doc.case_id }}
+                    </a>
+                    {% else %}
+                    <span class="bg-amber-100 text-amber-700 text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Unlinked</span>
+                    {% endif %}
+                </div>
+
+                <h3 class="text-sm font-bold text-on-surface mb-1 line-clamp-1 group-hover:text-primary transition-colors">{{ doc.title }}</h3>
+
+                <p class="text-xs text-on-surface-variant leading-relaxed line-clamp-2 mb-3">
+                    {{ (doc.content or 'No content available')[:200] | striptags }}{% if (doc.content or '')|length > 200 %}…{% endif %}
+                </p>
+
+                <div class="flex items-center justify-between pt-3 border-t border-outline-variant/10">
+                    <p class="text-[9px] text-on-surface-variant font-medium truncate max-w-[70%]">
+                        {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}
+                        {% else %}Document ID: {{ doc.id }}{% endif %}
+                    </p>
+                    <div class="flex items-center gap-2">
+                        {% if doc.needs_review %}
+                        <span class="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Needs Review</span>
+                        {% else %}
+                        <span class="text-[9px] bg-primary-container/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter">Reviewed</span>
+                        {% endif %}
+                        {% if doc.children %}
+                        <span class="text-[9px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-full font-bold">
+                            <span class="material-symbols-outlined text-[10px] align-middle">account_tree</span>
+                            {{ doc.children|length }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}

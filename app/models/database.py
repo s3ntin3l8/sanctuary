@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime
 
 from sqlalchemy import (
@@ -8,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -17,46 +17,46 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 
-
-class CaseStatus(enum.StrEnum):
-    INTAKE = "intake"
-    DISCOVERY = "discovery"
-    PRE_TRIAL = "pre_trial"
-    TRIAL = "trial"
-    POST_TRIAL = "post_trial"
-    CLOSED = "closed"
-
-
-class Jurisdiction(enum.StrEnum):
-    """Case jurisdiction for cost system."""
-
-    DE = "de"  # German (RVG/GKG)
-    UK = "uk"  # UK
-    US = "us"  # US
-    OTHER = "other"
-
-
-class OriginatorType(enum.StrEnum):
-    """Maps to the border-l-4 originator stripes from GEMINI.md §4."""
-
-    COURT = "court"  # Blue #0369A1 — Gavel icon
-    OPPOSING = "opposing"  # Red  #B91C1C — Warning icon
-    OWN = "own"  # Green #047857 — Shield icon
-    UNKNOWN = "unknown"  # Neutral — for unclassified docs
-
-
-class IngestStatus(enum.StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
+from app.models.enums import (
+    ActionItemStatus,
+    ActionItemType,
+    CaseStatus,
+    ClaimEvidenceRole,
+    ClaimStatus,
+    ClaimType,
+    ConversationRole,
+    ConversationScope,
+    CostCategory,
+    CostStatus,
+    DocumentRole,
+    DocumentType,
+    EntityType,
+    IngestBatchSourceType,
+    IngestBatchStatus,
+    IngestStatus,
+    Jurisdiction,
+    OriginatorType,
+    ProceedingCourtLevel,
+    ProceedingStatus,
+    RelationshipConfidence,
+    RelationshipType,
+    SignificanceTier,
+    UserReactionType,
+)
 
 Base = declarative_base()
 
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index("ix_documents_case_needs_review", "case_id", "needs_review"),
+        Index("ix_documents_case_created", "case_id", "created_at"),
+        Index("ix_documents_needs_review_created", "needs_review", "created_at"),
+        Index("ix_documents_proceeding", "proceeding_id"),
+        Index("ix_documents_ingest_batch", "ingest_batch_id"),
+        Index("ix_documents_significance", "significance_tier"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
@@ -112,13 +112,40 @@ class Document(Base):
         JSON, nullable=True
     )  # {"sender": "high", "date": "medium", "case_id": "high", "originator": "low"}
 
+    # Structural metadata (page counts, headings, chunking info)
+    meta = Column(JSON, nullable=True)
+
     # Self-referential relationship for 'Russian Doll' nesting
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+
+    # Phase 1: bundle / proceeding grouping
+    ingest_batch_id = Column(
+        Integer, ForeignKey("ingest_batches.id"), nullable=True, index=True
+    )
+    proceeding_id = Column(
+        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+    )
+
+    # Phase 1: structural and intelligence fields
+    role = Column(SAEnum(DocumentRole), default=DocumentRole.STANDALONE, nullable=False)
+    court_relay = Column(Boolean, default=False, nullable=False)
+    attributed_originator = Column(String, nullable=True)  # true author, if routed
+    document_type = Column(SAEnum(DocumentType), nullable=True)
+    significance_tier = Column(SAEnum(SignificanceTier), nullable=True, index=True)
+    thread_open = Column(Boolean, default=False, nullable=False)
+
+    # Phase 1-B: AI-annotated reading & cost delta
+    key_passages = Column(JSON, nullable=True)  # list of {text, rationale, span}
+    cost_delta = Column(
+        JSON, nullable=True
+    )  # {amount, direction, description} single delta this doc introduces
 
     children = relationship(
         "Document", back_populates="parent", cascade="all, delete-orphan"
     )
     parent = relationship("Document", back_populates="children", remote_side=[id])
+    ingest_batch = relationship("IngestBatch", back_populates="documents")
+    proceeding = relationship("Proceeding", back_populates="documents")
 
 
 class Case(Base):
@@ -131,6 +158,277 @@ class Case(Base):
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
+
+    # Phase 1: cumulative AI intelligence + parties + exposure
+    ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case
+    ai_brief_updated_at = Column(DateTime, nullable=True)
+    parties = Column(JSON, nullable=True)  # known actors and their roles
+    total_cost_exposure = Column(
+        Integer, default=0, nullable=False
+    )  # running total in cents
+
+    proceedings = relationship(
+        "Proceeding", back_populates="case", cascade="all, delete-orphan"
+    )
+
+
+class Proceeding(Base):
+    """A court-level stage inside a case (AG, LG, OLG, BGH)."""
+
+    __tablename__ = "proceedings"
+    __table_args__ = (
+        Index("ix_proceedings_case", "case_id"),
+        Index("ix_proceedings_case_status", "case_id", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    court_name = Column(String, nullable=False)  # "Amtsgericht Hamburg"
+    court_level = Column(SAEnum(ProceedingCourtLevel), nullable=False)
+    subject_matter = Column(String, nullable=True)  # "§ 1671 BGB, custody"
+    az_court = Column(String, nullable=True)  # court file number e.g. "003 F 426/25"
+    status = Column(
+        SAEnum(ProceedingStatus), default=ProceedingStatus.ACTIVE, nullable=False
+    )
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    case = relationship("Case", back_populates="proceedings")
+    documents = relationship("Document", back_populates="proceeding")
+
+
+class IngestBatch(Base):
+    """A group of documents that arrived together (one email = one batch)."""
+
+    __tablename__ = "ingest_batches"
+    __table_args__ = (
+        Index("ix_ingest_batches_case", "case_id"),
+        Index("ix_ingest_batches_received", "received_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(SAEnum(IngestBatchSourceType), nullable=False)
+    received_at = Column(DateTime, default=datetime.now, nullable=False)
+    sender_email = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    raw_source_path = Column(String, nullable=True)  # path to original .eml/scan
+    case_id = Column(String, ForeignKey("cases.id"), nullable=True, index=True)
+    proceeding_id = Column(
+        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+    )
+    status = Column(
+        SAEnum(IngestBatchStatus),
+        default=IngestBatchStatus.PENDING,
+        nullable=False,
+    )
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    case = relationship("Case")
+    proceeding = relationship("Proceeding")
+    documents = relationship("Document", back_populates="ingest_batch")
+
+
+class DocumentRelationship(Base):
+    """Typed N:N edge between two documents (replaces the single in_reply_to FK idea)."""
+
+    __tablename__ = "document_relationships"
+    __table_args__ = (
+        Index("ix_document_relationships_from", "from_document_id"),
+        Index("ix_document_relationships_to", "to_document_id"),
+        Index(
+            "ix_document_relationships_type",
+            "relationship_type",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    from_document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+    to_document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+    relationship_type = Column(SAEnum(RelationshipType), nullable=False)
+    confidence = Column(
+        SAEnum(RelationshipConfidence),
+        default=RelationshipConfidence.AI_DETECTED,
+        nullable=False,
+    )
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    from_document = relationship("Document", foreign_keys=[from_document_id])
+    to_document = relationship("Document", foreign_keys=[to_document_id])
+
+
+class ActionItem(Base):
+    """Deadlines, court dates, and other case-level actions.
+
+    Consolidates what used to be split across Deadline and Hearing tables.
+    action_type distinguishes the kind of action.
+    """
+
+    __tablename__ = "action_items"
+    __table_args__ = (
+        Index("ix_action_items_case_due", "case_id", "due_date"),
+        Index("ix_action_items_due_status", "due_date", "status"),
+        Index("ix_action_items_proceeding", "proceeding_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    proceeding_id = Column(
+        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+    )
+    source_document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=True, index=True
+    )
+
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=False, index=True)
+    action_type = Column(
+        SAEnum(ActionItemType),
+        default=ActionItemType.DEADLINE,
+        nullable=False,
+    )
+    status = Column(
+        SAEnum(ActionItemStatus), default=ActionItemStatus.OPEN, nullable=False
+    )
+    location = Column(String, nullable=True)  # for court_date entries
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    case = relationship("Case")
+    proceeding = relationship("Proceeding")
+    source_document = relationship("Document")
+
+
+class Claim(Base):
+    """An atomic factual or legal assertion made in a document (the Truth Map)."""
+
+    __tablename__ = "claims"
+    __table_args__ = (
+        Index("ix_claims_case", "case_id"),
+        Index("ix_claims_case_status", "case_id", "status"),
+        Index("ix_claims_proceeding", "proceeding_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    proceeding_id = Column(
+        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+    )
+    source_document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+
+    claim_text = Column(Text, nullable=False)
+    claim_type = Column(SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False)
+    status = Column(SAEnum(ClaimStatus), default=ClaimStatus.ASSERTED, nullable=False)
+    first_made_at = Column(DateTime, default=datetime.now, nullable=False)
+    last_updated_at = Column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )
+
+    case = relationship("Case")
+    proceeding = relationship("Proceeding")
+    source_document = relationship("Document")
+    evidence = relationship(
+        "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
+    )
+
+
+class ClaimEvidence(Base):
+    """Link between a claim and a document that supports, contests, or refutes it."""
+
+    __tablename__ = "claim_evidence"
+    __table_args__ = (
+        Index("ix_claim_evidence_claim", "claim_id"),
+        Index("ix_claim_evidence_document", "document_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    claim_id = Column(Integer, ForeignKey("claims.id"), nullable=False, index=True)
+    document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+    role = Column(SAEnum(ClaimEvidenceRole), nullable=False)
+    excerpt = Column(Text, nullable=True)
+    confidence = Column(
+        SAEnum(RelationshipConfidence),
+        default=RelationshipConfidence.AI_DETECTED,
+        nullable=False,
+    )
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    claim = relationship("Claim", back_populates="evidence")
+    document = relationship("Document")
+
+
+class UserReaction(Base):
+    """Strategic reaction the user tags on a document during triage.
+
+    These become high-weight context for the AI when answering later
+    questions about the document or case.
+    """
+
+    __tablename__ = "user_reactions"
+    __table_args__ = (
+        Index("ix_user_reactions_document", "document_id"),
+        Index("ix_user_reactions_reaction", "reaction"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+    user_id = Column(String, default="single_user", nullable=False)
+    reaction = Column(SAEnum(UserReactionType), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    document = relationship("Document")
+
+
+class Conversation(Base):
+    """AI chat thread scoped to either a case or a specific document."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_scope", "scope_type", "scope_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope_type = Column(SAEnum(ConversationScope), nullable=False)
+    scope_id = Column(
+        String, nullable=False
+    )  # case.id (str) or document.id (int-as-str)
+    title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    messages = relationship(
+        "ConversationMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessage.created_at",
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+    __table_args__ = (
+        Index("ix_conversation_messages_conversation", "conversation_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer, ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    role = Column(SAEnum(ConversationRole), nullable=False)
+    content = Column(Text, nullable=False)
+    context_document_ids = Column(JSON, nullable=True)  # [int, int, ...] sources
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
 
 
 class UserSettings(Base):
@@ -145,8 +443,7 @@ class UserSettings(Base):
             "sidebar_collapsed": False,
             "default_view": "dashboard",
             "dashboard_cards": {
-                "deadlines": True,
-                "hearings": True,
+                "action_items": True,
                 "costs": True,
                 "documents": True,
             },
@@ -165,67 +462,6 @@ class SavedSearch(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
-class Deadline(Base):
-    __tablename__ = "deadlines"
-
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    due_at = Column(DateTime, nullable=False, index=True)
-    completed = Column(Boolean, default=False, nullable=False, index=True)
-    source_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=True, index=True
-    )
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-    case = relationship("Case")
-    source_document = relationship("Document")
-
-
-class Hearing(Base):
-    __tablename__ = "hearings"
-
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    scheduled_for = Column(DateTime, nullable=False, index=True)
-    location = Column(String, nullable=True)
-    source_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=True, index=True
-    )
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-    case = relationship("Case")
-    source_document = relationship("Document")
-
-
-class CostCategory(enum.StrEnum):
-    """German legal cost categories (Kostenkategorien)."""
-
-    GERICHTSKOSTEN = "gerichtskosten"  # Court fees — GKG
-    ANWALTSKOSTEN = "anwaltskosten"  # Own lawyer fees — RVG
-    ANWALTSKOSTEN_GEGNER = (
-        "anwaltskosten_gegner"  # Opposing counsel fees (§91 ZPO claim/liability)
-    )
-    SACHVERSTAENDIGER = "sachverstaendiger"  # Expert witnesses — JVEG
-    VORSCHUSS = "vorschuss"  # Advance payments (Gerichtskostenvorschuss)
-    VOLLSTRECKUNG = "vollstreckung"  # Enforcement costs
-    AUSLAGEN = "auslagen"  # Out-of-pocket expenses (RVG Nr. 7000 ff.)
-    SONSTIGES = "sonstiges"  # Other
-
-
-class CostStatus(enum.StrEnum):
-    """Payment/reimbursement status of a cost position."""
-
-    OFFEN = "offen"  # Due but unpaid (ausstehend)
-    BEZAHLT = "bezahlt"  # Paid by us
-    ERSTATTET = "erstattet"  # Reimbursed by opposing party (§91 ZPO)
-    TEILWEISE = "teilweise"  # Partially paid / partially reimbursed
-    STRITTIG = "strittig"  # Disputed
-
-
 class LegalCost(Base):
     """
     A single cost position in the German legal cost system.
@@ -240,6 +476,10 @@ class LegalCost(Base):
     """
 
     __tablename__ = "legal_costs"
+    __table_args__ = (
+        Index("ix_legal_costs_case_status", "case_id", "status"),
+        Index("ix_legal_costs_status_due", "status", "due_at"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
@@ -283,16 +523,6 @@ class LegalCost(Base):
     source_document = relationship("Document")
 
 
-class EntityType(enum.StrEnum):
-    """Types of entities extracted from documents."""
-
-    PERSON = "person"
-    ORGANIZATION = "organization"
-    DATE = "date"
-    FINANCIAL = "financial"
-    LEGAL_CATEGORY = "legal_category"
-
-
 class Entity(Base):
     """
     Extracted entities from documents, aggregated per case.
@@ -302,6 +532,7 @@ class Entity(Base):
     """
 
     __tablename__ = "entities"
+    __table_args__ = (Index("ix_entities_case_type", "case_id", "type"),)
 
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)

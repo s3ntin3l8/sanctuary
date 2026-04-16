@@ -1,0 +1,43 @@
+{# Error macros for consistent error handling across templates #}
+{# Usage: {% from "components/error_macros.html" import render_error, render_field_error %} #}
+
+{% macro render_error(title, message='') -%}
+<div class="flex items-start gap-3 p-4 bg-error-container/10 border border-error/30 rounded-lg">
+    <span class="material-symbols-outlined text-error shrink-0">error</span>
+    <div>
+        <p class="text-sm font-bold text-error">{{ title }}</p>
+        {% if message %}
+        <p class="text-xs text-on-surface-variant mt-1">{{ message }}</p>
+        {% endif %}
+    </div>
+</div>
+{%- endmacro %}
+
+
+{% macro render_field_error(field_name, errors=[]) -%}
+{% if errors %}
+<div class="flex items-center gap-2 text-error text-xs mt-1">
+    <span class="material-symbols-outlined text-[14px]">warning</span>
+    <span>{{ errors[0] }}</span>
+</div>
+{% endif %}
+{%- endmacro %}
+
+
+{% macro render_loading(message='Loading...') -%}
+<div class="flex flex-col items-center justify-center py-8">
+    <span class="material-symbols-outlined animate-spin text-primary text-3xl mb-2">sync</span>
+    <p class="text-xs text-on-surface-variant">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+
+{% macro render_empty_list(icon='inbox', title='No items found', action_href=none, action_label='') -%}
+<div class="flex flex-col items-center justify-center py-12 text-center">
+    <span class="material-symbols-outlined text-4xl text-outline mb-3">{{ icon }}</span>
+    <p class="text-sm font-bold text-on-surface">{{ title }}</p>
+    {% if action_href and action_label %}
+    <a href="{{ action_href }}" class="mt-3 text-xs font-bold text-primary hover:underline">{{ action_label }}</a>
+    {% endif %}
+</div>
+{%- endmacro %}

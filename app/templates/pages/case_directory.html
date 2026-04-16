@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'components/pagination.html' import pagination_simple %}
 
 {% block title %}Case Files | The Sanctuary{% endblock %}
 
@@ -125,6 +126,13 @@
             %}
                 {% include "partials/empty_state.html" %}
             {% endwith %}
+            {% endif %}
+
+            {# ── Pagination ── #}
+            {% if total_pages > 1 %}
+            <div class="mt-8">
+                {{ pagination_simple(current_page, total_pages, '/cases', 'page') }}
+            </div>
             {% endif %}
 
         </div>

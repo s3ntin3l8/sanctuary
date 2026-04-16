@@ -1,0 +1,24 @@
+{% macro empty_state(icon='inbox', title='No items', description='') -%}
+<div class="flex flex-col items-center justify-center py-12 text-center">
+    <span class="material-symbols-outlined text-4xl text-outline mb-3">{{ icon }}</span>
+    <p class="text-sm font-bold text-on-surface">{{ title }}</p>
+    {% if description %}
+    <p class="text-xs text-on-surface-variant mt-1 max-w-xs">{{ description }}</p>
+    {% endif %}
+</div>
+{%- endmacro %}
+
+
+{% macro loading_spinner(size='md') -%}
+{% set sizes = { 'sm': 'text-xl', 'md': 'text-3xl', 'lg': 'text-5xl' } %}
+<div class="flex items-center justify-center">
+    <span class="material-symbols-outlined animate-spin {{ sizes.get(size, 'text-3xl') }} text-primary">sync</span>
+</div>
+{%- endmacro %}
+
+
+{% macro icon_button(icon, href='#', class='') -%}
+<a href="{{ href }}" class="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-container-high hover:bg-surface-container-highest transition-colors {{ class }}">
+    <span class="material-symbols-outlined text-on-surface-variant text-[18px]">{{ icon }}</span>
+</a>
+{%- endmacro %}

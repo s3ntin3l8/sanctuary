@@ -13,7 +13,7 @@
             hx-target="#upload-result"
             hx-swap="innerHTML"
             hx-indicator="#upload-spinner"
-            hx-on::after-request="if(event.detail.successful) { setTimeout(() => { window.dispatchEvent(new CustomEvent('close-upload-modal')) }, 1000); }"
+            hx-on::after-request="if(event.detail.successful) { setTimeout(() => { window.dispatchEvent(new CustomEvent('close-upload-modal')); window.location.href = '/activity'; }, 1500); }"
             class="p-6 space-y-4">
             {% if case_id %}
             <input type="hidden" name="case_id" value="{{ case_id }}">

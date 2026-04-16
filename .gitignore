@@ -63,6 +63,7 @@ Thumbs.db
 *.db
 *.sqlite3
 data/
+data_debug/
 
 # Custom & AI tools
 !scripts/

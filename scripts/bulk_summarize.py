@@ -20,7 +20,7 @@ def trigger_all_missing_summaries():
             .filter(
                 (Document.ai_summary_status == "pending")
                 | (Document.ai_summary_status == "failed")
-                | (Document.ai_summary == None)
+                | (Document.ai_summary is None)
             )
             .all()
         )

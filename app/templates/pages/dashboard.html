@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 
+{% from "components/case_card.html" import case_card %}
+{% from "components/empty_state.html" import empty_state %}
+
 {% block title %}Dashboard | The Sanctuary{% endblock %}
 
 {% block content %}
@@ -109,7 +112,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                         {% if upcoming_deadlines %}
                         {% for deadline in upcoming_deadlines %}
-                        {% set badge = format_deadline_badge(deadline.due_at) %}
+                        {% set badge = format_deadline_badge(deadline.due_date) %}
                         <a href="/cases/{{ deadline.case_id|urlencode }}" class="flex h-full min-h-[190px] flex-col group rounded-xl border border-outline-variant/10 bg-surface-container-low p-4 hover:border-originator-opposing/40 transition-colors">
                             <div class="flex items-start justify-between gap-3 mb-2">
                                 <div>
@@ -124,7 +127,7 @@
                             <div class="mt-auto pt-3">
                                 <div class="flex items-center gap-2 text-[10px] text-on-surface-variant bg-surface-container-high py-1 px-2 rounded w-fit">
                                     <span class="material-symbols-outlined text-[12px]">calendar_today</span>
-                                    {{ format_upcoming_datetime(deadline.due_at) }}
+                                    {{ format_upcoming_datetime(deadline.due_date) }}
                                 </div>
                             </div>
                         </a>
@@ -168,7 +171,7 @@
                             <div class="mt-auto pt-3">
                                 <div class="flex items-center gap-2 text-[10px] text-on-surface-variant bg-surface-container-high py-1 px-2 rounded w-fit">
                                     <span class="material-symbols-outlined text-[12px]">schedule</span>
-                                    {{ format_upcoming_datetime(hearing.scheduled_for) }}
+                                    {{ format_upcoming_datetime(hearing.due_date) }}
                                 </div>
                             </div>
                         </a>
@@ -256,7 +259,7 @@
                     <!-- AI Status Widget -->
                     {% if ai_status %}
                     {% set status = ai_status %}
-                    {% set base_url = ollama_base_url %}
+                    {% set base_url = ai_base_url %}
                     {% include "partials/ai_status.html" %}
                     {% endif %}
 
@@ -273,19 +276,7 @@
                         <div class="space-y-4">
                             {% if active_case_snapshot %}
                             {% for case in active_case_snapshot %}
-                            {% set meta = status_meta[case.status] %}
-                            <a href="/cases/{{ case.id|urlencode }}" class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-high/50 group cursor-pointer transition-colors">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden flex items-center justify-center text-xs font-bold text-on-surface-variant">
-                                        {{ case.id[:2] }}
-                                    </div>
-                                    <div>
-                                        <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{{ case.title }}</p>
-                                        <p class="text-[10px] text-on-surface-variant">{{ case.id }}</p>
-                                    </div>
-                                </div>
-                                <span class="{{ meta.color }} text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">{{ meta.label }}</span>
-                            </a>
+                            {{ case_card(case, status_meta) }}
                             {% endfor %}
                             {% else %}
                             <p class="text-sm text-on-surface-variant italic">No active cases yet.</p>

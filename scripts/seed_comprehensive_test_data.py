@@ -494,7 +494,7 @@ for ot in OriginatorType:
 # Breakdown by needs_review
 needs_review_true = (
     db.query(Document)
-    .filter(Document.case_id.like("TEST-%"), Document.needs_review == True)
+    .filter(Document.case_id.like("TEST-%"), Document.needs_review)
     .count()
 )
 

@@ -4,136 +4,247 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>{% block title %}The Sanctuary | Personal Advocate Case Workspace{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.png?v=1.0.4"/>
+
+    <!-- 1. CRITICAL INITIALIZATION (Zero-Flicker) -->
     <script>
-        (() => {
-            const savedTheme = localStorage.getItem('site-theme');
-            if (savedTheme === 'dark') {
-                document.documentElement.classList.add('dark');
-            }
-        })();
-    </script>
-
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@300..700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-
-    <!-- Alpine.js -->
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-
-    <!-- Tailwind CSS Compiled Styles -->
-    <link href="/static/styles.css" rel="stylesheet"/>
-    <script>
-        // Settings auto-persist
         (function() {
-            // Default settings
-            const defaultSettings = {
+            // Load settings
+            const savedTheme = localStorage.getItem('site-theme');
+            const savedSidebar = localStorage.getItem('sidebar-collapsed');
+            const userSettings = JSON.parse(localStorage.getItem('user-settings') || 'null');
+
+            // Determine theme and sidebar state
+            const theme = savedTheme || (userSettings ? userSettings.theme : null) || 'dark';
+            const sidebarCollapsed = savedSidebar === 'true' || (userSettings && userSettings.sidebarCollapsed);
+
+            // Apply instantly to documentElement
+            if (theme === 'dark') document.documentElement.classList.add('dark');
+            if (sidebarCollapsed) document.documentElement.setAttribute('data-sidebar-collapsed', 'true');
+
+            // Prevent animations during initial load
+            document.documentElement.classList.add('no-transition');
+
+            // Global settings object for Alpine and other scripts
+            window.userSettings = userSettings || {
                 theme: 'dark',
                 sidebarCollapsed: false,
-                dashboardCards: {
-                    deadlines: true,
-                    hearings: true,
-                    costs: true,
-                    documents: true
-                }
+                dashboardCards: { deadlines: true, hearings: true, costs: true, documents: true }
             };
 
-            // Load settings from localStorage or use defaults
-            window.userSettings = JSON.parse(localStorage.getItem('user-settings') || 'null') || defaultSettings;
-
-            // Save settings to localStorage
             window.saveUserSettings = (newSettings) => {
                 window.userSettings = { ...window.userSettings, ...newSettings };
                 localStorage.setItem('user-settings', JSON.stringify(window.userSettings));
-
-                // Also persist sidebar state for page loads
                 if (newSettings.sidebarCollapsed !== undefined) {
                     localStorage.setItem('sidebar-collapsed', newSettings.sidebarCollapsed);
                 }
+                if (newSettings.theme !== undefined) {
+                    localStorage.setItem('site-theme', newSettings.theme);
+                }
             };
-
-            // Apply theme on load
-            const savedTheme = localStorage.getItem('site-theme');
-            const userPrefersDark = window.userSettings.theme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
-            if (savedTheme === 'light' || window.userSettings.theme === 'light') {
-                document.documentElement.classList.remove('dark');
-                document.body.classList.remove('dark');
-            } else {
-                document.documentElement.classList.add('dark');
-                document.body.classList.add('dark');
-            }
-
-            // Apply sidebar collapsed state
-            const sidebarCollapsed = localStorage.getItem('sidebar-collapsed') === 'true' || window.userSettings.sidebarCollapsed;
-            if (sidebarCollapsed) {
-                document.body.setAttribute('data-sidebar-collapsed', 'true');
-            }
         })();
     </script>
+
     <style>
-        @keyframes shell-fade-in {
-            from {
-                opacity: 0;
-            }
+        [x-cloak] { display: none !important; }
 
-            to {
-                opacity: 1;
-            }
+        /* ── Core Theme Variables Lockdown ── */
+        :root {
+            --color-primary: #45636b;
+            --color-on-surface: #2a3437;
+            --color-on-surface-variant: #566164;
+            --color-surface-container-low: #f0f4f6;
+            --color-surface-container-lowest: #ffffff;
+            --tracking-widest: 0.1em;
         }
-
-        .htmx-added {
-            animation: shell-fade-in 220ms ease;
-        }
-
-        .htmx-indicator {
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 180ms ease, visibility 180ms ease;
-        }
-
-        .htmx-request .htmx-indicator,
-        .htmx-request.htmx-indicator {
-            opacity: 1;
-            visibility: visible;
+        .dark {
+            --color-primary: #57f1db;
+            --color-on-surface: #dae2fd;
+            --color-on-surface-variant: #859490;
+            --color-surface-container-low: #131b2e;
+            --color-surface-container-lowest: #060e20;
         }
 
-        .htmx-request [data-loading-idle] {
-            display: none;
+        /* Instant Font Definitions */
+        @font-face {
+            font-family: 'Inter';
+            font-style: normal;
+            font-weight: 300 700;
+            font-display: optional;
+            src: url(/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2) format('woff2');
+        }
+        @font-face {
+            font-family: 'Manrope';
+            font-style: normal;
+            font-weight: 200 800;
+            font-display: optional;
+            src: url(/static/fonts/xn7gYHE41ni1AdIRggexSg.woff2) format('woff2');
+        }
+        @font-face {
+            font-family: 'Material Symbols Outlined';
+            font-style: normal;
+            font-weight: 100 700;
+            font-display: swap;
+            src: url(/static/fonts/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2) format('woff2');
         }
 
-        [data-loading-active] {
-            display: none;
+        /* Instant Background Colors & Stable Typography */
+        html {
+            background-color: #f8fafb;
+            color: var(--color-on-surface);
+            overflow-y: scroll; /* Force scrollbar gutter to prevent horizontal jumping */
+        }
+        html.dark { background-color: #0b1326; }
+        html.dark body { background-color: #0b1326 !important; }
+
+        /* Typography Lock - Set weights and spacing immediately */
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+        h1, h2, h3, .font-headline { font-family: 'Manrope', system-ui, sans-serif; font-weight: 800; }
+
+        /* Secondary Nav Stability Lock */
+        nav.flex.gap-6 {
+            display: flex !important;
+            gap: 1.5rem !important; /* gap-6 */
+            letter-spacing: 0.1em !important; /* tracking-widest */
+            font-size: 10px !important;
+            font-weight: 700 !important;
+            line-height: 1 !important;
+            text-transform: uppercase !important;
+            color: var(--color-on-surface-variant) !important;
+        }
+        nav.flex.gap-6 a { display: inline-block !important; height: 14px !important; }
+        nav.flex.gap-6 a.text-primary {
+            color: var(--color-primary) !important;
         }
 
-        .htmx-request [data-loading-active],
-        .htmx-request[data-loading-active] {
-            display: inline-flex;
+        /* Empty State Stability */
+        .text-sm.text-on-surface-variant.max-w-sm.leading-relaxed {
+            font-size: 0.875rem !important;
+            line-height: 1.625 !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 24rem !important;
         }
 
-        .htmx-request[data-loading-dim],
-        .htmx-request [data-loading-dim] {
-            opacity: 0.65;
-            transition: opacity 180ms ease;
+        /* Disable ALL transitions on load */
+        .no-transition, .no-transition * {
+            transition: none !important;
+            animation: none !important;
         }
 
-        /* Inline editing styles */
-        .editable-field input {
-            background: transparent;
-            border: 1px solid theme('colors.primary');
-            border-radius: 2px;
-            color: inherit;
-            font-family: inherit;
-            font-size: inherit;
-            padding: 1px 4px;
-            width: 100%;
-            text-align: right;
+        /* CRITICAL: Force status bars to solid colors and fixed heights */
+        header.sticky {
+            height: 56px !important;
+            min-height: 56px !important;
+            max-height: 56px !important;
+            top: 0 !important;
+            background-color: var(--color-surface-container-low) !important;
+            border-bottom: 1px solid rgba(114, 125, 128, 0.1) !important;
         }
-        .editable-field input:focus {
-            outline: none;
-            background: theme('colors.surface-container-low' / 50);
+        html.dark header.sticky {
+            border-bottom: 1px solid rgba(133, 148, 144, 0.1) !important;
         }
+
+        /* Secondary Status Bar */
+        .px-8.py-3.bg-surface-container-lowest,
+        main .sticky.top-0:not(header),
+        main .sticky.top-\[56px\],
+        main .sticky.top-14 {
+            top: 56px !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            background-color: var(--color-surface-container-lowest) !important;
+        }
+
+        /* Sidebar Lockdown */
+        aside {
+            width: 260px !important;
+            min-width: 260px !important;
+            max-width: 260px !important;
+            background-color: var(--color-surface-container-low) !important;
+            z-index: 50 !important;
+        }
+        html[data-sidebar-collapsed="true"] aside {
+            width: 80px !important;
+            min-width: 80px !important;
+            max-width: 80px !important;
+        }
+
+        /* Card and Avatar Lockdown */
+        .bg-surface-container { background-color: #e8eff1 !important; }
+        html.dark .bg-surface-container { background-color: #171f33 !important; }
+
+        .w-8.h-8 { width: 32px !important; height: 32px !important; }
+        .w-6.h-6 { width: 24px !important; height: 24px !important; }
+
+        /* COMPREHENSIVE ICON LOCK */
+        .material-symbols-outlined {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            width: 24px !important;
+            height: 24px !important;
+            min-width: 24px !important;
+            overflow: hidden !important;
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
+            line-height: 1 !important;
+            font-size: 24px !important;
+        }
+
+        /* Specific icon size variants */
+        .text-\[8px\].material-symbols-outlined   { width: 8px !important; height: 8px !important; min-width: 8px !important; font-size: 8px !important; }
+        .text-\[10px\].material-symbols-outlined  { width: 10px !important; height: 10px !important; min-width: 10px !important; font-size: 10px !important; }
+        .text-\[11px\].material-symbols-outlined  { width: 11px !important; height: 11px !important; min-width: 11px !important; font-size: 11px !important; }
+        .text-\[12px\].material-symbols-outlined,
+        .text-xs.material-symbols-outlined        { width: 12px !important; height: 12px !important; min-width: 12px !important; font-size: 12px !important; }
+        .text-sm.material-symbols-outlined,
+        .text-\[14px\].material-symbols-outlined { width: 14px !important; height: 14px !important; min-width: 14px !important; font-size: 14px !important; }
+        .text-base.material-symbols-outlined      { width: 16px !important; height: 16px !important; min-width: 16px !important; font-size: 16px !important; }
+        .text-lg.material-symbols-outlined,
+        .text-\[18px\].material-symbols-outlined { width: 18px !important; height: 18px !important; min-width: 18px !important; font-size: 18px !important; }
+        .text-\[20px\].material-symbols-outlined  { width: 20px !important; height: 20px !important; min-width: 20px !important; font-size: 20px !important; }
+        .text-3xl.material-symbols-outlined       { width: 30px !important; height: 30px !important; min-width: 30px !important; font-size: 30px !important; }
+        .text-4xl.material-symbols-outlined       { width: 36px !important; height: 36px !important; min-width: 36px !important; font-size: 36px !important; }
+        .text-6xl.material-symbols-outlined       { width: 60px !important; height: 60px !important; min-width: 60px !important; font-size: 60px !important; }
     </style>
+
+    <!-- 3. EXTERNAL ASSETS -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+    <link rel="preload" href="/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2" crossorigin/>
+    <link rel="preload" href="/static/fonts/xn7gYHE41ni1AdIRggexSg.woff2" as="font" type="font/woff2" crossorigin/>
+    <link rel="preload" href="/static/fonts/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2" as="font" type="font/woff2" crossorigin/>
+
+    <link href="/static/fonts.css?v=1.0.5" rel="stylesheet"/>
+    <link href="/static/styles.css?v=1.0.4" rel="stylesheet"/>
+
+    <script>
+        // Post-load cleanup
+        document.addEventListener('DOMContentLoaded', () => {
+            // Sync theme icons
+            if (window.syncHeaderThemeControls) {
+                window.syncHeaderThemeControls();
+            }
+
+            const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+            document.body.classList.toggle('dark', theme === 'dark');
+
+            if (document.documentElement.getAttribute('data-sidebar-collapsed') === 'true') {
+                document.body.setAttribute('data-sidebar-collapsed', 'true');
+            }
+
+            // Enable transitions after first paint
+            setTimeout(() => {
+                document.documentElement.classList.remove('no-transition');
+            }, 150);
+        });
+    </script>
 </head>
 <body class="bg-background font-body text-on-surface flex h-screen overflow-hidden">
     {% include 'partials/sidebar.html' %}
@@ -202,380 +313,75 @@
 
                 // Escape: Close modals and panels
                 if (e.key === 'Escape') {
-                    // Close any open modals
-                    document.querySelectorAll('[x-show][style*="display"]').forEach(el => {
-                        const xShow = el.getAttribute('x-show');
-                        if (xShow && !xShow.includes('false') && !xShow.includes('open === false')) {
-                            // Try to close by dispatching escape event
-                            el.dispatchEvent(new CustomEvent('escape'));
-                        }
-                    });
+                    window.dispatchEvent(new CustomEvent('close-modals'));
                 }
             });
 
-            window.syncHeaderThemeControls = () => {
-                const isDark = root.classList.contains('dark');
-                document.querySelectorAll('[data-theme-icon]').forEach((icon) => {
-                    icon.textContent = isDark ? 'light_mode' : 'dark_mode';
-                });
-                document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-                    button.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
-                });
-            };
+            // HTMX error handling
+            document.addEventListener('htmx:responseError', (e) => {
+                window.showToast(`Error: ${e.detail.xhr.status} ${e.detail.xhr.statusText}`, 'error');
+            });
 
-            window.showShellToast = ({ title, body, icon = 'info' }) => {
-                if (!toastHost) return;
+            document.addEventListener('htmx:sendError', () => {
+                window.showToast('Network error. Please check your connection.', 'error');
+            });
 
+            // Global Toast helper
+            window.showToast = (message, type = 'info') => {
                 const toast = document.createElement('div');
-                toast.className = 'pointer-events-auto rounded-xl border border-outline-variant/20 bg-surface-container px-4 py-3 shadow-xl text-sm text-on-surface';
+                toast.className = `px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 animate-shell-fade-in pointer-events-auto bg-surface-container-high`;
+
+                let icon = 'info';
+                let iconClass = 'text-primary';
+
+                if (type === 'success') { icon = 'check_circle'; iconClass = 'text-originator-own'; }
+                if (type === 'error') { icon = 'error'; iconClass = 'text-error'; }
+                if (type === 'warning') { icon = 'warning'; iconClass = 'text-amber-500'; }
+
                 toast.innerHTML = `
-                    <div class="flex items-start gap-3">
-                        <span class="material-symbols-outlined text-primary text-[18px]">${icon}</span>
-                        <div>
-                            <p class="font-bold text-on-surface">${title}</p>
-                            <p class="text-xs text-on-surface-variant mt-1">${body}</p>
-                        </div>
-                    </div>
+                    <span class="material-symbols-outlined ${iconClass} text-[20px]">${icon}</span>
+                    <p class="text-xs font-bold text-on-surface">${message}</p>
                 `;
+
                 toastHost.appendChild(toast);
-                window.setTimeout(() => {
-                    toast.remove();
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', 'translate-y-2', 'transition-all', 'duration-500');
+                    setTimeout(() => toast.remove(), 500);
                 }, 4000);
             };
-
-            window.showShellPlaceholder = (label) => {
-                window.showShellToast({
-                    title: label,
-                    body: 'This control is a placeholder for now.',
-                    icon: 'info',
-                });
-            };
-
-            window.renderDocumentPaneLoading = () => `
-                <section class="flex-1 flex flex-col bg-surface-container-low h-full overflow-hidden w-full">
-                    <div class="h-[70%] border-b border-outline-variant/10 relative overflow-hidden flex flex-col">
-                        <div class="px-8 py-4 bg-surface-container-low/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between border-b border-outline-variant/10">
-                            <h4 class="text-lg font-black tracking-tighter text-on-surface uppercase">Document Preview</h4>
-                            <div class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-primary">
-                                <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                                Loading
-                            </div>
-                        </div>
-                        <div class="flex-1 p-8 overflow-y-auto bg-surface-container/40">
-                            <div class="animate-pulse space-y-6">
-                                <div class="h-7 w-2/3 rounded bg-surface-container-high"></div>
-                                <div class="rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-6 space-y-3">
-                                    <div class="h-3 w-full rounded bg-surface-container-high"></div>
-                                    <div class="h-3 w-5/6 rounded bg-surface-container-high"></div>
-                                    <div class="h-3 w-4/5 rounded bg-surface-container-high"></div>
-                                    <div class="h-3 w-11/12 rounded bg-surface-container-high"></div>
-                                    <div class="h-3 w-3/4 rounded bg-surface-container-high"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="p-6 bg-primary-container/10 border-b border-outline-variant/10 flex-shrink-0">
-                        <div class="animate-pulse space-y-3">
-                            <div class="h-3 w-36 rounded bg-primary/20"></div>
-                            <div class="h-3 w-full rounded bg-surface-container-high"></div>
-                            <div class="h-3 w-5/6 rounded bg-surface-container-high"></div>
-                            <div class="h-3 w-4/6 rounded bg-surface-container-high"></div>
-                        </div>
-                    </div>
-                    <div class="h-[30%] min-h-[200px] p-8 overflow-y-auto custom-scrollbar">
-                        <div class="animate-pulse space-y-4">
-                            <div class="h-3 w-28 rounded bg-surface-container-high"></div>
-                            <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                                <div class="h-24 rounded-xl bg-surface-container-low"></div>
-                                <div class="h-24 rounded-xl bg-surface-container-low"></div>
-                                <div class="h-24 rounded-xl bg-surface-container-low"></div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            `;
-
-            document.body.addEventListener('htmx:beforeRequest', (event) => {
-                const target = event.detail?.target;
-                if (target && target.id === 'document-pane') {
-                    target.innerHTML = window.renderDocumentPaneLoading();
-                }
-            });
-
-            document.body.addEventListener('htmx:responseError', (event) => {
-                const xhr = event.detail?.xhr;
-                let message = 'The update did not complete. Please try again.';
-                let title = 'Request failed';
-
-                if (xhr) {
-                    if (xhr.status === 413) {
-                        message = 'File too large. Maximum size is 50MB.';
-                        title = 'File rejected';
-                    } else if (xhr.status === 409) {
-                        message = 'This document already exists. Duplicate not allowed.';
-                        title = 'Duplicate detected';
-                    } else if (xhr.status === 400) {
-                        try {
-                            const data = JSON.parse(xhr.responseText);
-                            message = data.detail || message;
-                        } catch (e) {}
-                    } else if (xhr.status === 500) {
-                        message = 'Server error. Please try again later.';
-                    } else if (!xhr.status) {
-                        message = 'Network error. Check your connection.';
-                        title = 'Network error';
-                    }
-                }
-
-                window.showShellToast({
-                    title: title,
-                    body: message,
-                    icon: 'error',
-                });
-            });
-
-            // Upload retry handling
-            document.body.addEventListener('htmx:sendError', (event) => {
-                if (event.detail?.target?.tagName === 'FORM' && event.detail.target.enctype === 'multipart/form-data') {
-                    window.showShellToast({
-                        title: 'Upload failed',
-                        body: 'Network error. Click retry or try again.',
-                        icon: 'error',
-                    });
-                }
-            });
-
-            document.body.addEventListener('htmx:afterSwap', (event) => {
-                if (typeof Alpine !== 'undefined' && event.detail && event.detail.target) {
-                    Alpine.discoverUninitializedComponents(() => {
-                        Alpine.initTree(event.detail.target);
-                    });
-                }
-            });
-
-            // Inline editable field handler
-            document.body.addEventListener('click', (e) => {
-                const field = e.target.closest('.editable-field');
-                if (!field) return;
-                if (field.querySelector('input')) return; // Already editing
-
-                const fieldName = field.dataset.field;
-                const currentValue = field.dataset.value || '';
-                const format = field.dataset.format || 'text';
-                const costId = field.closest('[id^="cost-row-"]')?.id.replace('cost-row-', '');
-
-                let inputHtml = '';
-                if (format === 'eur') {
-                    const numValue = parseFloat(currentValue) || 0;
-                    inputHtml = `<input type="number" step="0.01" min="0" value="${numValue.toFixed(2)}" data-format="eur" data-field="${fieldName}" data-cost-id="${costId}" class="inline-edit-input" />`;
-                } else {
-                    inputHtml = `<input type="text" value="${currentValue}" data-format="text" data-field="${fieldName}" data-cost-id="${costId}" class="inline-edit-input" />`;
-                }
-
-                field.innerHTML = inputHtml;
-                const input = field.querySelector('input');
-                input.focus();
-                input.select();
-            });
-
-            // Save on blur
-            document.body.addEventListener('blur', (e) => {
-                if (!e.target.classList.contains('inline-edit-input')) return;
-
-                const input = e.target;
-                const field = input.closest('.editable-field');
-                if (!field || !input.dataset.costId) return;
-
-                const costId = input.dataset.costId;
-                const fieldName = input.dataset.field;
-                let newValue = input.value;
-
-                // Convert EUR format to number
-                if (input.dataset.format === 'eur') {
-                    newValue = parseFloat(newValue) || 0;
-                }
-
-                const originalValue = field.dataset.value;
-
-                // Don't save if unchanged
-                if (String(newValue) === String(originalValue)) {
-                    // Restore display
-                    const displayValue = input.dataset.format === 'eur' ? (parseFloat(newValue) || 0).toFixed(2) : newValue;
-                    field.innerHTML = '';
-                    const p = document.createElement('p');
-                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
-                                  input.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
-                                  input.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
-                                  'text-xs font-mono text-on-surface-variant';
-                    p.textContent = input.dataset.format === 'eur' ? '€ ' + parseFloat(newValue).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : newValue;
-                    field.appendChild(p);
-                    return;
-                }
-
-                // Save via HTMX POST
-                const formData = new FormData();
-                formData.append('field', fieldName);
-                formData.append('value', String(newValue));
-
-                htmx.ajax('POST', `/costs/${costId}/update-field`, {
-                    target: field,
-                    swap: 'outerHTML',
-                    formData: formData,
-                }).catch((err) => {
-                    console.error('Failed to save:', err);
-                    window.showShellToast({
-                        title: 'Save failed',
-                        body: 'Could not update the value. Please try again.',
-                        icon: 'error',
-                    });
-                    // Restore original
-                    field.dataset.value = originalValue;
-                    const p = document.createElement('p');
-                    p.className = input.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
-                                  input.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
-                                  input.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
-                                  'text-xs font-mono text-on-surface-variant';
-                    p.textContent = input.dataset.format === 'eur' ? '€ ' + parseFloat(originalValue).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : originalValue;
-                    field.innerHTML = '';
-                    field.appendChild(p);
-                });
-            }, true);
-
-            // Enter key saves, Escape cancels
-            document.body.addEventListener('keydown', (e) => {
-                if (!e.target.classList.contains('inline-edit-input')) return;
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.target.blur();
-                } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    const field = e.target.closest('.editable-field');
-                    const originalValue = field.dataset.value;
-                    const format = e.target.dataset.format;
-                    field.innerHTML = '';
-                    const p = document.createElement('p');
-                    p.className = e.target.dataset.field === 'amount_gross' ? 'text-xs font-mono text-on-surface' :
-                                  e.target.dataset.field === 'amount_paid' ? 'text-xs font-mono text-originator-own' :
-                                  e.target.dataset.field === 'amount_reimbursed' ? 'text-xs font-mono text-primary' :
-                                  'text-xs font-mono text-on-surface-variant';
-                    const displayVal = format === 'eur' ? (parseFloat(originalValue) || 0).toFixed(2) : originalValue;
-                    p.textContent = format === 'eur' ? '€ ' + parseFloat(displayVal).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : displayVal;
-                    field.appendChild(p);
-                }
-            });
-
-            window.syncHeaderThemeControls();
-            window.addEventListener('site-theme-changed', window.syncHeaderThemeControls);
         })();
     </script>
 
-    {# Notifications Panel — at body level so fixed positioning works correctly #}
-    {% if notification_count is defined %}
-    <div id="notifications-panel-root"
-         x-data="{ open: false }"
-         @toggle-notif.window="open = !open"
-         @click.outside="open = false"
-         @keydown.escape.window="open = false"
-         class="fixed right-8 top-14 w-80 bg-surface-container-high border border-outline-variant/20 rounded-xl shadow-2xl z-[9999] overflow-hidden"
-         x-show="open"
-         x-transition:enter="transition ease-out duration-150"
-         x-transition:enter-start="opacity-0 -translate-y-2"
-         x-transition:enter-end="opacity-100 translate-y-0"
-         x-transition:leave="transition ease-in duration-100"
-         x-transition:leave-start="opacity-100 translate-y-0"
-         x-transition:leave-end="opacity-0 -translate-y-2"
-         style="display: none;">
-        <div class="px-4 py-3 border-b border-outline-variant/10 bg-surface-container-low">
-            <h3 class="text-xs font-bold text-on-surface uppercase tracking-wider">Notifications</h3>
-        </div>
+    <!-- Modal Root for Uploads -->
+    <div id="upload-modal-root"></div>
 
-        <div class="max-h-96 overflow-y-auto custom-scrollbar">
-            {% if overdue_deadlines %}
-            <div class="px-4 py-2 bg-error-container/10 border-b border-error/10">
-                <p class="text-[9px] font-bold text-error uppercase tracking-wider mb-2">Overdue Deadlines — {{ overdue_deadlines|length }}</p>
-                {% for dl in overdue_deadlines %}
-                <a href="/cases/{{ dl.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
-                    <span class="material-symbols-outlined text-error text-sm shrink-0 mt-0.5">event_busy</span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
-                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(dl.case_id, dl.case_id) }} &middot; Due {{ dl.due_at.strftime('%b %d') }}</p>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-            {% endif %}
+    <!-- Notifications Global Panel -->
+    {% include "partials/notifications_panel.html" %}
 
-            {% if upcoming_deadlines_notif %}
-            <div class="px-4 py-2 border-b border-outline-variant/10">
-                <p class="text-[9px] font-bold text-originator-opposing uppercase tracking-wider mb-2">Upcoming Deadlines — {{ upcoming_deadlines_notif|length }}</p>
-                {% for dl in upcoming_deadlines_notif %}
-                <a href="/cases/{{ dl.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
-                    <span class="material-symbols-outlined text-originator-opposing text-sm shrink-0 mt-0.5">event</span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface truncate">{{ dl.title }}</p>
-                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(dl.case_id, dl.case_id) }} &middot; {{ dl.due_at.strftime('%b %d') }}</p>
-                    </div>
-                </a>
-                {% endfor %}
+    <!-- Global Confirmation Modal -->
+    <div x-data="confirmDialog"
+         x-show="show"
+         @open-confirm.window="open($event.detail)"
+         class="fixed inset-0 z-[10000] flex items-center justify-center"
+         x-cloak>
+        <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="close()"></div>
+        <div class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-shell-fade-in">
+            <div class="px-6 py-4 border-b border-outline-variant/10">
+                <h3 class="text-sm font-black text-on-surface uppercase tracking-wider" x-text="title">Confirm</h3>
             </div>
-            {% endif %}
-
-            {% if upcoming_hearings_notif %}
-            <div class="px-4 py-2 border-b border-outline-variant/10">
-                <p class="text-[9px] font-bold text-originator-court uppercase tracking-wider mb-2">Upcoming Hearings — {{ upcoming_hearings_notif|length }}</p>
-                {% for h in upcoming_hearings_notif %}
-                <a href="/cases/{{ h.case_id|urlencode }}" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
-                    <span class="material-symbols-outlined text-originator-court text-sm shrink-0 mt-0.5">gavel</span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface truncate">{{ h.title }}</p>
-                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(h.case_id, h.case_id) }} &middot; {{ h.scheduled_for.strftime('%b %d') }}</p>
-                    </div>
-                </a>
-                {% endfor %}
+            <div class="p-6">
+                <p class="text-sm text-on-surface-variant leading-relaxed" x-text="message">Are you sure?</p>
             </div>
-            {% endif %}
-
-            {% if pending_docs %}
-            <div class="px-4 py-2 border-b border-outline-variant/10">
-                <p class="text-[9px] font-bold text-primary uppercase tracking-wider mb-2">Pending Review — {{ pending_docs|length }}</p>
-                {% for doc in pending_docs %}
-                <a href="/triage" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
-                    <span class="material-symbols-outlined text-primary text-sm shrink-0 mt-0.5">inbox</span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface truncate">{{ doc.title }}</p>
-                        <p class="text-[10px] text-on-surface-variant">{{ doc.case_id or 'Unassigned' }} &middot; {{ doc.created_at.strftime('%b %d') }}</p>
-                    </div>
-                </a>
-                {% endfor %}
+            <div class="px-6 py-4 bg-surface-container-high/50 flex justify-end gap-3">
+                <button @click="confirm()" class="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer">Delete</button>
+                <button @click="close()" class="px-4 py-2 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer">Cancel</button>
             </div>
-            {% endif %}
-
-            {% if overdue_costs_notif %}
-            <div class="px-4 py-2 border-b border-outline-variant/10">
-                <p class="text-[9px] font-bold text-error uppercase tracking-wider mb-2">Overdue Costs — {{ overdue_costs_notif|length }}</p>
-                {% for cost in overdue_costs_notif %}
-                <a href="/costs" class="flex items-start gap-2 py-1.5 hover:bg-surface-container rounded px-1 -mx-1">
-                    <span class="material-symbols-outlined text-error text-sm shrink-0 mt-0.5">payments</span>
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface truncate">{{ cost.title }}</p>
-                        <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; {{ cost.due_at.strftime('%b %d') }}</p>
-                    </div>
-                </a>
-                {% endfor %}
-            </div>
-            {% endif %}
-
-            {% if notification_count == 0 %}
-            <div class="px-4 py-8 text-center">
-                <span class="material-symbols-outlined text-3xl text-outline mb-2">notifications_none</span>
-                <p class="text-xs text-on-surface-variant">All caught up</p>
-            </div>
-            {% endif %}
         </div>
     </div>
-    {% endif %}
 
-    {# Upload Modal Root — at body level so fixed positioning works correctly #}
-    <div id="upload-modal-root"></div>
+    <!-- Component JS -->
+    <script src="/static/js/components/case-stream.js?v=1.0.4"></script>
+    <script src="/static/js/components/upload-modal.js?v=1.0.4"></script>
+    <script src="/static/js/alpine-utils.js?v=1.0.5"></script>
 </body>
 </html>

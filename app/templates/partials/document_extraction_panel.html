@@ -77,7 +77,7 @@
                     <span class="material-symbols-outlined text-sm text-originator-opposing">event_upcoming</span>
                     <span class="text-[11px] font-bold text-on-surface">{{ deadline.title }}</span>
                 </div>
-                <span class="font-mono text-[10px] text-originator-opposing font-bold">{{ deadline.due_at.strftime('%b %d') }}</span>
+                <span class="font-mono text-[10px] text-originator-opposing font-bold">{{ deadline.due_date.strftime('%b %d') }}</span>
             </div>
             {% endfor %}
             {% for hearing in linked_hearings %}
@@ -86,7 +86,7 @@
                     <span class="material-symbols-outlined text-sm text-originator-court">gavel</span>
                     <span class="text-[11px] font-bold text-on-surface">{{ hearing.title }}</span>
                 </div>
-                <span class="font-mono text-[10px] text-originator-court font-bold">{{ hearing.scheduled_for.strftime('%b %d') }}</span>
+                <span class="font-mono text-[10px] text-originator-court font-bold">{{ hearing.due_date.strftime('%b %d') }}</span>
             </div>
             {% endfor %}
         </div>

@@ -27,6 +27,7 @@ def upgrade() -> None:
             "jurisdiction",
             sa.Enum("DE", "UK", "US", "OTHER", name="jurisdiction"),
             nullable=False,
+            server_default="DE",
         ),
     )
     # ### end Alembic commands ###

@@ -1,0 +1,92 @@
+<div class="h-full flex flex-col overflow-hidden">
+    {# Header #}
+    <div class="px-8 py-6 border-b border-outline-variant/10 bg-surface-container-high/30">
+        <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                        <span class="material-symbols-outlined text-primary text-2xl">person</span>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-black text-on-surface truncate">{{ sender }}</h2>
+                        <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mt-0.5">Contact Detail</p>
+                    </div>
+                </div>
+            </div>
+            <div class="shrink-0 flex gap-2">
+                <a href="/search?q={{ sender|urlencode }}" class="p-2 rounded-lg bg-surface-container hover:bg-surface-container-highest text-on-surface-variant transition-colors" title="Search all references">
+                    <span class="material-symbols-outlined text-sm">search</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-6 mt-6">
+            <div class="bg-surface-container-low rounded-xl p-3 border border-outline-variant/10">
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Documents</p>
+                <p class="text-xl font-black text-on-surface">{{ documents|length }}</p>
+            </div>
+            <div class="bg-surface-container-low rounded-xl p-3 border border-outline-variant/10">
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Cases</p>
+                <p class="text-xl font-black text-on-surface">{{ cases|length }}</p>
+            </div>
+            <div class="bg-surface-container-low rounded-xl p-3 border border-outline-variant/10">
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Last Contact</p>
+                <p class="text-sm font-bold text-on-surface mt-1">
+                    {% if documents %}
+                        {{ documents[0].created_at.strftime('%d.%m.%Y') }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    {# Document History #}
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <h3 class="text-[10px] font-black text-on-surface-variant uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+            <span class="w-1 h-3 bg-primary rounded-full"></span>
+            Communication History
+        </h3>
+
+        {% if documents %}
+        <div class="space-y-3">
+            {% for doc in documents %}
+            <a href="/document/{{ doc.id }}" class="group block bg-surface-container-lowest rounded-xl border border-outline-variant/10 p-4 hover:border-primary/20 hover:bg-surface-container transition-all">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+                            <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ stripe_color }};"></span>
+                            <span class="text-[10px] font-mono text-on-surface-variant">{{ doc.created_at.strftime('%d.%m.%Y') }}</span>
+                            {% if doc.case_id %}
+                            <span class="text-[9px] font-bold text-primary uppercase bg-primary/5 px-1.5 py-0.5 rounded">{{ cases.get(doc.case_id, doc.case_id) }}</span>
+                            {% endif %}
+                        </div>
+                        <h4 class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors truncate">{{ doc.title }}</h4>
+                        {% if doc.ai_summary and doc.ai_summary.legal_significance %}
+                        <p class="text-[11px] text-on-surface-variant mt-2 line-clamp-2 italic leading-relaxed">
+                            {{ doc.ai_summary.legal_significance }}
+                        </p>
+                        {% endif %}
+                    </div>
+                    <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="h-64 flex items-center justify-center">
+            {% with
+                icon='history',
+                title='No History',
+                body='No documents associated with this contact were found.'
+            %}
+                {% include "partials/empty_state.html" %}
+            {% endwith %}
+        </div>
+        {% endif %}
+    </div>
+</div>
