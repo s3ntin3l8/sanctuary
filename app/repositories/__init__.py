@@ -9,6 +9,7 @@ from app.repositories.entity import EntityRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.repositories.legal_cost import LegalCostRepository
 from app.repositories.proceeding import ProceedingRepository
+from app.repositories.user_reaction import UserReactionRepository
 
 __all__ = [
     "ActionItemRepository",
@@ -20,4 +21,5 @@ __all__ = [
     "IngestBatchRepository",
     "LegalCostRepository",
     "ProceedingRepository",
+    "UserReactionRepository",
 ]

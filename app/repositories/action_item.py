@@ -39,6 +39,14 @@ class ActionItemRepository(BaseRepository[ActionItem]):
             .all()
         )
 
+    def get_by_source_document(self, document_id: int) -> Sequence[ActionItem]:
+        return (
+            self.db.query(ActionItem)
+            .filter(ActionItem.source_document_id == document_id)
+            .order_by(ActionItem.due_date.asc())
+            .all()
+        )
+
     # --- time-based ---------------------------------------------------------
 
     def get_upcoming(

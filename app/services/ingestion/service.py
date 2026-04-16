@@ -14,6 +14,8 @@ from app.models.database import (
     IngestStatus,
     OriginatorType,
 )
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.converters import (
     ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE,
@@ -35,6 +37,32 @@ class IngestionError(Exception):
         self.message = message
         self.detail = detail
         super().__init__(self.message)
+
+
+def create_manual_upload_batch(
+    db: Session,
+    filenames: list[str],
+    case_id: str | None = None,
+) -> int:
+    """Create an IngestBatch row for one upload action.
+
+    A single user upload = one batch, even if it contains multiple files.
+    Email/scan batches come later (Phase 3).
+    """
+    subject = (
+        filenames[0]
+        if len(filenames) == 1
+        else f"{len(filenames)} files ({filenames[0]}, ...)"
+    )
+    repo = IngestBatchRepository(db)
+    batch = repo.create_batch(
+        source_type=IngestBatchSourceType.MANUAL,
+        subject=subject,
+        case_id=case_id,
+    )
+    batch.status = IngestBatchStatus.COMPLETED
+    db.flush()
+    return batch.id
 
 
 def compute_review_reasons(doc: Document) -> list[str]:
@@ -259,6 +287,7 @@ async def ingest_file(
     db: Session = None,
     parent_id: int = None,
     skip_processing: bool = False,
+    ingest_batch_id: int | None = None,
 ) -> Document:
     """Save uploaded file, optionally process it."""
     if not file.filename:
@@ -273,7 +302,12 @@ async def ingest_file(
         )
 
     safe_filename = os.path.basename(file.filename)
-    extracted_case_id, _ = extract_case_id(safe_filename, "")
+    extracted_case_obj = extract_case_id(safe_filename, "")
+    extracted_case_id = (
+        extracted_case_obj.get("value")
+        if isinstance(extracted_case_obj, dict)
+        else None
+    )
     preliminary_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
     case_dir = DATA_DIR / preliminary_case_id
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -334,6 +368,7 @@ async def ingest_file(
             sender=None,
             received_date=None,
             ingest_status=IngestStatus.PENDING,
+            ingest_batch_id=ingest_batch_id,
         )
 
         db.add(new_doc)
@@ -394,6 +429,7 @@ async def ingest_file(
         cost_candidates=extract_cost_candidates(markdown_content or ""),
         extraction_confidence=extraction_confidence,
         meta=conversion_metadata,
+        ingest_batch_id=ingest_batch_id,
     )
 
     db.add(new_doc)

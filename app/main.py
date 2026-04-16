@@ -345,16 +345,29 @@ templates.env.globals["format_eur"] = format_eur
 templates.env.filters["format_relative_time"] = format_relative_time
 templates.env.filters["urlencode"] = quote
 
-# Safe markdown filter to strip tags
+# Markdown renderer.
+# html=False blocks raw-HTML passthrough — Docling-produced markdown can't inject
+# <script> even if the source PDF was adversarial. typographer upgrades straight
+# quotes / dashes; linkify auto-links bare URLs. Tables enabled for Schriftsatz
+# cost tables.
+from markdown_it import MarkdownIt
 from markupsafe import Markup
 
+_md = (
+    MarkdownIt("commonmark", {"html": False, "linkify": True, "typographer": True})
+    .enable("table")
+    .enable("strikethrough")
+)
 
-def safe_markdown(value: str) -> Markup:
-    """Return a safe string with HTML tags stripped."""
-    return Markup(str(value).replace("<", "&lt;").replace(">", "&gt;"))
+
+def render_markdown(value: str | None) -> Markup:
+    if not value:
+        return Markup("")
+    return Markup(_md.render(str(value)))
 
 
-templates.env.filters["safe_markdown"] = safe_markdown
+# Filter name kept for backward compat with existing templates.
+templates.env.filters["safe_markdown"] = render_markdown
 
 # Rate limiter setup
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -372,9 +385,9 @@ DEFAULT_SIDEBAR_COUNTS = {
 async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse:
     """Render custom 404 page."""
     return templates.TemplateResponse(
+        request,
         "errors/404.html",
         {
-            "request": request,
             "message": str(exc.detail) if hasattr(exc, "detail") else "Page not found",
             "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
         },
@@ -388,9 +401,9 @@ async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse
     error_msg = str(exc.detail) if hasattr(exc, "detail") else str(exc)
     logger.error(f"Server error on {request.url.path}: {error_msg}", exc_info=True)
     return templates.TemplateResponse(
+        request,
         "errors/500.html",
         {
-            "request": request,
             "message": "An unexpected error occurred.",
             "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
         },
@@ -401,9 +414,9 @@ async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse
 async def validation_error_handler(request: Request, exc: Exception) -> HTMLResponse:
     """Render custom 422 page."""
     return templates.TemplateResponse(
+        request,
         "errors/422.html",
         {
-            "request": request,
             "message": str(exc.detail)
             if hasattr(exc, "detail")
             else "Validation error",

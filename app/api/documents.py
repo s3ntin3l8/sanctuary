@@ -10,7 +10,11 @@ from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db
 from app.helpers import build_document_extraction_context, render_page
 from app.models.database import Case, Document, IngestStatus
-from app.services.ingestion.service import ingest_file, process_uploaded_document
+from app.services.ingestion.service import (
+    create_manual_upload_batch,
+    ingest_file,
+    process_uploaded_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +35,13 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
         )
 
     context = {
-        "request": request,
         "case_id": case_id,
         "case_title": case.title if case else None,
         "top_level_docs": top_level_docs,
     }
 
     if request.headers.get("hx-request"):
-        return templates.TemplateResponse("partials/upload_form.html", context)
+        return templates.TemplateResponse(request, "partials/upload_form.html", context)
 
     return render_page(request, "partials/upload_form.html", db=db, **context)
 
@@ -68,12 +71,29 @@ async def upload_document(
     success_count = 0
     error_count = 0
 
+    valid_files = [f for f in files if f.filename]
+    ingest_batch_id = None
+    if valid_files:
+        ingest_batch_id = create_manual_upload_batch(
+            db,
+            filenames=[f.filename for f in valid_files],
+            case_id=case_id,
+        )
+        db.commit()
+
     for file in files:
         if not file.filename:
             continue
 
         try:
-            doc = await ingest_file(file, case_id, db, parent_id, skip_processing=True)
+            doc = await ingest_file(
+                file,
+                case_id,
+                db,
+                parent_id,
+                skip_processing=True,
+                ingest_batch_id=ingest_batch_id,
+            )
             success_count += 1
 
             try:
@@ -168,9 +188,9 @@ async def document_activity_item(
     case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
 
     return templates.TemplateResponse(
+        request,
         "partials/activity_feed_items.html",
         {
-            "request": request,
             "documents": [doc],
             "case_titles": case_titles,
             "originator_colors": ORIGINATOR_COLORS,
@@ -187,8 +207,9 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         return templates.TemplateResponse(
+            request,
             "errors/404.html",
-            {"request": request, "message": f"Document {doc_id} not found"},
+            {"message": f"Document {doc_id} not found"},
             status_code=404,
         )
 
@@ -196,18 +217,27 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
     context_type = request.query_params.get("context", "detail")
 
     if context_type == "triage":
+        from app.models.enums import UserReactionType
+        from app.services.triage_service import TriageService
+
+        triage_service = TriageService(db)
         cases = db.query(Case).order_by(Case.title.asc()).all()
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
+        reactions = list(triage_service.get_reactions(doc.id))
+        action_items = triage_service.get_action_items(doc.id)
         return templates.TemplateResponse(
+            request,
             "partials/document_triage.html",
             {
-                "request": request,
                 "doc": doc,
                 "doc_id": doc.id,
                 "cases": cases,
                 "entities": entities,
                 "context": context,
+                "reactions": reactions,
+                "action_items": action_items,
                 "OriginatorType": OriginatorType,
+                "UserReactionType": UserReactionType,
                 "originator_colors": ORIGINATOR_COLORS,
                 "originator_icons": ORIGINATOR_ICONS,
             },
@@ -219,9 +249,9 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
 
         return templates.TemplateResponse(
+            request,
             "partials/document_activity.html",
             {
-                "request": request,
                 "doc": doc,
                 "doc_id": doc.id,
                 "all_cases": all_cases,
@@ -239,9 +269,9 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
         extraction_confidence = doc.extraction_confidence or {}
         return templates.TemplateResponse(
+            request,
             "partials/document_detail.html",
             {
-                "request": request,
                 "doc": doc,
                 "doc_id": doc.id,
                 "entities": entities,
