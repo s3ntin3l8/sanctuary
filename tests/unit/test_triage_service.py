@@ -1,10 +1,10 @@
-"""Unit tests for TriageService confirm_bundle correctness (P0 spec compliance)."""
+"""Unit tests for TriageService confirm_bundle / BundleView correctness."""
 
 from datetime import UTC, datetime
 
 import pytest
 
-from app.models.database import ActionItem, Document, IngestBatch
+from app.models.database import ActionItem, Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     ActionItemType,
     CaseStatus,
@@ -12,6 +12,8 @@ from app.models.enums import (
     IngestBatchSourceType,
     Jurisdiction,
     OriginatorType,
+    RelationshipConfidence,
+    RelationshipType,
 )
 from app.services.ingestion.service import compute_review_reasons
 
@@ -267,3 +269,199 @@ def test_confirm_bundle_cascades_case_to_action_items(db_session):
 
     db_session.refresh(action_item)
     assert action_item.case_id == target_case.id
+
+
+# ---------------------------------------------------------------------------
+# BundleView — proof_doc_ids population
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_bundle_view_proof_doc_ids_populated(db_session):
+    """proof_doc_ids should contain the to_document_id of ATTACHES_AS_PROOF edges."""
+    from app.models.database import Case
+
+    triage_case = Case(
+        id="_TRIAGE",
+        title="Triage Inbox",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(triage_case)
+    db_session.commit()
+
+    batch, docs = _make_batch_with_docs(
+        db_session,
+        triage_case,
+        triage_case,
+        [
+            {
+                "title": "Cover Letter",
+                "role": DocumentRole.COVER_LETTER,
+                "reasons": ["missing_case_id"],
+            },
+            {
+                "title": "Exhibit A",
+                "role": DocumentRole.ENCLOSURE,
+                "reasons": ["missing_case_id"],
+            },
+        ],
+    )
+    cover, exhibit = docs
+
+    rel = DocumentRelationship(
+        from_document_id=cover.id,
+        to_document_id=exhibit.id,
+        relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
+    )
+    db_session.add(rel)
+    db_session.commit()
+
+    from app.services.triage_service import TriageService
+
+    svc = TriageService(db_session)
+    bundles = svc.get_triage_bundles()
+
+    assert bundles, "expected at least one bundle"
+    bundle = next((b for b in bundles if b.batch_id == batch.id), None)
+    assert bundle is not None
+    assert exhibit.id in bundle.proof_doc_ids
+    assert cover.id not in bundle.proof_doc_ids
+
+
+# ---------------------------------------------------------------------------
+# BundleView — proceeding chip data flow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_bundle_view_proceeding_populated(db_session):
+    """bundle.proceeding should reflect the batch's linked Proceeding."""
+    from app.models.database import Case, Proceeding
+
+    triage_case = Case(
+        id="_TRIAGE",
+        title="Triage Inbox",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    target_case = Case(
+        id="ADV-PROC-T",
+        title="Proceeding Test Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    proceeding = Proceeding(
+        case_id=target_case.id,
+        court_name="AG Hamburg",
+        court_level="AG",
+        az_court="003 F 99/25",
+    )
+    db_session.add(proceeding)
+    db_session.commit()
+    db_session.refresh(proceeding)
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.MANUAL,
+        case_id=target_case.id,
+        proceeding_id=proceeding.id,
+        received_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    doc = Document(
+        title="Court Notice",
+        content="content",
+        case_id="_TRIAGE",
+        role=DocumentRole.COVER_LETTER,
+        originator_type=OriginatorType.COURT,
+        sender="court@ag-hamburg.de",
+        received_date=datetime(2026, 4, 1, tzinfo=UTC),
+        ingest_batch_id=batch.id,
+        needs_review=True,
+        review_reasons=["missing_case_id"],
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    from app.services.triage_service import TriageService
+
+    svc = TriageService(db_session)
+    bundles = svc.get_triage_bundles()
+
+    bundle = next((b for b in bundles if b.batch_id == batch.id), None)
+    assert bundle is not None
+    assert bundle.proceeding is not None
+    assert bundle.proceeding.court_name == "AG Hamburg"
+
+
+# ---------------------------------------------------------------------------
+# confirm_document — finalize-always behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_confirm_document_clears_needs_review_when_all_fields_present(db_session):
+    """confirm_document with finalize=True should clear needs_review when all required fields are populated."""
+    from app.models.database import Case
+
+    triage_case = Case(
+        id="_TRIAGE",
+        title="Triage Inbox",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    target_case = Case(
+        id="ADV-FIN-T",
+        title="Finalize Test Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    doc = Document(
+        title="Test Document",
+        content="content",
+        case_id="_TRIAGE",
+        role=DocumentRole.COVER_LETTER,
+        originator_type=None,
+        sender=None,
+        received_date=None,
+        needs_review=True,
+        review_reasons=[
+            "missing_case_id",
+            "missing_originator",
+            "missing_sender",
+            "missing_received_date",
+        ],
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    from app.services.triage_service import TriageService
+
+    svc = TriageService(db_session)
+    updated = svc.confirm_document(
+        doc.id,
+        title="Test Document",
+        case_id=target_case.id,
+        originator_type=OriginatorType.COURT,
+        sender="court@example.com",
+        received_date=datetime(2026, 4, 1, tzinfo=UTC),
+        finalize=True,
+    )
+
+    assert updated is not None
+    assert updated.needs_review is False
+    assert (
+        updated.review_reasons == []
+        or updated.review_reasons is None
+        or len(updated.review_reasons) == 0
+    )

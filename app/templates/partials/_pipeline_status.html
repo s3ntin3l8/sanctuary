@@ -1,0 +1,36 @@
+{# Shared pipeline-status pill macro.
+    Usage:  {% from "partials/_pipeline_status.html" import pipeline_status_pill %}
+            {{ pipeline_status_pill(doc) }}
+    Five states (priority order): failed > AI processing > ready > review > pending.
+#}
+{% macro pipeline_status_pill(doc) %}
+    {% set _ingest_ok  = doc.ingest_status and doc.ingest_status.value == 'completed' %}
+    {% set _ingest_bad = doc.ingest_status and doc.ingest_status.value == 'failed' %}
+    {% set _ai_ok      = doc.ai_summary_status in ('generated', 'approved') %}
+    {% set _ai_busy    = not doc.ai_summary_status or doc.ai_summary_status == 'pending' %}
+    {% set _ai_bad     = doc.ai_summary_status == 'failed' %}
+    {% if _ingest_bad or _ai_bad %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-error-container/20 text-error whitespace-nowrap" title="Pipeline failed — retry available">
+        <span class="material-symbols-outlined text-[10px]">error_outline</span> failed
+    </span>
+    {% elif _ingest_ok and _ai_busy %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-tertiary/10 text-tertiary whitespace-nowrap" title="AI processing in progress">
+        <span class="material-symbols-outlined text-[10px]">settings</span> AI processing
+    </span>
+    {% elif _ingest_ok and _ai_ok %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-green-500/10 text-green-400 whitespace-nowrap" title="Ready — all pipelines complete">
+        <span class="material-symbols-outlined text-[10px]">done_all</span> ready
+    </span>
+    {% else %}
+    {% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
+    {% if _real_reasons %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-warning-container/20 text-warning whitespace-nowrap" title="{{ _real_reasons|length }} issue{{ 's' if _real_reasons|length != 1 else '' }} pending">
+        <span class="material-symbols-outlined text-[10px]">priority_high</span> review
+    </span>
+    {% else %}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-surface-container-highest text-on-surface-variant/60 whitespace-nowrap" title="Pending ingestion">
+        <span class="material-symbols-outlined text-[10px]">hourglass_empty</span> pending
+    </span>
+    {% endif %}
+    {% endif %}
+{% endmacro %}

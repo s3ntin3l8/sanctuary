@@ -1,184 +1,205 @@
-{# Confidence-aware metadata form.
-
-    Vision.md §1: "The form shows only fields with low confidence or missing values
-                   — high-confidence fields are pre-confirmed."
-
-    Implementation:
-      - Low / medium confidence fields are always visible.
-      - High-confidence fields collapse into a summary row ("X confirmed ✓ [edit]").
-      - Click "edit" to reveal all fields.
-      - Unknown (no confidence value) is treated as low.
+{# Confidence-aware metadata form — two states: review / confirmed.
+    State is initialised from the server (doc.needs_review); the [Edit] button
+    flips confirmed → review client-side without a round-trip.
 
     Required context: doc, cases, OriginatorType.
 #}
-{% macro confidence_chip(level) %}
+{% macro conf_chip(level) %}
     {% if level == 'high' %}
-        <span class="inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-originator-own/15 text-originator-own" title="High confidence — extracted cleanly">
-            <span class="material-symbols-outlined text-[9px]">check</span>high
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-own/15 text-originator-own" title="High confidence — extracted cleanly">
+            <span class="w-1.5 h-1.5 rounded-full bg-originator-own flex-shrink-0"></span>H
         </span>
     {% elif level == 'medium' %}
-        <span class="inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400" title="Medium confidence — review recommended">
-            <span class="material-symbols-outlined text-[9px]">help</span>medium
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-amber-500/15 text-amber-500" title="Medium confidence — review recommended">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>M
         </span>
     {% elif level == 'low' %}
-        <span class="inline-flex items-center gap-1 text-[8px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-originator-opposing/15 text-originator-opposing" title="Low confidence — please verify">
-            <span class="material-symbols-outlined text-[9px]">priority_high</span>low
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-opposing/15 text-originator-opposing" title="Low confidence — please verify">
+            <span class="w-1.5 h-1.5 rounded-full bg-originator-opposing flex-shrink-0"></span>L
         </span>
     {% endif %}
 {% endmacro %}
 
 {% set conf = doc.extraction_confidence or {} %}
-{% set low_border = 'border-originator-opposing/40 ring-1 ring-originator-opposing/10' %}
-{% set med_border = 'border-amber-500/40' %}
-{% set ok_border  = 'border-outline-variant/20' %}
+{% set low_border  = 'border-originator-opposing/40 ring-1 ring-originator-opposing/10' %}
+{% set med_border  = 'border-amber-500/40' %}
+{% set ok_border   = 'border-outline-variant/20' %}
+{% set input_base  = 'w-full px-3 py-1.5 bg-surface rounded-lg border text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all' %}
 
-{# Count which fields are high-confidence (pre-confirmed)
-    and which need user attention (low/medium/missing). #}
 {% set field_confs = {
-    'title':        'high' if doc.title else 'low',
-    'case_id':      conf.get('case_id') or ('high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low'),
-    'originator':   conf.get('originator') or ('high' if doc.originator_type else 'low'),
-    'sender':       conf.get('sender') or ('high' if doc.sender else 'low'),
-    'date':         conf.get('date') or ('high' if doc.received_date else 'low'),
+    'title':      'high' if doc.title else 'low',
+    'case_id':    conf.get('case_id') or ('high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low'),
+    'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
+    'sender':     conf.get('sender') or ('high' if doc.sender else 'low'),
+    'date':       conf.get('date') or ('high' if doc.received_date else 'low'),
 } %}
 {% set high_fields = [] %}
 {% for k, v in field_confs.items() %}{% if v == 'high' %}{% set _ = high_fields.append(k) %}{% endif %}{% endfor %}
 {% set needs_attention = field_confs|length - high_fields|length %}
 
-<div id="triage-metadata-form" class="bg-surface-container-high/50 p-6 border-b border-outline-variant/10"
-     x-data="{ showAll: {{ 'true' if needs_attention == 5 else 'false' }} }">
-    <div class="flex items-center justify-between mb-4">
-        <h4 class="text-[10px] font-black text-primary uppercase tracking-widest flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm">edit_note</span>
+<div id="triage-metadata-form"
+     class="bg-surface-container-high/50 p-4 border-b border-outline-variant/10"
+     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}', showAll: {{ 'true' if needs_attention == 5 else 'false' }} }">
+
+    {# Header row #}
+    <div class="flex items-center justify-between mb-3">
+        <h4 class="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-xs">edit_note</span>
             Metadata
         </h4>
         <div class="flex items-center gap-2">
-            {% if doc.review_reasons %}
-            <span class="text-[9px] font-bold text-warning uppercase bg-warning-container/20 px-2 py-0.5 rounded-full">
-                {{ doc.review_reasons|length }} Issues Remaining
+            {% set _open_reasons = (doc.review_reasons or []) %}
+            {% if _open_reasons %}
+            <span class="text-[8px] font-bold text-warning uppercase bg-warning-container/20 px-1.5 py-px rounded-full">
+                {{ _open_reasons|length }} issue{{ 's' if _open_reasons|length != 1 else '' }}
             </span>
             {% else %}
-            <span class="text-[9px] font-bold text-green-400 uppercase bg-green-500/10 px-2 py-0.5 rounded-full">
-                All Issues Resolved
+            <span class="text-[8px] font-bold text-originator-own uppercase bg-originator-own/10 px-1.5 py-px rounded-full flex items-center gap-0.5">
+                <span class="material-symbols-outlined text-[9px]">check_circle</span>resolved
             </span>
             {% endif %}
-        </div>
-    </div>
-
-    {# Summary row: pre-confirmed fields #}
-    {% if high_fields %}
-    <div class="flex items-center justify-between gap-2 mb-4 px-3 py-2 bg-originator-own/5 border border-originator-own/20 rounded-lg"
-         x-show="!showAll">
-        <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span class="material-symbols-outlined text-sm text-originator-own shrink-0">check_circle</span>
-            <p class="text-[10px] text-on-surface-variant leading-relaxed">
-                <span class="font-bold text-originator-own">{{ high_fields|length }} field{{ 's' if high_fields|length != 1 else '' }} pre-confirmed:</span>
-                {% for f in high_fields %}
-                    <span class="font-medium">{{ f|replace('_', ' ') }}</span>{% if not loop.last %}, {% endif %}
-                {% endfor %}
-            </p>
-        </div>
-        <button type="button" @click="showAll = true"
-                class="shrink-0 text-[9px] font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer">
-            Edit all &rarr;
-        </button>
-    </div>
-    {% endif %}
-
-    <form hx-post="/triage/document/{{ doc.id }}/confirm"
-          hx-target="#triage-doc-pane"
-          hx-swap="innerHTML"
-          class="grid grid-cols-1 md:grid-cols-2 gap-4"
-          @keydown.tab="
-              const fields = Array.from($el.querySelectorAll('[data-needs-review]')).filter(f => f.offsetParent !== null);
-              if (fields.length === 0) return;
-              $event.preventDefault();
-              const idx = fields.indexOf(document.activeElement);
-              const next = $event.shiftKey ? (idx <= 0 ? fields.length - 1 : idx - 1) : (idx >= fields.length - 1 ? 0 : idx + 1);
-              fields[next].focus();
-          ">
-
-        {# Title #}
-        <div class="md:col-span-2 space-y-1.5"
-             {% if field_confs.title == 'high' %}x-show="showAll"{% endif %}>
-            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1 flex items-center gap-2">Document Title</label>
-            <input type="text" name="title" value="{{ doc.title }}"
-                   class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all {{ ok_border }}">
-        </div>
-
-        {# Case #}
-        <div class="space-y-1.5"
-             {% if field_confs.case_id == 'high' %}x-show="showAll"{% endif %}>
-            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1 flex items-center gap-2">
-                Assign to Case
-                {{ confidence_chip(field_confs.case_id) }}
-            </label>
-            <select name="case_id" data-triage-case-select
-                    {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
-                    class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
-                           {% if field_confs.case_id == 'low' %}{{ low_border }}{% elif field_confs.case_id == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
-                <option value="">Unassigned (Triage)</option>
-                {% for case in cases %}
-                <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }})</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        {# Originator #}
-        <div class="space-y-1.5"
-             {% if field_confs.originator == 'high' %}x-show="showAll"{% endif %}>
-            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1 flex items-center gap-2">
-                Originator Type
-                {{ confidence_chip(field_confs.originator) }}
-            </label>
-            <select name="originator_type"
-                    {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
-                    class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
-                           {% if field_confs.originator == 'low' %}{{ low_border }}{% elif field_confs.originator == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
-                {% for type in OriginatorType %}
-                <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        {# Sender #}
-        <div class="space-y-1.5"
-             {% if field_confs.sender == 'high' %}x-show="showAll"{% endif %}>
-            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1 flex items-center gap-2">
-                Sender / Source
-                {{ confidence_chip(field_confs.sender) }}
-            </label>
-            <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="e.g. Attorney Name"
-                   {% if field_confs.sender in ('low', 'medium') %}data-needs-review{% endif %}
-                   class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
-                          {% if field_confs.sender == 'low' %}{{ low_border }}{% elif field_confs.sender == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
-        </div>
-
-        {# Date #}
-        <div class="space-y-1.5"
-             {% if field_confs.date == 'high' %}x-show="showAll"{% endif %}>
-            <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest ml-1 flex items-center gap-2">
-                Received Date
-                {{ confidence_chip(field_confs.date) }}
-            </label>
-            <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
-                   {% if field_confs.date in ('low', 'medium') %}data-needs-review{% endif %}
-                   class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
-                          {% if field_confs.date == 'low' %}{{ low_border }}{% elif field_confs.date == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
-        </div>
-
-        {# Footer #}
-        <div class="md:col-span-2 pt-4 flex items-center justify-between border-t border-outline-variant/5 mt-2">
-            <label class="flex items-center gap-2 cursor-pointer group">
-                <input type="checkbox" name="mark_resolved" value="true" class="accent-primary rounded">
-                <span class="text-[10px] font-bold text-on-surface-variant group-hover:text-primary transition-colors uppercase tracking-wider">Finalize &amp; Remove from Triage</span>
-            </label>
-
-            <button type="submit" class="bg-primary hover:bg-primary/90 text-on-primary px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-primary/10 active:scale-95 transition-all flex items-center gap-2">
-                <span data-loading-idle>Confirm doc &rarr;</span>
-                <span class="material-symbols-outlined text-sm htmx-indicator animate-spin" data-loading-active>progress_activity</span>
-                <span data-loading-active>Saving...</span>
+            {# Edit toggle (confirmed → review) #}
+            <button type="button" x-show="state === 'confirmed'" @click="state = 'review'; showAll = true"
+                    class="text-[8px] font-bold uppercase tracking-wider text-primary/70 hover:text-primary transition-colors cursor-pointer">
+                Edit
             </button>
         </div>
-    </form>
+    </div>
+
+    {# ── CONFIRMED STATE: read-only summary ── #}
+    <div x-show="state === 'confirmed'" x-cloak>
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+            <div class="col-span-2">
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Title</dt>
+                <dd class="text-on-surface font-medium truncate" title="{{ doc.title }}">{{ doc.title or '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case</dt>
+                <dd class="text-on-surface font-medium font-mono">{{ doc.case_id if doc.case_id and doc.case_id != '_TRIAGE' else '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Originator</dt>
+                <dd class="text-on-surface font-medium capitalize">{{ doc.originator_type.value if doc.originator_type else '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Sender</dt>
+                <dd class="text-on-surface-variant font-medium truncate" title="{{ doc.sender or '' }}">{{ doc.sender or '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Received</dt>
+                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—' }}</dd>
+            </div>
+        </dl>
+    </div>
+
+    {# ── REVIEW STATE: edit form ── #}
+    <div x-show="state === 'review'">
+
+        {# Pre-confirmed summary row #}
+        {% if high_fields %}
+        <div class="flex items-center justify-between gap-2 mb-3 px-2.5 py-1.5 bg-originator-own/5 border border-originator-own/20 rounded-lg"
+             x-show="!showAll">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                <span class="material-symbols-outlined text-xs text-originator-own shrink-0">check_circle</span>
+                <p class="text-[9px] text-on-surface-variant leading-relaxed truncate">
+                    <span class="font-bold text-originator-own">{{ high_fields|length }} pre-confirmed:</span>
+                    {% for f in high_fields %}
+                        <span class="font-medium">{{ f|replace('_', ' ') }}</span>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </p>
+            </div>
+            <button type="button" @click="showAll = true"
+                    class="shrink-0 text-[8px] font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer whitespace-nowrap">
+                Edit all &rarr;
+            </button>
+        </div>
+        {% endif %}
+
+        <form hx-post="/triage/document/{{ doc.id }}/confirm"
+              hx-target="#triage-doc-pane"
+              hx-swap="innerHTML"
+              class="grid grid-cols-1 md:grid-cols-2 gap-3"
+              @keydown.tab="
+                  const fields = Array.from($el.querySelectorAll('[data-needs-review]')).filter(f => f.offsetParent !== null);
+                  if (fields.length === 0) return;
+                  $event.preventDefault();
+                  const idx = fields.indexOf(document.activeElement);
+                  const next = $event.shiftKey ? (idx <= 0 ? fields.length - 1 : idx - 1) : (idx >= fields.length - 1 ? 0 : idx + 1);
+                  fields[next].focus();
+              ">
+
+            {# Title #}
+            <div class="md:col-span-2 space-y-1"
+                 {% if field_confs.title == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Title
+                </label>
+                <input type="text" name="title" value="{{ doc.title }}"
+                       class="{{ input_base }} {{ ok_border }}">
+            </div>
+
+            {# Case #}
+            <div class="space-y-1"
+                 {% if field_confs.case_id == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Case {{ conf_chip(field_confs.case_id) }}
+                </label>
+                <select name="case_id" data-triage-case-select
+                        {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
+                        class="{{ input_base }} {{ low_border if field_confs.case_id == 'low' else med_border if field_confs.case_id == 'medium' else ok_border }}">
+                    <option value="">Unassigned (Triage)</option>
+                    {% for case in cases %}
+                    <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# Originator #}
+            <div class="space-y-1"
+                 {% if field_confs.originator == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Originator {{ conf_chip(field_confs.originator) }}
+                </label>
+                <select name="originator_type"
+                        {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
+                        class="{{ input_base }} {{ low_border if field_confs.originator == 'low' else med_border if field_confs.originator == 'medium' else ok_border }}">
+                    {% for type in OriginatorType %}
+                    <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# Sender #}
+            <div class="space-y-1"
+                 {% if field_confs.sender == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Sender {{ conf_chip(field_confs.sender) }}
+                </label>
+                <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="e.g. Attorney Name"
+                       {% if field_confs.sender in ('low', 'medium') %}data-needs-review{% endif %}
+                       class="{{ input_base }} {{ low_border if field_confs.sender == 'low' else med_border if field_confs.sender == 'medium' else ok_border }}">
+            </div>
+
+            {# Date #}
+            <div class="space-y-1"
+                 {% if field_confs.date == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Received {{ conf_chip(field_confs.date) }}
+                </label>
+                <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
+                       {% if field_confs.date in ('low', 'medium') %}data-needs-review{% endif %}
+                       class="{{ input_base }} {{ low_border if field_confs.date == 'low' else med_border if field_confs.date == 'medium' else ok_border }}">
+            </div>
+
+            {# Footer — single primary action, no checkbox #}
+            <div class="md:col-span-2 pt-3 flex justify-end border-t border-outline-variant/5 mt-1">
+                <button type="submit"
+                        class="bg-primary hover:bg-primary/90 text-on-primary px-5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm shadow-primary/10 active:scale-95 transition-all flex items-center gap-1.5">
+                    <span data-loading-idle>Confirm &rarr;</span>
+                    <span class="material-symbols-outlined text-xs htmx-indicator animate-spin" data-loading-active>progress_activity</span>
+                    <span data-loading-active class="text-[10px]">Saving…</span>
+                </button>
+            </div>
+        </form>
+    </div>
 </div>

@@ -33,7 +33,9 @@ async def triage_page(
     from app.models.database import Proceeding
 
     bundles = triage_service.get_triage_bundles(limit=limit, offset=offset)
-    all_cases = db.query(Case).order_by(Case.title.asc()).all()
+    all_cases = (
+        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    )
     total_docs = sum(b.doc_count for b in bundles)
 
     reactions_by_doc = {}
@@ -78,7 +80,6 @@ async def confirm_document(
     originator_type: str | None = Form(None),
     sender: str | None = Form(None),
     received_date: str | None = Form(None),
-    mark_resolved: str | None = Form(None),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
@@ -109,7 +110,7 @@ async def confirm_document(
         originator_type=parsed_originator,
         sender=sender,
         received_date=parsed_date,
-        finalize=bool(mark_resolved),
+        finalize=True,
     )
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
@@ -119,7 +120,7 @@ async def confirm_document(
     from app.models.database import Entity
     from app.models.enums import RelationshipConfidence
 
-    cases = db.query(Case).order_by(Case.title.asc()).all()
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
     extraction_context = build_document_extraction_context(db, doc)
     reactions = list(triage_service.get_reactions(doc.id))
@@ -152,6 +153,10 @@ async def confirm_document(
             "originator_icons": ORIGINATOR_ICONS,
         },
     )
+    # Always update the left sidebar feed via OOB swap.
+    # If the doc is now out of triage, tell the client which doc to advance to.
+    feed_oob = _render_triage_feed_oob(request, triage_service, db)
+    response.body += feed_oob.encode("utf-8")
 
     # Confirm-and-next: if the doc is now out of triage, tell the client which
     # doc to advance to. Alpine listener picks this up from the HX-Trigger
@@ -210,10 +215,12 @@ async def confirm_bundle(
             reactions_by_doc[doc.id] = {
                 r.reaction for r in triage_service.get_reactions(doc.id)
             }  # set for card-level membership check only
-    all_cases = db.query(Case).order_by(Case.title.asc()).all()
+    all_cases = (
+        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    )
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "partials/triage_feed.html",
         {
@@ -229,6 +236,26 @@ async def confirm_bundle(
         },
     )
 
+    # Auto-advance to the first remaining unconfirmed doc
+    first_doc_id = None
+    if bundles:
+        for b in bundles:
+            for d in b.documents:
+                if d.needs_review or d.case_id == "_TRIAGE":
+                    first_doc_id = d.id
+                    break
+            if first_doc_id:
+                break
+
+    if first_doc_id:
+        response.headers["HX-Trigger"] = json.dumps(
+            {"triage:advance": {"next_doc_id": first_doc_id}}
+        )
+    else:
+        response.headers["HX-Trigger"] = json.dumps({"triage:clear": {}})
+
+    return response
+
 
 # -----------------------------------------------------------------------------
 # Reaction Bar (POST/DELETE)
@@ -241,6 +268,7 @@ async def set_reaction(
     doc_id: int,
     reaction: str = Form(...),
     notes: str | None = Form(None),
+    db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
     try:
@@ -262,6 +290,11 @@ async def set_reaction(
             "UserReactionType": UserReactionType,
         },
     )
+
+    # Update sidebar OOB to show the new reaction icon
+    feed_oob = _render_triage_feed_oob(request, triage_service, db)
+    response.body += feed_oob.encode("utf-8")
+
     if notes is not None and notes.strip():
         response.headers["HX-Trigger"] = json.dumps(
             {"triage:note-saved": {"message": "Note saved"}}
@@ -274,6 +307,7 @@ async def clear_reaction(
     request: Request,
     doc_id: int,
     reaction: str,
+    db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
     try:
@@ -286,7 +320,7 @@ async def clear_reaction(
     triage_service.clear_reaction(doc_id, reaction_enum)
     reactions = list(triage_service.get_reactions(doc_id))
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "partials/triage_reaction_bar.html",
         {
@@ -295,6 +329,11 @@ async def clear_reaction(
             "UserReactionType": UserReactionType,
         },
     )
+
+    # Update sidebar OOB
+    feed_oob = _render_triage_feed_oob(request, triage_service, db)
+    response.body += feed_oob.encode("utf-8")
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -387,7 +426,7 @@ async def _render_document_hud(
     from app.models.enums import RelationshipConfidence
 
     triage_service = TriageService(db)
-    cases = db.query(Case).order_by(Case.title.asc()).all()
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
     extraction_context = build_document_extraction_context(db, doc)
     reactions = list(triage_service.get_reactions(doc.id))
@@ -401,7 +440,7 @@ async def _render_document_hud(
         .all()
     )
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "partials/document_triage.html",
         {
@@ -420,6 +459,10 @@ async def _render_document_hud(
             "originator_icons": ORIGINATOR_ICONS,
         },
     )
+    # Update sidebar status icon
+    feed_oob = _render_triage_feed_oob(request, triage_service, db)
+    response.body += feed_oob.encode("utf-8")
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -522,3 +565,42 @@ async def activity_feed_hx(
             "originator_icons": ORIGINATOR_ICONS,
         },
     )
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+
+def _render_triage_feed_oob(
+    request: Request, triage_service: TriageService, db: Session
+) -> str:
+    """Renders the triage feed wrapped in an OOB swap div."""
+    from app.models.database import Proceeding
+
+    bundles = triage_service.get_triage_bundles()
+    reactions_by_doc = {}
+    for bundle in bundles:
+        for doc in bundle.documents:
+            reactions_by_doc[doc.id] = {
+                r.reaction for r in triage_service.get_reactions(doc.id)
+            }
+    all_cases = (
+        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    )
+    proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
+
+    html = templates.get_template("partials/triage_feed.html").render(
+        {
+            "request": request,
+            "bundles": bundles,
+            "cases": all_cases,
+            "proceedings": proceedings,
+            "reactions_by_doc": reactions_by_doc,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+            "OriginatorType": OriginatorType,
+            "UserReactionType": UserReactionType,
+        }
+    )
+    return f'\n<div id="triage-feed" hx-swap-oob="true">\n{html}\n</div>'

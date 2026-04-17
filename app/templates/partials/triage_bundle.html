@@ -25,7 +25,9 @@
         Case chip: [ADV-024-A] solid = confirmed, [ADV-024-A?] = AI-suggested, [?] = none.
         Proceeding chip follows when known.
     #}
-    <div class="flex items-center justify-between gap-3 px-1 text-[10px] font-medium text-on-surface-variant">
+    <div class="flex items-center justify-between gap-3 px-1 text-[10px] font-medium text-on-surface-variant cursor-pointer select-none hover:text-on-surface transition-colors"
+         @click="toggleBundle('{{ bundle.key }}')"
+         title="Toggle bundle">
         <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
             <span class="material-symbols-outlined text-sm text-on-surface-variant/70">{{ source_icon }}</span>
             <span class="font-bold uppercase tracking-wider text-on-surface">{{ source_label }}</span>
@@ -69,11 +71,9 @@
             </span>
             {% endif %}
         </div>
-        <button @click="toggleBundle('{{ bundle.key }}')"
-                class="w-6 h-6 flex items-center justify-center rounded hover:bg-surface-container-highest transition-colors cursor-pointer text-on-surface-variant shrink-0"
-                title="Toggle bundle">
+        <span class="w-5 h-5 flex items-center justify-center text-on-surface-variant/60 shrink-0">
             <span class="material-symbols-outlined text-sm" x-text="isBundleExpanded('{{ bundle.key }}') ? 'expand_more' : 'chevron_right'"></span>
-        </button>
+        </span>
     </div>
 
     {# The bundle card #}
@@ -151,51 +151,35 @@
         </ul>
         {% endif %}
 
-        {# Bundle confirm (case + proceeding) — only for real batches.
-            Two-line layout: label + dropdowns on line 1, button right-aligned on line 2. #}
-        {% if not bundle.is_synthetic %}
-        <form hx-post="/triage/bundle/{{ bundle.batch_id }}/confirm"
-              hx-target="#triage-feed"
-              hx-swap="outerHTML"
-              x-data="{ selectedCase: '' }"
-              class="px-4 py-3 bg-surface-container-low/40 border-t border-outline-variant/10 space-y-2">
-            <div class="flex items-center gap-3 flex-wrap">
-                <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant shrink-0">
-                    Bundle &rarr;
-                </span>
-                <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                    <label class="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70 shrink-0">Case</label>
-                    <select name="case_id" required x-model="selectedCase"
-                            class="flex-1 min-w-0 px-2.5 py-1 bg-surface-container-lowest rounded-lg border border-outline-variant/20 text-[11px] text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
-                        <option value="">Select&hellip;</option>
-                        {% for case in cases %}
-                        <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                    <label class="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70 shrink-0">Proc.</label>
-                    <select name="proceeding_id"
-                            :disabled="!selectedCase"
-                            class="flex-1 min-w-0 px-2.5 py-1 bg-surface-container-lowest rounded-lg border border-outline-variant/20 text-[11px] text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none disabled:opacity-50">
-                        <option value="">Optional</option>
-                        {% for p in (proceedings or []) %}
-                        <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
-                                x-show="selectedCase === '{{ p.case_id }}'">
-                            {{ p.court_name }}{% if p.az_court %} &mdash; {{ p.az_court }}{% endif %}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-            <div class="flex items-center justify-end">
-                <button type="submit"
-                        :disabled="!selectedCase"
-                        class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-40 disabled:cursor-not-allowed">
-                    Confirm &amp; cascade
-                </button>
-            </div>
-        </form>
-        {% endif %}
+        {# Confirm bundle CTA — enabled only when all docs have metadata confirmed #}
+        <div class="px-4 py-3 bg-surface-container-low/40 border-t border-outline-variant/10 flex items-center justify-between gap-3"
+             @click.stop>
+            {% if bundle.needs_review_count > 0 %}
+            <span class="text-[9px] text-on-surface-variant">
+                {{ bundle.needs_review_count }} doc{{ 's' if bundle.needs_review_count != 1 else '' }} still need{{ '' if bundle.needs_review_count != 1 else 's' }} metadata review
+            </span>
+            <button type="button" disabled
+                    class="bg-surface-container text-on-surface-variant/40 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest cursor-not-allowed border border-outline-variant/10">
+                Confirm bundle
+            </button>
+            {% else %}
+            <span class="text-[9px] font-bold text-originator-own flex items-center gap-1">
+                <span class="material-symbols-outlined text-xs">check_circle</span>
+                All metadata confirmed
+            </span>
+            <button type="button"
+                    @click="$dispatch('triage:open-bundle-confirm', {
+                        batch_id: '{{ bundle.batch_id }}',
+                        is_synthetic: {{ 'true' if bundle.is_synthetic else 'false' }},
+                        doc_id: '{{ bundle.documents[0].id if bundle.documents else '' }}',
+                        subject: {{ (bundle.subject or (bundle.documents[0].title if bundle.documents else 'Bundle')) | tojson }},
+                        doc_count: {{ bundle.doc_count }},
+                        suggested_case_id: {{ (bundle.confirmed_case_id or bundle.suggested_case_id or '') | tojson }}
+                    })"
+                    class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm shadow-primary/10">
+                Confirm bundle &rarr;
+            </button>
+            {% endif %}
+        </div>
     </div>
 </div>

@@ -121,7 +121,22 @@ class TriageService:
 
     def get_triage_bundles(self, limit: int = 50, offset: int = 0) -> list[BundleView]:
         """All triage documents grouped into bundles."""
-        from app.models.database import ActionItem
+        from sqlalchemy import and_, or_
+
+        from app.models.database import ActionItem, IngestBatch, IngestBatchStatus
+
+        # Batch subquery: any batch that is NOT completed is in triage.
+        unresolved_batches_subq = (
+            self.db.query(IngestBatch.id)
+            .filter(IngestBatch.status != IngestBatchStatus.COMPLETED)
+            .scalar_subquery()
+        )
+
+        # Loose docs: no batch, but needs review or unassigned case.
+        loose_docs_condition = and_(
+            Document.ingest_batch_id.is_(None),
+            or_(Document.case_id == "_TRIAGE", Document.needs_review),
+        )
 
         docs = (
             self.db.query(Document)
@@ -129,7 +144,12 @@ class TriageService:
                 joinedload(Document.ingest_batch).joinedload(IngestBatch.proceeding),
                 joinedload(Document.proceeding),
             )
-            .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
+            .filter(
+                or_(
+                    Document.ingest_batch_id.in_(unresolved_batches_subq),
+                    loose_docs_condition,
+                )
+            )
             .order_by(Document.created_at.desc())
             .all()
         )
@@ -312,13 +332,7 @@ class TriageService:
 
         reasons = compute_review_reasons(doc)
         doc.review_reasons = reasons
-
-        has_real_case = bool(doc.case_id and doc.case_id != "_TRIAGE")
-        if finalize and has_real_case:
-            doc.needs_review = False
-            doc.review_reasons = []
-        else:
-            doc.needs_review = len(reasons) > 0
+        doc.needs_review = len(reasons) > 0
 
         self.db.commit()
         self.db.refresh(doc)
@@ -365,7 +379,11 @@ class TriageService:
         batch.case_id = case_id
         if proceeding_id is not None:
             batch.proceeding_id = proceeding_id
-        batch.status = IngestBatchStatus.COMPLETED
+
+        # Only mark batch completed if ALL documents are resolved.
+        all_resolved = all(not doc.needs_review for doc in docs)
+        if all_resolved:
+            batch.status = IngestBatchStatus.COMPLETED
 
         self.db.commit()
         self.db.refresh(batch)

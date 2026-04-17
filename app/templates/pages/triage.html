@@ -67,6 +67,7 @@
              court: true, opposing: true, own: true, third_party: true, unknown: true,
              activeDoc: '{{ (first_bundle_doc.id if first_bundle_doc else '') }}',
              collapsedBundles: {},
+             bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '' },
              isBundleExpanded(key) { return !this.collapsedBundles[key]; },
              toggleBundle(key) {
                  this.collapsedBundles = { ...this.collapsedBundles, [key]: !this.collapsedBundles[key] };
@@ -123,15 +124,9 @@
                  const sel = document.querySelector('[data-triage-case-select]');
                  if (sel) { $event.preventDefault(); sel.focus(); }
              } else if ($event.key === 'Enter') {
-                 // Save-and-advance — finalize the current doc; server's
-                 // triage:advance event moves focus to the next needs_review doc.
                  $event.preventDefault();
                  const form = document.querySelector('#triage-doc-pane form[hx-post*=\'/confirm\']');
-                 if (form) {
-                     const chk = form.querySelector('input[name=\'mark_resolved\']');
-                     if (chk) chk.checked = true;
-                     form.requestSubmit();
-                 }
+                 if (form) form.requestSubmit();
              }
          "
          @triage:advance.document="
@@ -147,7 +142,13 @@
          @triage:clear.document="
              if (window.showToast) window.showToast('Triage queue clear ✓', 'success');
          "
+         @triage:open-bundle-confirm.document="
+             const d = $event.detail || {};
+             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '' };
+         "
          class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+
+    {% include "partials/triage_bundle_confirm_modal.html" %}
     {% include "partials/page_header.html" %}
 
     {# Secondary Status Bar #}

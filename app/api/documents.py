@@ -226,7 +226,9 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         from app.services.triage_service import TriageService
 
         triage_service = TriageService(db)
-        cases = db.query(Case).order_by(Case.title.asc()).all()
+        cases = (
+            db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+        )
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
         reactions = list(triage_service.get_reactions(doc.id))
         action_items = triage_service.get_action_items(doc.id)
@@ -262,7 +264,9 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         )
 
     if context_type == "activity":
-        cases = db.query(Case).order_by(Case.title.asc()).all()
+        cases = (
+            db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+        )
         all_cases = {c.id: c.title for c in cases}
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
 

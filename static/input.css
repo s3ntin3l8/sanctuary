@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @source "../app/templates";
+@source inline("{bg,text,border}-originator-{court,opposing,own,third-party,unknown}/{10,15,20,30,40}");
 
 /* ── Dark mode via .dark class on <html> ── */
 @custom-variant dark (&:where(.dark, .dark *));
