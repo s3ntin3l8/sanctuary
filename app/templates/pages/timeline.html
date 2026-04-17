@@ -43,7 +43,6 @@
             {% endfor %}
         </div>
     </div>
-    {% include "partials/header_controls.html" %}
 {% endset %}
 <div x-data="{ activeDoc: null, filterOpen: false, court: true, opposing: true, own: true, currentPage: {{ current_page or 1 }}, hasMore: {{ 'true' if has_more else 'false' }}, loading: false, nextCursor: null }" class="flex-1 flex overflow-hidden w-full relative">
     <section :class="activeDoc ? 'w-[47%] min-w-[500px]' : 'flex-1'"

@@ -7,7 +7,6 @@
 {% set header_title = "Case Directory" %}
 {% set header_subtitle %}{{ active_cases|length + closed_cases|length }} Total Cases{% endset %}
 {% set header_actions %}
-    {% include "partials/header_controls.html" %}
 {% endset %}
 <section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}

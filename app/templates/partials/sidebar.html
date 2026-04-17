@@ -1,176 +1,70 @@
-<style>
-  .sb-label-enter { transition: opacity 150ms ease 220ms; }
-  .sb-label-leave { transition: none; }
-</style>
-<aside x-data="{
-    expanded: document.documentElement.getAttribute('data-sidebar-collapsed') !== 'true',
-    toggle() {
-        this.expanded = !this.expanded;
-        if (this.expanded) {
-            document.documentElement.removeAttribute('data-sidebar-collapsed');
-        } else {
-            document.documentElement.setAttribute('data-sidebar-collapsed', 'true');
-        }
-        if (window.saveUserSettings) {
-            window.saveUserSettings({ sidebarCollapsed: !this.expanded });
-        }
-    }
-}"
-    class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r-0 font-headline tracking-tight font-semibold z-50">
+<aside class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r border-outline-variant/10 z-50">
     <!-- Brand Header -->
-    <div class="px-4 pt-8 min-h-[80px]">
-        <div class="px-3 flex items-center gap-3" style="min-height: 40px;">
-            <!-- Shielded Leaf Icon -->
-            <div class="relative flex items-center justify-center w-5 h-5 bg-surface-container shrink-0 shadow-sm" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);">
-                <span class="material-symbols-outlined text-primary text-[14px]" style="font-variation-settings: 'FILL' 1;">eco</span>
-            </div>
-            <!-- Brand Text -->
-            <div class="flex flex-col justify-center whitespace-nowrap transition-opacity duration-300" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-                <h1 class="text-xl font-bold text-primary leading-tight">The Sanctuary</h1>
-                <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">Lead Counsel</p>
-            </div>
+    <div class="flex items-center justify-center pt-6 pb-6 min-h-[80px]">
+        <div class="relative flex items-center justify-center w-6 h-6 bg-surface-container shrink-0 shadow-sm" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);" title="The Sanctuary">
+            <span class="material-symbols-outlined text-primary text-[16px]" style="font-variation-settings: 'FILL' 1;">eco</span>
         </div>
     </div>
 
     <!-- Navigation Links -->
-    <nav class="flex-1 px-4 space-y-1">
-        <!-- Focus Mode Toggle -->
-        <div class="mt-8 mb-4">
-            <button @click="toggle()" class="w-full flex items-center px-3 py-2.5 rounded-lg text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Toggle Focus Mode">
-                <div class="flex w-full items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] group-hover:text-primary" x-text="expanded ? 'side_navigation' : 'menu_open'">side_navigation</span>
-                    <span class="text-sm whitespace-nowrap overflow-hidden transition-all duration-300"
-                          x-cloak x-show="expanded"
-                          x-transition:enter="sb-label-enter"
-                          x-transition:enter-start="opacity-0"
-                          x-transition:enter-end="opacity-100"
-                          x-transition:leave="sb-label-leave"
-                          x-transition:leave-start="opacity-100"
-                          x-transition:leave-end="opacity-0">Focus Mode</span>
-                </div>
-            </button>
-        </div>
+    <nav class="flex-1 flex flex-col items-center gap-4 px-2 mt-4">
+        <!-- 1. Dashboard -->
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/" title="Home">
+            {% if request.url.path == '/' %}
+            <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+            {% endif %}
+            <span class="material-symbols-outlined text-[20px]">dashboard</span>
+        </a>
 
-        <div class="mb-6">
-            <div class="h-5 mb-2">
-                <p class="px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Workspace</p>
-            </div>
+        <!-- 2. Triage Center -->
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage" title="Triage">
+            {% if request.url.path == '/triage' %}
+            <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+            {% endif %}
+            <span class="material-symbols-outlined text-[20px]">inbox</span>
+            {% if sidebar_counts.triage_count > 0 %}
+            <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.triage_count }}</span>
+            {% endif %}
+        </a>
 
-            <!-- 1. Dashboard -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/" title="Dashboard">
-                {% if request.url.path == '/' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/' %}group-hover:text-primary{% endif %}">dashboard</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Dashboard</span>
-                </div>
-            </a>
-
-            <!-- 2. Triage Center -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage" title="Triage Center">
-                {% if request.url.path == '/triage' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/triage' %}group-hover:text-primary{% endif %}">inbox</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Triage Center</span>
-                </div>
-                {% if sidebar_counts.triage_count > 0 %}
-                <span class="bg-error-container/30 text-error text-[10px] px-2 py-0.5 rounded-full group-hover:bg-error-container/50 transition-opacity duration-300 font-bold" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.triage_count }}</span>
-                {% endif %}
-            </a>
-
-            <!-- 3. Case Files -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases" title="Case Files">
-                {% if request.url.path.startswith('/cases') %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if not request.url.path.startswith('/cases') %}group-hover:text-primary{% endif %}">folder_open</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Case Files</span>
-                </div>
-                <span class="bg-primary-container/20 text-primary text-[10px] px-2 py-0.5 rounded-full transition-opacity duration-300" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">{{ sidebar_counts.case_count }}</span>
-            </a>
-
-            <!-- 4. Master Timeline -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/timeline' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/timeline" title="Master Timeline">
-                {% if request.url.path == '/timeline' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/timeline' %}group-hover:text-primary{% endif %}">timeline</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Master Timeline</span>
-                </div>
-            </a>
-
-            <!-- 5. Legal Costs -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/costs' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/costs" title="Legal Costs">
-                {% if request.url.path == '/costs' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/costs' %}group-hover:text-primary{% endif %}">payments</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Legal Costs</span>
-                </div>
-            </a>
-
-            <!-- 6. Contacts -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/contacts' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/contacts" title="Contacts">
-                {% if request.url.path == '/contacts' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/contacts' %}group-hover:text-primary{% endif %}">contacts</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Contacts</span>
-                </div>
-            </a>
-
-            <!-- 7. Activity Log -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/activity' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/activity" title="Activity Log">
-                {% if request.url.path == '/activity' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if request.url.path != '/activity' %}group-hover:text-primary{% endif %}">history</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Activity Log</span>
-                </div>
-            </a>
-
-            <!-- 8. Entities -->
-            <a class="relative w-full box-border flex items-center justify-between px-3 py-2.5 rounded-lg {{ 'text-primary bg-primary/5' if request.url.path == '/entities' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/entities" title="Global Entities">
-                {% if request.url.path == '/entities' %}
-                <span class="absolute right-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
-                {% endif %}
-                <div class="flex min-w-0 items-center gap-3">
-                    <span class="material-symbols-outlined text-[20px] {% if not request.url.path.startswith('/entities') %}group-hover:text-primary{% endif %}">category</span>
-                    <span class="text-sm whitespace-nowrap" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">Entities</span>
-                </div>
-            </a>
-        </div>
+        <!-- 3. Case Files -->
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases" title="Cases">
+            {% if request.url.path.startswith('/cases') %}
+            <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+            {% endif %}
+            <span class="material-symbols-outlined text-[20px]">folder_open</span>
+        </a>
     </nav>
 
-    <!-- Profile & CTA -->
-    <div class="p-4 mt-auto border-t border-outline-variant/20 flex flex-col items-center">
-        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors active:scale-95 mb-4 px-0" title="Upload Document">
-            <span class="material-symbols-outlined text-lg">upload_file</span>
-            <span class="whitespace-nowrap"
-                  x-cloak x-show="expanded"
-                  x-transition:enter="sb-label-enter"
-                  x-transition:enter-start="opacity-0"
-                  x-transition:enter-end="opacity-100"
-                  x-transition:leave="sb-label-leave"
-                  x-transition:leave-start="opacity-100"
-                  x-transition:leave-end="opacity-0">Upload Document</span>
+    <!-- Bottom Controls -->
+    <div class="flex flex-col items-center gap-4 px-2 pb-6 mt-auto">
+        <!-- Command Palette Trigger -->
+        <button type="button" onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Search & Commands (⌘K)">
+            <span class="material-symbols-outlined text-[20px]">search</span>
         </button>
 
-        <div class="flex items-center gap-3 px-2 w-full" :class="expanded ? '' : 'justify-center'">
-            <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 shrink-0 flex items-center justify-center">
+        <!-- Upload -->
+        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Upload Document">
+            <span class="material-symbols-outlined text-[20px]">upload_file</span>
+        </button>
+
+        <!-- Notifications -->
+        <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Notifications">
+            <span class="material-symbols-outlined text-[20px]">notifications</span>
+            {% if notification_count > 0 %}
+            <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface-container-low"></span>
+            {% endif %}
+        </button>
+
+        <!-- Theme Toggle -->
+        <button type="button" onclick="window.toggleSiteTheme && window.toggleSiteTheme()" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Toggle Theme">
+            <span data-theme-icon class="material-symbols-outlined text-[20px]">dark_mode</span>
+        </button>
+
+        <!-- User Profile -->
+        <div class="relative flex items-center justify-center w-10 h-10 mt-2 cursor-pointer group" title="Profile">
+            <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 flex items-center justify-center border border-primary/20 group-hover:border-primary transition-colors">
                 <span class="material-symbols-outlined text-sm text-primary">person</span>
-            </div>
-            <div class="overflow-hidden transition-opacity duration-300" x-cloak x-show="expanded" x-transition:enter="sb-label-enter" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="sb-label-leave" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
-                <p class="text-xs font-bold text-on-surface truncate">Julian Vance</p>
-                <p class="text-[10px] text-on-surface-variant truncate">Senior Associate</p>
             </div>
         </div>
     </div>

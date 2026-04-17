@@ -1,26 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="utf-8"/>
-    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>{% block title %}The Sanctuary | Personal Advocate Case Workspace{% endblock %}</title>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.png?v=1.0.4"/>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.png?v=1.0.4" />
 
     <!-- 1. CRITICAL INITIALIZATION (Zero-Flicker) -->
     <script>
-        (function() {
+        (function () {
             // Load settings
             const savedTheme = localStorage.getItem('site-theme');
-            const savedSidebar = localStorage.getItem('sidebar-collapsed');
             const userSettings = JSON.parse(localStorage.getItem('user-settings') || 'null');
 
-            // Determine theme and sidebar state
+            // Determine theme
             const theme = savedTheme || (userSettings ? userSettings.theme : null) || 'dark';
-            const sidebarCollapsed = savedSidebar === 'true' || (userSettings && userSettings.sidebarCollapsed);
 
             // Apply instantly to documentElement
             if (theme === 'dark') document.documentElement.classList.add('dark');
-            if (sidebarCollapsed) document.documentElement.setAttribute('data-sidebar-collapsed', 'true');
 
             // Prevent animations during initial load
             document.documentElement.classList.add('no-transition');
@@ -28,16 +26,12 @@
             // Global settings object for Alpine and other scripts
             window.userSettings = userSettings || {
                 theme: 'dark',
-                sidebarCollapsed: false,
                 dashboardCards: { deadlines: true, hearings: true, costs: true, documents: true }
             };
 
             window.saveUserSettings = (newSettings) => {
                 window.userSettings = { ...window.userSettings, ...newSettings };
                 localStorage.setItem('user-settings', JSON.stringify(window.userSettings));
-                if (newSettings.sidebarCollapsed !== undefined) {
-                    localStorage.setItem('sidebar-collapsed', newSettings.sidebarCollapsed);
-                }
                 if (newSettings.theme !== undefined) {
                     localStorage.setItem('site-theme', newSettings.theme);
                 }
@@ -46,7 +40,9 @@
     </script>
 
     <style>
-        [x-cloak] { display: none !important; }
+        [x-cloak] {
+            display: none !important;
+        }
 
         /* ── Core Theme Variables Lockdown ── */
         :root {
@@ -57,6 +53,7 @@
             --color-surface-container-lowest: #ffffff;
             --tracking-widest: 0.1em;
         }
+
         .dark {
             --color-primary: #57f1db;
             --color-on-surface: #dae2fd;
@@ -73,6 +70,7 @@
             font-display: optional;
             src: url(/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2) format('woff2');
         }
+
         @font-face {
             font-family: 'Manrope';
             font-style: normal;
@@ -80,6 +78,7 @@
             font-display: optional;
             src: url(/static/fonts/xn7gYHE41ni1AdIRggexSg.woff2) format('woff2');
         }
+
         @font-face {
             font-family: 'Material Symbols Outlined';
             font-style: normal;
@@ -92,10 +91,17 @@
         html {
             background-color: #f8fafb;
             color: var(--color-on-surface);
-            overflow-y: scroll; /* Force scrollbar gutter to prevent horizontal jumping */
+            overflow-y: scroll;
+            /* Force scrollbar gutter to prevent horizontal jumping */
         }
-        html.dark { background-color: #0b1326; }
-        html.dark body { background-color: #0b1326 !important; }
+
+        html.dark {
+            background-color: #0b1326;
+        }
+
+        html.dark body {
+            background-color: #0b1326 !important;
+        }
 
         /* Typography Lock - Set weights and spacing immediately */
         body {
@@ -103,20 +109,34 @@
             -webkit-font-smoothing: antialiased;
             text-rendering: optimizeLegibility;
         }
-        h1, h2, h3, .font-headline { font-family: 'Manrope', system-ui, sans-serif; font-weight: 800; }
+
+        h1,
+        h2,
+        h3,
+        .font-headline {
+            font-family: 'Manrope', system-ui, sans-serif;
+            font-weight: 800;
+        }
 
         /* Secondary Nav Stability Lock */
         nav.flex.gap-6 {
             display: flex !important;
-            gap: 1.5rem !important; /* gap-6 */
-            letter-spacing: 0.1em !important; /* tracking-widest */
+            gap: 1.5rem !important;
+            /* gap-6 */
+            letter-spacing: 0.1em !important;
+            /* tracking-widest */
             font-size: 10px !important;
             font-weight: 700 !important;
             line-height: 1 !important;
             text-transform: uppercase !important;
             color: var(--color-on-surface-variant) !important;
         }
-        nav.flex.gap-6 a { display: inline-block !important; height: 14px !important; }
+
+        nav.flex.gap-6 a {
+            display: inline-block !important;
+            height: 14px !important;
+        }
+
         nav.flex.gap-6 a.text-primary {
             color: var(--color-primary) !important;
         }
@@ -131,7 +151,8 @@
         }
 
         /* Disable ALL transitions on load */
-        .no-transition, .no-transition * {
+        .no-transition,
+        .no-transition * {
             transition: none !important;
             animation: none !important;
         }
@@ -145,6 +166,7 @@
             background-color: var(--color-surface-container-low) !important;
             border-bottom: 1px solid rgba(114, 125, 128, 0.1) !important;
         }
+
         html.dark header.sticky {
             border-bottom: 1px solid rgba(133, 148, 144, 0.1) !important;
         }
@@ -162,24 +184,31 @@
 
         /* Sidebar Lockdown */
         aside {
-            width: 260px !important;
-            min-width: 260px !important;
-            max-width: 260px !important;
+            width: 56px !important;
+            min-width: 56px !important;
+            max-width: 56px !important;
             background-color: var(--color-surface-container-low) !important;
             z-index: 50 !important;
         }
-        html[data-sidebar-collapsed="true"] aside {
-            width: 80px !important;
-            min-width: 80px !important;
-            max-width: 80px !important;
-        }
 
         /* Card and Avatar Lockdown */
-        .bg-surface-container { background-color: #e8eff1 !important; }
-        html.dark .bg-surface-container { background-color: #171f33 !important; }
+        .bg-surface-container {
+            background-color: #e8eff1 !important;
+        }
 
-        .w-8.h-8 { width: 32px !important; height: 32px !important; }
-        .w-6.h-6 { width: 24px !important; height: 24px !important; }
+        html.dark .bg-surface-container {
+            background-color: #171f33 !important;
+        }
+
+        .w-8.h-8 {
+            width: 32px !important;
+            height: 32px !important;
+        }
+
+        .w-6.h-6 {
+            width: 24px !important;
+            height: 24px !important;
+        }
 
         /* COMPREHENSIVE ICON LOCK */
         .material-symbols-outlined {
@@ -197,32 +226,100 @@
         }
 
         /* Specific icon size variants */
-        .text-\[8px\].material-symbols-outlined   { width: 8px !important; height: 8px !important; min-width: 8px !important; font-size: 8px !important; }
-        .text-\[10px\].material-symbols-outlined  { width: 10px !important; height: 10px !important; min-width: 10px !important; font-size: 10px !important; }
-        .text-\[11px\].material-symbols-outlined  { width: 11px !important; height: 11px !important; min-width: 11px !important; font-size: 11px !important; }
+        .text-\[8px\].material-symbols-outlined {
+            width: 8px !important;
+            height: 8px !important;
+            min-width: 8px !important;
+            font-size: 8px !important;
+        }
+
+        .text-\[10px\].material-symbols-outlined {
+            width: 10px !important;
+            height: 10px !important;
+            min-width: 10px !important;
+            font-size: 10px !important;
+        }
+
+        .text-\[11px\].material-symbols-outlined {
+            width: 11px !important;
+            height: 11px !important;
+            min-width: 11px !important;
+            font-size: 11px !important;
+        }
+
         .text-\[12px\].material-symbols-outlined,
-        .text-xs.material-symbols-outlined        { width: 12px !important; height: 12px !important; min-width: 12px !important; font-size: 12px !important; }
+        .text-xs.material-symbols-outlined {
+            width: 12px !important;
+            height: 12px !important;
+            min-width: 12px !important;
+            font-size: 12px !important;
+        }
+
         .text-sm.material-symbols-outlined,
-        .text-\[14px\].material-symbols-outlined { width: 14px !important; height: 14px !important; min-width: 14px !important; font-size: 14px !important; }
-        .text-base.material-symbols-outlined      { width: 16px !important; height: 16px !important; min-width: 16px !important; font-size: 16px !important; }
+        .text-\[14px\].material-symbols-outlined {
+            width: 14px !important;
+            height: 14px !important;
+            min-width: 14px !important;
+            font-size: 14px !important;
+        }
+
+        .text-base.material-symbols-outlined {
+            width: 16px !important;
+            height: 16px !important;
+            min-width: 16px !important;
+            font-size: 16px !important;
+        }
+
         .text-lg.material-symbols-outlined,
-        .text-\[18px\].material-symbols-outlined { width: 18px !important; height: 18px !important; min-width: 18px !important; font-size: 18px !important; }
-        .text-\[20px\].material-symbols-outlined  { width: 20px !important; height: 20px !important; min-width: 20px !important; font-size: 20px !important; }
-        .text-3xl.material-symbols-outlined       { width: 30px !important; height: 30px !important; min-width: 30px !important; font-size: 30px !important; }
-        .text-4xl.material-symbols-outlined       { width: 36px !important; height: 36px !important; min-width: 36px !important; font-size: 36px !important; }
-        .text-6xl.material-symbols-outlined       { width: 60px !important; height: 60px !important; min-width: 60px !important; font-size: 60px !important; }
+        .text-\[18px\].material-symbols-outlined {
+            width: 18px !important;
+            height: 18px !important;
+            min-width: 18px !important;
+            font-size: 18px !important;
+        }
+
+        .text-\[20px\].material-symbols-outlined {
+            width: 20px !important;
+            height: 20px !important;
+            min-width: 20px !important;
+            font-size: 20px !important;
+        }
+
+        .text-3xl.material-symbols-outlined {
+            width: 30px !important;
+            height: 30px !important;
+            min-width: 30px !important;
+            font-size: 30px !important;
+        }
+
+        .text-4xl.material-symbols-outlined {
+            width: 36px !important;
+            height: 36px !important;
+            min-width: 36px !important;
+            font-size: 36px !important;
+        }
+
+        .text-6xl.material-symbols-outlined {
+            width: 60px !important;
+            height: 60px !important;
+            min-width: 60px !important;
+            font-size: 60px !important;
+        }
     </style>
 
     <!-- 3. EXTERNAL ASSETS -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 
-    <link rel="preload" href="/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2" crossorigin/>
-    <link rel="preload" href="/static/fonts/xn7gYHE41ni1AdIRggexSg.woff2" as="font" type="font/woff2" crossorigin/>
-    <link rel="preload" href="/static/fonts/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2" as="font" type="font/woff2" crossorigin/>
+    <link rel="preload" href="/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2"
+        crossorigin />
+    <link rel="preload" href="/static/fonts/xn7gYHE41ni1AdIRggexSg.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload"
+        href="/static/fonts/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2"
+        as="font" type="font/woff2" crossorigin />
 
-    <link href="/static/fonts.css?v=1.0.5" rel="stylesheet"/>
-    <link href="/static/styles.css?v=1.0.4" rel="stylesheet"/>
+    <link href="/static/fonts.css?v=1.0.5" rel="stylesheet" />
+    <link href="/static/styles.css?v=1.0.4" rel="stylesheet" />
 
     <script>
         // Post-load cleanup
@@ -235,10 +332,6 @@
             const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
             document.body.classList.toggle('dark', theme === 'dark');
 
-            if (document.documentElement.getAttribute('data-sidebar-collapsed') === 'true') {
-                document.body.setAttribute('data-sidebar-collapsed', 'true');
-            }
-
             // Enable transitions after first paint
             setTimeout(() => {
                 document.documentElement.classList.remove('no-transition');
@@ -246,6 +339,7 @@
         });
     </script>
 </head>
+
 <body class="bg-background font-body text-on-surface flex h-screen overflow-hidden">
     {% include 'partials/sidebar.html' %}
 
@@ -359,13 +453,11 @@
     {% include "partials/notifications_panel.html" %}
 
     <!-- Global Confirmation Modal -->
-    <div x-data="confirmDialog"
-         x-show="show"
-         @open-confirm.window="open($event.detail)"
-         class="fixed inset-0 z-[10000] flex items-center justify-center"
-         x-cloak>
+    <div x-data="confirmDialog" x-show="show" @open-confirm.window="open($event.detail)"
+        class="fixed inset-0 z-[10000] flex items-center justify-center" x-cloak>
         <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="close()"></div>
-        <div class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-shell-fade-in">
+        <div
+            class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-shell-fade-in">
             <div class="px-6 py-4 border-b border-outline-variant/10">
                 <h3 class="text-sm font-black text-on-surface uppercase tracking-wider" x-text="title">Confirm</h3>
             </div>
@@ -373,15 +465,21 @@
                 <p class="text-sm text-on-surface-variant leading-relaxed" x-text="message">Are you sure?</p>
             </div>
             <div class="px-6 py-4 bg-surface-container-high/50 flex justify-end gap-3">
-                <button @click="confirm()" class="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer">Delete</button>
-                <button @click="close()" class="px-4 py-2 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer">Cancel</button>
+                <button @click="confirm()"
+                    class="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer">Delete</button>
+                <button @click="close()"
+                    class="px-4 py-2 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer">Cancel</button>
             </div>
         </div>
     </div>
+
+    <!-- Command Palette Modal -->
+    {% include "partials/command_palette.html" %}
 
     <!-- Component JS -->
     <script src="/static/js/components/case-stream.js?v=1.0.4"></script>
     <script src="/static/js/components/upload-modal.js?v=1.0.4"></script>
     <script src="/static/js/alpine-utils.js?v=1.0.5"></script>
 </body>
+
 </html>

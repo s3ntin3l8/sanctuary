@@ -1,0 +1,135 @@
+<!-- Command Palette Modal -->
+<div x-data="{
+    searchOpen: false,
+    searchQuery: '',
+    searchResults: {documents: [], cases: [], contacts: [], total: 0},
+    async doSearch() {
+        if (this.searchQuery.length < 2) {
+            this.searchResults = {documents:[], cases:[], contacts:[], total:0};
+            return;
+        }
+        try {
+            const r = await fetch('/api/search?q=' + encodeURIComponent(this.searchQuery));
+            this.searchResults = await r.json();
+        } catch (e) { console.error(e); }
+    }
+}"
+@keydown.window.prevent.cmd.k="searchOpen = true; $nextTick(() => $refs.searchInput.focus())"
+@keydown.window.prevent.ctrl.k="searchOpen = true; $nextTick(() => $refs.searchInput.focus())"
+@open-command-palette.window="searchOpen = true; $nextTick(() => $refs.searchInput.focus())"
+x-cloak x-show="searchOpen" class="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh]">
+
+    <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="searchOpen = false"></div>
+
+    <div x-show="searchOpen"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="relative w-full max-w-2xl bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
+
+        <!-- Search Input Header -->
+        <div class="flex items-center px-4 py-3 border-b border-outline-variant/10 bg-surface-container-low">
+            <span class="material-symbols-outlined text-on-surface-variant mr-3">search</span>
+            <input type="text"
+                   x-ref="searchInput"
+                   x-model="searchQuery"
+                   @input.debounce.300ms="doSearch()"
+                   @keydown.escape="searchOpen = false; searchQuery = ''"
+                   @keydown.enter="if(searchQuery) window.location.href='/search?q=' + encodeURIComponent(searchQuery)"
+                   placeholder="Type a command or search..."
+                   class="flex-1 bg-transparent text-sm text-on-surface focus:outline-none placeholder:text-on-surface-variant/50"
+                   data-search-input>
+            <span class="text-[10px] font-bold text-on-surface-variant bg-surface-container-high px-1.5 py-0.5 rounded ml-3">ESC</span>
+        </div>
+
+        <!-- Scrollable Results Area -->
+        <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+
+            <!-- Default State (Empty Search) -->
+            <div x-show="searchQuery.length < 2">
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Navigate</p>
+                <a href="/" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                    <span class="material-symbols-outlined text-sm text-primary">dashboard</span>
+                    <span class="text-sm text-on-surface">Home Dashboard</span>
+                </a>
+                <a href="/triage" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                    <span class="material-symbols-outlined text-sm text-primary">inbox</span>
+                    <span class="text-sm text-on-surface">Triage Center</span>
+                </a>
+                <a href="/cases" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                    <span class="material-symbols-outlined text-sm text-primary">folder_open</span>
+                    <span class="text-sm text-on-surface">Case Files</span>
+                </a>
+
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2 mt-2">Actions</p>
+                <button type="button" @click="searchOpen = false" htmx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer">
+                    <span class="material-symbols-outlined text-sm text-on-surface-variant">upload_file</span>
+                    <span class="text-sm text-on-surface">Upload Document</span>
+                </button>
+                <button type="button" @click="searchOpen = false; window.toggleSiteTheme && window.toggleSiteTheme()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer">
+                    <span class="material-symbols-outlined text-sm text-on-surface-variant">dark_mode</span>
+                    <span class="text-sm text-on-surface">Toggle Theme</span>
+                </button>
+            </div>
+
+            <!-- Search Results State -->
+            <div x-show="searchQuery.length >= 2">
+                <!-- Documents Section -->
+                <template x-if="searchResults.documents?.length">
+                    <div class="mb-2">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Documents</p>
+                        <template x-for="doc in searchResults.documents.slice(0,5)">
+                            <a :href="'/document/' + doc.id" @click="searchOpen = false" class="block px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                                <p class="text-sm text-on-surface truncate" x-text="doc.title"></p>
+                                <p class="text-[10px] text-on-surface-variant" x-text="doc.case_id || '_TRIAGE'"></p>
+                            </a>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- Cases Section -->
+                <template x-if="searchResults.cases?.length">
+                    <div class="mb-2">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Cases</p>
+                        <template x-for="c in searchResults.cases.slice(0,3)">
+                            <a :href="'/cases/' + c.id" @click="searchOpen = false" class="block px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                                <p class="text-sm text-on-surface" x-text="c.title"></p>
+                                <p class="text-[10px] text-on-surface-variant" x-text="c.status"></p>
+                            </a>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- Contacts Section -->
+                <template x-if="searchResults.contacts?.length">
+                    <div class="mb-2">
+                        <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Contacts</p>
+                        <template x-for="contact in searchResults.contacts.slice(0,3)">
+                            <a :href="'/contacts/' + encodeURIComponent(contact.name)" @click="searchOpen = false" class="block px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                                <p class="text-sm text-on-surface" x-text="contact.name"></p>
+                            </a>
+                        </template>
+                    </div>
+                </template>
+
+                <!-- No Results State -->
+                <div x-show="searchResults.total === 0" class="px-3 py-6 text-center">
+                    <span class="material-symbols-outlined text-on-surface-variant/50 text-3xl mb-2">search_off</span>
+                    <p class="text-sm text-on-surface-variant">No results found for "<span x-text="searchQuery"></span>"</p>
+                </div>
+
+                <!-- More Results Link -->
+                <template x-if="searchResults.total > 10">
+                    <a :href="'/search?q=' + encodeURIComponent(searchQuery)" @click="searchOpen = false"
+                       class="block px-3 py-2 text-center text-xs text-primary hover:bg-surface-container-high transition-colors font-bold rounded-lg mt-2">
+                        View all <span x-text="searchResults.total"></span> results →
+                    </a>
+                </template>
+            </div>
+
+        </div>
+    </div>
+</div>
