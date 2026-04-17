@@ -348,6 +348,7 @@ templates.env.filters["urlencode"] = quote
 # cost tables.
 from markdown_it import MarkdownIt
 from markupsafe import Markup
+from markupsafe import escape as _escape
 
 _md = (
     MarkdownIt("commonmark", {"html": False, "linkify": True, "typographer": True})
@@ -362,8 +363,31 @@ def render_markdown(value: str | None) -> Markup:
     return Markup(_md.render(str(value)))
 
 
+def render_highlighted(value: str | None, key_passages: list | None = None) -> Markup:
+    """Render markdown then wrap key_passage text in slate-blue <mark> spans.
+
+    key_passages is a list of {text, rationale, span} dicts from Document.key_passages.
+    No-ops gracefully when the list is empty or None (pre-Phase 4).
+    """
+    import re as _re
+
+    html = _md.render(str(value)) if value else ""
+    if key_passages:
+        for passage in key_passages:
+            text = (passage.get("text") or "").strip()
+            if not text:
+                continue
+            # Escape for regex, then replace first occurrence preserving case.
+            pattern = _re.escape(text)
+            rationale = _escape(passage.get("rationale", ""))
+            replacement = f'<mark class="bg-sky-800/30 text-sky-200 rounded px-0.5" title="{rationale}">{text}</mark>'
+            html = _re.sub(pattern, replacement, html, count=1)
+    return Markup(html)
+
+
 # Filter name kept for backward compat with existing templates.
 templates.env.filters["safe_markdown"] = render_markdown
+templates.env.filters["render_highlighted"] = render_highlighted
 
 # Rate limiter setup
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

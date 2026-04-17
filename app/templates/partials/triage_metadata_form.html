@@ -88,7 +88,15 @@
     <form hx-post="/triage/document/{{ doc.id }}/confirm"
           hx-target="#triage-doc-pane"
           hx-swap="innerHTML"
-          class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          class="grid grid-cols-1 md:grid-cols-2 gap-4"
+          @keydown.tab="
+              const fields = Array.from($el.querySelectorAll('[data-needs-review]')).filter(f => f.offsetParent !== null);
+              if (fields.length === 0) return;
+              $event.preventDefault();
+              const idx = fields.indexOf(document.activeElement);
+              const next = $event.shiftKey ? (idx <= 0 ? fields.length - 1 : idx - 1) : (idx >= fields.length - 1 ? 0 : idx + 1);
+              fields[next].focus();
+          ">
 
         {# Title #}
         <div class="md:col-span-2 space-y-1.5"
@@ -106,6 +114,7 @@
                 {{ confidence_chip(field_confs.case_id) }}
             </label>
             <select name="case_id" data-triage-case-select
+                    {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
                     class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
                            {% if field_confs.case_id == 'low' %}{{ low_border }}{% elif field_confs.case_id == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
                 <option value="">Unassigned (Triage)</option>
@@ -123,6 +132,7 @@
                 {{ confidence_chip(field_confs.originator) }}
             </label>
             <select name="originator_type"
+                    {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
                     class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
                            {% if field_confs.originator == 'low' %}{{ low_border }}{% elif field_confs.originator == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
                 {% for type in OriginatorType %}
@@ -139,6 +149,7 @@
                 {{ confidence_chip(field_confs.sender) }}
             </label>
             <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="e.g. Attorney Name"
+                   {% if field_confs.sender in ('low', 'medium') %}data-needs-review{% endif %}
                    class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
                           {% if field_confs.sender == 'low' %}{{ low_border }}{% elif field_confs.sender == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
         </div>
@@ -151,6 +162,7 @@
                 {{ confidence_chip(field_confs.date) }}
             </label>
             <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
+                   {% if field_confs.date in ('low', 'medium') %}data-needs-review{% endif %}
                    class="w-full px-4 py-2.5 bg-surface rounded-xl border text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all
                           {% if field_confs.date == 'low' %}{{ low_border }}{% elif field_confs.date == 'medium' %}{{ med_border }}{% else %}{{ ok_border }}{% endif %}">
         </div>

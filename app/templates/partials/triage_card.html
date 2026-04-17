@@ -19,20 +19,42 @@
          hx-get="/document/{{ doc.id }}?context=triage"
          hx-target="#triage-doc-pane"
          hx-swap="innerHTML">
-        {# Row 1: Title + Date + Status #}
+        {# Row 1: Title + Date + Pipeline status (§1 spec) #}
+        {# Pipeline status: ⚠ failed > ⚙ AI processing > ✓ ready #}
+        {% set _ingest_ok  = doc.ingest_status and doc.ingest_status.value == 'completed' %}
+        {% set _ingest_bad = doc.ingest_status and doc.ingest_status.value == 'failed' %}
+        {% set _ai_ok      = doc.ai_summary_status in ('generated', 'approved') %}
+        {% set _ai_busy    = not doc.ai_summary_status or doc.ai_summary_status == 'pending' %}
+        {% set _ai_bad     = doc.ai_summary_status == 'failed' %}
         <div class="flex items-center justify-between gap-3 mb-1">
             <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
             <div class="flex items-center gap-2 shrink-0">
                 <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
+                {# Pipeline status marker #}
+                {% if _ingest_bad or _ai_bad %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-error-container/20 text-error" title="Pipeline failed — retry available">
+                    <span class="material-symbols-outlined text-sm">error_outline</span>
+                </span>
+                {% elif _ingest_ok and _ai_busy %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-tertiary/10 text-tertiary" title="AI processing in progress">
+                    <span class="material-symbols-outlined text-sm">pending</span>
+                </span>
+                {% elif _ingest_ok and _ai_ok %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-green-500/10 text-green-400" title="Ready — all pipelines complete">
+                    <span class="material-symbols-outlined text-sm">done_all</span>
+                </span>
+                {% else %}
+                {# Metadata review state — show warning when fields missing #}
                 {% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
                 {% if _real_reasons %}
                 <span class="w-5 h-5 flex items-center justify-center rounded-full bg-warning-container/20 text-warning" title="{{ _real_reasons|length }} issue{{ 's' if _real_reasons|length != 1 else '' }} pending">
                     <span class="material-symbols-outlined text-sm">priority_high</span>
                 </span>
                 {% else %}
-                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-green-500/10 text-green-400" title="Metadata complete">
-                    <span class="material-symbols-outlined text-sm">done_all</span>
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant/40" title="Pending ingestion">
+                    <span class="material-symbols-outlined text-sm">hourglass_empty</span>
                 </span>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -69,6 +91,13 @@
             {% if doc_type_value %}
             <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400">
                 {{ doc_type_value }}
+            </span>
+            {% endif %}
+            {# Proof marker — this doc is cited as evidence (ATTACHES_AS_PROOF target) #}
+            {% if bundle is defined and doc.id in bundle.proof_doc_ids %}
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-violet-500/10 text-violet-400" title="Attached as evidence in this bundle">
+                <span class="material-symbols-outlined text-[10px]">gavel</span>
+                proof
             </span>
             {% endif %}
         </div>

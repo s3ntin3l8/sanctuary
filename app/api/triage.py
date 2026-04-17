@@ -9,7 +9,7 @@ from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
-from app.models.database import Case, Document
+from app.models.database import Case, Document, DocumentRelationship
 from app.models.enums import OriginatorType, UserReactionType
 from app.services.document_service import DocumentService
 from app.services.triage_service import TriageService
@@ -117,12 +117,21 @@ async def confirm_document(
     # Return the updated HUD by re-rendering document_triage.html
     from app.helpers import build_document_extraction_context
     from app.models.database import Entity
+    from app.models.enums import RelationshipConfidence
 
     cases = db.query(Case).order_by(Case.title.asc()).all()
     entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
     extraction_context = build_document_extraction_context(db, doc)
     reactions = list(triage_service.get_reactions(doc.id))
     action_items = triage_service.get_action_items(doc.id)
+    ai_relationships = (
+        db.query(DocumentRelationship)
+        .filter(
+            DocumentRelationship.from_document_id == doc.id,
+            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+        )
+        .all()
+    )
 
     response = templates.TemplateResponse(
         request,
@@ -135,8 +144,10 @@ async def confirm_document(
             "context": extraction_context,
             "reactions": reactions,
             "action_items": action_items,
+            "ai_relationships": ai_relationships,
             "OriginatorType": OriginatorType,
             "UserReactionType": UserReactionType,
+            "RelationshipConfidence": RelationshipConfidence,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
         },
@@ -373,6 +384,7 @@ async def _render_document_hud(
     """Render the HUD partial — reused by reingest/summarize/approve-summary/confirm."""
     from app.helpers import build_document_extraction_context
     from app.models.database import Entity
+    from app.models.enums import RelationshipConfidence
 
     triage_service = TriageService(db)
     cases = db.query(Case).order_by(Case.title.asc()).all()
@@ -380,6 +392,14 @@ async def _render_document_hud(
     extraction_context = build_document_extraction_context(db, doc)
     reactions = list(triage_service.get_reactions(doc.id))
     action_items = triage_service.get_action_items(doc.id)
+    ai_relationships = (
+        db.query(DocumentRelationship)
+        .filter(
+            DocumentRelationship.from_document_id == doc.id,
+            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+        )
+        .all()
+    )
 
     return templates.TemplateResponse(
         request,
@@ -392,12 +412,57 @@ async def _render_document_hud(
             "context": extraction_context,
             "reactions": reactions,
             "action_items": action_items,
+            "ai_relationships": ai_relationships,
             "OriginatorType": OriginatorType,
             "UserReactionType": UserReactionType,
+            "RelationshipConfidence": RelationshipConfidence,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
         },
     )
+
+
+# -----------------------------------------------------------------------------
+# Relationship suggestions (confirm / reject)
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/relationship/{rel_id}/confirm")
+async def confirm_relationship(
+    request: Request,
+    rel_id: int,
+    db: Session = Depends(get_db),
+):
+    """Promote an AI-detected relationship to user-confirmed."""
+    from app.models.enums import RelationshipConfidence
+
+    rel = (
+        db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
+    )
+    if not rel:
+        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+
+    rel.confidence = RelationshipConfidence.USER_CONFIRMED
+    db.commit()
+    return HTMLResponse("")
+
+
+@router.delete("/triage/relationship/{rel_id}")
+async def reject_relationship(
+    request: Request,
+    rel_id: int,
+    db: Session = Depends(get_db),
+):
+    """Remove an AI-detected relationship suggestion."""
+    rel = (
+        db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
+    )
+    if not rel:
+        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+
+    db.delete(rel)
+    db.commit()
+    return HTMLResponse("")
 
 
 # -----------------------------------------------------------------------------

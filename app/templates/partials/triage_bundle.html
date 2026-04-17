@@ -21,22 +21,51 @@
 
 <div class="space-y-2" data-bundle-key="{{ bundle.key }}">
 
-    {# Top summary row (outside the card) — vision-spec layout #}
+    {# Top summary row (outside the card) — vision-spec §5a layout
+        Case chip: [ADV-024-A] solid = confirmed, [ADV-024-A?] = AI-suggested, [?] = none.
+        Proceeding chip follows when known.
+    #}
     <div class="flex items-center justify-between gap-3 px-1 text-[10px] font-medium text-on-surface-variant">
-        <div class="flex items-center gap-2 min-w-0 flex-1">
+        <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
             <span class="material-symbols-outlined text-sm text-on-surface-variant/70">{{ source_icon }}</span>
             <span class="font-bold uppercase tracking-wider text-on-surface">{{ source_label }}</span>
             <span class="text-outline">·</span>
             <span class="font-mono">{{ bundle.received_at.strftime('%b %d, %Y') }}</span>
             {% if bundle.sender_email %}
             <span class="text-outline">·</span>
-            <span class="truncate">{{ bundle.sender_email }}</span>
+            <span class="truncate max-w-[140px]">{{ bundle.sender_email }}</span>
             {% endif %}
             <span class="text-outline">·</span>
-            <span>{{ bundle.doc_count }} document{{ 's' if bundle.doc_count != 1 else '' }}</span>
+            <span>{{ bundle.doc_count }} doc{{ 's' if bundle.doc_count != 1 else '' }}</span>
+
+            {# Case chip (§5a) #}
+            {% if bundle.confirmed_case_id %}
+            <span class="inline-flex items-center gap-0.5 text-[9px] font-bold font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30"
+                  title="Case confirmed">
+                {{ bundle.confirmed_case_id }}
+            </span>
+            {% elif bundle.suggested_case_id %}
+            <span class="inline-flex items-center gap-0.5 text-[9px] font-bold font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-secondary/10 text-secondary border border-secondary/20"
+                  title="AI-suggested case — not yet confirmed">
+                {{ bundle.suggested_case_id }}<span class="opacity-60">?</span>
+            </span>
+            {% else %}
+            <span class="inline-flex items-center text-[9px] font-bold font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-surface-container-highest text-outline border border-outline/20"
+                  title="No case detected yet">
+                ?
+            </span>
+            {% endif %}
+
+            {# Proceeding chip #}
+            {% if bundle.proceeding %}
+            <span class="text-outline">·</span>
+            <span class="text-[9px] text-on-surface-variant">{{ bundle.proceeding.court_name }}</span>
+            {% endif %}
+
+            {# Warning indicator — at least one doc still needs review #}
             {% if bundle.needs_review_count %}
-            <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-warning-container/20 text-warning ml-1">
-                {{ bundle.needs_review_count }} review
+            <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-warning-container/20 text-warning">
+                ⚠ {{ bundle.needs_review_count }}
             </span>
             {% endif %}
         </div>

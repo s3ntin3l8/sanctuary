@@ -21,6 +21,22 @@
                 <h3 class="text-base font-black tracking-tight text-on-surface line-clamp-1" title="{{ doc.title if doc else 'Document not found' }}">
                     {{ doc.title if doc else 'Document not found' }}
                 </h3>
+                {# §5a breadcrumb — ADV-024-A · AG Hamburg · 003 F 426/25 #}
+                {% if doc and (doc.case_id or doc.proceeding) %}
+                <div class="flex items-center gap-1.5 mt-0.5 font-mono text-[9px] font-bold text-on-surface-variant/70">
+                    {% if doc.case_id and doc.case_id != '_TRIAGE' %}
+                    <span class="text-primary/80">{{ doc.case_id }}</span>
+                    {% endif %}
+                    {% if doc.proceeding %}
+                    {% if doc.case_id and doc.case_id != '_TRIAGE' %}<span class="text-outline">·</span>{% endif %}
+                    <span>{{ doc.proceeding.court_name }}</span>
+                    {% if doc.proceeding.az_court %}
+                    <span class="text-outline">·</span>
+                    <span>{{ doc.proceeding.az_court }}</span>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
                 {% if doc %}
                 <div class="flex items-center gap-2 mt-1 flex-wrap text-[10px] text-on-surface-variant">
                     {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
@@ -85,7 +101,7 @@
                             prose-hr:border-outline-variant/30
                             prose-table:text-[11px] prose-th:text-on-surface prose-td:text-on-surface-variant prose-td:border-outline-variant/20
                             prose-li:text-on-surface-variant marker:text-outline">
-                {{ doc.content | safe_markdown }}
+                {{ doc.content | render_highlighted(doc.key_passages) }}
             </article>
         </div>
 
@@ -205,15 +221,52 @@
             </div>
             {% endif %}
 
-            {# Phase 4 footer — single-line, replaces three placeholder blocks #}
+            {# Relationship suggestions (§2) — AI-detected edges awaiting confirmation.
+                Shows today even when empty; AI will populate via Phase 4. #}
+            <div class="px-6 py-4 border-t border-outline-variant/10">
+                <p class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">Relationship Suggestions</p>
+                {% set _ai_rels = ai_relationships if ai_relationships is defined else [] %}
+                {% if _ai_rels %}
+                <div class="space-y-2">
+                    {% for rel in _ai_rels %}
+                    <div id="rel-suggestion-{{ rel.id }}" class="flex items-center gap-3 text-[11px] bg-surface-container-high rounded-lg px-3 py-2">
+                        <span class="font-mono font-bold text-on-surface-variant text-[9px] uppercase tracking-wider shrink-0">{{ rel.relationship_type.value.replace('_', ' ') }}</span>
+                        <span class="text-outline">→</span>
+                        <span class="flex-1 text-on-surface line-clamp-1 text-[11px]">
+                            {% if rel.to_document %}{{ rel.to_document.title }}{% else %}Document #{{ rel.to_document_id }}{% endif %}
+                        </span>
+                        {% if rel.notes %}
+                        <span class="text-[9px] text-on-surface-variant/60 italic truncate max-w-[120px]">{{ rel.notes }}</span>
+                        {% endif %}
+                        <button
+                            hx-post="/triage/relationship/{{ rel.id }}/confirm"
+                            hx-target="#rel-suggestion-{{ rel.id }}"
+                            hx-swap="outerHTML"
+                            class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer shrink-0">
+                            confirm
+                        </button>
+                        <button
+                            hx-delete="/triage/relationship/{{ rel.id }}"
+                            hx-target="#rel-suggestion-{{ rel.id }}"
+                            hx-swap="outerHTML"
+                            class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer shrink-0">
+                            reject
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-[10px] text-on-surface-variant/50 italic">No AI-detected relationships yet — Phase 4 will populate this.</p>
+                {% endif %}
+            </div>
+
+            {# Phase 4 footer — remaining enrichment not yet available #}
             <div class="px-6 py-3 bg-surface-container-low/30 border-t border-outline-variant/10 border-dashed flex items-center gap-2 text-[10px] text-on-surface-variant/60 italic">
                 <span class="material-symbols-outlined text-sm">auto_awesome</span>
                 AI enrichment pending:
                 <span class="font-medium">Key passages</span>
                 <span class="text-outline">·</span>
                 <span class="font-medium">Claims</span>
-                <span class="text-outline">·</span>
-                <span class="font-medium">Relationships</span>
                 <span class="ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-surface-container-highest/50 text-outline">Phase 4</span>
             </div>
         </div>

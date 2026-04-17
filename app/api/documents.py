@@ -3,13 +3,13 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db
 from app.helpers import build_document_extraction_context, render_page
-from app.models.database import Case, Document, IngestStatus
+from app.models.database import Case, Document, DocumentRelationship, IngestStatus
 from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
@@ -204,7 +204,12 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
     from app.models.database import Case, Entity
     from app.models.enums import OriginatorType
 
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+    doc = (
+        db.query(Document)
+        .options(joinedload(Document.proceeding))
+        .filter(Document.id == doc_id)
+        .first()
+    )
     if not doc:
         return templates.TemplateResponse(
             request,
@@ -217,7 +222,7 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
     context_type = request.query_params.get("context", "detail")
 
     if context_type == "triage":
-        from app.models.enums import UserReactionType
+        from app.models.enums import RelationshipConfidence, UserReactionType
         from app.services.triage_service import TriageService
 
         triage_service = TriageService(db)
@@ -225,6 +230,17 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
         reactions = list(triage_service.get_reactions(doc.id))
         action_items = triage_service.get_action_items(doc.id)
+        ai_relationships = (
+            db.query(DocumentRelationship)
+            .filter(
+                DocumentRelationship.from_document_id == doc.id,
+                DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+            )
+            .options(
+                joinedload(DocumentRelationship.to_document),
+            )
+            .all()
+        )
         return templates.TemplateResponse(
             request,
             "partials/document_triage.html",
@@ -236,8 +252,10 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
                 "context": context,
                 "reactions": reactions,
                 "action_items": action_items,
+                "ai_relationships": ai_relationships,
                 "OriginatorType": OriginatorType,
                 "UserReactionType": UserReactionType,
+                "RelationshipConfidence": RelationshipConfidence,
                 "originator_colors": ORIGINATOR_COLORS,
                 "originator_icons": ORIGINATOR_ICONS,
             },

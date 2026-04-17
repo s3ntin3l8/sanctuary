@@ -14,7 +14,7 @@ from app.models.database import (
     IngestStatus,
     OriginatorType,
 )
-from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.converters import (
     ALLOWED_EXTENSIONS,
@@ -78,7 +78,7 @@ def compute_review_reasons(doc: Document) -> list[str]:
     if not doc.received_date:
         reasons.append("missing_date")
 
-    if not doc.parent_id:
+    if doc.role == DocumentRole.ENCLOSURE and not doc.parent_id:
         reasons.append("missing_parent")
 
     return reasons

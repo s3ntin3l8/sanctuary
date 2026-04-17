@@ -13,17 +13,31 @@ from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.database import Document, IngestBatch, UserReaction
+from app.models.database import (
+    Document,
+    DocumentRelationship,
+    IngestBatch,
+    UserReaction,
+)
 from app.models.enums import (
     DocumentRole,
     IngestBatchSourceType,
     IngestBatchStatus,
+    RelationshipType,
+    SignificanceTier,
     UserReactionType,
 )
 from app.repositories.action_item import ActionItemRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.repositories.user_reaction import UserReactionRepository
+
+_SIG_ORDER: dict = {
+    SignificanceTier.CRITICAL: 0,
+    SignificanceTier.SIGNIFICANT: 1,
+    SignificanceTier.INFORMATIONAL: 2,
+    SignificanceTier.ADMINISTRATIVE: 3,
+}
 
 
 @dataclass
@@ -37,6 +51,12 @@ class BundleView:
     subject: str | None
     sender_email: str | None
     received_at: datetime
+    # Case chip state (§5a display rules)
+    confirmed_case_id: str | None = None  # set after batch cascade
+    suggested_case_id: str | None = None  # AI-suggested, awaiting confirmation
+    proceeding: object | None = None  # Proceeding ORM instance if known
+    # Set of doc IDs that are targets of ATTACHES_AS_PROOF edges (→ [proof] pill)
+    proof_doc_ids: set = field(default_factory=set)
     documents: list[Document] = field(default_factory=list)
     action_items: list = field(default_factory=list)
 
@@ -101,9 +121,14 @@ class TriageService:
 
     def get_triage_bundles(self, limit: int = 50, offset: int = 0) -> list[BundleView]:
         """All triage documents grouped into bundles."""
+        from app.models.database import ActionItem
+
         docs = (
             self.db.query(Document)
-            .options(joinedload(Document.ingest_batch))
+            .options(
+                joinedload(Document.ingest_batch).joinedload(IngestBatch.proceeding),
+                joinedload(Document.proceeding),
+            )
             .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
             .order_by(Document.created_at.desc())
             .all()
@@ -115,6 +140,14 @@ class TriageService:
                 key = f"batch-{doc.ingest_batch_id}"
                 if key not in bundles:
                     batch = doc.ingest_batch
+                    # Derive case chip state: confirmed = batch was cascaded to a
+                    # real case; suggested = a doc already has an AI-extracted case_id
+                    # that hasn't been cascaded to the batch yet.
+                    confirmed = (
+                        batch.case_id
+                        if batch.case_id and batch.case_id != "_TRIAGE"
+                        else None
+                    )
                     bundles[key] = BundleView(
                         key=key,
                         batch_id=batch.id,
@@ -122,10 +155,23 @@ class TriageService:
                         subject=batch.subject,
                         sender_email=batch.sender_email,
                         received_at=batch.received_at,
+                        confirmed_case_id=confirmed,
+                        proceeding=batch.proceeding,
                     )
                 bundles[key].documents.append(doc)
+                # Populate suggested_case_id from AI-extracted doc case_ids not yet cascaded
+                bundle = bundles[key]
+                if (
+                    not bundle.confirmed_case_id
+                    and doc.case_id
+                    and doc.case_id != "_TRIAGE"
+                ):
+                    bundle.suggested_case_id = doc.case_id
             else:
                 key = f"loose-{doc.id}"
+                confirmed = (
+                    doc.case_id if doc.case_id and doc.case_id != "_TRIAGE" else None
+                )
                 bundles[key] = BundleView(
                     key=key,
                     batch_id=None,
@@ -133,6 +179,8 @@ class TriageService:
                     subject=doc.title,
                     sender_email=None,
                     received_at=doc.created_at or datetime.now(),
+                    confirmed_case_id=confirmed,
+                    proceeding=doc.proceeding,
                     documents=[doc],
                 )
 
@@ -145,22 +193,35 @@ class TriageService:
         )
 
         for bundle in ordered:
+            # Significance-first within the bundle (§5b), cover-letter as in-tier
+            # tiebreaker so the user's eye lands on high-impact docs first.
             bundle.documents.sort(
                 key=lambda d: (
+                    _SIG_ORDER.get(d.significance_tier, 99),
                     0 if d.role == DocumentRole.COVER_LETTER else 1,
                     d.created_at or datetime.min,
                 )
             )
             doc_ids = [d.id for d in bundle.documents]
             if doc_ids:
-                from app.models.database import ActionItem
-
                 bundle.action_items = (
                     self.db.query(ActionItem)
                     .filter(ActionItem.source_document_id.in_(doc_ids))
                     .order_by(ActionItem.due_date.asc())
                     .all()
                 )
+                # Build proof_doc_ids: docs that are the *target* of an
+                # ATTACHES_AS_PROOF edge within this bundle.
+                proof_rels = (
+                    self.db.query(DocumentRelationship)
+                    .filter(
+                        DocumentRelationship.to_document_id.in_(doc_ids),
+                        DocumentRelationship.relationship_type
+                        == RelationshipType.ATTACHES_AS_PROOF,
+                    )
+                    .all()
+                )
+                bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
 
         return ordered[offset : offset + limit]
 
@@ -277,12 +338,29 @@ class TriageService:
         docs = (
             self.db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
         )
+        from app.models.database import ActionItem
+        from app.services.ingestion.service import compute_review_reasons
+
+        doc_ids = [doc.id for doc in docs]
         for doc in docs:
             doc.case_id = case_id
             if proceeding_id is not None:
                 doc.proceeding_id = proceeding_id
-            doc.needs_review = False
-            doc.review_reasons = []
+            reasons = compute_review_reasons(doc)
+            doc.review_reasons = reasons
+            doc.needs_review = len(reasons) > 0
+
+        # Cascade case/proceeding to ActionItems created during ingestion (Phase 4)
+        # that are still parked under _TRIAGE pending bundle confirmation.
+        if doc_ids:
+            orphaned = self.db.query(ActionItem).filter(
+                ActionItem.source_document_id.in_(doc_ids),
+                ActionItem.case_id == "_TRIAGE",
+            )
+            for item in orphaned:
+                item.case_id = case_id
+                if proceeding_id is not None and item.proceeding_id is None:
+                    item.proceeding_id = proceeding_id
 
         batch.case_id = case_id
         if proceeding_id is not None:

@@ -105,6 +105,12 @@
                  if (btn) btn.click();
                  return;
              }
+             // Escape — close HUD / cancel active edit.
+             if ($event.key === 'Escape') {
+                 if (inInput) { $event.target.blur(); return; }
+                 activeDoc = null;
+                 return;
+             }
              if (inInput) return;
              if ($event.altKey) return;
              if ($event.key === 'ArrowRight' || $event.key === 'ArrowDown' || $event.key === 'j' || $event.key === 'J') {
