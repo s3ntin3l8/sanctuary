@@ -11,8 +11,16 @@ celery_app = Celery(
     include=[
         "app.tasks.document_processing",
         "app.tasks.ai_summaries",
+        "app.tasks.gmail_sync",
     ],
 )
+
+celery_app.conf.beat_schedule = {
+    "sync-gmail-every-5-minutes": {
+        "task": "app.tasks.gmail_sync.sync_gmail_incremental",
+        "schedule": 300.0,
+    },
+}
 
 celery_app.conf.update(
     task_serializer="json",
