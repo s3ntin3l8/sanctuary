@@ -396,6 +396,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Error page defaults
 DEFAULT_SIDEBAR_COUNTS = {
     "triage_count": 0,
+    "notification_count": 0,
     "pending_count": 0,
     "case_count": 0,
     "cost_count": 0,
@@ -460,9 +461,9 @@ from app.api import (
     dashboard_router,
     documents_router,
     entities,
+    ingestion_settings,
     search,
     triage_router,
-    ingestion_settings,
 )
 
 app.include_router(dashboard_router)

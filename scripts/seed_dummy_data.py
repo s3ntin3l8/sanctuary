@@ -252,27 +252,61 @@ def make_doc(
 
 
 def _content(title, originator, sender):
-    originator_label = {
-        OriginatorType.COURT: "Gericht",
-        OriginatorType.OPPOSING: "Gegenseite",
-        OriginatorType.OWN: "Eigene Kanzlei",
-        OriginatorType.THIRD_PARTY: "Dritte",
-        OriginatorType.UNKNOWN: "Unbekannt",
-    }.get(originator, "Unbekannt")
-    return (
-        f"# {title}\n\n"
-        f"**Von:** {sender}  \n"
-        f"**Kategorie:** {originator_label}\n\n"
-        "## Inhalt\n\n"
-        "Dieser Schriftsatz dient als Testdokument für die Triage-Ansicht. "
-        "Er enthält ausreichend Text, damit der Lesebereich befüllt wirkt.\n\n"
-        "> Zitat aus dem Schriftsatz zur Demonstration der Key-Passage-Hervorhebung.\n\n"
-        "## Rechtliche Ausführungen\n\n"
-        "Nach §1671 BGB ist die elterliche Sorge bei Vorliegen der gesetzlichen "
-        "Voraussetzungen neu zu regeln. Die Parteien streiten über die tatsächlichen "
-        "Voraussetzungen.\n\n"
-        "Streitwert: **3.000,00 EUR**"
-    )
+    # German Legal Content Templates
+    COURT_TEMPLATE = f"""# {title}
+**AKTENZEICHEN:** 003 F 426/25
+**DATUM:** {datetime.now().strftime("%d.%m.%Y")}
+
+## BESCHLUSS
+In der Familiensache **Vane ./. Vane** wegen elterlicher Sorge wird gemäß § 1671 BGB folgendes beschlossen:
+
+1. Die elterliche Sorge für das gemeinsame Kind **Lukas Vane** wird der Kindesmutter zur alleinigen Ausübung übertragen.
+2. Die Kosten des Verfahrens werden gegeneinander aufgehoben.
+3. Der Verfahrenswert wird auf 3.000,00 EUR festgesetzt.
+
+### GRÜNDE
+Die Parteien sind die gemeinsam sorgeberechtigten Eltern des betroffenen Kindes. Die Trennung erfolgte im Januar 2025. Seither lebt das Kind im Haushalt der Mutter. Ein Einvernehmen über die Ausübung der Sorge konnte nicht erzielt werden...
+
+> "Eine Aufhebung der gemeinsamen Sorge ist erforderlich, da die Kommunikation der Eltern nachhaltig gestört ist."
+"""
+
+    LAWYER_TEMPLATE = f"""# {title}
+**AN DIE GEGENSEITE**
+**UNSER ZEICHEN:** 8124/25 HB
+
+## KLAGEERWIDERUNG
+In dem Rechtsstreit **Meridian Holdings ./. Stadtplanung Berlin** nehmen wir Bezug auf die Klageschrift vom 10.02.2026.
+
+Es wird beantragt:
+**DIE KLAGE ABZUWEISEN.**
+
+### BEGRÜNDUNG
+Die Klägerin verkennt die Rechtslage hinsichtlich der Erschließungspflicht nach § 123 BauGB. Die behaupteten Mängel im Bebauungsplan liegen nicht vor. Insbesondere wurde das Gutachten der Gegenseite (Anlage K1) methodisch fehlerhaft erstellt...
+
+Streitwert: **120.000,00 EUR**
+"""
+
+    REPORT_TEMPLATE = f"""# {title}
+**JUGENDAMT HAMBURG-MITTE**
+**FACHBEREICH:** Sozialer Dienst
+
+## BERICHT FÜR DAS FAMILIENGERICHT
+Gemäß § 50 SGB VIII nimmt das Jugendamt zur Frage der elterlichen Sorge Stellung.
+
+Das Kind Lukas macht einen aufgeweckten und altersgemäß entwickelten Eindruck. Die Bindung zu beiden Elternteilen ist als stabil einzustufen. Dennoch zeigen sich im Gespräch mit den Eltern erhebliche Defizite in der Kooperationsfähigkeit...
+
+**EMPFEHLUNG:**
+Es wird empfohlen, die Entscheidung über die Sorge bis zum Abschluss der Erziehungsberatung auszusetzen.
+"""
+
+    if originator == OriginatorType.COURT:
+        return COURT_TEMPLATE
+    elif originator == OriginatorType.OPPOSING:
+        return LAWYER_TEMPLATE
+    elif originator == OriginatorType.THIRD_PARTY:
+        return REPORT_TEMPLATE
+    else:
+        return f"# {title}\n\nStandard-Dokumententext für {sender}."
 
 
 # ═══════════════════════════════════════════════════════════════════════════
