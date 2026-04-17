@@ -43,6 +43,13 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             .all()
         )
 
+    def get_by_message_id(self, message_id: str) -> IngestBatch | None:
+        return (
+            self.db.query(IngestBatch)
+            .filter(IngestBatch.message_id == message_id)
+            .first()
+        )
+
     def create_batch(
         self,
         source_type: IngestBatchSourceType,

@@ -214,6 +214,7 @@ class IngestBatch(Base):
     sender_email = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     raw_source_path = Column(String, nullable=True)  # path to original .eml/scan
+    message_id = Column(String, index=True, nullable=True)
     case_id = Column(String, ForeignKey("cases.id"), nullable=True, index=True)
     proceeding_id = Column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True

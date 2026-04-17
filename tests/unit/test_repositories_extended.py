@@ -274,3 +274,24 @@ def test_entity_repository_get_by_type(db_session, sample_entity):
     repo = EntityRepository(db_session)
     results = repo.get_by_type(EntityType.PERSON)
     assert len(results) >= 1
+
+
+# IngestBatch Repository Tests
+
+
+@pytest.mark.unit
+def test_ingest_batch_message_id(db_session):
+    from app.models.enums import IngestBatchSourceType
+    from app.repositories.ingest_batch import IngestBatchRepository
+
+    repo = IngestBatchRepository(db_session)
+    batch = repo.create_batch(
+        source_type=IngestBatchSourceType.EMAIL,
+        subject="Test",
+    )
+    batch.message_id = "test-msg-id"
+    db_session.commit()
+
+    found = repo.get_by_message_id("test-msg-id")
+    assert found is not None
+    assert found.id == batch.id
