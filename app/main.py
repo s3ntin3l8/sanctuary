@@ -230,25 +230,21 @@ _SEED_CASES = [
     {
         "id": "_TRIAGE",
         "title": "Triage Inbox",
-        "court_id": "",
         "status": CaseStatus.INTAKE,
     },
     {
         "id": "ADV-992-K",
         "title": "Vane vs. Vane: Divorce & Assets",
-        "court_id": "2024-FL-DR-00992",
         "status": CaseStatus.DISCOVERY,
     },
     {
         "id": "ADV-804-M",
         "title": "Smith Construction vs. City Council",
-        "court_id": "2024-CV-00804",
         "status": CaseStatus.PRE_TRIAL,
     },
     {
         "id": "REF-441-22",
         "title": "Mercury Tech IP Dispute",
-        "court_id": "2022-IP-HC-00441",
         "status": CaseStatus.CLOSED,
     },
 ]

@@ -8,18 +8,18 @@ from sqlalchemy.orm import Session
 
 from app.config import AI_BASE_URL, AI_SUMMARY_MODEL, AI_SYSTEM_PROMPT
 from app.core.cache import cache, get_ai_summary_key
-from app.models.database import Document
+from app.models.database import Document, Proceeding
 from app.services.ai_provider import ai_provider
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
 Analyze the provided document and return a JSON object with these specific keys:
-- court_id: Extract the official court docket number (e.g. 003 F 426/25 or without spaces, maybe marked by AZ for Aktenzeichen). Normalize spaces to dashes.
-- internal_id: Extract the lawyer's internal reference number (e.g. 8124/25).
+- az_court: The official court Aktenzeichen / docket number for the proceeding (e.g. 003 F 426/25; normalize spaces to dashes if needed).
+- internal_id: The lawyer's internal reference number (e.g. 8124/25).
 - sender: The organization or person who authored/sent the document.
 - received_date: The date of the document or when it was received (YYYY-MM-DD).
-- originator_type: Categorize as "court", "opposing", "own", or "unknown".
+- originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - legal_significance: What does this document mean for our legal position? (1-2 sentences)
 - required_action: What needs to be done and by when? (1-2 sentences)
 - financial_impact: Any direct financial implications? (1 sentence)
@@ -206,25 +206,37 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         except Exception:
             pass
 
-    # 3. Auto-Triage: Match IDs to existing Cases
-    court_id = summary_data.get("court_id")
+    # 3. Auto-Triage: match by Proceeding.az_court (per-court Aktenzeichen),
+    # fallback to internal_id against Case.id.
+    az_court = summary_data.get("az_court")
     internal_id = summary_data.get("internal_id")
 
     if doc.case_id == "_TRIAGE":
         matching_case = None
-        if court_id:
-            matching_case = db.query(Case).filter(Case.court_id == court_id).first()
+        matching_proceeding = None
+
+        if az_court:
+            matching_proceeding = (
+                db.query(Proceeding).filter(Proceeding.az_court == az_court).first()
+            )
+            if matching_proceeding:
+                matching_case = matching_proceeding.case
+
         if not matching_case and internal_id:
             matching_case = db.query(Case).filter(Case.id == internal_id).first()
 
         if matching_case:
             doc.case_id = matching_case.id
+            if matching_proceeding:
+                doc.proceeding_id = matching_proceeding.id
             logger.info(
-                f"AI Auto-Triage: Moved doc {doc.id} to case {matching_case.id}"
+                f"AI Auto-Triage: moved doc {doc.id} to case {matching_case.id}"
+                + (
+                    f" / proceeding {matching_proceeding.id}"
+                    if matching_proceeding
+                    else ""
+                )
             )
-        elif court_id:
-            doc.case_id = court_id
-            logger.info(f"AI extracted case_id for doc {doc.id}: {court_id}")
 
     # 4. Merge detected costs
     if summary_data.get("detected_costs") and isinstance(

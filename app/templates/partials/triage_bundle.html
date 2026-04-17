@@ -61,23 +61,43 @@
         </div>
         {% endif %}
 
-        {# Documents #}
-        <div class="px-4 py-3 space-y-2">
-            {% for doc in bundle.documents %}
-                {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
-                {% set stripe_icon  = originator_icons.get(doc.originator_type, 'help_outline') %}
-                {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
-                {% set is_enclosure = loop.index > 1 or (doc.role and doc.role.value == 'enclosure') %}
-                <div id="triage-wrapper-{{ doc.id }}"
-                     x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (unknown && '{{ doc_type }}' === 'unknown')"
-                     class="relative {% if is_enclosure and bundle.doc_count > 1 %}pl-6{% endif %}">
-                    {% if is_enclosure and bundle.doc_count > 1 %}
-                    <svg class="absolute left-1 top-0 w-4 h-full text-outline-variant/40" aria-hidden="true">
-                        <path d="M2 0 L2 18 L16 18" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                    </svg>
-                    {% endif %}
-                    {% include "partials/triage_card.html" %}
+        {# Documents — segmented by parent-root subtree (vision.md §1 shows one
+            email delivering multiple parent-root "bundles"). Each subtree
+            renders as its own sub-card with an A/B/C label when there's more
+            than one root. depth drives indentation + L-connector for children.#}
+        {% set segmented = bundle.parent_groups|length > 1 %}
+        <div class="px-4 py-3 {% if segmented %}space-y-3{% else %}space-y-2{% endif %}">
+            {% for group in bundle.parent_groups %}
+            {% set group_letter = 'ABCDEFGHIJKLMN'[loop.index0] %}
+            <div class="{% if segmented %}rounded-lg border border-outline-variant/20 bg-surface-container-lowest/40 overflow-hidden{% endif %}">
+                {% if segmented %}
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container-low/50 border-b border-outline-variant/10">
+                    <span class="text-[9px] font-black tracking-widest text-on-surface-variant uppercase">Bundle {{ group_letter }}</span>
+                    <span class="text-outline">·</span>
+                    <span class="text-[9px] text-on-surface-variant">{{ group|length }} doc{{ 's' if group|length != 1 else '' }}</span>
                 </div>
+                {% endif %}
+                <div class="{% if segmented %}p-2{% endif %} space-y-2">
+                    {% for depth, doc in group %}
+                        {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+                        {% set stripe_icon  = originator_icons.get(doc.originator_type, 'help_outline') %}
+                        {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
+                        {% set indent_class = 'pl-6' if depth == 1 else 'pl-12' if depth == 2 else 'pl-18' if depth > 2 else '' %}
+                        <div id="triage-wrapper-{{ doc.id }}"
+                             x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (third_party && '{{ doc_type }}' === 'third_party') || (unknown && '{{ doc_type }}' === 'unknown')"
+                             class="relative {{ indent_class }}">
+                            {% if depth > 0 %}
+                            <svg class="absolute top-0 w-4 h-full text-outline-variant/40"
+                                 style="left: {{ (depth - 1) * 24 + 4 }}px;"
+                                 aria-hidden="true">
+                                <path d="M2 0 L2 18 L16 18" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                            </svg>
+                            {% endif %}
+                            {% include "partials/triage_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
             {% endfor %}
         </div>
 

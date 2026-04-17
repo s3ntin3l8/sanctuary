@@ -128,13 +128,14 @@ The database uses SQLite with the following tables:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | String | Internal case ID (e.g., ADV-992-K) |
+| `id` | String | Internal lead ID (e.g., ADV-992-K) — shown everywhere |
 | `title` | String | Case title |
-| `court_id` | String | Official docket number |
-| `status` | Enum | INTAKE / ACTIVE / CLOSED |
-| `jurisdiction` | Enum | DE (German) |
+| `status` | Enum | INTAKE / DISCOVERY / PRE_TRIAL / TRIAL / POST_TRIAL / CLOSED |
+| `jurisdiction` | Enum | DE / UK / US / OTHER |
 | `created_at` | DateTime | Creation timestamp |
 | `closed_at` | DateTime | Closure timestamp |
+
+Per-court Aktenzeichen (docket numbers) live on `Proceeding.az_court` — one case may have multiple proceedings as it escalates (AG → OLG → BGH), each with its own Az.
 
 ### Entity Fields
 

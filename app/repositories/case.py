@@ -67,7 +67,6 @@ class CaseRepository(BaseRepository[Case]):
         title: str,
         status: CaseStatus = CaseStatus.INTAKE,
         jurisdiction: Jurisdiction = Jurisdiction.DE,
-        court_id: str | None = None,
     ) -> Case:
         """Create a new case."""
         return self.create(
@@ -75,7 +74,6 @@ class CaseRepository(BaseRepository[Case]):
             title=title,
             status=status,
             jurisdiction=jurisdiction,
-            court_id=court_id,
             created_at=datetime.now(),
         )
 

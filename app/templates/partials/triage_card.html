@@ -24,8 +24,9 @@
             <p class="text-sm font-bold text-on-surface line-clamp-1 flex-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
             <div class="flex items-center gap-2 shrink-0">
                 <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
-                {% if doc.review_reasons %}
-                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-warning-container/20 text-warning" title="{{ doc.review_reasons|length }} issues pending">
+                {% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
+                {% if _real_reasons %}
+                <span class="w-5 h-5 flex items-center justify-center rounded-full bg-warning-container/20 text-warning" title="{{ _real_reasons|length }} issue{{ 's' if _real_reasons|length != 1 else '' }} pending">
                     <span class="material-symbols-outlined text-sm">priority_high</span>
                 </span>
                 {% else %}
@@ -36,13 +37,16 @@
             </div>
         </div>
 
-        {# Row 2: Role / originator / document-type badges #}
+        {# Row 2: Role / originator / document-type badges.
+            `ot_class` replaces underscores with hyphens so Tailwind's
+            kebab-case `bg-originator-third-party` classes resolve. #}
         {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
+        {% set ot_class = ot.replace('_', '-') %}
         <div class="flex items-center flex-wrap gap-1 mb-1.5">
             {# Originator badge (always present) #}
-            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-originator-{{ ot }}/15 text-originator-{{ ot }}">
+            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-originator-{{ ot_class }}/15 text-originator-{{ ot_class }}">
                 <span class="material-symbols-outlined text-[10px]">{{ stripe_icon }}</span>
-                {{ ot }}
+                {{ ot.replace('_', ' ') }}
             </span>
             {# Court relay marker #}
             {% if doc.court_relay %}
@@ -69,10 +73,12 @@
             {% endif %}
         </div>
 
-        {# Row 3: Review chips + Reactions + Provenance #}
+        {# Row 3: Review chips + Reactions + Provenance. Skip 'missing_parent'
+            — indentation + L-connector in the bundle view already conveys
+            parent-child structure. #}
         <div class="flex items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-1">
-                {% for reason in (doc.review_reasons or []) %}
+                {% for reason in (doc.review_reasons or []) if reason != 'missing_parent' %}
                 {% set fm = review_field_labels.get(reason, {}) %}
                 <span class="inline-flex items-center gap-0.5 text-[8px] bg-warning-container/30 text-warning px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight">
                     <span class="material-symbols-outlined text-[9px]">{{ fm.icon or 'warning' }}</span>

@@ -74,6 +74,54 @@ Case ADV-024-A
 
 Documents belong to a proceeding. The correspondence graph is scoped per proceeding by default — switching proceeding shows a completely different graph. Cross-proceeding references exist but are visually distinct.
 
+### Case IDs — internal is the lead
+
+A single case carries multiple identifiers in the real world:
+
+| ID | Example | Scope | Stability |
+|---|---|---|---|
+| **Internal ID** (`Case.id`) | `ADV-024-A` | Your counsel | Permanent, stable across all courts |
+| **Court Az** (`Proceeding.az_court`) | `003 F 426/25` (AG), `12 UF 89/25` (OLG) | Per court level | Changes on escalation |
+| **External refs** | Jugendamt ref, opposing counsel ref | Per third party | Varies |
+
+**The internal ID is the lead identifier everywhere** — sidebar, breadcrumb, URLs, chat, cross-references, reports. Reasoning:
+
+- It's yours. The matter stays named `ADV-024-A` whether it's at AG, on Beschwerde at OLG, or closed.
+- Court Az numbers are context-specific — there is no single "the court ID" for a case that has moved through three courts.
+- The internal ID is stable, addressable, human-readable.
+
+Per-court Aktenzeichen live on `Proceeding.az_court`. The pre-Proceeding era `Case.court_id` column was dropped (migration `cc7bed04fc19`).
+
+#### Display rules
+
+| Surface | Primary | Secondary | Format |
+|---|---|---|---|
+| Sidebar / breadcrumb | Internal ID | — | `ADV-024-A` |
+| Triage batch header | Internal ID | Proceeding name | `[ADV-024-A?] · AG Hamburg` |
+| Document HUD | Internal ID | Proceeding + Az | `ADV-024-A · AG Hamburg · 003 F 426/25` |
+| Case list row | Internal ID + title | Active proceeding | `ADV-024-A — Custody dispute · AG Hamburg` |
+| URLs | Internal ID | — | `/cases/ADV-024-A` |
+| AI chat answers | Internal ID | Az when quoting court docs | "The ruling [ADV-024-A, AG 003 F 426/25] sets a deadline of…" |
+
+The Az is shown but never lead — it's context for the proceeding, not the identity of the case.
+
+### What the AI assigns at ingest
+
+Phase 4 (document intelligence) populates these fields. The UI shows them when present, renders empty blocks with a processing indicator when still running.
+
+| Field | Purpose | Values |
+|---|---|---|
+| `Document.significance_tier` | Drives graph visibility and triage sort order | `critical` / `significant` / `informational` / `administrative` |
+| `Document.document_type` | Classifies the document | `ruling`, `motion`, `statement`, `annex`, `relay`, `correspondence`, `report`, `invoice`, `other` |
+| `Document.attributed_originator` | True sender behind court routing | Free text (e.g., "Opposing counsel", "Jugendamt") |
+| `Document.court_relay` | Is this a pass-through cover letter? | boolean |
+| `Document.key_passages` | AI-identified significant excerpts | `[{text, rationale, span}, …]` |
+| `Document.cost_delta` | Financial impact of this document | `{amount, direction, description}` |
+| `Claim` rows | Factual/legal assertions the doc makes | linked via `source_document_id` |
+| `DocumentRelationship` rows | Proposed edges to prior docs | `confidence=ai_detected`, user confirms later |
+
+`OriginatorType` now includes `THIRD_PARTY` (amber) for non-court / non-opposing / non-own actors — Jugendamt, Verfahrensbeistand, Sachverständige, etc. These often route via the court but are substantively independent.
+
 ### Document relationships are many-to-many
 
 A document can respond to multiple prior documents simultaneously. A letter from opposing counsel may react to both a court ruling AND a child services report. This requires a proper relationship graph, not a single FK:

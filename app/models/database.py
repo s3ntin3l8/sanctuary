@@ -151,9 +151,10 @@ class Document(Base):
 class Case(Base):
     __tablename__ = "cases"
 
-    id = Column(String, primary_key=True, index=True)  # Internal ID e.g. ADV-992-K
+    id = Column(
+        String, primary_key=True, index=True
+    )  # Internal lead ID, e.g. ADV-992-K
     title = Column(String, nullable=False)
-    court_id = Column(String, nullable=True)  # Official docket ID
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
     created_at = Column(DateTime, default=datetime.now)

@@ -61,6 +61,7 @@
   --color-originator-court: #0369a1;
   --color-originator-opposing: #b91c1c;
   --color-originator-own: #047857;
+  --color-originator-third-party: #c2410c;
   --color-originator-unknown: #64748b;
 
   --color-on-surface: #2a3437;
@@ -129,6 +130,7 @@
     --color-originator-court: #0369a1;
     --color-originator-opposing: #b91c1c;
     --color-originator-own: #047857;
+    --color-originator-third-party: #c2410c;
     --color-originator-unknown: #859490;
 
     --color-on-surface: #dae2fd;

@@ -52,6 +52,42 @@ class BundleView:
     def is_synthetic(self) -> bool:
         return self.batch_id is None
 
+    @property
+    def parent_groups(self) -> list[list[tuple[int, Document]]]:
+        """Group the bundle's documents by their parent-root subtree.
+
+        Vision.md §1 shows one email delivering multiple "bundles" — each
+        being a cover letter with its own enclosures. In our model that's
+        multiple parent_id=None docs within a single IngestBatch. This
+        property returns one list per parent-root, each entry a `(depth,
+        doc)` tuple in BFS order so the template can indent enclosures
+        consistently no matter how deep the tree goes.
+
+        A doc is a parent-root if its `parent_id` is None OR points to a
+        document outside this bundle (orphaned child).
+        """
+        docs_by_id = {d.id: d for d in self.documents}
+        children_of: dict[int, list[Document]] = {}
+        roots: list[Document] = []
+        for d in self.documents:
+            if not d.parent_id or d.parent_id not in docs_by_id:
+                roots.append(d)
+            else:
+                children_of.setdefault(d.parent_id, []).append(d)
+
+        groups: list[list[tuple[int, Document]]] = []
+        for root in roots:
+            group: list[tuple[int, Document]] = [(0, root)]
+            queue: list[tuple[int, Document]] = [
+                (1, c) for c in children_of.get(root.id, [])
+            ]
+            while queue:
+                depth, node = queue.pop(0)
+                group.append((depth, node))
+                queue.extend((depth + 1, c) for c in children_of.get(node.id, []))
+            groups.append(group)
+        return groups
+
 
 class TriageService:
     def __init__(self, db: Session):

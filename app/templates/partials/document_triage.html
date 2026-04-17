@@ -24,9 +24,10 @@
                 {% if doc %}
                 <div class="flex items-center gap-2 mt-1 flex-wrap text-[10px] text-on-surface-variant">
                     {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-originator-{{ ot }}/15 text-originator-{{ ot }} font-bold uppercase tracking-wider text-[9px]">
+                    {% set ot_class = ot.replace('_', '-') %}
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-originator-{{ ot_class }}/15 text-originator-{{ ot_class }} font-bold uppercase tracking-wider text-[9px]">
                         <span class="material-symbols-outlined text-[10px]">{{ originator_icons.get(doc.originator_type, 'help_outline') }}</span>
-                        {{ ot }}
+                        {{ ot.replace('_', ' ') }}
                     </span>
                     {% if doc.court_relay %}
                     <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-on-surface-variant">
@@ -72,8 +73,8 @@
         ≥lg: side-by-side, each column scrolls independently                  #}
     <div class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
 
-        {# ── Left: document view ───────────────────────────────────────── #}
-        <div class="lg:w-[55%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-surface-container/30">
+        {# ── Left: document view (60% per docs/triage.md §2) ───────────── #}
+        <div class="lg:w-[60%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar bg-surface-container/30">
             <article class="prose prose-sm max-w-none px-8 py-6
                             prose-headings:text-on-surface prose-headings:font-black
                             prose-p:text-on-surface-variant prose-p:leading-relaxed
@@ -88,10 +89,22 @@
             </article>
         </div>
 
-        {# ── Right: sidebar ────────────────────────────────────────────── #}
-        <div class="lg:w-[45%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-outline-variant/10">
+        {# ── Right: sidebar (40% per docs/triage.md §2).
+            Order follows docs/triage.md §2 mockup: metadata-first so the user's
+            eye lands on "what needs work" before the AI block; reaction below
+            it at the moment of highest focus; AI Extracted (summary, action
+            items, financial) after. #}
+        <div class="lg:w-[40%] lg:flex-none w-full flex-1 min-h-0 overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-outline-variant/10">
 
-            {# AI Summary (if generated or approved) #}
+            {# 1. Metadata form (⚠ NEEDS REVIEW) — top of sidebar #}
+            {% if doc.needs_review or not doc.case_id or doc.case_id == '_TRIAGE' %}
+                {% include "partials/triage_metadata_form.html" %}
+            {% endif %}
+
+            {# 2. Reaction Bar #}
+            {% include "partials/triage_reaction_bar.html" %}
+
+            {# 3. AI Summary — the "AI extracted" top panel #}
             {% if doc.ai_summary_status in ("generated", "approved") and doc.ai_summary %}
             <div class="px-6 py-4 bg-primary-container/10 border-b border-outline-variant/10">
                 <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest mb-2 flex items-center gap-2">
@@ -145,10 +158,7 @@
             </div>
             {% endif %}
 
-            {# Reaction Bar #}
-            {% include "partials/triage_reaction_bar.html" %}
-
-            {# Action Items sourced from this document #}
+            {# 4. Action Items sourced from this document #}
             {% if action_items %}
             <div class="px-6 py-4 border-b border-outline-variant/10">
                 <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2 flex items-center gap-2">
@@ -174,13 +184,8 @@
             </div>
             {% endif %}
 
-            {# Financial Delta #}
+            {# 5. Financial Delta #}
             {% include "partials/triage_financial_delta.html" %}
-
-            {# Metadata form (confidence-aware) #}
-            {% if doc.needs_review or not doc.case_id or doc.case_id == '_TRIAGE' %}
-                {% include "partials/triage_metadata_form.html" %}
-            {% endif %}
 
             {# Schedule Candidates (collapsible) #}
             {% if context.schedule_candidates or context.linked_deadlines or context.linked_hearings %}

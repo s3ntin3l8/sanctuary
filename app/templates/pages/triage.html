@@ -3,13 +3,14 @@
 {% block title %}Triage Center | The Sanctuary{% endblock %}
 
 {% block content %}
-{% set counts_by_type = namespace(court=0, opposing=0, own=0, unknown=0, bundles=0) %}
+{% set counts_by_type = namespace(court=0, opposing=0, own=0, third_party=0, unknown=0, bundles=0) %}
 {% for bundle in bundles %}
     {% set counts_by_type.bundles = counts_by_type.bundles + 1 %}
     {% for doc in bundle.documents %}
         {% if doc.originator_type and doc.originator_type.value == 'court' %}{% set counts_by_type.court = counts_by_type.court + 1 %}
         {% elif doc.originator_type and doc.originator_type.value == 'opposing' %}{% set counts_by_type.opposing = counts_by_type.opposing + 1 %}
         {% elif doc.originator_type and doc.originator_type.value == 'own' %}{% set counts_by_type.own = counts_by_type.own + 1 %}
+        {% elif doc.originator_type and doc.originator_type.value == 'third_party' %}{% set counts_by_type.third_party = counts_by_type.third_party + 1 %}
         {% else %}{% set counts_by_type.unknown = counts_by_type.unknown + 1 %}
         {% endif %}
     {% endfor %}
@@ -47,6 +48,11 @@
                 <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Own Counsel</span>
             </label>
             <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
+                <input type="checkbox" x-model="third_party" class="accent-originator-third-party rounded">
+                <span class="w-2 h-2 rounded-full bg-originator-third-party"></span>
+                <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Third Party</span>
+            </label>
+            <label class="flex items-center gap-2 py-1.5 cursor-pointer group">
                 <input type="checkbox" x-model="unknown" class="accent-outline rounded">
                 <span class="w-2 h-2 rounded-full bg-outline"></span>
                 <span class="text-[10px] text-on-surface-variant group-hover:text-primary">Unknown</span>
@@ -58,7 +64,7 @@
 
 <section x-data="{
              filterOpen: false,
-             court: true, opposing: true, own: true, unknown: true,
+             court: true, opposing: true, own: true, third_party: true, unknown: true,
              activeDoc: '{{ (first_bundle_doc.id if first_bundle_doc else '') }}',
              collapsedBundles: {},
              isBundleExpanded(key) { return !this.collapsedBundles[key]; },
@@ -88,13 +94,38 @@
              },
          }"
          @keydown.window="
-             if ($event.target.matches('input, textarea, select, [contenteditable=true]')) return;
-             if ($event.metaKey || $event.ctrlKey || $event.altKey) return;
-             if ($event.key === 'j' || $event.key === 'J') { $event.preventDefault(); _step(1); }
-             else if ($event.key === 'k' || $event.key === 'K') { $event.preventDefault(); _step(-1); }
-             else if (['1','2','3','4'].includes($event.key)) { $event.preventDefault(); _fireReaction(parseInt($event.key, 10) - 1); }
-             else if ($event.key === 'c' || $event.key === 'C') {
-                 const sel = document.querySelector('[data-triage-case-select]'); if (sel) { $event.preventDefault(); sel.focus(); }
+             const inInput = $event.target.matches('input, textarea, select, [contenteditable=true]');
+             const mod = $event.metaKey || $event.ctrlKey;
+             // Ctrl/Cmd+Enter — confirm the whole bundle (works inside inputs too).
+             if (mod && $event.key === 'Enter') {
+                 $event.preventDefault();
+                 const card = document.getElementById('triage-card-' + activeDoc);
+                 const bundle = card && card.closest('[data-bundle-key]');
+                 const btn = bundle && bundle.querySelector('form[hx-post*=\'/bundle/\'] button[type=submit]:not([disabled])');
+                 if (btn) btn.click();
+                 return;
+             }
+             if (inInput) return;
+             if ($event.altKey) return;
+             if ($event.key === 'ArrowRight' || $event.key === 'ArrowDown' || $event.key === 'j' || $event.key === 'J') {
+                 $event.preventDefault(); _step(1);
+             } else if ($event.key === 'ArrowLeft' || $event.key === 'ArrowUp' || $event.key === 'k' || $event.key === 'K') {
+                 $event.preventDefault(); _step(-1);
+             } else if (['1','2','3','4'].includes($event.key)) {
+                 $event.preventDefault(); _fireReaction(parseInt($event.key, 10) - 1);
+             } else if ($event.key === 'c' || $event.key === 'C') {
+                 const sel = document.querySelector('[data-triage-case-select]');
+                 if (sel) { $event.preventDefault(); sel.focus(); }
+             } else if ($event.key === 'Enter') {
+                 // Save-and-advance — finalize the current doc; server's
+                 // triage:advance event moves focus to the next needs_review doc.
+                 $event.preventDefault();
+                 const form = document.querySelector('#triage-doc-pane form[hx-post*=\'/confirm\']');
+                 if (form) {
+                     const chk = form.querySelector('input[name=\'mark_resolved\']');
+                     if (chk) chk.checked = true;
+                     form.requestSubmit();
+                 }
              }
          "
          @triage:advance.document="
@@ -142,18 +173,28 @@
             <span class="text-[10px] text-on-surface-variant">Own Counsel</span>
         </div>
         <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-originator-third-party"></span>
+            <span class="text-[10px] font-bold text-originator-third-party">{{ counts_by_type.third_party }}</span>
+            <span class="text-[10px] text-on-surface-variant">Third Party</span>
+        </div>
+        <div class="flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-outline"></span>
             <span class="text-[10px] font-bold text-on-surface-variant">{{ counts_by_type.unknown }}</span>
             <span class="text-[10px] text-on-surface-variant">Unknown</span>
         </div>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2 text-[9px] text-on-surface-variant uppercase tracking-wider">
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">J</kbd>
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">K</kbd>
-            <span class="font-medium">navigate</span>
+            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">↑↓</kbd>
+            <span class="font-medium">nav</span>
             <span class="text-outline">·</span>
             <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">1-4</kbd>
             <span class="font-medium">react</span>
+            <span class="text-outline">·</span>
+            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">↵</kbd>
+            <span class="font-medium">next</span>
+            <span class="text-outline">·</span>
+            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">⌘↵</kbd>
+            <span class="font-medium">bundle</span>
         </div>
     </div>
 

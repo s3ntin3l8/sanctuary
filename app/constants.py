@@ -4,6 +4,7 @@ ORIGINATOR_COLORS = {
     OriginatorType.COURT: "#0369A1",
     OriginatorType.OPPOSING: "#B91C1C",
     OriginatorType.OWN: "#047857",
+    OriginatorType.THIRD_PARTY: "#C2410C",
     OriginatorType.UNKNOWN: "#64748b",
 }
 
@@ -11,6 +12,7 @@ ORIGINATOR_ICONS = {
     OriginatorType.COURT: "gavel",
     OriginatorType.OPPOSING: "warning",
     OriginatorType.OWN: "shield",
+    OriginatorType.THIRD_PARTY: "groups",
     OriginatorType.UNKNOWN: "help_outline",
 }
 

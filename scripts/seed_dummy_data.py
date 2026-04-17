@@ -52,25 +52,21 @@ SEED_CASES = [
     {
         "id": "ADV-992-K",
         "title": "Vane vs. Vane: Divorce & Assets",
-        "court_id": "2024-FL-DR-00992",
         "status": CaseStatus.DISCOVERY,
     },
     {
         "id": "ADV-804-M",
         "title": "Meridian Holdings v. City Planning Board",
-        "court_id": "2023-CV-ADM-0804",
         "status": CaseStatus.PRE_TRIAL,
     },
     {
         "id": "ADV-331-P",
         "title": "Patel Estate: Probate & Distribution",
-        "court_id": "2025-PR-EST-00331",
         "status": CaseStatus.INTAKE,
     },
     {
         "id": "ADV-550-R",
         "title": "Rothschild Corp. v. H&M Retail Group",
-        "court_id": "2024-CV-COM-00550",
         "status": CaseStatus.DISCOVERY,
     },
 ]
@@ -757,6 +753,234 @@ db.add(
         title="Stellungnahme Klageerwiderung",
         description="Stellungnahme auf Klageerwiderung binnen zwei Wochen einzureichen.",
         due_date=now + timedelta(days=14),
+        action_type=ActionItemType.DEADLINE,
+        status=ActionItemStatus.OPEN,
+    )
+)
+
+db.commit()
+
+# ── Phase 2 demo B: one email delivering TWO bundles ─────────────────────────
+# Mirrors vision.md §1 mockup (lines 233–248): one email, 5 documents,
+# grouped under TWO parent-root cover letters. Bundle A routes the
+# Klageerwiderung + Anlage K1; Bundle B routes a Jugendamtsbericht from a
+# third party (via the court). Both cascade to the same case.
+demo_b_case_id = case_ids[1]
+demo_b_batch = IngestBatch(
+    source_type=IngestBatchSourceType.EMAIL,
+    sender_email="anwalt@kanzlei.de",
+    subject="LG Hamburg — Zustellung Klageerwiderung + Jugendamtsbericht",
+    received_at=now - timedelta(hours=6),
+    status=IngestBatchStatus.PENDING,
+    case_id=None,  # assignment happens on triage confirm
+)
+db.add(demo_b_batch)
+db.flush()
+
+# ── BUNDLE A: Klageerwiderung + Anlage K1 ──────────────────────────────────
+cover_a = Document(
+    title="Begleitschreiben LG Hamburg — Klageerwiderung",
+    content=(
+        "# Landgericht Hamburg\n\n"
+        "**Aktenzeichen:** 003 F 426/25\n\n"
+        "## Begleitschreiben\n\n"
+        "Sehr geehrte Damen und Herren,\n\n"
+        "anliegend übersende ich Ihnen die **Klageerwiderung des Beklagten** "
+        "nebst **Anlage K1** zur weiteren Veranlassung.\n\n"
+        "Eine Stellungnahme wird binnen zwei Wochen erwartet, **spätestens bis "
+        "zum 30.04.2026**.\n\n"
+        "Mit freundlichen Grüßen\n\n"
+        "— *Geschäftsstelle LG Hamburg*"
+    ),
+    case_id=demo_b_case_id,
+    ingest_batch_id=demo_b_batch.id,
+    originator_type=OriginatorType.COURT,
+    sender="Geschäftsstelle LG Hamburg",
+    received_date=now - timedelta(hours=6),
+    role=DocumentRole.COVER_LETTER,
+    document_type=DocumentType.RELAY,
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    court_relay=True,
+    attributed_originator="Dr. Opposing, Rechtsanwalt (Beklagtenvertreter)",
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "high",
+        "date": "high",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(cover_a)
+db.flush()
+
+klagewi = Document(
+    title="Klageerwiderung Beklagter",
+    content=(
+        "# Klageerwiderung\n\n"
+        "*In der Familiensache 003 F 426/25*\n\n"
+        "## I. Sachverhalt\n\n"
+        "Der Beklagte **bestreitet** die von der Klägerin "
+        "vorgetragenen Tatsachen zur Kindesbetreuung.\n\n"
+        "## II. Rechtliche Würdigung\n\n"
+        "Eine Übertragung der elterlichen Sorge nach §1671 BGB ist nicht "
+        "gerechtfertigt.\n\n"
+        "## III. Kostenantrag\n\n"
+        "Streitwert: **5.000,00 EUR**\n"
+        "Verfahrensgebühr nach RVG Nr. 3100 VV: **420,50 EUR**\n"
+    ),
+    case_id=demo_b_case_id,
+    ingest_batch_id=demo_b_batch.id,
+    parent_id=cover_a.id,
+    originator_type=OriginatorType.OPPOSING,
+    sender="Dr. Opposing, Rechtsanwalt",
+    received_date=now - timedelta(hours=6),
+    role=DocumentRole.ENCLOSURE,
+    document_type=DocumentType.STATEMENT,
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    cost_candidates=[
+        {"type": "amount", "value": 5000.00, "context": "Streitwert: 5.000,00 EUR"},
+        {"type": "amount", "value": 420.50, "context": "Verfahrensgebühr: 420,50 EUR"},
+        {
+            "type": "rvg_position",
+            "value": "Nr. 3100 VV RVG",
+            "context": "Verfahrensgebühr nach RVG",
+        },
+    ],
+    extraction_confidence={
+        "sender": "high",
+        "date": "high",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(klagewi)
+db.flush()
+
+anlage_k1_b = Document(
+    title="Anlage K1 — Rechnung",
+    content=(
+        "# Anlage K1\n\n"
+        "## Rechnung — Kindergarten Hamburg Nord\n\n"
+        "| Position | Betrag |\n"
+        "|----------|--------|\n"
+        "| Monatsbeitrag März | 420,00 EUR |\n"
+        "| Zusatzleistungen  |  85,00 EUR |\n"
+        "| **Summe** | **505,00 EUR** |\n\n"
+        "*Vorgelegt als Nachweis tatsächlicher Betreuungskosten.*"
+    ),
+    case_id=demo_b_case_id,
+    ingest_batch_id=demo_b_batch.id,
+    parent_id=cover_a.id,
+    originator_type=OriginatorType.OPPOSING,
+    sender="Dr. Opposing, Rechtsanwalt",
+    received_date=now - timedelta(hours=6),
+    role=DocumentRole.ENCLOSURE,
+    document_type=DocumentType.ANNEX,
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    cost_candidates=[
+        {"type": "amount", "value": 420.00, "context": "Monatsbeitrag März 420,00 EUR"},
+        {"type": "amount", "value": 505.00, "context": "Summe 505,00 EUR"},
+    ],
+    extraction_confidence={
+        "sender": "medium",
+        "date": "high",
+        "case_id": "high",
+        "originator": "medium",
+    },
+)
+db.add(anlage_k1_b)
+db.flush()
+
+# ── BUNDLE B: Jugendamtsbericht ────────────────────────────────────────────
+cover_b = Document(
+    title="Begleitschreiben LG Hamburg — Jugendamtsbericht",
+    content=(
+        "# Landgericht Hamburg\n\n"
+        "**Aktenzeichen:** 003 F 426/25\n\n"
+        "## Begleitschreiben\n\n"
+        "In derselben Familiensache übersende ich Ihnen anbei den "
+        "**Bericht des Jugendamtes Hamburg** zur Kenntnisnahme. "
+        "Eine separate Stellungnahme ist hierzu nicht erforderlich.\n\n"
+        "Mit freundlichen Grüßen\n\n"
+        "— *Geschäftsstelle LG Hamburg*"
+    ),
+    case_id=demo_b_case_id,
+    ingest_batch_id=demo_b_batch.id,
+    originator_type=OriginatorType.COURT,
+    sender="Geschäftsstelle LG Hamburg",
+    received_date=now - timedelta(hours=6),
+    role=DocumentRole.COVER_LETTER,
+    document_type=DocumentType.RELAY,
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    court_relay=True,
+    attributed_originator="Jugendamt Hamburg (Child Services)",
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "high",
+        "date": "high",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(cover_b)
+db.flush()
+
+ja_report = Document(
+    title="Jugendamtsbericht — Kindeswohl",
+    content=(
+        "# Bericht des Jugendamtes Hamburg\n\n"
+        "*Az. 003 F 426/25 — zur Vorlage an das Familiengericht*\n\n"
+        "## I. Gesprächsverlauf\n\n"
+        "Am 08.04.2026 fand ein persönliches Gespräch mit beiden Elternteilen "
+        "und dem Kind statt.\n\n"
+        "## II. Empfehlung\n\n"
+        "Das Jugendamt empfiehlt, die **elterliche Sorge gemeinsam zu belassen**, "
+        "ergänzt um eine feste Umgangsregelung.\n\n"
+        "## III. Hinweis\n\n"
+        "Dieser Bericht dient der Information. Eine weitergehende Stellungnahme "
+        "durch die Parteien ist vom Gericht nicht angefordert."
+    ),
+    case_id=demo_b_case_id,
+    ingest_batch_id=demo_b_batch.id,
+    parent_id=cover_b.id,
+    originator_type=OriginatorType.THIRD_PARTY,
+    sender="Jugendamt Hamburg",
+    received_date=now - timedelta(hours=6),
+    role=DocumentRole.ENCLOSURE,
+    document_type=DocumentType.REPORT,
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    attributed_originator="Jugendamt Hamburg (Child Services)",
+    needs_review=True,
+    review_reasons=["missing_parent"],
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "high",
+        "date": "high",
+        "case_id": "high",
+        "originator": "high",
+    },
+)
+db.add(ja_report)
+db.flush()
+
+# ── ActionItem: Frist 30.04 aus Begleitschreiben A (vision §1 ⚑) ──────────
+db.add(
+    ActionItem(
+        case_id=demo_b_case_id,
+        source_document_id=cover_a.id,
+        title="Stellungnahme auf Klageerwiderung",
+        description="Frist 30.04 (aus Begleitschreiben). Stellungnahme binnen zwei Wochen.",
+        due_date=datetime(2026, 4, 30, 23, 59, tzinfo=UTC),
         action_type=ActionItemType.DEADLINE,
         status=ActionItemStatus.OPEN,
     )

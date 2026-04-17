@@ -116,7 +116,6 @@ class CaseService:
         title: str,
         status: CaseStatus = CaseStatus.INTAKE,
         jurisdiction: Jurisdiction = Jurisdiction.DE,
-        court_id: str | None = None,
     ) -> Case:
         """Create a new case."""
         return self.case_repo.create_case(
@@ -124,7 +123,6 @@ class CaseService:
             title=title,
             status=status,
             jurisdiction=jurisdiction,
-            court_id=court_id,
         )
 
     def update_case_status(self, case_id: str, status: CaseStatus) -> Case | None:

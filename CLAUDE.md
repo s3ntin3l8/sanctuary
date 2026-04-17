@@ -2,8 +2,6 @@
 
 Privacy-first legal case management. All AI runs locally via Ollama. "Quiet Sanctuary" aesthetic — high density, dark slate, minimal chrome, zero unnecessary chrome.
 
-Full product vision: `docs/vision.md`
-
 ## What this is
 
 A **case intelligence engine**, not a document archive. Documents are evidence. Cases are the primary object. The user navigates by graph and claim — never by file list.
@@ -23,7 +21,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **Frontend:** HTMX + Alpine.js
 * **Styling:** Tailwind CSS v4 (`static/input.css` dual light/dark tokens)
 * **DB:** SQLite + Alembic + `sqlite-vec`
-* **AI:** Ollama (`qwen3.5:9b` summaries, `nomic-embed-text` embeddings)
+* **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
 
 ## Key data model concepts (target)
@@ -37,6 +35,8 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * `Document.court_relay` + `Document.attributed_originator` — true sender behind court routing
 
 ## Rules
+* **Pre-release — clean as you go.** Working with test data only. When a field, table, model, route, or template becomes unused or superseded, **remove it in the same change** — no deprecation shims, no backwards-compat layers, no "keep for now" comments. Migrations drop columns; templates lose unused branches; obsolete routes disappear. No dead code accumulates before v1.
+* **Internal ID is the lead everywhere.** `Case.id` (e.g. `ADV-024-A`) is shown in sidebar, breadcrumb, URLs, chat, reports. Per-court Aktenzeichen lives on `Proceeding.az_court` — context, never identity.
 * **Management Summary:** 3-bullet (Legal Significance, Action/Deadline, Financial Impact).
 * **Triage:** No `case_id`/`parent_id` → Triage Inbox. Bundle by `ingest_batch_id`.
 * **Graph first:** primary case view is the correspondence swim-lane graph, not a document list.

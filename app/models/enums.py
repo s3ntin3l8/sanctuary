@@ -25,6 +25,8 @@ class OriginatorType(enum.StrEnum):
     COURT = "court"  # Blue #0369A1 — Gavel icon
     OPPOSING = "opposing"  # Red  #B91C1C — Warning icon
     OWN = "own"  # Green #047857 — Shield icon
+    THIRD_PARTY = "third_party"  # Amber #C2410C — Groups icon — Child Services,
+    #     Verfahrensbeistand, Sachverständige, Jugendamt, etc.
     UNKNOWN = "unknown"  # Neutral — for unclassified docs
 
 
