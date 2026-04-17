@@ -72,11 +72,14 @@ def compute_review_reasons(doc: Document) -> list[str]:
     if not doc.case_id or doc.case_id == "_TRIAGE":
         reasons.append("missing_case_id")
 
+    if not doc.originator_type:
+        reasons.append("missing_originator")
+
     if not doc.sender:
         reasons.append("missing_sender")
 
     if not doc.received_date:
-        reasons.append("missing_date")
+        reasons.append("missing_received_date")
 
     if doc.role == DocumentRole.ENCLOSURE and not doc.parent_id:
         reasons.append("missing_parent")

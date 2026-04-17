@@ -1,15 +1,28 @@
-"""Seed script: generates ~50 realistic dummy documents with varied content,
-parent-child relationships, costs, deadlines, and hearings across 4 cases."""
+"""Comprehensive triage seed — one of every triage state, bundle shape, and edge case.
+
+Run:  make seed-adv
+
+Bundles seeded (all scoped to ADV-024-A / ADV-031-B / ADV-100-X)
+─────────────────────────────────────────────────────────────────
+ 1  CLEAN         All docs confirmed; Confirm bundle → active; proceeding chip visible
+ 2  PARTIAL       First doc ✓, others still need review; CTA disabled; suggested_case_id chip
+ 3  FRESH         All need review; all 4 pipeline states across 4 docs
+ 4  PROOF_PILL    ATTACHES_AS_PROOF edge → [proof] badge; ActionItem parked under _TRIAGE
+ 5  MULTI_ROOT    One email → 2 cover-letter subtrees (Bundle A / Bundle B segmentation)
+ 6  DEEP_NEST     Cover → child → grandchild (depth-2 L-connector indentation)
+ 7  CRITICAL_SCAN CRITICAL ruling via scanner; floats to top of feed; ai_summary=failed pill
+ 8  LOW_CONF      UNKNOWN originator; all-low extraction_confidence; all fields expanded
+ 9  REACTIONS     All four UserReactionType values pre-seeded on docs
+10  SYNTHETIC     Loose doc (no batch) → synthetic bundle
+11  COMPLETED     batch.status=COMPLETED → must NOT appear in triage feed
+"""
 
 import os
-import random
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-# Add app to path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db")
 
 from app.config import SessionLocal, engine
@@ -18,991 +31,1059 @@ from app.models.database import (
     Base,
     Case,
     CaseStatus,
-    CostCategory,
-    CostStatus,
     Document,
+    DocumentRelationship,
     DocumentRole,
     DocumentType,
-    Entity,
     IngestBatch,
     IngestBatchSourceType,
     IngestBatchStatus,
-    LegalCost,
+    IngestStatus,
     OriginatorType,
+    Proceeding,
     SignificanceTier,
+    UserReaction,
 )
-from app.models.enums import ActionItemStatus, ActionItemType
-from app.services.ingestion.service import _extract_and_save_entities
-from app.services.normalization import normalize_hm
+from app.models.enums import (
+    ActionItemStatus,
+    ActionItemType,
+    Jurisdiction,
+    ProceedingCourtLevel,
+    ProceedingStatus,
+    RelationshipConfidence,
+    RelationshipType,
+    UserReactionType,
+)
 
-# Use checkfirst=True to avoid "table already exists" errors
 Base.metadata.create_all(bind=engine, checkfirst=True)
 
-# Stamp alembic to HEAD so the app's lifespan doesn't try to re-run every
-# migration against already-created tables on next startup.
-from alembic import command as _alembic_command  # noqa: E402
-from alembic.config import Config as _AlembicConfig  # noqa: E402
+from alembic import command as _alembic_command
+from alembic.config import Config as _AlembicConfig
 
 _alembic_command.stamp(_AlembicConfig("alembic.ini"), "head")
 
 db = SessionLocal()
+now = datetime.now(UTC).replace(second=0, microsecond=0)
 
-# ── Seed Cases ──────────────────────────────────────────────────────────────
-SEED_CASES = [
-    {
-        "id": "ADV-992-K",
-        "title": "Vane vs. Vane: Divorce & Assets",
-        "status": CaseStatus.DISCOVERY,
-    },
-    {
-        "id": "ADV-804-M",
-        "title": "Meridian Holdings v. City Planning Board",
-        "status": CaseStatus.PRE_TRIAL,
-    },
-    {
-        "id": "ADV-331-P",
-        "title": "Patel Estate: Probate & Distribution",
-        "status": CaseStatus.INTAKE,
-    },
-    {
-        "id": "ADV-550-R",
-        "title": "Rothschild Corp. v. H&M Retail Group",
-        "status": CaseStatus.DISCOVERY,
-    },
-]
+# ── Idempotency: remove prior seed data ────────────────────────────────────
+# Delete in dependency order so FK constraints aren't violated.
+SEED_CASE_IDS = ["_TRIAGE", "ADV-024-A", "ADV-031-B", "ADV-100-X"]
 
-for seed in SEED_CASES:
-    if not db.get(Case, seed["id"]):
-        db.add(Case(**seed))
+for model in (
+    UserReaction,
+    ActionItem,
+    DocumentRelationship,
+    Document,
+    IngestBatch,
+    Proceeding,
+):
+    db.query(model).filter(
+        model.case_id.in_(SEED_CASE_IDS)
+        if hasattr(model, "case_id")
+        else model.id.isnot(None)  # fallback — unused in practice here
+    ).delete(synchronize_session=False)
+
+# DocumentRelationship has no case_id; delete via joined doc IDs instead.
+# (The delete above skipped it via the fallback — clear it properly.)
+db.query(DocumentRelationship).filter(
+    DocumentRelationship.from_document_id.in_(
+        db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
+    )
+).delete(synchronize_session=False)
+db.query(UserReaction).filter(
+    UserReaction.document_id.in_(
+        db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
+    )
+).delete(synchronize_session=False)
+db.query(Document).filter(Document.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
+db.query(IngestBatch).filter(IngestBatch.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
+# Orphaned batches (case_id=None) from previous runs — identify by subject prefix.
+db.query(IngestBatch).filter(IngestBatch.subject.like("[SEED]%")).delete(
+    synchronize_session=False
+)
+db.query(Proceeding).filter(Proceeding.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
+db.query(Case).filter(Case.id.in_(SEED_CASE_IDS)).delete(synchronize_session=False)
 db.commit()
 
-case_ids = [c["id"] for c in SEED_CASES]
-
-# ── Content Templates ───────────────────────────────────────────────────────
-SENDERS = {
-    OriginatorType.COURT: [
-        "Clerk's Office <clerk@lg-berlin.de>",
-        "Judge Richter <richter@olg-muenchen.de>",
-        "Court Administrator <admin@ag-hamburg.de>",
-        "Presiding Judge <presiding@bggh.de>",
-    ],
-    OriginatorType.OPPOSING: [
-        "Dr. Mueller <mueller@kanzlei-feinde.de>",
-        "Opposing Counsel <counsel@wright-law.com>",
-        "Schmidt & Partners <info@schmidt-partner.de>",
-        "Litigation Team <litigation@opposing-firm.de>",
-    ],
-    OriginatorType.OWN: [
-        "Julian Vance <jvance@sanctuary-counsel.com>",
-        "Sarah Chen <schen@sanctuary-counsel.com>",
-        "Legal Assistant <assistant@sanctuary-counsel.com>",
-    ],
-}
-
-DOCUMENT_TEMPLATES = [
-    {
-        "title": "Court Order — Motion to Compel Discovery",
-        "originator": OriginatorType.COURT,
-        "content": """ORDER ON MOTION TO COMPEL
-
-This matter comes before the Court on Plaintiff's Motion to Compel Discovery.
-The Court has reviewed the submissions of both parties and finds that the
-Defendant has failed to produce documents responsive to Requests 1-7 within
-the 30-day period prescribed by Rule 34.
-
-IT IS HEREBY ORDERED that Defendant shall produce all responsive documents
-within 14 days of this Order. Failure to comply may result in sanctions
-including adverse inference instructions.
-
-The hearing on the Motion for Summary Judgment is scheduled for March 15, 2026
-at 9:00 AM in Courtroom 4B. Both parties must file their briefs no later than
-14 days before the hearing date.
-
-Court costs of EUR 425.00 are assessed against Defendant pursuant to
-Gerichtskostengesetz (GKG) KV 1210.""",
-    },
-    {
-        "title": "Opposing Counsel — Settlement Demand Letter",
-        "originator": OriginatorType.OPPOSING,
-        "content": """SETTLEMENT DEMAND
-
-Dear Counsel,
-
-We write on behalf of our client to formally present the following settlement
-demand in the above-referenced matter.
-
-Our client is willing to resolve this dispute for the sum of EUR 185,000.00,
-payable within 30 days of execution of a full and final release. This demand
-is inclusive of all claims, including attorney fees and costs.
-
-Please note that this demand expires on February 28, 2026. If we do not
-receive a counteroffer by that date, we will proceed with filing the
-Amended Complaint and Motion for Preliminary Injunction.
-
-Our client has also incurred H&M retail expenses totaling EUR 3,200.00
-which are documented in Exhibit C and form part of the damages claim.
-
-We look forward to your prompt response.""",
-    },
-    {
-        "title": "Internal Memo — Case Strategy Review",
-        "originator": OriginatorType.OWN,
-        "content": """INTERNAL MEMORANDUM — PRIVILEGED & CONFIDENTIAL
-
-TO: Case File
-FROM: Julian Vance
-RE: Strategy Review — Next Steps
-
-After reviewing the opposing counsel's latest filing, I recommend the
-following course of action:
-
-1. File a Motion for Protective Order regarding the overly broad document
-   requests (Requests 8-15).
-2. Retain Dr. Weber as our expert witness on valuation matters.
-3. Prepare deposition outlines for the three key witnesses identified
-   during discovery.
-
-The deadline for our response to their discovery requests is March 1, 2026.
-We should schedule a client meeting for the week of February 17 to discuss
-settlement parameters.
-
-Budget estimate for expert witness: EUR 8,500.00 (Sachverständiger under JVEG).""",
-    },
-    {
-        "title": "Notice of Hearing — Preliminary Injunction",
-        "originator": OriginatorType.COURT,
-        "content": """NOTICE OF HEARING
-
-PLEASE TAKE NOTICE that a hearing on Plaintiff's Motion for Preliminary
-Injunction has been scheduled as follows:
-
-Date: April 2, 2026
-Time: 10:30 AM
-Location: Amtsgericht Berlin, Courtroom 2A
-Judge: Hon. Richter
-
-All parties must appear and be prepared to argue. Oral argument is limited
-to 20 minutes per side.
-
-The Court requires that all exhibits be filed at least 5 business days
-prior to the hearing date.
-
-Court filing fee of EUR 150.00 applies per GKG schedule.""",
-    },
-    {
-        "title": "Discovery Response — Interrogatories",
-        "originator": OriginatorType.OPPOSING,
-        "content": """DEFENDANT'S RESPONSES TO PLAINTIFF'S FIRST SET OF INTERROGATORIES
-
-Defendant responds to Plaintiff's Interrogatories as follows:
-
-Interrogatory No. 1: Admitted.
-Interrogatory No. 2: Objection. This interrogatory seeks information that
-is protected by the attorney-client privilege.
-Interrogatory No. 3: Defendant has no knowledge or information sufficient
-to form a belief as to the truth of the matter.
-Interrogatory No. 4: See attached Schedule A for complete response.
-
-Pursuant to the applicable rules, Defendant reserves the right to supplement
-these responses as discovery proceeds.
-
-Please note that all responses are due within 30 days of service. Any
-objections not raised within this period are waived.""",
-    },
-    {
-        "title": "Client Communication — Status Update",
-        "originator": OriginatorType.OWN,
-        "content": """CLIENT STATUS UPDATE
-
-Dear Client,
-
-I am writing to provide you with an update on the current status of your case.
-
-The Court has issued its Order on the Motion to Compel, largely in our favor.
-The opposing party has until March 15 to produce the requested documents.
-
-We have also received the opposing counsel's settlement demand of EUR 185,000.
-I believe this is significantly above the realistic value of the claim, and
-I recommend we prepare a counteroffer in the range of EUR 75,000-95,000.
-
-Next steps:
-- Review the produced documents when received (expected by March 15)
-- Prepare counteroffer by February 28
-- Schedule mediation session for April
-
-Please call me at your earliest convenience to discuss.""",
-    },
-    {
-        "title": "Expert Witness Report — Financial Valuation",
-        "originator": OriginatorType.OPPOSING,
-        "content": """EXPERT WITNESS REPORT
-
-Prepared by: Dr. Klaus Weber, CPA
-Date: January 15, 2026
-
-EXECUTIVE SUMMARY
-
-Based on my analysis of the financial records provided, I have determined
-the following:
-
-1. The fair market value of the disputed assets is approximately EUR 420,000.
-2. The depreciation schedule used by the Plaintiff is inconsistent with
-   industry standards.
-3. Additional H&M clothing and retail expenses of EUR 12,500.00 were
-   improperly classified as business expenses.
-
-METHODOLOGY
-
-I applied the income approach and market approach to valuation, using
-comparable transactions from the past 36 months. The discount rate of 8.5%
-reflects the risk profile of the subject entity.
-
-FEE SCHEDULE
-
-My fees for this engagement are calculated at EUR 350.00 per hour under
-JVEG guidelines, for a total of EUR 14,000.00 (40 hours).""",
-    },
-    {
-        "title": "Court Judgment — Partial Summary",
-        "originator": OriginatorType.COURT,
-        "content": """JUDGMENT ON PARTIAL SUMMARY JUDGMENT
-
-After careful consideration of the motions, briefs, and oral argument
-presented on January 20, 2026, the Court rules as follows:
-
-1. Plaintiff's Motion for Partial Summary Judgment is GRANTED in part.
-   The Court finds that Defendant breached the contractual obligation
-   under Section 4.2 of the Agreement.
-
-2. Defendant's Cross-Motion is DENIED.
-
-3. Damages are set at EUR 95,000.00, plus prejudgment interest at the
-   statutory rate of 5% per annum from the date of breach.
-
-4. Court costs of EUR 1,250.00 are assessed against Defendant.
-
-5. The remaining claims shall proceed to trial, scheduled for June 10, 2026.
-
-This is a final and appealable Order as to the claims resolved herein.""",
-    },
-    {
-        "title": "Invoice — Legal Services Rendered",
-        "originator": OriginatorType.OWN,
-        "content": """INVOICE FOR LEGAL SERVICES
-
-Matter: ADV-992-K
-Period: January 2026
-Attorney: Julian Vance
-
-DESCRIPTION                          HOURS    RATE      AMOUNT
-───────────────────────────────────────────────────────────────
-Review of discovery responses         3.5    450.00    1,575.00
-Draft Motion for Protective Order     5.0    450.00    2,250.00
-Client conference call                1.0    450.00      450.00
-Legal research on privilege issues    2.5    450.00    1,125.00
-Correspondence with opposing counsel  1.5    450.00      675.00
-───────────────────────────────────────────────────────────────
-SUBTOTAL                                               6,075.00
-VAT (19%)                                              1,154.25
-───────────────────────────────────────────────────────────────
-TOTAL                                                  7,229.25
-
-Payment due within 30 days.""",
-    },
-    {
-        "title": "Deposition Transcript — Key Witness",
-        "originator": OriginatorType.COURT,
-        "content": """DEPOSITION TRANSCRIPT
-
-Case No.: 2024-FL-DR-00992
-Deponent: Maria Schmidt
-Date: February 5, 2026
-Court Reporter: Lisa Bauer
-
-EXAMINATION BY COUNSEL FOR PLAINTIFF:
-
-Q: Please state your name for the record.
-A: Maria Schmidt.
-Q: What is your relationship to the Defendant?
-A: I was the financial advisor for the Defendant from 2019 to 2023.
-Q: Did you prepare any financial statements during that period?
-A: Yes, I prepared quarterly and annual statements.
-Q: Were these statements provided to the Plaintiff?
-A: Not to my knowledge. The Defendant instructed me not to share them.
-
-[Deposition continues for 47 pages...]
-
-The deposition concluded at 3:45 PM. The witness was excused.
-
-Court reporter fee: EUR 890.00 (JVEG witness compensation schedule).""",
-    },
-]
-
-TITLE_VARIATIONS = [
-    "Amended {title}",
-    "Supplemental {title}",
-    "Re: {title}",
-    "{title} — Follow-Up",
-    "{title} (Second Filing)",
-    "Corrected {title}",
-    "{title} — Addendum",
-]
-
-COST_TEMPLATES = [
-    {
-        "title": "Court Filing Fee — Motion to Compel",
-        "category": CostCategory.GERICHTSKOSTEN,
-        "rvg_position": "KV 1210 GKG",
-        "amount_net": 357.14,
-        "vat_rate": 0.19,
-        "streitwert": 150000,
-        "gebuehren_faktor": 1.0,
-        "is_reimbursable": True,
-    },
-    {
-        "title": "Attorney Fees — Discovery Phase",
-        "category": CostCategory.ANWALTSKOSTEN,
-        "rvg_position": "Nr. 3100 VV RVG",
-        "amount_net": 4200.00,
-        "vat_rate": 0.19,
-        "streitwert": 150000,
-        "gebuehren_faktor": 1.3,
-        "is_reimbursable": True,
-    },
-    {
-        "title": "Opposing Counsel — Costs to Date",
-        "category": CostCategory.ANWALTSKOSTEN_GEGNER,
-        "rvg_position": "§91 ZPO",
-        "amount_net": 6800.00,
-        "vat_rate": 0.19,
-        "streitwert": 150000,
-        "gebuehren_faktor": 1.5,
-        "is_reimbursable": False,
-    },
-    {
-        "title": "Expert Witness — Dr. Weber Valuation",
-        "category": CostCategory.SACHVERSTAENDIGER,
-        "rvg_position": "§3 JVEG",
-        "amount_net": 11764.71,
-        "vat_rate": 0.19,
-        "streitwert": 150000,
-        "gebuehren_faktor": None,
-        "is_reimbursable": True,
-    },
-    {
-        "title": "Court Advance Payment",
-        "category": CostCategory.VORSCHUSS,
-        "rvg_position": "KV 1211 GKG",
-        "amount_net": 2100.00,
-        "vat_rate": 0.0,
-        "streitwert": 150000,
-        "gebuehren_faktor": None,
-        "is_reimbursable": True,
-    },
-    {
-        "title": "Deposition Court Reporter Fees",
-        "category": CostCategory.AUSLAGEN,
-        "rvg_position": "Nr. 7002 VV RVG",
-        "amount_net": 747.90,
-        "vat_rate": 0.19,
-        "streitwert": None,
-        "gebuehren_faktor": None,
-        "is_reimbursable": True,
-    },
-]
-
-DEADLINE_TEMPLATES = [
-    ("Response to Discovery Requests", 14),
-    ("File Motion for Protective Order", 21),
-    ("Submit Expert Witness List", 30),
-    ("Settlement Counteroffer Due", 7),
-    ("Deposition of Maria Schmidt", 45),
-    ("Brief for Summary Judgment", 35),
-    ("Mediation Session", 60),
-    ("Amended Complaint Filing", 28),
-]
-
-HEARING_TEMPLATES = [
-    ("Preliminary Injunction Hearing", "Amtsgericht Berlin, Room 2A"),
-    ("Summary Judgment Hearing", "Landgericht München, Room 4B"),
-    ("Status Conference", "OLG Hamburg, Room 12"),
-    ("Mediation Session", "Mediation Center Berlin"),
-    ("Trial — Day 1", "BGH Leipzig, Saal 1"),
-]
-
-# ── Generate Documents ──────────────────────────────────────────────────────
-random.seed(42)
-now = datetime.now(UTC).replace(second=0, microsecond=0)
-doc_counter = 0
-parent_docs = {}  # case_id -> list of doc ids that can be parents
-
-for case_seed in SEED_CASES:
-    case_id = case_seed["id"]
-    num_docs = random.randint(10, 16)
-    parent_docs[case_id] = []
-
-    for i in range(num_docs):
-        template = random.choice(DOCUMENT_TEMPLATES)
-        originator = template["originator"]
-        sender = random.choice(SENDERS[originator])
-
-        # Vary the title occasionally
-        if random.random() < 0.3:
-            title = random.choice(TITLE_VARIATIONS).format(title=template["title"])
-        else:
-            title = template["title"]
-
-        content = normalize_hm(template["content"])
-
-        # Random date within last 120 days
-        days_ago = random.randint(0, 120)
-        received_date = now - timedelta(days=days_ago)
-
-        doc = Document(
-            title=title,
-            content=content,
-            case_id=case_id,
-            originator_type=originator,
-            sender=sender,
-            received_date=received_date,
-            needs_review=random.random() < 0.15,
-            review_reasons=random.sample(
-                [
-                    "missing_case_id",
-                    "missing_originator",
-                    "missing_sender",
-                    "missing_received_date",
-                ],
-                k=random.randint(0, 1),
-            )
-            if random.random() < 0.1
-            else [],
-            ai_summary_status="pending",
-        )
-        db.add(doc)
-        db.flush()
-        _extract_and_save_entities(db, doc, doc.content)
-        doc_counter += 1
-
-        # ~30% of docs become parents for child documents
-        if random.random() < 0.3:
-            parent_docs[case_id].append(doc.id)
-
-    db.commit()
-
-    # ── Create Child Documents ──────────────────────────────────────────────
-    for parent_id in parent_docs[case_id]:
-        if random.random() < 0.6:  # 60% of parents get children
-            num_children = random.randint(1, 3)
-            for _ in range(num_children):
-                template = random.choice(DOCUMENT_TEMPLATES)
-                originator = template["originator"]
-                sender = random.choice(SENDERS[originator])
-
-                child_title = f"Re: {template['title']} — Response"
-                child_content = normalize_hm(
-                    f"Response to the above-referenced document.\n\n"
-                    f"From: {sender}\n\n"
-                    f"{template['content'][:300]}..."
-                )
-
-                days_ago = random.randint(0, 90)
-                received_date = now - timedelta(days=days_ago)
-
-                child = Document(
-                    title=child_title,
-                    content=child_content,
-                    case_id=case_id,
-                    originator_type=originator,
-                    sender=sender,
-                    received_date=received_date,
-                    parent_id=parent_id,
-                    needs_review=False,
-                    ai_summary_status="pending",
-                )
-                db.add(child)
-                db.flush()
-                _extract_and_save_entities(db, child, child.content)
-                doc_counter += 1
-
-    db.commit()
-
-    # ── Seed Deadlines (as ActionItems) ─────────────────────────────────────
-    for title, offset in random.sample(DEADLINE_TEMPLATES, k=random.randint(3, 6)):
-        due_date = now + timedelta(days=random.randint(-10, 60))
-        completed = due_date < now and random.random() < 0.3
-        db.add(
-            ActionItem(
-                case_id=case_id,
-                title=title,
-                description=f"Deadline for {title.lower()} in case {case_id}.",
-                due_date=due_date,
-                action_type=ActionItemType.DEADLINE,
-                status=ActionItemStatus.COMPLETED
-                if completed
-                else ActionItemStatus.OPEN,
-            )
-        )
-
-    # ── Seed Hearings (as ActionItems) ──────────────────────────────────────
-    for title, location in random.sample(HEARING_TEMPLATES, k=random.randint(2, 4)):
-        hearing_date = now + timedelta(days=random.randint(5, 90))
-        db.add(
-            ActionItem(
-                case_id=case_id,
-                title=title,
-                description=f"Hearing: {title}",
-                location=location,
-                due_date=hearing_date.replace(
-                    hour=random.choice([9, 10, 11, 14, 15]),
-                    minute=random.choice([0, 15, 30, 45]),
-                ),
-                action_type=ActionItemType.COURT_DATE,
-                status=ActionItemStatus.OPEN,
-            )
-        )
-
-    # ── Seed Costs ──────────────────────────────────────────────────────────
-    for cost_template in random.sample(COST_TEMPLATES, k=random.randint(3, 5)):
-        issued_offset = random.randint(-90, -5)
-        due_offset = random.randint(-30, 30)
-        status = random.choice(
-            [
-                CostStatus.OFFEN,
-                CostStatus.BEZAHLT,
-                CostStatus.ERSTATTET,
-                CostStatus.TEILWEISE,
-            ]
-        )
-
-        cost = LegalCost(
-            case_id=case_id,
-            title=cost_template["title"],
-            category=cost_template["category"],
-            status=status,
-            rvg_position=cost_template["rvg_position"],
-            amount_net=cost_template["amount_net"],
-            vat_rate=cost_template["vat_rate"],
-            amount_gross=cost_template["amount_net"] * (1 + cost_template["vat_rate"]),
-            streitwert=cost_template["streitwert"],
-            gebuehren_faktor=cost_template["gebuehren_faktor"],
-            is_reimbursable=cost_template["is_reimbursable"],
-            issued_at=now + timedelta(days=issued_offset),
-            due_at=now + timedelta(days=due_offset),
-            paid_at=now + timedelta(days=random.randint(-60, -1))
-            if status == CostStatus.BEZAHLT
-            else None,
-            amount_paid=cost_template["amount_net"] * (1 + cost_template["vat_rate"])
-            if status == CostStatus.BEZAHLT
-            else 0,
-            amount_reimbursed=cost_template["amount_net"]
-            * (1 + cost_template["vat_rate"])
-            if status == CostStatus.ERSTATTET
-            else 0,
-        )
-        db.add(cost)
-
-    db.commit()
-
-# ── Phase 2 demo: one realistic bundle showcasing cover-letter → enclosures ──
-# Shows the Russian-doll visuals (role badges, L-connector, court-relay pill,
-# significance tiers) that the rest of the seed data leaves at default values.
-demo_case_id = case_ids[0]  # first seed case
-demo_batch = IngestBatch(
-    source_type=IngestBatchSourceType.EMAIL,
-    sender_email="anwalt@kanzlei.de",
-    subject="LG Hamburg — Klageerwiderung + Anlage K1",
-    received_at=now - timedelta(days=2),
+# ── Cases ──────────────────────────────────────────────────────────────────
+triage_inbox = Case(
+    id="_TRIAGE",
+    title="Triage Inbox",
+    status=CaseStatus.INTAKE,
+    jurisdiction=Jurisdiction.DE,
+)
+case_a = Case(
+    id="ADV-024-A",
+    title="Vane v. Vane — Elternsorge AG Hamburg",
+    status=CaseStatus.DISCOVERY,
+    jurisdiction=Jurisdiction.DE,
+)
+case_b = Case(
+    id="ADV-031-B",
+    title="Meridian Holdings v. Stadtplanung Berlin",
+    status=CaseStatus.PRE_TRIAL,
+    jurisdiction=Jurisdiction.DE,
+)
+case_c = Case(
+    id="ADV-100-X",
+    title="DataBreach GmbH — Corporate Litigation",
+    status=CaseStatus.DISCOVERY,
+    jurisdiction=Jurisdiction.DE,
+)
+db.add_all([triage_inbox, case_a, case_b, case_c])
+db.commit()
+
+# ── Proceedings ────────────────────────────────────────────────────────────
+proc_a = Proceeding(
+    case_id="ADV-024-A",
+    court_name="Amtsgericht Hamburg",
+    court_level=ProceedingCourtLevel.AG,
+    subject_matter="§ 1671 BGB — Elterliche Sorge",
+    az_court="003 F 426/25",
+    status=ProceedingStatus.ACTIVE,
+    started_at=now - timedelta(days=180),
+)
+proc_b = Proceeding(
+    case_id="ADV-031-B",
+    court_name="Landgericht Berlin",
+    court_level=ProceedingCourtLevel.LG,
+    subject_matter="§ 823 BGB — Schadensersatz",
+    az_court="14 O 123/25",
+    status=ProceedingStatus.ACTIVE,
+    started_at=now - timedelta(days=90),
+)
+db.add_all([proc_a, proc_b])
+db.commit()
+
+
+# ── Bundle helpers ──────────────────────────────────────────────────────────
+
+
+def make_batch(
+    source_type,
+    subject,
+    *,
+    case_id=None,
+    proceeding_id=None,
     status=IngestBatchStatus.PENDING,
-    case_id=None,  # intentionally unassigned → lands in triage
-)
-db.add(demo_batch)
-db.flush()
+    sender_email=None,
+    days_ago=1,
+):
+    batch = IngestBatch(
+        source_type=source_type,
+        subject=f"[SEED] {subject}",
+        case_id=case_id,
+        proceeding_id=proceeding_id,
+        status=status,
+        sender_email=sender_email,
+        received_at=now - timedelta(days=days_ago),
+    )
+    db.add(batch)
+    db.flush()
+    return batch
 
-# Parent: court relay cover letter
-cover = Document(
-    title="Begleitschreiben LG Hamburg — Az. 003 F 426/25",
-    content=(
-        "# Landgericht Hamburg\n\n"
-        "**Aktenzeichen:** 003 F 426/25\n\n"
-        "## Begleitschreiben\n\n"
-        "Sehr geehrte Damen und Herren,\n\n"
-        "in der Familiensache der Parteien übersende ich Ihnen in der Anlage "
-        "**die Klageerwiderung des Beklagten** vom 12.04.2026 nebst **Anlage K1**.\n\n"
-        "Die Stellungnahme wird binnen **zwei Wochen ab Zustellung** erwartet, "
-        "spätestens jedoch bis zum **30.04.2026**.\n\n"
-        "Mit freundlichen Grüßen\n\n"
-        "— *Geschäftsstelle*"
-    ),
-    case_id=demo_case_id,
-    ingest_batch_id=demo_batch.id,
-    originator_type=OriginatorType.COURT,
-    sender="Geschäftsstelle LG Hamburg",
-    received_date=now - timedelta(days=2),
+
+def make_doc(
+    title,
+    *,
+    batch,
     role=DocumentRole.COVER_LETTER,
-    document_type=DocumentType.RELAY,
-    significance_tier=SignificanceTier.INFORMATIONAL,
+    originator=OriginatorType.COURT,
+    sender="gericht@ag-hamburg.de",
+    case_id="_TRIAGE",
+    parent_id=None,
+    needs_review=True,
+    review_reasons=None,
+    significance=SignificanceTier.INFORMATIONAL,
+    court_relay=False,
+    attributed_originator=None,
+    doc_type=DocumentType.RELAY,
+    ingest_status=IngestStatus.COMPLETED,
+    ai_summary_status="generated",
+    ai_summary=None,
+    key_passages=None,
+    cost_candidates=None,
+    extraction_confidence=None,
+    days_ago=1,
+):
+    if review_reasons is None:
+        review_reasons = ["missing_case_id"] if needs_review else []
+    if extraction_confidence is None:
+        extraction_confidence = {
+            "sender": "high",
+            "date": "high",
+            "case_id": "high",
+            "originator": "high",
+        }
+
+    doc = Document(
+        title=title,
+        content=_content(title, originator, sender),
+        case_id=case_id,
+        ingest_batch_id=batch.id if batch else None,
+        parent_id=parent_id,
+        role=role,
+        originator_type=originator,
+        sender=sender,
+        received_date=now - timedelta(days=days_ago),
+        needs_review=needs_review,
+        review_reasons=review_reasons,
+        significance_tier=significance,
+        court_relay=court_relay,
+        attributed_originator=attributed_originator,
+        document_type=doc_type,
+        ingest_status=ingest_status,
+        ai_summary_status=ai_summary_status,
+        ai_summary=ai_summary,
+        key_passages=key_passages,
+        cost_candidates=cost_candidates,
+        extraction_confidence=extraction_confidence,
+        created_at=now - timedelta(days=days_ago),
+    )
+    db.add(doc)
+    db.flush()
+    return doc
+
+
+def _content(title, originator, sender):
+    originator_label = {
+        OriginatorType.COURT: "Gericht",
+        OriginatorType.OPPOSING: "Gegenseite",
+        OriginatorType.OWN: "Eigene Kanzlei",
+        OriginatorType.THIRD_PARTY: "Dritte",
+        OriginatorType.UNKNOWN: "Unbekannt",
+    }.get(originator, "Unbekannt")
+    return (
+        f"# {title}\n\n"
+        f"**Von:** {sender}  \n"
+        f"**Kategorie:** {originator_label}\n\n"
+        "## Inhalt\n\n"
+        "Dieser Schriftsatz dient als Testdokument für die Triage-Ansicht. "
+        "Er enthält ausreichend Text, damit der Lesebereich befüllt wirkt.\n\n"
+        "> Zitat aus dem Schriftsatz zur Demonstration der Key-Passage-Hervorhebung.\n\n"
+        "## Rechtliche Ausführungen\n\n"
+        "Nach §1671 BGB ist die elterliche Sorge bei Vorliegen der gesetzlichen "
+        "Voraussetzungen neu zu regeln. Die Parteien streiten über die tatsächlichen "
+        "Voraussetzungen.\n\n"
+        "Streitwert: **3.000,00 EUR**"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 1 — CLEAN: all docs confirmed, Confirm bundle → active
+#   Tests: enabled CTA, suggested_case_id chip [ADV-024-A?], proceeding chip
+# ═══════════════════════════════════════════════════════════════════════════
+b1 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "AG Hamburg — Gerichtsbeschluss (alle Metadaten bestätigt)",
+    sender_email="geschaeftsstelle@ag-hamburg.de",
+    days_ago=3,
+)
+
+b1_cover = make_doc(
+    "Begleitschreiben AG Hamburg — Beschluss §1671",
+    batch=b1,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="ADV-024-A",  # AI already suggested this case
+    needs_review=False,
+    review_reasons=[],
+    significance=SignificanceTier.INFORMATIONAL,
     court_relay=True,
-    attributed_originator="Dr. Müller, Rechtsanwalt (Beklagtenvertreter)",
-    needs_review=True,
-    review_reasons=["missing_parent"],
-    ai_summary_status="pending",
-    extraction_confidence={
-        "sender": "high",
-        "date": "high",
-        "case_id": "high",
-        "originator": "high",
+    attributed_originator="Richter Hoffmann",
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+    ai_summary={
+        "legal_significance": "Gerichtliche Zustellung eines Beschlusses nach §1671 BGB.",
+        "required_action": "Stellungnahme binnen zwei Wochen einreichen.",
+        "financial_impact": "Keine direkten Kostenauswirkungen.",
     },
-)
-db.add(cover)
-db.flush()
-
-# Enclosure 1: opposing statement
-stmt = Document(
-    title="Klageerwiderung Beklagter — Dr. Müller",
-    content=(
-        "# Klageerwiderung\n\n"
-        "*In der Familiensache 003 F 426/25*\n\n"
-        "## I. Sachverhalt\n\n"
-        "Der Beklagte **bestreitet** die von der Klägerin "
-        "vorgetragenen Tatsachen bezüglich der alleinigen elterlichen Sorge.\n\n"
-        "## II. Rechtliche Würdigung\n\n"
-        "Eine Übertragung der elterlichen Sorge nach §1671 BGB ist nicht gerechtfertigt. "
-        "Die Kostentragung hat nach §91 ZPO die Klägerin zu übernehmen.\n\n"
-        "## III. Kostenantrag\n\n"
-        "Streitwert: **3.000,00 EUR**\n"
-        "Verfahrensgebühr nach RVG Nr. 3100 VV: **261,30 EUR**\n"
-    ),
-    case_id=demo_case_id,
-    ingest_batch_id=demo_batch.id,
-    parent_id=cover.id,
-    originator_type=OriginatorType.OPPOSING,
-    sender="Dr. Müller, Rechtsanwalt",
-    received_date=now - timedelta(days=2),
-    role=DocumentRole.ENCLOSURE,
-    document_type=DocumentType.STATEMENT,
-    significance_tier=SignificanceTier.SIGNIFICANT,
-    needs_review=True,
-    review_reasons=["missing_parent"],
-    ai_summary_status="pending",
-    cost_candidates=[
-        {"type": "amount", "value": 3000.00, "context": "Streitwert: 3.000,00 EUR"},
-        {"type": "amount", "value": 261.30, "context": "Verfahrensgebühr: 261,30 EUR"},
+    key_passages=[
         {
-            "type": "rvg_position",
-            "value": "Nr. 3100 VV RVG",
-            "context": "Verfahrensgebühr nach RVG",
+            "text": "Stellungnahme binnen zwei Wochen",
+            "rationale": "Response deadline",
+            "span": [0, 30],
         },
-        {"type": "rvg_position", "value": "§ 91 ZPO", "context": "Kostentragung"},
     ],
-    extraction_confidence={
-        "sender": "high",
-        "date": "medium",
-        "case_id": "high",
-        "originator": "high",
-    },
 )
-db.add(stmt)
-db.flush()
 
-# Enclosure 2: annex as proof
-annex = Document(
-    title="Anlage K1 — Rechnung H&M",
-    content=(
-        "# Anlage K1\n\n"
-        "## Rechnung — H&M Hennes & Mauritz GmbH\n\n"
-        "| Position | Betrag |\n"
-        "|----------|--------|\n"
-        "| Bekleidung Kind | 180,00 EUR |\n"
-        "| Schulkleidung | 120,00 EUR |\n"
-        "| **Summe** | **300,00 EUR** |\n\n"
-        "*Vorgelegt als Nachweis der tatsächlichen Bedarfsposition.*"
-    ),
-    case_id=demo_case_id,
-    ingest_batch_id=demo_batch.id,
-    parent_id=cover.id,
-    originator_type=OriginatorType.OPPOSING,
-    sender="Dr. Müller, Rechtsanwalt",
-    received_date=now - timedelta(days=2),
+b1_ruling = make_doc(
+    "Beschluss AG Hamburg — Elterliche Sorge §1671 BGB",
+    batch=b1,
     role=DocumentRole.ENCLOSURE,
-    document_type=DocumentType.ANNEX,
-    significance_tier=SignificanceTier.INFORMATIONAL,
-    needs_review=True,
-    review_reasons=["missing_parent", "missing_sender"],
-    ai_summary_status="pending",
-    cost_candidates=[
-        {"type": "amount", "value": 180.00, "context": "Bekleidung Kind 180,00 EUR"},
-        {"type": "amount", "value": 120.00, "context": "Schulkleidung 120,00 EUR"},
-        {"type": "amount", "value": 300.00, "context": "Summe 300,00 EUR"},
-    ],
-    extraction_confidence={
-        "sender": "low",
-        "date": "medium",
-        "case_id": "high",
-        "originator": "medium",
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="ADV-024-A",
+    parent_id=b1_cover.id,
+    needs_review=False,
+    review_reasons=[],
+    significance=SignificanceTier.CRITICAL,
+    doc_type=DocumentType.RULING,
+    ai_summary_status="generated",
+    ai_summary={
+        "legal_significance": "Beschluss über elterliche Sorge. Entscheidung zugunsten der Mutter.",
+        "required_action": "Frist zur Beschwerde: 4 Wochen ab Zustellung (§63 FamFG).",
+        "financial_impact": "Gerichtskosten EUR 231,00.",
     },
+    key_passages=[
+        {
+            "text": "Die elterliche Sorge wird der Mutter übertragen",
+            "rationale": "Core ruling",
+            "span": [0, 52],
+        },
+        {
+            "text": "Frist zur Beschwerde: 4 Wochen",
+            "rationale": "Deadline",
+            "span": [100, 130],
+        },
+    ],
+    cost_candidates=[
+        {"type": "amount", "value": 231.00, "context": "Gerichtskosten EUR 231,00"},
+    ],
 )
-db.add(annex)
+
+# Wire the batch proceeding so the proceeding chip renders
+b1.proceeding_id = proc_a.id
 db.flush()
 
-# Action item sourced from the cover letter (would be AI-extracted in Phase 4)
 db.add(
     ActionItem(
-        case_id=demo_case_id,
-        source_document_id=cover.id,
-        title="Stellungnahme Klageerwiderung",
-        description="Stellungnahme auf Klageerwiderung binnen zwei Wochen einzureichen.",
+        case_id="ADV-024-A",
+        source_document_id=b1_cover.id,
+        title="Stellungnahme zum Beschluss §1671",
+        description="Stellungnahme binnen zwei Wochen auf den Beschluss einreichen.",
         due_date=now + timedelta(days=14),
         action_type=ActionItemType.DEADLINE,
         status=ActionItemStatus.OPEN,
     )
 )
-
 db.commit()
 
-# ── Phase 2 demo B: one email delivering TWO bundles ─────────────────────────
-# Mirrors vision.md §1 mockup (lines 233–248): one email, 5 documents,
-# grouped under TWO parent-root cover letters. Bundle A routes the
-# Klageerwiderung + Anlage K1; Bundle B routes a Jugendamtsbericht from a
-# third party (via the court). Both cascade to the same case.
-demo_b_case_id = case_ids[1]
-demo_b_batch = IngestBatch(
-    source_type=IngestBatchSourceType.EMAIL,
-    sender_email="anwalt@kanzlei.de",
-    subject="LG Hamburg — Zustellung Klageerwiderung + Jugendamtsbericht",
-    received_at=now - timedelta(hours=6),
-    status=IngestBatchStatus.PENDING,
-    case_id=None,  # assignment happens on triage confirm
-)
-db.add(demo_b_batch)
-db.flush()
 
-# ── BUNDLE A: Klageerwiderung + Anlage K1 ──────────────────────────────────
-cover_a = Document(
-    title="Begleitschreiben LG Hamburg — Klageerwiderung",
-    content=(
-        "# Landgericht Hamburg\n\n"
-        "**Aktenzeichen:** 003 F 426/25\n\n"
-        "## Begleitschreiben\n\n"
-        "Sehr geehrte Damen und Herren,\n\n"
-        "anliegend übersende ich Ihnen die **Klageerwiderung des Beklagten** "
-        "nebst **Anlage K1** zur weiteren Veranlassung.\n\n"
-        "Eine Stellungnahme wird binnen zwei Wochen erwartet, **spätestens bis "
-        "zum 30.04.2026**.\n\n"
-        "Mit freundlichen Grüßen\n\n"
-        "— *Geschäftsstelle LG Hamburg*"
-    ),
-    case_id=demo_b_case_id,
-    ingest_batch_id=demo_b_batch.id,
-    originator_type=OriginatorType.COURT,
-    sender="Geschäftsstelle LG Hamburg",
-    received_date=now - timedelta(hours=6),
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 2 — PARTIAL: first doc confirmed ✓, two still need review
+#   Tests: mixed card states, CTA disabled (2 docs), suggested_case_id chip
+# ═══════════════════════════════════════════════════════════════════════════
+b2 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "Kanzlei Müller — Klageerwiderung + Anlagen (teilweise bestätigt)",
+    sender_email="mueller@kanzlei-gegenseite.de",
+    days_ago=1,
+)
+
+b2_cover = make_doc(
+    "Begleitschreiben AG Hamburg — Klageerwiderung",
+    batch=b2,
     role=DocumentRole.COVER_LETTER,
-    document_type=DocumentType.RELAY,
-    significance_tier=SignificanceTier.INFORMATIONAL,
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="ADV-024-A",  # suggested by AI
+    needs_review=False,
+    review_reasons=[],
+    significance=SignificanceTier.INFORMATIONAL,
     court_relay=True,
-    attributed_originator="Dr. Opposing, Rechtsanwalt (Beklagtenvertreter)",
+    attributed_originator="Dr. Müller, Rechtsanwalt",
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+)
+
+b2_statement = make_doc(
+    "Klageerwiderung — Dr. Müller für Beklagten",
+    batch=b2,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender=None,  # missing_sender
+    case_id="ADV-024-A",
+    parent_id=b2_cover.id,
     needs_review=True,
-    review_reasons=["missing_parent"],
-    ai_summary_status="pending",
+    review_reasons=["missing_sender"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.STATEMENT,
+    ai_summary_status="generated",
     extraction_confidence={
-        "sender": "high",
+        "sender": "low",
         "date": "high",
         "case_id": "high",
         "originator": "high",
     },
-)
-db.add(cover_a)
-db.flush()
-
-klagewi = Document(
-    title="Klageerwiderung Beklagter",
-    content=(
-        "# Klageerwiderung\n\n"
-        "*In der Familiensache 003 F 426/25*\n\n"
-        "## I. Sachverhalt\n\n"
-        "Der Beklagte **bestreitet** die von der Klägerin "
-        "vorgetragenen Tatsachen zur Kindesbetreuung.\n\n"
-        "## II. Rechtliche Würdigung\n\n"
-        "Eine Übertragung der elterlichen Sorge nach §1671 BGB ist nicht "
-        "gerechtfertigt.\n\n"
-        "## III. Kostenantrag\n\n"
-        "Streitwert: **5.000,00 EUR**\n"
-        "Verfahrensgebühr nach RVG Nr. 3100 VV: **420,50 EUR**\n"
-    ),
-    case_id=demo_b_case_id,
-    ingest_batch_id=demo_b_batch.id,
-    parent_id=cover_a.id,
-    originator_type=OriginatorType.OPPOSING,
-    sender="Dr. Opposing, Rechtsanwalt",
-    received_date=now - timedelta(hours=6),
-    role=DocumentRole.ENCLOSURE,
-    document_type=DocumentType.STATEMENT,
-    significance_tier=SignificanceTier.SIGNIFICANT,
-    needs_review=True,
-    review_reasons=["missing_parent"],
-    ai_summary_status="pending",
     cost_candidates=[
         {"type": "amount", "value": 5000.00, "context": "Streitwert: 5.000,00 EUR"},
-        {"type": "amount", "value": 420.50, "context": "Verfahrensgebühr: 420,50 EUR"},
         {
             "type": "rvg_position",
             "value": "Nr. 3100 VV RVG",
-            "context": "Verfahrensgebühr nach RVG",
+            "context": "Verfahrensgebühr",
         },
     ],
-    extraction_confidence={
-        "sender": "high",
-        "date": "high",
-        "case_id": "high",
-        "originator": "high",
-    },
 )
-db.add(klagewi)
-db.flush()
 
-anlage_k1_b = Document(
-    title="Anlage K1 — Rechnung",
-    content=(
-        "# Anlage K1\n\n"
-        "## Rechnung — Kindergarten Hamburg Nord\n\n"
-        "| Position | Betrag |\n"
-        "|----------|--------|\n"
-        "| Monatsbeitrag März | 420,00 EUR |\n"
-        "| Zusatzleistungen  |  85,00 EUR |\n"
-        "| **Summe** | **505,00 EUR** |\n\n"
-        "*Vorgelegt als Nachweis tatsächlicher Betreuungskosten.*"
-    ),
-    case_id=demo_b_case_id,
-    ingest_batch_id=demo_b_batch.id,
-    parent_id=cover_a.id,
-    originator_type=OriginatorType.OPPOSING,
-    sender="Dr. Opposing, Rechtsanwalt",
-    received_date=now - timedelta(hours=6),
+b2_annex = make_doc(
+    "Anlage B1 — Kindergarten-Quittungen",
+    batch=b2,
     role=DocumentRole.ENCLOSURE,
-    document_type=DocumentType.ANNEX,
-    significance_tier=SignificanceTier.INFORMATIONAL,
+    originator=OriginatorType.OPPOSING,
+    sender="mueller@kanzlei-gegenseite.de",
+    case_id="_TRIAGE",  # AI didn't catch the case here
+    parent_id=b2_cover.id,
     needs_review=True,
-    review_reasons=["missing_parent"],
+    review_reasons=["missing_case_id", "missing_received_date"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.ANNEX,
     ai_summary_status="pending",
-    cost_candidates=[
-        {"type": "amount", "value": 420.00, "context": "Monatsbeitrag März 420,00 EUR"},
-        {"type": "amount", "value": 505.00, "context": "Summe 505,00 EUR"},
-    ],
     extraction_confidence={
         "sender": "medium",
-        "date": "high",
-        "case_id": "high",
+        "date": "low",
+        "case_id": "low",
         "originator": "medium",
     },
 )
-db.add(anlage_k1_b)
-db.flush()
+db.commit()
 
-# ── BUNDLE B: Jugendamtsbericht ────────────────────────────────────────────
-cover_b = Document(
-    title="Begleitschreiben LG Hamburg — Jugendamtsbericht",
-    content=(
-        "# Landgericht Hamburg\n\n"
-        "**Aktenzeichen:** 003 F 426/25\n\n"
-        "## Begleitschreiben\n\n"
-        "In derselben Familiensache übersende ich Ihnen anbei den "
-        "**Bericht des Jugendamtes Hamburg** zur Kenntnisnahme. "
-        "Eine separate Stellungnahme ist hierzu nicht erforderlich.\n\n"
-        "Mit freundlichen Grüßen\n\n"
-        "— *Geschäftsstelle LG Hamburg*"
-    ),
-    case_id=demo_b_case_id,
-    ingest_batch_id=demo_b_batch.id,
-    originator_type=OriginatorType.COURT,
-    sender="Geschäftsstelle LG Hamburg",
-    received_date=now - timedelta(hours=6),
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 3 — FRESH: all need review, all 4 pipeline states visible
+#   Tests: ⏳ pending / ⚙ AI processing / ✓ ready / ⚠ failed
+# ═══════════════════════════════════════════════════════════════════════════
+b3 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "LG Berlin — Klageschrift (frische Einlieferung, alle Pipelines sichtbar)",
+    sender_email="eingang@lg-berlin.de",
+    days_ago=0,
+)
+
+b3_cover = make_doc(
+    "Begleitschreiben LG Berlin — Klageschrift eingegangen",
+    batch=b3,
     role=DocumentRole.COVER_LETTER,
-    document_type=DocumentType.RELAY,
-    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    originator=OriginatorType.COURT,
+    sender="eingang@lg-berlin.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
     court_relay=True,
-    attributed_originator="Jugendamt Hamburg (Child Services)",
-    needs_review=True,
-    review_reasons=["missing_parent"],
+    doc_type=DocumentType.RELAY,
+    ingest_status=IngestStatus.PENDING,
     ai_summary_status="pending",
-    extraction_confidence={
-        "sender": "high",
-        "date": "high",
-        "case_id": "high",
-        "originator": "high",
-    },
+    # ⏳ pending: ingest not yet run
 )
-db.add(cover_b)
-db.flush()
 
-ja_report = Document(
-    title="Jugendamtsbericht — Kindeswohl",
-    content=(
-        "# Bericht des Jugendamtes Hamburg\n\n"
-        "*Az. 003 F 426/25 — zur Vorlage an das Familiengericht*\n\n"
-        "## I. Gesprächsverlauf\n\n"
-        "Am 08.04.2026 fand ein persönliches Gespräch mit beiden Elternteilen "
-        "und dem Kind statt.\n\n"
-        "## II. Empfehlung\n\n"
-        "Das Jugendamt empfiehlt, die **elterliche Sorge gemeinsam zu belassen**, "
-        "ergänzt um eine feste Umgangsregelung.\n\n"
-        "## III. Hinweis\n\n"
-        "Dieser Bericht dient der Information. Eine weitergehende Stellungnahme "
-        "durch die Parteien ist vom Gericht nicht angefordert."
-    ),
-    case_id=demo_b_case_id,
-    ingest_batch_id=demo_b_batch.id,
-    parent_id=cover_b.id,
-    originator_type=OriginatorType.THIRD_PARTY,
-    sender="Jugendamt Hamburg",
-    received_date=now - timedelta(hours=6),
+b3_motion = make_doc(
+    "Klageschrift — Meridian Holdings v. Stadtplanung",
+    batch=b3,
     role=DocumentRole.ENCLOSURE,
-    document_type=DocumentType.REPORT,
-    significance_tier=SignificanceTier.SIGNIFICANT,
-    attributed_originator="Jugendamt Hamburg (Child Services)",
+    originator=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    case_id="_TRIAGE",
+    parent_id=b3_cover.id,
     needs_review=True,
-    review_reasons=["missing_parent"],
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.CRITICAL,
+    doc_type=DocumentType.MOTION,
+    ingest_status=IngestStatus.COMPLETED,
     ai_summary_status="pending",
-    extraction_confidence={
-        "sender": "high",
-        "date": "high",
-        "case_id": "high",
-        "originator": "high",
-    },
+    # ⚙ AI processing: docling done, AI not yet
 )
-db.add(ja_report)
-db.flush()
 
-# ── ActionItem: Frist 30.04 aus Begleitschreiben A (vision §1 ⚑) ──────────
+b3_exhibit = make_doc(
+    "Anlage K1 — Bebauungsplan-Gutachten",
+    batch=b3,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.THIRD_PARTY,
+    sender="gutachter@stadtplanung.de",
+    case_id="_TRIAGE",
+    parent_id=b3_motion.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.REPORT,
+    ingest_status=IngestStatus.COMPLETED,
+    ai_summary_status="generated",
+    # ✓ ready: full pipeline done
+    ai_summary={
+        "legal_significance": "Sachverständigengutachten zum Bebauungsplan.",
+        "required_action": "Auf Aussagen zur Erschließung eingehen.",
+        "financial_impact": "Streitwert ca. EUR 120.000.",
+    },
+    key_passages=[
+        {
+            "text": "Der Bebauungsplan verstößt gegen §34 BauGB",
+            "rationale": "Key legal finding",
+            "span": [0, 44],
+        },
+    ],
+)
+
+b3_invoice = make_doc(
+    "Kostenrechnung Gericht — Einreichungsgebühr",
+    batch=b3,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.COURT,
+    sender="eingang@lg-berlin.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.ADMINISTRATIVE,
+    doc_type=DocumentType.INVOICE,
+    ingest_status=IngestStatus.FAILED,
+    ai_summary_status="failed",
+    # ⚠ failed: ingestion error
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 4 — PROOF_PILL: ATTACHES_AS_PROOF edge + ActionItem cascade test
+#   Tests: [proof] badge on annex; ActionItem(case_id=_TRIAGE) → cascades on confirm
+# ═══════════════════════════════════════════════════════════════════════════
+b4 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "Anwalt Schneider — Stellungnahme + Beweis-Anlage",
+    sender_email="schneider@kanzlei-schneider.de",
+    days_ago=2,
+)
+
+b4_cover = make_doc(
+    "Begleitschreiben LG Berlin — Stellungnahme Beklagter",
+    batch=b4,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.COURT,
+    sender="eingang@lg-berlin.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    court_relay=True,
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+)
+
+b4_statement = make_doc(
+    "Stellungnahme Beklagter — Schneider",
+    batch=b4,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="schneider@kanzlei-schneider.de",
+    case_id="_TRIAGE",
+    parent_id=b4_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.STATEMENT,
+    ai_summary_status="generated",
+    key_passages=[
+        {
+            "text": "Der Beklagte war am 10.01.2026 ortsabwesend",
+            "rationale": "Contested fact",
+            "span": [0, 44],
+        },
+    ],
+)
+
+b4_proof = make_doc(
+    "Anlage S1 — Reisekostenabrechnung als Nachweis",
+    batch=b4,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="schneider@kanzlei-schneider.de",
+    case_id="_TRIAGE",
+    parent_id=b4_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.ANNEX,
+    ai_summary_status="generated",
+    extraction_confidence={
+        "sender": "medium",
+        "date": "medium",
+        "case_id": "low",
+        "originator": "medium",
+    },
+    cost_candidates=[
+        {"type": "amount", "value": 342.50, "context": "Reisekosten 342,50 EUR"},
+    ],
+)
+
+db.add(
+    DocumentRelationship(
+        from_document_id=b4_statement.id,
+        to_document_id=b4_proof.id,
+        relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+)
+
+# ActionItem parked under _TRIAGE — should cascade on bundle confirm
 db.add(
     ActionItem(
-        case_id=demo_b_case_id,
-        source_document_id=cover_a.id,
-        title="Stellungnahme auf Klageerwiderung",
-        description="Frist 30.04 (aus Begleitschreiben). Stellungnahme binnen zwei Wochen.",
-        due_date=datetime(2026, 4, 30, 23, 59, tzinfo=UTC),
+        case_id="_TRIAGE",
+        source_document_id=b4_cover.id,
+        title="Erwiderung auf Stellungnahme Schneider",
+        description="Frist zur Gegendarstellung: 2 Wochen.",
+        due_date=now + timedelta(days=14),
         action_type=ActionItemType.DEADLINE,
         status=ActionItemStatus.OPEN,
     )
 )
-
 db.commit()
 
-# ── Summary ─────────────────────────────────────────────────────────────────
-total_docs = db.query(Document).count()
-total_cases = db.query(Case).count()
-total_actions = db.query(ActionItem).count()
-total_costs = db.query(LegalCost).count()
-total_batches = db.query(IngestBatch).count()
-parent_count = db.query(Document).filter(Document.parent_id.isnot(None)).count()
-total_entities = db.query(Entity).count()
 
-print("Seed complete:")
-print(f"  Cases:         {total_cases}")
-print(f"  Documents:     {total_docs}  ({parent_count} as children)")
-print(f"  Ingest batches:{total_batches}")
-print(f"  Action items:  {total_actions}")
-print(f"  Costs:         {total_costs}")
-print(f"  Entities:      {total_entities}")
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 5 — MULTI_ROOT: one email, two cover-letter subtrees
+#   Tests: parent_groups yields 2 groups → Bundle A / Bundle B labels
+# ═══════════════════════════════════════════════════════════════════════════
+b5 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "AG Hamburg — Klageerwiderung + Jugendamtsbericht (eine E-Mail, zwei Gruppen)",
+    sender_email="geschaeftsstelle@ag-hamburg.de",
+    days_ago=0,
+)
+
+# Root A: Klageerwiderung group
+b5_cover_a = make_doc(
+    "Begleitschreiben A — Klageerwiderung",
+    batch=b5,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    court_relay=True,
+    attributed_originator="Dr. Müller, Rechtsanwalt",
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+)
+
+b5_statement = make_doc(
+    "Klageerwiderung Beklagter — Dr. Müller",
+    batch=b5,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="mueller@kanzlei-gegenseite.de",
+    case_id="_TRIAGE",
+    parent_id=b5_cover_a.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.STATEMENT,
+    ai_summary_status="generated",
+    key_passages=[
+        {
+            "text": "§1671 BGB ist nicht gerechtfertigt",
+            "rationale": "Core legal argument",
+            "span": [0, 34],
+        },
+    ],
+)
+
+b5_annex = make_doc(
+    "Anlage K1 — Betreuungsrechnung",
+    batch=b5,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="mueller@kanzlei-gegenseite.de",
+    case_id="_TRIAGE",
+    parent_id=b5_cover_a.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.ANNEX,
+    ai_summary_status="generated",
+    cost_candidates=[
+        {"type": "amount", "value": 505.00, "context": "Betreuungskosten 505,00 EUR"},
+    ],
+)
+
+# Root B: Jugendamtsbericht group (separate subtree in same batch)
+b5_cover_b = make_doc(
+    "Begleitschreiben B — Jugendamtsbericht",
+    batch=b5,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    court_relay=True,
+    attributed_originator="Jugendamt Hamburg",
+    significance=SignificanceTier.ADMINISTRATIVE,
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+)
+
+b5_report = make_doc(
+    "Jugendamtsbericht — Kindeswohl §50 SGB VIII",
+    batch=b5,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.THIRD_PARTY,
+    sender="jugendamt@hamburg.de",
+    case_id="_TRIAGE",
+    parent_id=b5_cover_b.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.REPORT,
+    ai_summary_status="generated",
+    key_passages=[
+        {
+            "text": "Empfehlung: gemeinsame elterliche Sorge beibehalten",
+            "rationale": "Agency recommendation",
+            "span": [0, 50],
+        },
+    ],
+)
+
+db.add(
+    ActionItem(
+        case_id="_TRIAGE",
+        source_document_id=b5_cover_a.id,
+        title="Stellungnahme auf Klageerwiderung",
+        description="Frist 30 Tage ab Zustellung.",
+        due_date=now + timedelta(days=30),
+        action_type=ActionItemType.DEADLINE,
+        status=ActionItemStatus.OPEN,
+    )
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 6 — DEEP_NEST: depth-2 indentation (cover → child → grandchild)
+#   Tests: L-connector svg at depth=1 and depth=2
+# ═══════════════════════════════════════════════════════════════════════════
+b6 = make_batch(
+    IngestBatchSourceType.SCAN,
+    "Eingang Scan — Schriftsatz mit verschachtelten Anlagen",
+    days_ago=4,
+)
+
+b6_cover = make_doc(
+    "Hauptschriftsatz — Antragstellung",
+    batch=b6,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.MOTION,
+    ai_summary_status="generated",
+)
+
+b6_child = make_doc(
+    "Anlage A — Gutachten (Tiefe 1)",
+    batch=b6,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.THIRD_PARTY,
+    sender="gutachter@expert.de",
+    case_id="_TRIAGE",
+    parent_id=b6_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.REPORT,
+    ai_summary_status="generated",
+)
+
+b6_grandchild = make_doc(
+    "Anlage A.1 — Rohdaten zum Gutachten (Tiefe 2)",
+    batch=b6,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.THIRD_PARTY,
+    sender="gutachter@expert.de",
+    case_id="_TRIAGE",
+    parent_id=b6_child.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.ADMINISTRATIVE,
+    doc_type=DocumentType.ANNEX,
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "medium",
+        "date": "low",
+        "case_id": "low",
+        "originator": "medium",
+    },
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 7 — CRITICAL_SCAN: CRITICAL doc, ai_summary failed, floats to top
+#   Tests: scanner source icon; failed pill; urgency-first sort (most review flags)
+# ═══════════════════════════════════════════════════════════════════════════
+b7 = make_batch(
+    IngestBatchSourceType.SCAN,
+    "Eingang Scan — Urteil (KRITISCH, OCR-Fehler)",
+    days_ago=0,
+)
+
+b7_ruling = make_doc(
+    "Urteil AG Hamburg — §1671 BGB (KRITISCH)",
+    batch=b7,
+    role=DocumentRole.STANDALONE,
+    originator=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id", "missing_received_date"],
+    significance=SignificanceTier.CRITICAL,
+    doc_type=DocumentType.RULING,
+    ingest_status=IngestStatus.FAILED,
+    ai_summary_status="failed",
+    extraction_confidence={
+        "sender": "low",
+        "date": "low",
+        "case_id": "low",
+        "originator": "low",
+    },
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 8 — LOW_CONF: UNKNOWN originator, all-low confidence → all fields open
+#   Tests: unknown originator chip color; metadata form shows all fields expanded
+# ═══════════════════════════════════════════════════════════════════════════
+b8 = make_batch(
+    IngestBatchSourceType.MANUAL,
+    "Manuell eingepflegtes Dokument — Absender unbekannt",
+    days_ago=5,
+)
+
+b8_doc = make_doc(
+    "Unbekanntes Schriftstück — Herkunft unklar",
+    batch=b8,
+    role=DocumentRole.STANDALONE,
+    originator=OriginatorType.UNKNOWN,
+    sender=None,
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=[
+        "missing_case_id",
+        "missing_sender",
+        "missing_originator",
+        "missing_received_date",
+    ],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.OTHER,
+    ai_summary_status="pending",
+    extraction_confidence={
+        "sender": "low",
+        "date": "low",
+        "case_id": "low",
+        "originator": "low",
+    },
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 9 — REACTIONS: all four UserReactionType values pre-seeded
+#   Tests: reaction pills visible on cards and in the HUD reaction bar
+# ═══════════════════════════════════════════════════════════════════════════
+b9 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "Gegenseite — Behauptungsschriftsatz (Reaktionen vorbelegt)",
+    sender_email="gegenseite@kanzlei-opposition.de",
+    days_ago=7,
+)
+
+b9_cover = make_doc(
+    "Begleitschreiben — Behauptungsschriftsatz",
+    batch=b9,
+    role=DocumentRole.COVER_LETTER,
+    originator=OriginatorType.COURT,
+    sender="eingang@ag-hamburg.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    court_relay=True,
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.RELAY,
+    ai_summary_status="generated",
+)
+
+b9_lies = make_doc(
+    "Tatsachenbehauptung — Behauptete Abwesenheit am 10.01.2026",
+    batch=b9,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="gegenseite@kanzlei-opposition.de",
+    case_id="_TRIAGE",
+    parent_id=b9_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.STATEMENT,
+    ai_summary_status="generated",
+    key_passages=[
+        {
+            "text": "Der Beklagte war am 10.01.2026 ortsabwesend",
+            "rationale": "Contested fact — see reaction",
+            "span": [0, 44],
+        },
+    ],
+)
+
+b9_needs_proof = make_doc(
+    "Behauptung ohne Beleg — Unterhaltsrückstände",
+    batch=b9,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="gegenseite@kanzlei-opposition.de",
+    case_id="_TRIAGE",
+    parent_id=b9_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.SIGNIFICANT,
+    doc_type=DocumentType.STATEMENT,
+    ai_summary_status="generated",
+)
+
+b9_precedent = make_doc(
+    "Verweis auf BGH-Rechtsprechung — §1671 BGB",
+    batch=b9,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.OPPOSING,
+    sender="gegenseite@kanzlei-opposition.de",
+    case_id="_TRIAGE",
+    parent_id=b9_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.CORRESPONDENCE,
+    ai_summary_status="generated",
+)
+
+b9_true = make_doc(
+    "Bestätigte Tatsache — Kindergartenbeitrag März belegt",
+    batch=b9,
+    role=DocumentRole.ENCLOSURE,
+    originator=OriginatorType.THIRD_PARTY,
+    sender="kindergarten@hamburg.de",
+    case_id="_TRIAGE",
+    parent_id=b9_cover.id,
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.INVOICE,
+    ai_summary_status="generated",
+)
+
+db.add_all(
+    [
+        UserReaction(
+            document_id=b9_lies.id,
+            reaction=UserReactionType.LIES,
+            notes="Widerspricht Reisekostenabrechnung Anlage S1",
+        ),
+        UserReaction(
+            document_id=b9_needs_proof.id, reaction=UserReactionType.NEEDS_PROOF
+        ),
+        UserReaction(
+            document_id=b9_precedent.id,
+            reaction=UserReactionType.PRECEDENT,
+            notes="BGH XII ZB 601/15 — maßgeblich für §1671-Auslegung",
+        ),
+        UserReaction(document_id=b9_true.id, reaction=UserReactionType.TRUE),
+    ]
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 10 — SYNTHETIC: loose doc with no batch (synthetic bundle key=loose-N)
+#   Tests: ingest_batch_id=None path; loose_docs_condition filter; MANUAL icon
+# ═══════════════════════════════════════════════════════════════════════════
+b10_doc = make_doc(
+    "Einzel-Schriftstück — kein Batch (lose eingelegt)",
+    batch=None,
+    role=DocumentRole.STANDALONE,
+    originator=OriginatorType.OWN,
+    sender="eigene-kanzlei@sanctuary.de",
+    case_id="_TRIAGE",
+    needs_review=True,
+    review_reasons=["missing_case_id"],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.CORRESPONDENCE,
+    ai_summary_status="generated",
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BUNDLE 11 — COMPLETED: already left triage; must NOT appear in feed
+#   Tests: IngestBatch.status=COMPLETED excluded by get_triage_bundles query
+# ═══════════════════════════════════════════════════════════════════════════
+b11 = make_batch(
+    IngestBatchSourceType.EMAIL,
+    "Bereits bestätigtes Bundle — darf NICHT in Triage erscheinen",
+    sender_email="done@kanzlei.de",
+    case_id="ADV-100-X",
+    status=IngestBatchStatus.COMPLETED,
+    days_ago=10,
+)
+
+make_doc(
+    "Bestätigter Schriftsatz (nicht in Triage sichtbar)",
+    batch=b11,
+    role=DocumentRole.STANDALONE,
+    originator=OriginatorType.COURT,
+    sender="done@kanzlei.de",
+    case_id="ADV-100-X",
+    needs_review=False,
+    review_reasons=[],
+    significance=SignificanceTier.INFORMATIONAL,
+    doc_type=DocumentType.CORRESPONDENCE,
+    ai_summary_status="generated",
+)
+db.commit()
+
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+from app.models.database import ActionItem as _AI
+from app.models.database import Document as _Doc
+from app.models.database import IngestBatch as _Batch
+
+total_docs = db.query(_Doc).filter(_Doc.case_id.in_(SEED_CASE_IDS)).count()
+total_batches = db.query(_Batch).count()
+total_actions = db.query(_AI).filter(_AI.case_id.in_(SEED_CASE_IDS)).count()
+needs_review = (
+    db.query(_Doc)
+    .filter(_Doc.case_id.in_(SEED_CASE_IDS), _Doc.needs_review.is_(True))
+    .count()
+)
+
+print("Triage seed complete:")
+print(f"  Cases:          {len(SEED_CASE_IDS)}")
+print("  Proceedings:    2  (AG Hamburg 003 F 426/25 / LG Berlin 14 O 123/25)")
+print(f"  Batches total:  {total_batches}")
+print(f"  Documents:      {total_docs}  ({needs_review} need review)")
+print(f"  Action items:   {total_actions}")
+print()
+print("Bundles in triage feed (expected 10, bundle 11 excluded):")
+print(
+    "  1  CLEAN         — 2 docs confirmed ✓, Confirm bundle → active, proceeding chip"
+)
+print("  2  PARTIAL       — 1 confirmed ✓, 2 still pending; CTA disabled")
+print("  3  FRESH         — 4 docs, all 4 pipeline states (pending/AI/ready/failed)")
+print("  4  PROOF_PILL    — [proof] badge on Anlage S1; ActionItem under _TRIAGE")
+print("  5  MULTI_ROOT    — 2 cover-letter subtrees → Bundle A / Bundle B")
+print("  6  DEEP_NEST     — depth-2 grandchild (L-connector at px-12)")
+print("  7  CRITICAL_SCAN — CRITICAL ruling, ai=failed, floats to top by urgency")
+print("  8  LOW_CONF      — UNKNOWN originator, all-low confidence, all fields open")
+print("  9  REACTIONS     — LIES / NEEDS_PROOF / PRECEDENT / TRUE pre-seeded")
+print(" 10  SYNTHETIC     — loose doc, no batch (loose-N key, MANUAL icon)")
+print(" 11  COMPLETED     — EXCLUDED from feed (status=COMPLETED)")
 
 db.close()

@@ -265,16 +265,98 @@ created_at
 
 ## UI Architecture
 
-### Primary navigation paradigm
+### Navigation architecture
 
-The **correspondence graph is the primary interface** for a case — not a document list. You navigate by clicking nodes in the graph; documents surface in context, never from a list.
+Sanctuary's app chrome follows from the case-first model: **primary navigation surfaces only what's genuinely top-level — everything else is derived, contextual, or searchable.**
+
+#### App shell: thin rail + command palette
+
+The left edge of the app is a **thin icon rail** (~56px), not a wide sidebar. Labels appear on hover; no collapsed/expanded state — the rail is already minimal. The saved real estate goes to the correspondence graph, the AI brief, and the document HUD.
+
+```
+┌────┐
+│ ●  │ ← brand
+├────┤
+│ ⌂  │ ← Home
+│ ⊞ ●│ ← Triage (badge = pending count)
+│ ▸  │ ← Cases
+├────┤
+│    │
+├────┤
+│ ⌘K │ ← Command palette
+│ ⬆ │ ← Upload
+│ 🔔 │ ← Notifications
+│ ⚙  │ ← Settings (incl. Gmail config)
+│ 🙂 │ ← User menu
+└────┘
+```
+
+There is **no global top bar**. Per-page top bars (in the triage page, the case dashboard, etc.) own the page-level chrome — proceeding switcher, view mode tabs, page-specific actions. Eliminating the global header gives every pixel of vertical real estate back to content.
+
+#### Three primary destinations
+
+| Destination | Purpose |
+|---|---|
+| **Home** (`/`) | Cross-case priority view: action items due today/this-week, batches awaiting triage, cases with recent significant activity. The "what needs my attention right now" view you open first thing. |
+| **Triage** (`/triage`) | The inbox of documents awaiting user confirmation, grouped by `IngestBatch`. See `docs/triage.md`. |
+| **Cases** (`/cases`) | Compact list of cases (status, title, internal ID). Click a case → its dashboard. |
+
+That's the entire primary nav. Everything else is reached contextually or through ⌘K.
+
+#### Command palette (⌘K) is the scale mechanism
+
+With only 3 primary nav items, the palette carries the weight of reaching anything else. It has three always-present sections, filtered simultaneously as you type:
+
+```
+⌘K  ________________________________
+
+  Navigate
+  > home
+  > triage
+  > case ADV-024-A
+  > document #47
+
+  Search
+  > "Müller"     (3 cases, 12 documents, 2 contacts)
+  > "Frist"      (5 action items, 8 documents)
+
+  Actions
+  > upload document
+  > open Gmail settings
+  > add new case
+  > ask AI (global)
+```
+
+The palette replaces what would otherwise be a Contacts page, an Entities page, a cross-case search page, and several buried menu items.
+
+#### Within-case navigation: graph-first
+
+Once inside a case, the **correspondence graph is the primary interface** (see `docs/dashboard.md`). You navigate by clicking nodes in the graph; documents surface in context, never from a list.
 
 The information hierarchy:
 ```
-All cases (sidebar) → Case graph + AI brief → Node click → Document HUD
+Rail (global)  →  Cases  →  Case dashboard (graph + brief)  →  Node click  →  Document HUD
+                                       ↑                                              │
+                                       └──────────── Proceeding switcher ─────────────┘
 ```
 
-You never open a "document list." You always arrive at a document through the graph, with full case context already present.
+You never open a "document list." You always arrive at a document through the graph, with full case context already present. The one exception is the Timeline view mode on the case dashboard — a flat fallback for cases too early to have relationships detected, or for the occasional chronological scan.
+
+#### What is explicitly *not* in primary nav
+
+Each of these was a top-level destination in an earlier sidebar. Each pulled the user toward a cross-case flat-list mental model — the paradigm Sanctuary is built to escape.
+
+| Removed | Replaced by |
+|---|---|
+| Master Timeline (cross-case flat list) | Deleted. Timeline exists as a view mode inside each case dashboard. |
+| Legal Costs (cross-case cost browser) | Case dashboard's Financials view mode; global pending-costs widget on Home; ⌘K aggregates. |
+| Contacts (cross-case contact directory) | ⌘K search. A dedicated contacts page implies a file-manager mental model. |
+| Entities (cross-case entity browser) | ⌘K search, same reason. |
+| Activity Log (cross-case feed) | Notifications panel (rail 🔔) and Home feed. Not a navigation destination. |
+
+The principle: **the primary nav never leads to a flat list.** If what you want is a flat list, you're always going through ⌘K or through a specific case's view mode — which keeps the case-as-object intact.
+
+---
 
 ### 1. Triage — strategy session, not data entry
 

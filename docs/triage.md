@@ -46,10 +46,11 @@ Parent-child tree shown inline (uses existing `parent_id`).
 
 ### Per-document pipeline status
 
-Three states, derived from `Document.ingest_status` + `Document.ai_summary_status`:
+Four states, derived from `Document.ingest_status` + `Document.ai_summary_status`:
 
 | Marker | Meaning | Source fields |
 |---|---|---|
+| `⏳ pending` | Docling not yet run | `ingest_status=pending` |
 | `⚙ AI processing` | Docling done, but AI summary / extraction still running | `ingest_status=COMPLETED`, `ai_summary_status in (pending, null)` |
 | `✓ ready` | All pipelines done; `key_passages`, `ai_summary`, `cost_delta` populated (or confirmed empty) | `ingest_status=COMPLETED`, `ai_summary_status in (generated, approved)` |
 | `⚠ failed` | Ingestion or AI failed — offer retry | `ingest_status=FAILED` OR `ai_summary_status=failed` |
@@ -109,33 +110,37 @@ Not two equal columns. The document fills ~60% of the pane; the metadata form is
 
 ---
 
-## 3. Batch-level confirm — what it does and doesn't do
+## 3. Confirm flow — two levels
 
-At the batch header, a single **[confirm & process all →]** button.
+### Per-document metadata confirm
 
-### What the cascade does
+Each document has a **metadata panel** in the right HUD. It has two states:
 
-1. **Sets `case_id` + `proceeding_id`** on all documents in the bundle (via `IngestBatchRepository.assign_case()`)
-2. **Creates `ActionItem` records** for any deadlines/court dates extracted from the cover letter, linked to the source document
-3. **Transitions batch status** → `completed`
-4. **Recomputes `review_reasons`** for each child: any doc whose only blocker was `missing_case_id` now has an empty reasons list, which flips `needs_review=False` automatically
+| State | When | Content |
+|---|---|---|
+| `review` | `doc.needs_review == True` | Pre-confirmed fields in a summary row; low/medium confidence fields expanded for editing |
+| `confirmed` | `doc.needs_review == False` | Read-only summary of all fields; **Edit** button to re-open |
 
-### What the cascade does NOT do
+Pressing **Confirm** patches the fields and recomputes `review_reasons`. The panel switches to `confirmed` state when all reasons are resolved. It stays visible in the HUD at all times — it does not disappear after confirmation.
 
-- It does **not** unconditionally clear `needs_review`. Documents with other unresolved reasons (missing sender, missing date, missing parent, etc.) stay in triage even after their case is assigned.
-- It does not mark individual AI extractions (claims, relationships) as confirmed. Those require per-document review.
+The case can be assigned here (useful when the AI mis-grouped a document). Case assignment also happens at bundle level and cascades to all children on bundle confirm.
 
-### Two levels of "confirm"
+### Bundle-level confirm
 
-| Action | Effect |
-|---|---|
-| **Batch cascade** | Assigns case + proceeding, creates action items, batch → `completed`. Each child leaves triage *iff* case assignment was its only blocker. |
-| **Per-document "mark reviewed"** | Explicitly clears `needs_review` on that one document. |
+Once **every** child document has `needs_review=False`, a **Confirm bundle →** button becomes active at the bottom of the bundle card. Before that it shows a disabled counter ("N docs still need metadata review").
 
-### The two paths
+Clicking opens a modal with case + proceeding dropdowns (pre-filled from AI-detected values). Confirming cascades:
 
-- **Fast path** (simple bundle where AI got sender/date/originator right): a single batch cascade clears the whole bundle from triage in one action.
-- **Detailed path** (children are missing sender/date etc.): cascade first to set the case + proceeding, then walk each child quickly to fill gaps and mark reviewed.
+1. **Sets `case_id` + `proceeding_id`** on all documents in the bundle
+2. **Migrates `ActionItem` records** parked under `_TRIAGE` to the target case
+3. **Transitions `IngestBatch.status`** → `COMPLETED` iff all docs are resolved
+4. **Recomputes `review_reasons`** for each child: any doc whose only remaining blocker was `missing_case_id` gets `needs_review=False`
+5. Bundle disappears from the triage feed
+
+### What cascade does NOT do
+
+- Does **not** unconditionally clear `needs_review`. Documents with other unresolved reasons (missing sender, missing date, missing parent) stay in triage.
+- Does not confirm AI extractions (claims, relationships). Those require per-document review.
 
 ---
 
@@ -143,15 +148,19 @@ At the batch header, a single **[confirm & process all →]** button.
 
 ```
 1. Open /triage
-2. Queue shows 3 unconfirmed batches (left sidebar)
-3. Click batch → first document auto-loads in review pane
+2. Queue shows unconfirmed bundles sorted by urgency (left sidebar)
+3. Click bundle header to expand → click a document card to open the HUD
 4. Scan the AI-highlighted text (~5 seconds)
-5. Glance at the form — only 2 fields need attention (sender, date)
-6. Fix them
-7. Tap 🚩 Lies or ✅ True (optional but quick)
-8. Confirm 1-2 AI extractions (claims, relationships)
-9. → next doc in bundle (keyboard shortcut) OR [confirm & process all]
-10. Batch clears from queue
+5. Glance at the metadata panel — pre-confirmed fields shown collapsed;
+   only low/medium confidence fields are expanded for editing
+6. Fix the flagged fields; press Confirm →
+   → panel folds to a read-only summary; card on the left gains a ✓ badge
+7. Tap a reaction (🚩 / ✅ / 🔍 / ⚖️) — optional but captured
+8. Repeat for each document in the bundle
+9. Once all documents show ✓, "Confirm bundle →" becomes active at the
+   bottom of the bundle card
+10. Click → modal opens with case + proceeding dropdowns (AI pre-fill)
+11. Confirm → case cascades to all documents → bundle disappears
 ```
 
 **Target:** a 5-doc bundle goes from "30 minutes of clicking through forms" to "3 minutes of focused review."
@@ -173,7 +182,7 @@ The initial case *is* its first proceeding. When a case escalates (Beschwerde to
 
 In triage, the AI usually detects the proceeding from the Aktenzeichen in the cover letter — e.g., `003 F 426/25` pins the document to the AG Hamburg proceeding. The user confirms per batch, and the `proceeding_id` cascades to all children.
 
-This scoping matters downstream: the correspondence graph (Phase 7) is rendered per proceeding by default, with cross-proceeding references shown as grayed edges.
+This scoping matters downstream: the correspondence graph (Phase 8) is rendered per proceeding by default, with cross-proceeding references shown as grayed edges.
 
 ---
 
@@ -259,19 +268,21 @@ All tables already exist from Phase 1 migrations. Nothing new to migrate for the
 
 ---
 
-## 7. Files that will change
+## 7. Key files
 
-| File | Change |
+| File | Role |
 |---|---|
-| `app/api/triage.py` | New bundle-grouped query; batch-level resolve endpoint |
-| `app/services/triage_service.py` *(new)* | Bundle aggregation, cascade assignment logic |
-| `app/templates/pages/triage.html` | Tree-based queue, document-first review layout |
-| `app/templates/partials/triage_batch.html` *(new)* | Bundle row with parent-child tree |
-| `app/templates/partials/triage_metadata_form.html` | Confidence-aware rendering, new fields (proceeding, role, attributed_originator) |
-| `app/templates/partials/reaction_bar.html` *(new)* | 🚩/✅/🔍/⚖️ component |
-| `app/templates/partials/document_hud.html` *(new)* | AI-annotated text view with key_passages highlighting |
-| `app/repositories/user_reaction.py` *(new)* | Reaction CRUD |
-| `app/static/js/triage.js` *(new)* | Keyboard shortcuts (→ next, ← prev, 1-4 reactions, Enter confirm) |
+| `app/api/triage.py` | Routes: confirm_document, confirm_bundle, set_reaction, feed OOB helper |
+| `app/services/triage_service.py` | Bundle aggregation (`get_triage_bundles`), cascade assignment, reaction upsert |
+| `app/repositories/user_reaction.py` | Reaction CRUD |
+| `app/templates/pages/triage.html` | Page-level Alpine state (activeDoc, collapsedBundles, bundleConfirm, filters) |
+| `app/templates/partials/triage_bundle.html` | Bundle header row + document tree + CTA footer |
+| `app/templates/partials/triage_bundle_confirm_modal.html` | Page-level modal for bundle confirm (case + proceeding dropdowns) |
+| `app/templates/partials/triage_card.html` | Per-document card with ✓ badge, pipeline pill, reaction display |
+| `app/templates/partials/triage_metadata_form.html` | Two-state metadata panel (review / confirmed) |
+| `app/templates/partials/document_triage.html` | Right HUD: AI-highlighted text + metadata form + reaction bar |
+| `app/templates/partials/_pipeline_status.html` | Shared Jinja macro: 5-state pipeline pill (used by card and HUD) |
+| `static/input.css` | Tailwind v4 safelist for originator opacity variants |
 
 ---
 
@@ -310,9 +321,13 @@ Mouse input remains fully supported; the keyboard shortcuts are for the power pa
 
 Phase 2 is done when:
 
-- A batch of 5 documents can be triaged end-to-end in under 5 minutes without leaving the keyboard
-- Confirming at batch level correctly cascades case + proceeding assignment to all children
-- `UserReaction` records are persisted and visible in the document detail view after the fact
-- Cover letter deadlines automatically create `ActionItem` records for the whole bundle
-- Confidence-low fields are visually distinct from confidence-high fields — the user's eye is drawn only to what needs attention
-- The document HUD renders `key_passages` highlighted (even if the list is empty pre-Phase 4)
+- A 5-doc bundle can be triaged end-to-end in under 5 minutes without leaving the keyboard
+- Per-document metadata panel switches to read-only `confirmed` state after Confirm; card gains ✓ badge
+- `Confirm bundle →` is disabled until all children have `needs_review=False`
+- Bundle confirm modal cascades case + proceeding to all children and `ActionItem` records
+- `UserReaction` records are persisted and visible after the session
+- Cover letter deadlines create `ActionItem` records for the bundle
+- Confidence-low fields visually distinct from confidence-high fields (H/M/L dot chips)
+- Pipeline status pill rendered consistently on card and HUD header
+- Originator backgrounds render correctly for all five originator types
+- Keyboard: arrow nav, Enter-to-confirm, Escape works across the full HUD

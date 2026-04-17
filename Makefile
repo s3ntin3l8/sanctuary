@@ -46,7 +46,7 @@ test-unit: ## Run unit tests
 test-integration: ## Run integration tests
 	$(PYTEST) -m integration
 
-seed: ## Reset database and seed with dummy data
+seed: ## Reset database and seed with advanced triage combinations
 	rm -f data/sanctuary.db
 	$(PYTHON) scripts/seed_dummy_data.py
 
