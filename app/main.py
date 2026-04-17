@@ -462,6 +462,7 @@ from app.api import (
     entities,
     search,
     triage_router,
+    ingestion_settings,
 )
 
 app.include_router(dashboard_router)
@@ -472,3 +473,4 @@ app.include_router(cases.router)
 app.include_router(contacts.router)
 app.include_router(entities.router)
 app.include_router(search.router)
+app.include_router(ingestion_settings.router)

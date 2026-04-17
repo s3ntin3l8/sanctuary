@@ -61,6 +61,14 @@
             <span data-theme-icon class="material-symbols-outlined text-[20px]">dark_mode</span>
         </button>
 
+        <!-- Settings -->
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/api/ingest/settings' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/api/ingest/settings" title="Settings">
+            {% if request.url.path == '/api/ingest/settings' %}
+            <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
+            {% endif %}
+            <span class="material-symbols-outlined text-[20px]">settings</span>
+        </a>
+
         <!-- User Profile -->
         <div class="relative flex items-center justify-center w-10 h-10 mt-2 cursor-pointer group" title="Profile">
             <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 flex items-center justify-center border border-primary/20 group-hover:border-primary transition-colors">

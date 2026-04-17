@@ -27,6 +27,11 @@ AI_SYSTEM_PROMPT = os.getenv("AI_SYSTEM_PROMPT", "")
 AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
 AI_API_KEY = os.getenv("AI_API_KEY", "not-needed")
 
+# Gmail OAuth Configuration
+GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
+GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
+GMAIL_REDIRECT_URI = os.getenv("GMAIL_REDIRECT_URI", "http://localhost:8000/api/ingest/gmail/oauth/callback")
+
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
