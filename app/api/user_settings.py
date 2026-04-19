@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.services.user_settings_service import (
     set_active_proceeding,
-    set_dashboard_default_view,
+    set_dashboard_view,
 )
 
 router = APIRouter(prefix="/api/user-settings", tags=["user-settings"])
@@ -17,12 +17,12 @@ class DashboardViewBody(BaseModel):
 
 
 class ActiveProceedingBody(BaseModel):
-    proceeding_id: str
+    proceeding_id: int
 
 
 @router.post("/dashboard-view", status_code=204)
 def post_dashboard_view(body: DashboardViewBody, db: Session = Depends(get_db)):
-    set_dashboard_default_view(body.view, db)
+    set_dashboard_view(body.view, db)
     db.commit()
     return Response(status_code=204)
 

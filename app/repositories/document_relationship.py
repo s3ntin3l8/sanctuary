@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased
 
-from app.models.database import DocumentRelationship
+from app.models.database import Document, DocumentRelationship
 from app.models.enums import RelationshipConfidence, RelationshipType
 from app.repositories.base import BaseRepository
 
@@ -73,12 +73,10 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
     def confirm(self, rel_id: int) -> DocumentRelationship | None:
         return self.update(rel_id, confidence=RelationshipConfidence.USER_CONFIRMED)
 
-    def get_for_proceeding(self, proceeding_id: int) -> list:
+    def get_for_proceeding(self, proceeding_id: int) -> list[DocumentRelationship]:
         """Return all relationships where BOTH endpoints belong to the given proceeding."""
-        from app.models.database import Document as Doc
-
-        FromDoc = aliased(Doc)
-        ToDoc = aliased(Doc)
+        FromDoc = aliased(Document)
+        ToDoc = aliased(Document)
         return (
             self.db.query(DocumentRelationship)
             .join(FromDoc, DocumentRelationship.from_document_id == FromDoc.id)

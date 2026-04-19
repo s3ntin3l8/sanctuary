@@ -44,13 +44,15 @@ def _get_or_create(db) -> UserSettings:
     return settings
 
 
-def get_active_proceeding(case_id: str, db) -> str | None:
-    settings = _get_or_create(db)
-    active = settings.settings_json.get("active_proceeding", {})
-    return active.get(case_id)
+def get_active_proceeding(case_id: str, db) -> int | None:
+    settings = db.query(UserSettings).first()
+    if not settings:
+        return None
+    value = settings.settings_json.get("active_proceeding", {}).get(case_id)
+    return int(value) if value is not None else None
 
 
-def set_active_proceeding(case_id: str, proceeding_id: str, db) -> None:
+def set_active_proceeding(case_id: str, proceeding_id: int, db) -> None:
     settings = _get_or_create(db)
     data = dict(settings.settings_json)
     active = dict(data.get("active_proceeding", {}))
@@ -60,15 +62,17 @@ def set_active_proceeding(case_id: str, proceeding_id: str, db) -> None:
     db.flush()
 
 
-def get_dashboard_default_view(db) -> str:
-    settings = _get_or_create(db)
-    return settings.settings_json.get("dashboard_default_view", "graph")
+def get_dashboard_view(db) -> str:
+    settings = db.query(UserSettings).first()
+    if not settings:
+        return "graph"
+    return settings.settings_json.get("dashboard_view", "graph")
 
 
-def set_dashboard_default_view(view: str, db) -> None:
+def set_dashboard_view(view: str, db) -> None:
     settings = _get_or_create(db)
     data = dict(settings.settings_json)
-    data["dashboard_default_view"] = view
+    data["dashboard_view"] = view
     settings.settings_json = data
     db.flush()
 

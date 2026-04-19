@@ -173,8 +173,8 @@ class DocumentRepository(BaseRepository[Document]):
     def get_by_proceeding(
         self,
         proceeding_id: int,
-        tiers: list | None = None,
-    ) -> list:
+        tiers: list["SignificanceTier"] | None = None,
+    ) -> list["Document"]:
         """Return all documents for a proceeding, ordered by received_date asc nulls last, id asc."""
         q = self.db.query(Document).filter(Document.proceeding_id == proceeding_id)
         if tiers:
