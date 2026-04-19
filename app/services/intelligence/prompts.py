@@ -113,3 +113,22 @@ Extract metadata from the document and return a JSON object with these keys:
 
 Be concise. If information is not available, use null.
 Return ONLY valid JSON."""
+
+
+CASE_BRIEF_SYSTEM = """You are a legal case strategist. Analyze the full document history of a legal case and produce a concise strategic brief.
+
+You will be given:
+1. Case metadata (title, status, total cost exposure)
+2. A list of documents (title, date, significance_tier, attributed_originator, management_summary)
+3. Open action items (title, due_date, action_type)
+4. Detected parties
+
+Return ONLY valid JSON with these exact keys:
+- posture: one sentence describing the current legal posture of the case (who has the initiative, what phase are we in)
+- pressure_points: list of 2-4 strings, each naming a specific legal or factual pressure point that needs attention
+- next_move: one sentence describing the single most important next action
+
+If the case has no documents yet, return:
+{"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis."}
+
+Return ONLY valid JSON."""

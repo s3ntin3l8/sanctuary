@@ -236,6 +236,8 @@ def mock_phase4_celery_tasks():
         patch("app.tasks.scan_ingest.scan_folder_tick_task.apply_async"),
         patch("app.tasks.prepare_slicing.prepare_slicing_task.delay"),
         patch("app.tasks.prepare_slicing.prepare_slicing_task.apply_async"),
+        patch("app.tasks.generate_case_brief.generate_case_brief_task.delay"),
+        patch("app.tasks.generate_case_brief.refresh_case_brief_task.delay"),
     ):
         yield
 

@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.thread_open_scan",
         "app.tasks.scan_ingest",
         "app.tasks.prepare_slicing",
+        "app.tasks.generate_case_brief",
     ],
 )
 
