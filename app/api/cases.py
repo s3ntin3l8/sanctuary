@@ -106,7 +106,6 @@ async def case_brief_partial(
         request,
         "partials/case_brief_panel.html",
         {
-            "request": request,
             "case": case,
             "brief": case.ai_brief,
             "ai_brief_updated_at": case.ai_brief_updated_at,
@@ -134,7 +133,6 @@ async def case_brief_refresh(
         request,
         "partials/case_brief_panel.html",
         {
-            "request": request,
             "case": case,
             "brief": {"status": "processing"},
             "ai_brief_updated_at": None,
@@ -165,7 +163,11 @@ async def case_detail(request: Request, case_id: str, db: Session = Depends(get_
         "pages/case_dashboard.html",
         db=db,
         case=data["case"],
-        documents=data["documents"],
+        documents=sorted(
+            data["documents"],
+            key=lambda d: d.received_date or d.created_at,
+            reverse=True,
+        ),
         deadlines=data["deadlines"],
         hearings=data["hearings"],
         brief=data["case"].ai_brief,

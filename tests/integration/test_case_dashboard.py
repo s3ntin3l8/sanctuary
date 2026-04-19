@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Case
+from app.models.database import Case, Document
 from app.models.enums import CaseStatus, Jurisdiction
 
 client = TestClient(app)
@@ -12,7 +12,7 @@ client = TestClient(app)
 
 @pytest.mark.integration
 def test_case_dashboard_renders_basic_structure(db_session):
-    """GET /cases/{case_id} returns 200 with key UI strings."""
+    """GET /cases/{case_id} returns 200 with key UI strings, no polling when no brief."""
     case = Case(
         id="DASH-001",
         title="Dashboard Test Case",
@@ -26,6 +26,7 @@ def test_case_dashboard_renders_basic_structure(db_session):
     assert response.status_code == 200
     assert "Dashboard Test Case" in response.text
     assert "case-brief-panel" in response.text
+    assert "hx-trigger" not in response.text
 
 
 @pytest.mark.integration
@@ -104,7 +105,7 @@ def test_case_brief_refresh_404_on_unknown_case():
 
 @pytest.mark.integration
 def test_case_dashboard_with_processing_brief(db_session):
-    """Brief panel shows spinner when brief status is processing."""
+    """Brief panel shows spinner and polling when brief status is processing."""
     case = Case(
         id="PROC-001",
         title="Processing Brief Case",
@@ -118,3 +119,30 @@ def test_case_dashboard_with_processing_brief(db_session):
     response = client.get("/cases/PROC-001")
     assert response.status_code == 200
     assert "Generating brief" in response.text
+    assert 'hx-trigger="every 4s"' in response.text
+
+
+@pytest.mark.integration
+def test_case_dashboard_with_null_received_date(db_session):
+    """Dashboard must render without crash when a document has received_date=None."""
+    case = Case(
+        id="NULL-DATE-001",
+        title="Null Date Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="Scan Document",
+        content="Scanned content",
+        case_id=case.id,
+        received_date=None,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    response = client.get("/cases/NULL-DATE-001")
+    assert response.status_code == 200
+    assert "Null Date Case" in response.text
