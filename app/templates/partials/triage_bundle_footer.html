@@ -1,0 +1,52 @@
+{# Bundle footer — "Assign case" always visible; "Confirm bundle" only when all metadata confirmed.
+    Extracted so individual-doc confirms can OOB-swap just this element without replacing the whole feed.
+
+    Both buttons fire a native CustomEvent on document so the section's
+    @triage:open-bundle-confirm.document listener picks it up regardless of Alpine
+    re-initialization state after HTMX OOB swaps.
+
+    Required context: bundle (BundleView).
+    Optional: as_oob (bool) — adds hx-swap-oob="true" for targeted OOB replacement.
+#}
+<div id="triage-bundle-footer-{{ bundle.key }}"
+     class="px-4 py-3 bg-surface-container-low/40 border-t border-outline-variant/10 flex items-center justify-between gap-3"
+     {% if as_oob %}hx-swap-oob="true"{% endif %}
+     @click.stop>
+    {% set _subject = bundle.subject or (bundle.documents[0].title if bundle.documents else 'Bundle') %}
+    {% set _doc_id  = bundle.documents[0].id if bundle.documents else '' %}
+    {% set _case_id = bundle.confirmed_case_id or bundle.suggested_case_id or '' %}
+    {% if bundle.needs_review_count > 0 %}
+    <span class="text-[9px] text-on-surface-variant">
+        {{ bundle.needs_review_count }} doc{{ 's' if bundle.needs_review_count != 1 else '' }} still need{{ '' if bundle.needs_review_count != 1 else 's' }} metadata review
+    </span>
+    <button type="button"
+            data-batch-id="{{ bundle.batch_id }}"
+            data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+            data-doc-id="{{ _doc_id }}"
+            data-subject="{{ _subject | e }}"
+            data-doc-count="{{ bundle.doc_count }}"
+            data-case-id="{{ _case_id }}"
+            data-action="assign_case"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, action:d.action}}))"
+            class="text-[10px] font-bold text-primary hover:text-primary/80 px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60 transition-all cursor-pointer">
+        Assign case &rarr;
+    </button>
+    {% else %}
+    <span class="text-[9px] font-bold text-originator-own flex items-center gap-1">
+        <span class="material-symbols-outlined text-xs">check_circle</span>
+        All metadata confirmed
+    </span>
+    <button type="button"
+            data-batch-id="{{ bundle.batch_id }}"
+            data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+            data-doc-id="{{ _doc_id }}"
+            data-subject="{{ _subject | e }}"
+            data-doc-count="{{ bundle.doc_count }}"
+            data-case-id="{{ _case_id }}"
+            data-action="confirm_bundle"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, action:d.action}}))"
+            class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm shadow-primary/10">
+        Confirm bundle &rarr;
+    </button>
+    {% endif %}
+</div>
