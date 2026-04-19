@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
@@ -6,26 +7,31 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import templates
-from app.constants import (
-    CASE_STATUS_META,
-    ORIGINATOR_COLORS,
-)
 from app.dependencies import get_db
-from app.helpers import build_cost_summary, render_page
+from app.helpers import render_page
 from app.models.database import (
     Case,
-    CostStatus,
     Document,
+    DocumentRelationship,
+    UserReaction,
 )
-from app.models.enums import (
-    ClaimEvidenceRole,
-    ClaimStatus,
-    ProceedingStatus,
-    UserReactionType,
+from app.models.enums import ProceedingStatus
+from app.services.case_dashboard_service import (
+    CaseDashboardService,
+    key_passages_for_template,
+    neighbor_doc_ids,
+    originator_color_for_doc,
+    summary_bullets_from_ai_summary,
 )
+from app.services.case_graph_service import CaseGraphService
 from app.services.case_service import CaseService
-from app.services.claim_service import ClaimService
-from app.services.user_settings_service import mark_viewed
+from app.services.user_settings_service import (
+    get_active_proceeding,
+    get_dashboard_view,
+    mark_viewed,
+    set_active_proceeding,
+    set_dashboard_view,
+)
 
 router = APIRouter(prefix="/cases", tags=["pages"])
 
@@ -34,6 +40,7 @@ DORMANCY_DAYS = 90
 
 
 def _compute_dormancy_alert(case, db) -> str | None:
+    """Return a textual alert when an active proceeding has been silent past the threshold."""
     now = datetime.now()
     active_procs = [
         p for p in (case.proceedings or []) if p.status == ProceedingStatus.ACTIVE
@@ -71,6 +78,8 @@ def _compute_dormancy_alert(case, db) -> str | None:
 async def case_directory(
     request: Request, page: int = 1, db: Session = Depends(get_db)
 ):
+    from app.constants import CASE_STATUS_META
+
     case_service = CaseService(db)
 
     if page > 1:
@@ -146,12 +155,23 @@ async def case_brief_refresh(
     )
 
 
-@router.get("/{case_id}")
-async def case_detail(request: Request, case_id: str, db: Session = Depends(get_db)):
-    case_service = CaseService(db)
-    data = case_service.get_case_with_summary(case_id)
+# ---------------------------------------------------------------------------
+# Main dashboard page
+# ---------------------------------------------------------------------------
 
-    if not data:
+
+@router.get("/{case_id}")
+async def case_detail(
+    request: Request,
+    case_id: str,
+    proceeding: int | None = None,
+    view: str | None = None,
+    filter: str = "significant+",
+    db: Session = Depends(get_db),
+):
+    """Primary case dashboard — graph-first strategic view."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
         response = render_page(
             request,
             "errors/404.html",
@@ -161,41 +181,198 @@ async def case_detail(request: Request, case_id: str, db: Session = Depends(get_
         response.status_code = 404
         return response
 
-    cost_summary = build_cost_summary(data["costs"], CostStatus)
-    dormancy_alert = _compute_dormancy_alert(data["case"], db)
+    # --- Resolve active proceeding (query param wins; persist when given) ---
+    if proceeding is not None:
+        set_active_proceeding(case_id, proceeding, db)
+        active_proceeding_id: int | None = proceeding
+    else:
+        active_proceeding_id = get_active_proceeding(case_id, db)
 
-    claim_svc = ClaimService(db)
-    truth_map = claim_svc.get_truth_map(data["case"].id, "open")
+    # --- Resolve active view (query param wins; persist when given) --------
+    if view is not None:
+        set_dashboard_view(view, db)
+        active_view = view
+    else:
+        active_view = get_dashboard_view(db)
+
+    # --- Build the context -------------------------------------------------
+    context = CaseDashboardService(db).build_context(
+        case_id=case_id,
+        active_proceeding_id=active_proceeding_id,
+        active_view=active_view,
+        significance_filter=filter,
+    )
+    if context is None:
+        response = render_page(
+            request,
+            "errors/404.html",
+            db=db,
+            message=f"Case {case_id} not found",
+        )
+        response.status_code = 404
+        return response
 
     response = render_page(
         request,
         "pages/case_dashboard.html",
         db=db,
-        case=data["case"],
-        documents=sorted(
-            data["documents"],
-            key=lambda d: d.received_date or d.created_at,
-            reverse=True,
-        ),
-        deadlines=data["deadlines"],
-        hearings=data["hearings"],
-        brief=data["case"].ai_brief,
-        ai_brief_updated_at=data["case"].ai_brief_updated_at,
-        parties=data["case"].parties or [],
-        total_cost_exposure=data["case"].total_cost_exposure or 0,
-        cost_summary=cost_summary,
-        count=data["new_docs_since_last_visit"],
-        since=data["last_visit"],
-        dormancy_alert=dormancy_alert,
-        originator_colors=ORIGINATOR_COLORS,
-        status_meta=CASE_STATUS_META,
-        truth_map=truth_map,
-        ClaimStatus=ClaimStatus,
-        ClaimEvidenceRole=ClaimEvidenceRole,
-        UserReactionType=UserReactionType,
+        **context,
     )
 
     mark_viewed(case_id, db)
     db.commit()
-
     return response
+
+
+# ---------------------------------------------------------------------------
+# Graph partial (HTMX swap target for proceeding/filter changes)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{case_id}/graph")
+async def case_graph_partial(
+    request: Request,
+    case_id: str,
+    proceeding: int | None = None,
+    filter: str = "significant+",
+    db: Session = Depends(get_db),
+):
+    """Return just the correspondence-graph partial for HTMX swaps."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return HTMLResponse(content="<p>Case not found</p>", status_code=404)
+
+    if proceeding is None:
+        proceeding = get_active_proceeding(case_id, db)
+
+    if proceeding is None:
+        # No proceeding to graph — return an empty placeholder fragment.
+        return templates.TemplateResponse(
+            request,
+            "partials/dashboard/correspondence_graph.html",
+            {
+                "graph": _empty_graph_dict(filter),
+                "case": case,
+            },
+        )
+
+    payload = CaseGraphService(db).build_payload(proceeding, filter)
+    graph_dict = dataclasses.asdict(payload)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/dashboard/correspondence_graph.html",
+        {
+            "graph": graph_dict,
+            "case": case,
+        },
+    )
+
+
+def _empty_graph_dict(filter_mode: str) -> dict:
+    from app.services.case_graph_service import LANE_W, LANES, LEFT, TOP
+
+    return {
+        "lanes": list(LANES),
+        "nodes": [],
+        "bundles": [],
+        "edges": [],
+        "proof_badges": {},
+        "svg_width": LEFT * 2 + len(LANES) * LANE_W,
+        "svg_height": TOP + 120,
+        "hidden_counts": {"administrative": 0, "informational": 0},
+        "filter": filter_mode,
+        "node_count": 0,
+        "edge_count": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# HUD partial — document slide-in inside the dashboard
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{case_id}/document/{doc_id}/hud")
+async def case_document_hud(
+    request: Request,
+    case_id: str,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Render the document HUD slide-in for the given doc within the case."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc or doc.case_id != case_id:
+        return HTMLResponse(content="<p>Document not found</p>", status_code=404)
+
+    # User reactions (first-class triage data recalled by AI)
+    reactions = (
+        db.query(UserReaction)
+        .filter(UserReaction.document_id == doc.id)
+        .order_by(UserReaction.created_at.asc())
+        .all()
+    )
+
+    # Document relationships — incoming + outgoing
+    rels_out = (
+        db.query(DocumentRelationship)
+        .filter(DocumentRelationship.from_document_id == doc.id)
+        .all()
+    )
+    rels_in = (
+        db.query(DocumentRelationship)
+        .filter(DocumentRelationship.to_document_id == doc.id)
+        .all()
+    )
+
+    # Titles for the related documents
+    related_ids = {r.to_document_id for r in rels_out} | {
+        r.from_document_id for r in rels_in
+    }
+    titles_by_id: dict[int, str] = {}
+    if related_ids:
+        for row in (
+            db.query(Document.id, Document.title)
+            .filter(Document.id.in_(related_ids))
+            .all()
+        ):
+            titles_by_id[row[0]] = row[1] or "Untitled"
+
+    def _rel_list(rels, *, side: str) -> list[dict]:
+        out = []
+        for rel in rels:
+            other_id = rel.to_document_id if side == "out" else rel.from_document_id
+            out.append(
+                {
+                    "id": other_id,
+                    "title": titles_by_id.get(other_id, "Untitled"),
+                    "rel_type": rel.relationship_type.value
+                    if rel.relationship_type
+                    else "related",
+                }
+            )
+        return out
+
+    relationships_in = _rel_list(rels_in, side="in")
+    relationships_out = _rel_list(rels_out, side="out")
+
+    summary_bullets = summary_bullets_from_ai_summary(doc.ai_summary)
+    key_passages = key_passages_for_template(doc.key_passages)
+    prev_doc_id, next_doc_id = neighbor_doc_ids(db, doc)
+    originator_color = originator_color_for_doc(doc)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/dashboard/case_dashboard_hud.html",
+        {
+            "doc": doc,
+            "case_id": case_id,
+            "summary_bullets": summary_bullets,
+            "key_passages": key_passages,
+            "reactions": reactions,
+            "relationships_in": relationships_in,
+            "relationships_out": relationships_out,
+            "prev_doc_id": prev_doc_id,
+            "next_doc_id": next_doc_id,
+            "originator_color": originator_color,
+        },
+    )
