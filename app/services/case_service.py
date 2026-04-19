@@ -1,10 +1,17 @@
 import logging
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import Case, Document
-from app.models.enums import ActionItemStatus, ActionItemType, CaseStatus, Jurisdiction
+from app.models.enums import (
+    ActionItemStatus,
+    ActionItemType,
+    CaseStatus,
+    Jurisdiction,
+    ProceedingStatus,
+)
 from app.repositories.action_item import ActionItemRepository
 from app.repositories.case import CaseRepository
 from app.repositories.document import DocumentRepository
@@ -12,6 +19,8 @@ from app.repositories.entity import EntityRepository
 from app.repositories.legal_cost import LegalCostRepository
 
 logger = logging.getLogger(__name__)
+
+DORMANCY_DAYS = 90
 
 
 def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
@@ -225,3 +234,38 @@ class CaseService:
             "upcoming_deadlines": upcoming_deadlines,
             "upcoming_hearings": upcoming_hearings,
         }
+
+
+def _compute_dormancy_alert(case, db) -> str | None:
+    """Return a textual alert when an active proceeding has been silent past the threshold."""
+    now = datetime.now()
+    active_procs = [
+        p for p in (case.proceedings or []) if p.status == ProceedingStatus.ACTIVE
+    ]
+    if not active_procs:
+        return None
+
+    oldest_silent_proc = None
+    oldest_days = 0
+
+    for proc in active_procs:
+        last_activity = (
+            db.query(func.max(Document.created_at))
+            .filter(Document.proceeding_id == proc.id)
+            .scalar()
+        )
+        if last_activity is None:
+            last_activity = proc.started_at or proc.created_at
+        if last_activity is None:
+            continue
+        days = (now - last_activity).days
+        if days > DORMANCY_DAYS and days > oldest_days:
+            oldest_silent_proc = proc
+            oldest_days = days
+
+    if oldest_silent_proc is None:
+        return None
+
+    court = oldest_silent_proc.court_name or "Unknown court"
+    az = oldest_silent_proc.az_court or "no docket"
+    return f"{court} ({az}) has had no activity for {oldest_days} days."

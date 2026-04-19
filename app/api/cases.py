@@ -1,9 +1,8 @@
 import dataclasses
-from datetime import datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import templates
@@ -15,7 +14,6 @@ from app.models.database import (
     DocumentRelationship,
     UserReaction,
 )
-from app.models.enums import ProceedingStatus
 from app.services.case_dashboard_service import (
     CaseDashboardService,
     key_passages_for_template,
@@ -24,7 +22,11 @@ from app.services.case_dashboard_service import (
     summary_bullets_from_ai_summary,
 )
 from app.services.case_graph_service import CaseGraphService
-from app.services.case_service import CaseService
+from app.services.case_service import (  # noqa: F401 (re-exported for tests)
+    DORMANCY_DAYS,
+    CaseService,
+    _compute_dormancy_alert,
+)
 from app.services.user_settings_service import (
     get_active_proceeding,
     get_dashboard_view,
@@ -36,42 +38,8 @@ from app.services.user_settings_service import (
 router = APIRouter(prefix="/cases", tags=["pages"])
 
 DEFAULT_PAGE_SIZE = 20
-DORMANCY_DAYS = 90
 
-
-def _compute_dormancy_alert(case, db) -> str | None:
-    """Return a textual alert when an active proceeding has been silent past the threshold."""
-    now = datetime.now()
-    active_procs = [
-        p for p in (case.proceedings or []) if p.status == ProceedingStatus.ACTIVE
-    ]
-    if not active_procs:
-        return None
-
-    oldest_silent_proc = None
-    oldest_days = 0
-
-    for proc in active_procs:
-        last_activity = (
-            db.query(func.max(Document.created_at))
-            .filter(Document.proceeding_id == proc.id)
-            .scalar()
-        )
-        if last_activity is None:
-            last_activity = proc.started_at or proc.created_at
-        if last_activity is None:
-            continue
-        days = (now - last_activity).days
-        if days > DORMANCY_DAYS and days > oldest_days:
-            oldest_silent_proc = proc
-            oldest_days = days
-
-    if oldest_silent_proc is None:
-        return None
-
-    court = oldest_silent_proc.court_name or "Unknown court"
-    az = oldest_silent_proc.az_court or "no docket"
-    return f"{court} ({az}) has had no activity for {oldest_days} days."
+FilterQuery = Annotated[str, Query(pattern=r"^(critical|significant\+|all)$")]
 
 
 @router.get("")
@@ -166,7 +134,7 @@ async def case_detail(
     case_id: str,
     proceeding: int | None = None,
     view: str | None = None,
-    filter: str = "significant+",
+    filter: FilterQuery = "significant+",
     db: Session = Depends(get_db),
 ):
     """Primary case dashboard — graph-first strategic view."""
@@ -234,7 +202,7 @@ async def case_graph_partial(
     request: Request,
     case_id: str,
     proceeding: int | None = None,
-    filter: str = "significant+",
+    filter: FilterQuery = "significant+",
     db: Session = Depends(get_db),
 ):
     """Return just the correspondence-graph partial for HTMX swaps."""

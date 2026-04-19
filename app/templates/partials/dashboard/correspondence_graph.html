@@ -114,12 +114,12 @@
             font-size="9" fill="var(--color-primary)" opacity="0.85">{{ node.reaction }}</text>
       {% endif %}
 
-      {# Title text (clipped to 17 chars) #}
+      {# Title text (pre-clipped server-side by _clip) #}
       <text x="{{ node.x + 12 }}" y="{{ node.y + 17 }}"
             font-size="11" font-weight="600"
             fill="var(--color-on-surface)"
             font-family="Inter, sans-serif">
-        {{ node.title[:17] }}{% if node.title | length > 17 %}…{% endif %}
+        {{ node.title }}
       </text>
 
       {# Role subtitle #}

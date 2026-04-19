@@ -30,7 +30,7 @@ from app.models.enums import (
     UserReactionType,
 )
 from app.services.case_graph_service import CaseGraphService
-from app.services.case_service import CaseService
+from app.services.case_service import CaseService, _compute_dormancy_alert
 from app.services.claim_service import ClaimService
 
 
@@ -91,6 +91,14 @@ class CaseDashboardService:
                 .all()
             )
         new_doc_ids = {d.id for d in new_docs}
+        new_docs_for_template = [
+            {
+                "id": d.id,
+                "title": d.title,
+                "originator_color": originator_color_for_doc(d),
+            }
+            for d in new_docs
+        ]
 
         # --- Graph payload (only when an active proceeding exists) ------
         graph_dict: dict | None = None
@@ -113,9 +121,6 @@ class CaseDashboardService:
         )
 
         # --- Strategic layer: truth map, cost summary, dormancy ---------
-        # Import lazily to avoid circular-import with app.api.cases.
-        from app.api.cases import _compute_dormancy_alert
-
         claim_svc = ClaimService(self.db)
         truth_map = claim_svc.get_truth_map(case.id, "open")
         cost_summary = build_cost_summary(data["costs"], CostStatus)
@@ -147,7 +152,7 @@ class CaseDashboardService:
             "active_proceeding": active_proceeding,
             "graph": graph_dict,
             "action_items": action_items,
-            "new_docs": new_docs,
+            "new_docs": new_docs_for_template,
             "parties": case.parties or [],
             "brief": case.ai_brief,
             "financials": financials,

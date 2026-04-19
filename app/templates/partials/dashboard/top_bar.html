@@ -43,7 +43,7 @@
          onmouseover="this.style.background='var(--color-surface-high)'"
          onmouseout="this.style.background=''">
         <span class="text-[12px] font-mono flex-1">{{ p.az_court }}</span>
-        <span class="text-[11px]" style="color:var(--color-on-surface-variant);">{{ p.level }}</span>
+        <span class="text-[11px]" style="color:var(--color-on-surface-variant);">{{ p.court_level.value | upper }}</span>
       </a>
       {% endfor %}
     </div>
