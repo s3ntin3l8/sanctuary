@@ -53,12 +53,12 @@ def _apply_brief(case: Case, result: dict) -> None:
 
     Pure function — never calls db.commit().
     """
-    posture = result.get("posture", "")
+    posture = str(result.get("posture", ""))
 
     pressure_raw = result.get("pressure_points") or []
     pressure_points = [p for p in pressure_raw if isinstance(p, str)]
 
-    next_move = result.get("next_move", "")
+    next_move = str(result.get("next_move", ""))
 
     case.ai_brief = {
         "posture": posture,
@@ -166,7 +166,6 @@ def generate(case_id: str) -> None:
             logger.warning(f"Case {case_id} not found after marking processing")
             return
 
-        # Load documents (exclude triage)
         docs = (
             db.query(Document)
             .filter(Document.case_id == case_id)
@@ -174,7 +173,6 @@ def generate(case_id: str) -> None:
             .all()
         )
 
-        # Load open action items
         action_items = (
             db.query(ActionItem)
             .filter(
@@ -194,7 +192,6 @@ def generate(case_id: str) -> None:
             result = _call_brief_sync(case, docs, action_items, debug_file)
             _apply_brief(case, result)
 
-            # Compute and store parties
             parties = _compute_parties(docs)
             case.parties = parties
 

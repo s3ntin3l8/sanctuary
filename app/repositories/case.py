@@ -88,18 +88,6 @@ class CaseRepository(BaseRepository[Case]):
             self.db.refresh(case)
         return case
 
-    def update_ai_brief(
-        self, case_id: str, brief: dict, timestamp: datetime
-    ) -> Case | None:
-        """Update the AI brief and timestamp for a case."""
-        case = self.get_by_id(case_id)
-        if case:
-            case.ai_brief = brief
-            case.ai_brief_updated_at = timestamp
-            self.db.flush()
-            self.db.refresh(case)
-        return case
-
     def exists(self, case_id: str) -> bool:
         """Check if case exists."""
         return self.get_by_id(case_id) is not None

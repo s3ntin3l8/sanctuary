@@ -121,7 +121,6 @@ You will be given:
 1. Case metadata (title, status, total cost exposure)
 2. A list of documents (title, date, significance_tier, attributed_originator, management_summary)
 3. Open action items (title, due_date, action_type)
-4. Detected parties
 
 Return ONLY valid JSON with these exact keys:
 - posture: one sentence describing the current legal posture of the case (who has the initiative, what phase are we in)
