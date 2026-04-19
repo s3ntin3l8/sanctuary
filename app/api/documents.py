@@ -1,5 +1,4 @@
 import logging
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -7,14 +6,14 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db, get_db_session
+from app.dependencies import get_db
 from app.helpers import build_document_extraction_context, render_page
-from app.models.database import Case, Document, DocumentRelationship, IngestStatus
+from app.models.database import Case, Document, DocumentRelationship
 from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
-    process_uploaded_document,
 )
+from app.tasks.document_processing import process_document_task
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +96,9 @@ async def upload_document(
             success_count += 1
 
             try:
-                background_tasks.add_task(run_ingest_pipeline, doc.id)
+                process_document_task.delay(doc.id)
             except Exception as e:
-                logger.warning(f"Background task failed for doc {doc.id}: {e}")
+                logger.warning(f"Celery task dispatch failed for doc {doc.id}: {e}")
 
             results.append(
                 f'<div class="p-2 text-xs text-green-400">✓ {file.filename} queued for processing</div>'
@@ -303,62 +302,3 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
                 "originator_icons": ORIGINATOR_ICONS,
             },
         )
-
-
-def run_ingest_pipeline(doc_id: int):
-    """Background task to process a manually uploaded document through the full ingest pipeline."""
-    db = get_db_session()
-    try:
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc:
-            return
-
-        doc.ingest_status = IngestStatus.PROCESSING
-        doc.ingest_started_at = datetime.now(UTC)
-        db.commit()
-
-        try:
-            process_uploaded_document(doc, db)
-            doc.ingest_status = IngestStatus.COMPLETED
-            doc.ingest_completed_at = datetime.now(UTC)
-            db.commit()
-        except Exception as e:
-            doc.ingest_status = IngestStatus.FAILED
-            doc.ingest_error = str(e)
-            doc.ingest_completed_at = datetime.now(UTC)
-            db.commit()
-            return
-
-        # Phase 1: metadata extraction + auto-triage
-        try:
-            from app.services.ai_summary import _summarize_document_sync
-
-            _summarize_document_sync(doc.id, db)
-        except Exception as e:
-            logger.warning(f"Phase 1 summary failed for doc {doc.id}: {e}")
-
-        # Phase 4: batch-ready check → analyze_batch or direct enrichment
-        batch_id = doc.ingest_batch_id
-        if batch_id:
-            from app.services.intelligence.orchestrator import claim_batch_for_analysis
-            from app.tasks.analyze_batch import analyze_batch_task
-
-            if claim_batch_for_analysis(batch_id, db):
-                logger.info(f"Batch {batch_id}: dispatching analyze_batch_task")
-                analyze_batch_task.delay(batch_id)
-        else:
-            from app.tasks.enrich_document import enrich_document_task
-
-            enrich_document_task.delay(doc.id)
-
-        # Embeddings
-        try:
-            import asyncio
-
-            from app.services.embeddings import generate_embedding
-
-            asyncio.run(generate_embedding(doc.id))
-        except Exception as e:
-            logger.warning(f"Embedding failed for doc {doc.id}: {e}")
-    finally:
-        db.close()

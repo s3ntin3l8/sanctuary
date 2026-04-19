@@ -12,13 +12,13 @@ from app.tasks.document_processing import (
 @pytest.mark.unit
 def test_process_document_task_success(db_session, sample_document):
     with (
-        patch("app.tasks.document_processing.SessionLocal") as mock_session_local,
+        patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,
         patch("app.services.ingestion.process_uploaded_document") as mock_process_doc,
         patch("app.tasks.document_processing._run_phase1_summary"),
         patch("app.tasks.enrich_document.enrich_document_task.delay"),
         patch.object(db_session, "close", return_value=None),
     ):
-        mock_session_local.return_value = db_session
+        mock_get_db_session.return_value = db_session
 
         result = process_document_task.run(sample_document.id)
 
@@ -32,13 +32,13 @@ def test_process_document_task_success(db_session, sample_document):
 @pytest.mark.unit
 def test_reingest_all_documents_task(db_session, sample_document):
     with (
-        patch("app.tasks.document_processing.SessionLocal") as mock_session_local,
+        patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,
         patch(
             "app.tasks.document_processing.process_document_task.delay"
         ) as mock_delay,
         patch.object(db_session, "close", return_value=None),
     ):
-        mock_session_local.return_value = db_session
+        mock_get_db_session.return_value = db_session
 
         result = reingest_all_documents_task.run(case_id=sample_document.case_id)
 

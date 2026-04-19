@@ -53,7 +53,10 @@ def setup_test_db(test_engine):
 
     app.dependency_overrides[get_db] = override_get_db
     # We also need to patch get_db_session where it's used in background tasks
-    with patch("app.api.documents.get_db_session", side_effect=override_get_db_session):
+    with patch(
+        "app.tasks.document_processing.get_db_session",
+        side_effect=override_get_db_session,
+    ):
         yield
     app.dependency_overrides.clear()
     test_engine.dispose()

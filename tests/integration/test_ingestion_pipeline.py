@@ -4,9 +4,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.documents import run_ingest_pipeline
 from app.main import app
 from app.models.database import Case, CaseStatus, Document, IngestStatus
+from app.tasks.document_processing import process_document_task
 
 client = TestClient(app)
 
@@ -87,8 +87,8 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         # Let's just ensure we have it.
 
         # 5. Manually run the background task (to ensure it runs exactly as we expect)
-        # In a real app, this is triggered via background_tasks.add_task
-        run_ingest_pipeline(doc.id)
+        # In a real app, this is triggered via .delay()
+        process_document_task(doc.id)
 
         # 6. Verify Results
         db_session.refresh(doc)

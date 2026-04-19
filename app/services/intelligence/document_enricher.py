@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
 from app.models.database import Document
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
+from app.models.schemas import (
+    AISummarySchema,
+    CostDeltaSchema,
+    KeyPassageSchema,
+)
 from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._json import parse_json_response
@@ -104,37 +109,41 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
         validated = []
         for p in passages:
             if isinstance(p, dict) and p.get("text"):
-                validated.append(
-                    {
-                        "text": str(p.get("text", "")),
-                        "rationale": str(p.get("rationale", "")),
-                        "span": str(p.get("span", "")),
-                    }
-                )
+                try:
+                    validated.append(KeyPassageSchema(**p).model_dump())
+                except Exception as e:
+                    logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")
         doc.key_passages = validated or None
 
     # cost_delta — validate direction
     cost_delta = result.get("cost_delta")
     if isinstance(cost_delta, dict) and cost_delta.get("amount") is not None:
-        direction = (cost_delta.get("direction") or "none").lower()
-        if direction not in VALID_COST_DIRECTIONS:
-            logger.info(
-                f"Doc {doc.id}: cost_delta.direction '{direction}' invalid, normalizing to 'none'"
+        try:
+            direction = (cost_delta.get("direction") or "none").lower()
+            if direction not in VALID_COST_DIRECTIONS:
+                direction = "none"
+
+            validated_delta = CostDeltaSchema(
+                amount=float(cost_delta["amount"]),
+                direction=direction,
+                description=str(cost_delta.get("description", "")),
             )
-            direction = "none"
-        doc.cost_delta = {
-            "amount": float(cost_delta["amount"]),
-            "direction": direction,
-            "description": str(cost_delta.get("description", "")),
-        }
+            doc.cost_delta = validated_delta.model_dump()
+        except Exception as e:
+            logger.warning(f"Doc {doc.id}: invalid cost_delta skipped: {e}")
 
     # ai_summary — must use exact keys that templates expect
     mgmt = result.get("management_summary") or {}
-    doc.ai_summary = {
-        "legal_significance": mgmt.get("legal_significance"),
-        "required_action": mgmt.get("required_action"),
-        "financial_impact": mgmt.get("financial_impact"),
-    }
+    try:
+        validated_summary = AISummarySchema(
+            legal_significance=mgmt.get("legal_significance"),
+            required_action=mgmt.get("required_action"),
+            financial_impact=mgmt.get("financial_impact"),
+        )
+        doc.ai_summary = validated_summary.model_dump()
+    except Exception as e:
+        logger.warning(f"Doc {doc.id}: invalid ai_summary skipped: {e}")
+
     doc.ai_summary_status = "generated"
     doc.ai_summary_created_at = datetime.now(UTC)
 

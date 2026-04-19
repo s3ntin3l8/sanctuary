@@ -15,6 +15,10 @@ from app.models.database import (
     OriginatorType,
 )
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
+from app.models.schemas import (
+    CostCandidateSchema,
+    ExtractionConfidenceSchema,
+)
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.converters import (
     ALLOWED_EXTENSIONS,
@@ -257,12 +261,12 @@ def process_uploaded_document(doc: Document, db: Session):
     result_date = extract_received_date(markdown_content or "", safe_filename)
     result_sender = extract_sender(markdown_content or "")
 
-    extraction_confidence = {
-        "sender": result_sender["confidence"],
-        "date": result_date["confidence"],
-        "case_id": result_case_id["confidence"],
-        "originator": result_originator["confidence"],
-    }
+    extraction_confidence = ExtractionConfidenceSchema(
+        sender=result_sender["confidence"],
+        date=result_date["confidence"],
+        case_id=result_case_id["confidence"],
+        originator=result_originator["confidence"],
+    ).model_dump()
 
     doc.content = markdown_content
     doc.title = extract_clean_title(safe_filename, markdown_content or "")
@@ -274,7 +278,11 @@ def process_uploaded_document(doc: Document, db: Session):
     doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
     doc.received_date = result_date["value"]
-    doc.cost_candidates = extract_cost_candidates(markdown_content or "")
+
+    raw_costs = extract_cost_candidates(markdown_content or "")
+    doc.cost_candidates = [
+        CostCandidateSchema(**c).model_dump() for c in raw_costs if isinstance(c, dict)
+    ]
     doc.extraction_confidence = extraction_confidence
 
     reasons = compute_review_reasons(doc)
