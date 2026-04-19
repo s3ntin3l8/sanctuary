@@ -65,6 +65,16 @@ class UserReactionRepository(BaseRepository[UserReaction]):
             notes=notes,
         )
 
+    def get_by_document_ids(self, document_ids: list[int]) -> list[UserReaction]:
+        if not document_ids:
+            return []
+        return (
+            self.db.query(UserReaction)
+            .filter(UserReaction.document_id.in_(document_ids))
+            .order_by(UserReaction.created_at.desc())
+            .all()
+        )
+
     def clear_reaction(self, document_id: int, reaction: UserReactionType) -> bool:
         existing = self.find(document_id, reaction)
         if existing:

@@ -9,7 +9,7 @@ from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
-from app.models.database import Case, Document, DocumentRelationship
+from app.models.database import Case, Claim, Document, DocumentRelationship
 from app.models.enums import OriginatorType, UserReactionType
 from app.services.document_service import DocumentService
 from app.services.triage_service import TriageService
@@ -136,6 +136,8 @@ async def confirm_document(
         .all()
     )
 
+    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
+
     response = templates.TemplateResponse(
         request,
         "partials/document_triage.html",
@@ -153,6 +155,7 @@ async def confirm_document(
             "RelationshipConfidence": RelationshipConfidence,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
+            "doc_claim_count": doc_claim_count,
         },
     )
     # Targeted OOB: update only the affected card + bundle footer + badge.
@@ -565,6 +568,8 @@ async def _render_document_hud(
         .all()
     )
 
+    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
+
     response = templates.TemplateResponse(
         request,
         "partials/document_triage.html",
@@ -582,6 +587,7 @@ async def _render_document_hud(
             "RelationshipConfidence": RelationshipConfidence,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
+            "doc_claim_count": doc_claim_count,
         },
     )
     # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
@@ -749,6 +755,8 @@ def _render_hud_oob(
         .all()
     )
 
+    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
+
     hud_html = templates.get_template("partials/document_triage.html").render(
         {
             "request": request,
@@ -765,6 +773,7 @@ def _render_hud_oob(
             "RelationshipConfidence": RelationshipConfidence,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
+            "doc_claim_count": doc_claim_count,
         }
     )
     return (

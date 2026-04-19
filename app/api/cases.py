@@ -17,8 +17,14 @@ from app.models.database import (
     CostStatus,
     Document,
 )
-from app.models.enums import ProceedingStatus
+from app.models.enums import (
+    ClaimEvidenceRole,
+    ClaimStatus,
+    ProceedingStatus,
+    UserReactionType,
+)
 from app.services.case_service import CaseService
+from app.services.claim_service import ClaimService
 from app.services.user_settings_service import mark_viewed
 
 router = APIRouter(prefix="/cases", tags=["pages"])
@@ -158,6 +164,9 @@ async def case_detail(request: Request, case_id: str, db: Session = Depends(get_
     cost_summary = build_cost_summary(data["costs"], CostStatus)
     dormancy_alert = _compute_dormancy_alert(data["case"], db)
 
+    claim_svc = ClaimService(db)
+    truth_map = claim_svc.get_truth_map(data["case"].id, "open")
+
     response = render_page(
         request,
         "pages/case_dashboard.html",
@@ -180,6 +189,10 @@ async def case_detail(request: Request, case_id: str, db: Session = Depends(get_
         dormancy_alert=dormancy_alert,
         originator_colors=ORIGINATOR_COLORS,
         status_meta=CASE_STATUS_META,
+        truth_map=truth_map,
+        ClaimStatus=ClaimStatus,
+        ClaimEvidenceRole=ClaimEvidenceRole,
+        UserReactionType=UserReactionType,
     )
 
     mark_viewed(case_id, db)

@@ -31,13 +31,18 @@
       <div class="space-y-4">
         {# Tab bar #}
         <div class="flex gap-2 border-b border-surface-container-high pb-2">
-          {% for tab, label in [('timeline','Timeline'),('financials','Financials'),('graph','Graph'),('truthmap','Truth Map')] %}
+          {% for tab, label in [('timeline','Timeline'),('financials','Financials'),('graph','Graph')] %}
           <button @click="view='{{ tab }}'"
             :class="view==='{{ tab }}' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant'"
             class="pb-1 text-sm font-medium">
             {{ label }}
           </button>
           {% endfor %}
+          <button @click="view='truthmap'"
+            :class="view==='truthmap' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant'"
+            class="pb-1 text-sm font-medium">
+            <span id="truthmap-badge">Truth Map{% if truth_map and truth_map.open_claim_count %}&thinsp;·&thinsp;{{ truth_map.open_claim_count }}{% endif %}</span>
+          </button>
         </div>
 
         {# Tab content #}
@@ -51,7 +56,7 @@
           {% include "partials/case_view_graph_placeholder.html" with context %}
         </div>
         <div x-show="view==='truthmap'">
-          {% include "partials/case_view_truthmap_placeholder.html" with context %}
+          {% include "partials/case_view_truthmap.html" with context %}
         </div>
       </div>
 

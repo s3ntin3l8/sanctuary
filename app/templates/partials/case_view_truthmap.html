@@ -1,0 +1,51 @@
+<div id="truthmap-panel" class="space-y-4">
+
+  {# Filter chips #}
+  <div class="flex gap-2 flex-wrap">
+    {% for f, label in [('open','Open'),('established','Established'),('refuted','Refuted'),('all','All')] %}
+    <button hx-get="/cases/{{ case.id }}/truthmap?filter={{ f }}"
+            hx-target="#truthmap-panel"
+            hx-swap="outerHTML"
+            class="text-xs px-2.5 py-1 rounded-full border transition-colors
+              {% if truth_map.filter == f %}border-primary text-primary bg-primary/10
+              {% else %}border-outline-variant text-on-surface-variant hover:border-primary/50{% endif %}">
+      {{ label }}
+      {% if f == 'open' and truth_map.open_claim_count > 0 %}
+      <span class="ml-1 font-semibold">{{ truth_map.open_claim_count }}</span>
+      {% endif %}
+    </button>
+    {% endfor %}
+  </div>
+
+  {# Claim groups #}
+  {% if truth_map.groups %}
+    {% for group in truth_map.groups %}
+    {% if group.claims %}
+    <div class="space-y-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-on-surface-variant/70 flex items-center gap-2">
+        <span class="w-1.5 h-1.5 rounded-full inline-block
+          {% if group.status.value == 'contested' %}bg-error
+          {% elif group.status.value == 'asserted' %}bg-secondary
+          {% elif group.status.value == 'established' %}bg-originator-own
+          {% else %}bg-outline-variant{% endif %}"></span>
+        {{ group.status.value | title }}
+        <span class="font-normal text-outline">{{ group.claims | length }}</span>
+      </h3>
+      {% for row in group.claims %}
+        {% include "components/claim_card.html" with context %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  {% else %}
+  <div class="rounded-xl border border-dashed border-surface-container-high bg-surface-container/50 p-8 text-center">
+    <p class="text-sm text-on-surface-variant">
+      {% if truth_map.filter == 'open' %}No open claims yet — they are extracted automatically from significant documents.
+      {% elif truth_map.filter == 'established' %}No established claims yet.
+      {% elif truth_map.filter == 'refuted' %}No refuted claims yet.
+      {% else %}No claims found for this case.{% endif %}
+    </p>
+  </div>
+  {% endif %}
+
+</div>

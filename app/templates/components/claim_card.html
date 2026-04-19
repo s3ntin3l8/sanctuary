@@ -1,0 +1,90 @@
+{% set c = row.claim %}
+<div id="claim-card-{{ c.id }}"
+     class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+
+  <div class="flex items-start justify-between gap-3">
+    <p class="text-sm font-medium text-on-surface leading-snug">{{ c.claim_text }}</p>
+
+    {# Interactive status chip — user owns ESTABLISHED and reopen-to-ASSERTED #}
+    <div class="relative flex-shrink-0" x-data="{ open: false }">
+      <button @click="open = !open" @click.outside="open = false"
+              class="text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap
+                {% if c.status.value == 'contested' %}bg-error/20 text-error
+                {% elif c.status.value == 'asserted' %}bg-secondary/20 text-secondary
+                {% elif c.status.value == 'established' %}bg-originator-own/20 text-originator-own
+                {% else %}bg-surface-container-highest text-on-surface-variant{% endif %}">
+        {{ c.status.value | title }} ▾
+      </button>
+      <div x-show="open" x-cloak
+           class="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-outline-variant/50 bg-surface-container-high shadow-xl text-xs">
+        {% if c.status.value in ('asserted', 'contested') %}
+        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+                hx-vals='{"status": "established"}'
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-lg">
+          ✓ Mark Established
+        </button>
+        {% else %}
+        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+                hx-vals='{"status": "asserted"}'
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-lg">
+          ↺ Reopen as Asserted
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Evidence chain #}
+  {% if row.evidence %}
+  <ul class="space-y-1.5 border-l-2 border-outline-variant/20 pl-3">
+    {% for ev_row in row.evidence %}
+    {% set ev = ev_row.evidence %}
+    {% set doc = ev_row.document %}
+    <li class="flex items-center gap-2 text-xs min-w-0">
+      {# Role indicator #}
+      <span class="flex-shrink-0
+        {% if ev.role.value == 'supports' %}text-originator-own
+        {% elif ev.role.value == 'contests' %}text-amber-500
+        {% elif ev.role.value == 'refutes' %}text-error
+        {% else %}text-on-surface-variant{% endif %}">
+        {% if ev.role.value == 'supports' %}✓
+        {% elif ev.role.value == 'contests' %}⚠
+        {% elif ev.role.value == 'refutes' %}✕
+        {% else %}📎{% endif %}
+      </span>
+      {# Originator color dot #}
+      <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style="background-color: {{ originator_colors.get(doc.originator_type, '#64748b') if originator_colors else '#64748b' }}"></span>
+      {# Doc title + date #}
+      <span class="text-on-surface-variant flex-1 truncate">
+        {{ doc.title or 'Untitled' }}
+        {% if doc.received_date %}
+        <span class="text-outline">· {{ doc.received_date | format_relative_time }}</span>
+        {% endif %}
+      </span>
+      {# Reaction emojis from triage #}
+      {% for rxn in ev_row.reactions %}
+      <span class="flex-shrink-0" title="{{ rxn.notes or rxn.reaction.value }}">
+        {% if rxn.reaction.value == 'lies' %}🚩
+        {% elif rxn.reaction.value == 'true' %}✅
+        {% elif rxn.reaction.value == 'needs_proof' %}🔍
+        {% else %}⚖️{% endif %}
+      </span>
+      {% endfor %}
+    </li>
+    {% if ev.excerpt %}
+    <li class="pl-5 text-xs text-on-surface-variant/60 italic truncate">{{ ev.excerpt }}</li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-xs text-on-surface-variant/50 italic">No evidence linked yet.</p>
+  {% endif %}
+
+</div>

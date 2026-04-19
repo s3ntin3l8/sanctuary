@@ -260,15 +260,14 @@
                 {% endif %}
             </div>
 
-            {# Phase 4 footer — remaining enrichment not yet available #}
-            <div class="px-6 py-3 bg-surface-container-low/30 border-t border-outline-variant/10 border-dashed flex items-center gap-2 text-[10px] text-on-surface-variant/60 italic">
-                <span class="material-symbols-outlined text-sm">auto_awesome</span>
-                AI enrichment pending:
-                <span class="font-medium">Key passages</span>
-                <span class="text-outline">·</span>
-                <span class="font-medium">Claims</span>
-                <span class="ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-surface-container-highest/50 text-outline">Phase 4</span>
+            {# Claims extracted indicator — links to Truth Map when case is assigned #}
+            {% if doc_claim_count and doc_claim_count > 0 and doc.case_id and doc.case_id != '_TRIAGE' %}
+            <div class="px-6 py-2 bg-surface-container-low/30 border-t border-outline-variant/10 flex items-center gap-2 text-[10px] text-on-surface-variant/60">
+                <span class="material-symbols-outlined text-sm">account_tree</span>
+                <span>{{ doc_claim_count }} claim{{ 's' if doc_claim_count != 1 else '' }} extracted</span>
+                <a href="/cases/{{ doc.case_id }}#truthmap" class="ml-auto text-primary hover:underline">View in Truth Map →</a>
             </div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
