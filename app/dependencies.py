@@ -6,8 +6,13 @@ from sqlalchemy.orm import Session
 from app.config import SessionLocal
 
 
+def get_db_session() -> Session:
+    """Return a new database session from SessionLocal."""
+    return SessionLocal()
+
+
 def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
+    db = get_db_session()
     try:
         yield db
     finally:

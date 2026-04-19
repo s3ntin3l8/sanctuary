@@ -48,8 +48,13 @@ def setup_test_db(test_engine):
         finally:
             db.close()
 
+    def override_get_db_session():
+        return TestingSessionLocal()
+
     app.dependency_overrides[get_db] = override_get_db
-    yield
+    # We also need to patch get_db_session where it's used in background tasks
+    with patch("app.api.documents.get_db_session", side_effect=override_get_db_session):
+        yield
     app.dependency_overrides.clear()
     test_engine.dispose()
 

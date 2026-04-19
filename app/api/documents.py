@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db
+from app.dependencies import get_db, get_db_session
 from app.helpers import build_document_extraction_context, render_page
 from app.models.database import Case, Document, DocumentRelationship, IngestStatus
 from app.services.ingestion.service import (
@@ -97,7 +97,7 @@ async def upload_document(
             success_count += 1
 
             try:
-                background_tasks.add_task(run_ingest_pipeline, doc.id, db)
+                background_tasks.add_task(run_ingest_pipeline, doc.id)
             except Exception as e:
                 logger.warning(f"Background task failed for doc {doc.id}: {e}")
 
@@ -305,56 +305,60 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         )
 
 
-def run_ingest_pipeline(doc_id: int, db: Session):
+def run_ingest_pipeline(doc_id: int):
     """Background task to process a manually uploaded document through the full ingest pipeline."""
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        return
-
-    doc.ingest_status = IngestStatus.PROCESSING
-    doc.ingest_started_at = datetime.now(UTC)
-    db.commit()
-
+    db = get_db_session()
     try:
-        process_uploaded_document(doc, db)
-        doc.ingest_status = IngestStatus.COMPLETED
-        doc.ingest_completed_at = datetime.now(UTC)
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            return
+
+        doc.ingest_status = IngestStatus.PROCESSING
+        doc.ingest_started_at = datetime.now(UTC)
         db.commit()
-    except Exception as e:
-        doc.ingest_status = IngestStatus.FAILED
-        doc.ingest_error = str(e)
-        doc.ingest_completed_at = datetime.now(UTC)
-        db.commit()
-        return
 
-    # Phase 1: metadata extraction + auto-triage
-    try:
-        from app.services.ai_summary import _summarize_document_sync
+        try:
+            process_uploaded_document(doc, db)
+            doc.ingest_status = IngestStatus.COMPLETED
+            doc.ingest_completed_at = datetime.now(UTC)
+            db.commit()
+        except Exception as e:
+            doc.ingest_status = IngestStatus.FAILED
+            doc.ingest_error = str(e)
+            doc.ingest_completed_at = datetime.now(UTC)
+            db.commit()
+            return
 
-        _summarize_document_sync(doc.id, db)
-    except Exception as e:
-        logger.warning(f"Phase 1 summary failed for doc {doc.id}: {e}")
+        # Phase 1: metadata extraction + auto-triage
+        try:
+            from app.services.ai_summary import _summarize_document_sync
 
-    # Phase 4: batch-ready check → analyze_batch or direct enrichment
-    batch_id = doc.ingest_batch_id
-    if batch_id:
-        from app.services.intelligence.orchestrator import claim_batch_for_analysis
-        from app.tasks.analyze_batch import analyze_batch_task
+            _summarize_document_sync(doc.id, db)
+        except Exception as e:
+            logger.warning(f"Phase 1 summary failed for doc {doc.id}: {e}")
 
-        if claim_batch_for_analysis(batch_id, db):
-            logger.info(f"Batch {batch_id}: dispatching analyze_batch_task")
-            analyze_batch_task.delay(batch_id)
-    else:
-        from app.tasks.enrich_document import enrich_document_task
+        # Phase 4: batch-ready check → analyze_batch or direct enrichment
+        batch_id = doc.ingest_batch_id
+        if batch_id:
+            from app.services.intelligence.orchestrator import claim_batch_for_analysis
+            from app.tasks.analyze_batch import analyze_batch_task
 
-        enrich_document_task.delay(doc.id)
+            if claim_batch_for_analysis(batch_id, db):
+                logger.info(f"Batch {batch_id}: dispatching analyze_batch_task")
+                analyze_batch_task.delay(batch_id)
+        else:
+            from app.tasks.enrich_document import enrich_document_task
 
-    # Embeddings
-    try:
-        import asyncio
+            enrich_document_task.delay(doc.id)
 
-        from app.services.embeddings import generate_embedding
+        # Embeddings
+        try:
+            import asyncio
 
-        asyncio.run(generate_embedding(doc.id))
-    except Exception as e:
-        logger.warning(f"Embedding failed for doc {doc.id}: {e}")
+            from app.services.embeddings import generate_embedding
+
+            asyncio.run(generate_embedding(doc.id))
+        except Exception as e:
+            logger.warning(f"Embedding failed for doc {doc.id}: {e}")
+    finally:
+        db.close()

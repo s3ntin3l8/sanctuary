@@ -73,7 +73,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         response = client.post(
             "/api/v1/upload",
             files=[("files", ("test.pdf", file_content, "application/pdf"))],
-            data={"case_id": "PIPE-001"},
+            data={"case_id": "ADV-123-K"},
             headers={"hx-request": "true"},
         )
         assert response.status_code == 200
@@ -88,7 +88,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
 
         # 5. Manually run the background task (to ensure it runs exactly as we expect)
         # In a real app, this is triggered via background_tasks.add_task
-        run_ingest_pipeline(doc.id, db_session)
+        run_ingest_pipeline(doc.id)
 
         # 6. Verify Results
         db_session.refresh(doc)

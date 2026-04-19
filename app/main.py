@@ -24,7 +24,6 @@ from app.config import (
     SCAN_PROCESSED_DIR,
     SCAN_PROCESSING_DIR,
     SessionLocal,
-    engine,
     templates,
 )
 from app.constants import REVIEW_FIELD_LABELS
@@ -80,27 +79,6 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
 # --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import sqlite3
-
-    from alembic import command
-    from alembic.config import Config as _AlembicConfig
-
-    db_path = str(engine.url).replace("sqlite:///", "")
-    needs_migration = False
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.execute("SELECT version_num FROM alembic_version")
-        row = cursor.fetchone()
-        conn.close()
-        if row is None:
-            needs_migration = True
-    except (sqlite3.OperationalError, Exception):
-        needs_migration = True
-
-    if needs_migration:
-        alembic_cfg = _AlembicConfig("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-
     for scan_dir in (
         SCAN_INCOMING_DIR,
         SCAN_PROCESSING_DIR,
