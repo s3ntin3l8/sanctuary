@@ -1,0 +1,76 @@
+{# Variables expected: case, active_proceeding, proceedings #}
+<header class="flex items-center gap-3 px-4 border-b flex-shrink-0"
+        style="height:48px; border-color:var(--color-outline-variant); background:var(--color-surface-lowest);">
+
+  {# Case ID pill #}
+  <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold"
+        style="background:var(--color-primary-container); color:var(--color-primary);">
+    {{ case.id }}
+  </span>
+
+  {# Title #}
+  <span class="font-semibold text-[14px] truncate" style="color:var(--color-on-surface);">
+    {{ case.title }}
+  </span>
+
+  {# Status dot #}
+  <span class="h-2 w-2 rounded-full flex-shrink-0"
+        style="background:{% if case.status == 'active' %}var(--color-originator-own){% else %}var(--color-on-surface-variant){% endif %};"></span>
+
+  <div style="flex:1;"></div>
+
+  {# Proceeding switcher #}
+  {% if active_proceeding %}
+  <div class="relative" x-data="{ open: false }">
+    <button @click="open = !open"
+            class="flex items-center gap-1.5 text-[11.5px] px-3 py-1 rounded-md"
+            style="border:1px solid var(--color-outline-variant); color:var(--color-on-surface-variant);">
+      <span style="color:var(--color-on-surface);">{{ active_proceeding.az_court }}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+    <div x-show="open" @click.outside="open = false" x-cloak
+         class="absolute right-0 top-full mt-1 z-50 rounded-lg overflow-hidden"
+         style="min-width:280px; background:var(--color-surface-container); border:1px solid var(--color-outline-variant); box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+      {% for p in proceedings %}
+      <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}"
+         hx-target="#case-dashboard-main"
+         hx-swap="outerHTML"
+         @click="open = false"
+         class="flex items-center gap-3 px-4 py-2.5 cursor-pointer"
+         style="text-decoration:none; color:var(--color-on-surface);"
+         onmouseover="this.style.background='var(--color-surface-high)'"
+         onmouseout="this.style.background=''">
+        <span class="text-[12px] font-mono flex-1">{{ p.az_court }}</span>
+        <span class="text-[11px]" style="color:var(--color-on-surface-variant);">{{ p.level }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# View tabs #}
+  <div class="flex items-center gap-0.5 p-0.5 rounded-lg"
+       style="background:var(--color-surface-low);">
+    {% set tabs = [('graph','Graph'),('truth','Truth'),('timeline','Timeline'),('fin','€')] %}
+    {% for v, label in tabs %}
+    <button @click="setView('{{ v }}')"
+            :class="view === '{{ v }}' ? 'text-[var(--color-primary)]' : 'text-[var(--color-on-surface-variant)]'"
+            :style="view === '{{ v }}' ? 'background:var(--color-surface-highest)' : ''"
+            class="px-3 py-1 rounded-md text-[12px] font-medium transition-colors">
+      {{ label }}
+    </button>
+    {% endfor %}
+  </div>
+
+  {# Ask AI stub #}
+  <button @click="chatOpen = true"
+          class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px]"
+          style="background:var(--color-primary-container); color:var(--color-primary);">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z"/>
+    </svg>
+    Ask AI
+  </button>
+</header>
