@@ -123,6 +123,24 @@ def test_case_dashboard_with_processing_brief(db_session):
 
 
 @pytest.mark.integration
+def test_case_brief_panel_shows_failed_state(db_session):
+    """Brief panel shows failure message when brief status is failed."""
+    case = Case(
+        id="FAIL-001",
+        title="Failed Brief Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        ai_brief={"status": "failed", "error": "timeout"},
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    response = client.get("/cases/FAIL-001/brief")
+    assert response.status_code == 200
+    assert "Brief generation failed." in response.text
+
+
+@pytest.mark.integration
 def test_case_dashboard_with_null_received_date(db_session):
     """Dashboard must render without crash when a document has received_date=None."""
     case = Case(
