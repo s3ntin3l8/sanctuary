@@ -1,33 +1,28 @@
 {# Party rows double as lane filters: clicking a party toggles the graph
-   party filter on the parent caseDashboard Alpine scope. #}
+   party filter on the parent caseDashboard Alpine scope.
+   Party dicts use `color` (own/court/opposing/third) as the lane key. #}
 <div class="flex flex-wrap gap-2">
-  {% set role_classes = {
+  {% set color_classes = {
     "court":       "bg-originator-court",
     "opposing":    "bg-originator-opposing",
     "own":         "bg-originator-own",
+    "third":       "bg-originator-third",
     "third_party": "bg-originator-third-party",
     "unknown":     "bg-originator-unknown"
   } %}
-  {% set role_to_lane = {
-    "court":       "court",
-    "opposing":    "opposing",
-    "own":         "own",
-    "third_party": "third",
-    "unknown":     "own"
-  } %}
   {% if parties %}
     {% for party in parties %}
-    {% set lane_key = role_to_lane.get(party.role, 'own') %}
+    {% set lane_key = party.color | default(party.role) | default('own') %}
+    {% set display_name = party.name | default(party.label) %}
     <button type="button"
             @click="togglePartyFilter('{{ lane_key }}')"
             :class="{ 'opacity-20': partyFilter && partyFilter !== '{{ lane_key }}',
                       'ring-2 ring-primary/60': partyFilter === '{{ lane_key }}' }"
             class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition
-                   {{ role_classes.get(party.role, 'bg-originator-unknown') }} text-white
+                   {{ color_classes.get(lane_key, 'bg-originator-unknown') }} text-white
                    hover:brightness-110 focus:outline-none"
-            title="Filter graph by {{ party.name }}">
-      {{ party.name }}
-      <span class="opacity-60">({{ party.document_count }})</span>
+            title="Filter graph by {{ display_name }}">
+      {{ display_name }}
     </button>
     {% endfor %}
   {% else %}

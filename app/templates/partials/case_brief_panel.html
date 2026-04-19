@@ -29,7 +29,29 @@
   </div>
   {% else %}
   <div class="space-y-2 text-sm">
-    <p class="text-on-surface">{{ brief.get('posture', '') }}</p>
+    {# Phase 8 schema: status_line / key_risks / open_threads / recent_development #}
+    {% if brief.get('status_line') %}
+    <p class="text-on-surface font-medium leading-snug">{{ brief.status_line }}</p>
+    {% if brief.get('key_risks') %}
+    <ul class="space-y-1">
+      {% for r in brief.key_risks %}
+      <li class="flex items-start gap-2 text-xs text-on-surface-variant">
+        <span class="mt-0.5 h-1.5 w-1.5 rounded-full flex-shrink-0 {% if r.severity == 'critical' %}bg-error{% else %}bg-tertiary{% endif %}"></span>
+        <span><strong class="text-on-surface">{{ r.label }}</strong> — {{ r.sub }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if brief.get('open_threads') %}
+    <div class="pt-1 space-y-1">
+      {% for t in brief.open_threads %}
+      <p class="text-xs text-on-surface-variant">⟳ <strong class="text-on-surface">{{ t.thread }}</strong> — {{ t.description }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {# Legacy schema: posture / pressure_points / next_move #}
+    {% elif brief.get('posture') %}
+    <p class="text-on-surface">{{ brief.posture }}</p>
     {% if brief.get('pressure_points') %}
     <ul class="list-disc list-inside space-y-1 text-on-surface-variant">
       {% for point in brief.pressure_points %}
@@ -39,6 +61,7 @@
     {% endif %}
     {% if brief.get('next_move') %}
     <p class="text-primary font-medium">→ {{ brief.next_move }}</p>
+    {% endif %}
     {% endif %}
   </div>
   {% if ai_brief_updated_at %}
