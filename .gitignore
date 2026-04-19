@@ -50,7 +50,6 @@ yarn-error.log*
 .env.*.local
 
 # IDEs and Editors
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -75,3 +74,4 @@ agent_task.md
 competitor_analysis.md
 .worktrees/
 .worktrees/
+docs/design_spec/

@@ -52,14 +52,29 @@
             --color-surface-container-low: #f0f4f6;
             --color-surface-container-lowest: #ffffff;
             --tracking-widest: 0.1em;
+            /* aliases used by templates */
+            --color-surface-lowest: var(--color-surface-container-lowest);
+            --color-surface-low: var(--color-surface-container-low);
+            --color-surface-high: var(--color-surface-container-high);
+            --color-surface-highest: var(--color-surface-container-highest);
         }
 
         .dark {
             --color-primary: #57f1db;
             --color-on-surface: #dae2fd;
             --color-on-surface-variant: #859490;
+            --color-surface: #0d1626;
+            --color-surface-container: #171f33;
             --color-surface-container-low: #131b2e;
             --color-surface-container-lowest: #060e20;
+            --color-surface-container-high: #1d2840;
+            --color-surface-container-highest: #243050;
+            --color-surface-lowest: #060e20;
+            --color-surface-low: #131b2e;
+            --color-surface-high: #1d2840;
+            --color-surface-highest: #243050;
+            --color-outline: #3d4d5c;
+            --color-outline-variant: #2a3a4a;
         }
 
         /* Instant Font Definitions */
@@ -183,7 +198,7 @@
         }
 
         /* Sidebar Lockdown */
-        aside {
+        aside#nav-rail {
             width: 56px !important;
             min-width: 56px !important;
             max-width: 56px !important;

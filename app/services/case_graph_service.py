@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 LANE_W = 225
 ROW_H = 80
-TOP = 0
+TOP = 32
 LEFT = 36
 NODE_W = 180
 NODE_H = 50

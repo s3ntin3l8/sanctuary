@@ -32,6 +32,8 @@ help: ## Show this help message
 
 setup: .venv ## Install dependencies and pre-commit hooks
 	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m playwright install chromium
+	npm install
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push
 	cp -r app/static/js static/ 2>/dev/null || true
@@ -46,10 +48,10 @@ watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
 
 test-unit: ## Run unit tests
-	$(PYTEST) -m unit
+	$(PYTEST) --ignore=tests/e2e -m unit
 
 test-integration: ## Run integration tests
-	$(PYTEST) -m integration
+	$(PYTEST) --ignore=tests/e2e -m integration
 
 seed: ## Reset database and seed with advanced triage combinations
 	rm -f data/sanctuary.db

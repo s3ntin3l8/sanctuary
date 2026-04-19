@@ -1,0 +1,37 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "make run",
+            "type": "shell",
+            "command": "make run",
+            "problemMatcher": [],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "make watch-css",
+            "type": "shell",
+            "command": "make watch-css",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^.*$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "tailwindcss",
+                    "endsPattern": "Done in"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "label": "Tailwind Watcher"
+            }
+        }
+    ]
+}

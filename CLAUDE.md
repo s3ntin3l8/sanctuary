@@ -41,6 +41,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **Triage:** No `case_id`/`parent_id` → Triage Inbox. Bundle by `ingest_batch_id`.
 * **Graph first:** primary case view is the correspondence swim-lane graph, not a document list.
 * **AI answers cite sources** — every AI response references the document and passage it drew from.
+* **Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
 
 ## Run
 ```bash

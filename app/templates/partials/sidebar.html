@@ -1,4 +1,4 @@
-<aside class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r border-outline-variant/10 z-50">
+<aside id="nav-rail" class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r border-outline-variant/10 z-50">
     <!-- Brand Header -->
     <div class="flex items-center justify-center pt-6 pb-6 min-h-[80px]">
         <div class="relative flex items-center justify-center w-6 h-6 bg-surface-container shrink-0 shadow-sm" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);" title="The Sanctuary">
@@ -48,10 +48,9 @@
             <span class="material-symbols-outlined text-[20px]">upload_file</span>
         </button>
 
-        <!-- Notifications -->
         <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Notifications">
             <span class="material-symbols-outlined text-[20px]">notifications</span>
-            {% if notification_count > 0 %}
+            {% if sidebar_counts.notification_count > 0 %}
             <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface-container-low"></span>
             {% endif %}
         </button>

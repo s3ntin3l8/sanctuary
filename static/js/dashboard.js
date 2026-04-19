@@ -1,6 +1,8 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('caseDashboard', (initial) => ({
     view: initial.view || 'graph',
+    filter: initial.filter || 'significant+',
+    nodeCounts: initial.nodeCounts || {},
     selectedDocId: null,
     chatOpen: false,
     reviewOpen: false,
@@ -8,8 +10,8 @@ document.addEventListener('alpine:init', () => {
     partyFilter: null,   // 'court' | 'opposing' | 'own' | 'third' | null
 
     init() {
-      // expose openDoc globally so HTMX afterSwap handlers and graph nodes can call it
       window._dashOpenDoc = (id) => this.openDoc(id);
+      this.$el.addEventListener('set-filter', (e) => { this.filter = e.detail.filter; });
     },
 
     setView(v) {
@@ -33,6 +35,30 @@ document.addEventListener('alpine:init', () => {
 
     togglePartyFilter(key) {
       this.partyFilter = this.partyFilter === key ? null : key;
+    },
+
+    isNodeHidden(tier, role) {
+      if (this.filter === 'critical') return tier !== 'critical';
+      if (this.filter === 'significant+') return tier === 'administrative' && role !== 'cover_letter';
+      return false;
+    },
+
+    hiddenCount() {
+      const c = this.nodeCounts;
+      if (!c) return 0;
+      if (this.filter === 'all') return 0;
+      if (this.filter === 'significant+') return c.administrative_standalone || 0;
+      if (this.filter === 'critical') {
+        const total = (c.critical || 0) + (c.significant || 0) + (c.informational || 0)
+                    + (c.administrative_standalone || 0) + (c.administrative_relay || 0);
+        return total - (c.critical || 0);
+      }
+      return 0;
+    },
+
+    isNodeDimmed(lane) {
+      if (!this.partyFilter) return false;
+      return lane !== this.partyFilter;
     },
 
     onKey(e) {
@@ -63,23 +89,4 @@ document.addEventListener('alpine:init', () => {
     },
   }));
 
-  // -----------------------------------------------------------
-  Alpine.data('correspondenceGraph', (initial) => ({
-    filter: initial.filter || 'significant+',
-
-    setFilter(f) {
-      this.filter = f;
-    },
-
-    isNodeHidden(tier, role) {
-      if (this.filter === 'critical') return tier !== 'critical';
-      if (this.filter === 'significant+') return tier === 'administrative' && role !== 'cover_letter';
-      return false;
-    },
-
-    isNodeDimmed(lane, partyFilter) {
-      if (!partyFilter) return false;
-      return lane !== partyFilter;
-    },
-  }));
 });

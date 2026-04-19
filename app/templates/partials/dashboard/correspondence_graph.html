@@ -1,21 +1,19 @@
 {# Variables: graph (dict from CaseGraphService.build_payload), case, active_proceeding #}
-{# Alpine scope: correspondenceGraph + caseDashboard (parent) #}
+{# Alpine scope: caseDashboard (parent) #}
 
 <div class="relative h-full overflow-auto custom-scrollbar"
-     x-data="correspondenceGraph({ filter: '{{ graph.filter }}' })"
-     @set-filter.window="setFilter($event.detail.filter)"
      id="correspondence-graph-container"
      style="background:var(--color-surface);">
 
-  {# Sticky lane headers #}
-  <div class="sticky top-0 z-10 flex"
-       style="background:linear-gradient(to bottom, var(--color-surface) 75%, transparent);
-              padding-left:36px; padding-top:14px; padding-bottom:10px;">
+  {# Lane headers — sticky gradient overlay; nodes scroll behind it #}
+  <div class="sticky top-0 z-10 flex pointer-events-none"
+       style="padding-left:36px; padding-top:0; padding-bottom:18px;
+              background:linear-gradient(to bottom, var(--color-surface) 52%, transparent);">
     {% for lane in graph.lanes %}
-    <div style="width:180px;" class="flex items-center gap-2">
-      <span class="inline-block h-2 w-2 rounded-full"
+    <div style="width:225px;" class="flex items-center gap-2">
+      <span class="inline-block h-2.5 w-2.5 rounded-full"
             style="background:var(--color-originator-{{ lane.color }});"></span>
-      <span class="font-semibold text-[10.5px] tracking-[0.12em] uppercase"
+      <span class="font-semibold text-[13px] tracking-[0.12em] uppercase"
             style="color:var(--color-on-surface-variant);">
         {{ lane.label }}
       </span>
@@ -23,35 +21,35 @@
     {% endfor %}
   </div>
 
-  {# SVG canvas #}
+  {# SVG canvas — pulled up behind the sticky header gradient via negative margin #}
   <svg width="{{ graph.svg_width }}" height="{{ graph.svg_height }}"
        style="display:block; overflow:visible;">
     <defs>
       <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
-              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
         <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-outline)"/>
       </marker>
     </defs>
 
     {# Lane separator lines #}
     {% for i in range(graph.lanes | length + 1) %}
-    <line x1="{{ 36 + i * 180 }}" y1="56"
-          x2="{{ 36 + i * 180 }}" y2="{{ graph.svg_height - 80 }}"
+    <line x1="{{ 36 + i * 225 }}" y1="8"
+          x2="{{ 36 + i * 225 }}" y2="{{ graph.svg_height - 20 }}"
           stroke="var(--color-outline-variant)" stroke-width="0.5"
           stroke-dasharray="2 6" opacity="0.4"/>
     {% endfor %}
 
     {# Date axis ticks — one text per node row #}
     {% for node in graph.nodes %}
-    <text x="8" y="{{ node.y + 24 }}"
-          font-family="JetBrains Mono, monospace" font-size="10"
+    <text x="8" y="{{ node.y + 30 }}"
+          font-family="JetBrains Mono, monospace" font-size="13"
           fill="var(--color-on-surface-variant)" opacity="0.6">
       {{ node.date_short }}
     </text>
     {% endfor %}
     {% for bundle in graph.bundles %}
-    <text x="8" y="{{ bundle.y + 24 }}"
-          font-family="JetBrains Mono, monospace" font-size="10"
+    <text x="8" y="{{ bundle.y + 30 }}"
+          font-family="JetBrains Mono, monospace" font-size="13"
           fill="var(--color-on-surface-variant)" opacity="0.6">
       {{ bundle.footer | default('') }}
     </text>
@@ -67,93 +65,96 @@
           {% if edge.arrow %}marker-end="url(#arrow)"{% endif %}/>
     {% endfor %}
 
-    {# Regular doc nodes #}
-    {% for node in graph.nodes %}
+    {# Reaction enum value → emoji #}
+    {% set _rxn = {'lies': '🚩', 'true': '✅', 'needs_proof': '🔍', 'precedent': '⚖️'} %}
+
+    {# Regular doc nodes (bundle headers rendered separately below) #}
+    {% for node in graph.nodes %}{% if not node.is_bundle %}
     {% set proof_count = graph.proof_badges.get(node.id, 0) %}
     <g class="graph-node cursor-pointer"
-       :class="{ 'opacity-30': isNodeDimmed('{{ node.lane }}', $root.partyFilter), 'opacity-0 pointer-events-none': isNodeHidden('{{ node.tier }}', '{{ node.role }}') }"
-       @click="$root.openDoc({{ node.id }})"
+       :class="{ 'opacity-30': isNodeDimmed('{{ node.lane }}'), 'opacity-0 pointer-events-none': isNodeHidden('{{ node.tier }}', '{{ node.role }}') }"
+       @click="openDoc({{ node.id }})"
        style="transition:opacity .15s;">
 
       {# Thread-open amber glow ring #}
       {% if node.thread_open %}
-      <rect x="{{ node.x - 3 }}" y="{{ node.y - 3 }}"
-            width="150" height="46" rx="7"
+      <rect x="{{ node.x - 4 }}" y="{{ node.y - 4 }}"
+            width="188" height="58" rx="9"
             fill="none" stroke="var(--color-amber)" stroke-width="1"
             opacity="0.5" class="pulse-amber"/>
       {% endif %}
 
       {# Card background #}
       <rect x="{{ node.x }}" y="{{ node.y }}"
-            width="144" height="40" rx="5"
+            width="180" height="50" rx="6"
             fill="{{ 'transparent' if node.ghost else 'var(--color-surface-container)' }}"
             stroke="{{ 'var(--color-primary)' if node.is_new_since_last_visit else 'var(--color-outline-variant)' }}"
             stroke-width="1"
             stroke-dasharray="{{ '3 3' if node.ghost else '' }}"/>
 
-      {# Originator stripe (4px left bar) #}
+      {# Originator stripe (5px left bar) #}
       <rect x="{{ node.x }}" y="{{ node.y }}"
-            width="4" height="40" rx="5"
+            width="5" height="50" rx="6"
             fill="var(--color-originator-{{ node.lane }})"/>
 
       {# Significance flag #}
       {% if node.tier == 'critical' %}
-      <text x="{{ node.x + 130 }}" y="{{ node.y + 14 }}"
-            font-size="11" fill="var(--color-critical)" font-weight="700">⚑</text>
+      <text x="{{ node.x + 163 }}" y="{{ node.y + 18 }}"
+            font-size="14" fill="var(--color-critical)" font-weight="700">⚑</text>
       {% endif %}
 
       {# Paperclip badge for proof attachments #}
       {% if proof_count > 0 %}
-      <text x="{{ node.x + 126 }}" y="{{ node.y + 32 }}"
-            font-size="9" fill="var(--color-on-surface-variant)" opacity="0.8">📎{{ proof_count }}</text>
+      <text x="{{ node.x + 158 }}" y="{{ node.y + 40 }}"
+            font-size="11" fill="var(--color-on-surface-variant)" opacity="0.8">📎{{ proof_count }}</text>
       {% endif %}
 
-      {# Reaction badge #}
+      {# Reaction badge — top-right corner #}
       {% if node.reaction %}
-      <text x="{{ node.x + 8 }}" y="{{ node.y + 36 }}"
-            font-size="9" fill="var(--color-primary)" opacity="0.85">{{ node.reaction }}</text>
+      <text x="{{ node.x + 174 }}" y="{{ node.y + 14 }}"
+            font-size="13" text-anchor="end">{{ _rxn.get(node.reaction, '?') }}</text>
       {% endif %}
 
       {# Title text (pre-clipped server-side by _clip) #}
-      <text x="{{ node.x + 12 }}" y="{{ node.y + 17 }}"
-            font-size="11" font-weight="600"
+      <text x="{{ node.x + 15 }}" y="{{ node.y + 22 }}"
+            font-size="14" font-weight="600"
             fill="var(--color-on-surface)"
             font-family="Inter, sans-serif">
         {{ node.title }}
       </text>
 
       {# Role subtitle #}
-      <text x="{{ node.x + 12 }}" y="{{ node.y + 31 }}"
-            font-size="10" fill="var(--color-on-surface-variant)"
+      <text x="{{ node.x + 15 }}" y="{{ node.y + 39 }}"
+            font-size="13" fill="var(--color-on-surface-variant)"
             font-family="Inter, sans-serif">
         {{ node.role }}
       </text>
     </g>
-    {% endfor %}
+    {% endif %}{% endfor %}
 
     {# Bundle nodes #}
     {% for bundle in graph.bundles %}
-    {% set child_row_h = 26 %}
+    {% set child_row_h = 32 %}
     {% set bundle_h = 16 + (bundle.children | length) * child_row_h + 22 %}
     <g class="cursor-pointer"
-       :class="{ 'opacity-30': isNodeDimmed('{{ bundle.lane }}', $root.partyFilter) }"
+       :class="{ 'opacity-30': isNodeDimmed('{{ bundle.lane }}') }"
        style="transition:opacity .15s;">
 
       {# Outer dashed amber backdrop #}
-      <rect x="{{ bundle.x - 6 }}" y="{{ bundle.y - 6 }}"
-            width="156" height="{{ bundle_h + 12 }}" rx="8"
+      <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
+            width="195" height="{{ bundle_h + 16 }}" rx="10"
             fill="var(--color-surface-container)"
             stroke="var(--color-amber)" stroke-width="1"
             stroke-dasharray="3 3" opacity="0.9"/>
 
       {# Court originator stripe on bundle #}
-      <rect x="{{ bundle.x - 6 }}" y="{{ bundle.y - 6 }}"
-            width="4" height="{{ bundle_h + 12 }}" rx="8"
+      <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
+            width="5" height="{{ bundle_h + 16 }}" rx="10"
             fill="var(--color-originator-{{ bundle.lane }})"/>
 
       {# Bundle header label #}
-      <text x="{{ bundle.x + 8 }}" y="{{ bundle.y + 8 }}"
-            font-size="10" fill="var(--color-amber)" font-weight="700"
+      <text x="{{ bundle.x + 10 }}" y="{{ bundle.y + 10 }}"
+            font-size="13" fill="var(--color-amber)" font-weight="700"
             font-family="Manrope, sans-serif" letter-spacing="0.08em">
         {{ bundle.header }}
       </text>
@@ -161,16 +162,16 @@
       {# Child rows #}
       {% for child in bundle.children %}
       {% set cy = bundle.y + 16 + loop.index0 * child_row_h %}
-      <g @click.stop="$root.openDoc({{ child.id }})" class="cursor-pointer graph-node">
+      <g @click.stop="openDoc({{ child.id }})" class="cursor-pointer graph-node">
         <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
-              width="140" height="{{ child_row_h - 4 }}" rx="3"
+              width="175" height="{{ child_row_h - 4 }}" rx="3"
               fill="var(--color-surface-lowest)"
               stroke="var(--color-outline-variant)" stroke-width="0.5"/>
         <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
-              width="3" height="{{ child_row_h - 4 }}"
+              width="4" height="{{ child_row_h - 4 }}"
               fill="var(--color-originator-{{ child.origin }})"/>
-        <text x="{{ bundle.x + 10 }}" y="{{ cy + 14 }}"
-              font-size="10.5" font-weight="600"
+        <text x="{{ bundle.x + 13 }}" y="{{ cy + 17 }}"
+              font-size="13" font-weight="600"
               fill="var(--color-on-surface)"
               font-family="Inter, sans-serif">
           {{ child.title }}
@@ -180,8 +181,8 @@
 
       {# Footer date #}
       {% if bundle.footer %}
-      <text x="{{ bundle.x + 8 }}" y="{{ bundle.y + bundle_h + 1 }}"
-            font-size="9.5" fill="var(--color-on-surface-variant)"
+      <text x="{{ bundle.x + 10 }}" y="{{ bundle.y + bundle_h + 1 }}"
+            font-size="12" fill="var(--color-on-surface-variant)"
             font-family="JetBrains Mono, monospace">
         {{ bundle.footer }}
       </text>
@@ -191,8 +192,7 @@
 
   </svg>
 
-  {# Hidden-tier strip (absolute positioned bottom-left) #}
-  {% set hidden_counts = graph.hidden_counts %}
+  {# Hidden-tier strip — sticky gradient overlay at the bottom of the graph #}
   {% include "partials/dashboard/hidden_tier_strip.html" %}
 
 </div>

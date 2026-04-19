@@ -122,8 +122,9 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
-// Make Alpine available globally for debugging
-window.Alpine = Alpine;
+document.addEventListener('alpine:init', () => {
+    window.Alpine = Alpine;
+});
 
 function slicingGrid(slicingData, batchId) {
     return {

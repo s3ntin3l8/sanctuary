@@ -13,15 +13,16 @@
       <top_bar>             48px
       <secondary_header>    breadcrumbs + filter chips
       <grid>                flex-1
-        left  280px   AI Brief  / Parties / Financials  (+ privacy footer)
-        right flex-1  view switcher (graph | truth | timeline | fin)
-      <action_items>        bottom row, full width
+        left  340px   AI Brief  / Parties / Financials  (+ privacy footer)
+        right flex-1  flex-col
+          view switcher (graph | truth | timeline | fin)  flex-1
+          action_items  280px, under graph only
       overlays: #case-dashboard-hud, chat drawer, delta review modal
 #}
 
 <section id="case-dashboard-main"
          class="flex-1 flex flex-col overflow-hidden"
-         x-data="caseDashboard({{ initial | tojson }})"
+         x-data='caseDashboard({{ initial | tojson }})'
          @keydown.window="onKey($event)">
 
   {# ── Top bar (48px) ────────────────────────────────────────────── #}
@@ -31,42 +32,42 @@
   {% include "partials/dashboard/secondary_header.html" %}
 
   {# ── Main body grid ────────────────────────────────────────────── #}
-  <div class="flex-1 flex flex-col overflow-hidden">
+  <div class="flex-1 grid gap-0 overflow-hidden"
+       style="grid-template-columns: 340px 1fr;">
 
-    {# Top row: 280px left panel + flex-1 right main view #}
-    <div class="flex-1 grid gap-0 overflow-hidden"
-         style="grid-template-columns: 280px 1fr;">
+    {# ── Left column: AI Brief / Parties / Financials + privacy footer ── #}
+    <aside class="flex flex-col overflow-hidden border-r"
+           style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+      <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+        {% include "partials/case_brief_panel.html" %}
 
-      {# ── Left column: AI Brief / Parties / Financials + privacy footer ── #}
-      <aside class="flex flex-col overflow-hidden border-r"
-             style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-          {% include "partials/case_brief_panel.html" %}
-
-          <div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
-            <h3 class="text-sm font-semibold text-on-surface">Parties</h3>
-            {% include "partials/case_parties_panel.html" %}
-          </div>
-
-          {% include "partials/case_financials_panel.html" %}
-
-          {% if dormancy_alert %}
-          <div class="rounded-lg border border-tertiary/30 bg-tertiary/10 px-4 py-2 text-sm text-tertiary">
-            {{ dormancy_alert }}
-          </div>
-          {% endif %}
+        <div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+          <h3 class="text-sm font-semibold text-on-surface">Parties</h3>
+          {% include "partials/case_parties_panel.html" %}
         </div>
 
-        {# Privacy footer pinned to the bottom of the left column #}
-        {% include "partials/dashboard/privacy_footer.html" %}
-      </aside>
+        {% include "partials/case_financials_panel.html" %}
 
-      {# ── Right column: view-switched main content ─────────────── #}
-      <section class="flex flex-col overflow-hidden"
-               style="background:var(--color-surface);">
+        {% if dormancy_alert %}
+        <div class="rounded-lg border border-tertiary/30 bg-tertiary/10 px-4 py-2 text-sm text-tertiary">
+          {{ dormancy_alert }}
+        </div>
+        {% endif %}
+      </div>
+
+      {# Privacy footer pinned to the bottom of the left column #}
+      {% include "partials/dashboard/privacy_footer.html" %}
+    </aside>
+
+    {# ── Right column: view content + action items at bottom ───────── #}
+    <section class="flex flex-col overflow-hidden"
+             style="background:var(--color-surface);">
+
+      {# View-switched main content (flex-1) #}
+      <div class="flex-1 overflow-hidden" style="min-height:0;">
 
         {# Graph view — requires an active proceeding #}
-        <div x-show="view === 'graph'" x-cloak class="flex-1 overflow-hidden">
+        <div x-show="view === 'graph'" x-cloak class="h-full overflow-hidden">
           {% if graph %}
             {% include "partials/dashboard/correspondence_graph.html" %}
           {% else %}
@@ -86,32 +87,33 @@
 
         {# Truth Map view #}
         <div x-show="view === 'truth'" x-cloak
-             class="flex-1 overflow-auto custom-scrollbar p-4">
+             class="h-full overflow-auto custom-scrollbar p-4">
           {% include "partials/case_view_truthmap.html" %}
         </div>
 
         {# Timeline view #}
         <div x-show="view === 'timeline'" x-cloak
-             class="flex-1 overflow-auto custom-scrollbar p-4">
+             class="h-full overflow-auto custom-scrollbar p-4">
           {% include "partials/case_timeline_panel.html" %}
         </div>
 
         {# Financials view — re-use the panel as the focused main pane #}
         <div x-show="view === 'fin'" x-cloak
-             class="flex-1 overflow-auto custom-scrollbar p-4">
+             class="h-full overflow-auto custom-scrollbar p-4">
           {% include "partials/case_financials_panel.html" %}
         </div>
 
-      </section>
-    </div>
-
-    {# ── Bottom row: Action Items (full width, ~280px) ─────────── #}
-    <div class="flex-shrink-0 border-t overflow-hidden"
-         style="height:280px; border-color:var(--color-outline-variant); background:var(--color-surface-low);">
-      <div class="h-full overflow-y-auto custom-scrollbar p-4">
-        {% include "partials/case_action_items_panel.html" %}
       </div>
-    </div>
+
+      {# ── Action Items (under graph only, ~280px) ─────────────────── #}
+      <div class="flex-shrink-0 border-t overflow-hidden"
+           style="height:280px; border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+        <div class="h-full overflow-y-auto custom-scrollbar p-4">
+          {% include "partials/case_action_items_panel.html" %}
+        </div>
+      </div>
+
+    </section>
   </div>
 
   {# ── Overlays (must live inside the caseDashboard Alpine scope) ── #}

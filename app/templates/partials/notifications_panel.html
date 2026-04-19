@@ -16,10 +16,9 @@
      x-cloak
      style="display: none;">
 
-    {# Header #}
     <div class="px-4 py-3 border-b border-outline-variant/10 bg-surface-container-high/50 flex items-center justify-between">
         <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest">Notifications</h3>
-        <span class="bg-primary/10 text-primary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ notification_count }} Total</span>
+        <span class="bg-primary/10 text-primary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ sidebar_counts.notification_count }} Total</span>
     </div>
 
     {# Tabs #}
@@ -37,7 +36,7 @@
 
     {# Content #}
     <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30">
-        {% if notification_count == 0 %}
+        {% if sidebar_counts.notification_count == 0 %}
         <div class="p-8 text-center">
             <span class="material-symbols-outlined text-outline/30 text-3xl mb-2">notifications_off</span>
             <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">All caught up</p>

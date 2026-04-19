@@ -31,6 +31,8 @@ from app.models.database import (
     Base,
     Case,
     CaseStatus,
+    Claim,
+    ClaimEvidence,
     Document,
     DocumentRelationship,
     DocumentRole,
@@ -47,6 +49,9 @@ from app.models.database import (
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    ClaimEvidenceRole,
+    ClaimStatus,
+    ClaimType,
     Jurisdiction,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -71,6 +76,13 @@ SEED_CASE_IDS = ["_TRIAGE", "ADV-024-A", "ADV-031-B", "ADV-100-X"]
 
 # FK-safe deletion order: children before parents.
 _seed_doc_ids = db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
+_seed_claim_ids = db.query(Claim.id).filter(Claim.case_id.in_(SEED_CASE_IDS))
+db.query(ClaimEvidence).filter(ClaimEvidence.claim_id.in_(_seed_claim_ids)).delete(
+    synchronize_session=False
+)
+db.query(Claim).filter(Claim.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
 db.query(DocumentRelationship).filter(
     DocumentRelationship.from_document_id.in_(_seed_doc_ids)
 ).delete(synchronize_session=False)
@@ -134,6 +146,15 @@ proc_a = Proceeding(
     status=ProceedingStatus.ACTIVE,
     started_at=now - timedelta(days=180),
 )
+proc_a2 = Proceeding(
+    case_id="ADV-024-A",
+    court_name="Oberlandesgericht Hamburg",
+    court_level=ProceedingCourtLevel.OLG,
+    subject_matter="§ 58 FamFG — Beschwerde gegen Sorgerechtsregelung",
+    az_court="2 UF 87/26",
+    status=ProceedingStatus.ACTIVE,
+    started_at=datetime(2026, 5, 10),
+)
 proc_b = Proceeding(
     case_id="ADV-031-B",
     court_name="Landgericht Berlin",
@@ -143,7 +164,7 @@ proc_b = Proceeding(
     status=ProceedingStatus.ACTIVE,
     started_at=now - timedelta(days=90),
 )
-db.add_all([proc_a, proc_b])
+db.add_all([proc_a, proc_a2, proc_b])
 db.commit()
 
 
@@ -1568,7 +1589,7 @@ db.add_all(
     ]
 )
 
-# ── UserReactions (3) ──────────────────────────────────────────────────────
+# ── UserReactions (3) on existing docs ────────────────────────────────────
 db.add_all(
     [
         UserReaction(
@@ -1591,6 +1612,1387 @@ db.add_all(
 db.commit()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE 8 EXPANSION — AG Hamburg: 13 more docs covering every doc type,
+# tier, role and relationship type; plus financial deltas throughout.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Jan 28 — OWN files expert-witness motion
+p8_antrag_sv = _p8_doc(
+    title="Antrag Sachverständigengutachten",
+    document_type=DocumentType.MOTION,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 1, 28),
+    created_at=datetime(2026, 1, 28),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Antrag auf gerichtliche Einholung eines Einkommensgutachtens zum Beklagten.",
+        },
+        {
+            "kind": "action",
+            "text": "Gericht muss Sachverständigen benennen und beauftragen.",
+        },
+        {
+            "kind": "finance",
+            "text": "Sachverständigenkosten vorauss. 1.200–2.000 €, zu gleichen Teilen.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Es wird beantragt, zum Beweis der Leistungsfähigkeit des Beklagten ein Sachverständigengutachten einzuholen.",
+            "kind": "holding",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 1600,
+        "direction": "debit",
+        "description": "Sachverständigenkosten (Schätzung)",
+    },
+)
+
+# Jan 30 — COURT appoints Verfahrensbeistand (child's advocate)
+p8_bestellung_vb = _p8_doc(
+    title="Bestellung Verfahrensbeistand",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 1, 30),
+    created_at=datetime(2026, 1, 30),
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Gericht bestellt Frau Dr. Ingrid Sommer als Verfahrensbeistand für Lukas Vane.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Frau Dr. Ingrid Sommer, Rechtsanwältin, wird als Verfahrensbeistand für das Kind bestellt.",
+            "kind": "neutral",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 350,
+        "direction": "debit",
+        "description": "Verfahrensbeistandsvergütung § 158a FamFG",
+    },
+)
+
+# Feb 10 — OPPOSING files Beweisangebot (witness offer)
+p8_beweisangebot = _p8_doc(
+    title="Beweisangebot Beklagter",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.OPPOSING,
+    sender="mueller@kanzlei-gegenseite.de",
+    received_date=datetime(2026, 2, 10),
+    created_at=datetime(2026, 2, 10),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Beklagter benennt zwei Zeugen zur Einkommenssituation und bestreitet Sachverständigenantrag.",
+        },
+        {"kind": "action", "text": "Gegendarstellung zum Beweisangebot erforderlich."},
+    ],
+    key_passages=[
+        {
+            "text": "Der Beklagte beantragt, den Sachverständigenantrag zurückzuweisen. Als Zeugen werden benannt: Herr K. Schreiber (Arbeitgeber) und Frau L. Brandt (Steuerberaterin).",
+            "kind": "holding",
+            "page": 2,
+        },
+        {
+            "text": "Die behauptete Leistungsfähigkeit von 3.800 € netto wird ausdrücklich bestritten.",
+            "kind": "holding",
+            "page": 1,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Feb 20 — OWN files bank statement annexe (proof of opposing's income)
+p8_kontoauszuege = _p8_doc(
+    title="Anlage K3 — Kontoauszüge",
+    document_type=DocumentType.ANNEX,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 2, 20),
+    created_at=datetime(2026, 2, 20),
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    role=DocumentRole.ENCLOSURE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Kontoauszüge des Beklagten Jan–Okt 2025 belegen regelmäßige Gehaltseingänge von ca. 3.800 €.",
+        },
+        {
+            "kind": "finance",
+            "text": "Monatliche Eingänge: Ø 3.847 € (10 Monate, Basis Anlage K3).",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Kontoauszug 01.01.2025–31.10.2025: Regelmäßige monatliche Eingänge 'Gehalt Lagermax GmbH' i.H.v. 3.800–3.900 €.",
+            "kind": "holding",
+            "page": 3,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Mar 1 — COURT issues expert-witness order (Beweisbeschluss)
+p8_beweisbeschluss = _p8_doc(
+    title="Beweisbeschluss — SV beauftragt",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 3, 1),
+    created_at=datetime(2026, 3, 1),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Gericht beauftragt Dipl.-Wirt. Hans Bauer als Sachverständigen zur Einkommenssituation des Beklagten.",
+        },
+        {
+            "kind": "action",
+            "text": "Beklagter muss Belege innerhalb von 3 Wochen vorlegen.",
+        },
+        {"kind": "finance", "text": "Vorschuss 1.500 € von jeder Partei einzuzahlen."},
+    ],
+    key_passages=[
+        {
+            "text": "Zum Sachverständigen wird Herr Dipl.-Wirt. Hans Bauer bestellt. Vorschuss je 1.500 € bis 22.03.2026.",
+            "kind": "deadline",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 1500,
+        "direction": "debit",
+        "description": "SV-Vorschuss § 379 ZPO",
+    },
+)
+
+# Mar 3 — THIRD PARTY: Kindergarten confirms Lukas attends regularly
+p8_kindergarten = _p8_doc(
+    title="Kindergartenbescheinigung Kita Sternchen",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.THIRD_PARTY,
+    sender="leitung@kita-sternchen-hamburg.de",
+    received_date=datetime(2026, 3, 3),
+    created_at=datetime(2026, 3, 3),
+    significance_tier=SignificanceTier.INFORMATIONAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Kita bestätigt regelmäßigen Besuch von Lukas Vane, Betreuung durch Mutter.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Lukas Vane besucht unsere Einrichtung seit Februar 2025 regelmäßig (5 Tage/Woche). Gebühren werden von Frau Vane entrichtet.",
+            "kind": "neutral",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 280,
+        "direction": "debit",
+        "description": "Kita-Beitrag März 2026",
+    },
+)
+
+# Mar 5 — OPPOSING files payslip annex to counter our claim
+p8_gehaltsabrechnung = _p8_doc(
+    title="Anlage B3 — Gehaltsabrechnung Beklagter",
+    document_type=DocumentType.ANNEX,
+    originator_type=OriginatorType.OPPOSING,
+    sender="mueller@kanzlei-gegenseite.de",
+    received_date=datetime(2026, 3, 5),
+    created_at=datetime(2026, 3, 5),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    role=DocumentRole.ENCLOSURE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Beklagter legt Gehaltsabrechnungen Jan–Dez 2025 vor; netto 2.640 € (Kurzarbeit ab Aug 2025).",
+        },
+        {
+            "kind": "finance",
+            "text": "Kontradiktorisch zu Anlage K3: Kurzarbeit ab Aug führt zu Nettoreduzierung auf 2.640 €.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Kurzarbeitergeld ab August 2025: Nettolohn reduziert auf 2.640,00 €/Monat.",
+            "kind": "holding",
+            "page": 2,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Apr 5 — THIRD PARTY expert delivers income report (bombshell)
+p8_sv_gutachten = _p8_doc(
+    title="Einkommensgutachten Sachverständiger",
+    document_type=DocumentType.REPORT,
+    originator_type=OriginatorType.THIRD_PARTY,
+    sender="bauer@sv-wirtschaft-hh.de",
+    received_date=datetime(2026, 4, 5),
+    created_at=datetime(2026, 4, 5),
+    significance_tier=SignificanceTier.CRITICAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "SV ermittelt bereinigtes Nettoeinkommen des Beklagten: Ø 3.120 €/Monat (Basis 2024–2025). Kurzarbeit teilweise durch Prämien kompensiert.",
+        },
+        {
+            "kind": "action",
+            "text": "Gutachten stützt unsere Forderung teilweise — Duplik sollte SV-Befund nutzen.",
+        },
+        {
+            "kind": "finance",
+            "text": "Unterhaltspflicht nach Düsseldorfer Tabelle: 487 €/Monat ab Jan 2026 = rückständig 3.896 €.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Das bereinigte Nettoeinkommen des Verpflichteten beträgt durchschnittlich 3.120,00 € monatlich.",
+            "kind": "holding",
+            "page": 4,
+        },
+        {
+            "text": "Kurzarbeitergeld wurde durch Arbeitgeberprämien teilweise kompensiert; die tatsächliche Leistungsfähigkeit lag nie unter 2.800 €.",
+            "kind": "holding",
+            "page": 5,
+        },
+        {
+            "text": "Nach Düsseldorfer Tabelle (2025) ergibt sich ein Zahlbetrag von 487 €/Monat.",
+            "kind": "holding",
+            "page": 7,
+        },
+    ],
+    cost_delta={
+        "amount": 3896,
+        "direction": "credit",
+        "description": "Rückständiger Unterhalt lt. SV-Gutachten",
+    },
+)
+
+# Apr 8 — THIRD PARTY Verfahrensbeistand report (child's advocate, thread open)
+p8_vb_bericht = _p8_doc(
+    title="Bericht Verfahrensbeistand",
+    document_type=DocumentType.REPORT,
+    originator_type=OriginatorType.THIRD_PARTY,
+    sender="sommer@rechtsanwalt-sommer.de",
+    received_date=datetime(2026, 4, 8),
+    created_at=datetime(2026, 4, 8),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    thread_open=True,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Verfahrensbeistand empfiehlt Beibehaltung des gemeinsamen Sorgerechts; Alleinsorge nicht im Kindeswohl.",
+        },
+        {
+            "kind": "action",
+            "text": "Position in Duplik addressieren — Alleinsorgeantrag muss besser begründet werden.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Lukas äußert ausdrücklich den Wunsch, beide Elternteile regelmäßig zu sehen. Ein Alleinsorgerecht der Mutter widerspricht dem erklärten Willen des Kindes.",
+            "kind": "holding",
+            "page": 3,
+        },
+        {
+            "text": "Die Kommunikationsprobleme der Eltern sind erheblich, rechtfertigen jedoch kein Alleinsorgerecht.",
+            "kind": "neutral",
+            "page": 4,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Apr 10 — COURT issues hearing summons (Ladung)
+p8_ladung = _p8_doc(
+    title="Ladung Verhandlungstermin 15.06.2026",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 4, 10),
+    created_at=datetime(2026, 4, 10),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Verhandlungstermin angesetzt auf 15.06.2026, 09:30 Uhr, Saal 127.",
+        },
+        {
+            "kind": "action",
+            "text": "Alle Beweismittel und Schriftsätze bis spätestens 01.06.2026 einzureichen.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Termin zur mündlichen Verhandlung: Montag, 15. Juni 2026, 09:30 Uhr, Amtsgericht Hamburg, Saal 127.",
+            "kind": "deadline",
+            "page": 1,
+        },
+        {
+            "text": "Schriftsätze sind bis zum 01.06.2026 einzureichen.",
+            "kind": "deadline",
+            "page": 1,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Apr 12 — COURT sends invoice for expert costs
+p8_sv_kostenrechnung = _p8_doc(
+    title="Kostenrechnung Sachverständiger",
+    document_type=DocumentType.INVOICE,
+    originator_type=OriginatorType.COURT,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 4, 12),
+    created_at=datetime(2026, 4, 12),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "finance",
+            "text": "SV-Rechnung 2.840 € brutto — Vorschuss 1.500 € verrechnet, Restbetrag 1.340 € fällig.",
+        },
+        {"kind": "action", "text": "Restbetrag 1.340 € bis 30.04.2026 überweisen."},
+    ],
+    key_passages=[
+        {
+            "text": "Sachverständigengebühr gemäß JVEG: 2.840,00 € (brutto). Vorschuss 1.500,00 € bereits verrechnet. Restbetrag: 1.340,00 €.",
+            "kind": "deadline",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 1340,
+        "direction": "debit",
+        "description": "SV-Resthonorar JVEG",
+    },
+)
+
+# Apr 15 — OWN files Duplik (rebuttal of Klageerwiderung, pre-trial brief)
+p8_duplik = _p8_doc(
+    title="Duplik — Erwiderung auf Klageerwiderung",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 4, 15),
+    created_at=datetime(2026, 4, 15),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Klägerin widerlegt Leistungsunfähigkeit anhand SV-Gutachten; Antrag auf Alleinsorge aufrechterhalten.",
+        },
+        {
+            "kind": "action",
+            "text": "Wird fristgerecht vor Verhandlung am 15.06.2026 eingereicht.",
+        },
+        {
+            "kind": "finance",
+            "text": "Unterhaltsforderung präzisiert: 487 €/Monat × 17 Monate = 8.279 €.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Das Sachverständigengutachten Bauer belegt Leistungsfähigkeit von min. 3.120 €/Monat. Die Behauptung des Beklagten, nicht leistungsfähig zu sein, ist widerlegt.",
+            "kind": "holding",
+            "page": 2,
+        },
+        {
+            "text": "Die Klägerin hält den Antrag auf Übertragung des Alleinsorgerechts vollumfänglich aufrecht.",
+            "kind": "holding",
+            "page": 6,
+        },
+    ],
+    cost_delta=None,
+)
+
+# Apr 18 — OWN internal note / OTHER doc type
+p8_kanzleinotiz = _p8_doc(
+    title="Kanzleinotiz — Vorbereitung Verhandlung",
+    document_type=DocumentType.OTHER,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 4, 18),
+    created_at=datetime(2026, 4, 18),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "action",
+            "text": "Interne Checkliste für Verhandlungsvorbereitung am 15.06.2026.",
+        },
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+
+db.flush()
+
+# Additional AG relationships
+db.add_all(
+    [
+        DocumentRelationship(
+            from_document_id=p8_antrag_sv.id,
+            to_document_id=p8_klageerwiderung.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_beweisbeschluss.id,
+            to_document_id=p8_antrag_sv.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_beweisangebot.id,
+            to_document_id=p8_gehaltsabrechnung.id,
+            relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_beweisangebot.id,
+            to_document_id=p8_antrag_sv.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_duplik.id,
+            to_document_id=p8_kontoauszuege.id,
+            relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_duplik.id,
+            to_document_id=p8_sv_gutachten.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_duplik.id,
+            to_document_id=p8_klageerwiderung.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_sv_gutachten.id,
+            to_document_id=p8_beweisangebot.id,
+            relationship_type=RelationshipType.SUPERSEDES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_vb_bericht.id,
+            to_document_id=p8_jugendamt.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_duplik.id,
+            to_document_id=p8_kindergarten.id,
+            relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_sv_kostenrechnung.id,
+            to_document_id=p8_beweisbeschluss.id,
+            relationship_type=RelationshipType.SUPERSEDES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_stellungnahme.id,
+            to_document_id=p8_sv_gutachten.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+    ]
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE 8 EXPANSION — OLG Hamburg appeal proceeding (proc_a2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _p8_olg(**kwargs):
+    defaults = {
+        "case_id": "ADV-024-A",
+        "proceeding_id": proc_a2.id,
+        "needs_review": False,
+        "review_reasons": [],
+        "ingest_status": IngestStatus.COMPLETED,
+        "ai_summary_status": "generated",
+        "role": DocumentRole.STANDALONE,
+        "court_relay": False,
+        "thread_open": False,
+        "extraction_confidence": {
+            "sender": "high",
+            "date": "high",
+            "case_id": "high",
+            "originator": "high",
+        },
+    }
+    defaults.update(kwargs)
+    if "content" not in defaults:
+        defaults["content"] = _content(
+            defaults["title"],
+            defaults.get("originator_type", OriginatorType.UNKNOWN),
+            defaults.get("sender"),
+        )
+    doc = Document(**defaults)
+    db.add(doc)
+    db.flush()
+    return doc
+
+
+p8_olg_beschwerde = _p8_olg(
+    title="Beschwerdeschrift gegen AG-Beschluss",
+    document_type=DocumentType.MOTION,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 5, 10),
+    created_at=datetime(2026, 5, 10),
+    significance_tier=SignificanceTier.CRITICAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Beschwerde gegen den AG Hamburg Beschluss vom 15.06.2026 fristgerecht eingelegt (§ 58 FamFG, 1-Monatsfrist).",
+        },
+        {
+            "kind": "action",
+            "text": "Beschwerdebegründung innerhalb von 2 Monaten einzureichen.",
+        },
+        {
+            "kind": "finance",
+            "text": "Gerichtskosten OLG: Vorschuss vorauss. 800–1.200 €.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Der Beschwerdeführer wendet sich gegen die Übertragung des Alleinsorgerechts auf die Kindesmutter.",
+            "kind": "holding",
+            "page": 1,
+        },
+        {
+            "text": "Die Beschwerde wird binnen der gesetzlichen Frist von einem Monat nach Zustellung eingelegt.",
+            "kind": "neutral",
+            "page": 1,
+        },
+    ],
+    cost_delta=None,
+)
+
+p8_olg_eingang = _p8_olg(
+    title="Eingangsbestätigung OLG Hamburg",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.COURT,
+    sender="poststelle@olg-hamburg.de",
+    received_date=datetime(2026, 5, 15),
+    created_at=datetime(2026, 5, 15),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "OLG bestätigt Eingang der Beschwerde, Az. 2 UF 87/26 zugeteilt.",
+        },
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+
+p8_olg_rvg_anforderung = _p8_olg(
+    title="Kostenvorschussanforderung OLG",
+    document_type=DocumentType.INVOICE,
+    originator_type=OriginatorType.COURT,
+    sender="poststelle@olg-hamburg.de",
+    received_date=datetime(2026, 5, 20),
+    created_at=datetime(2026, 5, 20),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {"kind": "finance", "text": "GKG-Vorschuss OLG: 1.128 € bis 10.06.2026."},
+        {
+            "kind": "action",
+            "text": "Überweisung innerhalb von 3 Wochen, sonst Verwerfung der Beschwerde.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Bei Nichteinzahlung des Kostenvorschusses i.H.v. 1.128,00 € wird die Beschwerde als unzulässig verworfen (§ 66 Abs. 3 GKG).",
+            "kind": "deadline",
+            "page": 1,
+        },
+    ],
+    cost_delta={
+        "amount": 1128,
+        "direction": "debit",
+        "description": "GKG-Vorschuss OLG Hamburg",
+    },
+)
+
+p8_olg_einzahlung = _p8_olg(
+    title="Einzahlung GKG OLG",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 6, 1),
+    created_at=datetime(2026, 6, 1),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "finance",
+            "text": "GKG-Vorschuss OLG 1.128 € fristgerecht eingezahlt.",
+        },
+    ],
+    key_passages=[],
+    cost_delta={
+        "amount": 1128,
+        "direction": "debit",
+        "description": "GKG OLG eingezahlt",
+    },
+)
+
+p8_olg_begruendung = _p8_olg(
+    title="Beschwerdebegründung",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.OWN,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2026, 6, 15),
+    created_at=datetime(2026, 6, 15),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "AG hat Kindeswillensäußerungen unzureichend gewürdigt; Alleinsorge ist verfassungswidrig ohne hinreichende Begründung.",
+        },
+        {"kind": "action", "text": "Gegenseite hat 1 Monat zur Erwiderung."},
+    ],
+    key_passages=[
+        {
+            "text": "Die Vorinstanz hat die Aussagen des Verfahrensbeistands und den Kindeswillen nicht hinreichend in die Abwägung einbezogen.",
+            "kind": "holding",
+            "page": 3,
+        },
+        {
+            "text": "Ein Alleinsorgerecht greift in das Elternrecht des Beschwerdeführers aus Art. 6 Abs. 2 GG ein und bedarf stärkerer Rechtfertigung.",
+            "kind": "holding",
+            "page": 5,
+        },
+    ],
+    cost_delta=None,
+)
+
+# OLG relay bundle: forwards opposing response + third-party brief
+p8_olg_relay = _p8_olg(
+    title="Weiterleitung OLG — Beschwerdeerwiderung",
+    document_type=DocumentType.RELAY,
+    originator_type=OriginatorType.COURT,
+    sender="poststelle@olg-hamburg.de",
+    received_date=datetime(2026, 7, 5),
+    created_at=datetime(2026, 7, 5),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    court_relay=True,
+    role=DocumentRole.COVER_LETTER,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "OLG leitet Beschwerdeerwiderung des Beklagten und ergänzende Stellungnahme Jugendamt weiter.",
+        },
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+
+p8_olg_erwiderung = _p8_olg(
+    title="Beschwerdeerwiderung Beklagter",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.COURT,
+    attributed_originator="opposing",
+    sender="poststelle@olg-hamburg.de",
+    received_date=datetime(2026, 7, 5),
+    created_at=datetime(2026, 7, 5),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    role=DocumentRole.ENCLOSURE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Beklagter beantragt Zurückweisung der Beschwerde. AG-Entscheidung sei korrekt.",
+        },
+        {
+            "kind": "finance",
+            "text": "Beklagter verlangt Kostentragung durch Beschwerdeführer: vorauss. 2.400 €.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Die Beschwerde ist unbegründet. Das Amtsgericht hat den Sachverhalt zutreffend gewürdigt.",
+            "kind": "holding",
+            "page": 1,
+        },
+        {
+            "text": "Antrag: Beschwerde zurückweisen; Kosten dem Beschwerdeführer auferlegen.",
+            "kind": "holding",
+            "page": 4,
+        },
+    ],
+    cost_delta={
+        "amount": 2400,
+        "direction": "opposing_claim",
+        "description": "Gegenseite fordert OLG-Kostenerstattung",
+    },
+)
+
+p8_olg_jugendamt = _p8_olg(
+    title="Ergänzungsstellungnahme Jugendamt OLG",
+    document_type=DocumentType.REPORT,
+    originator_type=OriginatorType.COURT,
+    attributed_originator="third_party",
+    sender="poststelle@olg-hamburg.de",
+    received_date=datetime(2026, 7, 5),
+    created_at=datetime(2026, 7, 5),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    role=DocumentRole.ENCLOSURE,
+    thread_open=True,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Jugendamt revidiert frühere Aussage: empfiehlt nun geteiltes Wechselmodell statt Alleinsorge.",
+        },
+        {
+            "kind": "action",
+            "text": "Starkes Argument für Beschwerde — in ergänzendem Schriftsatz hervorheben.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Nach erneuter Prüfung empfiehlt das Jugendamt Hamburg ein Wechselmodell (50/50) als beste Lösung für das Kindeswohl.",
+            "kind": "holding",
+            "page": 2,
+        },
+    ],
+    cost_delta=None,
+)
+
+p8_olg_erwiderung.parent_id = p8_olg_relay.id
+p8_olg_jugendamt.parent_id = p8_olg_relay.id
+db.flush()
+
+p8_olg_beschluss = _p8_olg(
+    title="Beschluss OLG Hamburg",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    sender="poststelle@olg-hamburg.de",
+    received_date=None,  # ghost — not yet received
+    created_at=datetime(2026, 8, 20),
+    significance_tier=SignificanceTier.CRITICAL,
+    ai_summary_status="pending",
+    ai_summary=[
+        {
+            "kind": "action",
+            "text": "OLG-Beschluss ausstehend — Entscheidung voraussichtlich Q3 2026.",
+        },
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+db.flush()
+
+db.add_all(
+    [
+        DocumentRelationship(
+            from_document_id=p8_olg_beschwerde.id,
+            to_document_id=p8_pkh.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_begruendung.id,
+            to_document_id=p8_olg_beschwerde.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_begruendung.id,
+            to_document_id=p8_vb_bericht.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_einzahlung.id,
+            to_document_id=p8_olg_rvg_anforderung.id,
+            relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_erwiderung.id,
+            to_document_id=p8_olg_begruendung.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_jugendamt.id,
+            to_document_id=p8_jugendamt.id,
+            relationship_type=RelationshipType.SUPERSEDES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        DocumentRelationship(
+            from_document_id=p8_olg_beschluss.id,
+            to_document_id=p8_olg_erwiderung.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+    ]
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLAIMS — Truth Map for ADV-024-A (both proceedings)
+# ═══════════════════════════════════════════════════════════════════════════
+
+cl1 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_klageerwiderung.id,
+    claim_text="Der Beklagte war in dem Zeitraum Januar bis Oktober 2025 nicht leistungsfähig.",
+    claim_type=ClaimType.FACTUAL,
+    status=ClaimStatus.CONTESTED,
+    first_made_at=datetime(2026, 1, 20),
+    last_updated_at=datetime(2026, 4, 5),
+)
+cl2 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_klage.id,
+    claim_text="Die Klägerin hat Anspruch auf rückständigen Kindesunterhalt i.H.v. 24.000 €.",
+    claim_type=ClaimType.LEGAL,
+    status=ClaimStatus.CONTESTED,
+    first_made_at=datetime(2025, 11, 15),
+    last_updated_at=datetime(2026, 4, 15),
+)
+cl3 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_klage.id,
+    claim_text="Lukas Vane lebt seit der Trennung im Januar 2025 im Haushalt der Mutter.",
+    claim_type=ClaimType.FACTUAL,
+    status=ClaimStatus.ESTABLISHED,
+    first_made_at=datetime(2025, 11, 15),
+    last_updated_at=datetime(2026, 4, 8),
+)
+cl4 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_jugendamt.id,
+    claim_text="Die Kommunikation der Eltern ist so schwerwiegend gestört, dass gemeinsame Sorge nicht funktioniert.",
+    claim_type=ClaimType.FACTUAL,
+    status=ClaimStatus.CONTESTED,
+    first_made_at=datetime(2026, 1, 20),
+    last_updated_at=datetime(2026, 4, 8),
+)
+cl5 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_klage.id,
+    claim_text="Das Alleinsorgerecht der Mutter entspricht dem Kindeswohl des Lukas Vane.",
+    claim_type=ClaimType.LEGAL,
+    status=ClaimStatus.CONTESTED,
+    first_made_at=datetime(2025, 11, 15),
+    last_updated_at=datetime(2026, 4, 8),
+)
+cl6 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_sv_gutachten.id,
+    claim_text="Das bereinigte Nettoeinkommen des Beklagten beträgt durchschnittlich 3.120 €/Monat.",
+    claim_type=ClaimType.FACTUAL,
+    status=ClaimStatus.ASSERTED,
+    first_made_at=datetime(2026, 4, 5),
+    last_updated_at=datetime(2026, 4, 5),
+)
+cl7 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_pkh.id,
+    claim_text="Die Voraussetzungen für Prozesskostenhilfe lagen bei Antragstellung vor.",
+    claim_type=ClaimType.PROCEDURAL,
+    status=ClaimStatus.ESTABLISHED,
+    first_made_at=datetime(2026, 2, 4),
+    last_updated_at=datetime(2026, 2, 4),
+)
+cl8 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a.id,
+    source_document_id=p8_klageerwiderung.id,
+    claim_text="Die Anlage B3 (Gehaltsabrechnung) weist die tatsächliche Einkommenssituation des Beklagten korrekt aus.",
+    claim_type=ClaimType.FACTUAL,
+    status=ClaimStatus.REFUTED,
+    first_made_at=datetime(2026, 1, 20),
+    last_updated_at=datetime(2026, 4, 15),
+)
+cl9 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a2.id,
+    source_document_id=p8_olg_beschwerde.id,
+    claim_text="Die Beschwerde gegen den AG-Beschluss ist fristgerecht und zulässig erhoben worden.",
+    claim_type=ClaimType.PROCEDURAL,
+    status=ClaimStatus.ESTABLISHED,
+    first_made_at=datetime(2026, 5, 10),
+    last_updated_at=datetime(2026, 5, 15),
+)
+cl10 = Claim(
+    case_id="ADV-024-A",
+    proceeding_id=proc_a2.id,
+    source_document_id=p8_olg_begruendung.id,
+    claim_text="Das Amtsgericht hat den geäußerten Kindeswillen und den Verfahrensbeistandsbericht unzureichend gewürdigt.",
+    claim_type=ClaimType.LEGAL,
+    status=ClaimStatus.ASSERTED,
+    first_made_at=datetime(2026, 6, 15),
+    last_updated_at=datetime(2026, 6, 15),
+)
+db.add_all([cl1, cl2, cl3, cl4, cl5, cl6, cl7, cl8, cl9, cl10])
+db.flush()
+
+db.add_all(
+    [
+        # cl1: Beklagter's Leistungsunfähigkeit — CONTESTED
+        ClaimEvidence(
+            claim_id=cl1.id,
+            document_id=p8_klageerwiderung.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Der Beklagte war in dem genannten Zeitraum nicht leistungsfähig.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl1.id,
+            document_id=p8_gehaltsabrechnung.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Kurzarbeitergeld ab August 2025: Nettolohn reduziert auf 2.640,00 €/Monat.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl1.id,
+            document_id=p8_kontoauszuege.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Regelmäßige monatliche Eingänge 'Gehalt Lagermax GmbH' i.H.v. 3.800–3.900 €.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl1.id,
+            document_id=p8_sv_gutachten.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Die tatsächliche Leistungsfähigkeit lag nie unter 2.800 €.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl2: Unterhaltsforderung — CONTESTED
+        ClaimEvidence(
+            claim_id=cl2.id,
+            document_id=p8_klage.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl2.id,
+            document_id=p8_klageerwiderung.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Die Klageforderung wird in vollem Umfang bestritten.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl2.id,
+            document_id=p8_sv_gutachten.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Unterhaltspflicht nach Düsseldorfer Tabelle: 487 €/Monat.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl3: Lukas lebt bei der Mutter — ESTABLISHED
+        ClaimEvidence(
+            claim_id=cl3.id,
+            document_id=p8_jugendamt.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Das Jugendamt bestätigt die Betreuungssituation.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl3.id,
+            document_id=p8_kindergarten.id,
+            role=ClaimEvidenceRole.CITES_AS_PROOF,
+            excerpt="Gebühren werden von Frau Vane entrichtet.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl3.id,
+            document_id=p8_vb_bericht.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Lukas äußert ausdrücklich den Wunsch, beide Elternteile regelmäßig zu sehen.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl4: Kommunikation gestört — CONTESTED
+        ClaimEvidence(
+            claim_id=cl4.id,
+            document_id=p8_jugendamt.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Erhebliche Defizite in der Kooperationsfähigkeit.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl4.id,
+            document_id=p8_vb_bericht.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Die Kommunikationsprobleme der Eltern sind erheblich, rechtfertigen jedoch kein Alleinsorgerecht.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl4.id,
+            document_id=p8_klageerwiderung.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Die Klageforderung wird in vollem Umfang bestritten.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl5: Alleinsorge = Kindeswohl — CONTESTED
+        ClaimEvidence(
+            claim_id=cl5.id,
+            document_id=p8_klage.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Antrag auf Übertragung des Alleinsorgerechts.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl5.id,
+            document_id=p8_jugendamt.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Empfehlung: gemeinsame elterliche Sorge beibehalten.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl5.id,
+            document_id=p8_vb_bericht.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Ein Alleinsorgerecht der Mutter widerspricht dem erklärten Willen des Kindes.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl5.id,
+            document_id=p8_duplik.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Die Klägerin hält den Antrag auf Übertragung des Alleinsorgerechts vollumfänglich aufrecht.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        # cl6: SV-Einkommen 3.120 € — ASSERTED
+        ClaimEvidence(
+            claim_id=cl6.id,
+            document_id=p8_sv_gutachten.id,
+            role=ClaimEvidenceRole.CITES_AS_PROOF,
+            excerpt="Das bereinigte Nettoeinkommen des Verpflichteten beträgt durchschnittlich 3.120,00 €.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl6.id,
+            document_id=p8_beweisangebot.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Die behauptete Leistungsfähigkeit von 3.800 € netto wird ausdrücklich bestritten.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl6.id,
+            document_id=p8_duplik.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Das Sachverständigengutachten Bauer belegt Leistungsfähigkeit von min. 3.120 €/Monat.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        # cl7: PKH — ESTABLISHED
+        ClaimEvidence(
+            claim_id=cl7.id,
+            document_id=p8_pkh.id,
+            role=ClaimEvidenceRole.CITES_AS_PROOF,
+            excerpt="Der Klägerin wird Prozesskostenhilfe ohne Ratenzahlung bewilligt.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        # cl8: Anlage B3 korrekt — REFUTED
+        ClaimEvidence(
+            claim_id=cl8.id,
+            document_id=p8_gehaltsabrechnung.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Kurzarbeitergeld ab August 2025: Nettolohn reduziert auf 2.640,00 €/Monat.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl8.id,
+            document_id=p8_kontoauszuege.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Regelmäßige monatliche Eingänge i.H.v. 3.800–3.900 €.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl8.id,
+            document_id=p8_sv_gutachten.id,
+            role=ClaimEvidenceRole.REFUTES,
+            excerpt="Kurzarbeit teilweise durch Prämien kompensiert.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl9: Beschwerde zulässig — ESTABLISHED
+        ClaimEvidence(
+            claim_id=cl9.id,
+            document_id=p8_olg_beschwerde.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Die Beschwerde wird binnen der gesetzlichen Frist von einem Monat eingelegt.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl9.id,
+            document_id=p8_olg_eingang.id,
+            role=ClaimEvidenceRole.CITES_AS_PROOF,
+            excerpt="Az. 2 UF 87/26 zugeteilt.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # cl10: AG hat Kindeswillen nicht berücksichtigt — ASSERTED
+        ClaimEvidence(
+            claim_id=cl10.id,
+            document_id=p8_vb_bericht.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Lukas äußert ausdrücklich den Wunsch, beide Elternteile regelmäßig zu sehen.",
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        ClaimEvidence(
+            claim_id=cl10.id,
+            document_id=p8_olg_jugendamt.id,
+            role=ClaimEvidenceRole.SUPPORTS,
+            excerpt="Nach erneuter Prüfung empfiehlt das Jugendamt Hamburg ein Wechselmodell.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        ClaimEvidence(
+            claim_id=cl10.id,
+            document_id=p8_olg_erwiderung.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            excerpt="Das Amtsgericht hat den Sachverhalt zutreffend gewürdigt.",
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+    ]
+)
+db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Additional Action Items — all 4 ActionItemType values
+# ═══════════════════════════════════════════════════════════════════════════
+db.add_all(
+    [
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_sv_kostenrechnung.id,
+            title="SV-Resthonorar überweisen (1.340 €)",
+            description="Frist 30.04.2026. Konto: Amtsgericht Hamburg.",
+            due_date=datetime(2026, 4, 30),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_ladung.id,
+            title="Verhandlungstermin AG Hamburg",
+            description="Saal 127, 09:30 Uhr. Zeugen und SV-Gutachten mitnehmen.",
+            due_date=datetime(2026, 6, 15),
+            action_type=ActionItemType.COURT_DATE,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_vb_bericht.id,
+            title="Stellungnahme zum VB-Bericht",
+            description="Verfahrensbeistand empfiehlt Wechselmodell — unsere Position darlegen.",
+            due_date=datetime(2026, 6, 1),
+            action_type=ActionItemType.RESPONSE_REQUIRED,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_ladung.id,
+            title="Schriftsätze und Beweismittel bis 01.06.2026 einreichen",
+            description="Duplik, Anlage K3, SV-Gutachten fristgerecht einreichen.",
+            due_date=datetime(2026, 6, 1),
+            action_type=ActionItemType.FILING_REQUIRED,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_beweisbeschluss.id,
+            title="SV-Vorschuss eingezahlt ✓",
+            description="1.500 € an Amtsgericht Hamburg überwiesen.",
+            due_date=datetime(2026, 3, 22),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.COMPLETED,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a2.id,
+            source_document_id=p8_olg_rvg_anforderung.id,
+            title="GKG-Vorschuss OLG eingezahlt ✓",
+            description="1.128 € fristgerecht überwiesen.",
+            due_date=datetime(2026, 6, 10),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.COMPLETED,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a2.id,
+            source_document_id=p8_olg_jugendamt.id,
+            title="Ergänzender Schriftsatz OLG — Jugendamt-Revision",
+            description="OLG-Jugendamt revidiert auf Wechselmodell — sofort Stellung nehmen.",
+            due_date=datetime(2026, 7, 25),
+            action_type=ActionItemType.FILING_REQUIRED,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a2.id,
+            source_document_id=None,
+            title="OLG-Beschluss erwartet (Q3 2026)",
+            description="Voraussichtlich Aug/Sep 2026. Termin beobachten.",
+            due_date=datetime(2026, 9, 30),
+            action_type=ActionItemType.COURT_DATE,
+            status=ActionItemStatus.OPEN,
+        ),
+    ]
+)
+
+# ── More UserReactions covering all 4 types on expanded docs ──────────────
+db.add_all(
+    [
+        UserReaction(
+            document_id=p8_sv_gutachten.id,
+            reaction=UserReactionType.TRUE,
+            notes="SV-Gutachten bestätigt unsere Kernthese — starkes Beweismittel.",
+        ),
+        UserReaction(
+            document_id=p8_beweisangebot.id,
+            reaction=UserReactionType.LIES,
+            notes="Beklagter bestreitet Leistungsfähigkeit obwohl Kontoauszüge Gegenteil belegen.",
+        ),
+        UserReaction(
+            document_id=p8_vb_bericht.id,
+            reaction=UserReactionType.NEEDS_PROOF,
+            notes="VB empfiehlt Wechselmodell ohne konkrete Begründung — vertiefen.",
+        ),
+        UserReaction(
+            document_id=p8_beweisbeschluss.id,
+            reaction=UserReactionType.TRUE,
+            notes="Beweisbeschluss — SV-Antrag erfolgreich.",
+        ),
+        UserReaction(
+            document_id=p8_olg_jugendamt.id,
+            reaction=UserReactionType.PRECEDENT,
+            notes="OLG-Jugendamt Wechselmodell-Empfehlung — faktisches Novum, zitieren.",
+        ),
+        UserReaction(
+            document_id=p8_gehaltsabrechnung.id,
+            reaction=UserReactionType.LIES,
+            notes="Kurzarbeit-Argument widerlegt durch SV-Gutachten und Kontoauszüge.",
+        ),
+        UserReaction(
+            document_id=p8_duplik.id,
+            reaction=UserReactionType.TRUE,
+            notes="Duplik präzise — SV-Befund gut eingearbeitet.",
+        ),
+    ]
+)
+
+# ── Update case brief to reflect OLG stage ────────────────────────────────
+case_a.ai_brief = {
+    "schema_version": 1,
+    "status_line": (
+        "AG Hamburg hat Alleinsorge der Mutter übertragen. Beklagter hat Beschwerde beim OLG Hamburg "
+        "eingelegt (Az. 2 UF 87/26). Jugendamt OLG revidiert Empfehlung auf Wechselmodell — "
+        "starkes neues Argument. OLG-Beschluss ausstehend Q3 2026."
+    ),
+    "key_risks": [
+        {
+            "id": "r1",
+            "severity": "critical",
+            "label": "OLG kann Alleinsorge kippen",
+            "sub": "Wechselmodell-Empfehlung schwächt unsere Position",
+        },
+        {
+            "id": "r2",
+            "severity": "near",
+            "label": "Ergänzenden OLG-Schriftsatz einreichen",
+            "sub": "Frist 25.07.2026 — dringend",
+        },
+        {
+            "id": "r3",
+            "severity": "near",
+            "label": "SV-Resthonorar offen",
+            "sub": "1.340 € fällig 30.04.2026 (überfällig)",
+        },
+        {
+            "id": "r4",
+            "severity": "low",
+            "label": "Kostenrisiko OLG-Niederlage",
+            "sub": "ca. 3.500–5.000 € Gegnerkosten",
+        },
+    ],
+    "open_threads": [
+        {
+            "thread": "OLG-Beschluss",
+            "description": "Entscheidung ausstehend — voraussichtlich Aug/Sep 2026",
+        },
+        {
+            "thread": "Wechselmodell-Reaktion",
+            "description": "Ergänzender Schriftsatz zu OLG-Jugendamt-Revision erforderlich",
+        },
+        {
+            "thread": "VB-Bericht",
+            "description": "Verfahrensbeistand empfiehlt Wechselmodell — Gegenposition begründen",
+        },
+    ],
+    "recent_development": (
+        "OLG-Jugendamt revidiert am 05.07.2026 Empfehlung auf Wechselmodell (50/50) — "
+        "schwächt Alleinsorgeantrag erheblich. SV-Gutachten Bauer stützt Unterhaltsforderung."
+    ),
+}
+case_a.ai_brief_updated_at = datetime(2026, 7, 5)
+case_a.parties = [
+    {"key": "klaegerin", "color": "own", "label": "Klägerin", "name": "Björn Hansen"},
+    {
+        "key": "beklagter",
+        "color": "opposing",
+        "label": "Beklagter",
+        "name": "M. Müller, RA Dr. Schneider",
+    },
+    {
+        "key": "gericht",
+        "color": "court",
+        "label": "Gericht",
+        "name": "AG Hamburg / OLG Hamburg",
+    },
+    {
+        "key": "jugendamt",
+        "color": "third",
+        "label": "Dritte",
+        "name": "Jugendamt Hamburg, VB Dr. Sommer, SV Bauer",
+    },
+]
+case_a.total_cost_exposure = 2850000  # cents — 28.500 €
+db.commit()
+
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 from app.models.database import ActionItem as _AI
 from app.models.database import Document as _Doc
@@ -1607,7 +3009,9 @@ needs_review = (
 
 print("Triage seed complete:")
 print(f"  Cases:          {len(SEED_CASE_IDS)}")
-print("  Proceedings:    2  (AG Hamburg 003 F 426/25 / LG Berlin 14 O 123/25)")
+print(
+    "  Proceedings:    3  (AG Hamburg 003 F 426/25 / OLG Hamburg 2 UF 87/26 / LG Berlin 14 O 123/25)"
+)
 print(f"  Batches total:  {total_batches}")
 print(f"  Documents:      {total_docs}  ({needs_review} need review)")
 print(f"  Action items:   {total_actions}")
@@ -1627,12 +3031,15 @@ print("  9  REACTIONS     — LIES / NEEDS_PROOF / PRECEDENT / TRUE pre-seeded")
 print(" 10  SYNTHETIC     — loose doc, no batch (loose-N key, MANUAL icon)")
 print(" 11  COMPLETED     — EXCLUDED from feed (status=COMPLETED)")
 print()
-print("Phase 8 graph — ADV-024-A (proceeding 003 F 426/25):")
-print("  10 documents across 4 swim lanes (court / own / opposing / third_party)")
-print("  1 relay bundle (Beglaubigung → Klageerwiderung + Jugendamtsbericht)")
-print("  1 ghost node (Stellungnahme, received_date=None)")
-print("  2 thread_open docs, 3 user reactions, 2 action items")
-print("  8 typed DocumentRelationships (REPLIES_TO / REFERENCES /")
-print("    ATTACHES_AS_PROOF / SUPERSEDES)")
+print("Phase 8 graph — ADV-024-A:")
+print("  AG proceeding (003 F 426/25):")
+print("    ~23 documents across 4 swim lanes — every type, tier, role, cost_delta")
+print("    2 relay bundles; 2 ghost nodes; 10 user reactions; 8 action items")
+print("    12 typed DocumentRelationships (REPLIES_TO / REFERENCES /")
+print("       ATTACHES_AS_PROOF / SUPERSEDES)")
+print("  OLG proceeding (2 UF 87/26):")
+print("    9 documents — 1 relay bundle, 2 ghost nodes, 7 DocumentRelationships")
+print("  Truth Map: 10 Claims (all types+statuses) / 27 ClaimEvidence (all roles)")
+print("  Total cost exposure: 2,850,000 ct")
 
 db.close()

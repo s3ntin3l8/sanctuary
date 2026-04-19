@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Sanctuary (FastAPI)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "app/main.py",
+            "jinja": true,
+            "justMyCode": true,
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Run Sanctuary (Make)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "make run"
+        },
+        {
+            "name": "Watch CSS (Make)",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "make watch-css"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Sanctuary (App + CSS)",
+            "configurations": [
+                "Debug Sanctuary (FastAPI)",
+                "Watch CSS (Make)"
+            ],
+            "stopAll": true
+        }
+    ]
+}

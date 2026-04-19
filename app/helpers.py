@@ -33,8 +33,11 @@ def render_page(
 ):
     base_context = {}
     if db is not None:
-        base_context["sidebar_counts"] = build_sidebar_counts(db)
-        base_context.update(_build_notifications(db))
+        notif_data = _build_notifications(db)
+        counts = build_sidebar_counts(db)
+        counts["notification_count"] = notif_data["notification_count"]
+        base_context["sidebar_counts"] = counts
+        base_context.update(notif_data)
     base_context.update(context)
     return templates.TemplateResponse(request, template_name, base_context)
 
