@@ -28,7 +28,7 @@
 
 {% set field_confs = {
     'title':      'high' if doc.title else 'low',
-    'case_id':    conf.get('case_id') or ('high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low'),
+    'case_id':    (conf.get('case_id') or 'high') if (doc.case_id and doc.case_id != '_TRIAGE') else 'low',
     'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
     'sender':     conf.get('sender') or ('high' if doc.sender else 'low'),
     'date':       conf.get('date') or ('high' if doc.received_date else 'low'),
@@ -147,7 +147,7 @@
                 <select name="case_id" data-triage-case-select
                         {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
                         class="{{ input_base }} {{ low_border if field_confs.case_id == 'low' else med_border if field_confs.case_id == 'medium' else ok_border }}">
-                    <option value="">Unassigned (Triage)</option>
+                    <option value="" disabled {% if not doc.case_id or doc.case_id == '_TRIAGE' %}selected{% endif %}>Select case…</option>
                     {% for case in cases %}
                     <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }})</option>
                     {% endfor %}

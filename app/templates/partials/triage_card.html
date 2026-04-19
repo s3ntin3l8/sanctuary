@@ -1,9 +1,10 @@
-{# Condensed Triage Card — 2-row compact design.
+{# Condensed Triage Card — 3-row compact design.
 
     Required context: doc, stripe_color, stripe_icon, review_field_labels (global),
     bundle (optional, for proof_doc_ids), reactions_by_doc (optional), UserReactionType (optional).
 #}
-{% from "partials/_pipeline_status.html" import pipeline_status_pill %}
+{% from "partials/_pipeline_status.html" import pipeline_status_icon %}
+{% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
 {% set role_value = doc.role.value if doc.role else none %}
 {% set doc_type_value = doc.document_type.value if doc.document_type else none %}
 
@@ -21,7 +22,7 @@
      style="border-left-color: {{ stripe_color }};"
      {% if hx_swap_oob is defined and hx_swap_oob %}hx-swap-oob="true"{% endif %}>
 
-    {# Row 1: Title + confirmed check + pipeline status #}
+    {# Row 1: Title + pipeline status icon + review icon + date #}
     <div class="flex items-center justify-between gap-3 mb-1">
         <div class="flex items-center gap-1.5 min-w-0 flex-1">
             {% if not doc.needs_review %}
@@ -29,9 +30,12 @@
             {% endif %}
             <p class="text-sm font-bold text-on-surface line-clamp-1 group-hover:text-primary transition-colors" title="{{ doc.title }}">{{ doc.title }}</p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap">{{ doc.created_at.strftime('%Y-%m-%d') }}</span>
-            {{ pipeline_status_pill(doc) }}
+        <div class="flex items-center gap-1 shrink-0">
+            {{ pipeline_status_icon(doc) }}
+            {% if _real_reasons %}
+            <span class="material-symbols-outlined text-base text-warning shrink-0" title="Metadata needs review: {{ _real_reasons | join(', ') }}">priority_high</span>
+            {% endif %}
+            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap ml-1">{{ (doc.received_date or doc.created_at).strftime('%Y-%m-%d') }}</span>
         </div>
     </div>
 
@@ -71,16 +75,9 @@
         {% endif %}
     </div>
 
-    {# Row 3: Review chips + Reactions + Provenance #}
+    {# Row 3: Reactions · Sender/case #}
     <div class="flex items-center justify-between gap-2">
-        <div class="flex flex-wrap items-center gap-1">
-            {% for reason in (doc.review_reasons or []) if reason != 'missing_parent' %}
-            {% set fm = review_field_labels.get(reason, {}) %}
-            <span class="inline-flex items-center gap-0.5 text-[8px] bg-warning-container/30 text-warning px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight">
-                <span class="material-symbols-outlined text-[9px]">{{ fm.icon or 'warning' }}</span>
-                {{ fm.label or reason }}
-            </span>
-            {% endfor %}
+        <div class="flex items-center gap-1">
             {% set doc_reactions = (reactions_by_doc.get(doc.id) if reactions_by_doc is defined else []) or [] %}
             {% if doc_reactions %}
             <span class="inline-flex items-center gap-0.5 text-[11px] px-1 py-0.5">

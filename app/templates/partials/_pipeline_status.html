@@ -1,8 +1,27 @@
-{# Shared pipeline-status pill macro.
-    Usage:  {% from "partials/_pipeline_status.html" import pipeline_status_pill %}
-            {{ pipeline_status_pill(doc) }}
-    Five states (priority order): failed > AI processing > ready > review > pending.
+{# Shared pipeline-status macros.
+    pipeline_status_pill  — full pill with text label (used in doc HUD / detail views)
+    pipeline_status_icon  — icon only, larger (used in triage card Row 1)
+
+    Usage:  {% from "partials/_pipeline_status.html" import pipeline_status_pill, pipeline_status_icon %}
+    Four states (priority order): failed > AI processing > ready > pending.
 #}
+{% macro pipeline_status_icon(doc) %}
+    {% set _ingest_ok  = doc.ingest_status and doc.ingest_status.value == 'completed' %}
+    {% set _ingest_bad = doc.ingest_status and doc.ingest_status.value == 'failed' %}
+    {% set _ai_ok      = doc.ai_summary_status in ('generated', 'approved') %}
+    {% set _ai_busy    = not doc.ai_summary_status or doc.ai_summary_status == 'pending' %}
+    {% set _ai_bad     = doc.ai_summary_status == 'failed' %}
+    {% if _ingest_bad or _ai_bad %}
+    <span class="material-symbols-outlined text-base text-error shrink-0" title="Pipeline failed — retry available">error_outline</span>
+    {% elif _ingest_ok and _ai_busy %}
+    <span class="material-symbols-outlined text-base text-tertiary shrink-0" title="AI processing in progress">settings</span>
+    {% elif _ingest_ok and _ai_ok %}
+    <span class="material-symbols-outlined text-base text-green-400 shrink-0" title="Ready — all pipelines complete">done_all</span>
+    {% else %}
+    <span class="material-symbols-outlined text-base text-on-surface-variant/40 shrink-0" title="Pending ingestion">hourglass_empty</span>
+    {% endif %}
+{% endmacro %}
+
 {% macro pipeline_status_pill(doc) %}
     {% set _ingest_ok  = doc.ingest_status and doc.ingest_status.value == 'completed' %}
     {% set _ingest_bad = doc.ingest_status and doc.ingest_status.value == 'failed' %}
@@ -22,15 +41,8 @@
         <span class="material-symbols-outlined text-[10px]">done_all</span> ready
     </span>
     {% else %}
-    {% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
-    {% if _real_reasons %}
-    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-warning-container/20 text-warning whitespace-nowrap" title="{{ _real_reasons|length }} issue{{ 's' if _real_reasons|length != 1 else '' }} pending">
-        <span class="material-symbols-outlined text-[10px]">priority_high</span> review
-    </span>
-    {% else %}
     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-surface-container-highest text-on-surface-variant/60 whitespace-nowrap" title="Pending ingestion">
         <span class="material-symbols-outlined text-[10px]">hourglass_empty</span> pending
     </span>
-    {% endif %}
     {% endif %}
 {% endmacro %}

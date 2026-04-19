@@ -69,39 +69,24 @@ now = datetime.now(UTC).replace(second=0, microsecond=0)
 # Delete in dependency order so FK constraints aren't violated.
 SEED_CASE_IDS = ["_TRIAGE", "ADV-024-A", "ADV-031-B", "ADV-100-X"]
 
-for model in (
-    UserReaction,
-    ActionItem,
-    DocumentRelationship,
-    Document,
-    IngestBatch,
-    Proceeding,
-):
-    db.query(model).filter(
-        model.case_id.in_(SEED_CASE_IDS)
-        if hasattr(model, "case_id")
-        else model.id.isnot(None)  # fallback — unused in practice here
-    ).delete(synchronize_session=False)
-
-# DocumentRelationship has no case_id; delete via joined doc IDs instead.
-# (The delete above skipped it via the fallback — clear it properly.)
+# FK-safe deletion order: children before parents.
+_seed_doc_ids = db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
 db.query(DocumentRelationship).filter(
-    DocumentRelationship.from_document_id.in_(
-        db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
-    )
+    DocumentRelationship.from_document_id.in_(_seed_doc_ids)
 ).delete(synchronize_session=False)
-db.query(UserReaction).filter(
-    UserReaction.document_id.in_(
-        db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
-    )
-).delete(synchronize_session=False)
+db.query(UserReaction).filter(UserReaction.document_id.in_(_seed_doc_ids)).delete(
+    synchronize_session=False
+)
+db.query(ActionItem).filter(ActionItem.case_id.in_(SEED_CASE_IDS)).delete(
+    synchronize_session=False
+)
 db.query(Document).filter(Document.case_id.in_(SEED_CASE_IDS)).delete(
     synchronize_session=False
 )
 db.query(IngestBatch).filter(IngestBatch.case_id.in_(SEED_CASE_IDS)).delete(
     synchronize_session=False
 )
-# Orphaned batches (case_id=None) from previous runs — identify by subject prefix.
+# Orphaned batches (case_id=None) from previous runs — identified by subject prefix.
 db.query(IngestBatch).filter(IngestBatch.subject.like("[SEED]%")).delete(
     synchronize_session=False
 )

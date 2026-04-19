@@ -209,7 +209,10 @@ class TriageService:
         # what's just recent. Ties broken by recency.
         ordered = sorted(
             bundles.values(),
-            key=lambda b: (-b.needs_review_count, -b.received_at.timestamp()),
+            key=lambda b: (
+                0 if b.needs_review_count > 0 else 1,
+                -b.received_at.timestamp(),
+            ),
         )
 
         for bundle in ordered:
@@ -332,7 +335,8 @@ class TriageService:
 
         reasons = compute_review_reasons(doc)
         doc.review_reasons = reasons
-        doc.needs_review = len(reasons) > 0
+        actionable = [r for r in reasons if r != "missing_parent"]
+        doc.needs_review = bool(actionable)
 
         self.db.commit()
         self.db.refresh(doc)
@@ -343,8 +347,15 @@ class TriageService:
         batch_id: int,
         case_id: str,
         proceeding_id: int | None = None,
+        finalize: bool = False,
     ) -> IngestBatch | None:
-        """Cascade case/proceeding assignment to every doc in the bundle."""
+        """Cascade case/proceeding assignment to every doc in the bundle.
+
+        finalize=True marks the batch COMPLETED unconditionally (used by the
+        explicit "Confirm bundle" action). finalize=False (the default, used by
+        "Assign case") never touches batch status — the bundle stays in triage
+        for further per-doc review.
+        """
         batch = self.batch_repo.get(batch_id)
         if not batch:
             return None
@@ -362,7 +373,8 @@ class TriageService:
                 doc.proceeding_id = proceeding_id
             reasons = compute_review_reasons(doc)
             doc.review_reasons = reasons
-            doc.needs_review = len(reasons) > 0
+            actionable = [r for r in reasons if r != "missing_parent"]
+            doc.needs_review = bool(actionable)
 
         # Cascade case/proceeding to ActionItems created during ingestion (Phase 4)
         # that are still parked under _TRIAGE pending bundle confirmation.
@@ -380,9 +392,8 @@ class TriageService:
         if proceeding_id is not None:
             batch.proceeding_id = proceeding_id
 
-        # Only mark batch completed if ALL documents are resolved.
-        all_resolved = all(not doc.needs_review for doc in docs)
-        if all_resolved:
+        # Mark batch completed only when explicitly finalizing.
+        if finalize:
             batch.status = IngestBatchStatus.COMPLETED
 
         self.db.commit()

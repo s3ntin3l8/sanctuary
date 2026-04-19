@@ -18,6 +18,11 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
     "DATABASE_URL", f"sqlite:///{DATA_DIR / 'sanctuary.db'}"
 )
 
+# Application Settings
+HOST = os.getenv("HOST", "127.0.0.1")
+PORT = int(os.getenv("PORT", "8000"))
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
 AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5:9b")
 AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text")
@@ -30,7 +35,9 @@ AI_API_KEY = os.getenv("AI_API_KEY", "not-needed")
 # Gmail OAuth Configuration
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-GMAIL_REDIRECT_URI = os.getenv("GMAIL_REDIRECT_URI", "http://localhost:8000/api/ingest/gmail/oauth/callback")
+GMAIL_REDIRECT_URI = os.getenv(
+    "GMAIL_REDIRECT_URI", "http://localhost:8000/api/ingest/gmail/oauth/callback"
+)
 
 CORS_ORIGINS = [
     origin.strip()

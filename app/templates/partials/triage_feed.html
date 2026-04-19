@@ -2,7 +2,7 @@
 
     Required context: bundles, cases, reactions_by_doc, originator_colors, originator_icons
 #}
-<div id="triage-feed" class="p-6 space-y-4">
+<div id="triage-feed" class="p-6 space-y-4" {% if as_oob %}hx-swap-oob="true"{% endif %}>
     {% if bundles %}
         {% for bundle in bundles %}
             {% include "partials/triage_bundle.html" %}

@@ -475,3 +475,11 @@ app.include_router(contacts.router)
 app.include_router(entities.router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    from app.config import DEBUG, HOST, PORT
+
+    uvicorn.run("app.main:app", host=HOST, port=PORT, reload=DEBUG)

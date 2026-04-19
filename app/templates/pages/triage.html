@@ -66,7 +66,7 @@
              court: true, opposing: true, own: true, third_party: true, unknown: true,
              activeDoc: '{{ (first_bundle_doc.id if first_bundle_doc else '') }}',
              collapsedBundles: {},
-             bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '' },
+             bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', action: 'confirm_bundle' },
              isBundleExpanded(key) { return !this.collapsedBundles[key]; },
              toggleBundle(key) {
                  this.collapsedBundles = { ...this.collapsedBundles, [key]: !this.collapsedBundles[key] };
@@ -130,9 +130,20 @@
          "
          @triage:advance.document="
              const nextId = $event.detail && ($event.detail.next_doc_id ?? $event.detail[0]?.next_doc_id);
+             const noScroll = $event.detail && $event.detail.scroll === false;
              if (!nextId) return;
-             const card = document.getElementById('triage-card-' + nextId);
-             if (card) { activeDoc = String(nextId); card.click(); card.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+             $nextTick(() => {
+                 const card = document.getElementById('triage-card-' + nextId);
+                 if (!card) return;
+                 activeDoc = String(nextId);
+                 htmx.ajax('GET', '/document/' + nextId + '?context=triage', {target: '#triage-doc-pane', swap: 'innerHTML'});
+                 if (!noScroll) card.scrollIntoView({behavior:'smooth', block:'nearest'});
+             });
+         "
+         @triage:set-active.document="
+             const docId = $event.detail && $event.detail.doc_id;
+             if (!docId) return;
+             setTimeout(() => { activeDoc = String(docId); }, 0);
          "
          @triage:note-saved.document="
              const msg = ($event.detail && ($event.detail.message || $event.detail[0]?.message)) || 'Note saved';
@@ -143,8 +154,9 @@
          "
          @triage:open-bundle-confirm.document="
              const d = $event.detail || {};
-             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '' };
+             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', action: d.action || 'confirm_bundle' };
          "
+         @triage:bundle-confirmed.document="bundleConfirm.open = false"
          class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
 
     {% include "partials/triage_bundle_confirm_modal.html" %}
@@ -208,7 +220,7 @@
     {# Two-Column Split: Feed (38%) + HUD (62%) #}
     <div class="flex-1 flex overflow-hidden bg-surface">
         {# Left: Bundle feed #}
-        <div class="w-[38%] min-w-[380px] border-r border-outline-variant/10 overflow-y-auto custom-scrollbar">
+        <div id="triage-queue" class="w-[38%] min-w-[380px] border-r border-outline-variant/10 overflow-y-auto custom-scrollbar">
             {% include "partials/triage_feed.html" %}
         </div>
 
@@ -239,4 +251,22 @@
     {% include "partials/triage_feed.html" %}
     {% endif %}
 </section>
+
+{# Preserve the queue scroll position across HTMX swaps (bundle replaces / deletes).
+   htmx:beforeSwap fires before any DOM change; htmx:afterSettle fires after all
+   OOB swaps settle. The $nextTick scrollIntoView (for normal navigation) fires
+   as a microtask after htmx:afterSettle, so it can still override when needed. #}
+<script>
+(function () {
+    var saved = null;
+    document.addEventListener('htmx:beforeSwap', function () {
+        var q = document.getElementById('triage-queue');
+        if (q && saved === null) saved = q.scrollTop;
+    });
+    document.addEventListener('htmx:afterSettle', function () {
+        var q = document.getElementById('triage-queue');
+        if (q && saved !== null) { q.scrollTop = saved; saved = null; }
+    });
+})();
+</script>
 {% endblock %}
