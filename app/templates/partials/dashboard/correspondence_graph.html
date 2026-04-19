@@ -6,11 +6,11 @@
      style="background:var(--color-surface);">
 
   {# Lane headers — sticky gradient overlay; nodes scroll behind it #}
-  <div class="sticky top-0 z-10 flex pointer-events-none"
-       style="padding-left:36px; padding-top:0; padding-bottom:18px;
+  <div class="sticky z-10 flex pointer-events-none"
+       style="top:0; padding-left:36px; padding-top:10px; padding-bottom:18px;
               background:linear-gradient(to bottom, var(--color-surface) 52%, transparent);">
     {% for lane in graph.lanes %}
-    <div style="width:225px;" class="flex items-center gap-2">
+    <div style="width:225px;" class="flex items-center justify-center gap-2">
       <span class="inline-block h-2.5 w-2.5 rounded-full"
             style="background:var(--color-originator-{{ lane.color }});"></span>
       <span class="font-semibold text-[13px] tracking-[0.12em] uppercase"
