@@ -1,0 +1,21 @@
+<div class="space-y-2">
+  {% for doc in documents | sort(attribute='received_date', reverse=True) %}
+  <div class="flex items-start gap-3 rounded-lg border border-surface-container-high bg-surface-container p-3 text-sm">
+    <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded
+      {{ 'bg-error/20 text-error' if doc.significance_tier and doc.significance_tier.value == 'critical'
+         else 'bg-secondary/20 text-secondary' if doc.significance_tier and doc.significance_tier.value == 'significant'
+         else 'bg-surface-container-highest text-on-surface-variant' }}">
+      {{ doc.significance_tier.value if doc.significance_tier else '—' }}
+    </span>
+    <div class="flex-1 min-w-0">
+      <p class="font-medium text-on-surface truncate">{{ doc.title or 'Untitled' }}</p>
+      <p class="text-xs text-on-surface-variant">
+        {{ doc.attributed_originator or doc.sender or 'Unknown sender' }}
+        {% if doc.received_date %}· {{ doc.received_date | format_relative_time }}{% endif %}
+      </p>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-sm italic text-on-surface-variant text-center py-8">No documents yet.</p>
+  {% endfor %}
+</div>

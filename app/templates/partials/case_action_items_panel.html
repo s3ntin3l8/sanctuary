@@ -1,0 +1,24 @@
+<div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+  <h3 class="text-sm font-semibold text-on-surface">Action Items</h3>
+
+  {% set all_items = (deadlines + hearings) | sort(attribute='due_date') %}
+  {% if all_items %}
+  <ul class="space-y-2">
+    {% for item in all_items[:8] %}
+    <li class="flex items-start gap-2 text-sm">
+      <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded {{ 'bg-error/20 text-error' if item.action_type.value == 'deadline' else 'bg-tertiary/20 text-tertiary' }}">
+        {{ item.action_type.value | replace('_', ' ') | title }}
+      </span>
+      <div class="flex-1 min-w-0">
+        <p class="truncate text-on-surface">{{ item.title }}</p>
+        {% if item.due_date %}
+        <p class="text-xs text-on-surface-variant">{{ item.due_date | format_relative_time }}</p>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm italic text-on-surface-variant">No open action items.</p>
+  {% endif %}
+</div>

@@ -1,0 +1,23 @@
+<div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+  <h3 class="text-sm font-semibold text-on-surface">Financials</h3>
+
+  <div class="text-2xl font-bold text-on-surface">
+    {{ format_eur((total_cost_exposure or 0) / 100.0) }}
+  </div>
+  <p class="text-xs text-on-surface-variant">Total cost exposure</p>
+
+  <div class="grid grid-cols-3 gap-2 pt-1">
+    <div class="text-center">
+      <p class="text-sm font-medium text-on-surface">{{ format_eur(cost_summary.total_gross) }}</p>
+      <p class="text-xs text-on-surface-variant">Gross</p>
+    </div>
+    <div class="text-center">
+      <p class="text-sm font-medium text-error">{{ format_eur(cost_summary.total_outstanding) }}</p>
+      <p class="text-xs text-on-surface-variant">Open</p>
+    </div>
+    <div class="text-center">
+      <p class="text-sm font-medium text-tertiary">{{ format_eur(cost_summary.total_reimbursable) }}</p>
+      <p class="text-xs text-on-surface-variant">Reimbursable</p>
+    </div>
+  </div>
+</div>

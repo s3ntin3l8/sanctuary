@@ -1,0 +1,43 @@
+<div id="case-brief-panel"
+  {% if brief and brief.get('status') == 'processing' %}
+    hx-get="/cases/{{ case.id }}/brief"
+    hx-trigger="every 4s"
+    hx-swap="outerHTML"
+  {% endif %}
+  class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+
+  <div class="flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-on-surface">Case Brief</h3>
+    <button
+      hx-post="/cases/{{ case.id }}/brief/refresh"
+      hx-swap="outerHTML"
+      hx-target="#case-brief-panel"
+      class="text-xs text-primary hover:underline">
+      Refresh
+    </button>
+  </div>
+
+  {% if not brief or brief.get('status') == 'processing' %}
+  <div class="flex items-center gap-2 text-sm text-on-surface-variant">
+    <span class="animate-spin">⟳</span>
+    Generating brief…
+  </div>
+  {% else %}
+  <div class="space-y-2 text-sm">
+    <p class="text-on-surface">{{ brief.get('posture', '') }}</p>
+    {% if brief.get('pressure_points') %}
+    <ul class="list-disc list-inside space-y-1 text-on-surface-variant">
+      {% for point in brief.pressure_points %}
+      <li>{{ point }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if brief.get('next_move') %}
+    <p class="text-primary font-medium">→ {{ brief.next_move }}</p>
+    {% endif %}
+  </div>
+  {% if ai_brief_updated_at %}
+  <p class="text-xs text-on-surface-variant">Updated {{ ai_brief_updated_at | format_relative_time }}</p>
+  {% endif %}
+  {% endif %}
+</div>
