@@ -11,8 +11,10 @@ from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+
 def _get_user_settings(db: Session, user_id: str = "single_user"):
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+
 
 @celery_app.task
 def sync_gmail_incremental():
@@ -63,6 +65,7 @@ def sync_gmail_incremental():
         return str(e)
     finally:
         db.close()
+
 
 @celery_app.task
 def run_gmail_backfill(user_id: str, days: int = 90):

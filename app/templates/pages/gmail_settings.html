@@ -22,7 +22,7 @@
                     <span class="material-symbols-outlined text-primary text-[24px]">mail</span>
                     <h2 class="text-xl font-extrabold text-on-surface tracking-tight">Gmail Integration</h2>
                 </div>
-                
+
                 <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
                     {% if settings.gmail_credentials_json %}
                     <div class="flex items-center justify-between">
@@ -92,7 +92,7 @@
                         <p class="text-sm font-bold text-on-surface">Import Historical Mail</p>
                         <p class="text-xs text-on-surface-variant leading-relaxed max-w-md italic">Pull past legal documents matching your filters into the triage inbox.</p>
                     </div>
-                    
+
                     <form hx-post="/api/ingest/gmail/backfill" hx-swap="none" class="flex items-center gap-2">
                         <select name="days" class="bg-surface-container-high border border-outline-variant/20 rounded-xl px-3 py-2 text-xs text-on-surface-variant font-bold focus:outline-none">
                             <option value="90">Past 90 days</option>

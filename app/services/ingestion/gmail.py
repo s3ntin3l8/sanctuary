@@ -16,6 +16,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
+
 def get_oauth_flow() -> Flow:
     client_config = {
         "web": {
@@ -26,10 +27,9 @@ def get_oauth_flow() -> Flow:
         }
     }
     return Flow.from_client_config(
-        client_config,
-        scopes=SCOPES,
-        redirect_uri=GMAIL_REDIRECT_URI
+        client_config, scopes=SCOPES, redirect_uri=GMAIL_REDIRECT_URI
     )
+
 
 def get_gmail_service(credentials_json: str) -> Any:
     creds_dict = json.loads(credentials_json)
@@ -40,7 +40,14 @@ def get_gmail_service(credentials_json: str) -> Any:
 
     return build("gmail", "v1", credentials=creds)
 
+
 def fetch_raw_message(service: Any, message_id: str) -> bytes:
     import base64
-    msg = service.users().messages().get(userId="me", id=message_id, format="raw").execute()
+
+    msg = (
+        service.users()
+        .messages()
+        .get(userId="me", id=message_id, format="raw")
+        .execute()
+    )
     return base64.urlsafe_b64decode(msg["raw"])

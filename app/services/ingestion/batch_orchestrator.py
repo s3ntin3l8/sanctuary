@@ -9,12 +9,18 @@ from app.services.ingestion.email_parser import parse_rfc822
 from app.tasks.celery_app import celery_app
 
 
-def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSourceType = IngestBatchSourceType.EMAIL) -> IngestBatch | None:
+def ingest_raw_email(
+    db: Session,
+    raw_bytes: bytes,
+    source_type: IngestBatchSourceType = IngestBatchSourceType.EMAIL,
+) -> IngestBatch | None:
     parsed = parse_rfc822(raw_bytes)
     msg_id = parsed["message_id"]
 
     if msg_id:
-        existing = db.query(IngestBatch).filter(IngestBatch.message_id == msg_id).first()
+        existing = (
+            db.query(IngestBatch).filter(IngestBatch.message_id == msg_id).first()
+        )
         if existing:
             return existing
 
@@ -22,7 +28,7 @@ def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSour
         source_type=source_type,
         subject=parsed["subject"][:255] if parsed["subject"] else "No Subject",
         sender_email=parsed["sender"][:255] if parsed["sender"] else None,
-        message_id=msg_id
+        message_id=msg_id,
     )
     db.add(batch)
     db.flush()
@@ -45,7 +51,7 @@ def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSour
             content_hash=body_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
-            ingest_status=IngestStatus.PENDING
+            ingest_status=IngestStatus.PENDING,
         )
         db.add(doc)
         docs_to_process.append(doc)
@@ -56,10 +62,11 @@ def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSour
         att_hash = hashlib.sha256(att["content"]).hexdigest()
 
         # Check for duplicate within the same case (_TRIAGE)
-        existing_doc = db.query(Document).filter(
-            Document.content_hash == att_hash,
-            Document.case_id == "_TRIAGE"
-        ).first()
+        existing_doc = (
+            db.query(Document)
+            .filter(Document.content_hash == att_hash, Document.case_id == "_TRIAGE")
+            .first()
+        )
 
         if existing_doc:
             # Link existing doc to this batch too?
@@ -77,7 +84,7 @@ def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSour
             content_hash=att_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
-            ingest_status=IngestStatus.PENDING
+            ingest_status=IngestStatus.PENDING,
         )
         db.add(doc)
         docs_to_process.append(doc)
@@ -85,6 +92,8 @@ def ingest_raw_email(db: Session, raw_bytes: bytes, source_type: IngestBatchSour
     db.commit()
 
     for doc in docs_to_process:
-        celery_app.send_task("app.tasks.document_processing.process_document_background", args=[doc.id])
+        celery_app.send_task(
+            "app.tasks.document_processing.process_document_background", args=[doc.id]
+        )
 
     return batch

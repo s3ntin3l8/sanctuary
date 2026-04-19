@@ -12,10 +12,12 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         for part in msg.walk():
             content_disposition = str(part.get("Content-Disposition", ""))
             if "attachment" in content_disposition:
-                attachments.append({
-                    "filename": part.get_filename(),
-                    "content": part.get_payload(decode=True)
-                })
+                attachments.append(
+                    {
+                        "filename": part.get_filename(),
+                        "content": part.get_payload(decode=True),
+                    }
+                )
             elif part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if payload:
@@ -31,5 +33,5 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         "message_id": msg.get("Message-ID", ""),
         "date": msg.get("Date", ""),
         "body": body,
-        "attachments": attachments
+        "attachments": attachments,
     }
