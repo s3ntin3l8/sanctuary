@@ -355,6 +355,7 @@ class CaseGraphService:
                 "kind": style["kind"],
                 "path": path,
                 "dashed": style["dashed"],
+                "dasharray": "4 3" if style["dashed"] else "",
                 "stroke_w": style["stroke_w"],
                 "arrow": style["arrow"],
             }
