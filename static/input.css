@@ -175,6 +175,25 @@
     border: 1px solid var(--color-primary) !important;
     background-color: var(--color-surface-container-lowest) !important;
   }
+  .kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    padding: 2px 5px;
+    border: 1px solid var(--color-outline-variant);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    color: var(--color-on-surface-variant);
+    background: var(--color-surface-lowest);
+    line-height: 1;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 2px 7px; border-radius: 4px;
+    border: 1px solid var(--color-outline-variant);
+    color: var(--color-on-surface-variant);
+    background: var(--color-surface-lowest);
+    line-height: 1.4;
+  }
   .pulse-amber {
     animation: pulseAmber 2.6s ease-in-out infinite;
   }

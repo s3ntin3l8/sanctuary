@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.constants import CASE_STATUS_META, ORIGINATOR_COLORS
@@ -62,12 +63,19 @@ class CaseDashboardService:
         case = data["case"]
 
         # --- Proceedings ------------------------------------------------
-        proceedings = (
-            self.db.query(Proceeding)
+        proceedings_with_counts = (
+            self.db.query(Proceeding, func.count(Document.id).label("doc_count"))
+            .outerjoin(Document, Document.proceeding_id == Proceeding.id)
             .filter(Proceeding.case_id == case_id)
+            .group_by(Proceeding.id)
             .order_by(Proceeding.created_at.asc().nullslast(), Proceeding.id.asc())
             .all()
         )
+
+        proceedings = []
+        for p, count in proceedings_with_counts:
+            p.doc_count = count
+            proceedings.append(p)
 
         active_proceeding: Proceeding | None = None
         if active_proceeding_id is not None:

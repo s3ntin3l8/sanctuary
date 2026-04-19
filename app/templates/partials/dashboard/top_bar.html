@@ -29,28 +29,41 @@
   {% if active_proceeding %}
   <div class="relative flex-shrink-0" x-data="{ open: false }">
     <button @click="open = !open"
-            class="flex items-center gap-1.5 text-[11.5px] px-3 py-1 rounded-md"
-            style="border:1px solid var(--color-outline-variant); color:var(--color-on-surface-variant);">
-      <span style="color:var(--color-on-surface);">{{ active_proceeding.az_court }}</span>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            class="flex items-center gap-2 px-2.5 h-8 rounded-md text-[12px] flex-shrink-0"
+            style="background:var(--color-surface-container); border:1px solid var(--color-outline-variant); color:var(--color-on-surface);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 3l7 7M11 6l7 7M9 8l-5 5 3 3 5-5M3 21h10"/>
+      </svg>
+      <span class="font-semibold">{{ active_proceeding.court_name }}</span>
+      <span class="font-mono text-[10.5px] hidden lg:inline" style="color:var(--color-on-surface-variant);">{{ active_proceeding.az_court }}</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-on-surface-variant)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 9l6 6 6-6"/>
       </svg>
     </button>
     <div x-show="open" @click.outside="open = false" x-cloak
-         class="absolute left-0 top-full mt-1 z-50 rounded-lg overflow-hidden"
-         style="min-width:280px; background:var(--color-surface-container); border:1px solid var(--color-outline-variant); box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+         class="absolute left-0 top-full mt-1 z-50 w-[320px] rounded-md overflow-hidden fade-in"
+         style="background:var(--color-surface-container); border:1px solid var(--color-outline-variant); box-shadow:0 18px 40px rgba(0,0,0,0.35);">
+      <div class="px-3 py-2 text-[10.5px] uppercase tracking-[0.12em]"
+           style="color:var(--color-on-surface-variant);">Switch proceeding</div>
       {% for p in proceedings %}
       <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}"
          hx-target="#case-dashboard-main"
          hx-swap="outerHTML"
          hx-select="#case-dashboard-main"
          @click="open = false"
-         class="flex items-center gap-3 px-4 py-2.5 cursor-pointer"
-         style="text-decoration:none; color:var(--color-on-surface);"
-         onmouseover="this.style.background='var(--color-surface-high)'"
-         onmouseout="this.style.background=''">
-        <span class="text-[12px] font-mono flex-1">{{ p.az_court }}</span>
-        <span class="text-[11px]" style="color:var(--color-on-surface-variant);">{{ p.court_level.value | upper }}</span>
+         class="w-full text-left px-3 py-2 flex items-center gap-3 border-t cursor-pointer hover:bg-surface-low transition-colors"
+         style="text-decoration:none; color:var(--color-on-surface); border-color:var(--color-outline-variant);">
+        <span class="kbd">{{ loop.index }}</span>
+        <div class="flex-1">
+          <div class="text-[12.5px] font-semibold" style="color:var(--color-on-surface);">{{ p.court_name }}</div>
+          <div class="text-[11px] font-mono" style="color:var(--color-on-surface-variant);">{{ p.az_court }} · {{ p.court_level.value | upper }}</div>
+        </div>
+        <span class="chip">{{ p.doc_count }} docs</span>
+        {% if p.id == active_proceeding.id %}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        {% endif %}
       </a>
       {% endfor %}
     </div>
