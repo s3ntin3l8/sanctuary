@@ -170,6 +170,20 @@ class DocumentRepository(BaseRepository[Document]):
             created_at=datetime.now(),
         )
 
+    def get_by_proceeding(
+        self,
+        proceeding_id: int,
+        tiers: list["SignificanceTier"] | None = None,
+    ) -> list["Document"]:
+        """Return all documents for a proceeding, ordered by received_date asc nulls last, id asc."""
+        q = self.db.query(Document).filter(Document.proceeding_id == proceeding_id)
+        if tiers:
+            q = q.filter(Document.significance_tier.in_(tiers))
+        return q.order_by(
+            Document.received_date.asc().nullslast(),
+            Document.id.asc(),
+        ).all()
+
     def list_prior_in_proceeding(
         self,
         proceeding_id: int,

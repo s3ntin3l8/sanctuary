@@ -484,7 +484,9 @@ from app.api import (
 )
 from app.api.claims import router as claims_router
 from app.api.slicing import router as slicing_router
+from app.api.user_settings import router as user_settings_router
 
+app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(dashboard_router)
 app.include_router(triage_router)

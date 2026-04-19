@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @source "../app/templates";
-@source inline("{bg,text,border}-originator-{court,opposing,own,third-party,unknown}/{10,15,20,30,40}");
+@source inline("{bg,text,border}-originator-{court,opposing,own,third,third-party,unknown}/{10,15,20,30,40}");
 
 /* ── Dark mode via .dark class on <html> ── */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -63,7 +63,11 @@
   --color-originator-opposing: #b91c1c;
   --color-originator-own: #047857;
   --color-originator-third-party: #c2410c;
+  --color-originator-third: var(--color-originator-third-party);
   --color-originator-unknown: #64748b;
+  --color-amber: #d97706;
+  --color-critical: #dc2626;
+  --color-near: #ca8a04;
 
   --color-on-surface: #2a3437;
   --color-on-surface-variant: #566164;
@@ -133,6 +137,9 @@
     --color-originator-own: #047857;
     --color-originator-third-party: #c2410c;
     --color-originator-unknown: #859490;
+    --color-amber: #fbbf24;
+    --color-critical: #f87171;
+    --color-near: #fbbf24;
 
     --color-on-surface: #dae2fd;
     --color-on-surface-variant: #bacac5;
@@ -167,5 +174,26 @@
   .selected-card {
     border: 1px solid var(--color-primary) !important;
     background-color: var(--color-surface-container-lowest) !important;
+  }
+  .pulse-amber {
+    animation: pulseAmber 2.6s ease-in-out infinite;
+  }
+  @keyframes pulseAmber {
+    0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.22); }
+    50%      { box-shadow: 0 0 0 6px transparent; }
+  }
+  .slide-in-right {
+    animation: slideRight .24s cubic-bezier(.2,.7,.2,1) both;
+  }
+  @keyframes slideRight {
+    from { transform: translateX(16px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+  }
+  .fade-in {
+    animation: fadeIn .22s ease-out both;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
   }
 }

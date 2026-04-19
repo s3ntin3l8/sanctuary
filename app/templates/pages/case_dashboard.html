@@ -3,71 +3,127 @@
 {% block title %}{{ case.title }} — Sanctuary{% endblock %}
 
 {% block content %}
-{% set header_title = case.title %}
-{% set header_subtitle = case.id %}
-{% set header_back_href = "/cases" %}
-{% set header_back_title = "Back to Case Directory" %}
+{#
+  Phase 8 case dashboard — two-column layout.
 
-<section class="flex-1 flex flex-col overflow-hidden" x-data="{ view: 'timeline' }" @keydown.t.window="view='timeline'" @keydown.f.window="view='financials'" @keydown.escape.window="view='timeline'">
+  Structure inside main (base.html wraps us in a row-flex container, with the
+  56px rail sidebar already rendered):
 
-  {% include "partials/page_header.html" with context %}
+    <section #case-dashboard-main x-data="caseDashboard(initial)">
+      <top_bar>             48px
+      <secondary_header>    breadcrumbs + filter chips
+      <grid>                flex-1
+        left  280px   AI Brief  / Parties / Financials  (+ privacy footer)
+        right flex-1  view switcher (graph | truth | timeline | fin)
+      <action_items>        bottom row, full width
+      overlays: #case-dashboard-hud, chat drawer, delta review modal
+#}
 
-  <div class="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 space-y-4">
+<section id="case-dashboard-main"
+         class="flex-1 flex flex-col overflow-hidden"
+         x-data="caseDashboard({{ initial | tojson }})"
+         @keydown.window="onKey($event)">
 
-    {# Delta banner + dormancy alert #}
-    <div class="space-y-2">
-      {% include "partials/case_delta_banner.html" with context %}
-      {% if dormancy_alert %}
-      <div class="rounded-lg border border-tertiary/30 bg-tertiary/10 px-4 py-2 text-sm text-tertiary">
-        {{ dormancy_alert }}
-      </div>
-      {% endif %}
+  {# ── Top bar (48px) ────────────────────────────────────────────── #}
+  {% include "partials/dashboard/top_bar.html" %}
+
+  {# ── Secondary header (breadcrumbs + filter chips) ─────────────── #}
+  {% include "partials/dashboard/secondary_header.html" %}
+
+  {# ── Main body grid ────────────────────────────────────────────── #}
+  <div class="flex-1 flex flex-col overflow-hidden">
+
+    {# Top row: 280px left panel + flex-1 right main view #}
+    <div class="flex-1 grid gap-0 overflow-hidden"
+         style="grid-template-columns: 280px 1fr;">
+
+      {# ── Left column: AI Brief / Parties / Financials + privacy footer ── #}
+      <aside class="flex flex-col overflow-hidden border-r"
+             style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+          {% include "partials/case_brief_panel.html" %}
+
+          <div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
+            <h3 class="text-sm font-semibold text-on-surface">Parties</h3>
+            {% include "partials/case_parties_panel.html" %}
+          </div>
+
+          {% include "partials/case_financials_panel.html" %}
+
+          {% if dormancy_alert %}
+          <div class="rounded-lg border border-tertiary/30 bg-tertiary/10 px-4 py-2 text-sm text-tertiary">
+            {{ dormancy_alert }}
+          </div>
+          {% endif %}
+        </div>
+
+        {# Privacy footer pinned to the bottom of the left column #}
+        {% include "partials/dashboard/privacy_footer.html" %}
+      </aside>
+
+      {# ── Right column: view-switched main content ─────────────── #}
+      <section class="flex flex-col overflow-hidden"
+               style="background:var(--color-surface);">
+
+        {# Graph view — requires an active proceeding #}
+        <div x-show="view === 'graph'" x-cloak class="flex-1 overflow-hidden">
+          {% if graph %}
+            {% include "partials/dashboard/correspondence_graph.html" %}
+          {% else %}
+            <div class="h-full flex items-center justify-center p-8 text-center">
+              <div class="max-w-sm space-y-2">
+                <p class="text-sm font-medium" style="color:var(--color-on-surface-variant);">
+                  No active proceeding
+                </p>
+                <p class="text-xs" style="color:var(--color-on-surface-variant);">
+                  The correspondence graph appears once this case has a proceeding
+                  with documents assigned.
+                </p>
+              </div>
+            </div>
+          {% endif %}
+        </div>
+
+        {# Truth Map view #}
+        <div x-show="view === 'truth'" x-cloak
+             class="flex-1 overflow-auto custom-scrollbar p-4">
+          {% include "partials/case_view_truthmap.html" %}
+        </div>
+
+        {# Timeline view #}
+        <div x-show="view === 'timeline'" x-cloak
+             class="flex-1 overflow-auto custom-scrollbar p-4">
+          {% include "partials/case_timeline_panel.html" %}
+        </div>
+
+        {# Financials view — re-use the panel as the focused main pane #}
+        <div x-show="view === 'fin'" x-cloak
+             class="flex-1 overflow-auto custom-scrollbar p-4">
+          {% include "partials/case_financials_panel.html" %}
+        </div>
+
+      </section>
     </div>
 
-    {# Two-column grid #}
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-
-      {# Left: main view #}
-      <div class="space-y-4">
-        {# Tab bar #}
-        <div class="flex gap-2 border-b border-surface-container-high pb-2">
-          {% for tab, label in [('timeline','Timeline'),('financials','Financials'),('graph','Graph')] %}
-          <button @click="view='{{ tab }}'"
-            :class="view==='{{ tab }}' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant'"
-            class="pb-1 text-sm font-medium">
-            {{ label }}
-          </button>
-          {% endfor %}
-          <button @click="view='truthmap'"
-            :class="view==='truthmap' ? 'text-primary border-b-2 border-primary' : 'text-on-surface-variant'"
-            class="pb-1 text-sm font-medium">
-            <span id="truthmap-badge">Truth Map{% if truth_map and truth_map.open_claim_count %}&thinsp;·&thinsp;{{ truth_map.open_claim_count }}{% endif %}</span>
-          </button>
-        </div>
-
-        {# Tab content #}
-        <div x-show="view==='timeline'">
-          {% include "partials/case_timeline_panel.html" with context %}
-        </div>
-        <div x-show="view==='financials'">
-          {% include "partials/case_financials_panel.html" with context %}
-        </div>
-        <div x-show="view==='graph'">
-          {% include "partials/case_view_graph_placeholder.html" with context %}
-        </div>
-        <div x-show="view==='truthmap'">
-          {% include "partials/case_view_truthmap.html" with context %}
-        </div>
+    {# ── Bottom row: Action Items (full width, ~280px) ─────────── #}
+    <div class="flex-shrink-0 border-t overflow-hidden"
+         style="height:280px; border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+      <div class="h-full overflow-y-auto custom-scrollbar p-4">
+        {% include "partials/case_action_items_panel.html" %}
       </div>
-
-      {# Right: sidebar panels #}
-      <div class="space-y-4">
-        {% include "partials/case_brief_panel.html" with context %}
-        {% include "partials/case_parties_panel.html" with context %}
-        {% include "partials/case_action_items_panel.html" with context %}
-      </div>
-
     </div>
   </div>
+
+  {# ── Overlays (must live inside the caseDashboard Alpine scope) ── #}
+
+  {# Document HUD slide-in (populated by HTMX on node click) #}
+  <div id="case-dashboard-hud"></div>
+
+  {# AI chat drawer stub #}
+  {% include "partials/dashboard/ai_chat_stub.html" %}
+
+  {# "What's new since last visit" modal #}
+  {% include "partials/dashboard/delta_review_modal.html" %}
+
 </section>
 {% endblock %}

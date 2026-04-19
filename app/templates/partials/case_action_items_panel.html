@@ -1,12 +1,41 @@
-<div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
-  <h3 class="text-sm font-semibold text-on-surface">Action Items</h3>
+{# Action items panel with local open/completed/all filter and source-doc
+   jump. Uses `action_items` when available (Phase 8 dashboard service),
+   otherwise falls back to deadlines + hearings combined. #}
+{% if action_items is defined and action_items is not none %}
+  {% set _items = action_items %}
+{% else %}
+  {% set _items = (deadlines + hearings) | sort(attribute='due_date') %}
+{% endif %}
 
-  {% set all_items = (deadlines + hearings) | sort(attribute='due_date') %}
-  {% if all_items %}
+<div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3"
+     x-data="{ filter: 'open' }">
+  <div class="flex items-center justify-between gap-2">
+    <h3 class="text-sm font-semibold text-on-surface">Action Items</h3>
+    <div class="flex items-center gap-1 text-[11px]">
+      {% for key, label in [('open','open'),('completed','completed'),('all','all')] %}
+      <button type="button"
+              @click="filter = '{{ key }}'"
+              :class="filter === '{{ key }}'
+                       ? 'bg-primary/20 text-primary'
+                       : 'text-on-surface-variant hover:bg-surface-container-high'"
+              class="px-2 py-0.5 rounded-full font-medium transition-colors">
+        {{ label }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if _items %}
   <ul class="space-y-2">
-    {% for item in all_items[:8] %}
-    <li class="flex items-start gap-2 text-sm">
-      <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded {{ 'bg-error/20 text-error' if item.action_type.value == 'deadline' else 'bg-tertiary/20 text-tertiary' }}">
+    {% for item in _items[:12] %}
+    {% set is_open = (item.status.value == 'open') if item.status else true %}
+    {% set is_done = (item.status.value in ('completed','dismissed')) if item.status else false %}
+    <li class="flex items-start gap-2 text-sm"
+        x-show="filter === 'all'
+                 || (filter === 'open' && {{ 'true' if is_open else 'false' }})
+                 || (filter === 'completed' && {{ 'true' if is_done else 'false' }})">
+      <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded
+                   {{ 'bg-error/20 text-error' if item.action_type.value == 'deadline' else 'bg-tertiary/20 text-tertiary' }}">
         {{ item.action_type.value | replace('_', ' ') | title }}
       </span>
       <div class="flex-1 min-w-0">
@@ -15,6 +44,12 @@
         <p class="text-xs text-on-surface-variant">{{ item.due_date | format_relative_time }}</p>
         {% endif %}
       </div>
+      {% if item.source_document_id %}
+      <button type="button"
+              @click="$root.openDoc({{ item.source_document_id }})"
+              class="shrink-0 text-[11px] text-primary hover:underline underline-offset-2"
+              title="Open source document">source ↗</button>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

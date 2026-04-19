@@ -1,0 +1,34 @@
+{# Variables: case, active_proceeding, graph (GraphPayload-like dict) #}
+<div class="flex items-center gap-3 px-4 py-2 border-b text-[11.5px] flex-shrink-0"
+     style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+
+  {# Breadcrumbs #}
+  <nav class="flex items-center gap-1" style="color:var(--color-on-surface-variant);">
+    <a href="/cases" style="color:var(--color-on-surface-variant); text-decoration:none;">Cases</a>
+    <span>/</span>
+    {% if case.case_type %}
+    <span>{{ case.case_type | title }}</span>
+    <span>/</span>
+    {% endif %}
+    <span style="color:var(--color-on-surface);">{{ case.title | truncate(30, true) }}</span>
+  </nav>
+
+  <div style="flex:1;"></div>
+
+  {# Filter chips — significance #}
+  {% set filters = [('critical','critical'),('significant+','sig+'),('all','all')] %}
+  {% for fval, flabel in filters %}
+  <button @click="$dispatch('set-filter', { filter: '{{ fval }}' })"
+          :class="filter === '{{ fval }}' ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-[var(--color-outline-variant)] text-[var(--color-on-surface-variant)]'"
+          class="px-2.5 py-0.5 rounded-full border text-[10.5px] font-medium transition-colors">
+    {{ flabel }}
+  </button>
+  {% endfor %}
+
+  {# Node / edge counts #}
+  {% if graph %}
+  <span class="font-mono text-[10px]" style="color:var(--color-on-surface-variant);">
+    {{ graph.node_count }}n · {{ graph.edge_count }}e
+  </span>
+  {% endif %}
+</div>

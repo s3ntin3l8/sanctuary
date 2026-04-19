@@ -370,6 +370,9 @@ b1_ruling = make_doc(
 
 # Wire the batch proceeding so the proceeding chip renders
 b1.proceeding_id = proc_a.id
+# Wire the confirmed ADV-024-A docs into the proceeding so Phase 8 graph picks them up
+b1_cover.proceeding_id = proc_a.id
+b1_ruling.proceeding_id = proc_a.id
 db.flush()
 
 db.add(
@@ -1069,6 +1072,525 @@ make_doc(
 db.commit()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PHASE 8 — ADV-024-A correspondence graph (10 docs, 4 swim lanes)
+#   Tests: proceeding-scoped graph, relay bundle, ghost node, thread_open,
+#          cost_delta, key_passages, multi-party actors, typed relationships.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+# Phase 8 docs are confirmed into the proceeding (not triage-state), so they
+# skip the make_doc helper (which enforces needs_review semantics).
+def _p8_doc(**kwargs):
+    """Phase 8 doc factory — sensible defaults for confirmed ADV-024-A docs."""
+    defaults = {
+        "case_id": "ADV-024-A",
+        "proceeding_id": proc_a.id,
+        "needs_review": False,
+        "review_reasons": [],
+        "ingest_status": IngestStatus.COMPLETED,
+        "ai_summary_status": "generated",
+        "role": DocumentRole.STANDALONE,
+        "court_relay": False,
+        "thread_open": False,
+        "extraction_confidence": {
+            "sender": "high",
+            "date": "high",
+            "case_id": "high",
+            "originator": "high",
+        },
+    }
+    defaults.update(kwargs)
+    # Render canned content from title + originator if caller didn't supply it
+    if "content" not in defaults:
+        defaults["content"] = _content(
+            defaults["title"],
+            defaults.get("originator_type", OriginatorType.UNKNOWN),
+            defaults.get("sender"),
+        )
+    doc = Document(**defaults)
+    db.add(doc)
+    db.flush()
+    return doc
+
+
+# 1. Klage (YOU → Complaint) — anchors the case
+p8_klage = _p8_doc(
+    title="Klage",
+    document_type=DocumentType.MOTION,
+    originator_type=OriginatorType.OWN,
+    attributed_originator=None,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2025, 11, 15),
+    created_at=datetime(2025, 11, 15),
+    significance_tier=SignificanceTier.CRITICAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Klage eingereicht gegen Beklagten wegen Unterhaltsrückständen i.H.v. 24.000 €.",
+        },
+        {
+            "kind": "action",
+            "text": "Gerichtskosten-Vorschuss von 747 € innerhalb von 2 Wochen einzuzahlen.",
+        },
+        {"kind": "finance", "text": "Streitwert: 24.000 €; GKG-Vorschuss fällig."},
+    ],
+    key_passages=[
+        {
+            "text": "Der Beklagte schuldet gemäß § 1601 BGB rückständigen Unterhalt für den Zeitraum Januar bis Oktober 2025.",
+            "kind": "holding",
+            "page": 2,
+        },
+        {
+            "text": "Antrag auf Prozesskostenhilfe wird gestellt.",
+            "kind": "neutral",
+            "page": 4,
+        },
+    ],
+    cost_delta=None,
+)
+
+# 2. Eingangsbestätigung (COURT → acknowledgement)
+p8_eingang = _p8_doc(
+    title="Eingangsbestätigung",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.COURT,
+    attributed_originator=None,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2025, 11, 20),
+    created_at=datetime(2025, 11, 20),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Eingang der Klage beim AG Hamburg bestätigt, Az. 003 F 426/25 zugeteilt.",
+        }
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+
+# 3. Kostenvorschussanforderung (COURT → cost request)
+p8_kostenvorschuss = _p8_doc(
+    title="Kostenvorschussanforderung",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.COURT,
+    attributed_originator=None,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2025, 11, 25),
+    created_at=datetime(2025, 11, 25),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "action",
+            "text": "GKG-Vorschuss i.H.v. 747 € bis 09.12.2025 einzuzahlen, sonst Klagerücknahmefiktion.",
+        },
+        {"kind": "finance", "text": "747 € fällig innerhalb von 14 Tagen."},
+    ],
+    key_passages=[
+        {
+            "text": "Bei Nichteinzahlung gilt die Klage gemäß § 12 Abs. 3 GKG als zurückgenommen.",
+            "kind": "deadline",
+            "page": 1,
+        }
+    ],
+    cost_delta={"amount": 747, "direction": "debit", "description": "GKG Vorschuss"},
+)
+
+# 4. Einzahlung GKG (YOU → payment)
+p8_einzahlung = _p8_doc(
+    title="Einzahlung GKG",
+    document_type=DocumentType.CORRESPONDENCE,
+    originator_type=OriginatorType.OWN,
+    attributed_originator=None,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=datetime(2025, 12, 5),
+    created_at=datetime(2025, 12, 5),
+    significance_tier=SignificanceTier.ADMINISTRATIVE,
+    ai_summary=[
+        {
+            "kind": "finance",
+            "text": "GKG-Vorschuss von 747 € eingezahlt. Quittung liegt vor.",
+        }
+    ],
+    key_passages=[],
+    cost_delta={
+        "amount": 747,
+        "direction": "debit",
+        "description": "GKG Vorschuss eingezahlt",
+    },
+)
+
+# 5. Beschluss Zustellung (COURT → ruling)
+p8_zustellung = _p8_doc(
+    title="Beschluss Zustellung",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    attributed_originator=None,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2025, 12, 20),
+    created_at=datetime(2025, 12, 20),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Gericht ordnet Zustellung der Klage an Beklagten an.",
+        },
+        {"kind": "action", "text": "Beklagter hat 4 Wochen Zeit zur Klageerwiderung."},
+    ],
+    key_passages=[
+        {
+            "text": "Die Klage wird dem Beklagten förmlich zugestellt. Frist zur Klageerwiderung: 4 Wochen.",
+            "kind": "deadline",
+            "page": 1,
+        }
+    ],
+    cost_delta=None,
+)
+
+# 6. Beglaubigung (COURT relay bundle → cover letter)
+p8_beglaubigung = _p8_doc(
+    title="Beglaubigung",
+    document_type=DocumentType.RELAY,
+    originator_type=OriginatorType.COURT,
+    attributed_originator=None,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 1, 20),
+    created_at=datetime(2026, 1, 20),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    court_relay=True,
+    role=DocumentRole.COVER_LETTER,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Gerichtliche Weiterleitung von Klageerwiderung und Jugendamtsbericht.",
+        }
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+
+# 7. Klageerwiderung (OPPOSING via court relay — child of Beglaubigung)
+p8_klageerwiderung = _p8_doc(
+    title="Klageerwiderung",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.COURT,  # routed via court
+    attributed_originator="opposing",  # true sender
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 1, 20),
+    created_at=datetime(2026, 1, 20),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    role=DocumentRole.ENCLOSURE,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Beklagter bestreitet Unterhaltsrückstände und behauptet verringerte Leistungsfähigkeit.",
+        },
+        {
+            "kind": "action",
+            "text": "Stellungnahme zu den bestrittenen Fakten erforderlich.",
+        },
+        {
+            "kind": "finance",
+            "text": "Beklagter beansprucht Kostenerstattung i.H.v. 1.240 € (§ 91 ZPO) für Anwaltskosten.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Die Klageforderung wird in vollem Umfang bestritten. Der Beklagte war in dem genannten Zeitraum nicht leistungsfähig.",
+            "kind": "holding",
+            "page": 1,
+        },
+        {
+            "text": "Antrag: Die Klage wird abgewiesen. Kosten trägt die Klägerin.",
+            "kind": "holding",
+            "page": 3,
+        },
+    ],
+    cost_delta={
+        "amount": 1240,
+        "direction": "opposing_claim",
+        "description": "§ 91 ZPO Anwaltskosten Beklagter",
+    },
+)
+
+# 8. Jugendamtsbericht (THIRD_PARTY via court relay — child of Beglaubigung, thread open)
+p8_jugendamt = _p8_doc(
+    title="Jugendamtsbericht",
+    document_type=DocumentType.REPORT,
+    originator_type=OriginatorType.COURT,
+    attributed_originator="third_party",
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 1, 20),
+    created_at=datetime(2026, 1, 20),
+    significance_tier=SignificanceTier.SIGNIFICANT,
+    role=DocumentRole.ENCLOSURE,
+    thread_open=True,  # amber glow
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Jugendamt bestätigt Betreuungssituation, aber keine Angaben zur Einkommenssituation.",
+        },
+        {
+            "kind": "action",
+            "text": "Rückfrage beim Jugendamt zur Einkommenssituation des Beklagten ausstehend.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Das Jugendamt hat keine Kenntnis von der aktuellen Einkommenssituation des Beklagten.",
+            "kind": "neutral",
+            "page": 2,
+        }
+    ],
+    cost_delta=None,
+)
+
+# Wire relay children to the Beglaubigung cover letter (after flush for IDs)
+p8_klageerwiderung.parent_id = p8_beglaubigung.id
+p8_jugendamt.parent_id = p8_beglaubigung.id
+db.flush()
+
+# 9. Beschluss PKH (COURT → ruling, critical)
+p8_pkh = _p8_doc(
+    title="Beschluss PKH gewährt",
+    document_type=DocumentType.RULING,
+    originator_type=OriginatorType.COURT,
+    attributed_originator=None,
+    sender="geschaeftsstelle@ag-hamburg.de",
+    received_date=datetime(2026, 2, 4),
+    created_at=datetime(2026, 2, 4),
+    significance_tier=SignificanceTier.CRITICAL,
+    ai_summary=[
+        {
+            "kind": "legal",
+            "text": "Prozesskostenhilfe bewilligt. Klägerin muss keinen weiteren Vorschuss leisten.",
+        },
+        {
+            "kind": "action",
+            "text": "Stellungnahme zur Klageerwiderung bis 30.04.2026 einzureichen.",
+        },
+        {
+            "kind": "finance",
+            "text": "PKH reduziert direktes Kostenrisiko. Erstattungspflicht bleibt bei Unterliegen.",
+        },
+    ],
+    key_passages=[
+        {
+            "text": "Der Klägerin wird Prozesskostenhilfe ohne Ratenzahlung bewilligt.",
+            "kind": "holding",
+            "page": 1,
+        },
+        {
+            "text": "Stellungnahme zur Klageerwiderung ist bis zum 30. April 2026 beim Gericht einzureichen.",
+            "kind": "deadline",
+            "page": 2,
+        },
+    ],
+    cost_delta={
+        "amount": 450,
+        "direction": "credit",
+        "description": "PKH bewilligt — Vorschuss entfällt",
+    },
+)
+
+# 10. Stellungnahme (YOU → ghost/pending, no received_date)
+p8_stellungnahme = _p8_doc(
+    title="Stellungnahme",
+    document_type=DocumentType.STATEMENT,
+    originator_type=OriginatorType.OWN,
+    attributed_originator=None,
+    sender="kanzlei@sanctuary-counsel.de",
+    received_date=None,  # ghost — not yet filed
+    created_at=datetime(2026, 4, 19),
+    significance_tier=SignificanceTier.CRITICAL,
+    thread_open=True,
+    ai_summary_status="pending",
+    ai_summary=[
+        {
+            "kind": "action",
+            "text": "Stellungnahme zur Klageerwiderung — noch nicht eingereicht. Frist: 30.04.2026.",
+        }
+    ],
+    key_passages=[],
+    cost_delta=None,
+)
+db.flush()
+
+# ── DocumentRelationships (8) ──────────────────────────────────────────────
+db.add_all(
+    [
+        # PKH ruling opens the reply thread that Stellungnahme will close
+        DocumentRelationship(
+            from_document_id=p8_stellungnahme.id,
+            to_document_id=p8_pkh.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # Klageerwiderung is the answer to the Beschluss Zustellung
+        DocumentRelationship(
+            from_document_id=p8_klageerwiderung.id,
+            to_document_id=p8_zustellung.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # Klageerwiderung references the original Klage
+        DocumentRelationship(
+            from_document_id=p8_klageerwiderung.id,
+            to_document_id=p8_klage.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # Jugendamtsbericht references the Klageerwiderung it accompanies
+        DocumentRelationship(
+            from_document_id=p8_jugendamt.id,
+            to_document_id=p8_klageerwiderung.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # Einzahlung is the proof-of-payment for the cost request
+        DocumentRelationship(
+            from_document_id=p8_einzahlung.id,
+            to_document_id=p8_kostenvorschuss.id,
+            relationship_type=RelationshipType.ATTACHES_AS_PROOF,
+            confidence=RelationshipConfidence.USER_CONFIRMED,
+        ),
+        # Stellungnahme will reference Klageerwiderung it rebuts
+        DocumentRelationship(
+            from_document_id=p8_stellungnahme.id,
+            to_document_id=p8_klageerwiderung.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # PKH ruling supersedes the original cost request (no further advances)
+        DocumentRelationship(
+            from_document_id=p8_pkh.id,
+            to_document_id=p8_kostenvorschuss.id,
+            relationship_type=RelationshipType.SUPERSEDES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+        # Eingangsbestätigung references the Klage it acknowledges
+        DocumentRelationship(
+            from_document_id=p8_eingang.id,
+            to_document_id=p8_klage.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        ),
+    ]
+)
+
+# ── Case ai_brief, parties, total_cost_exposure ────────────────────────────
+case_a.ai_brief = {
+    "schema_version": 1,
+    "status_line": (
+        "PKH bewilligt. Klageerwiderung des Beklagten bestreitet Leistungsfähigkeit. "
+        "Stellungnahme bis 30.04.2026 fällig. Jugendamtsbericht lückenhaft — "
+        "Rückfrage offen."
+    ),
+    "key_risks": [
+        {
+            "id": "r1",
+            "severity": "critical",
+            "label": "Fristversäumnis Stellungnahme",
+            "sub": "30.04.2026 — 11 Tage",
+        },
+        {
+            "id": "r2",
+            "severity": "near",
+            "label": "Einkommensbehauptung unbelegt",
+            "sub": "Beklagter bestreitet Leistungsfähigkeit ohne Nachweis",
+        },
+        {
+            "id": "r3",
+            "severity": "near",
+            "label": "Jugendamt-Lücke",
+            "sub": "Keine Einkommensauskunft erhalten",
+        },
+    ],
+    "open_threads": [
+        {
+            "thread": "Jugendamtsbericht",
+            "description": "Rückfrage zur Einkommenssituation ausstehend",
+        },
+        {"thread": "Stellungnahme", "description": "Entwurf noch nicht begonnen"},
+    ],
+    "recent_development": (
+        "PKH bewilligt am 04.02.2026 — Klageerwiderung des Beklagten "
+        "bestreitet sämtliche Forderungen."
+    ),
+}
+case_a.ai_brief_updated_at = datetime(2026, 2, 4)
+case_a.parties = [
+    {"key": "klaegerin", "color": "own", "label": "Klägerin", "name": "Björn Hansen"},
+    {
+        "key": "beklagter",
+        "color": "opposing",
+        "label": "Beklagter",
+        "name": "M. Müller",
+    },
+    {"key": "gericht", "color": "court", "label": "Gericht", "name": "AG Hamburg"},
+    {
+        "key": "jugendamt",
+        "color": "third",
+        "label": "Dritter",
+        "name": "Jugendamt Hamburg-Nord",
+    },
+]
+case_a.total_cost_exposure = 16900000  # cents — 169.000 €
+
+# ── ActionItems ────────────────────────────────────────────────────────────
+db.add_all(
+    [
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=p8_pkh.id,
+            title="Stellungnahme zur Klageerwiderung einreichen",
+            description=(
+                "Fristsetzung durch Gericht: 30.04.2026. PKH-Beschluss vom 04.02.2026."
+            ),
+            due_date=datetime(2026, 4, 30),
+            action_type=ActionItemType.DEADLINE,
+            status=ActionItemStatus.OPEN,
+        ),
+        ActionItem(
+            case_id="ADV-024-A",
+            proceeding_id=proc_a.id,
+            source_document_id=None,
+            title="Verhandlungstermin (voraussichtlich)",
+            description=(
+                "Typisches Tempo AG Hamburg: ca. 6 Monate nach Klageerwiderung."
+            ),
+            due_date=datetime(2026, 6, 15),
+            action_type=ActionItemType.COURT_DATE,
+            status=ActionItemStatus.OPEN,
+        ),
+    ]
+)
+
+# ── UserReactions (3) ──────────────────────────────────────────────────────
+db.add_all(
+    [
+        UserReaction(
+            document_id=p8_klageerwiderung.id,
+            reaction=UserReactionType.LIES,
+            notes="Leistungsfähigkeit bestritten — widerspricht Kontoauszügen",
+        ),
+        UserReaction(
+            document_id=p8_jugendamt.id,
+            reaction=UserReactionType.NEEDS_PROOF,
+            notes="Einkommensauskunft fehlt — Rückfrage senden",
+        ),
+        UserReaction(
+            document_id=p8_pkh.id,
+            reaction=UserReactionType.TRUE,
+            notes="PKH rechtskräftig bewilligt",
+        ),
+    ]
+)
+db.commit()
+
+
 # ── Summary ─────────────────────────────────────────────────────────────────
 from app.models.database import ActionItem as _AI
 from app.models.database import Document as _Doc
@@ -1104,5 +1626,13 @@ print("  8  LOW_CONF      — UNKNOWN originator, all-low confidence, all fields
 print("  9  REACTIONS     — LIES / NEEDS_PROOF / PRECEDENT / TRUE pre-seeded")
 print(" 10  SYNTHETIC     — loose doc, no batch (loose-N key, MANUAL icon)")
 print(" 11  COMPLETED     — EXCLUDED from feed (status=COMPLETED)")
+print()
+print("Phase 8 graph — ADV-024-A (proceeding 003 F 426/25):")
+print("  10 documents across 4 swim lanes (court / own / opposing / third_party)")
+print("  1 relay bundle (Beglaubigung → Klageerwiderung + Jugendamtsbericht)")
+print("  1 ghost node (Stellungnahme, received_date=None)")
+print("  2 thread_open docs, 3 user reactions, 2 action items")
+print("  8 typed DocumentRelationships (REPLIES_TO / REFERENCES /")
+print("    ATTACHES_AS_PROOF / SUPERSEDES)")
 
 db.close()
