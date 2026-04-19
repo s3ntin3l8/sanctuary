@@ -6,6 +6,7 @@ Jinja template is pure rendering with no logic.
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 from app.models.enums import (
     DocumentRole,
@@ -79,21 +80,35 @@ def _clip(s: str, n: int) -> str:
 
 
 def _lane_for(doc) -> str:
-    """Return the lane key for a document based on its originator_type."""
-    if doc.originator_type is None:
+    """Return the lane key for a document based on its originator_type.
+
+    When attributed_originator is set (e.g. a court-relayed opposing pleading),
+    it takes precedence over originator_type so the node lands in the correct lane.
+    """
+    originator = doc.originator_type
+    if doc.attributed_originator:
+        try:
+            originator = OriginatorType(doc.attributed_originator)
+        except ValueError:
+            logger.warning(
+                "Unknown attributed_originator value: %r on doc %s",
+                doc.attributed_originator,
+                doc.id,
+            )
+    if originator is None:
         logger.warning(
             "Document %s has no originator_type, defaulting to 'own'", doc.id
         )
         return "own"
-    lane = _ORIGINATOR_LANE.get(doc.originator_type)
+    lane = _ORIGINATOR_LANE.get(originator)
     if lane is None:
         logger.warning(
             "Document %s has unexpected originator_type %r, defaulting to 'own'",
             doc.id,
-            doc.originator_type,
+            originator,
         )
         return "own"
-    if doc.originator_type == OriginatorType.UNKNOWN:
+    if originator == OriginatorType.UNKNOWN:
         logger.warning(
             "Document %s has UNKNOWN originator_type, defaulting to 'own'", doc.id
         )
@@ -150,7 +165,9 @@ class CaseGraphService:
     def build_payload(
         self,
         proceeding_id: int,
-        significance_filter: str = "significant+",
+        significance_filter: Literal[
+            "critical", "significant+", "all"
+        ] = "significant+",
         new_doc_ids: set[int] | None = None,
         reaction_map: dict[int, str] | None = None,
     ) -> GraphPayload:
@@ -265,7 +282,7 @@ class CaseGraphService:
 
             bundle = {
                 "id": bundle_doc_id,
-                "lane": "court",
+                "lane": _lane_for(doc_obj),
                 "row": node["row"],
                 "x": LEFT + court_lane_idx * LANE_W + (LANE_W - NODE_W) / 2 - 6,
                 "y": TOP + node["row"] * ROW_H - 6,
@@ -369,7 +386,7 @@ class CaseGraphService:
         svg_width = LEFT * 2 + len(LANES) * LANE_W
 
         return GraphPayload(
-            lanes=LANES,
+            lanes=list(LANES),
             nodes=nodes,
             bundles=bundles,
             edges=edges,
