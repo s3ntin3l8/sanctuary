@@ -168,9 +168,8 @@
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
                 class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11.5px] transition-colors"
-                style="{% if is_active %}background:var(--color-primary-container); color:var(--color-primary);{% else %}background:var(--color-surface-low); color:var(--color-on-surface-variant);{% endif %}"
-                title="{{ label }}">
-          {{ emoji }} <span class="text-[10px]">{{ label }}</span>
+                style="{% if is_active %}background:var(--color-primary-container); color:var(--color-on-primary-container);{% else %}background:var(--color-surface-low); color:var(--color-on-surface-variant);{% endif %}"
+                title="{{ label }}">          {{ emoji }} <span class="text-[10px]">{{ label }}</span>
         </button>
         {% endfor %}
       </div>
