@@ -4,7 +4,7 @@
 
   {# Case ID pill #}
   <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
-        style="background:var(--color-primary-container); color:var(--color-primary);">
+        style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
     {{ case.id }}
   </span>
 
@@ -13,9 +13,17 @@
     {{ case.title }}
   </span>
 
-  {# Status dot #}
-  <span class="h-2 w-2 rounded-full flex-shrink-0"
-        style="background:{% if case.status == 'active' %}var(--color-originator-own){% else %}var(--color-on-surface-variant){% endif %};"></span>
+  {# Status indicator #}
+  {% set status_info = status_meta.get(case.status) %}
+  {% if status_info %}
+  <div class="flex items-center gap-1.5 flex-shrink-0 ml-1">
+    <span class="h-2 w-2 rounded-full"
+          style="background:var(--color-{% if case.status.value == 'closed' %}on-surface-variant{% elif case.status.value in ['trial', 'post_trial'] %}originator-own{% else %}amber{% endif %});"></span>
+    <span class="text-[11px] font-medium" style="color:var(--color-on-surface-variant);">
+      {{ status_info.label }}
+    </span>
+  </div>
+  {% endif %}
 
   {# Proceeding switcher — now on the left #}
   {% if active_proceeding %}
@@ -78,7 +86,7 @@
 
     <button @click="chatOpen = true"
             class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0"
-            style="background:var(--color-primary-container); color:var(--color-primary);">
+            style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z"/>
       </svg>
