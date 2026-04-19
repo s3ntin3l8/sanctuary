@@ -1,4 +1,4 @@
-<aside id="nav-rail" class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 overflow-y-auto overflow-x-hidden border-r border-outline-variant/10 z-50">
+<aside id="nav-rail" class="bg-surface-container-low flex flex-col h-full sticky left-0 top-0 border-r border-outline-variant/10 z-50">
     <!-- Brand Header -->
     <div class="flex items-center justify-center pt-6 pb-6 min-h-[80px]">
         <div class="relative flex items-center justify-center w-6 h-6 bg-surface-container shrink-0 shadow-sm" style="clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 50% 100%, 0% 70%);" title="The Sanctuary">
@@ -9,15 +9,18 @@
     <!-- Navigation Links -->
     <nav class="flex-1 flex flex-col items-center gap-4 px-2 mt-4">
         <!-- 1. Dashboard -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/" title="Home">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/">
             {% if request.url.path == '/' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
             <span class="material-symbols-outlined text-[20px]">dashboard</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Home
+            </span>
         </a>
 
         <!-- 2. Triage Center -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage" title="Triage">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage">
             {% if request.url.path == '/triage' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
@@ -25,54 +28,78 @@
             {% if sidebar_counts.triage_count > 0 %}
             <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.triage_count }}</span>
             {% endif %}
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Triage
+            </span>
         </a>
 
         <!-- 3. Case Files -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases" title="Cases">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases">
             {% if request.url.path.startswith('/cases') %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
             <span class="material-symbols-outlined text-[20px]">folder_open</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Cases
+            </span>
         </a>
     </nav>
 
     <!-- Bottom Controls -->
     <div class="flex flex-col items-center gap-4 px-2 pb-6 mt-auto">
         <!-- Command Palette Trigger -->
-        <button type="button" onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Search & Commands (⌘K)">
+        <button type="button" onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">search</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Search & Commands <span class="font-mono text-[10px] opacity-60 ml-1">⌘K</span>
+            </span>
         </button>
 
         <!-- Upload -->
-        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Upload Document">
+        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">upload_file</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Upload Document
+            </span>
         </button>
 
-        <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Notifications">
+        <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">notifications</span>
             {% if sidebar_counts.notification_count > 0 %}
             <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-surface-container-low"></span>
             {% endif %}
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Notifications
+            </span>
         </button>
 
         <!-- Theme Toggle -->
-        <button type="button" onclick="window.toggleSiteTheme && window.toggleSiteTheme()" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group" title="Toggle Theme">
+        <button type="button" onclick="window.toggleSiteTheme && window.toggleSiteTheme()" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span data-theme-icon class="material-symbols-outlined text-[20px]">dark_mode</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Toggle Theme
+            </span>
         </button>
 
         <!-- Settings -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/api/ingest/settings' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/api/ingest/settings" title="Settings">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/api/ingest/settings' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/api/ingest/settings">
             {% if request.url.path == '/api/ingest/settings' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
             <span class="material-symbols-outlined text-[20px]">settings</span>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Settings
+            </span>
         </a>
 
         <!-- User Profile -->
-        <div class="relative flex items-center justify-center w-10 h-10 mt-2 cursor-pointer group" title="Profile">
+        <div class="relative flex items-center justify-center w-10 h-10 mt-2 cursor-pointer group">
             <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 flex items-center justify-center border border-primary/20 group-hover:border-primary transition-colors">
                 <span class="material-symbols-outlined text-sm text-primary">person</span>
             </div>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Profile
+            </span>
         </div>
     </div>
 </aside>

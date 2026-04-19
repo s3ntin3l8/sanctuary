@@ -75,8 +75,21 @@ document.addEventListener('alpine:init', () => {
       if (e.key === 't') this.setView('truth');
       if (e.key === 'l') this.setView('timeline');
       if (e.key === '$') this.setView('fin');
+      if (e.key === 'f') { e.preventDefault(); this.$dispatch('graph-fit'); return; }
+      if (e.key === 'c') { e.preventDefault(); this.$dispatch('graph-center-critical'); return; }
+      if (e.key === 'a') {
+        e.preventDefault();
+        document.getElementById('action-items-anchor')?.scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
+      if (e.key === 'r') {
+        e.preventDefault();
+        const btn = document.getElementById('refresh-brief-btn');
+        if (btn) htmx.trigger(btn, 'click');
+        return;
+      }
       if (e.key === '?') {
-        alert('Keyboard shortcuts:\ng – Graph  t – Truth Map  l – Timeline  $ – Financials\n/ – AI Chat  Esc – Close panel');
+        alert('Keyboard shortcuts:\ng – Graph  t – Truth Map  l – Timeline  $ – Financials\nf – Fit Graph  c – Center Critical  a – Action Items  r – Refresh Brief\n/ – AI Chat  Esc – Close panel');
       }
     },
 

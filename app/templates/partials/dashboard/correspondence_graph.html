@@ -3,7 +3,13 @@
 
 <div class="relative h-full overflow-auto custom-scrollbar"
      id="correspondence-graph-container"
-     style="background:var(--color-surface);">
+     style="background:var(--color-surface);"
+     x-data="{ zoom: 1 }"
+     @graph-fit.window="$el.scrollTo({ top: 0, left: 0, behavior: 'smooth' })"
+     @graph-center-critical.window="
+       const crit = $el.querySelector('.text-error, .text-critical, text[fill=\'var(--color-critical)\']');
+       if (crit) crit.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+     ">
 
   {# Lane headers — sticky gradient overlay; nodes scroll behind it #}
   <div class="sticky z-10 flex pointer-events-none"

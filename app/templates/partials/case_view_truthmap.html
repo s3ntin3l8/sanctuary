@@ -24,9 +24,10 @@
     <div class="space-y-3">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-on-surface-variant/70 flex items-center gap-2">
         <span class="w-1.5 h-1.5 rounded-full inline-block
-          {% if group.status.value == 'contested' %}bg-error
-          {% elif group.status.value == 'asserted' %}bg-secondary
+          {% if group.status.value == 'contested' %}bg-amber
           {% elif group.status.value == 'established' %}bg-originator-own
+          {% elif group.status.value == 'refuted' %}bg-error
+          {% elif group.status.value == 'asserted' %}bg-outline-variant
           {% else %}bg-outline-variant{% endif %}"></span>
         {{ group.status.value | title }}
         <span class="font-normal text-outline">{{ group.claims | length }}</span>

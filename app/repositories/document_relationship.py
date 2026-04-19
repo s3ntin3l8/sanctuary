@@ -74,7 +74,9 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
         return self.update(rel_id, confidence=RelationshipConfidence.USER_CONFIRMED)
 
     def get_for_proceeding(self, proceeding_id: int) -> list[DocumentRelationship]:
-        """Return all relationships where BOTH endpoints belong to the given proceeding."""
+        """Return relationships where at least one endpoint belongs to the given proceeding.
+        Used by the correspondence graph to show cross-proceeding references.
+        """
         FromDoc = aliased(Document)
         ToDoc = aliased(Document)
         return (
@@ -82,8 +84,10 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
             .join(FromDoc, DocumentRelationship.from_document_id == FromDoc.id)
             .join(ToDoc, DocumentRelationship.to_document_id == ToDoc.id)
             .filter(
-                FromDoc.proceeding_id == proceeding_id,
-                ToDoc.proceeding_id == proceeding_id,
+                or_(
+                    FromDoc.proceeding_id == proceeding_id,
+                    ToDoc.proceeding_id == proceeding_id,
+                )
             )
             .all()
         )

@@ -9,6 +9,7 @@
   <div class="flex items-center justify-between">
     <h3 class="text-sm font-semibold text-on-surface">Case Brief</h3>
     <button
+      id="refresh-brief-btn"
       hx-post="/cases/{{ case.id }}/brief/refresh"
       hx-swap="outerHTML"
       hx-target="#case-brief-panel"

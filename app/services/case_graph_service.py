@@ -321,9 +321,57 @@ class CaseGraphService:
             bundles.append(bundle)
 
         # ------------------------------------------------------------------
-        # Edges and proof badges
+        # Edges and ghost nodes for cross-proceeding references
         # ------------------------------------------------------------------
         relationships = self.rel_repo.get_for_proceeding(proceeding_id)
+
+        # We may need to add "ghost" nodes for documents from other proceedings
+        # referenced by documents in this proceeding.
+        external_doc_ids = set()
+        for rel in relationships:
+            if rel.from_document_id not in node_by_id:
+                external_doc_ids.add(rel.from_document_id)
+            if rel.to_document_id not in node_by_id:
+                external_doc_ids.add(rel.to_document_id)
+
+        if external_doc_ids:
+            external_docs = (
+                self.db.query(Document)
+                .options(joinedload(Document.proceeding))
+                .filter(Document.id.in_(external_doc_ids))
+                .all()
+            )
+            for doc in external_docs:
+                # Ghost nodes are placed at the boundary of their lane
+                lane_key = _lane_for(doc)
+                lane_idx = _LANE_INDEX[lane_key]
+                x = LEFT + lane_idx * LANE_W + (LANE_W - NODE_W) / 2
+                # Place ghost nodes at -1 or max+1 relative to their connection?
+                # For now, let's just mark them as ghost and give them a special title.
+                node = {
+                    "id": doc.id,
+                    "lane": lane_key,
+                    "x": x,
+                    "y": -60,  # Place at the top for now
+                    "w": NODE_W,
+                    "h": NODE_H,
+                    "title": _clip(
+                        f"\u2192 {doc.proceeding.az_court if doc.proceeding else 'External'} \u00b7 {doc.title or 'Untitled'}",
+                        24,
+                    ),
+                    "full_title": doc.title or "Untitled",
+                    "role": doc.role.value if doc.role else "standalone",
+                    "date_short": doc.received_date.strftime("%m-%d")
+                    if doc.received_date
+                    else "\u2014",
+                    "tier": "administrative",
+                    "ghost": True,
+                    "is_bundle": False,
+                    "is_new_since_last_visit": False,
+                    "reaction": None,
+                }
+                nodes.append(node)
+                node_by_id[doc.id] = node
 
         proof_badges: dict[int, int] = {}
         edges: list[dict] = []
@@ -398,7 +446,9 @@ class CaseGraphService:
         # ------------------------------------------------------------------
         # SVG dimensions
         # ------------------------------------------------------------------
-        total_rows = (max((n["row"] for n in nodes), default=0) + 1) if nodes else 1
+        total_rows = (
+            (max((n.get("row", 0) for n in nodes), default=0) + 1) if nodes else 1
+        )
         svg_height = TOP + total_rows * ROW_H + 120
         active_lane_keys = {n["lane"] for n in nodes} | {b["lane"] for b in bundles}
         max_lane_idx = (
