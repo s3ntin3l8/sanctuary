@@ -16,7 +16,12 @@ import dataclasses
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants import CASE_STATUS_META, ORIGINATOR_COLORS
+from app.constants import (
+    CASE_STATUS_META,
+    COST_CATEGORY_META,
+    COST_STATUS_META,
+    ORIGINATOR_COLORS,
+)
 from app.helpers import build_cost_summary
 from app.models.database import (
     ActionItem,
@@ -174,9 +179,12 @@ class CaseDashboardService:
             "documents": documents_sorted,
             "deadlines": data["deadlines"],
             "hearings": data["hearings"],
+            "costs": data["costs"],
             "ai_brief_updated_at": case.ai_brief_updated_at,
             "total_cost_exposure": case.total_cost_exposure or 0,
             "cost_summary": cost_summary,
+            "cost_category_meta": COST_CATEGORY_META,
+            "cost_status_meta": COST_STATUS_META,
             "count": data["new_docs_since_last_visit"],
             "since": last_visit,
             "dormancy_alert": dormancy_alert,
