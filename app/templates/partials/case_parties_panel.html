@@ -1,8 +1,15 @@
 <div class="flex flex-wrap gap-2">
+  {% set role_classes = {
+    "court":       "bg-originator-court",
+    "opposing":    "bg-originator-opposing",
+    "own":         "bg-originator-own",
+    "third_party": "bg-originator-third-party",
+    "unknown":     "bg-originator-unknown"
+  } %}
   {% if parties %}
     {% for party in parties %}
     <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium
-                 bg-originator-{{ party.role }} text-white">
+                 {{ role_classes.get(party.role, 'bg-originator-unknown') }} text-white">
       {{ party.name }}
       <span class="opacity-60">({{ party.document_count }})</span>
     </span>

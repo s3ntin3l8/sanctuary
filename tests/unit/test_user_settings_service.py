@@ -1,6 +1,6 @@
 """Unit tests for user_settings_service."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
@@ -76,7 +76,7 @@ def test_get_last_viewed_no_last_viewed_key(db_session, settings_row):
 @pytest.mark.unit
 def test_get_last_viewed_after_mark_viewed(db_session, settings_row, case_a):
     """After mark_viewed, get_last_viewed returns a datetime close to the given time."""
-    fixed_now = datetime(2026, 4, 19, 10, 0, 0, tzinfo=UTC)
+    fixed_now = datetime(2026, 4, 19, 10, 0, 0)  # naive UTC
     mark_viewed(case_a.id, db_session, now=fixed_now)
 
     result = get_last_viewed(case_a.id, db_session)
@@ -100,8 +100,8 @@ def test_mark_viewed_no_op_when_no_settings_row(db_session, case_a):
 @pytest.mark.unit
 def test_multiple_cases_coexist(db_session, settings_row, case_a, case_b):
     """Two cases can be tracked in last_viewed_cases without collision."""
-    time_a = datetime(2026, 4, 1, 8, 0, 0, tzinfo=UTC)
-    time_b = datetime(2026, 4, 15, 12, 0, 0, tzinfo=UTC)
+    time_a = datetime(2026, 4, 1, 8, 0, 0)  # naive UTC
+    time_b = datetime(2026, 4, 15, 12, 0, 0)  # naive UTC
 
     mark_viewed(case_a.id, db_session, now=time_a)
     mark_viewed(case_b.id, db_session, now=time_b)
@@ -113,8 +113,8 @@ def test_multiple_cases_coexist(db_session, settings_row, case_a, case_b):
 @pytest.mark.unit
 def test_mark_viewed_overwrites_previous(db_session, settings_row, case_a):
     """Calling mark_viewed again updates the stored time."""
-    first = datetime(2026, 3, 1, 0, 0, 0, tzinfo=UTC)
-    second = datetime(2026, 4, 19, 9, 0, 0, tzinfo=UTC)
+    first = datetime(2026, 3, 1, 0, 0, 0)  # naive UTC
+    second = datetime(2026, 4, 19, 9, 0, 0)  # naive UTC
 
     mark_viewed(case_a.id, db_session, now=first)
     mark_viewed(case_a.id, db_session, now=second)
@@ -133,9 +133,9 @@ def test_count_new_since_none_returns_zero(db_session, case_a):
 
 
 @pytest.mark.unit
-def test_count_new_since_excludes_old_documents(db_session, case_a):
-    """Only documents created strictly after `since` are counted."""
-    since = datetime(2026, 4, 10, 12, 0, 0, tzinfo=UTC)
+def test_count_new_since_excludes_old_documents(db_session, case_a, settings_row):
+    """Only documents created strictly after `since` are counted via real round-trip."""
+    mark_viewed(case_a.id, db_session, now=datetime(2026, 4, 10, 12, 0, 0))
 
     old_doc = Document(
         title="Old Doc",
@@ -152,9 +152,8 @@ def test_count_new_since_excludes_old_documents(db_session, case_a):
     db_session.add_all([old_doc, new_doc])
     db_session.commit()
 
-    # Strip tz for naive comparison (Document.created_at is naive)
-    since_naive = since.replace(tzinfo=None)
-    result = count_new_since(case_a.id, since_naive, db_session)
+    since = get_last_viewed(case_a.id, db_session)
+    result = count_new_since(case_a.id, since, db_session)
     assert result == 1
 
 

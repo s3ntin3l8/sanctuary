@@ -20,7 +20,9 @@ def get_last_viewed(case_id: str, db) -> datetime | None:
 def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
     """Record that the user just viewed this case."""
     if now is None:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(
+            tzinfo=None
+        )  # naive UTC, consistent with Document.created_at
     settings = db.query(UserSettings).first()
     if not settings:
         return
