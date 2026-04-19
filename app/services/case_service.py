@@ -72,6 +72,8 @@ class CaseService:
 
     def get_case_with_summary(self, case_id: str) -> dict | None:
         """Get case with all related data."""
+        from app.services.user_settings_service import count_new_since, get_last_viewed
+
         case = self.case_repo.get_by_id(case_id)
         if not case:
             return None
@@ -85,6 +87,9 @@ class CaseService:
         )
         costs = self.cost_repo.get_by_case(case_id)
         entities = self.entity_repo.get_by_case(case_id)
+
+        last_visit = get_last_viewed(case_id, self.db)
+        new_docs = count_new_since(case_id, last_visit, self.db)
 
         now = datetime.now()
         return {
@@ -100,6 +105,8 @@ class CaseService:
                 1 for d in deadlines if d.status == ActionItemStatus.OPEN
             ),
             "upcoming_hearings": sum(1 for h in hearings if h.due_date > now),
+            "last_visit": last_visit,
+            "new_docs_since_last_visit": new_docs,
         }
 
     def get_all_cases_directory(self) -> dict:

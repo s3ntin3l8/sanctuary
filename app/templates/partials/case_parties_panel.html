@@ -1,0 +1,13 @@
+<div class="flex flex-wrap gap-2">
+  {% if parties %}
+    {% for party in parties %}
+    <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium
+                 bg-originator-{{ party.role }} text-white">
+      {{ party.name }}
+      <span class="opacity-60">({{ party.document_count }})</span>
+    </span>
+    {% endfor %}
+  {% else %}
+  <p class="text-sm italic text-on-surface-variant">No parties detected yet.</p>
+  {% endif %}
+</div>
