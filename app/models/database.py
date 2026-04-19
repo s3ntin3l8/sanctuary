@@ -226,6 +226,8 @@ class IngestBatch(Base):
     )
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     analysis_queued_at = Column(DateTime, nullable=True)
+    source_hash = Column(String, index=True, nullable=True)
+    meta = Column(JSON, nullable=True)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")

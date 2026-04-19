@@ -1,10 +1,12 @@
 import hashlib
+from pathlib import Path
 
+import pypdfium2 as pdfium
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchSourceType, IngestStatus
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus, IngestStatus
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
 from app.tasks.celery_app import celery_app
@@ -94,6 +96,68 @@ def ingest_raw_email(
     for doc in docs_to_process:
         celery_app.send_task(
             "app.tasks.document_processing.process_document_task", args=[doc.id]
+        )
+
+    return batch
+
+
+def ingest_scanned_file(
+    db: Session,
+    pdf_path: Path,
+    batch_id: str,
+    source_hash: str,
+) -> IngestBatch | None:
+    """Ingest a single scanned PDF from the scan folder.
+
+    Returns None when the file is a duplicate (already ingested).
+    Returns the created IngestBatch otherwise.
+    """
+    batch_repo = IngestBatchRepository(db)
+
+    existing = batch_repo.get_by_source_hash(source_hash)
+    if existing:
+        return None
+
+    batch = batch_repo.create_batch(
+        source_type=IngestBatchSourceType.SCAN,
+        subject=pdf_path.name[:255],
+        raw_source_path=str(pdf_path),
+    )
+    batch.source_hash = source_hash
+    db.flush()
+
+    try:
+        pdf_doc = pdfium.PdfDocument(str(pdf_path))
+        page_count = len(pdf_doc)
+        pdf_doc.close()
+    except Exception as exc:
+        db.rollback()
+        raise ValueError(f"Cannot open PDF: {exc}") from exc
+
+    if page_count == 1:
+        # Single-page: create Document directly and dispatch
+        content_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+        doc = Document(
+            title=pdf_path.name,
+            file_path=str(pdf_path),
+            content_hash=content_hash,
+            case_id="_TRIAGE",
+            ingest_batch_id=batch.id,
+            ingest_status=IngestStatus.PENDING,
+        )
+        db.add(doc)
+        batch.status = IngestBatchStatus.PROCESSING
+        db.commit()
+        celery_app.send_task(
+            "app.tasks.document_processing.process_document_task", args=[doc.id]
+        )
+    else:
+        # Multi-page: queue slicing; no Documents yet
+        batch.meta = {"slicing": {"status": "preparing", "page_count": page_count}}
+        batch.status = IngestBatchStatus.AWAITING_SLICING
+        db.commit()
+        celery_app.send_task(
+            "app.tasks.prepare_slicing.prepare_slicing_task", args=[batch.id]
         )
 
     return batch

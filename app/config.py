@@ -39,6 +39,14 @@ GMAIL_REDIRECT_URI = os.getenv(
     "GMAIL_REDIRECT_URI", "http://localhost:8000/api/ingest/gmail/oauth/callback"
 )
 
+# Scan folder ingest
+SCAN_INGEST_ROOT = DATA_DIR / "scans"
+SCAN_INCOMING_DIR = SCAN_INGEST_ROOT / "incoming"
+SCAN_PROCESSING_DIR = SCAN_INGEST_ROOT / "processing"
+SCAN_PROCESSED_DIR = SCAN_INGEST_ROOT / "processed"
+SCAN_FAILED_DIR = SCAN_INGEST_ROOT / "failed"
+SCAN_POLL_INTERVAL_SECONDS = int(os.getenv("SCAN_POLL_INTERVAL_SECONDS", "30"))
+
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

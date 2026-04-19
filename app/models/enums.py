@@ -131,6 +131,7 @@ class IngestBatchStatus(enum.StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    AWAITING_SLICING = "awaiting_slicing"
 
 
 class RelationshipType(enum.StrEnum):

@@ -17,6 +17,8 @@ celery_app = Celery(
         "app.tasks.detect_relationships",
         "app.tasks.extract_claims",
         "app.tasks.thread_open_scan",
+        "app.tasks.scan_ingest",
+        "app.tasks.prepare_slicing",
     ],
 )
 
@@ -28,6 +30,10 @@ celery_app.conf.beat_schedule = {
     "close-threads-every-15-minutes": {
         "task": "app.tasks.thread_open_scan.thread_open_scan_task",
         "schedule": 900.0,
+    },
+    "scan-folder-every-30-seconds": {
+        "task": "app.tasks.scan_ingest.scan_folder_tick_task",
+        "schedule": 30.0,
     },
 }
 

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Review Slicing | The Sanctuary{% endblock %}
+
+{% block content %}
+<section class="flex-1 flex flex-col min-h-0 overflow-hidden"
+         x-data="slicingGrid({{ slicing_data | tojson }}, '{{ batch.id }}')"
+         @keydown.window="handleKey($event)">
+
+    {# Header #}
+    <div class="flex items-center gap-3 px-6 py-3 border-b border-outline-variant/10 bg-surface-container-low/60 flex-shrink-0">
+        <a href="/triage" class="text-on-surface-variant hover:text-primary transition-colors">
+            <span class="material-symbols-outlined text-lg">arrow_back</span>
+        </a>
+        <span class="material-symbols-outlined text-amber-400 text-lg">content_cut</span>
+        <div class="flex-1 min-w-0">
+            <h1 class="text-[13px] font-bold text-on-surface truncate">{{ batch.subject or "Untitled Scan" }}</h1>
+            <p class="text-[10px] text-on-surface-variant">
+                <span x-text="pageCount"></span> pages &middot;
+                <span x-text="cuts.length + ' cut' + (cuts.length === 1 ? '' : 's')"></span> &middot;
+                <span x-text="groupCount + ' document' + (groupCount === 1 ? '' : 's')"></span>
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button @click="clearCuts()"
+                    class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors">
+                Single Doc
+            </button>
+            <button @click="resetCuts()"
+                    class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors">
+                Reset
+            </button>
+            <button @click="confirm()"
+                    :disabled="confirming"
+                    class="flex items-center gap-1.5 px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-primary text-on-primary hover:bg-primary/90 transition-colors disabled:opacity-50">
+                <span class="material-symbols-outlined text-xs">check</span>
+                <span x-text="confirming ? 'Confirming…' : 'Confirm Slicing'"></span>
+            </button>
+        </div>
+    </div>
+
+    {# Keyboard help bar #}
+    <div class="flex items-center gap-4 px-6 py-1.5 bg-surface-container/40 border-b border-outline-variant/5 text-[9px] text-on-surface-variant flex-shrink-0">
+        <span><kbd class="px-1 py-0.5 rounded bg-surface-container-high text-[9px]">↑↓</kbd> move</span>
+        <span><kbd class="px-1 py-0.5 rounded bg-surface-container-high text-[9px]">C</kbd> toggle cut</span>
+        <span><kbd class="px-1 py-0.5 rounded bg-surface-container-high text-[9px]">Enter</kbd> confirm</span>
+        <span><kbd class="px-1 py-0.5 rounded bg-surface-container-high text-[9px]">Esc</kbd> back</span>
+    </div>
+
+    {# Loading / error states #}
+    <template x-if="status === 'preparing'">
+        <div class="flex-1 flex items-center justify-center flex-col gap-3 text-on-surface-variant"
+             hx-get="/ingest/slice/{{ batch.id }}/status"
+             hx-trigger="every 3s"
+             hx-swap="none"
+             hx-on::after-request="refreshIfReady($event)">
+            <span class="material-symbols-outlined text-4xl animate-spin">autorenew</span>
+            <p class="text-[11px]">Preparing thumbnails and analysing cut candidates…</p>
+            <p class="text-[9px] text-on-surface-variant/60">This takes ~10–30 s for a typical bundle.</p>
+        </div>
+    </template>
+
+    <template x-if="status === 'failed'">
+        <div class="flex-1 flex items-center justify-center flex-col gap-3 text-on-surface-variant">
+            <span class="material-symbols-outlined text-4xl text-red-400">error</span>
+            <p class="text-[11px] text-red-400" x-text="errorMessage || 'Preparation failed.'"></p>
+            <form method="post" action="/ingest/slice/{{ batch.id }}/retry">
+                <button type="submit"
+                        class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors">
+                    Retry preparation
+                </button>
+            </form>
+        </div>
+    </template>
+
+    {# Main grid — only shown when ready #}
+    <template x-if="status === 'ready'">
+        <div class="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 space-y-0">
+            <template x-for="(item, idx) in gridItems" :key="idx">
+                <div>
+                    {# Document group header (before first page of each group) #}
+                    <template x-if="item.type === 'group-header'">
+                        <div class="flex items-center gap-2 py-2 sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
+                            <span class="material-symbols-outlined text-sm text-amber-400">description</span>
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-amber-400/80"
+                                  x-text="'Document ' + (item.groupIndex + 1)"></span>
+                            <span class="text-[9px] text-on-surface-variant/60"
+                                  x-text="'(' + item.pageRange + ')'"></span>
+                            <input x-model="groupTitles[item.groupIndex]"
+                                   class="flex-1 ml-2 bg-transparent border-b border-outline-variant/20 focus:border-primary text-[10px] text-on-surface outline-none px-1"
+                                   :placeholder="'Document ' + (item.groupIndex + 1) + ' title'">
+                        </div>
+                    </template>
+
+                    {# Page thumbnail #}
+                    <template x-if="item.type === 'page'">
+                        <div class="flex gap-3 py-1">
+                            <div class="w-6 flex flex-col items-center gap-0.5 pt-1 flex-shrink-0">
+                                <span class="text-[8px] text-on-surface-variant/40 font-mono"
+                                      x-text="item.pageNum"></span>
+                            </div>
+                            <div class="flex-1 border border-outline-variant/15 rounded-lg overflow-hidden bg-surface-container-low/40">
+                                <img :src="'/ingest/slice/{{ batch.id }}/thumb/' + item.pageNum"
+                                     :alt="'Page ' + item.pageNum"
+                                     class="w-full h-auto object-contain max-h-64"
+                                     loading="lazy">
+                            </div>
+                        </div>
+                    </template>
+
+                    {# Cut gutter between pages #}
+                    <template x-if="item.type === 'gutter'">
+                        <div class="flex items-center gap-2 py-0.5 group cursor-pointer"
+                             :class="{'cursor-focused': item.gutterIdx === focusedGutter}"
+                             @click="toggleCut(item.afterPage)">
+                            <div class="w-6 flex-shrink-0 flex justify-center">
+                                <span x-show="item.gutterIdx === focusedGutter"
+                                      class="material-symbols-outlined text-[10px] text-primary">chevron_right</span>
+                            </div>
+                            <div class="flex-1 relative h-5 flex items-center">
+                                <div x-show="!hasCut(item.afterPage)"
+                                     class="h-px w-full bg-outline-variant/10 group-hover:bg-outline-variant/30 transition-colors"></div>
+                                <div x-show="hasCut(item.afterPage)"
+                                     class="flex items-center gap-2 w-full">
+                                    <div class="flex-1 h-px bg-amber-500/60"></div>
+                                    <span class="text-amber-400 text-[10px] font-bold flex items-center gap-0.5">
+                                        <span class="material-symbols-outlined text-xs">content_cut</span>
+                                        <span>cut</span>
+                                    </span>
+                                    <div class="flex-1 h-px bg-amber-500/60"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            {# Confirm form (hidden) #}
+            <form id="slicing-confirm-form"
+                  method="post"
+                  :action="'/ingest/slice/{{ batch.id }}/confirm'">
+                <input type="hidden" name="cuts" :value="JSON.stringify(cuts)">
+                <template x-for="(title, idx) in groupTitles" :key="idx">
+                    <input type="hidden" :name="'title_' + idx" :value="title">
+                </template>
+            </form>
+        </div>
+    </template>
+</section>
+{% endblock %}

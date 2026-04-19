@@ -33,6 +33,7 @@ async def triage_page(
     from app.models.database import Proceeding
 
     bundles = triage_service.get_triage_bundles(limit=limit, offset=offset)
+    slicing_queue = triage_service.get_slicing_queue()
     all_cases = (
         db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     )
@@ -52,6 +53,7 @@ async def triage_page(
         "pages/triage.html",
         db=db,
         bundles=bundles,
+        slicing_queue=slicing_queue,
         all_cases=all_cases,
         cases=all_cases,
         proceedings=proceedings,

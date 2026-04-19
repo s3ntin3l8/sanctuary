@@ -92,6 +92,17 @@ Rules:
 Return ONLY valid JSON."""
 
 
+SLICING_CUT_SYSTEM = """You decide whether page N is the first page of a new document in a scanned bundle.
+Return JSON with exactly these keys:
+{
+  "is_new_document": true|false,
+  "confidence": "high"|"medium"|"low",
+  "notes": "one sentence reason"
+}
+A new document starts when: letterhead changes, a new Aktenzeichen or docket number appears, page numbering resets, a new salutation/greeting begins, or an explicit enclosure marker ("Anlage", "Annex") appears.
+Return ONLY valid JSON."""
+
+
 PHASE1_METADATA_SYSTEM = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
 Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25; normalize spaces to dashes if needed).

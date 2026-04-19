@@ -1,0 +1,35 @@
+{% if slicing_queue %}
+<div class="mb-4 border border-amber-500/30 rounded-xl overflow-hidden bg-amber-500/5">
+    <div class="flex items-center gap-2 px-4 py-2.5 border-b border-amber-500/20 bg-amber-500/10">
+        <span class="material-symbols-outlined text-amber-400 text-sm">content_cut</span>
+        <span class="text-[10px] font-bold uppercase tracking-widest text-amber-400">Awaiting Slicing</span>
+        <span class="ml-auto text-[10px] text-amber-400/70">{{ slicing_queue|length }} pending</span>
+    </div>
+    <ul class="divide-y divide-amber-500/10">
+        {% for batch in slicing_queue %}
+        <li class="flex items-center gap-3 px-4 py-3">
+            <div class="flex-1 min-w-0">
+                <p class="text-[11px] font-medium text-on-surface truncate">{{ batch.subject or "Untitled Scan" }}</p>
+                <p class="text-[9px] text-on-surface-variant mt-0.5">
+                    {{ batch.meta.slicing.page_count if batch.meta and batch.meta.slicing else "?" }} pages
+                    &middot;
+                    {% if batch.meta and batch.meta.slicing and batch.meta.slicing.status == "preparing" %}
+                    <span class="text-amber-400">Preparing thumbnails…</span>
+                    {% elif batch.meta and batch.meta.slicing and batch.meta.slicing.status == "failed" %}
+                    <span class="text-red-400">Preparation failed</span>
+                    {% else %}
+                    <span class="text-emerald-400">Ready to review</span>
+                    {% endif %}
+                </p>
+            </div>
+            <a href="/ingest/slice/{{ batch.id }}"
+               class="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg
+                      bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors whitespace-nowrap">
+                <span class="material-symbols-outlined text-xs">content_cut</span>
+                Review
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}

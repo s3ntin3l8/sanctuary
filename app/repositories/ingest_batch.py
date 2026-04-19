@@ -51,6 +51,13 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             .first()
         )
 
+    def get_by_source_hash(self, source_hash: str) -> IngestBatch | None:
+        return (
+            self.db.query(IngestBatch)
+            .filter(IngestBatch.source_hash == source_hash)
+            .first()
+        )
+
     def create_batch(
         self,
         source_type: IngestBatchSourceType,

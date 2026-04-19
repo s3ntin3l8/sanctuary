@@ -17,7 +17,16 @@ from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.api import api_router
-from app.config import CORS_ORIGINS, SessionLocal, engine, templates
+from app.config import (
+    CORS_ORIGINS,
+    SCAN_FAILED_DIR,
+    SCAN_INCOMING_DIR,
+    SCAN_PROCESSED_DIR,
+    SCAN_PROCESSING_DIR,
+    SessionLocal,
+    engine,
+    templates,
+)
 from app.constants import REVIEW_FIELD_LABELS
 from app.dependencies import get_db
 from app.helpers import format_eur, format_relative_time
@@ -91,6 +100,14 @@ async def lifespan(app: FastAPI):
     if needs_migration:
         alembic_cfg = _AlembicConfig("alembic.ini")
         command.upgrade(alembic_cfg, "head")
+
+    for scan_dir in (
+        SCAN_INCOMING_DIR,
+        SCAN_PROCESSING_DIR,
+        SCAN_PROCESSED_DIR,
+        SCAN_FAILED_DIR,
+    ):
+        scan_dir.mkdir(parents=True, exist_ok=True)
 
     db: Session = SessionLocal()
     try:
@@ -465,9 +482,11 @@ from app.api import (
     search,
     triage_router,
 )
+from app.api.slicing import router as slicing_router
 
 app.include_router(dashboard_router)
 app.include_router(triage_router)
+app.include_router(slicing_router)
 app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)

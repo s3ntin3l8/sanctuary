@@ -221,6 +221,9 @@
     <div class="flex-1 flex overflow-hidden bg-surface">
         {# Left: Bundle feed #}
         <div id="triage-queue" class="w-[38%] min-w-[380px] border-r border-outline-variant/10 overflow-y-auto custom-scrollbar">
+            {% if slicing_queue %}
+            <div class="px-4 pt-4">{% include "partials/triage_slicing_queue.html" %}</div>
+            {% endif %}
             {% include "partials/triage_feed.html" %}
         </div>
 
@@ -248,6 +251,9 @@
     </div>
 
     {% else %}
+    {% if slicing_queue %}
+    <div class="px-6 pt-4">{% include "partials/triage_slicing_queue.html" %}</div>
+    {% endif %}
     {% include "partials/triage_feed.html" %}
     {% endif %}
 </section>

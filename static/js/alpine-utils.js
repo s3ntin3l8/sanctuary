@@ -124,3 +124,89 @@ document.addEventListener('alpine:init', () => {
 
 // Make Alpine available globally for debugging
 window.Alpine = Alpine;
+
+function slicingGrid(slicingData, batchId) {
+    return {
+        batchId,
+        status: slicingData.status || 'preparing',
+        pageCount: slicingData.page_count || 0,
+        errorMessage: slicingData.error || '',
+        cuts: [],
+        groupTitles: [],
+        focusedGutter: 0,
+        confirming: false,
+
+        init() {
+            if (slicingData.proposed_cuts) {
+                this.cuts = slicingData.proposed_cuts.map(c => c.page - 1).filter(p => p > 0);
+            }
+            this._rebuildGroupTitles();
+        },
+
+        get groupCount() { return this.cuts.length + 1; },
+        hasCut(afterPage) { return this.cuts.includes(afterPage); },
+
+        toggleCut(afterPage) {
+            const idx = this.cuts.indexOf(afterPage);
+            if (idx >= 0) this.cuts.splice(idx, 1);
+            else { this.cuts.push(afterPage); this.cuts.sort((a, b) => a - b); }
+            this._rebuildGroupTitles();
+        },
+
+        clearCuts() { this.cuts = []; this._rebuildGroupTitles(); },
+
+        resetCuts() {
+            this.cuts = slicingData.proposed_cuts
+                ? slicingData.proposed_cuts.map(c => c.page - 1).filter(p => p > 0)
+                : [];
+            this._rebuildGroupTitles();
+        },
+
+        _rebuildGroupTitles() {
+            const n = this.cuts.length + 1;
+            const existing = this.groupTitles.slice(0, n);
+            while (existing.length < n) existing.push('');
+            this.groupTitles = existing;
+        },
+
+        get gridItems() {
+            if (this.status !== 'ready' || !this.pageCount) return [];
+            const items = [];
+            let groupIdx = 0, groupStart = 1, gutterIdx = 0;
+            for (let p = 1; p <= this.pageCount; p++) {
+                if (p === groupStart) {
+                    const groupEnd = this.cuts.find(c => c >= p) || this.pageCount;
+                    items.push({ type: 'group-header', groupIndex: groupIdx,
+                                 pageRange: p === groupEnd ? `p${p}` : `pp${p}–${groupEnd}` });
+                }
+                items.push({ type: 'page', pageNum: p });
+                if (p < this.pageCount) {
+                    gutterIdx++;
+                    items.push({ type: 'gutter', afterPage: p, gutterIdx });
+                    if (this.hasCut(p)) { groupIdx++; groupStart = p + 1; }
+                }
+            }
+            return items;
+        },
+
+        handleKey(e) {
+            const tag = (e.target && e.target.tagName || '').toLowerCase();
+            if (['input', 'textarea', 'select'].includes(tag)) return;
+            const gutterCount = this.pageCount - 1;
+            if (e.key === 'ArrowDown') { e.preventDefault(); this.focusedGutter = Math.min(this.focusedGutter + 1, gutterCount); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); this.focusedGutter = Math.max(this.focusedGutter - 1, 1); }
+            else if (e.key === 'c' || e.key === 'C') { if (this.focusedGutter > 0) this.toggleCut(this.focusedGutter); }
+            else if (e.key === 'Enter') { this.confirm(); }
+            else if (e.key === 'Escape') { window.location = '/triage'; }
+        },
+
+        confirm() { this.confirming = true; document.getElementById('slicing-confirm-form').submit(); },
+
+        refreshIfReady(event) {
+            try {
+                const data = JSON.parse(event.detail.xhr.responseText);
+                if (data.status && data.status !== 'preparing') window.location.reload();
+            } catch (_) {}
+        },
+    };
+}

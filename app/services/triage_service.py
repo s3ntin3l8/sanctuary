@@ -125,10 +125,14 @@ class TriageService:
 
         from app.models.database import ActionItem, IngestBatch, IngestBatchStatus
 
-        # Batch subquery: any batch that is NOT completed is in triage.
+        # Batch subquery: any batch that is NOT completed and NOT awaiting slicing is in triage.
+        # AWAITING_SLICING batches have no Documents yet and appear in the slicing queue instead.
         unresolved_batches_subq = (
             self.db.query(IngestBatch.id)
-            .filter(IngestBatch.status != IngestBatchStatus.COMPLETED)
+            .filter(
+                IngestBatch.status != IngestBatchStatus.COMPLETED,
+                IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+            )
             .scalar_subquery()
         )
 
@@ -247,6 +251,17 @@ class TriageService:
                 bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
 
         return ordered[offset : offset + limit]
+
+    def get_slicing_queue(self) -> list:
+        """Batches awaiting document slicing review."""
+        from app.models.database import IngestBatch, IngestBatchStatus
+
+        return (
+            self.db.query(IngestBatch)
+            .filter(IngestBatch.status == IngestBatchStatus.AWAITING_SLICING)
+            .order_by(IngestBatch.received_at.desc())
+            .all()
+        )
 
     def get_reactions(self, document_id: int) -> Sequence[UserReaction]:
         return self.reaction_repo.get_by_document(document_id)
