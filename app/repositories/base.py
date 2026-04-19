@@ -14,26 +14,36 @@ class BaseRepository[ModelType: Base]:
         self.model = model
         self.db = db
 
-    def get(self, id: int) -> ModelType | None:
+    def get(self, id: int, options: list | None = None) -> ModelType | None:
         """Get single record by ID."""
-        return self.db.get(self.model, id)
+        query = self.db.query(self.model)
+        if options:
+            query = query.options(*options)
+        return query.filter(self.model.id == id).first()
 
-    def get_by(self, **filters) -> ModelType | None:
+    def get_by(self, options: list | None = None, **filters) -> ModelType | None:
         """Get single record by arbitrary filters."""
-        return self.db.query(self.model).filter_by(**filters).first()
+        query = self.db.query(self.model)
+        if options:
+            query = query.options(*options)
+        return query.filter_by(**filters).first()
 
-    def get_all(self, **filters) -> list[ModelType]:
+    def get_all(self, options: list | None = None, **filters) -> list[ModelType]:
         """Get all records matching filters."""
         query = self.db.query(self.model)
+        if options:
+            query = query.options(*options)
         if filters:
             query = query.filter_by(**filters)
         return query.all()
 
     def get_paginated(
-        self, offset: int = 0, limit: int = 50, **filters
+        self, offset: int = 0, limit: int = 50, options: list | None = None, **filters
     ) -> list[ModelType]:
         """Get paginated records."""
         query = self.db.query(self.model)
+        if options:
+            query = query.options(*options)
         if filters:
             query = query.filter_by(**filters)
         return query.offset(offset).limit(limit).all()

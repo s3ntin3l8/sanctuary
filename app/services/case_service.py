@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.database import Case, Document
 from app.models.enums import (
@@ -87,7 +87,10 @@ class CaseService:
         if not case:
             return None
 
-        documents = self.doc_repo.get_by_case(case_id)
+        # Eager load proceedings to avoid N+1 in templates
+        documents = self.doc_repo.get_by_case(
+            case_id, options=[joinedload(Document.proceeding)]
+        )
         deadlines = self.action_repo.get_by_case(
             case_id, action_type=ActionItemType.DEADLINE
         )

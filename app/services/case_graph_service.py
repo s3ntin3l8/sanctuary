@@ -8,6 +8,9 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
+from sqlalchemy.orm import Session, joinedload
+
+from app.models.database import Document
 from app.models.enums import (
     DocumentRole,
     OriginatorType,
@@ -22,12 +25,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Geometry constants — must match the SVG template exactly
 # ---------------------------------------------------------------------------
-LANE_W = 180
-ROW_H = 64
-TOP = 64
+LANE_W = 225
+ROW_H = 80
+TOP = 0
 LEFT = 36
-NODE_W = 144
-NODE_H = 40
+NODE_W = 180
+NODE_H = 50
 
 # ---------------------------------------------------------------------------
 # Lane definitions (fixed order)
@@ -63,7 +66,7 @@ class GraphPayload:
     proof_badges: dict
     svg_width: int
     svg_height: int
-    hidden_counts: dict
+    node_counts: dict
     filter: str
     node_count: int
     edge_count: int
@@ -157,7 +160,7 @@ def compute_edge_path(from_node: dict, to_node: dict) -> str:
 
 
 class CaseGraphService:
-    def __init__(self, db):
+    def __init__(self, db: Session):
         self.db = db
         self.doc_repo = DocumentRepository(db)
         self.rel_repo = DocumentRelationshipRepository(db)
@@ -179,7 +182,10 @@ class CaseGraphService:
 
         # Fetch all docs for the proceeding (no tier filter — filter in Python
         # so we can accurately count hidden docs).
-        all_docs = self.doc_repo.get_by_proceeding(proceeding_id)
+        # Eager load proceeding to avoid N+1 in templates/logic
+        all_docs = self.doc_repo.get_by_proceeding(
+            proceeding_id, options=[joinedload(Document.proceeding)]
+        )
 
         # ------------------------------------------------------------------
         # Identify bundle headers and their children
@@ -201,17 +207,6 @@ class CaseGraphService:
                 child_doc_ids.add(doc.id)
 
         # ------------------------------------------------------------------
-        # Compute hidden counts (against "significant+" filter, before user filter)
-        # ------------------------------------------------------------------
-        hidden_counts: dict[str, int] = {"administrative": 0, "informational": 0}
-        for doc in all_docs:
-            if doc.significance_tier == SignificanceTier.ADMINISTRATIVE:
-                if doc.role != DocumentRole.COVER_LETTER:
-                    hidden_counts["administrative"] += 1
-            elif doc.significance_tier == SignificanceTier.INFORMATIONAL:
-                hidden_counts["informational"] += 1
-
-        # ------------------------------------------------------------------
         # Apply significance filter; exclude bundle children (they live inside
         # their bundle node, not as standalone rows).
         # ------------------------------------------------------------------
@@ -220,6 +215,28 @@ class CaseGraphService:
             for doc in all_docs
             if doc.id not in child_doc_ids and passes_filter(doc, significance_filter)
         ]
+
+        # Per-tier counts for Alpine hiddenCount() — mirrors isNodeHidden() logic.
+        node_counts: dict[str, int] = {
+            "critical": 0,
+            "significant": 0,
+            "informational": 0,
+            "administrative_standalone": 0,
+            "administrative_relay": 0,
+        }
+        for d in all_docs:
+            if d.id in child_doc_ids:
+                continue
+            tier = d.significance_tier.value if d.significance_tier else "informational"
+            if tier == "administrative":
+                if d.role == DocumentRole.COVER_LETTER:
+                    node_counts["administrative_relay"] += 1
+                else:
+                    node_counts["administrative_standalone"] += 1
+            elif tier in node_counts:
+                node_counts[tier] += 1
+            else:
+                node_counts["informational"] += 1
 
         # ------------------------------------------------------------------
         # Row assignment: docs are already sorted by received_date ASC NULLS LAST,
@@ -242,7 +259,7 @@ class CaseGraphService:
                 "y": y,
                 "w": NODE_W,
                 "h": NODE_H,
-                "title": _clip(doc.title or "Untitled", 17),
+                "title": _clip(doc.title or "Untitled", 21),
                 "full_title": doc.title or "Untitled",
                 "role": doc.role.value if doc.role else "standalone",
                 "date_short": doc.received_date.strftime("%m-%d")
@@ -295,7 +312,7 @@ class CaseGraphService:
                 "children": [
                     {
                         "id": child.id,
-                        "title": _clip(child.title or "Untitled", 18),
+                        "title": _clip(child.title or "Untitled", 22),
                         "origin": _lane_for(child),
                     }
                     for child in children
@@ -383,17 +400,26 @@ class CaseGraphService:
         # ------------------------------------------------------------------
         total_rows = (max((n["row"] for n in nodes), default=0) + 1) if nodes else 1
         svg_height = TOP + total_rows * ROW_H + 120
-        svg_width = LEFT * 2 + len(LANES) * LANE_W
+        active_lane_keys = {n["lane"] for n in nodes} | {b["lane"] for b in bundles}
+        max_lane_idx = (
+            max(_LANE_INDEX[k] for k in active_lane_keys)
+            if active_lane_keys
+            else len(LANES) - 1
+        )
+        svg_width = LEFT * 2 + (max_lane_idx + 1) * LANE_W
 
+        visible_lanes = [
+            lane for lane in LANES if _LANE_INDEX[lane["key"]] <= max_lane_idx
+        ]
         return GraphPayload(
-            lanes=list(LANES),
+            lanes=visible_lanes,
             nodes=nodes,
             bundles=bundles,
             edges=edges,
             proof_badges=proof_badges,
             svg_width=svg_width,
             svg_height=svg_height,
-            hidden_counts=hidden_counts,
+            node_counts=node_counts,
             filter=significance_filter,
             node_count=len(nodes),
             edge_count=len(edges),

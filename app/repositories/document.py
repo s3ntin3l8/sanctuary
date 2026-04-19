@@ -15,18 +15,23 @@ class DocumentRepository(BaseRepository[Document]):
     def __init__(self, db: Session):
         super().__init__(Document, db)
 
-    def get_by_case(self, case_id: str) -> Sequence[Document]:
+    def get_by_case(
+        self, case_id: str, options: list | None = None
+    ) -> Sequence[Document]:
         """Get all documents for a case."""
-        return self.db.query(Document).filter(Document.case_id == case_id).all()
+        query = self.db.query(Document).filter(Document.case_id == case_id)
+        if options:
+            query = query.options(*options)
+        return query.all()
 
-    def get_triage_documents(self) -> Sequence[Document]:
+    def get_triage_documents(self, options: list | None = None) -> Sequence[Document]:
         """Get documents in triage inbox or needing review."""
-        return (
-            self.db.query(Document)
-            .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
-            .order_by(Document.created_at.desc())
-            .all()
+        query = self.db.query(Document).filter(
+            or_(Document.case_id == "_TRIAGE", Document.needs_review)
         )
+        if options:
+            query = query.options(*options)
+        return query.order_by(Document.created_at.desc()).all()
 
     def get_pending_review(self) -> Sequence[Document]:
         """Get documents needing review."""
@@ -174,11 +179,14 @@ class DocumentRepository(BaseRepository[Document]):
         self,
         proceeding_id: int,
         tiers: list["SignificanceTier"] | None = None,
+        options: list | None = None,
     ) -> list["Document"]:
         """Return all documents for a proceeding, ordered by received_date asc nulls last, id asc."""
         q = self.db.query(Document).filter(Document.proceeding_id == proceeding_id)
         if tiers:
             q = q.filter(Document.significance_tier.in_(tiers))
+        if options:
+            q = q.options(*options)
         return q.order_by(
             Document.received_date.asc().nullslast(),
             Document.id.asc(),

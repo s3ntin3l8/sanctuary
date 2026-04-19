@@ -332,8 +332,8 @@ class TestCaseGraphServiceBuildPayload:
         assert "Übersendung Gegenschrift" in titles
         assert "Empfangsbestätigung" not in titles
 
-        # Hidden-counts reflect the pre-filter tally
-        assert payload.hidden_counts["administrative"] == 1  # the standalone admin
+        # node_counts reflects per-tier breakdown for Alpine hiddenCount()
+        assert payload.node_counts["administrative_standalone"] == 1
 
     @pytest.mark.unit
     def test_build_payload_emits_bundle_for_court_relay(

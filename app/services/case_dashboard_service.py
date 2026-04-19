@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.constants import CASE_STATUS_META, ORIGINATOR_COLORS
 from app.helpers import build_cost_summary
@@ -83,6 +83,7 @@ class CaseDashboardService:
         if active_proceeding is not None and last_visit is not None:
             new_docs = (
                 self.db.query(Document)
+                .options(joinedload(Document.proceeding))
                 .filter(
                     Document.proceeding_id == active_proceeding.id,
                     Document.created_at > last_visit,
@@ -137,6 +138,7 @@ class CaseDashboardService:
             "view": active_view,
             "filter": significance_filter,
             "activeProceedingId": active_proceeding.id if active_proceeding else None,
+            "nodeCounts": graph_dict["node_counts"] if graph_dict else {},
         }
 
         # --- Legacy keys preserved so the existing template keeps rendering
