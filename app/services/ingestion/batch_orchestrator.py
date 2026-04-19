@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import DATA_DIR
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestStatus
+from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
 from app.tasks.celery_app import celery_app
 
@@ -17,20 +18,19 @@ def ingest_raw_email(
     parsed = parse_rfc822(raw_bytes)
     msg_id = parsed["message_id"]
 
+    batch_repo = IngestBatchRepository(db)
+
     if msg_id:
-        existing = (
-            db.query(IngestBatch).filter(IngestBatch.message_id == msg_id).first()
-        )
+        existing = batch_repo.get_by_message_id(msg_id)
         if existing:
             return existing
 
-    batch = IngestBatch(
+    batch = batch_repo.create_batch(
         source_type=source_type,
         subject=parsed["subject"][:255] if parsed["subject"] else "No Subject",
         sender_email=parsed["sender"][:255] if parsed["sender"] else None,
-        message_id=msg_id,
     )
-    db.add(batch)
+    batch.message_id = msg_id
     db.flush()
 
     case_dir = DATA_DIR / "_TRIAGE"
