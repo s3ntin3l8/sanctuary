@@ -97,7 +97,7 @@ async def upload_document(
             success_count += 1
 
             try:
-                background_tasks.add_task(process_document_background, doc.id, db)
+                background_tasks.add_task(run_ingest_pipeline, doc.id, db)
             except Exception as e:
                 logger.warning(f"Background task failed for doc {doc.id}: {e}")
 
@@ -305,8 +305,8 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         )
 
 
-def process_document_background(doc_id: int, db: Session):
-    """Background task to process document after upload."""
+def run_ingest_pipeline(doc_id: int, db: Session):
+    """Background task to process a manually uploaded document through the full ingest pipeline."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         return
@@ -318,8 +318,8 @@ def process_document_background(doc_id: int, db: Session):
     try:
         process_uploaded_document(doc, db)
         doc.ingest_status = IngestStatus.COMPLETED
+        doc.ingest_completed_at = datetime.now(UTC)
         db.commit()
-
     except Exception as e:
         doc.ingest_status = IngestStatus.FAILED
         doc.ingest_error = str(e)
@@ -327,17 +327,34 @@ def process_document_background(doc_id: int, db: Session):
         db.commit()
         return
 
-    # Only run AI enrichment if ingestion succeeded
-    import asyncio
-
-    from app.services.ai_summary import _summarize_document_sync
-    from app.services.embeddings import generate_embedding
-
+    # Phase 1: metadata extraction + auto-triage
     try:
-        _summarize_document_sync(doc.id, db)
-        asyncio.run(generate_embedding(doc.id))
-    except Exception as ai_err:
-        logger.warning(f"AI enrichment failed for doc {doc.id}: {ai_err}")
+        from app.services.ai_summary import _summarize_document_sync
 
-    doc.ingest_completed_at = datetime.now(UTC)
-    db.commit()
+        _summarize_document_sync(doc.id, db)
+    except Exception as e:
+        logger.warning(f"Phase 1 summary failed for doc {doc.id}: {e}")
+
+    # Phase 4: batch-ready check → analyze_batch or direct enrichment
+    batch_id = doc.ingest_batch_id
+    if batch_id:
+        from app.services.intelligence.orchestrator import claim_batch_for_analysis
+        from app.tasks.analyze_batch import analyze_batch_task
+
+        if claim_batch_for_analysis(batch_id, db):
+            logger.info(f"Batch {batch_id}: dispatching analyze_batch_task")
+            analyze_batch_task.delay(batch_id)
+    else:
+        from app.tasks.enrich_document import enrich_document_task
+
+        enrich_document_task.delay(doc.id)
+
+    # Embeddings
+    try:
+        import asyncio
+
+        from app.services.embeddings import generate_embedding
+
+        asyncio.run(generate_embedding(doc.id))
+    except Exception as e:
+        logger.warning(f"Embedding failed for doc {doc.id}: {e}")

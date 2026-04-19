@@ -14,15 +14,12 @@ def test_process_document_task_success(db_session, sample_document):
     with (
         patch("app.tasks.document_processing.SessionLocal") as mock_session_local,
         patch("app.services.ingestion.process_uploaded_document") as mock_process_doc,
+        patch("app.tasks.document_processing._run_phase1_summary"),
+        patch("app.tasks.enrich_document.enrich_document_task.delay"),
         patch.object(db_session, "close", return_value=None),
     ):
         mock_session_local.return_value = db_session
 
-        # In some Celery versions/setups, .run is already bound or __wrapped__ behaves differently.
-        # Let's try calling the function directly from the module if possible,
-        # or just use .run and handle the arguments.
-
-        # Try calling with ONE argument if it's already bound
         result = process_document_task.run(sample_document.id)
 
         assert result["status"] == "success"

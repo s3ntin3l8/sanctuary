@@ -1,5 +1,6 @@
 # Sanctuary Development Makefile
 
+PYTHON_EXE := /home/bjoern/.pyenv/versions/3.12.13/bin/python
 PYTHON := .venv/bin/python
 UVICORN := .venv/bin/uvicorn
 PYTEST := $(PYTHON) -m pytest
@@ -25,7 +26,11 @@ PORT ?= 8000
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Install dependencies and pre-commit hooks
+.venv: ## Create virtual environment
+	$(PYTHON_EXE) -m venv .venv
+	$(PYTHON) -m pip install --upgrade pip
+
+setup: .venv ## Install dependencies and pre-commit hooks
 	$(PYTHON) -m pip install -r requirements.txt
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push

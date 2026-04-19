@@ -12,6 +12,11 @@ celery_app = Celery(
         "app.tasks.document_processing",
         "app.tasks.ai_summaries",
         "app.tasks.gmail_sync",
+        "app.tasks.analyze_batch",
+        "app.tasks.enrich_document",
+        "app.tasks.detect_relationships",
+        "app.tasks.extract_claims",
+        "app.tasks.thread_open_scan",
     ],
 )
 
@@ -19,6 +24,10 @@ celery_app.conf.beat_schedule = {
     "sync-gmail-every-5-minutes": {
         "task": "app.tasks.gmail_sync.sync_gmail_incremental",
         "schedule": 300.0,
+    },
+    "close-threads-every-15-minutes": {
+        "task": "app.tasks.thread_open_scan.thread_open_scan_task",
+        "schedule": 900.0,
     },
 }
 

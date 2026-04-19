@@ -1,6 +1,7 @@
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.database import IngestBatch
@@ -85,3 +86,28 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
 
     def mark_failed(self, batch_id: int) -> IngestBatch | None:
         return self.update(batch_id, status=IngestBatchStatus.FAILED)
+
+    def claim_for_analysis(self, batch_id: int) -> bool:
+        """Atomically claim a batch for Phase 4 analysis.
+
+        Returns True only if this call won the race (all docs done + first claim).
+        Prevents duplicate analyze_batch_task dispatch under concurrent workers.
+        """
+        result = self.db.execute(
+            text(
+                """
+                UPDATE ingest_batches
+                SET analysis_queued_at = :now
+                WHERE id = :batch_id
+                  AND analysis_queued_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM documents
+                    WHERE ingest_batch_id = :batch_id
+                      AND ingest_status NOT IN ('COMPLETED', 'FAILED')
+                  )
+                """
+            ),
+            {"now": datetime.now(UTC), "batch_id": batch_id},
+        )
+        self.db.commit()
+        return result.rowcount == 1

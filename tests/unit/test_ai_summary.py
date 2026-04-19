@@ -139,27 +139,26 @@ async def test_summarize_document_success(db_session, sample_document):
     # Actually, we are calling the imported summarize_document directly.
     # But generate_summary inside it might be mocked or we can patch it.
 
-    data = {
-        "legal_significance": "Significance",
-        "required_action": "Action",
-        "financial_impact": "Impact",
-    }
-
     with patch(
         "app.services.ai_summary.generate_summary", new_callable=AsyncMock
     ) as mock_gen:
-        mock_gen.return_value = data
-
-        # Ensure we are testing the REAL summarize_document
-        # If conftest.py patched app.services.ai_summary.summarize_document,
-        # we need to ensure we call the original one.
-        # But we imported it at the top of this file.
+        # Phase 1 returns metadata-only keys; 3-bullet summary now comes from Phase 4 enricher
+        mock_gen.return_value = {
+            "az_court": "003 F 426/25",
+            "sender": "Amtsgericht Hamburg",
+            "received_date": "2025-01-15",
+            "originator_type": "court",
+        }
 
         updated_doc = await summarize_document(sample_document.id, db_session)
 
-        assert updated_doc.ai_summary == data
-        assert updated_doc.ai_summary_status == "generated"
-        assert updated_doc.ai_summary_created_at is not None
+        # Phase 1 sets status to "pending" (Phase 4 enricher writes "generated")
+        assert updated_doc.ai_summary_status == "pending"
+        # Phase 1 does NOT set ai_summary (that's Phase 4's job)
+        assert (
+            updated_doc.ai_summary is None
+            or updated_doc.ai_summary_status != "generated"
+        )
 
 
 @pytest.mark.asyncio

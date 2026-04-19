@@ -221,6 +221,22 @@ def mock_converter():
 
 
 @pytest.fixture(autouse=True)
+def mock_phase4_celery_tasks():
+    """Prevent Phase 4 Celery tasks from connecting to Redis during tests."""
+    with (
+        patch("app.tasks.analyze_batch.analyze_batch_task.delay"),
+        patch("app.tasks.enrich_document.enrich_document_task.delay"),
+        patch("app.tasks.detect_relationships.detect_relationships_task.delay"),
+        patch("app.tasks.extract_claims.extract_claims_task.delay"),
+        patch("app.tasks.thread_open_scan.thread_open_scan_task.delay"),
+        patch("app.tasks.enrich_document.enrich_document_task.apply_async"),
+        patch("app.tasks.analyze_batch.analyze_batch_task.apply_async"),
+        patch("app.tasks.extract_claims.extract_claims_task.apply_async"),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def clear_cache():
     from app.core.cache import cache
 

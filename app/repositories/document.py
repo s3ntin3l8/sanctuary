@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.database import Document
-from app.models.enums import IngestStatus, OriginatorType
+from app.models.enums import IngestStatus, OriginatorType, SignificanceTier
 from app.repositories.base import BaseRepository
 
 
@@ -169,6 +169,22 @@ class DocumentRepository(BaseRepository[Document]):
             needs_review=case_id is None or case_id == "_TRIAGE",
             created_at=datetime.now(),
         )
+
+    def list_prior_in_proceeding(
+        self,
+        proceeding_id: int,
+        before_doc_id: int,
+        tiers: list[SignificanceTier] | None = None,
+        limit: int = 15,
+    ) -> Sequence[Document]:
+        """Prior docs in the same proceeding for relationship detection candidates."""
+        q = self.db.query(Document).filter(
+            Document.proceeding_id == proceeding_id,
+            Document.id != before_doc_id,
+        )
+        if tiers:
+            q = q.filter(Document.significance_tier.in_(tiers))
+        return q.order_by(Document.received_date.desc().nullslast()).limit(limit).all()
 
     def get_paginated(
         self,

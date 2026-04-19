@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -9,6 +10,53 @@ from app.repositories.case import CaseRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.entity import EntityRepository
 from app.repositories.legal_cost import LegalCostRepository
+
+logger = logging.getLogger(__name__)
+
+
+def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
+    """Recompute and persist Case.total_cost_exposure from doc.cost_delta values.
+
+    Sums |cost_delta.amount| (in euros) across all non-TRIAGE documents for the
+    case, stores as integer cents in Case.total_cost_exposure. Returns the new
+    value in cents.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return 0
+
+    docs = (
+        db.query(Document)
+        .filter(
+            Document.case_id == case_id,
+            Document.cost_delta.isnot(None),
+        )
+        .all()
+    )
+
+    total_euros = 0.0
+    for doc in docs:
+        try:
+            amount = (
+                doc.cost_delta.get("amount")
+                if isinstance(doc.cost_delta, dict)
+                else None
+            )
+            if amount is not None:
+                total_euros += abs(float(amount))
+        except Exception:
+            pass
+
+    total_cents = int(round(total_euros * 100))
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case:
+        case.total_cost_exposure = total_cents
+        db.commit()
+        logger.info(
+            f"Case {case_id}: total_cost_exposure updated to {total_cents} cents"
+        )
+
+    return total_cents
 
 
 class CaseService:

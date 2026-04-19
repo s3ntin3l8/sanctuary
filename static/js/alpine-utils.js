@@ -122,4 +122,5 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
-// Alpine CDN build already exposes window.Alpine; no extra global wiring needed here.
+// Make Alpine available globally for debugging
+window.Alpine = Alpine;

@@ -30,6 +30,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 
 ## Quick Start
 
+Python venv: python3.12 -m venv .venv
 You can use the provided `Makefile` for common development tasks:
 
 ```bash

@@ -18,7 +18,7 @@ repos:
     hooks:
     -   id: unit-tests
         name: run unit tests
-        entry: .venv/bin/python -m pytest -m unit
+        entry: .venv/bin/python -m pytest -m unit --ignore=tests/e2e
         language: system
         types: [python]
         pass_filenames: false

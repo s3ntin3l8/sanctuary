@@ -225,6 +225,7 @@ class IngestBatch(Base):
         nullable=False,
     )
     created_at = Column(DateTime, default=datetime.now, nullable=False)
+    analysis_queued_at = Column(DateTime, nullable=True)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")

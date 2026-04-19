@@ -14,18 +14,14 @@ from app.services.ai_provider import ai_provider
 logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
-Analyze the provided document and return a JSON object with these specific keys:
+Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number for the proceeding (e.g. 003 F 426/25; normalize spaces to dashes if needed).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
 - sender: The organization or person who authored/sent the document.
 - received_date: The date of the document or when it was received (YYYY-MM-DD).
 - originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
-- legal_significance: What does this document mean for our legal position? (1-2 sentences)
-- required_action: What needs to be done and by when? (1-2 sentences)
-- financial_impact: Any direct financial implications? (1 sentence)
-- detected_costs: A list of objects with {"type": "string", "amount": float, "context": "string"} for any specific fees mentioned.
 
-Be concise and specific. If information is not available, use null for that field.
+Be concise. If information is not available, use null for that field.
 Return ONLY valid JSON."""
 
 SYSTEM_PROMPT = AI_SYSTEM_PROMPT if AI_SYSTEM_PROMPT else DEFAULT_SYSTEM_PROMPT
@@ -238,29 +234,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 )
             )
 
-    # 4. Merge detected costs
-    if summary_data.get("detected_costs") and isinstance(
-        summary_data["detected_costs"], list
-    ):
-        if not doc.cost_candidates:
-            doc.cost_candidates = []
-
-        # Avoid duplicate costs if possible (simple heuristic)
-        existing_values = [str(c.get("value", "")) for c in doc.cost_candidates]
-        for cost in summary_data["detected_costs"]:
-            if str(cost.get("amount", "")) not in existing_values:
-                doc.cost_candidates.append(
-                    {
-                        "type": "ai_detected",
-                        "label": cost.get("type", "Fee"),
-                        "value": cost.get("amount"),
-                        "context": cost.get(
-                            "context", "AI extracted from document body"
-                        ),
-                    }
-                )
-
-    # 5. Re-evaluate review status
+    # 4. Re-evaluate review status
     reasons = compute_review_reasons(doc)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0
@@ -288,18 +262,11 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     try:
         summary_data = await generate_summary(doc)
 
-        # Store the clean 3-bullet summary as before
-        doc.ai_summary = {
-            "legal_significance": summary_data.get("legal_significance"),
-            "required_action": summary_data.get("required_action"),
-            "financial_impact": summary_data.get("financial_impact"),
-        }
-
-        # Perform Deep Extraction enrichment
+        # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
+        # The 3-bullet ai_summary is now written by Phase 4 document_enricher
         enrich_document_with_ai(doc, summary_data, db)
 
-        doc.ai_summary_created_at = datetime.now(UTC)
-        doc.ai_summary_status = "generated"
+        doc.ai_summary_status = "pending"  # Phase 4 enricher will set to "generated"
     except Exception as e:
         logger.error(f"Failed to generate summary for doc {doc_id}: {e}", exc_info=True)
         doc.ai_summary_status = "failed"
@@ -401,18 +368,11 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
     try:
         summary_data = generate_summary_sync(doc)
 
-        # Store the clean 3-bullet summary as before
-        doc.ai_summary = {
-            "legal_significance": summary_data.get("legal_significance"),
-            "required_action": summary_data.get("required_action"),
-            "financial_impact": summary_data.get("financial_impact"),
-        }
-
-        # Perform Deep Extraction enrichment
+        # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
+        # The 3-bullet ai_summary is now written by Phase 4 document_enricher
         enrich_document_with_ai(doc, summary_data, db)
 
-        doc.ai_summary_created_at = datetime.now(UTC)
-        doc.ai_summary_status = "generated"
+        doc.ai_summary_status = "pending"  # Phase 4 enricher will set to "generated"
     except Exception as e:
         logger.error(
             f"Failed to generate summary for doc {doc_id} (sync): {e}", exc_info=True

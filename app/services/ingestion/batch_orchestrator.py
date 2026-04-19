@@ -93,7 +93,7 @@ def ingest_raw_email(
 
     for doc in docs_to_process:
         celery_app.send_task(
-            "app.tasks.document_processing.process_document_background", args=[doc.id]
+            "app.tasks.document_processing.process_document_task", args=[doc.id]
         )
 
     return batch
