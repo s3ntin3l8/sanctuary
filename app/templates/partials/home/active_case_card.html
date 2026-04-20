@@ -4,9 +4,10 @@
    :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'cases' && focusedIdx === {{ loop_index0 }} }">
     <!-- Header -->
     <div class="flex items-start justify-between mb-2 shrink-0">
-        <div class="font-mono text-[11px] font-bold text-on-surface">
+        <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
+              style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
             {{ case.id }}
-        </div>
+        </span>
         {% if case.new_docs > 0 %}
             <span class="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-primary-container/20 text-primary uppercase">
                 +{{ case.new_docs }} new
