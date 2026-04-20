@@ -105,11 +105,18 @@ Return ONLY valid JSON."""
 
 PHASE1_METADATA_SYSTEM = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
 Extract metadata from the document and return a JSON object with these keys:
-- az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25; normalize spaces to dashes if needed).
+- az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
 - sender: The organization or person who authored/sent the document.
 - received_date: The date of the document or when it was received (YYYY-MM-DD).
 - originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
+- confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
+
+Verification Task:
+You will be provided with "Heuristic Hints" found by simple regex patterns.
+- If a hint is correct, use it and set confidence to "high".
+- If a hint is wrong (e.g. matched a random number as Aktenzeichen), correct it and set confidence to "medium" or "low".
+- If no hint is provided, extract from scratch.
 
 Be concise. If information is not available, use null.
 Return ONLY valid JSON."""

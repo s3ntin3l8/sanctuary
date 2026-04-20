@@ -67,11 +67,22 @@
             <div class="flex items-center gap-2 shrink-0">
                 {% if doc and doc.id %}
                 <button
+                    hx-post="/triage/document/{{ doc.id }}/retry-ai"
+                    hx-target="#triage-doc-pane"
+                    hx-swap="innerHTML"
+                    class="text-[10px] font-bold text-on-surface-variant hover:text-primary flex items-center gap-1 cursor-pointer"
+                    title="Retry full AI pipeline (Phase 4)">
+                    <span class="material-symbols-outlined text-sm">smart_toy</span>
+                    <span class="sr-only">Retry AI</span>
+                </button>
+                <button
                     hx-post="/document/{{ doc.id }}/reingest"
                     hx-target="#triage-doc-pane"
                     hx-swap="innerHTML"
                     class="text-[10px] font-bold text-on-surface-variant hover:text-primary flex items-center gap-1 cursor-pointer"
-                    title="Re-run extraction"><span class="material-symbols-outlined text-sm">refresh</span></button>
+                    title="Re-run extraction (Docling)">
+                    <span class="material-symbols-outlined text-sm">refresh</span>
+                </button>
                 {% endif %}
                 <button @click="activeDoc = null" class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors cursor-pointer" title="Close">close</button>
             </div>
@@ -163,7 +174,7 @@
                 <span class="text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-sm animate-spin text-primary">autorenew</span>generating summary…</span>
                 {% elif doc.ai_summary_status == 'failed' %}
                 <span class="text-error">summary failed —</span>
-                <button hx-post="/document/{{ doc.id }}/summarize" hx-target="#triage-doc-pane" hx-swap="innerHTML"
+                <button hx-post="/triage/document/{{ doc.id }}/retry-ai" hx-target="#triage-doc-pane" hx-swap="innerHTML"
                         class="text-primary underline">retry</button>
                 {% else %}
                 <button hx-post="/document/{{ doc.id }}/summarize" hx-target="#triage-doc-pane" hx-swap="innerHTML"

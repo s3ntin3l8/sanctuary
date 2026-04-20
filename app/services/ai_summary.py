@@ -10,19 +10,11 @@ from app.config import AI_BASE_URL, AI_SUMMARY_MODEL, AI_SYSTEM_PROMPT
 from app.core.cache import cache, get_ai_summary_key
 from app.models.database import Document, Proceeding
 from app.services.ai_provider import ai_provider
+from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SYSTEM_PROMPT = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
-Extract metadata from the document and return a JSON object with these keys:
-- az_court: The official court Aktenzeichen / docket number for the proceeding (e.g. 003 F 426/25; normalize spaces to dashes if needed).
-- internal_id: The lawyer's internal reference number (e.g. 8124/25).
-- sender: The organization or person who authored/sent the document.
-- received_date: The date of the document or when it was received (YYYY-MM-DD).
-- originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
-
-Be concise. If information is not available, use null for that field.
-Return ONLY valid JSON."""
+DEFAULT_SYSTEM_PROMPT = PHASE1_METADATA_SYSTEM
 
 SYSTEM_PROMPT = AI_SYSTEM_PROMPT if AI_SYSTEM_PROMPT else DEFAULT_SYSTEM_PROMPT
 
@@ -106,10 +98,27 @@ async def generate_summary(doc: Document) -> dict:
     """Generate a 3-bullet management summary via configured AI provider using streaming."""
     content_preview = get_content_preview(doc, 4000)
 
+    # Heuristic hints for verification
+    hints = {
+        "az_court": doc.az_court,
+        "sender": doc.sender,
+        "received_date": doc.received_date.strftime("%Y-%m-%d")
+        if doc.received_date
+        else None,
+        "originator_type": doc.originator_type.value if doc.originator_type else None,
+    }
+    hints_str = json.dumps(hints, indent=2)
+
+    prompt = (
+        f"Document: {doc.title}\n\n"
+        f"### Heuristic Hints (found by regex, please verify):\n{hints_str}\n\n"
+        f"### Document Content Preview:\n{content_preview}"
+    )
+
     # Get provider-specific parameters
     params = await ai_provider.get_generate_params(
         model=AI_SUMMARY_MODEL,
-        prompt=f"Document: {doc.title}\n\n{content_preview}",
+        prompt=prompt,
         system_prompt=SYSTEM_PROMPT,
         stream=True,
         options={
@@ -182,8 +191,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     from app.models.enums import OriginatorType
     from app.services.ingestion.service import compute_review_reasons
 
-    # 1. Update core text-based fields if missing or provided by AI
-    if summary_data.get("sender") and not doc.sender:
+    # 1. Update core fields (AI overrides heuristics)
+    if summary_data.get("sender"):
         doc.sender = summary_data["sender"]
 
     if summary_data.get("originator_type"):
@@ -194,13 +203,28 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         except Exception:
             pass
 
-    # 2. Date parsing
-    if summary_data.get("received_date") and not doc.received_date:
+    if summary_data.get("received_date"):
         try:
             parsed_date = datetime.strptime(summary_data["received_date"], "%Y-%m-%d")
             doc.received_date = parsed_date.replace(tzinfo=UTC)
         except Exception:
             pass
+
+    if summary_data.get("az_court"):
+        doc.az_court = summary_data["az_court"]
+
+    if summary_data.get("internal_id"):
+        doc.internal_id = summary_data["internal_id"]
+
+    # 2. Update confidence scores
+    ai_conf = summary_data.get("confidence")
+    if ai_conf and isinstance(ai_conf, dict):
+        # Create a new dict to ensure SQLAlchemy detects the change
+        new_conf = dict(doc.extraction_confidence or {})
+        for key, val in ai_conf.items():
+            if val in ("high", "medium", "low"):
+                new_conf[key] = val
+        doc.extraction_confidence = new_conf
 
     # 3. Auto-Triage: match by Proceeding.az_court (per-court Aktenzeichen),
     # fallback to internal_id against Case.id.
@@ -285,11 +309,28 @@ def generate_summary_sync(doc: Document) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     content_preview = get_content_preview(doc, 4000)
 
+    # Heuristic hints for verification
+    hints = {
+        "az_court": doc.az_court,
+        "sender": doc.sender,
+        "received_date": doc.received_date.strftime("%Y-%m-%d")
+        if doc.received_date
+        else None,
+        "originator_type": doc.originator_type.value if doc.originator_type else None,
+    }
+    hints_str = json.dumps(hints, indent=2)
+
+    prompt = (
+        f"Document: {doc.title}\n\n"
+        f"### Heuristic Hints (found by regex, please verify):\n{hints_str}\n\n"
+        f"### Document Content Preview:\n{content_preview}"
+    )
+
     # Get provider-specific parameters
     params = asyncio.run(
         ai_provider.get_generate_params(
             model=AI_SUMMARY_MODEL,
-            prompt=f"Document: {doc.title}\n\n{content_preview}",
+            prompt=prompt,
             system_prompt=SYSTEM_PROMPT,
             stream=True,
             options={

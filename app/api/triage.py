@@ -540,6 +540,31 @@ async def approve_summary(
     return await _render_document_hud(request, doc, db)
 
 
+@router.post("/triage/document/{doc_id}/retry-ai")
+async def retry_ai(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Clear AI status and re-enqueue processing task."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    # Reset statuses
+    doc.ai_summary_status = "pending"
+    doc.ai_summary = None
+    doc.ingest_status = "pending"
+    db.commit()
+
+    from app.tasks.document_processing import process_document_task
+
+    process_document_task.delay(doc.id)
+
+    # Return the HUD (will show as "pending")
+    return await _render_document_hud(request, doc, db)
+
+
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------

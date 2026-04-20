@@ -34,14 +34,18 @@ VALID_ACTION_TYPES = {e.value for e in ActionItemType}
 
 
 def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
-    """Heuristic: pick the most likely cover letter candidate from the batch."""
-    for doc in docs:
+    """Heuristic: pick the most likely cover letter candidate from the batch.
+    Only considers documents with actual content.
+    """
+    healthy_docs = [d for d in docs if d.content and len(d.content.strip()) > 10]
+
+    for doc in healthy_docs:
         lower = (doc.title or "").lower()
         if any(kw in lower for kw in COVER_LETTER_KEYWORDS):
             return doc
 
-    if docs:
-        return min(docs, key=lambda d: len(d.content or ""))
+    if healthy_docs:
+        return min(healthy_docs, key=lambda d: len(d.content or ""))
 
     return None
 
@@ -153,7 +157,7 @@ def _apply_batch_results(
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         case_id = batch.case_id if batch else None
 
-        if case_id and case_id != "_TRIAGE":
+        if case_id:
             for action in detected_actions:
                 raw_type = (action.get("action_type") or "deadline").lower()
                 if raw_type not in VALID_ACTION_TYPES:
@@ -202,12 +206,21 @@ def analyze(batch_id: int) -> None:
             logger.info(f"Batch {batch_id} has no documents to analyze")
             return
 
-        if len(docs) == 1:
-            docs[0].role = DocumentRole.STANDALONE
+        healthy_docs = [d for d in docs if d.content and len(d.content.strip()) > 10]
+
+        if not healthy_docs:
+            for d in docs:
+                d.role = DocumentRole.STANDALONE
             db.commit()
             return
 
-        candidate = _pick_cover_letter_candidate(docs)
+        if len(healthy_docs) == 1:
+            for d in docs:
+                d.role = DocumentRole.STANDALONE
+            db.commit()
+            return
+
+        candidate = _pick_cover_letter_candidate(healthy_docs)
         if not candidate:
             for d in docs:
                 d.role = DocumentRole.STANDALONE
@@ -218,7 +231,7 @@ def analyze(batch_id: int) -> None:
         debug_dir.mkdir(parents=True, exist_ok=True)
         debug_file = str(debug_dir / f"batch_{batch_id}_analyzer.log")
 
-        sibling_titles = [d.title for d in docs if d.id != candidate.id]
+        sibling_titles = [d.title for d in healthy_docs if d.id != candidate.id]
 
         try:
             result = _call_batch_analyzer_sync(candidate, sibling_titles, debug_file)
