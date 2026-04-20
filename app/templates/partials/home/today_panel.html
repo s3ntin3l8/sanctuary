@@ -18,13 +18,15 @@
         <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group"
              data-panel-item="today" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'today'; focusedIdx = {{ loop.index0 }}"
-             :class="{ 'bg-surface-low ring-1 ring-inset ring-primary/40': focusedPanel === 'today' && focusedIdx === {{ loop.index0 }} }">
+             :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === 'today' && focusedIdx === {{ loop.index0 }} }">
             <!-- urgency icon -->
             <div class="w-5 flex justify-center shrink-0">
-                {% if (item.due_date - now).days < 7 %}
-                    <span class="text-error text-[14px]">⚑</span>
+                {% if item.action_type.value == 'court_date' %}
+                    <span class="material-symbols-outlined text-originator-court text-[14px]" title="Court Date">event</span>
+                {% elif item.action_type.value == 'deadline' %}
+                    <span class="material-symbols-outlined text-error text-[14px]" title="Deadline">timer</span>
                 {% else %}
-                    <span class="text-on-surface-variant text-[14px]">·</span>
+                    <span class="text-on-surface-variant text-[14px]" title="{{ item.action_type.value.replace('_', ' ') | title }}">⚑</span>
                 {% endif %}
             </div>
             <!-- date column -->

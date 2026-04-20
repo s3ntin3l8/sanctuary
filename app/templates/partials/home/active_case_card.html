@@ -48,7 +48,13 @@
     {% if case.next_action %}
     <div class="flex items-center gap-1.5 text-[12px] mb-4 shrink-0">
         {% set days = (case.next_action.due_date - now).days %}
-        <span class="{{ 'text-error' if days <= 7 else 'text-amber-500' }}">⚑</span>
+        {% if case.next_action.action_type.value == 'court_date' %}
+            <span class="material-symbols-outlined text-originator-court text-[14px]" title="Court Date">event</span>
+        {% elif case.next_action.action_type.value == 'deadline' %}
+            <span class="material-symbols-outlined text-error text-[14px]" title="Deadline">timer</span>
+        {% else %}
+            <span class="text-on-surface-variant text-[14px]" title="{{ case.next_action.action_type.value.replace('_', ' ') | title }}">⚑</span>
+        {% endif %}
         <span class="{{ 'text-error font-bold' if days <= 7 else 'text-on-surface font-medium' }}">
             {{ case.next_action.title }} ({{ case.next_action.due_date.strftime('%b %d') }})
         </span>
