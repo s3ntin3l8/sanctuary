@@ -1,7 +1,7 @@
 function homeDashboard() {
     return {
         focusedPanel: null,
-        focusedIdx: 0,
+        focusedIdx: -1,
         showShortcuts: false,
         showCreateCase: false,
 

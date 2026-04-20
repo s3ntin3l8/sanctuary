@@ -1,7 +1,9 @@
-<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
-         @mouseenter="focusedPanel = 'triage'"
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-shadow duration-300"
+         @mouseenter="focusedPanel = 'triage'; focusedIdx = -1"
+         @mouseleave="focusedPanel = null; focusedIdx = -1"
          :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'triage' }">
-    <div class="flex items-baseline justify-between mb-3">
+    <div class="flex items-baseline justify-between mb-3"
+         @mouseenter.stop="focusedIdx = -1">
         <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">inbox</span>
             <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
@@ -16,10 +18,10 @@
 
     <div class="space-y-0">
         {% for bundle in triage_bundles %}
-        <a href="/triage" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group no-underline"
+        <a href="/triage" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group no-underline"
              data-panel-item="triage" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'triage'; focusedIdx = {{ loop.index0 }}"
-             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
+             :class="{ 'bg-surface-low ring-2 ring-inset ring-primary/40': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
             <div class="w-5 flex justify-center shrink-0">
                 <span class="font-mono text-[11px] font-semibold text-amber-500">
                     {{ bundle.documents|length }}

@@ -1,7 +1,9 @@
-<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
-         @mouseenter="focusedPanel = 'delta'"
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-shadow duration-300"
+         @mouseenter="focusedPanel = 'delta'; focusedIdx = -1"
+         @mouseleave="focusedPanel = null; focusedIdx = -1"
          :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'delta' }">
-    <div class="flex items-baseline justify-between mb-3">
+    <div class="flex items-baseline justify-between mb-3"
+         @mouseenter.stop="focusedIdx = -1">
         <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">bolt</span>
             <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
@@ -18,10 +20,10 @@
 
     <div class="space-y-0">
         {% for delta in delta_cases %}
-        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group"
+        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group"
              data-panel-item="delta" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'delta'; focusedIdx = {{ loop.index0 }}"
-             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'delta' && focusedIdx === {{ loop.index0 }} }">
+             :class="{ 'bg-surface-low ring-2 ring-inset ring-primary/40': focusedPanel === 'delta' && focusedIdx === {{ loop.index0 }} }">
 
             <a href="/cases/{{ delta.case_id }}" class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface bg-surface-container hover:bg-surface-container-high transition-colors shrink-0">
                 {{ delta.case_id }}

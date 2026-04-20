@@ -1,7 +1,9 @@
-<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
-         @mouseenter="focusedPanel = 'signals'"
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-shadow duration-300"
+         @mouseenter="focusedPanel = 'signals'; focusedIdx = -1"
+         @mouseleave="focusedPanel = null; focusedIdx = -1"
          :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'signals' }">
-    <div class="flex items-baseline justify-between mb-3">
+    <div class="flex items-baseline justify-between mb-3"
+         @mouseenter.stop="focusedIdx = -1">
         <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">hourglass_empty</span>
             <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
@@ -12,10 +14,10 @@
 
     <div class="space-y-0">
         {% for signal in signals %}
-        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group"
+        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group"
              data-panel-item="signals" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'signals'; focusedIdx = {{ loop.index0 }}"
-             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'signals' && focusedIdx === {{ loop.index0 }} }">
+             :class="{ 'bg-surface-low ring-2 ring-inset ring-primary/40': focusedPanel === 'signals' && focusedIdx === {{ loop.index0 }} }">
             <div class="w-5 flex justify-center shrink-0">
                 {% if signal.severity == 'warn' %}
                     <span class="material-symbols-outlined text-[14px] text-amber-500">warning</span>
