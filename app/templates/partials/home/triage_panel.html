@@ -21,7 +21,7 @@
         <a href="/triage" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group no-underline"
              data-panel-item="triage" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'triage'; focusedIdx = {{ loop.index0 }}"
-             :class="{ 'bg-surface-low ring-2 ring-inset ring-primary/40': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
+             :class="{ 'bg-surface-low ring-1 ring-inset ring-primary/40': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
             <div class="w-5 flex justify-center shrink-0">
                 <span class="font-mono text-[11px] font-semibold text-amber-500">
                     {{ bundle.documents|length }}
