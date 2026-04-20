@@ -205,19 +205,43 @@
     line-height: 1.4;
   }
   .pulse-amber {
-    animation: pulseAmber 2.6s ease-in-out infinite;
-  }
-  .slide-in-right {
-    animation: slideRight .24s cubic-bezier(.2,.7,.2,1) both;
-  }
-  .fade-in {
-    animation: fadeIn .22s ease-out both;
+    animation: svgPulseAmber 2.6s ease-in-out infinite;
   }
 }
 
 @keyframes pulseAmber {
   0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.22); }
   50%      { box-shadow: 0 0 0 6px transparent; }
+}
+
+@keyframes svgPulseAmber {
+  0%, 100% { stroke-opacity: 0.3; stroke-width: 1px; }
+  50% { stroke-opacity: 0.8; stroke-width: 2px; }
+}
+
+/* ── Graph Highlighting ── */
+.is-highlighting .graph-edge:not(.highlighted) {
+  opacity: 0.1 !important;
+  transition: opacity 0.2s ease;
+}
+.is-highlighting .graph-node:not(.highlighted) {
+  opacity: 0.2 !important;
+  transition: opacity 0.2s ease;
+}
+.graph-edge.highlighted {
+  opacity: 1 !important;
+  stroke-width: 2.5px !important;
+  stroke: var(--color-primary) !important;
+  transition: all 0.2s ease;
+}
+.graph-node.highlighted {
+  opacity: 1 !important;
+  transition: all 0.2s ease;
+}
+.graph-node.is-hovered rect {
+  stroke: var(--color-primary) !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 4px rgba(69, 99, 107, 0.3));
 }
 
 @keyframes fadeIn {

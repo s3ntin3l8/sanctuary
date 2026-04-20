@@ -94,6 +94,9 @@ cache = TTLCache(default_ttl=300)
 CACHE_KEY_AI_SUMMARY = "ai_summary:{doc_id}"
 CACHE_KEY_CASE_DIRECTORY = "case_directory"
 CACHE_KEY_CASE_DETAIL = "case_detail:{case_id}"
+CACHE_KEY_CASE_LIST = "case_list"
+CACHE_KEY_PROCEEDING_LIST = "proceeding_list"
+CACHE_KEY_SIGNALS = "signals"
 
 
 def get_ai_summary_key(doc_id: int) -> str:

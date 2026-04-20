@@ -68,9 +68,9 @@
       </h2>
       <div class="text-[11.5px] space-x-2" style="color:var(--color-on-surface-variant);">
         {% if doc.attributed_originator %}
-        <span>{{ doc.attributed_originator | title }}</span> ·
+        <span>{{ doc.attributed_originator | replace('_', ' ') | title }}</span> ·
         {% else %}
-        <span>{{ doc.originator_type.value | title }}</span> ·
+        <span>{{ doc.originator_type.value | replace('_', ' ') | title }}</span> ·
         {% endif %}
         {% if doc.received_date %}
         <span>{{ doc.received_date.strftime('%d.%m.%Y') }}</span> ·

@@ -325,6 +325,8 @@
     <!-- 3. EXTERNAL ASSETS -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    {% block scripts %}{% endblock %}
+    <script src="/static/js/dashboard.js"></script>
 
     <link rel="preload" href="/static/fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" as="font" type="font/woff2"
         crossorigin />
@@ -494,7 +496,6 @@
     <!-- Component JS -->
     <script src="/static/js/components/upload-modal.js?v=1.0.4"></script>
     <script src="/static/js/alpine-utils.js?v=1.0.5"></script>
-    <script src="/static/js/dashboard.js"></script>
 </body>
 
 </html>

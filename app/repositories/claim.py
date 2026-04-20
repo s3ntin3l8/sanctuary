@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import Claim
@@ -11,6 +12,16 @@ from app.repositories.base import BaseRepository
 class ClaimRepository(BaseRepository[Claim]):
     def __init__(self, db: Session):
         super().__init__(Claim, db)
+
+    def get_by_case_count(self, case_ids: list[str]) -> dict[str, int]:
+        """Bulk count claims by case IDs (avoids N+1)."""
+        results = (
+            self.db.query(Claim.case_id, func.count(Claim.id))
+            .filter(Claim.case_id.in_(case_ids))
+            .group_by(Claim.case_id)
+            .all()
+        )
+        return dict(results)
 
     def create_claim(
         self,

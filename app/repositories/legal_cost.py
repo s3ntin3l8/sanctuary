@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import LegalCost
@@ -60,13 +61,46 @@ class LegalCostRepository(BaseRepository[LegalCost]):
         )
 
     def sum_amounts_by_case(self, case_id: str) -> dict:
-        """Sum all amounts for a case."""
-        costs = self.get_by_case(case_id)
+        """Sum all amounts for a case using SQL aggregation."""
+        result = (
+            self.db.query(
+                func.sum(LegalCost.amount_net).label("net"),
+                func.sum(LegalCost.amount_gross).label("gross"),
+                func.sum(LegalCost.amount_paid).label("paid"),
+                func.sum(LegalCost.amount_reimbursed).label("reimbursed"),
+            )
+            .filter(LegalCost.case_id == case_id)
+            .first()
+        )
         return {
-            "net": sum(c.amount_net for c in costs),
-            "gross": sum(c.amount_gross for c in costs),
-            "paid": sum(c.amount_paid for c in costs),
-            "reimbursed": sum(c.amount_reimbursed for c in costs),
+            "net": result.net or 0,
+            "gross": result.gross or 0,
+            "paid": result.paid or 0,
+            "reimbursed": result.reimbursed or 0,
+        }
+
+    def bulk_sum_by_cases(self, case_ids: list[str]) -> dict[str, dict]:
+        """Bulk sum amounts for multiple cases (avoids N+1)."""
+        results = (
+            self.db.query(
+                LegalCost.case_id,
+                func.sum(LegalCost.amount_net).label("net"),
+                func.sum(LegalCost.amount_gross).label("gross"),
+                func.sum(LegalCost.amount_paid).label("paid"),
+                func.sum(LegalCost.amount_reimbursed).label("reimbursed"),
+            )
+            .filter(LegalCost.case_id.in_(case_ids))
+            .group_by(LegalCost.case_id)
+            .all()
+        )
+        return {
+            r.case_id: {
+                "net": r.net or 0,
+                "gross": r.gross or 0,
+                "paid": r.paid or 0,
+                "reimbursed": r.reimbursed or 0,
+            }
+            for r in results
         }
 
     def count_by_case(self, case_id: str) -> int:

@@ -52,7 +52,12 @@ def process_document_task(self, doc_id: int):
                 raise self.retry(
                     exc=e, countdown=60 * (self.request.retries + 1)
                 ) from e
-            return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+            from celery.exceptions import MaxRetriesExceededError
+
+            raise MaxRetriesExceededError(
+                f"Document {doc_id} failed after {self.max_retries} retries",
+                exc=e,
+            ) from e
 
         # Phase 1: metadata extraction + auto-triage
         _run_phase1_summary(doc_id)

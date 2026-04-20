@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import Case
@@ -17,6 +18,10 @@ class CaseRepository(BaseRepository[Case]):
     def get_by_id(self, case_id: str) -> Case | None:
         """Get case by its string ID."""
         return self.db.query(Case).filter(Case.id == case_id).first()
+
+    def _escape_wildcards(self, s: str) -> str:
+        """Escape SQL LIKE wildcards in user input."""
+        return s.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
 
     def get_all_active(self) -> Sequence[Case]:
         """Get all non-closed cases."""
@@ -50,16 +55,30 @@ class CaseRepository(BaseRepository[Case]):
 
     def search(self, query: str) -> Sequence[Case]:
         """Search cases by title or ID."""
-        query_lower = f"%{query.lower()}%"
+        escaped = self._escape_wildcards(query.lower())
+        query_pattern = f"%{escaped}%"
         return (
             self.db.query(Case)
-            .filter((Case.id.ilike(query_lower)) | (Case.title.ilike(query_lower)))
+            .filter(
+                (Case.id.ilike(query_pattern, escape="\\"))
+                | (Case.title.ilike(query_pattern, escape="\\"))
+            )
             .all()
         )
 
     def count_by_status(self, status: CaseStatus) -> int:
         """Count cases by status."""
         return self.db.query(Case).filter(Case.status == status).count()
+
+    def count_all_by_status(self) -> dict[CaseStatus, int]:
+        """Count all cases grouped by status (single query, avoids N+1)."""
+        results = (
+            self.db.query(Case.status, func.count())
+            .filter(Case.id != "_TRIAGE")
+            .group_by(Case.status)
+            .all()
+        )
+        return {row[0]: row[1] for row in results}
 
     def create_case(
         self,

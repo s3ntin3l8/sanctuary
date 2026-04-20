@@ -138,19 +138,38 @@ def passes_filter(doc, filter_mode: str) -> bool:
 
 def compute_edge_path(from_node: dict, to_node: dict) -> str:
     """Compute SVG path string for an edge between two nodes (Bezier routing)."""
+    # Start/End is center-middle of cards
     ax = from_node["x"] + NODE_W / 2
     ay = from_node["y"] + NODE_H / 2
     bx = to_node["x"] + NODE_W / 2
     by = to_node["y"] + NODE_H / 2
+
     dx = bx - ax
+    dy = by - ay
     same_lane = abs(dx) < 2
+
+    # If same lane and far apart, cards have a vertical entry/exit
     if same_lane:
+        # Exit bottom of A, enter top of B
         path = f"M {ax} {ay + NODE_H / 2} L {bx} {by - NODE_H / 2}"
     else:
-        mx = ax + dx / 2
+        # Cubic bezier for cross-lane movement.
+        # Exit/Enter from side edges
         ax_edge = ax + (NODE_W / 2 if dx > 0 else -NODE_W / 2)
         bx_edge = bx + (-NODE_W / 2 if dx > 0 else NODE_W / 2)
-        path = f"M {ax_edge} {ay} C {mx} {ay}, {mx} {by}, {bx_edge} {by}"
+
+        # Control points at 50% horizontal distance
+        cp1x = ax_edge + (dx * 0.4)
+        cp2x = bx_edge - (dx * 0.4)
+
+        # But if vertical distance is large, we force the tangents to be more vertical
+        # to avoid the "broken arrow" problem where the line enters at a sharp angle.
+        if abs(dy) > ROW_H:
+            # S-curve with more verticality
+            path = f"M {ax_edge} {ay} C {cp1x} {ay}, {cp2x} {by}, {bx_edge} {by}"
+        else:
+            path = f"M {ax_edge} {ay} C {ax_edge + dx / 2} {ay}, {bx_edge - dx / 2} {by}, {bx_edge} {by}"
+
     return path
 
 
@@ -259,7 +278,9 @@ class CaseGraphService:
                 "y": y,
                 "w": NODE_W,
                 "h": NODE_H,
-                "title": _clip(doc.title or "Untitled", 21),
+                "title": _clip(
+                    doc.title or "Untitled", 16 if reaction_map.get(doc.id) else 21
+                ),
                 "full_title": doc.title or "Untitled",
                 "role": doc.role.value if doc.role else "standalone",
                 "date_short": doc.received_date.strftime("%m-%d")
@@ -341,18 +362,17 @@ class CaseGraphService:
                 .filter(Document.id.in_(external_doc_ids))
                 .all()
             )
-            for doc in external_docs:
+            for i, doc in enumerate(external_docs):
                 # Ghost nodes are placed at the boundary of their lane
                 lane_key = _lane_for(doc)
                 lane_idx = _LANE_INDEX[lane_key]
                 x = LEFT + lane_idx * LANE_W + (LANE_W - NODE_W) / 2
-                # Place ghost nodes at -1 or max+1 relative to their connection?
-                # For now, let's just mark them as ghost and give them a special title.
+                # Stack ghost nodes upwards to avoid overlap at the top
                 node = {
                     "id": doc.id,
                     "lane": lane_key,
                     "x": x,
-                    "y": -60,  # Place at the top for now
+                    "y": -60 - (i * 70),  # Stack upwards with spacing
                     "w": NODE_W,
                     "h": NODE_H,
                     "title": _clip(

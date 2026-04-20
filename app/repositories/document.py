@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document
 from app.models.enums import IngestStatus, OriginatorType, SignificanceTier
@@ -12,8 +12,14 @@ from app.repositories.base import BaseRepository
 class DocumentRepository(BaseRepository[Document]):
     """Repository for Document operations."""
 
+    _DEFERRED_CONTENT = [defer(Document.content), defer(Document.content_embedding)]
+
     def __init__(self, db: Session):
         super().__init__(Document, db)
+
+    def _with_content_deferred(self, query):
+        """Apply content deferral to avoid loading large fields."""
+        return query.options(*self._DEFERRED_CONTENT)
 
     def get_by_case(
         self, case_id: str, options: list | None = None
@@ -22,7 +28,7 @@ class DocumentRepository(BaseRepository[Document]):
         query = self.db.query(Document).filter(Document.case_id == case_id)
         if options:
             query = query.options(*options)
-        return query.all()
+        return self._with_content_deferred(query).all()
 
     def get_triage_documents(self, options: list | None = None) -> Sequence[Document]:
         """Get documents in triage inbox or needing review."""
@@ -31,7 +37,11 @@ class DocumentRepository(BaseRepository[Document]):
         )
         if options:
             query = query.options(*options)
-        return query.order_by(Document.created_at.desc()).all()
+        return (
+            self._with_content_deferred(query)
+            .order_by(Document.created_at.desc())
+            .all()
+        )
 
     def get_pending_review(self) -> Sequence[Document]:
         """Get documents needing review."""
@@ -44,9 +54,11 @@ class DocumentRepository(BaseRepository[Document]):
 
     def get_by_sender(self, sender: str) -> Sequence[Document]:
         """Get documents from specific sender."""
-        return (
-            self.db.query(Document).filter(Document.sender.ilike(f"%{sender}%")).all()
-        )
+        escaped = sender.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+        pattern = f"%{escaped}%"
+        return self._with_content_deferred(
+            self.db.query(Document).filter(Document.sender.ilike(pattern, escape="\\"))
+        ).all()
 
     def get_senders(self) -> list[str]:
         """Get unique senders."""
@@ -60,22 +72,23 @@ class DocumentRepository(BaseRepository[Document]):
 
     def get_all_with_sender(self) -> Sequence[Document]:
         """Get all documents with a sender."""
-        return (
+        return self._with_content_deferred(
             self.db.query(Document)
             .filter(Document.sender.isnot(None))
             .order_by(Document.created_at.desc())
-            .all()
-        )
+        ).all()
 
     def get_by_originator(self, originator: OriginatorType) -> Sequence[Document]:
         """Get documents by originator type."""
-        return (
-            self.db.query(Document).filter(Document.originator_type == originator).all()
-        )
+        return self._with_content_deferred(
+            self.db.query(Document).filter(Document.originator_type == originator)
+        ).all()
 
     def get_by_ingest_status(self, status: IngestStatus) -> Sequence[Document]:
         """Get documents by ingest status."""
-        return self.db.query(Document).filter(Document.ingest_status == status).all()
+        return self._with_content_deferred(
+            self.db.query(Document).filter(Document.ingest_status == status)
+        ).all()
 
     def search(self, query: str) -> Sequence[Document]:
         """Search documents by title or content."""
@@ -93,20 +106,21 @@ class DocumentRepository(BaseRepository[Document]):
 
     def get_recent(self, limit: int = 10) -> Sequence[Document]:
         """Get recently created documents."""
-        return (
-            self.db.query(Document)
-            .order_by(Document.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        return self._with_content_deferred(
+            self.db.query(Document).order_by(Document.created_at.desc()).limit(limit)
+        ).all()
 
     def get_since(self, since: datetime) -> Sequence[Document]:
         """Get documents created since given datetime."""
-        return self.db.query(Document).filter(Document.created_at >= since).all()
+        return self._with_content_deferred(
+            self.db.query(Document).filter(Document.created_at >= since)
+        ).all()
 
     def get_children(self, parent_id: int) -> Sequence[Document]:
         """Get child documents."""
-        return self.db.query(Document).filter(Document.parent_id == parent_id).all()
+        return self._with_content_deferred(
+            self.db.query(Document).filter(Document.parent_id == parent_id)
+        ).all()
 
     def get_parent(self, doc_id: int) -> Document | None:
         """Get parent document."""

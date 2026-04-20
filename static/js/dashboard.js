@@ -1,4 +1,171 @@
-document.addEventListener('alpine:init', () => {
+/**
+ * Correspondence Graph Dashboard Logic
+ * Includes CaseGraphRenderer class and Alpine.js caseDashboard component.
+ */
+
+// ── CaseGraphRenderer ──────────────────────────────────────────────────────────
+
+class CaseGraphRenderer {
+  constructor(containerId, viewportId) {
+    this.container = document.getElementById(containerId);
+    this.viewport = document.getElementById(viewportId);
+    this.axisViewport = document.getElementById('axis-viewport');
+    this.legendViewport = document.getElementById('legend-viewport');
+
+    if (!this.container || !this.viewport) {
+      console.warn('CaseGraphRenderer: Container or viewport not found', { containerId, viewportId });
+      return;
+    }
+
+    this.svg = this.container.querySelector('svg');
+
+    // Camera state
+    this.scale = 1.0;
+    this.tx = 0;
+    this.ty = 0;
+
+    // Interaction state
+    this.isDragging = false;
+    this.lastMouseX = 0;
+    this.lastMouseY = 0;
+
+    this.init();
+  }
+
+  init() {
+    this.container.addEventListener('mousedown', this.handleMouseDown.bind(this));
+    window.addEventListener('mousemove', this.handleMouseMove.bind(this));
+    window.addEventListener('mouseup', this.handleMouseUp.bind(this));
+    this.container.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+    this.applyTransform();
+  }
+
+  handleMouseDown(e) {
+    if (e.target.closest('.graph-node') || e.target.closest('.graph-edge')) return;
+    if (e.button !== 0) return;
+    this.isDragging = true;
+    this.lastMouseX = e.clientX;
+    this.lastMouseY = e.clientY;
+    this.container.style.cursor = 'grabbing';
+    e.preventDefault();
+  }
+
+  handleMouseMove(e) {
+    if (!this.isDragging) return;
+    const dx = (e.clientX - this.lastMouseX);
+    const dy = (e.clientY - this.lastMouseY);
+    this.tx += dx;
+    this.ty += dy;
+    this.lastMouseX = e.clientX;
+    this.lastMouseY = e.clientY;
+    this.applyTransform();
+  }
+
+  handleMouseUp() {
+    this.isDragging = false;
+    this.container.style.cursor = '';
+  }
+
+  handleWheel(e) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = -e.deltaY;
+      const factor = Math.pow(1.1, delta / 100);
+      const oldScale = this.scale;
+      this.scale = Math.max(0.1, Math.min(5, this.scale * factor));
+      const rect = this.svg.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      this.tx = mouseX - (mouseX - this.tx) * (this.scale / oldScale);
+      this.ty = mouseY - (mouseY - this.ty) * (this.scale / oldScale);
+      this.applyTransform();
+    }
+  }
+
+  applyTransform() {
+    if (!this.viewport) return;
+    requestAnimationFrame(() => {
+      this.viewport.setAttribute('transform', `translate(${this.tx}, ${this.ty}) scale(${this.scale})`);
+      if (this.axisViewport) {
+        // Sticky axis: ignore horizontal pan (tx), but follow vertical pan (ty) and zoom (scale)
+        this.axisViewport.setAttribute('transform', `translate(0, ${this.ty}) scale(${this.scale})`);
+      }
+      if (this.legendViewport) {
+        // Pinned legend: stay at top-right of viewport regardless of pan/scroll/zoom
+        const w = this.container.clientWidth;
+        const scrollX = this.container.scrollLeft;
+        const scrollY = this.container.scrollTop;
+
+        // Target coordinates in the raw SVG space that counteract scale and translation
+        const targetX = (scrollX + w - 190 - this.tx) / this.scale;
+        const targetY = (scrollY + 16 - this.ty) / this.scale;
+
+        this.legendViewport.setAttribute('transform', `translate(${targetX * this.scale + this.tx}, ${targetY * this.scale + this.ty})`);
+      }
+    });
+  }
+
+  focusOn(x, y, zoom = 1.0) {
+    if (!this.container) return;
+    const rect = this.container.getBoundingClientRect();
+    this.scale = zoom;
+    this.tx = rect.width/2 - x * this.scale;
+    this.ty = rect.height/2 - y * this.scale;
+    this.applyTransform();
+  }
+
+  fit() {
+    if (!this.viewport || !this.container) return;
+    const bbox = this.viewport.getBBox();
+    const rect = this.container.getBoundingClientRect();
+    if (bbox.width === 0 || bbox.height === 0) return;
+    const padding = 60;
+    const availableW = rect.width - padding * 2;
+    const availableH = rect.height - padding * 2;
+    const scaleW = availableW / bbox.width;
+    const scaleH = availableH / bbox.height;
+    this.scale = Math.max(0.2, Math.min(scaleW, scaleH, 1.2));
+    this.tx = (rect.width - bbox.width * this.scale) / 2 - bbox.x * this.scale;
+    this.ty = (rect.height - bbox.height * this.scale) / 2 - bbox.y * this.scale;
+    this.applyTransform();
+  }
+
+  setHighlight(nodeId) {
+    if (!this.svg) return;
+    if (!nodeId) {
+      this.svg.classList.remove('is-highlighting');
+      this.svg.querySelectorAll('.highlighted').forEach(el => el.classList.remove('highlighted'));
+      return;
+    }
+    this.svg.classList.add('is-highlighting');
+    const targetNode = this.svg.querySelector(`.graph-node[data-id="${nodeId}"]`);
+    if (targetNode) targetNode.classList.add('highlighted');
+
+    const edges = this.svg.querySelectorAll(`.graph-edge[data-from="${nodeId}"], .graph-edge[data-to="${nodeId}"], .graph-edge[data-edge-to="${nodeId}"]`);
+    edges.forEach(edge => {
+      edge.classList.add('highlighted');
+      const fromId = edge.getAttribute('data-from');
+      const toId = edge.getAttribute('data-to') || edge.getAttribute('data-edge-to');
+      this.svg.querySelector(`.graph-node[data-id="${fromId}"]`)?.classList.add('highlighted');
+      this.svg.querySelector(`.graph-node[data-id="${toId}"]`)?.classList.add('highlighted');
+    });
+  }
+}
+
+window.CaseGraphRenderer = CaseGraphRenderer;
+
+// ── Alpine Component ─────────────────────────────────────────────────────────
+
+function initCaseDashboard() {
+  if (!window.Alpine) {
+    document.addEventListener('alpine:init', () => registerCaseDashboard());
+  } else {
+    registerCaseDashboard();
+  }
+}
+
+function registerCaseDashboard() {
   Alpine.data('caseDashboard', (initial) => ({
     view: initial.view || 'graph',
     filter: initial.filter || 'significant+',
@@ -7,11 +174,46 @@ document.addEventListener('alpine:init', () => {
     chatOpen: false,
     reviewOpen: false,
     procOpen: false,
-    partyFilter: null,   // 'court' | 'opposing' | 'own' | 'third' | null
+    partyFilter: null,
+
+    renderer: null,
+    contextMenu: { open: false, x: 0, y: 0, docId: null },
+    hoveredNodeId: null,
 
     init() {
       window._dashOpenDoc = (id) => this.openDoc(id);
       this.$el.addEventListener('set-filter', (e) => { this.filter = e.detail.filter; });
+      this.$nextTick(() => { if (this.view === 'graph') this.initRenderer(); });
+      this.$watch('view', (v) => { if (v === 'graph') this.$nextTick(() => this.initRenderer()); });
+    },
+
+    initRenderer() {
+      if (!this.renderer) {
+        try {
+          this.renderer = new CaseGraphRenderer('correspondence-graph-container', 'viewport-content');
+          if (initial.graph && initial.graph.nodes && initial.graph.nodes.length > 0) {
+            this.renderer.fit();
+          }
+        } catch (err) {
+          console.error('Failed to init CaseGraphRenderer:', err);
+        }
+      }
+    },
+
+    fit() {
+      if (this.renderer) this.renderer.fit();
+      else this.initRenderer();
+    },
+
+    centerCritical() {
+      const crit = document.querySelector('.text-critical');
+      if (crit && this.renderer) {
+        const x = parseFloat(crit.parentNode.getAttribute('x') || 0);
+        const y = parseFloat(crit.parentNode.getAttribute('y') || 0);
+        this.renderer.focusOn(x + 90, y + 25, 1.2);
+      } else if (crit) {
+        crit.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      }
     },
 
     setView(v) {
@@ -33,9 +235,23 @@ document.addEventListener('alpine:init', () => {
       if (el) el.innerHTML = '';
     },
 
-    togglePartyFilter(key) {
-      this.partyFilter = this.partyFilter === key ? null : key;
+    onNodeHover(id) {
+      this.hoveredNodeId = id;
+      if (this.renderer) this.renderer.setHighlight(id);
     },
+
+    onNodeLeave() {
+      this.hoveredNodeId = null;
+      if (this.renderer) this.renderer.setHighlight(null);
+    },
+
+    openContextMenu(e, id) {
+      this.contextMenu = { open: true, x: e.clientX, y: e.clientY, docId: id };
+    },
+
+    closeContextMenu() { this.contextMenu.open = false; },
+
+    togglePartyFilter(key) { this.partyFilter = this.partyFilter === key ? null : key; },
 
     isNodeHidden(tier, role) {
       if (this.filter === 'critical') return tier !== 'critical';
@@ -56,18 +272,14 @@ document.addEventListener('alpine:init', () => {
       return 0;
     },
 
-    isNodeDimmed(lane) {
-      if (!this.partyFilter) return false;
-      return lane !== this.partyFilter;
-    },
+    isNodeDimmed(lane) { if (!this.partyFilter) return false; return lane !== this.partyFilter; },
 
     onKey(e) {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (e.key === 'Escape') {
+        if (this.contextMenu.open) { this.closeContextMenu(); return; }
         this.closeDoc();
-        this.chatOpen = false;
-        this.reviewOpen = false;
-        this.procOpen = false;
+        this.chatOpen = false; this.reviewOpen = false; this.procOpen = false;
         return;
       }
       if (e.key === '/') { e.preventDefault(); this.chatOpen = true; return; }
@@ -75,8 +287,8 @@ document.addEventListener('alpine:init', () => {
       if (e.key === 't') this.setView('truth');
       if (e.key === 'l') this.setView('timeline');
       if (e.key === '$') this.setView('fin');
-      if (e.key === 'f') { e.preventDefault(); this.$dispatch('graph-fit'); return; }
-      if (e.key === 'c') { e.preventDefault(); this.$dispatch('graph-center-critical'); return; }
+      if (e.key === 'f') { e.preventDefault(); this.fit(); return; }
+      if (e.key === 'c') { e.preventDefault(); this.centerCritical(); return; }
       if (e.key === 'a') {
         e.preventDefault();
         document.getElementById('action-items-anchor')?.scrollIntoView({ behavior: 'smooth' });
@@ -88,9 +300,6 @@ document.addEventListener('alpine:init', () => {
         if (btn) htmx.trigger(btn, 'click');
         return;
       }
-      if (e.key === '?') {
-        alert('Keyboard shortcuts:\ng – Graph  t – Truth Map  l – Timeline  $ – Financials\nf – Fit Graph  c – Center Critical  a – Action Items  r – Refresh Brief\n/ – AI Chat  Esc – Close panel');
-      }
     },
 
     persistView(v) {
@@ -101,5 +310,6 @@ document.addEventListener('alpine:init', () => {
       });
     },
   }));
+}
 
-});
+initCaseDashboard();

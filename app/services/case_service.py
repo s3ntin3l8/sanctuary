@@ -128,9 +128,7 @@ class CaseService:
         active_cases = [c for c in all_cases if c.status != CaseStatus.CLOSED]
         closed_cases = [c for c in all_cases if c.status == CaseStatus.CLOSED]
 
-        stats_by_status = {}
-        for status in CaseStatus:
-            stats_by_status[status] = self.case_repo.count_by_status(status)
+        stats_by_status = self.case_repo.count_all_by_status()
 
         doc_counts = self.doc_repo.bulk_count_by_case([c.id for c in all_cases])
         action_counts = self.action_repo.bulk_count_open_by_case(
@@ -156,9 +154,7 @@ class CaseService:
         active_cases = [c for c in cases if c.status != CaseStatus.CLOSED]
         closed_cases = [c for c in cases if c.status == CaseStatus.CLOSED]
 
-        stats_by_status = {}
-        for status in CaseStatus:
-            stats_by_status[status] = self.case_repo.count_by_status(status)
+        stats_by_status = self.case_repo.count_all_by_status()
 
         case_ids = [c.id for c in cases]
         doc_counts = self.doc_repo.bulk_count_by_case(case_ids)

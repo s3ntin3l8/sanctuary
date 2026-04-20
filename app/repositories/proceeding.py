@@ -22,6 +22,33 @@ class ProceedingRepository(BaseRepository[Proceeding]):
             .all()
         )
 
+    def get_paginated(
+        self,
+        page: int = 1,
+        per_page: int = 20,
+        case_id: str | None = None,
+        status: ProceedingStatus | None = None,
+    ) -> tuple[Sequence[Proceeding], int]:
+        """Get paginated proceedings with total count."""
+        query = self.db.query(Proceeding)
+
+        if case_id:
+            query = query.filter(Proceeding.case_id == case_id)
+
+        if status:
+            query = query.filter(Proceeding.status == status)
+
+        total = query.count()
+
+        proceedings = (
+            query.order_by(Proceeding.started_at.asc().nullsfirst())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+        return proceedings, total
+
     def get_active_by_case(self, case_id: str) -> Sequence[Proceeding]:
         return (
             self.db.query(Proceeding)

@@ -151,7 +151,7 @@ class CaseDashboardService:
             "view": active_view,
             "filter": significance_filter,
             "activeProceedingId": active_proceeding.id if active_proceeding else None,
-            "nodeCounts": graph_dict["node_counts"] if graph_dict else {},
+            "nodeCounts": graph_dict.get("node_counts", {}) if graph_dict else {},
         }
 
         # --- Legacy keys preserved so the existing template keeps rendering

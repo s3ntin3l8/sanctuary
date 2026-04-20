@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     db: Session = SessionLocal()
     try:
         for seed in _SEED_CASES:
-            if not db.get(Case, seed["id"]):
+            if not db.query(Case).filter(Case.id == seed["id"]).first():
                 db.add(Case(**seed))
         db.commit()
 

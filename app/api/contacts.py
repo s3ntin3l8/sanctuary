@@ -39,11 +39,11 @@ async def sender_detail(
     docs = doc_service.get_documents_by_sender(sender)
 
     case_ids = {d.case_id for d in docs if d.case_id}
-    cases = {
-        c.id: c.title
-        for c in db.query(Case).filter(Case.id.in_(case_ids)).all()
-        if case_ids
-    }
+    cases = {}
+    if case_ids:
+        cases = {
+            c.id: c.title for c in db.query(Case).filter(Case.id.in_(case_ids)).all()
+        }
 
     context = {
         "sender": sender,

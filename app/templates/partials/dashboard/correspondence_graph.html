@@ -30,9 +30,46 @@
   {# SVG canvas — pulled up behind the sticky header gradient via negative margin #}
   <svg width="{{ graph.svg_width }}" height="{{ graph.svg_height }}"
        style="display:block; overflow:visible;">
+    {# Sticky Date Axis #}
+    <g id="axis-viewport">
+      {# Date axis ticks — one text per node row #}
+      {% for node in graph.nodes %}
+      <text x="8" y="{{ node.y + 30 }}"
+            font-family="JetBrains Mono, monospace" font-size="13"
+            fill="var(--color-on-surface-variant)" opacity="0.6">
+        {{ node.date_short }}
+      </text>
+      {% endfor %}
+      {% for bundle in graph.bundles %}
+      {# Bundle footers moved back to bundle expansion block #}
+      {% endfor %}
+    </g>
+
+    {# Native In-Graph Legend #}
+    <g id="legend-viewport" opacity="0.65" font-family="Inter, sans-serif" font-size="11" fill="var(--color-on-surface)">
+      <text x="0" y="0" font-weight="600" font-size="12" fill="var(--color-on-surface-variant)">Graph Legend</text>
+
+      <line x1="0" y1="20" x2="16" y2="20" stroke="var(--color-outline-variant)" stroke-width="1.5"></line>
+      <text x="24" y="24">Replies To (Sequential)</text>
+
+      <line x1="0" y1="40" x2="16" y2="40" stroke="var(--color-outline-variant)" stroke-width="1.5" stroke-dasharray="3 3"></line>
+      <text x="24" y="44">References / Proofs</text>
+
+      <rect x="0" y="55" width="16" height="10" rx="3" fill="none" stroke="var(--color-amber)" stroke-width="1" stroke-dasharray="2 2"></rect>
+      <text x="24" y="64">Court Relay Bundle</text>
+
+      <rect x="0" y="75" width="16" height="10" rx="3" fill="var(--color-surface-container)" stroke="var(--color-amber)" stroke-width="1"></rect>
+      <text x="24" y="84">Active Thread Component</text>
+
+      <rect x="0" y="95" width="16" height="10" rx="3" fill="none" stroke="var(--color-amber)" stroke-width="1"></rect>
+      <rect x="2" y="97" width="12" height="6" rx="2" fill="var(--color-amber)" opacity="0.5"></rect>
+      <text x="24" y="104">Thread Open / Action Item</text>
+    </g>
+
+    <g id="viewport-content">
     <defs>
-      <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
-              markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto">
         <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-outline)"/>
       </marker>
     </defs>
@@ -45,25 +82,15 @@
           stroke-dasharray="2 6" opacity="0.4"/>
     {% endfor %}
 
-    {# Date axis ticks — one text per node row #}
-    {% for node in graph.nodes %}
-    <text x="8" y="{{ node.y + 30 }}"
-          font-family="JetBrains Mono, monospace" font-size="13"
-          fill="var(--color-on-surface-variant)" opacity="0.6">
-      {{ node.date_short }}
-    </text>
-    {% endfor %}
-    {% for bundle in graph.bundles %}
-    <text x="8" y="{{ bundle.y + 30 }}"
-          font-family="JetBrains Mono, monospace" font-size="13"
-          fill="var(--color-on-surface-variant)" opacity="0.6">
-      {{ bundle.footer | default('') }}
-    </text>
-    {% endfor %}
+    {# Date labels moved to axis-viewport above #}
 
     {# Edges #}
     {% for edge in graph.edges %}
     <path d="{{ edge.path }}"
+          class="graph-edge"
+          data-from="{{ edge.from_node_id }}"
+          data-to="{{ edge.to_node_id }}"
+          @click="if (renderer) renderer.focusOn({{ (graph.nodes[0].x + graph.nodes[-1].x) / 2 if graph.nodes else 0 }}, {{ (graph.nodes[0].y + graph.nodes[-1].y) / 2 if graph.nodes else 0 }}, 1.2)"
           stroke="{{ 'var(--color-amber)' if edge.kind == 'relay' else 'var(--color-outline-variant)' }}"
           stroke-width="{{ edge.stroke_w }}"
           {% if edge.dasharray %}stroke-dasharray="{{ edge.dasharray }}"{% endif %}
@@ -78,9 +105,17 @@
     {% for node in graph.nodes %}{% if not node.is_bundle %}
     {% set proof_count = graph.proof_badges.get(node.id, 0) %}
     <g class="graph-node cursor-pointer"
-       :class="{ 'opacity-30': isNodeDimmed('{{ node.lane }}'), 'opacity-0 pointer-events-none': isNodeHidden('{{ node.tier }}', '{{ node.role }}') }"
+       data-id="{{ node.id }}"
+       :class="{
+         'opacity-30': isNodeDimmed('{{ node.lane }}') || isNodeHidden('{{ node.tier }}', '{{ node.role }}'),
+         'pointer-events-none': isNodeHidden('{{ node.tier }}', '{{ node.role }}'),
+         'is-hovered': hoveredNodeId === {{ node.id }}
+       }"
        @click="openDoc({{ node.id }})"
-       style="transition:opacity .15s;">
+       @mouseenter="onNodeHover({{ node.id }})"
+       @mouseleave="onNodeLeave()"
+       @contextmenu.prevent="openContextMenu($event, {{ node.id }})"
+       style="transition:opacity .15s, transform .1s;">
 
       {# Thread-open amber glow ring #}
       {% if node.thread_open %}
@@ -109,10 +144,15 @@
             font-size="14" fill="var(--color-critical)" font-weight="700">⚑</text>
       {% endif %}
 
-      {# Paperclip badge for proof attachments #}
+      {# Attachment Badge #}
       {% if proof_count > 0 %}
-      <text x="{{ node.x + 158 }}" y="{{ node.y + 40 }}"
-            font-size="11" fill="var(--color-on-surface-variant)" opacity="0.8">📎{{ proof_count }}</text>
+      <g>
+        <text x="{{ node.x + 138 }}" y="{{ node.y + 40 }}"
+              font-family="Material Symbols Outlined" font-size="14"
+              fill="var(--color-on-surface-variant)" opacity="0.6">attachment</text>
+        <text x="{{ node.x + 154 }}" y="{{ node.y + 39 }}"
+              font-size="11" fill="var(--color-on-surface-variant)" font-weight="600" opacity="0.8">{{ proof_count }}</text>
+      </g>
       {% endif %}
 
       {# Reaction badge — top-right corner #}
@@ -141,21 +181,30 @@
     {# Bundle nodes #}
     {% for bundle in graph.bundles %}
     {% set child_row_h = 32 %}
-    {% set bundle_h = 16 + (bundle.children | length) * child_row_h + 22 %}
-    <g class="cursor-pointer"
-       :class="{ 'opacity-30': isNodeDimmed('{{ bundle.lane }}') }"
+    {% set bundle_h = 16 + (bundle.children | length) * child_row_h + 16 %}
+    <g class="cursor-pointer group/bundle graph-node"
+       data-id="{{ bundle.id }}"
+       x-data="{ expanded: false, pinned: false }"
+       @mouseenter="expanded = true"
+       @mouseleave="if (!pinned) expanded = false"
+       @click="pinned = !pinned; expanded = true"
+       :class="{
+         'opacity-30': isNodeDimmed('{{ bundle.lane }}'),
+         'is-hovered': hoveredNodeId === {{ bundle.id }}
+       }"
        style="transition:opacity .15s;">
 
-      {# Outer dashed amber backdrop #}
+      {# Outer dashed amber backdrop (collapsed state is just the header area) #}
       <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
-            width="195" height="{{ bundle_h + 16 }}" rx="10"
+            width="195" :height="expanded ? {{ bundle_h + 16 }} : 40" rx="10"
             fill="var(--color-surface-container)"
             stroke="var(--color-amber)" stroke-width="1"
-            stroke-dasharray="3 3" opacity="0.9"/>
+            stroke-dasharray="3 3" opacity="0.9"
+            style="transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);"/>
 
       {# Court originator stripe on bundle #}
       <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
-            width="5" height="{{ bundle_h + 16 }}" rx="10"
+            width="5" :height="expanded ? {{ bundle_h + 16 }} : 40" rx="10"
             fill="var(--color-originator-{{ bundle.lane }})"/>
 
       {# Bundle header label #}
@@ -165,38 +214,68 @@
         {{ bundle.header }}
       </text>
 
-      {# Child rows #}
-      {% for child in bundle.children %}
-      {% set cy = bundle.y + 16 + loop.index0 * child_row_h %}
-      <g @click.stop="openDoc({{ child.id }})" class="cursor-pointer graph-node">
-        <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
-              width="175" height="{{ child_row_h - 4 }}" rx="3"
-              fill="var(--color-surface-lowest)"
-              stroke="var(--color-outline-variant)" stroke-width="0.5"/>
-        <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
-              width="4" height="{{ child_row_h - 4 }}"
-              fill="var(--color-originator-{{ child.origin }})"/>
-        <text x="{{ bundle.x + 13 }}" y="{{ cy + 17 }}"
-              font-size="13" font-weight="600"
-              fill="var(--color-on-surface)"
-              font-family="Inter, sans-serif">
-          {{ child.title }}
-        </text>
-      </g>
-      {% endfor %}
+      <g x-show="expanded" x-transition.opacity>
+        {# Child rows #}
+        {% for child in bundle.children %}
+        {% set cy = bundle.y + 16 + loop.index0 * child_row_h %}
+        <g @click.stop="openDoc({{ child.id }})" class="cursor-pointer graph-node" data-id="{{ child.id }}">
+          <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
+                width="175" height="{{ child_row_h - 4 }}" rx="3"
+                fill="var(--color-surface-lowest)"
+                stroke="var(--color-outline-variant)" stroke-width="0.5"/>
+          <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
+                width="4" height="{{ child_row_h - 4 }}"
+                fill="var(--color-originator-{{ child.origin }})"/>
+          <text x="{{ bundle.x + 13 }}" y="{{ cy + 17 }}"
+                font-size="13" font-weight="600"
+                fill="var(--color-on-surface)"
+                font-family="Inter, sans-serif">
+            {{ child.title }}
+          </text>
+        </g>
+        {% endfor %}
 
-      {# Footer date #}
-      {% if bundle.footer %}
-      <text x="{{ bundle.x + 10 }}" y="{{ bundle.y + bundle_h + 1 }}"
-            font-size="12" fill="var(--color-on-surface-variant)"
-            font-family="JetBrains Mono, monospace">
-        {{ bundle.footer }}
-      </text>
-      {% endif %}
+        {# Footer date positioned relative to bundle #}
+        {% if bundle.footer %}
+        <text x="{{ bundle.x + 10 }}" y="{{ bundle.y + bundle_h - 4 }}"
+              font-size="12" fill="var(--color-on-surface-variant)"
+              font-family="JetBrains Mono, monospace"
+              opacity="0.6">
+          {{ bundle.footer }}
+        </text>
+        {% endif %}
+      </g>
+
+      {# Indicator for pinned state #}
+      <text x="{{ bundle.x + 175 }}" y="{{ bundle.y + 10 }}"
+            x-show="pinned" font-size="14" fill="var(--color-amber)">📌</text>
     </g>
     {% endfor %}
 
+    </g> {# end viewport-content #}
   </svg>
+
+  {# Context Menu overlay #}
+  <div x-show="contextMenu.open"
+       @click.away="closeContextMenu()"
+       class="fixed z-[100] bg-surface-container border border-outline-variant shadow-2xl rounded-lg overflow-hidden py-1 min-w-[160px]"
+       :style="`left: ${contextMenu.x}px; top: ${contextMenu.y}px;`"
+       x-transition.opacity>
+    <button @click="openDoc(contextMenu.docId); closeContextMenu()"
+            class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-surface-container-high transition-colors flex items-center gap-2">
+      <span class="material-symbols-outlined text-sm">visibility</span> View
+    </button>
+    <button @click="closeContextMenu()"
+            class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-surface-container-high transition-colors flex items-center gap-2 text-on-surface-variant">
+      <span class="material-symbols-outlined text-sm">edit</span> Add reaction
+    </button>
+    <hr class="border-outline-variant/10 my-1"/>
+    <button @click="closeContextMenu()"
+            class="w-full text-left px-4 py-2 text-xs font-bold hover:bg-surface-container-high transition-colors flex items-center gap-2 text-on-surface-variant">
+      <span class="material-symbols-outlined text-sm">link</span> Copy link to doc
+    </button>
+  </div>
+
 
   {# Hidden-tier strip — sticky gradient overlay at the bottom of the graph #}
   {% include "partials/dashboard/hidden_tier_strip.html" %}

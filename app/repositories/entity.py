@@ -17,6 +17,33 @@ class EntityRepository(BaseRepository[Entity]):
         """Get all entities for a case."""
         return self.db.query(Entity).filter(Entity.case_id == case_id).all()
 
+    def get_paginated(
+        self,
+        page: int = 1,
+        per_page: int = 50,
+        case_id: str | None = None,
+        entity_type: EntityType | None = None,
+    ) -> tuple[Sequence[Entity], int]:
+        """Get paginated entities with total count."""
+        query = self.db.query(Entity)
+
+        if case_id:
+            query = query.filter(Entity.case_id == case_id)
+
+        if entity_type:
+            query = query.filter(Entity.type == entity_type)
+
+        total = query.count()
+
+        entities = (
+            query.order_by(Entity.name.asc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+        return entities, total
+
     def get_by_case_and_type(
         self, case_id: str, entity_type: EntityType
     ) -> Sequence[Entity]:
@@ -70,10 +97,11 @@ class EntityRepository(BaseRepository[Entity]):
         )
 
     def delete_by_case(self, case_id: str) -> int:
-        """Delete all entities for a case."""
-        entities = self.get_by_case(case_id)
-        count = len(entities)
-        for entity in entities:
-            self.db.delete(entity)
+        """Delete all entities for a case (bulk delete)."""
+        result = (
+            self.db.query(Entity)
+            .filter(Entity.case_id == case_id)
+            .delete(synchronize_session=False)
+        )
         self.db.flush()
-        return count
+        return result

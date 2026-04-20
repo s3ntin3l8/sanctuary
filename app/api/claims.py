@@ -19,7 +19,7 @@ async def get_truthmap(
     filter: str = "open",
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    case = db.get(Case, case_id)
+    case = db.query(Case).filter(Case.id == case_id).first()
     if case is None:
         return HTMLResponse("<p>Case not found</p>", status_code=404)
 
@@ -51,7 +51,7 @@ async def update_claim_status(
     status: str = Form(...),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    if db.get(Case, case_id) is None:
+    if db.query(Case).filter(Case.id == case_id).first() is None:
         return HTMLResponse("<p>Case not found</p>", status_code=404)
 
     claim = db.get(Claim, claim_id)
@@ -73,7 +73,7 @@ async def update_claim_status(
 
     # Reload the truth map to get a fresh ClaimRow with evidence + reactions
     truth_map = svc.get_truth_map(case_id, "all")
-    case = db.get(Case, case_id)
+    case = db.query(Case).filter(Case.id == case_id).first()
 
     # Find the updated row
     updated_row: ClaimRow | None = None

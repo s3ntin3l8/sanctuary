@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
 from app.models.database import ActionItem, Case, Document
@@ -168,6 +168,10 @@ def generate(case_id: str) -> None:
 
         docs = (
             db.query(Document)
+            .options(
+                defer(Document.content),
+                defer(Document.content_embedding),
+            )
             .filter(Document.case_id == case_id)
             .order_by(Document.received_date.asc())
             .all()

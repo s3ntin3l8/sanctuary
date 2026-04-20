@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 
 import httpx
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
 from app.models.database import Document, DocumentRelationship
@@ -28,6 +28,11 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
 
     return (
         db.query(Document)
+        .options(
+            defer(Document.content),
+            defer(Document.content_embedding),
+            defer(Document.cost_delta),
+        )
         .filter(
             Document.proceeding_id == doc.proceeding_id,
             Document.id != doc.id,
