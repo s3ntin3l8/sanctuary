@@ -1,0 +1,109 @@
+<!-- Keyboard Shortcuts Cheat Sheet Modal -->
+<div x-show="showShortcuts"
+     class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0 scale-95"
+     x-transition:enter-end="opacity-100 scale-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100 scale-100"
+     x-transition:leave-end="opacity-0 scale-95"
+     style="display: none;">
+
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-surface-lowest/80 backdrop-blur-sm" @click="showShortcuts = false"></div>
+
+    <!-- Modal Card -->
+    <div class="relative bg-surface-low border border-outline-variant/30 shadow-2xl rounded-xl w-full max-w-[420px] overflow-hidden"
+         @click.away="showShortcuts = false">
+
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-outline-variant/20 flex items-center justify-between bg-surface-lowest">
+            <h3 class="font-headline text-[16px] font-bold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[18px]">keyboard</span>
+                Keyboard shortcuts
+            </h3>
+            <button @click="showShortcuts = false" class="text-on-surface-variant hover:text-on-surface transition-colors">
+                <span class="material-symbols-outlined text-[20px]">close</span>
+            </button>
+        </div>
+
+        <!-- Shortcuts List -->
+        <div class="p-6 space-y-4">
+            <div class="space-y-2">
+                <div class="text-[10px] uppercase tracking-widest font-black text-on-surface-variant/60 mb-3">Navigation</div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Navigate up / down</span>
+                    <div class="flex gap-1">
+                        <span class="kbd">↓</span>
+                        <span class="kbd">↑</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Open highlighted item</span>
+                    <span class="kbd min-w-[50px] text-center">Enter</span>
+                </div>
+            </div>
+
+            <div class="h-px bg-outline-variant/10"></div>
+
+            <div class="space-y-2">
+                <div class="text-[10px] uppercase tracking-widest font-black text-on-surface-variant/60 mb-3">Panel Jumps</div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Today panel</span>
+                    <span class="kbd">T</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Awaiting Triage</span>
+                    <span class="kbd">I</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Delta Feed</span>
+                    <span class="kbd">D</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Signals</span>
+                    <span class="kbd">S</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Active Cases</span>
+                    <span class="kbd">C</span>
+                </div>
+            </div>
+
+            <div class="h-px bg-outline-variant/10"></div>
+
+            <div class="space-y-2">
+                <div class="text-[10px] uppercase tracking-widest font-black text-on-surface-variant/60 mb-3">Global</div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Search anything</span>
+                    <span class="kbd">⌘K</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">Mark all reviewed</span>
+                    <span class="kbd">R</span>
+                </div>
+
+                <div class="flex items-center justify-between text-[13px]">
+                    <span class="text-on-surface-variant">This cheat sheet</span>
+                    <span class="kbd">?</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-3 bg-surface-lowest text-center">
+            <div class="text-[11px] text-on-surface-variant/60">
+                Press <span class="kbd py-0 px-1 text-[9px]">Esc</span> to close
+            </div>
+        </div>
+    </div>
+</div>

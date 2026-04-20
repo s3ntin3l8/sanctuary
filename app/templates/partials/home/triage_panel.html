@@ -1,0 +1,54 @@
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
+         @mouseenter="focusedPanel = 'triage'"
+         :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'triage' }">
+    <div class="flex items-baseline justify-between mb-3">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[14px] text-on-surface-variant">inbox</span>
+            <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                Awaiting Triage
+            </h2>
+            <span class="text-[11px] text-on-surface-variant">{{ triage_bundles|length }} bundle{{ 's' if triage_bundles|length > 1 else '' }}</span>
+        </div>
+        <a href="/triage" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+            open triage <span class="material-symbols-outlined text-[12px]">arrow_right_alt</span>
+        </a>
+    </div>
+
+    <div class="space-y-0">
+        {% for bundle in triage_bundles %}
+        <a href="/triage" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group no-underline"
+             data-panel-item="triage" data-index="{{ loop.index0 }}"
+             @mouseenter="focusedPanel = 'triage'; focusedIdx = {{ loop.index0 }}"
+             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
+            <div class="w-5 flex justify-center shrink-0">
+                <span class="font-mono text-[11px] font-semibold text-amber-500">
+                    {{ bundle.documents|length }}
+                </span>
+            </div>
+            <div class="font-mono text-[11px] w-[60px] shrink-0 text-on-surface-variant">
+                {{ bundle.received_at.strftime('%b %d') }}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-[13px] truncate flex items-center gap-2 text-on-surface">
+                    <span>{{ bundle.sender_email or 'Unknown source' }}</span>
+                    <span class="material-symbols-outlined text-[11px] text-on-surface-variant">arrow_right_alt</span>
+                    {% if bundle.case_id %}
+                    <span class="flex items-center gap-1">
+                        <span class="font-mono text-[11px] font-bold">{{ bundle.case_id }}</span>
+                        <span class="text-amber-500 text-[10px] font-bold">?</span>
+                    </span>
+                    {% else %}
+                    <span class="text-[11px] text-amber-500 font-medium">no match yet</span>
+                    {% endif %}
+                </div>
+                <div class="text-[11px] truncate text-on-surface-variant">
+                    {{ bundle.subject or (bundle.documents[0].title if bundle.documents else 'No documents') }}
+                </div>
+            </div>
+            <span class="flex items-center gap-1 text-[11px] font-bold text-on-primary bg-primary px-3 py-1.5 rounded transition-colors ml-2 group-hover:bg-primary/90">
+                triage <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+</section>

@@ -107,7 +107,7 @@
                     <button
                         x-data="{ cursor: null }"
                         x-init="cursor = document.querySelector('.timeline-doc-item:last-child')?.dataset.docId"
-                        hx-get="/api/v1/timeline"
+                        hx-get="/api/v1/timeline/data"
                         hx-trigger="click"
                         hx-vars="cursor: cursor"
                         hx-params="cursor"

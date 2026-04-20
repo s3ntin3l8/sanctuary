@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Home | The Sanctuary{% endblock %}
+
+{% block content %}
+<section class="flex-1 flex flex-col overflow-hidden bg-surface"
+         x-data="homeDashboard()">
+
+    <!-- Greeting Bar -->
+    <div class="flex items-baseline justify-between px-8 pt-8 pb-6 shrink-0">
+        <div>
+            <h1 class="font-headline text-[28px] font-semibold leading-tight text-on-surface">
+                {{ greeting }}, {{ user_name }}.
+            </h1>
+            <div class="text-[13px] mt-1 text-on-surface-variant">
+                {{ now.strftime('%A · %b %d, %Y') }}
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-lowest hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
+                    onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))">
+                <span class="material-symbols-outlined text-[14px]">search</span>
+                <span>Search</span>
+                <span class="kbd ml-1"><span class="relative -top-[0.5px]">⌘</span>K</span>
+            </button>
+            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-lowest hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
+                    @click="showCreateCase = true">
+                <span class="material-symbols-outlined text-[14px]">add</span>
+                New case
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Scroll Area -->
+    <div class="flex-1 overflow-y-auto custom-scrollbar">
+        <div class="max-w-[1180px] mx-auto px-8 pb-16 space-y-6">
+
+            {% if caught_up %}
+                {% include "partials/home/caught_up.html" %}
+            {% else %}
+                {% if today_items %}
+                    {% include "partials/home/today_panel.html" %}
+                {% endif %}
+
+                {% if triage_bundles %}
+                    {% include "partials/home/triage_panel.html" %}
+                {% endif %}
+
+                {% if delta_cases %}
+                    {% include "partials/home/delta_feed.html" %}
+                {% endif %}
+
+                {% if signals %}
+                    {% include "partials/home/signals_panel.html" %}
+                {% endif %}
+            {% endif %}
+
+            <!-- Active Cases Section -->
+            <div class="pt-4">
+                <div class="flex items-baseline justify-between mb-3 px-1">
+                    <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                        Active Cases <span class="text-[11px] font-normal normal-case tracking-normal text-on-surface-variant">· {{ active_cases|length }}</span>
+                    </h2>
+                    <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+                        see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
+                    </a>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {% for case in active_cases %}
+                        {% set loop_index0 = loop.index0 %}
+                        {% include "partials/home/active_case_card.html" %}
+                    {% endfor %}
+
+                    {% if not active_cases %}
+                        <div class="col-span-full p-10 rounded-lg border border-dashed border-outline-variant/30 text-center text-on-surface-variant text-sm bg-surface-lowest/50">
+                            No active cases yet.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Keyboard Hint -->
+            <div class="flex items-center justify-center gap-2 pt-8 text-[11px] text-on-surface-variant">
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(1)">↓</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(-1)">↑</span>
+                <span>navigate</span>
+                <span>·</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'today'; focusedIdx = 0; scrollToFocus()">t</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'triage'; focusedIdx = 0; scrollToFocus()">i</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'delta'; focusedIdx = 0; scrollToFocus()">d</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'signals'; focusedIdx = 0; scrollToFocus()">s</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'cases'; focusedIdx = 0; scrollToFocus()">c</span>
+                <span>jump panels</span>
+                <span>·</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="reviewAll()">r</span>
+                <span>mark reviewed</span>
+                <span>·</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="showShortcuts = true">?</span>
+                <span class="cursor-pointer hover:underline" @click="showShortcuts = true">all shortcuts</span>
+            </div>
+        </div>
+    </div>
+
+    {% include "partials/home/shortcuts_modal.html" %}
+    {% include "partials/home/create_case_modal.html" %}
+</section>
+<script src="/static/js/home.js"></script>
+{% endblock %}

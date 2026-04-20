@@ -8,12 +8,12 @@
 
     <!-- Navigation Links -->
     <nav class="flex-1 flex flex-col items-center gap-4 px-2 mt-4">
-        <!-- 1. Dashboard -->
+        <!-- 1. Home -->
         <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/">
             {% if request.url.path == '/' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
-            <span class="material-symbols-outlined text-[20px]">dashboard</span>
+            <span class="material-symbols-outlined text-[20px]">home</span>
             <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
                 Home
             </span>

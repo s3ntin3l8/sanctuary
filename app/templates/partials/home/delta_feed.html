@@ -1,0 +1,58 @@
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
+         @mouseenter="focusedPanel = 'delta'"
+         :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'delta' }">
+    <div class="flex items-baseline justify-between mb-3">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[14px] text-on-surface-variant">bolt</span>
+            <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                Since your last visit
+            </h2>
+            <span class="text-[11px] text-on-surface-variant">
+                ({{ last_home_visit.strftime('%b %d, %H:%M') if last_home_visit else 'first visit' }})
+            </span>
+        </div>
+        <button hx-post="/home/review-all" hx-swap="none" @click="$el.closest('section').remove()" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+            review all <span class="kbd ml-2">R</span>
+        </button>
+    </div>
+
+    <div class="space-y-0">
+        {% for delta in delta_cases %}
+        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group"
+             data-panel-item="delta" data-index="{{ loop.index0 }}"
+             @mouseenter="focusedPanel = 'delta'; focusedIdx = {{ loop.index0 }}"
+             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'delta' && focusedIdx === {{ loop.index0 }} }">
+
+            <a href="/cases/{{ delta.case_id }}" class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface bg-surface-container hover:bg-surface-container-high transition-colors shrink-0">
+                {{ delta.case_id }}
+            </a>
+
+            <div class="flex-1 min-w-0 flex items-center gap-3">
+                <span class="text-[12px] font-mono font-bold text-primary">
+                    +{{ delta.new_doc_count }} doc{{ 's' if delta.new_doc_count > 1 else '' }}
+                </span>
+                {% if delta.new_actions > 0 %}
+                    <span class="text-[12px] text-on-surface-variant">
+                        · {{ delta.new_actions }} new action{{ 's' if delta.new_actions > 1 else '' }}
+                    </span>
+                {% endif %}
+
+                <span class="text-[9px] uppercase font-black tracking-widest px-1.5 py-0.5 rounded border shrink-0
+                             {% if delta.max_significance == 'critical' %}border-error text-error
+                             {% elif delta.max_significance == 'significant' %}border-amber-500 text-amber-500
+                             {% else %}border-outline-variant text-on-surface-variant{% endif %}">
+                    {{ delta.max_significance }}
+                </span>
+
+                <span class="text-[12px] truncate text-on-surface-variant">
+                    {{ delta.doc_titles|join(' · ') }}
+                </span>
+            </div>
+
+            <a href="/cases/{{ delta.case_id }}" class="flex items-center gap-1 text-[11px] text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
+                open case <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>

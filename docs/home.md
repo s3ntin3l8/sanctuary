@@ -469,7 +469,7 @@ Explicit non-goals — these would all pull Home back toward a DMS mental model.
 | `app/templates/partials/home/signals_panel.html` | Signals panel |
 | `app/templates/partials/home/active_case_card.html` | Single case card |
 | `app/templates/partials/home/caught_up.html` | Composite empty state |
-| `app/static/js/home.js` | Keyboard navigation, last-visit timestamp update |
+| `static/js/home.js` | Keyboard navigation, last-visit timestamp update |
 
 ### Modified
 

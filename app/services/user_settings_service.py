@@ -77,6 +77,29 @@ def set_dashboard_view(view: str, db) -> None:
     db.flush()
 
 
+def get_last_home_visit(db) -> datetime | None:
+    """Return the datetime the user last visited the home page."""
+    settings = db.query(UserSettings).first()
+    if not settings or not settings.settings_json:
+        return None
+    raw = settings.settings_json.get("last_home_visit")
+    if raw is None:
+        return None
+    return datetime.fromisoformat(raw)
+
+
+def mark_home_visit(db, *, now: datetime | None = None) -> None:
+    """Record that the user just visited the home page."""
+    if now is None:
+        now = datetime.now()
+    settings = _get_or_create(db)
+    # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
+    current = dict(settings.settings_json or {})
+    current["last_home_visit"] = now.isoformat()
+    settings.settings_json = current
+    db.flush()
+
+
 def count_new_since(case_id: str, since: datetime | None, db) -> int:
     """Count documents added to the case after `since`. Returns 0 if since is None."""
     if since is None:

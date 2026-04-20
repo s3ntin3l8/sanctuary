@@ -1,0 +1,59 @@
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
+         @mouseenter="focusedPanel = 'today'"
+         :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'today' }">
+    <div class="flex items-baseline justify-between mb-3">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[14px] text-on-surface-variant">gavel</span>
+            <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                Today
+            </h2>
+            <span class="text-[11px] text-on-surface-variant">{{ today_items|length }} items</span>
+        </div>
+        <button class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+            see all <span class="material-symbols-outlined text-[12px]">arrow_right_alt</span>
+        </button>
+    </div>
+
+    <div class="space-y-0">
+        {% for item in today_items %}
+        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group"
+             data-panel-item="today" data-index="{{ loop.index0 }}"
+             @mouseenter="focusedPanel = 'today'; focusedIdx = {{ loop.index0 }}"
+             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'today' && focusedIdx === {{ loop.index0 }} }">
+            <!-- urgency icon -->
+            <div class="w-5 flex justify-center shrink-0">
+                {% if (item.due_date - now).days < 7 %}
+                    <span class="text-error text-[14px]">⚑</span>
+                {% else %}
+                    <span class="text-on-surface-variant text-[14px]">·</span>
+                {% endif %}
+            </div>
+            <!-- date column -->
+            <div class="font-mono text-[11px] w-[100px] shrink-0 {{ 'text-error' if (item.due_date - now).days < 7 else 'text-on-surface-variant' }}">
+                {% set days = (item.due_date - now).days %}
+                {{ item.due_date.strftime('%b %d') }} ·
+                {% if days < 0 %}{{ days|abs }}d late
+                {% elif days == 0 %}today
+                {% else %}{{ days }}d{% endif %}
+            </div>
+            <!-- title + subtitle -->
+            <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium truncate text-on-surface">
+                    {{ item.title }}
+                </div>
+                <div class="text-[11px] truncate text-on-surface-variant">
+                    {{ item.description or 'No description' }}
+                </div>
+            </div>
+            <!-- case chip -->
+            <a href="/cases/{{ item.case_id }}" class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface bg-surface-container hover:bg-surface-container-high transition-colors shrink-0">
+                {{ item.case_id }}
+            </a>
+            <!-- open -->
+            <a href="/cases/{{ item.case_id }}" class="flex items-center gap-1 text-[11px] text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
+                open <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>

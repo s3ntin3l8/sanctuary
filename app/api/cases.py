@@ -1,8 +1,8 @@
 import dataclasses
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import templates
@@ -12,7 +12,14 @@ from app.models.database import (
     Case,
     Document,
     DocumentRelationship,
+    Proceeding,
     UserReaction,
+)
+from app.models.enums import (
+    CaseStatus,
+    Jurisdiction,
+    ProceedingCourtLevel,
+    ProceedingStatus,
 )
 from app.services.case_dashboard_service import (
     CaseDashboardService,
@@ -344,3 +351,37 @@ async def case_document_hud(
             "originator_color": originator_color,
         },
     )
+
+
+@router.post("")
+async def create_case(
+    case_id: str = Form(...),
+    title: str = Form(...),
+    jurisdiction: Jurisdiction = Form(Jurisdiction.DE),
+    court_name: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Create a new case and its initial active proceeding."""
+    # 1. Create the Case
+    new_case = Case(
+        id=case_id,
+        title=title,
+        status=CaseStatus.INTAKE,
+        jurisdiction=jurisdiction,
+    )
+    db.add(new_case)
+
+    # 2. Create initial Proceeding
+    # We default to local court (Amtsgericht) for new intake cases
+    new_proceeding = Proceeding(
+        case_id=case_id,
+        court_name=court_name,
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+    )
+    db.add(new_proceeding)
+
+    db.commit()
+
+    # Redirect to the new case dashboard
+    return RedirectResponse(url=f"/cases/{case_id}", status_code=303)

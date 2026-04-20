@@ -7,7 +7,7 @@ client = TestClient(app)
 
 
 @pytest.mark.integration
-def test_dashboard_route():
+def test_home_route():
     response = client.get("/")
     assert response.status_code == 200
 

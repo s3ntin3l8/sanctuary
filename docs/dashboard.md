@@ -505,8 +505,8 @@ Dashboard implementation spans Phase 5 (shell + brief + actions + financials) an
 | `app/templates/partials/dashboard/truth_map.html` | Claims view (Phase 6) |
 | `app/templates/partials/dashboard/timeline_view.html` | Flat chronological fallback |
 | `app/templates/partials/dashboard/ai_chat.html` | Case-scoped chat panel |
-| `app/static/js/dashboard.js` | Keyboard shortcuts, view-mode persistence, graph interactions |
-| `app/static/js/graph_renderer.js` | SVG graph interactions (zoom/pan/hover/click) |
+| `static/js/dashboard.js` | Keyboard shortcuts, view-mode persistence, graph interactions |
+| `static/js/graph_renderer.js` | SVG graph interactions (zoom/pan/hover/click) |
 | `app/repositories/conversation.py` | Conversation + message CRUD (new) |
 
 ### Modified

@@ -1,0 +1,42 @@
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant/30 shadow-sm transition-all duration-300"
+         @mouseenter="focusedPanel = 'signals'"
+         :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'signals' }">
+    <div class="flex items-baseline justify-between mb-3">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[14px] text-on-surface-variant">hourglass_empty</span>
+            <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                Signals
+            </h2>
+        </div>
+    </div>
+
+    <div class="space-y-0">
+        {% for signal in signals %}
+        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-surface-low transition-colors cursor-pointer group"
+             data-panel-item="signals" data-index="{{ loop.index0 }}"
+             @mouseenter="focusedPanel = 'signals'; focusedIdx = {{ loop.index0 }}"
+             :class="{ 'bg-surface-low border border-outline-variant/30': focusedPanel === 'signals' && focusedIdx === {{ loop.index0 }} }">
+            <div class="w-5 flex justify-center shrink-0">
+                {% if signal.severity == 'warn' %}
+                    <span class="material-symbols-outlined text-[14px] text-amber-500">warning</span>
+                {% else %}
+                    <span class="material-symbols-outlined text-[14px] text-on-surface-variant">info</span>
+                {% endif %}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium truncate text-on-surface">
+                    {{ signal.title }}
+                </div>
+                <div class="text-[11px] truncate text-on-surface-variant">
+                    {{ signal.detail }}
+                </div>
+            </div>
+            <a href="{{ signal.link }}" class="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded transition-colors ml-2
+                        {% if signal.severity == 'warn' %}bg-primary text-on-primary hover:bg-primary/90
+                        {% else %}border border-outline-variant/30 text-primary hover:bg-surface-low{% endif %}">
+                {{ signal.action }} <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>

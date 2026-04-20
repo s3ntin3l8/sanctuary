@@ -36,7 +36,6 @@ setup: .venv ## Install dependencies and pre-commit hooks
 	npm install
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push
-	cp -r app/static/js static/ 2>/dev/null || true
 
 run: ## Start the FastAPI development server
 	$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload

@@ -324,10 +324,10 @@ async def health_check():
 
 @app.get("/")
 async def root_page(request: Request, db: Session = Depends(get_db)):
-    """Root page - serves the dashboard."""
-    from app.api.dashboard import dashboard
+    """Root page - serves the proactive home dashboard."""
+    from app.api.home import home
 
-    return await dashboard(request, db)
+    return await home(request, db)
 
 
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
@@ -453,11 +453,12 @@ from app.api import (
     cases,
     contacts,
     costs_router,
-    dashboard_router,
     documents_router,
     entities,
+    home_router,
     ingestion_settings,
     search,
+    timeline_api_router,
     triage_router,
 )
 from app.api.claims import router as claims_router
@@ -466,7 +467,8 @@ from app.api.user_settings import router as user_settings_router
 
 app.include_router(user_settings_router)
 app.include_router(claims_router)
-app.include_router(dashboard_router)
+app.include_router(home_router)
+app.include_router(timeline_api_router)
 app.include_router(triage_router)
 app.include_router(slicing_router)
 app.include_router(costs_router)
