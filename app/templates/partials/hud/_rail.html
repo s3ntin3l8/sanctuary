@@ -1,0 +1,37 @@
+{# Right rail — sections rendered in canonical order for all HUD contexts.
+   Required: doc, context, mode, summary_bullets, key_passages, reactions,
+             grounds, actions, relationships_out, relationships_in,
+             passage_claim_map (optional)
+   In mode=review: triage_metadata_form inserted between Summary and Passages.
+#}
+
+{# 1. AI Summary #}
+{% include "partials/hud/_summary.html" %}
+
+{# 2. Review-mode action strip (retry-ai, reingest) #}
+{% if mode == 'review' %}
+{% include "partials/hud/_review_actions.html" %}
+{% endif %}
+
+{# 3. Metadata form — review mode only (triage embedded context) #}
+{% if mode == 'review' %}
+{% include "partials/triage_metadata_form.html" %}
+{% endif %}
+
+{# 4. Passages (spine in standalone/embedded, cards in overlay) #}
+{% include "partials/hud/_passages_spine.html" %}
+
+{# 4. Relationships #}
+{% include "partials/hud/_relationships.html" %}
+
+{# 5. Grounds (claims sourced from this doc) #}
+{% include "partials/hud/_grounds.html" %}
+
+{# 6. Actions (action items sourced from this doc) #}
+{% include "partials/hud/_actions.html" %}
+
+{# 7. Cost Delta #}
+{% include "partials/hud/_cost_delta.html" %}
+
+{# 8. Reactions #}
+{% include "partials/hud/_reactions.html" %}

@@ -396,6 +396,34 @@ class UserReaction(Base):
     document = relationship("Document")
 
 
+class DocumentPin(Base):
+    """Passage-anchored margin pin — close-reading annotation dropped during HUD review.
+
+    Distinct from UserReaction (case-wide strategic tag). Pins are positional
+    and may carry long-form notes.
+    """
+
+    __tablename__ = "document_pins"
+    __table_args__ = (
+        Index("ix_document_pins_document", "document_id"),
+        Index("ix_document_pins_passage", "passage_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer, ForeignKey("documents.id"), nullable=False, index=True
+    )
+    passage_id = Column(String(12), nullable=False)
+    note = Column(Text, nullable=True)
+    user_id = Column(String, default="single_user", nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+    )
+
+    document = relationship("Document")
+
+
 class Conversation(Base):
     """AI chat thread scoped to either a case or a specific document."""
 

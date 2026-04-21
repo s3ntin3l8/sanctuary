@@ -1,0 +1,85 @@
+{# Document relationships — unified renderer for all three HUD contexts.
+   Required: doc, relationships_out (list[dict]), relationships_in (list[dict]), context, mode
+   Each rel dict: {id, title, rel_type, confidence, rel_obj}
+#}
+{% set total_rels = (relationships_out|length) + (relationships_in|length) %}
+
+<div class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">account_tree</span>
+    Relationships
+    {% if total_rels > 0 %}
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{{ total_rels }}</span>
+    {% endif %}
+  </h4>
+
+  {% if total_rels > 0 %}
+  <ul class="space-y-1.5">
+
+    {# Outgoing relationships #}
+    {% for rel in relationships_out %}
+    {% set is_ai = rel.confidence == 'ai_detected' %}
+    {% set rel_id = rel.rel_obj.id if rel.rel_obj else ('out-' ~ loop.index) %}
+    <li id="hud-rel-{{ rel_id }}"
+        class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
+      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">→</span>
+      <div class="flex-1 min-w-0">
+        <button {% if context != 'overlay' %}
+                onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
+                {% else %}
+                hx-get="/cases/{{ doc.case_id }}/document/{{ rel.id }}/hud"
+                hx-target="#case-dashboard-hud"
+                hx-swap="innerHTML"
+                {% endif %}
+                class="text-left truncate block text-primary hover:underline cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
+        <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
+      </div>
+      {% if is_ai and mode == 'review' and rel.rel_obj %}
+      <div class="flex gap-1 shrink-0">
+        <button hx-post="/triage/relationship/{{ rel.rel_obj.id }}/confirm"
+                hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
+                class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer">✓</button>
+        <button hx-delete="/triage/relationship/{{ rel.rel_obj.id }}"
+                hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
+                class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer">✕</button>
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+
+    {# Incoming relationships #}
+    {% for rel in relationships_in %}
+    {% set is_ai = rel.confidence == 'ai_detected' %}
+    {% set rel_id = rel.rel_obj.id if rel.rel_obj else ('in-' ~ loop.index) %}
+    <li id="hud-rel-{{ rel_id }}"
+        class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
+      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">←</span>
+      <div class="flex-1 min-w-0">
+        <button {% if context != 'overlay' %}
+                onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
+                {% else %}
+                hx-get="/cases/{{ doc.case_id }}/document/{{ rel.id }}/hud"
+                hx-target="#case-dashboard-hud"
+                hx-swap="innerHTML"
+                {% endif %}
+                class="text-left truncate block text-primary hover:underline cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
+        <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
+      </div>
+      {% if is_ai and mode == 'review' and rel.rel_obj %}
+      <div class="flex gap-1 shrink-0">
+        <button hx-post="/triage/relationship/{{ rel.rel_obj.id }}/confirm"
+                hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
+                class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer">✓</button>
+        <button hx-delete="/triage/relationship/{{ rel.rel_obj.id }}"
+                hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
+                class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer">✕</button>
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+
+  </ul>
+  {% else %}
+  <p class="text-[11px] italic" style="color:var(--color-outline);">No relationships detected.</p>
+  {% endif %}
+</div>

@@ -76,6 +76,12 @@
   --color-outline: #727d80;
   --color-outline-variant: #a9b4b7;
 
+  --color-key-passage-bg: #e0f2fe;
+  --color-key-passage-fg: #075985;
+  --color-key-passage-ring: #7dd3fc;
+  --color-warning: #b45309;
+  --color-warning-container: #fef3c7;
+
   --font-headline: "Manrope", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-label: "Inter", sans-serif;
@@ -147,6 +153,12 @@
 
     --color-outline: #859490;
     --color-outline-variant: #3c4a46;
+
+    --color-key-passage-bg: rgb(2 132 199 / 0.20);
+    --color-key-passage-fg: #bae6fd;
+    --color-key-passage-ring: rgb(56 189 248 / 0.35);
+    --color-warning: #fbbf24;
+    --color-warning-container: rgb(251 191 36 / 0.15);
   }
 }
 
@@ -253,3 +265,14 @@
   from { transform: translateX(16px); opacity: 0; }
   to   { transform: translateX(0); opacity: 1; }
 }
+
+.slide-in-right { animation: slideRight .24s cubic-bezier(.2,.7,.2,1) both; }
+
+@keyframes passageFocus {
+  0%   { box-shadow: 0 0 0 3px var(--color-primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.hud-mark-flash { animation: passageFocus 600ms ease-out both; }
+
+.hud-pin-card { transition: top .24s cubic-bezier(.2,.7,.2,1); }

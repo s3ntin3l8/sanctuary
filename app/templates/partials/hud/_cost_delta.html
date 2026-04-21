@@ -1,0 +1,73 @@
+{# Cost delta — fixed direction vocabulary (enricher writes incoming|outgoing|ruling|none).
+   Required: doc
+#}
+{% if doc.cost_delta or doc.cost_candidates %}
+<div class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">euro</span>
+    Cost Delta
+  </h4>
+
+  {% if doc.cost_delta %}
+  {% set amount = doc.cost_delta.amount if doc.cost_delta is not mapping else doc.cost_delta.get('amount', 0) %}
+  {% set direction = (doc.cost_delta.direction if doc.cost_delta is not mapping else doc.cost_delta.get('direction', 'none')) or 'none' %}
+  {% set description = (doc.cost_delta.description if doc.cost_delta is not mapping else doc.cost_delta.get('description', '')) or '' %}
+  {# Map enricher vocab: incoming=money received(green), outgoing=money owed(red), ruling=amber, none=hidden #}
+  {% set is_incoming = direction == 'incoming' %}
+  {% set is_outgoing = direction == 'outgoing' %}
+  {% set is_ruling   = direction == 'ruling' %}
+  <div class="flex items-start gap-3">
+    <span class="material-symbols-outlined text-lg mt-0.5
+                 {% if is_incoming %}text-originator-own
+                 {% elif is_outgoing %}text-originator-opposing
+                 {% elif is_ruling %}text-amber-500
+                 {% else %}text-outline{% endif %}">
+      {% if is_incoming %}trending_up
+      {% elif is_outgoing %}trending_down
+      {% elif is_ruling %}gavel
+      {% else %}euro{% endif %}
+    </span>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-black font-mono
+                {% if is_incoming %}text-originator-own
+                {% elif is_outgoing %}text-originator-opposing
+                {% elif is_ruling %}text-amber-500
+                {% else %}text-on-surface{% endif %}">
+        {% if is_incoming %}&plus;{% elif is_outgoing %}&minus;{% endif %}{{ format_eur(amount) }}
+      </p>
+      {% if description %}
+      <p class="text-[11px] text-on-surface-variant leading-relaxed mt-0.5">{{ description }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% elif doc.cost_candidates %}
+  {% set amount_rows = [] %}
+  {% for c in doc.cost_candidates %}
+    {% if c.type == 'amount' or (c is mapping and c.get('type') == 'amount') %}
+      {% set _ = amount_rows.append(c) %}
+    {% endif %}
+  {% endfor %}
+  {% if amount_rows %}
+  <p class="text-[9px] italic text-outline mb-2">Regex-detected at ingest · AI delta pending Phase 4</p>
+  <ul class="space-y-1">
+    {% for c in amount_rows[:5] %}
+    {% set val = c.value if c is not mapping else c.get('value', 0) %}
+    {% set ctx = c.context if c is not mapping else c.get('context', '') %}
+    <li class="flex items-start gap-2 text-[11px]">
+      <span class="font-mono font-bold text-on-surface shrink-0">{{ format_eur(val) }}</span>
+      {% if ctx %}
+      <span class="text-on-surface-variant line-clamp-1 italic">&hellip;{{ ctx }}&hellip;</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+    {% if amount_rows|length > 5 %}
+    <li class="text-[9px] italic text-outline">+ {{ amount_rows|length - 5 }} more</li>
+    {% endif %}
+  </ul>
+  {% else %}
+  <p class="text-[11px] italic text-outline">No cost amounts extracted.</p>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}

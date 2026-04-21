@@ -1,5 +1,6 @@
 """4a — Per-document AI enrichment: significance_tier, document_type, key_passages, cost_delta."""
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -110,7 +111,14 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
         for p in passages:
             if isinstance(p, dict) and p.get("text"):
                 try:
-                    validated.append(KeyPassageSchema(**p).model_dump())
+                    passage_dict = KeyPassageSchema(**p).model_dump()
+                    if not passage_dict.get("id"):
+                        text = passage_dict["text"]
+                        kind = (passage_dict.get("kind") or "neutral").lower()
+                        passage_dict["id"] = hashlib.sha1(
+                            f"{text}|{kind}".encode()
+                        ).hexdigest()[:12]
+                    validated.append(passage_dict)
                 except Exception as e:
                     logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")
         doc.key_passages = validated or None

@@ -1,0 +1,25 @@
+{# Margin pin card — rendered in the left gutter of _body.html.
+   Required: pin (DocumentPin). Positioned by hud.js._positionPins().
+#}
+<div id="pin-{{ pin.id }}" data-pin-id="{{ pin.id }}" data-passage-id="{{ pin.passage_id }}"
+     class="hud-pin-card absolute left-1 right-1 p-2 rounded-md bg-surface-container-low border border-outline-variant/20 pointer-events-auto"
+     style="top: 0px;">
+  <div class="flex items-start gap-1.5">
+    <span class="material-symbols-outlined text-[12px] shrink-0 mt-0.5" style="color: var(--color-amber, #f59e0b);">push_pin</span>
+    <textarea name="note" rows="2"
+              hx-patch="/pin/{{ pin.id }}"
+              hx-include="this"
+              hx-trigger="blur changed delay:300ms"
+              hx-swap="none"
+              class="flex-1 bg-transparent text-[10px] leading-snug resize-none focus:outline-none text-on-surface-variant"
+              placeholder="Add note…">{{ pin.note or '' }}</textarea>
+    <button hx-delete="/pin/{{ pin.id }}"
+            hx-target="#pin-{{ pin.id }}"
+            hx-swap="outerHTML"
+            class="shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+            style="color: var(--color-outline);"
+            title="Remove pin">
+      <span class="material-symbols-outlined text-[12px]">close</span>
+    </button>
+  </div>
+</div>

@@ -1,0 +1,37 @@
+{# Action items sourced from this document.
+   Required: doc, actions (list[ActionItem])
+#}
+<div class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">event</span>
+    Actions
+    {% if actions %}
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-originator-opposing/15 text-originator-opposing">{{ actions|length }}</span>
+    {% endif %}
+  </h4>
+
+  {% if actions %}
+  <ul class="space-y-2">
+    {% for item in actions %}
+    {% set type_icon = {
+      'deadline':   'flag',
+      'court_date': 'gavel',
+    }.get(item.action_type.value if item.action_type else '', 'checklist') %}
+    <li class="flex items-start gap-2 text-[11px]">
+      <span class="material-symbols-outlined text-[14px] mt-0.5 shrink-0"
+            style="color:var(--color-originator-opposing);">{{ type_icon }}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-on-surface font-medium truncate">{{ item.title }}</p>
+        <p class="text-[9px] font-mono text-on-surface-variant">
+          {{ item.due_date.strftime('%d.%m.%Y') if item.due_date else '—' }}
+          · {{ item.action_type.value if item.action_type else '—' }}
+          · {{ item.status.value if item.status else '—' }}
+        </p>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-[11px] italic" style="color:var(--color-outline);">No action items sourced from this document.</p>
+  {% endif %}
+</div>

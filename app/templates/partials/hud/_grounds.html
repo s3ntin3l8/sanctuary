@@ -1,0 +1,48 @@
+{# Claims grounded in this document — sourced from this doc.
+   Required: doc, grounds (list[Claim])
+#}
+<div class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">balance</span>
+    Grounds
+    {% if grounds %}
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{{ grounds|length }}</span>
+    {% endif %}
+  </h4>
+
+  {% if grounds %}
+  <ul class="space-y-2">
+    {% for claim in grounds %}
+    {% set status_color = {
+      'asserted':   'var(--color-primary)',
+      'contested':  'var(--color-amber)',
+      'refuted':    'var(--color-error)',
+      'established':'var(--color-originator-own)',
+    }.get(claim.status.value if claim.status else 'asserted', 'var(--color-on-surface-variant)') %}
+    <li class="text-[11px]">
+      <div class="flex items-start gap-2">
+        <span class="text-base leading-none flex-shrink-0">⚖</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-[11.5px] leading-snug" style="color:var(--color-on-surface);">{{ claim.claim_text | truncate(80, true) }}</p>
+          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
+                  style="background:var(--color-surface-container-high); color:{{ status_color }};">{{ claim.status.value if claim.status else '?' }}</span>
+            <span class="text-[9px] font-mono" style="color:var(--color-outline);">
+              #{{ claim.id }} · {{ claim.first_made_at.strftime('%d.%m.%y') if claim.first_made_at else '—' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if doc.case_id %}
+  <a href="/cases/{{ doc.case_id }}#truthmap"
+     class="mt-3 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
+    View in Truth Map →
+  </a>
+  {% endif %}
+  {% else %}
+  <p class="text-[11px] italic" style="color:var(--color-outline);">No claims grounded in this document yet.</p>
+  {% endif %}
+</div>

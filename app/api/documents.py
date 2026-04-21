@@ -1,14 +1,20 @@
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db
-from app.helpers import build_document_extraction_context, render_page
-from app.models.database import Case, Document, DocumentRelationship
+from app.helpers import render_page
+from app.models.database import Case, Document
+from app.models.enums import OriginatorType, UserReactionType
+from app.repositories.document_pin import DocumentPinRepository
+from app.repositories.user_reaction import UserReactionRepository
+from app.services.case_dashboard_service import summary_bullets_from_ai_summary
+from app.services.hud_context import build_hud_context, build_triage_hud_context
 from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
@@ -200,9 +206,6 @@ async def document_activity_item(
 
 @router.get("/document/{doc_id}")
 async def document_detail(request: Request, doc_id: int, db: Session = Depends(get_db)):
-    from app.models.database import Case, Entity
-    from app.models.enums import OriginatorType
-
     doc = (
         db.query(Document)
         .options(joinedload(Document.proceeding))
@@ -217,88 +220,218 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
             status_code=404,
         )
 
-    context = build_document_extraction_context(db, doc)
-    context_type = request.query_params.get("context", "detail")
+    context_type = request.query_params.get("context")
 
     if context_type == "triage":
-        from app.models.enums import RelationshipConfidence, UserReactionType
-        from app.services.triage_service import TriageService
-
-        triage_service = TriageService(db)
         cases = (
             db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
         )
-        entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
-        reactions = list(triage_service.get_reactions(doc.id))
-        action_items = triage_service.get_action_items(doc.id)
-        ai_relationships = (
-            db.query(DocumentRelationship)
-            .filter(
-                DocumentRelationship.from_document_id == doc.id,
-                DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
-            )
-            .options(
-                joinedload(DocumentRelationship.to_document),
-            )
-            .all()
+        ctx = build_triage_hud_context(
+            db, doc, cases=cases, OriginatorType=OriginatorType
         )
-        return templates.TemplateResponse(
-            request,
-            "partials/document_triage.html",
-            {
-                "doc": doc,
-                "doc_id": doc.id,
-                "cases": cases,
-                "entities": entities,
-                "context": context,
-                "reactions": reactions,
-                "action_items": action_items,
-                "ai_relationships": ai_relationships,
-                "OriginatorType": OriginatorType,
-                "UserReactionType": UserReactionType,
-                "RelationshipConfidence": RelationshipConfidence,
-                "originator_colors": ORIGINATOR_COLORS,
-                "originator_icons": ORIGINATOR_ICONS,
-            },
-        )
+        return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    if context_type == "activity":
-        cases = (
-            db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-        )
-        all_cases = {c.id: c.title for c in cases}
-        entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
+    # HTMX callers (document_card, timeline_item, review_card) get the embedded
+    # read-mode HUD as a self-contained fragment into their preview panes.
+    if request.headers.get("hx-request"):
+        ctx = build_hud_context(db, doc, mode="read")
+        ctx["context"] = "embedded"
+        ctx["case_id"] = doc.case_id
+        ctx["first_child_id"] = ctx.get("first_child_id")
+        ctx["bundle_prev_id"] = ctx.get("bundle_prev_id")
+        ctx["bundle_next_id"] = ctx.get("bundle_next_id")
+        return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-        return templates.TemplateResponse(
-            request,
-            "partials/document_activity.html",
-            {
-                "doc": doc,
-                "doc_id": doc.id,
-                "all_cases": all_cases,
-                "entities": entities,
-                "schedule_candidates": [],
-                "linked_deadlines": [],
-                "linked_hearings": [],
-                "context": context,
-                "OriginatorType": OriginatorType,
-                "originator_colors": ORIGINATOR_COLORS,
-                "originator_icons": ORIGINATOR_ICONS,
-            },
-        )
+    # Full-page navigations redirect to the canonical full-screen HUD URL.
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        return RedirectResponse(url="/triage", status_code=302)
+    return RedirectResponse(
+        url=f"/cases/{doc.case_id}/document/{doc.id}", status_code=302
+    )
+
+
+# ---------------------------------------------------------------------------
+# HUD reaction — unified endpoint used by all three HUD contexts (overlay /
+# standalone / embedded). Triage's /triage/document/:id/reaction stays until
+# Stage B when the triage pane migrates to the new embedded HUD.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/document/{doc_id}/reaction")
+async def hud_toggle_reaction(
+    request: Request,
+    doc_id: int,
+    reaction: str = Form(...),
+    notes: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    import json as _json
+
+    try:
+        reaction_enum = UserReactionType(reaction)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown reaction: {reaction}"
+        ) from exc
+
+    repo = UserReactionRepository(db)
+    existing = repo.find(doc_id, reaction_enum)
+    if existing and notes is None:
+        db.delete(existing)
     else:
-        entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
-        extraction_confidence = doc.extraction_confidence or {}
-        return templates.TemplateResponse(
-            request,
-            "partials/document_detail.html",
-            {
-                "doc": doc,
-                "doc_id": doc.id,
-                "entities": entities,
-                "extraction_confidence": extraction_confidence,
-                "context": context,
-                "originator_colors": ORIGINATOR_COLORS,
-                "originator_icons": ORIGINATOR_ICONS,
-            },
+        repo.set_reaction(doc_id, reaction_enum, notes)
+    db.commit()
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+    reactions = list(repo.get_by_document(doc_id))
+    response = templates.TemplateResponse(
+        request,
+        "partials/hud/_reactions.html",
+        {"doc": doc, "reactions": reactions},
+    )
+
+    # OOB feed-card refresh for triage (selector misses gracefully outside triage)
+    from app.api.triage import _render_doc_targeted_oob
+    from app.services.triage_service import TriageService
+
+    triage_service = TriageService(db)
+    response.body += _render_doc_targeted_oob(request, doc, triage_service, db).encode()
+
+    if notes is not None and notes.strip():
+        response.headers["HX-Trigger"] = _json.dumps(
+            {"triage:note-saved": {"message": "Note saved"}}
         )
+
+    return response
+
+
+# ---------------------------------------------------------------------------
+# HUD summary approve/reject — separate from triage's approve-summary so
+# both paths can coexist until Stage B.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/document/{doc_id}/hud/approve-summary")
+async def hud_approve_summary(
+    request: Request,
+    doc_id: int,
+    action: str,
+    db: Session = Depends(get_db),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    if action == "approve":
+        doc.ai_summary_status = "approved"
+        doc.ai_summary_approved_at = datetime.now()
+    elif action == "reject":
+        doc.ai_summary_status = "pending"
+        doc.ai_summary = None
+    else:
+        raise HTTPException(status_code=422, detail=f"Unknown action: {action}")
+
+    db.commit()
+    db.refresh(doc)
+    summary_bullets = summary_bullets_from_ai_summary(doc.ai_summary)
+    return templates.TemplateResponse(
+        request,
+        "partials/hud/_summary.html",
+        {"doc": doc, "summary_bullets": summary_bullets},
+    )
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Margin pins — passage-anchored annotations.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/document/{doc_id}/pin")
+async def create_pin(
+    request: Request,
+    doc_id: int,
+    passage_id: str = Form(...),
+    note: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    repo = DocumentPinRepository(db)
+    pin = repo.create(doc_id, passage_id, note)
+    db.commit()
+    db.refresh(pin)
+
+    pins = repo.get_by_document(doc_id)
+    passage_pin_counts: dict[str, int] = {}
+    for p in pins:
+        passage_pin_counts[p.passage_id] = passage_pin_counts.get(p.passage_id, 0) + 1
+
+    return templates.TemplateResponse(
+        request,
+        "partials/hud/_pin_card.html",
+        {"pin": pin, "passage_pin_counts": passage_pin_counts},
+    )
+
+
+@router.patch("/pin/{pin_id}")
+async def update_pin(
+    pin_id: int,
+    note: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    repo = DocumentPinRepository(db)
+    pin = repo.update_note(pin_id, note)
+    if pin is None:
+        raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+    db.commit()
+    return HTMLResponse("", status_code=204)
+
+
+@router.delete("/pin/{pin_id}")
+async def delete_pin(pin_id: int, db: Session = Depends(get_db)):
+    repo = DocumentPinRepository(db)
+    if not repo.delete(pin_id):
+        raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+    db.commit()
+    return HTMLResponse("", status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# Original file — serve raw stored file in a new tab.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/document/{doc_id}/original")
+async def document_original(
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    from app.config import DATA_DIR
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    if not doc.file_path:
+        raise HTTPException(
+            status_code=404, detail="No original file stored for this document"
+        )
+
+    import pathlib
+
+    file_path = pathlib.Path(doc.file_path)
+    if not file_path.is_absolute():
+        file_path = DATA_DIR / file_path
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Original file not found on disk")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )

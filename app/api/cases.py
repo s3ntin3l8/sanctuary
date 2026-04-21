@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.dependencies import get_db
@@ -11,9 +11,7 @@ from app.helpers import render_page
 from app.models.database import (
     Case,
     Document,
-    DocumentRelationship,
     Proceeding,
-    UserReaction,
 )
 from app.models.enums import (
     CaseStatus,
@@ -21,19 +19,14 @@ from app.models.enums import (
     ProceedingCourtLevel,
     ProceedingStatus,
 )
-from app.services.case_dashboard_service import (
-    CaseDashboardService,
-    key_passages_for_template,
-    neighbor_doc_ids,
-    originator_color_for_doc,
-    summary_bullets_from_ai_summary,
-)
+from app.services.case_dashboard_service import CaseDashboardService
 from app.services.case_graph_service import CaseGraphService
 from app.services.case_service import (  # noqa: F401 (re-exported for tests)
     DORMANCY_DAYS,
     CaseService,
     _compute_dormancy_alert,
 )
+from app.services.hud_context import build_hud_context
 from app.services.user_settings_service import (
     get_active_proceeding,
     get_dashboard_view,
@@ -279,78 +272,40 @@ async def case_document_hud(
     if not doc or doc.case_id != case_id:
         return HTMLResponse(content="<p>Document not found</p>", status_code=404)
 
-    # User reactions (first-class triage data recalled by AI)
-    reactions = (
-        db.query(UserReaction)
-        .filter(UserReaction.document_id == doc.id)
-        .order_by(UserReaction.created_at.asc())
-        .all()
+    ctx = build_hud_context(db, doc, mode="read")
+    ctx["context"] = "overlay"
+    ctx["case_id"] = case_id
+    return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+
+
+@router.get("/{case_id}/document/{doc_id}")
+async def case_document_fullscreen(
+    request: Request,
+    case_id: str,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Full-screen document reader at /cases/:case_id/document/:doc_id."""
+    from app.helpers import render_page
+
+    doc = (
+        db.query(Document)
+        .options(
+            joinedload(Document.proceeding),
+            joinedload(Document.children),
+        )
+        .filter(Document.id == doc_id)
+        .first()
     )
+    if not doc or doc.case_id != case_id:
+        from fastapi.responses import RedirectResponse
 
-    # Document relationships — incoming + outgoing
-    rels_out = (
-        db.query(DocumentRelationship)
-        .filter(DocumentRelationship.from_document_id == doc.id)
-        .all()
-    )
-    rels_in = (
-        db.query(DocumentRelationship)
-        .filter(DocumentRelationship.to_document_id == doc.id)
-        .all()
-    )
+        return RedirectResponse(f"/cases/{case_id}", status_code=302)
 
-    # Titles for the related documents
-    related_ids = {r.to_document_id for r in rels_out} | {
-        r.from_document_id for r in rels_in
-    }
-    titles_by_id: dict[int, str] = {}
-    if related_ids:
-        for row in (
-            db.query(Document.id, Document.title)
-            .filter(Document.id.in_(related_ids))
-            .all()
-        ):
-            titles_by_id[row[0]] = row[1] or "Untitled"
-
-    def _rel_list(rels, *, side: str) -> list[dict]:
-        out = []
-        for rel in rels:
-            other_id = rel.to_document_id if side == "out" else rel.from_document_id
-            out.append(
-                {
-                    "id": other_id,
-                    "title": titles_by_id.get(other_id, "Untitled"),
-                    "rel_type": rel.relationship_type.value
-                    if rel.relationship_type
-                    else "related",
-                }
-            )
-        return out
-
-    relationships_in = _rel_list(rels_in, side="in")
-    relationships_out = _rel_list(rels_out, side="out")
-
-    summary_bullets = summary_bullets_from_ai_summary(doc.ai_summary)
-    key_passages = key_passages_for_template(doc.key_passages)
-    prev_doc_id, next_doc_id = neighbor_doc_ids(db, doc)
-    originator_color = originator_color_for_doc(doc)
-
-    return templates.TemplateResponse(
-        request,
-        "partials/dashboard/case_dashboard_hud.html",
-        {
-            "doc": doc,
-            "case_id": case_id,
-            "summary_bullets": summary_bullets,
-            "key_passages": key_passages,
-            "reactions": reactions,
-            "relationships_in": relationships_in,
-            "relationships_out": relationships_out,
-            "prev_doc_id": prev_doc_id,
-            "next_doc_id": next_doc_id,
-            "originator_color": originator_color,
-        },
-    )
+    ctx = build_hud_context(db, doc, mode="read")
+    ctx["context"] = "standalone"
+    ctx["case_id"] = case_id
+    return render_page(request, "pages/document.html", db=db, **ctx)
 
 
 @router.post("")

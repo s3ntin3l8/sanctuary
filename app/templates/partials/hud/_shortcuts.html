@@ -1,0 +1,106 @@
+<!-- HUD Keyboard Shortcuts Cheat Sheet Modal -->
+<div x-show="$store.shortcuts?.showHud"
+     class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0 scale-95"
+     x-transition:enter-end="opacity-100 scale-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100 scale-100"
+     x-transition:leave-end="opacity-0 scale-95"
+     style="display: none;">
+
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-surface-lowest/80 backdrop-blur-sm"
+         @click="$store.shortcuts.showHud = false"
+         @keydown.escape.window="$store.shortcuts.showHud = false"></div>
+
+    <!-- Modal Card -->
+    <div class="relative bg-surface-low border border-outline-variant/40 shadow-2xl rounded-xl w-full max-w-[280px] overflow-hidden"
+         @click.away="$store.shortcuts.showHud = false">
+
+        <!-- Header -->
+        <div class="px-4 py-2.5 border-b border-outline-variant/20 flex items-center justify-between bg-surface-lowest">
+            <h3 class="font-headline text-[13px] font-bold text-on-surface flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[14px]">keyboard</span>
+                HUD Shortcuts
+            </h3>
+            <button @click="$store.shortcuts.showHud = false" class="text-on-surface-variant hover:text-on-surface transition-colors">
+                <span class="material-symbols-outlined text-[16px]">close</span>
+            </button>
+        </div>
+
+        <!-- Shortcuts List -->
+        <div class="px-4 py-3 space-y-2.5 text-[11px]">
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Prev doc</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">←</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Next doc</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">→</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Parent</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">[</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">First child</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">]</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Bundle prev</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">{"{"}</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Bundle next</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">{"}"}</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Prev passage</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">↑</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Next passage</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">↓</span></div>
+                </div>
+            </div>
+
+            <div class="h-px bg-outline-variant/10 my-1"></div>
+
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Add pin</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">n</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">React bar</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">r</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Focus mode</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">f</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Open original</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">o</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Cheat sheet</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">?</span></div>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-on-surface-variant">Close / back</span>
+                    <div class="flex gap-0.5"><span class="kbd text-[9px]">Esc</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-4 py-2 bg-surface-lowest text-center border-t border-outline-variant/10">
+            <div class="text-[9px] text-on-surface-variant/50">
+                Press <span class="kbd py-0 px-1 text-[8px]">Esc</span> to close
+            </div>
+        </div>
+    </div>
+</div>

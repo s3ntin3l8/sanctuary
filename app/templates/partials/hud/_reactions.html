@@ -1,0 +1,36 @@
+{# Reaction bar — unified endpoint /document/:id/reaction for all HUD contexts.
+   Required: doc, reactions (list[UserReaction])
+#}
+{% set active_reactions = reactions | map(attribute='reaction') | map('string') | list %}
+<div id="hud-reaction-bar-{{ doc.id }}"
+     data-triage-reaction-bar data-doc-id="{{ doc.id }}"
+     class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">bolt</span>
+    React
+    <span class="text-[9px] font-medium normal-case tracking-normal ml-0.5" style="color:var(--color-outline);">— high-weight AI context</span>
+  </h4>
+  <div class="flex flex-wrap items-center gap-2">
+    {% set reaction_opts = [
+      ('lies',        '🚩', 'Lies',      'originator-opposing'),
+      ('true',        '✅', 'True',      'originator-own'),
+      ('needs_proof', '🔍', 'Proof',     'amber-500'),
+      ('precedent',   '⚖️', 'Precedent', 'primary')
+    ] %}
+    {% for rval, emoji, label, tone in reaction_opts %}
+    {% set is_active = rval in active_reactions %}
+    <button hx-post="/document/{{ doc.id }}/reaction"
+            hx-vals='{"reaction": "{{ rval }}"}'
+            hx-target="#hud-reaction-bar-{{ doc.id }}"
+            hx-swap="outerHTML"
+            data-reaction-key="{{ rval }}"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-all active:scale-95
+                   {% if is_active %}bg-{{ tone }}/15 border-{{ tone }}/40 text-{{ tone }}
+                   {% else %}bg-surface-container-lowest border-outline-variant/20 text-on-surface-variant hover:border-{{ tone }}/40 hover:text-{{ tone }}{% endif %}"
+            title="{{ label }}">
+      <span class="text-base leading-none">{{ emoji }}</span>
+      <span>{{ label }}</span>
+    </button>
+    {% endfor %}
+  </div>
+</div>

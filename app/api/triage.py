@@ -9,9 +9,10 @@ from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
-from app.models.database import Case, Claim, Document, DocumentRelationship
+from app.models.database import Case, Document, DocumentRelationship
 from app.models.enums import OriginatorType, UserReactionType
 from app.services.document_service import DocumentService
+from app.services.hud_context import build_triage_hud_context
 from app.services.triage_service import TriageService
 
 router = APIRouter(tags=["pages"])
@@ -117,49 +118,10 @@ async def confirm_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    # Return the updated HUD by re-rendering document_triage.html
-    from app.helpers import build_document_extraction_context
-    from app.models.database import Entity
-    from app.models.enums import RelationshipConfidence
-
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
-    extraction_context = build_document_extraction_context(db, doc)
-    reactions = list(triage_service.get_reactions(doc.id))
-    action_items = triage_service.get_action_items(doc.id)
-    ai_relationships = (
-        db.query(DocumentRelationship)
-        .filter(
-            DocumentRelationship.from_document_id == doc.id,
-            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
-        )
-        .all()
-    )
-
-    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
-
-    response = templates.TemplateResponse(
-        request,
-        "partials/document_triage.html",
-        {
-            "doc": doc,
-            "doc_id": doc.id,
-            "cases": cases,
-            "entities": entities,
-            "context": extraction_context,
-            "reactions": reactions,
-            "action_items": action_items,
-            "ai_relationships": ai_relationships,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-            "RelationshipConfidence": RelationshipConfidence,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "doc_claim_count": doc_claim_count,
-        },
-    )
+    ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
+    response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
-    # Avoids the full feed swap that causes flicker, scroll reset, and Alpine state loss.
     targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
     response.body += targeted_oob.encode("utf-8")
 
@@ -382,89 +344,6 @@ async def confirm_bundle(
 
 
 # -----------------------------------------------------------------------------
-# Reaction Bar (POST/DELETE)
-# -----------------------------------------------------------------------------
-
-
-@router.post("/triage/document/{doc_id}/reaction")
-async def set_reaction(
-    request: Request,
-    doc_id: int,
-    reaction: str = Form(...),
-    notes: str | None = Form(None),
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    try:
-        reaction_enum = UserReactionType(reaction)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422, detail=f"Unknown reaction: {reaction}"
-        ) from exc
-
-    triage_service.toggle_reaction(doc_id, reaction_enum, notes=notes)
-    reactions = list(triage_service.get_reactions(doc_id))
-
-    response = templates.TemplateResponse(
-        request,
-        "partials/triage_reaction_bar.html",
-        {
-            "doc": {"id": doc_id},
-            "reactions": reactions,
-            "UserReactionType": UserReactionType,
-        },
-    )
-
-    # Update the card's reaction icons via targeted OOB (no full feed replacement)
-    doc_obj = triage_service.doc_repo.get(doc_id)
-    if doc_obj:
-        card_oob = _render_doc_targeted_oob(request, doc_obj, triage_service, db)
-        response.body += card_oob.encode("utf-8")
-
-    if notes is not None and notes.strip():
-        response.headers["HX-Trigger"] = json.dumps(
-            {"triage:note-saved": {"message": "Note saved"}}
-        )
-    return response
-
-
-@router.delete("/triage/document/{doc_id}/reaction/{reaction}")
-async def clear_reaction(
-    request: Request,
-    doc_id: int,
-    reaction: str,
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    try:
-        reaction_enum = UserReactionType(reaction)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422, detail=f"Unknown reaction: {reaction}"
-        ) from exc
-
-    triage_service.clear_reaction(doc_id, reaction_enum)
-    reactions = list(triage_service.get_reactions(doc_id))
-
-    response = templates.TemplateResponse(
-        request,
-        "partials/triage_reaction_bar.html",
-        {
-            "doc": {"id": doc_id},
-            "reactions": reactions,
-            "UserReactionType": UserReactionType,
-        },
-    )
-
-    # Update the card's reaction icons via targeted OOB
-    doc_obj = triage_service.doc_repo.get(doc_id)
-    if doc_obj:
-        card_oob = _render_doc_targeted_oob(request, doc_obj, triage_service, db)
-        response.body += card_oob.encode("utf-8")
-    return response
-
-
-# -----------------------------------------------------------------------------
 # Document actions (reingest, summarize, approve-summary)
 # -----------------------------------------------------------------------------
 
@@ -573,48 +452,11 @@ async def retry_ai(
 async def _render_document_hud(
     request: Request, doc: Document, db: Session
 ) -> HTMLResponse:
-    """Render the HUD partial — reused by reingest/summarize/approve-summary/confirm."""
-    from app.helpers import build_document_extraction_context
-    from app.models.database import Entity
-    from app.models.enums import RelationshipConfidence
-
+    """Render the embedded HUD — reused by reingest/summarize/approve-summary/retry-ai."""
     triage_service = TriageService(db)
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
-    extraction_context = build_document_extraction_context(db, doc)
-    reactions = list(triage_service.get_reactions(doc.id))
-    action_items = triage_service.get_action_items(doc.id)
-    ai_relationships = (
-        db.query(DocumentRelationship)
-        .filter(
-            DocumentRelationship.from_document_id == doc.id,
-            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
-        )
-        .all()
-    )
-
-    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
-
-    response = templates.TemplateResponse(
-        request,
-        "partials/document_triage.html",
-        {
-            "doc": doc,
-            "doc_id": doc.id,
-            "cases": cases,
-            "entities": entities,
-            "context": extraction_context,
-            "reactions": reactions,
-            "action_items": action_items,
-            "ai_relationships": ai_relationships,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-            "RelationshipConfidence": RelationshipConfidence,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "doc_claim_count": doc_claim_count,
-        },
-    )
+    ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
+    response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
     targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
     response.body += targeted_oob.encode("utf-8")
@@ -751,59 +593,6 @@ def _render_bundle_group_oob(
             "UserReactionType": UserReactionType,
             "as_oob": True,
         }
-    )
-
-
-def _render_hud_oob(
-    request: Request, doc: Document, triage_service: TriageService, db: Session
-) -> str:
-    """Render the doc HUD as an OOB innerHTML swap for #triage-doc-pane.
-
-    Used after bundle case assignment so the metadata form reflects the updated
-    case_id — prevents stale form values from undoing the assignment on confirm.
-    """
-    from app.helpers import build_document_extraction_context
-    from app.models.database import Entity
-    from app.models.enums import RelationshipConfidence
-
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    entities = db.query(Entity).filter(Entity.source_document_id == doc.id).all()
-    extraction_context = build_document_extraction_context(db, doc)
-    reactions = list(triage_service.get_reactions(doc.id))
-    action_items = triage_service.get_action_items(doc.id)
-    ai_relationships = (
-        db.query(DocumentRelationship)
-        .filter(
-            DocumentRelationship.from_document_id == doc.id,
-            DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
-        )
-        .all()
-    )
-
-    doc_claim_count = db.query(Claim).filter(Claim.source_document_id == doc.id).count()
-
-    hud_html = templates.get_template("partials/document_triage.html").render(
-        {
-            "request": request,
-            "doc": doc,
-            "doc_id": doc.id,
-            "cases": cases,
-            "entities": entities,
-            "context": extraction_context,
-            "reactions": reactions,
-            "action_items": action_items,
-            "ai_relationships": ai_relationships,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-            "RelationshipConfidence": RelationshipConfidence,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "doc_claim_count": doc_claim_count,
-        }
-    )
-    return (
-        f'<div id="triage-doc-pane" class="h-full flex flex-col min-h-0" '
-        f'hx-swap-oob="innerHTML">{hud_html}</div>'
     )
 
 

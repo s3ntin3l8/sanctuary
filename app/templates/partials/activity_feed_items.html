@@ -7,7 +7,7 @@
      class="group relative rounded-lg border border-outline-variant/10 bg-surface-container-lowest hover:border-primary/20 hover:bg-surface-container transition-all duration-200 cursor-pointer overflow-hidden"
      :class="selectedDocs.includes('{{ doc.id }}') ? 'ring-2 ring-primary border-transparent' : ''"
      style="border-left: 4px solid {{ stripe_color }};"
-     @click="activeDoc = '{{ doc.id }}'">
+     @click="">
 
     {# Action Overlay (Right Side) #}
     <div class="absolute top-0 right-0 bottom-0 w-12 flex flex-col items-center justify-between py-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-l from-surface-container/80 to-transparent"
@@ -24,13 +24,11 @@
                     title: 'Delete Document',
                     message: 'Are you sure you want to delete \'{{ doc.title }}\'? This action cannot be undone.',
                     onConfirm: () => {
-                        const isActive = (activeDoc === '{{ doc.id }}');
                         htmx.ajax('DELETE', '/document/{{ doc.id }}', {
                             target: '#doc-row-{{ doc.id }}',
                             swap: 'outerHTML'
                         }).then(() => {
                             window.showToast('Document deleted', 'success');
-                            if (isActive) clearPreview();
                         });
                     }
                 })"
@@ -50,7 +48,8 @@
          class="hidden"></div>
     {% endif %}
 
-    <div class="p-4 pr-12 flex items-start gap-4" hx-get="/document/{{ doc.id }}?context=triage" hx-target="#activity-doc-pane" hx-swap="innerHTML">
+    <a class="p-4 pr-12 flex items-start gap-4 hover:no-underline"
+       href="{% if doc.case_id and doc.case_id != '_TRIAGE' %}/cases/{{ doc.case_id }}/document/{{ doc.id }}{% else %}/triage{% endif %}">
         {# Icon #}
         <div class="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center" style="background-color: {{ stripe_color }}20;">
             <span class="material-symbols-outlined text-lg" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
@@ -103,6 +102,6 @@
         <div class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             <span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
         </div>
-    </div>
+    </a>
 </div>
 {% endfor %}

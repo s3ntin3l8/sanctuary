@@ -60,7 +60,6 @@
     hasMore: true,
     loading: false,
     selectedDocs: [],
-    activeDoc: null,
     filterOpen: false,
     court: true,
     opposing: true,
@@ -90,14 +89,6 @@
             this.selectedDocs.push(id);
         }
     },
-    clearPreview() {
-        this.activeDoc = null;
-        const pane = document.getElementById('activity-doc-pane');
-        if (pane) {
-            pane.innerHTML = '';
-            pane.appendChild(this.$refs.emptyStateTemplate.content.cloneNode(true));
-        }
-    },
     async bulkDelete() {
         if (this.selectedDocs.length === 0) return;
 
@@ -105,7 +96,6 @@
             title: 'Bulk Delete',
             message: 'Are you sure you want to delete ' + this.selectedDocs.length + ' documents? This action cannot be undone.',
             onConfirm: () => {
-                const wasActiveDeleted = this.selectedDocs.includes(this.activeDoc);
                 const count = this.selectedDocs.length;
 
                 htmx.ajax('POST', '/api/v1/documents/bulk-delete', {
@@ -113,7 +103,6 @@
                     values: { doc_ids: this.selectedDocs }
                 }).then(() => {
                     window.showToast(count + ' documents deleted', 'success');
-                    if (wasActiveDeleted) this.clearPreview();
                     this.selectedDocs = [];
                     this.refreshFeed();
                 });
@@ -141,23 +130,10 @@
                 sentinel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         });
-    },
-    loadFirstDoc() {
-        const firstDocId = this.$refs.firstDocId?.value;
-        if (firstDocId) {
-            this.activeDoc = firstDocId;
-            const pane = document.getElementById('activity-doc-pane');
-            if (pane) {
-                htmx.ajax('GET', '/document/' + firstDocId + '?context=activity', {
-                    target: pane,
-                    swap: 'innerHTML'
-                });
-            }
-        }
     }
 }"
-x-init="$watch('limit', () => { offset = 0; hasMore = true; }); $watch('court', () => { refreshFeed(); }); $watch('opposing', () => { refreshFeed(); }); $watch('own', () => { refreshFeed(); }); $watch('unknown', () => { refreshFeed(); }); setTimeout(loadFirstDoc, 100)"
-class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
+x-init="$watch('limit', () => { offset = 0; hasMore = true; }); $watch('court', () => { refreshFeed(); }); $watch('opposing', () => { refreshFeed(); }); $watch('own', () => { refreshFeed(); }); $watch('unknown', () => { refreshFeed(); })"
+class="flex-1 flex flex-col overflow-hidden">
     {% include "partials/page_header.html" %}
 
     {# Stats Bar with Filters #}
@@ -213,64 +189,36 @@ class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
         </div>
     </div>
 
-    {# Two-Column Split: Feed (35%) + Detail (remaining) #}
-    <div class="flex-1 flex overflow-hidden bg-surface">
-        {# Empty State Template for JS #}
-        <template x-ref="emptyStateTemplate">
-            <div class="flex items-center justify-center h-full">
-                {% with
-                    icon='description',
-                    title='Select a Document',
-                    body='Click on any document to view its details.',
-                    icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
-                    icon_class='text-xl text-outline'
-                %}
-                    {% include "partials/empty_state.html" %}
-                {% endwith %}
+    {# Activity Feed — full width; items link out to the full-screen HUD #}
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface"
+         @scroll.throttle.50ms="
+             if ($el.scrollTop + $el.clientHeight >= $el.scrollHeight - 400 && !loading && hasMore) {
+                 loadMore();
+             }
+          ">
+        <div id="activity-feed" class="p-8 space-y-3 max-w-4xl mx-auto" x-ref="feedContainer">
+            {% for doc in documents %}
+            {% set doc_type = doc.originator_type.value if doc.originator_type else 'unknown' %}
+            <div x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (unknown && '{{ doc_type }}' === 'unknown')">
+                {% include "partials/activity_feed_item.html" %}
             </div>
-        </template>
-
-        {# Store first doc ID for auto-load #}
-        <input type="hidden" x-ref="firstDocId" value="{{ documents[0].id if documents else '' }}">
-
-        {# Left: Activity Feed #}
-        <div class="w-[35%] min-w-[320px] border-r border-outline-variant/10 overflow-y-auto custom-scrollbar bg-surface"
-             @scroll.throttle.50ms="
-                 if ($el.scrollTop + $el.clientHeight >= $el.scrollHeight - 400 && !loading && hasMore) {
-                     loadMore();
-                 }
-              ">
-            <div id="activity-feed" class="p-8 space-y-3" x-ref="feedContainer">
-                {% for doc in documents %}
-                {% set doc_type = doc.originator_type.value if doc.originator_type else 'unknown' %}
-                <div x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (unknown && '{{ doc_type }}' === 'unknown')">
-                    {% include "partials/activity_feed_item.html" %}
-                </div>
-                {% endfor %}
-            </div>
-
-            {# Load More Trigger / Loading State #}
-            <div x-ref="loadSentinel" class="p-8 text-center">
-                <div x-show="loading" class="flex items-center justify-center gap-2">
-                    <span class="material-symbols-outlined text-primary animate-spin">sync</span>
-                    <span class="text-sm text-on-surface-variant">Loading more...</span>
-                </div>
-                <div x-show="!hasMore && documents|length > 0" class="flex items-center justify-center gap-2">
-                    <span class="material-symbols-outlined text-on-surface-variant">check_circle</span>
-                    <span class="text-sm text-on-surface-variant">All documents loaded</span>
-                </div>
-                <div x-show="documents|length == 0" class="flex items-center justify-center gap-2">
-                    <span class="material-symbols-outlined text-on-surface-variant">inbox</span>
-                    <span class="text-sm text-on-surface-variant">No documents yet</span>
-                </div>
-            </div>
+            {% endfor %}
         </div>
 
-        {# Right: Document Detail Pane (loaded via HTMX on click) #}
-        <div id="activity-doc-pane" class="flex-1 min-w-0 overflow-y-auto custom-scrollbar">
-            {% with icon='touch_app', title='Select a Document', body='Click any document on the left to view its details.', icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3', icon_class='text-xl text-outline' %}
-            {% include "partials/empty_state.html" %}
-            {% endwith %}
+        {# Load More Trigger / Loading State #}
+        <div x-ref="loadSentinel" class="p-8 text-center max-w-4xl mx-auto">
+            <div x-show="loading" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-primary animate-spin">sync</span>
+                <span class="text-sm text-on-surface-variant">Loading more...</span>
+            </div>
+            <div x-show="!hasMore && documents|length > 0" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant">check_circle</span>
+                <span class="text-sm text-on-surface-variant">All documents loaded</span>
+            </div>
+            <div x-show="documents|length == 0" class="flex items-center justify-center gap-2">
+                <span class="material-symbols-outlined text-on-surface-variant">inbox</span>
+                <span class="text-sm text-on-surface-variant">No documents yet</span>
+            </div>
         </div>
     </div>
 </section>

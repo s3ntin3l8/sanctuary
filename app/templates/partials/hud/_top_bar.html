@@ -1,0 +1,109 @@
+{# Top bar — rendered only in standalone (full-screen) context.
+   Required: doc, case_id, prev_doc_id, next_doc_id, originator_color
+#}
+{% from "components/significance_indicator.html" import significance_indicator %}
+{% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
+{% set ot_class = ot.replace('_', '-') %}
+
+<div class="flex-none border-b border-outline-variant/10 hud-top-bar"
+     style="background:var(--color-surface-container-low);">
+  <div class="flex items-center gap-3 px-5 py-2.5">
+
+    {# Back / breadcrumb #}
+    <a href="/cases/{{ doc.case_id }}"
+       class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest shrink-0 hover:text-primary transition-colors"
+       style="color:var(--color-on-surface-variant);"
+       title="Back to case dashboard">
+      <span class="material-symbols-outlined text-base">arrow_back</span>
+    </a>
+
+    {# Case / proceeding breadcrumb #}
+    <div class="text-[9px] font-mono font-bold shrink-0" style="color:var(--color-on-surface-variant);">
+      <span class="text-primary">{{ doc.case_id }}</span>
+      {% if doc.proceeding %}
+      <span class="text-outline"> · </span>
+      <span>{{ doc.proceeding.court_name }}</span>
+      {% if doc.proceeding.az_court %}
+      <span class="text-outline"> · </span>
+      <span>{{ doc.proceeding.az_court }}</span>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    {# Title + meta #}
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-black tracking-tighter truncate" style="color:var(--color-on-surface); font-family:Manrope, sans-serif;">
+        {{ doc.title }}
+      </h1>
+      <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-originator-{{ ot_class }}/15 text-originator-{{ ot_class }} font-bold uppercase tracking-wider text-[9px]">
+          {{ ot.replace('_', ' ') }}
+        </span>
+        {% if doc.significance_tier %}
+        {{ significance_indicator(doc.significance_tier) }}
+        {% endif %}
+        {% if doc.received_date %}
+        <span class="font-mono text-[9px]" style="color:var(--color-outline);">{{ doc.received_date.strftime('%d.%m.%Y') }}</span>
+        {% endif %}
+        {% if doc.thread_open %}
+        <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+              style="background:var(--color-surface-container); color:var(--color-amber);">thread open</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Prev / Next navigation #}
+    <div class="flex items-center gap-1 shrink-0">
+      {% if prev_doc_id %}
+      <a href="/cases/{{ doc.case_id }}/document/{{ prev_doc_id }}"
+         class="p-1.5 rounded hover:bg-surface-container-high transition-colors"
+         style="color:var(--color-on-surface-variant);"
+         title="Previous document (←)">
+        <span class="material-symbols-outlined text-base">arrow_back_ios</span>
+      </a>
+      {% else %}
+      <span class="p-1.5 opacity-30" style="color:var(--color-outline);">
+        <span class="material-symbols-outlined text-base">arrow_back_ios</span>
+      </span>
+      {% endif %}
+      {% if next_doc_id %}
+      <a href="/cases/{{ doc.case_id }}/document/{{ next_doc_id }}"
+         class="p-1.5 rounded hover:bg-surface-container-high transition-colors"
+         style="color:var(--color-on-surface-variant);"
+         title="Next document (→)">
+        <span class="material-symbols-outlined text-base">arrow_forward_ios</span>
+      </a>
+      {% else %}
+      <span class="p-1.5 opacity-30" style="color:var(--color-outline);">
+        <span class="material-symbols-outlined text-base">arrow_forward_ios</span>
+      </span>
+      {% endif %}
+    </div>
+
+    {# Open original file #}
+    <a href="/document/{{ doc.id }}/original"
+       target="_blank"
+       rel="noopener"
+       class="p-1.5 rounded hover:bg-surface-container-high transition-colors shrink-0"
+       style="color:var(--color-on-surface-variant);"
+       title="Open original file (o)">
+      <span class="material-symbols-outlined text-base">open_in_new</span>
+    </a>
+
+    {# Focus mode toggle (hides rail, body stretches) #}
+    <button @click="toggleFocusMode()"
+            class="p-1.5 rounded hover:bg-surface-container-high transition-colors shrink-0"
+            style="color:var(--color-on-surface-variant);"
+            title="Focus mode — hide rail (f)">
+      <span class="material-symbols-outlined text-base">fit_page</span>
+    </button>
+
+    {# Close — back to dashboard #}
+    <a href="/cases/{{ doc.case_id }}"
+       class="p-1.5 rounded hover:bg-surface-container-high transition-colors shrink-0"
+       style="color:var(--color-on-surface-variant);"
+       title="Back to dashboard (Esc)">
+      <span class="material-symbols-outlined text-base">close</span>
+    </a>
+  </div>
+</div>

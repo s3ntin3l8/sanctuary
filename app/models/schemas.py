@@ -53,3 +53,5 @@ class KeyPassageSchema(BaseModel):
     text: str
     rationale: str | None = ""
     span: Any | None = None
+    kind: str | None = None
+    id: str | None = None

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}{{ doc.title }} — Sanctuary{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/hud.js"></script>
+{% endblock %}
+
+{% block content %}
+{#
+  Full-screen document reader — standalone HUD context.
+  Sidebar is standard Sanctuary chrome (rendered by base.html).
+  This block fills the remainder of the main flex container.
+#}
+{% set context = 'standalone' %}
+{% include "partials/hud/_container.html" %}
+{% endblock %}

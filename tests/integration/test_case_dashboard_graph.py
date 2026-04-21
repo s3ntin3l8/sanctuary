@@ -181,6 +181,27 @@ class TestCaseDashboardGraph:
         response = client.get(f"/cases/{graph_case.id}/document/999999/hud")
         assert response.status_code == 404
 
+    @pytest.mark.integration
+    def test_document_fullscreen_route(
+        self, db_session, graph_case, graph_proceeding, graph_document
+    ):
+        db_session.commit()
+        response = client.get(f"/cases/{graph_case.id}/document/{graph_document.id}")
+        assert response.status_code == 200
+        assert 'data-hud-context="standalone"' in response.text
+        assert "Klageschrift" in response.text
+
+    @pytest.mark.integration
+    def test_document_fullscreen_wrong_case_redirects(
+        self, db_session, graph_case, graph_proceeding, graph_document
+    ):
+        db_session.commit()
+        response = client.get(
+            f"/cases/WRONG-CASE/document/{graph_document.id}",
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
 
 # ===========================================================================
 # UserSettings — persistence endpoints

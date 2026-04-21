@@ -1,0 +1,104 @@
+{# Passages spine (standalone/embedded) or passage cards (overlay).
+   Required: key_passages (list[{text, kind, page, rationale, id}]), context
+   Optional: passage_claim_map (dict[passage_id, claim_id])
+#}
+{% set pcm = passage_claim_map if passage_claim_map is defined else {} %}
+{% set kind_colors = {
+  'ruling':     'var(--color-primary)',
+  'holding':    'var(--color-primary)',
+  'deadline':   'var(--color-amber)',
+  'finding':    'var(--color-secondary)',
+  'concession': 'var(--color-tertiary)',
+  'neutral':    'var(--color-outline-variant)'
+} %}
+
+<div class="px-5 py-4 border-b border-outline-variant/10">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">format_quote</span>
+    Passages
+    {% if key_passages %}
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant">{{ key_passages|length }}</span>
+    {% if pcm %}
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary">⚖ {{ pcm|length }}</span>
+    {% endif %}
+    {% endif %}
+  </h4>
+
+  {% if key_passages %}
+    {% if context == 'overlay' %}
+    {# Overlay: full passage cards (no body column to scroll) #}
+    <div class="space-y-2.5">
+      {% for p in key_passages %}
+      {% set p_id = p.id if p.id else (p.text ~ p.kind)|hash %}
+      {% set accent = kind_colors.get(p.kind, kind_colors['neutral']) %}
+      {% set claim_id = pcm.get(p_id) %}
+      <blockquote class="pl-3 py-2 border-l-2 rounded-r text-[11.5px] leading-relaxed"
+                  style="border-color:{{ accent }}; background:var(--color-surface-container); color:var(--color-on-surface);">
+        <p class="italic line-clamp-3">"{{ p.text }}"</p>
+        <footer class="mt-1.5 flex items-center gap-2 flex-wrap">
+          <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                style="background:var(--color-surface-container-high); color:{{ accent }};">{{ p.kind }}</span>
+          {% if p.page %}
+          <span class="text-[9px] font-mono" style="color:var(--color-outline);">p. {{ p.page }}</span>
+          {% endif %}
+          {% if claim_id %}
+          <span class="text-[9px] font-bold" title="Claim #{{ claim_id }}">⚖ #{{ claim_id }}</span>
+          {% endif %}
+          {% if p.rationale %}
+          <span class="text-[9px] italic" style="color:var(--color-on-surface-variant);" title="{{ p.rationale }}">{{ p.rationale | truncate(60, true) }}</span>
+          {% endif %}
+        </footer>
+      </blockquote>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    {# Standalone / embedded: spine rows with scroll-spy anchors #}
+    <div class="space-y-1" id="hud-passages-spine">
+      {% set current_kind = namespace(val='') %}
+      {% for p in key_passages %}
+      {% set p_id = p.id if p.id else (p.text ~ p.kind)|hash %}
+      {% if p.kind != current_kind.val %}
+      {% set current_kind.val = p.kind %}
+      <div class="text-[9px] font-bold uppercase tracking-widest mt-3 mb-1 px-1"
+           style="color:var(--color-outline);">── {{ p.kind }}</div>
+      {% endif %}
+      {% set accent = kind_colors.get(p.kind, kind_colors['neutral']) %}
+      {% set claim_id = pcm.get(p_id) %}
+      <div role="button" tabindex="0"
+              data-spine-passage="{{ p_id }}"
+              @click="focusPassage && focusPassage('{{ p.id }}')"
+              @keydown.enter.prevent="focusPassage && focusPassage('{{ p.id }}')"
+              @keydown.space.prevent="focusPassage && focusPassage('{{ p.id }}')"
+              class="w-full text-left px-2 py-1.5 rounded hover:bg-surface-container-high transition-colors group cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40">
+        <p class="text-[11px] leading-snug line-clamp-2 italic" style="color:var(--color-on-surface);">"{{ p.text | truncate(100, true) }}"</p>
+        <div class="flex items-center gap-2 mt-1 flex-wrap">
+          {% if claim_id %}
+          <span class="text-[9px] font-bold text-primary">⚖ #{{ claim_id }}</span>
+          {% endif %}
+          {% if p.rationale %}
+          <span class="text-[9px]" style="color:var(--color-on-surface-variant);">{{ p.rationale | truncate(50, true) }}</span>
+          {% endif %}
+          {% if context != 'overlay' %}
+          {% set pin_count = passage_pin_counts.get(p_id, 0) if passage_pin_counts is defined else 0 %}
+          {% if pin_count > 0 %}
+          <span class="text-[9px] font-bold" style="color: var(--color-amber, #f59e0b);" title="{{ pin_count }} pin(s)">📌 {{ pin_count }}</span>
+          {% endif %}
+          <button type="button"
+                  @click.stop="createPinAt && createPinAt('{{ p_id }}')"
+                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors"
+                  style="color: var(--color-outline);"
+                  title="Pin this passage (n)">
+            + pin
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  {% else %}
+  <p class="text-[11px] italic" style="color:var(--color-outline);">No key passages detected yet.</p>
+  {% endif %}
+</div>

@@ -1,0 +1,144 @@
+{# Document HUD container — one template, three contexts, two modes.
+   context ∈ {overlay, standalone, embedded}
+   mode    ∈ {read, review}
+
+   Required context vars:
+     doc, context, mode, case_id,
+     summary_bullets, key_passages, passage_claim_map,
+     reactions, grounds, actions,
+     relationships_out, relationships_in,
+     prev_doc_id, next_doc_id, originator_color
+#}
+{% from "components/significance_indicator.html" import significance_indicator %}
+{% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
+{% set ot_class = ot.replace('_', '-') %}
+{% set case_id = case_id if case_id is defined else doc.case_id %}
+
+{# ── OVERLAY (slide-in, 480px, scan-primary) ─────────────────────────────── #}
+{% if context == 'overlay' %}
+<div class="fixed inset-y-0 right-0 z-50 flex flex-col slide-in-right"
+     style="width:480px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:-8px 0 32px rgba(0,0,0,0.35);">
+
+  {# Header strip #}
+  <div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 border-b border-outline-variant/10">
+    <span class="h-2.5 w-2.5 rounded-full flex-shrink-0"
+          style="background:var(--color-originator-{{ ot_class }});"></span>
+    <span class="text-[9.5px] uppercase tracking-widest font-semibold flex-1"
+          style="color:var(--color-on-surface-variant);">DOCUMENT HUD</span>
+
+    {# Prev / Next #}
+    {% if prev_doc_id %}
+    <button hx-get="/cases/{{ case_id }}/document/{{ prev_doc_id }}/hud"
+            hx-target="#case-dashboard-hud"
+            hx-swap="innerHTML"
+            class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
+            style="color:var(--color-on-surface-variant);"
+            title="Previous document (←)">←</button>
+    {% endif %}
+    {% if next_doc_id %}
+    <button hx-get="/cases/{{ case_id }}/document/{{ next_doc_id }}/hud"
+            hx-target="#case-dashboard-hud"
+            hx-swap="innerHTML"
+            class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
+            style="color:var(--color-on-surface-variant);"
+            title="Next document (→)">→</button>
+    {% endif %}
+
+    {# Expand to full-screen #}
+    <a href="/cases/{{ case_id }}/document/{{ doc.id }}"
+       class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
+       style="color:var(--color-on-surface-variant);"
+       title="Open full text (⇱)">⇱</a>
+
+    {# Close #}
+    <button @click="closeDoc()"
+            style="color:var(--color-on-surface-variant);"
+            title="Close (Esc)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M6 6l12 12M6 18L18 6"/>
+      </svg>
+    </button>
+  </div>
+
+  {# Title + meta #}
+  <div class="px-5 pt-4 pb-2 flex-shrink-0 border-b border-outline-variant/10">
+    <h2 class="font-black text-[15px] leading-snug mb-1.5"
+        style="color:var(--color-on-surface); font-family:Manrope, sans-serif;">
+      {{ doc.title }}
+    </h2>
+    <div class="flex items-center gap-2 flex-wrap text-[10px]" style="color:var(--color-on-surface-variant);">
+      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-originator-{{ ot_class }}/15 text-originator-{{ ot_class }} font-bold uppercase tracking-wider text-[8.5px]">
+        {{ ot.replace('_', ' ') }}
+      </span>
+      {% if doc.received_date %}
+      <span class="font-mono">{{ doc.received_date.strftime('%d.%m.%Y') }}</span>
+      {% endif %}
+      {% if doc.significance_tier %}
+      {{ significance_indicator(doc.significance_tier) }}
+      <span class="text-[8.5px] uppercase font-bold">{{ doc.significance_tier.value }}</span>
+      {% endif %}
+      {% if doc.thread_open %}
+      <span class="text-[8.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+            style="background:var(--color-surface-container); color:var(--color-amber);">thread open</span>
+      {% endif %}
+    </div>
+    <p class="text-[9px] font-mono mt-1" style="color:var(--color-outline);">{{ case_id }}</p>
+  </div>
+
+  {# Scrollable rail — all sections in canonical order #}
+  <div class="flex-1 overflow-auto custom-scrollbar">
+    {% include "partials/hud/_rail.html" %}
+  </div>
+
+  {# Footer: Ask AI + shortcuts hint #}
+  {% include "partials/hud/_ask_ai.html" %}
+  <div class="px-5 pb-2 text-center text-[9.5px]" style="color:var(--color-outline);">
+    Esc to close · ← → to navigate · ⇱ full text
+  </div>
+</div>
+
+{# ── STANDALONE (full-screen reader) ─────────────────────────────────────── #}
+{% elif context == 'standalone' %}
+<div class="flex-1 flex flex-col overflow-hidden" x-data="hudReader()" data-hud-root data-hud-context="standalone"
+     data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
+     data-prev-doc-id="{{ prev_doc_id or '' }}" data-next-doc-id="{{ next_doc_id or '' }}"
+     data-parent-doc-id="{{ doc.parent_id or '' }}"
+     data-first-child-doc-id="{{ first_child_id or '' }}"
+     data-bundle-prev="{{ bundle_prev_id or '' }}"
+     data-bundle-next="{{ bundle_next_id or '' }}">
+  {% include "partials/hud/_top_bar.html" %}
+  <div class="flex-1 flex overflow-hidden min-h-0 hud-body-rail">
+    {# Body column #}
+    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container/20">
+      {% include "partials/hud/_body.html" %}
+    </div>
+    {# Right rail #}
+    <div class="w-[340px] flex-none border-l border-outline-variant/10 overflow-y-auto custom-scrollbar bg-surface-container-low"
+         id="hud-rail-{{ doc.id }}">
+      {% include "partials/hud/_rail.html" %}
+      {% include "partials/hud/_ask_ai.html" %}
+    </div>
+  </div>
+</div>
+
+{# ── EMBEDDED (triage right pane) ────────────────────────────────────────── #}
+{% elif context == 'embedded' %}
+<div class="flex-1 flex overflow-hidden min-h-0" data-hud-root data-hud-context="embedded"
+     data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
+     data-first-child-doc-id="{{ first_child_id or '' }}"
+     data-bundle-prev="{{ bundle_prev_id or '' }}"
+     data-bundle-next="{{ bundle_next_id or '' }}">
+  {# Body column #}
+  <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container/20">
+    {% include "partials/hud/_body.html" %}
+  </div>
+  {# Right rail #}
+  <div class="w-[340px] flex-none border-l border-outline-variant/10 overflow-y-auto custom-scrollbar bg-surface-container-low"
+       id="hud-rail-{{ doc.id }}">
+    {% include "partials/hud/_rail.html" %}
+    {% include "partials/hud/_ask_ai.html" %}
+  </div>
+</div>
+{% endif %}
+
+{% include "partials/hud/_shortcuts.html" %}

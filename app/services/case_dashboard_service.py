@@ -256,7 +256,9 @@ def summary_bullets_from_ai_summary(ai_summary) -> list[dict]:
 
 
 def key_passages_for_template(key_passages) -> list[dict]:
-    """Normalise `Document.key_passages` to `[{text, kind, page}]` for the HUD."""
+    """Normalise `Document.key_passages` to `[{text, kind, page, rationale, id}]`."""
+    import hashlib
+
     if not key_passages:
         return []
     out: list[dict] = []
@@ -266,13 +268,22 @@ def key_passages_for_template(key_passages) -> list[dict]:
         text = raw.get("text") or ""
         if not text:
             continue
-        kind = raw.get("kind") or "neutral"
+        kind = (raw.get("kind") or "neutral").lower()
         page = raw.get("page")
         if page is None:
             span = raw.get("span") or {}
             if isinstance(span, dict):
                 page = span.get("page")
-        out.append({"text": text, "kind": kind, "page": page})
+        pid = raw.get("id") or hashlib.sha1(f"{text}|{kind}".encode()).hexdigest()[:12]
+        out.append(
+            {
+                "text": text,
+                "kind": kind,
+                "page": page,
+                "rationale": raw.get("rationale") or "",
+                "id": pid,
+            }
+        )
     return out
 
 

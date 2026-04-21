@@ -330,8 +330,16 @@ async def root_page(request: Request, db: Session = Depends(get_db)):
     return await home(request, db)
 
 
+import hashlib
+
+
+def _hash_id(text: str, kind: str = "neutral", length: int = 12) -> str:
+    return hashlib.sha1(f"{text}|{kind}".encode()).hexdigest()[:length]
+
+
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
 templates.env.filters["hm"] = normalize_hm
+templates.env.filters["hash"] = _hash_id
 templates.env.globals["format_eur"] = format_eur
 templates.env.filters["format_relative_time"] = format_relative_time
 templates.env.filters["urlencode"] = quote
@@ -343,7 +351,6 @@ templates.env.filters["urlencode"] = quote
 # cost tables.
 from markdown_it import MarkdownIt
 from markupsafe import Markup
-from markupsafe import escape as _escape
 
 _md = (
     MarkdownIt("commonmark", {"html": False, "linkify": True, "typographer": True})
@@ -358,12 +365,18 @@ def render_markdown(value: str | None) -> Markup:
     return Markup(_md.render(str(value)))
 
 
-def render_highlighted(value: str | None, key_passages: list | None = None) -> Markup:
-    """Render markdown then wrap key_passage text in slate-blue <mark> spans.
+def render_highlighted(
+    value: str | None,
+    key_passages: list | None = None,
+    passage_claim_ids: dict | None = None,
+) -> Markup:
+    """Render markdown then wrap key_passage text in semantic <mark> spans.
 
-    key_passages is a list of {text, rationale, span} dicts from Document.key_passages.
+    key_passages is a list of {text, rationale, span, kind?, id?} dicts.
+    passage_claim_ids maps passage_id → claim_id for the ⚖ chip.
     No-ops gracefully when the list is empty or None (pre-Phase 4).
     """
+    import hashlib as _hl
     import re as _re
 
     html = _md.render(str(value)) if value else ""
@@ -372,11 +385,24 @@ def render_highlighted(value: str | None, key_passages: list | None = None) -> M
             text = (passage.get("text") or "").strip()
             if not text:
                 continue
-            # Escape for regex, then replace first occurrence preserving case.
+            kind = (passage.get("kind") or "neutral").lower()
+            pid = (
+                passage.get("id")
+                or _hl.sha1(f"{text}|{kind}".encode()).hexdigest()[:12]
+            )
+            chip = ""
+            if passage_claim_ids and pid in passage_claim_ids:
+                claim_id = passage_claim_ids[pid]
+                chip = f'<a href="#claim-{claim_id}" class="hud-claim-chip ml-0.5 text-[10px] no-underline">⚖</a>'
+            mark = (
+                f'<mark id="p-{pid}" data-passage-id="{pid}" data-kind="{kind}" '
+                f'class="hud-mark hud-mark--{kind} '
+                f"bg-[color:var(--color-key-passage-bg)] text-[color:var(--color-key-passage-fg)] "
+                f'rounded px-0.5 ring-1 ring-[color:var(--color-key-passage-ring)]">'
+                f"{text}</mark>{chip}"
+            )
             pattern = _re.escape(text)
-            rationale = _escape(passage.get("rationale", ""))
-            replacement = f'<mark class="bg-sky-800/30 text-sky-200 rounded px-0.5" title="{rationale}">{text}</mark>'
-            html = _re.sub(pattern, replacement, html, count=1)
+            html = _re.sub(pattern, lambda _m, m=mark: m, html, count=1)
     return Markup(html)
 
 
