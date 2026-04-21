@@ -46,6 +46,8 @@ FilterQuery = Annotated[str, Query(pattern=r"^(critical|significant\+|all)$")]
 async def case_directory(
     request: Request, page: int = 1, db: Session = Depends(get_db)
 ):
+    from datetime import datetime
+
     from app.constants import CASE_STATUS_META
 
     case_service = CaseService(db)
@@ -57,12 +59,14 @@ async def case_directory(
     else:
         data = case_service.get_all_cases_directory()
 
-    case_titles = {c.id: c.title for c in data["cases"]}
+    case_titles = {c["id"]: c["title"] for c in data["cases"]}
+    now = datetime.now()
 
     return render_page(
         request,
         "pages/case_directory.html",
         db=db,
+        now=now,
         all_cases=data["cases"],
         active_cases=data["active_cases"],
         closed_cases=data["closed_cases"],
