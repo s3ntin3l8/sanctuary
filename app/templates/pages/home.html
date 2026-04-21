@@ -56,8 +56,11 @@
             {% endif %}
 
             <!-- Active Cases Section -->
-            <div class="pt-4">
-                <div class="flex items-baseline justify-between mb-3 px-1">
+            <div class="pt-4"
+                 @mouseenter="focusedPanel = 'cases'; focusedIdx = -1"
+                 @mouseleave="focusedPanel = null; focusedIdx = -1">
+                <div class="flex items-baseline justify-between mb-3 px-1"
+                     @mouseenter.stop="focusedIdx = -1">
                     <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
                         Active Cases <span class="text-[11px] font-normal normal-case tracking-normal text-on-surface-variant">· {{ active_cases|length }}</span>
                     </h2>
