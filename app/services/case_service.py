@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.database import Case, Document
+from app.models.database import ActionItem, Case, Document
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
@@ -121,12 +122,88 @@ class CaseService:
             "new_docs_since_last_visit": new_docs,
         }
 
+    def enrich_case_for_card(
+        self, case: Case, now: datetime, last_home_visit: datetime | None = None
+    ) -> dict[str, Any]:
+        """Enrich a case with metadata needed for the dashboard/directory card."""
+        from app.services.user_settings_service import count_new_since
+
+        # Get closest action item
+        next_action = (
+            self.db.query(ActionItem)
+            .filter(
+                ActionItem.case_id == case.id,
+                ActionItem.status == ActionItemStatus.OPEN,
+            )
+            .order_by(ActionItem.due_date.asc())
+            .first()
+        )
+
+        new_docs_count = (
+            count_new_since(case.id, last_home_visit, self.db) if last_home_visit else 0
+        )
+
+        # Days since last activity
+        last_doc = (
+            self.db.query(Document)
+            .filter(Document.case_id == case.id)
+            .order_by(Document.created_at.desc())
+            .first()
+        )
+        days_since = (
+            (now - last_doc.created_at).days
+            if last_doc
+            else (now - case.created_at).days
+        )
+
+        # Get active proceeding name
+        active_proc = next((p for p in case.proceedings if p.status == "active"), None)
+        if not active_proc and case.proceedings:
+            active_proc = case.proceedings[0]
+
+        proceeding_name = active_proc.court_name if active_proc else "General"
+
+        return {
+            "id": case.id,
+            "title": case.title,
+            "status": case.status,
+            "status_line": case.ai_brief.get("status_line", "Active")
+            if case.ai_brief
+            else "Active",
+            "next_action": next_action,
+            "exposure_eur": case.total_cost_exposure / 100.0
+            if case.total_cost_exposure
+            else 0.0,
+            "new_docs": new_docs_count,
+            "days_since_activity": days_since,
+            "tier": "delta" if new_docs_count > 0 else "normal",
+            "proceeding_name": proceeding_name,
+        }
+
     def get_all_cases_directory(self) -> dict:
         """Get all cases with counts for directory view."""
         all_cases = self.case_repo.get_all_sorted_by_date()
+        now = datetime.now()
 
-        active_cases = [c for c in all_cases if c.status != CaseStatus.CLOSED]
-        closed_cases = [c for c in all_cases if c.status == CaseStatus.CLOSED]
+        # Fetch last_home_visit from user settings for enrichment
+        from app.models.database import UserSettings
+
+        settings = self.db.query(UserSettings).first()
+        last_home_visit_iso = (
+            settings.settings_json.get("last_home_visit")
+            if settings and settings.settings_json
+            else None
+        )
+        last_home_visit = (
+            datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
+        )
+
+        enriched_cases = [
+            self.enrich_case_for_card(c, now, last_home_visit) for c in all_cases
+        ]
+
+        active_cases = [c for c in enriched_cases if c["status"] != CaseStatus.CLOSED]
+        closed_cases = [c for c in enriched_cases if c["status"] == CaseStatus.CLOSED]
 
         stats_by_status = self.case_repo.count_all_by_status()
 
@@ -136,12 +213,12 @@ class CaseService:
         )
 
         return {
-            "cases": all_cases,
+            "cases": enriched_cases,
             "active_cases": active_cases,
             "closed_cases": closed_cases,
             "stats_by_status": stats_by_status,
             "doc_counts": doc_counts,
-            "deadline_counts": action_counts,  # kept key name for template compatibility
+            "deadline_counts": action_counts,
             "total": len(all_cases),
         }
 
@@ -150,9 +227,27 @@ class CaseService:
     ) -> dict:
         """Get paginated cases with counts for directory view."""
         cases, total = self.case_repo.get_paginated(page=page, per_page=per_page)
+        now = datetime.now()
 
-        active_cases = [c for c in cases if c.status != CaseStatus.CLOSED]
-        closed_cases = [c for c in cases if c.status == CaseStatus.CLOSED]
+        # Fetch last_home_visit from user settings for enrichment
+        from app.models.database import UserSettings
+
+        settings = self.db.query(UserSettings).first()
+        last_home_visit_iso = (
+            settings.settings_json.get("last_home_visit")
+            if settings and settings.settings_json
+            else None
+        )
+        last_home_visit = (
+            datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
+        )
+
+        enriched_cases = [
+            self.enrich_case_for_card(c, now, last_home_visit) for c in cases
+        ]
+
+        active_cases = [c for c in enriched_cases if c["status"] != CaseStatus.CLOSED]
+        closed_cases = [c for c in enriched_cases if c["status"] == CaseStatus.CLOSED]
 
         stats_by_status = self.case_repo.count_all_by_status()
 
@@ -161,7 +256,7 @@ class CaseService:
         action_counts = self.action_repo.bulk_count_open_by_case(case_ids)
 
         return {
-            "cases": cases,
+            "cases": enriched_cases,
             "active_cases": active_cases,
             "closed_cases": closed_cases,
             "stats_by_status": stats_by_status,

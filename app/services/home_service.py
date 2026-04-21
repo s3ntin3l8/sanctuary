@@ -139,6 +139,9 @@ class HomeService:
         signals = get_signals(self.db)
 
         # 5. Active Cases Strip
+        from app.services.case_service import CaseService
+
+        case_service = CaseService(self.db)
         active_cases_query = (
             self.db.query(Case)
             .options(joinedload(Case.proceedings))
@@ -147,63 +150,10 @@ class HomeService:
         active_cases = active_cases_query.order_by(Case.created_at.desc()).all()
 
         # Enrich active cases with some metadata for the card
-        enriched_cases = []
-        for c in active_cases:
-            # Get closest action item
-            next_action = (
-                self.db.query(ActionItem)
-                .filter(
-                    ActionItem.case_id == c.id,
-                    ActionItem.status == ActionItemStatus.OPEN,
-                )
-                .order_by(ActionItem.due_date.asc())
-                .first()
-            )
-
-            new_docs_count = (
-                count_new_since(c.id, last_home_visit, self.db)
-                if last_home_visit
-                else 0
-            )
-
-            # Days since last activity
-            last_doc = (
-                self.db.query(Document)
-                .filter(Document.case_id == c.id)
-                .order_by(Document.created_at.desc())
-                .first()
-            )
-            days_since = (
-                (now - last_doc.created_at).days
-                if last_doc
-                else (now - c.created_at).days
-            )
-
-            # Get active proceeding name
-            active_proc = next((p for p in c.proceedings if p.status == "active"), None)
-            if not active_proc and c.proceedings:
-                active_proc = c.proceedings[0]
-
-            proceeding_name = active_proc.court_name if active_proc else "General"
-
-            enriched_cases.append(
-                {
-                    "id": c.id,
-                    "title": c.title,
-                    "status": c.status,
-                    "status_line": c.ai_brief.get("status_line", "Active")
-                    if c.ai_brief
-                    else "Active",
-                    "next_action": next_action,
-                    "exposure_eur": c.total_cost_exposure / 100.0
-                    if c.total_cost_exposure
-                    else 0.0,
-                    "new_docs": new_docs_count,
-                    "days_since_activity": days_since,
-                    "tier": "delta" if new_docs_count > 0 else "normal",
-                    "proceeding_name": proceeding_name,
-                }
-            )
+        enriched_cases = [
+            case_service.enrich_case_for_card(c, now, last_home_visit)
+            for c in active_cases
+        ]
 
         return {
             "user_name": "Björn",  # Placeholder or fetch from settings
