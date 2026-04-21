@@ -1,4 +1,4 @@
-<a href="/cases/{{ case.id }}" class="flex flex-col h-full rounded-lg p-4 bg-surface-lowest border border-outline-variant/30 hover:bg-surface-low hover:border-primary/50 transition-all duration-300 group no-underline"
+<a href="/cases/{{ case.id }}" class="flex flex-col h-full rounded-lg p-4 bg-surface-container border border-outline-variant/30 hover:bg-surface-low hover:border-primary/50 transition-all duration-300 group no-underline"
    data-panel-item="cases" data-index="{{ loop_index0 }}"
    @mouseenter="focusedPanel = 'cases'; focusedIdx = {{ loop_index0 }}"
    :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'cases' && focusedIdx === {{ loop_index0 }} }">

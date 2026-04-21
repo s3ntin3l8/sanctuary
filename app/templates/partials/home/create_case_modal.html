@@ -12,7 +12,7 @@
      style="display: none;">
 
     <!-- Backdrop -->
-    <div class="absolute inset-0 bg-surface-lowest/80 backdrop-blur-sm" @click="showCreateCase = false"></div>
+    <div class="absolute inset-0 bg-surface-container/80 backdrop-blur-sm" @click="showCreateCase = false"></div>
 
     <!-- Modal Card -->
     <div x-show="showCreateCase"
@@ -26,7 +26,7 @@
          @click.away="showCreateCase = false">
 
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10 bg-surface-lowest">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10 bg-surface-container">
             <h3 class="text-sm font-black text-on-surface uppercase tracking-wider">Create New Case</h3>
             <button @click="showCreateCase = false" class="material-symbols-outlined text-on-surface-variant hover:text-error cursor-pointer text-sm">close</button>
         </div>
@@ -37,7 +37,7 @@
                 <label for="case_id" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Internal Case ID</label>
                 <input type="text" name="case_id" id="case_id" required
                        placeholder="e.g. ADV-2026-A"
-                       class="w-full mt-1.5 bg-surface-lowest border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                       class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
                 <p class="mt-1.5 text-[10px] text-on-surface-variant/60 italic">Unique lead identifier for files, URLs and AI recall.</p>
             </div>
 
@@ -46,7 +46,7 @@
                 <label for="title" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Case Title</label>
                 <input type="text" name="title" id="title" required
                        placeholder="e.g. Miller vs. City of Hamburg"
-                       class="w-full mt-1.5 bg-surface-lowest border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                       class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
             </div>
 
             <div class="grid grid-cols-2 gap-4">
@@ -54,7 +54,7 @@
                 <div>
                     <label for="jurisdiction" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Jurisdiction</label>
                     <select name="jurisdiction" id="jurisdiction"
-                            class="w-full mt-1.5 bg-surface-lowest border border-outline-variant/30 rounded-lg px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all">
+                            class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all">
                         <option value="de">Germany (DE)</option>
                         <option value="eu">European Union (EU)</option>
                         <option value="int">International (INT)</option>
@@ -66,7 +66,7 @@
                     <label for="court_name" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Active Court</label>
                     <input type="text" name="court_name" id="court_name" required
                            placeholder="e.g. AG Hamburg"
-                           class="w-full mt-1.5 bg-surface-lowest border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                           class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
                 </div>
             </div>
 

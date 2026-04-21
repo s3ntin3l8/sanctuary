@@ -17,13 +17,13 @@
             </div>
         </div>
         <div class="flex items-center gap-3">
-            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-lowest hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
+            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-container hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
                     onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))">
                 <span class="material-symbols-outlined text-[14px]">search</span>
                 <span>Search</span>
                 <span class="kbd ml-1"><span class="cmd-glyph">⌘</span>K</span>
             </button>
-            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-lowest hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
+            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-container hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
                     @click="showCreateCase = true">
                 <span class="material-symbols-outlined text-[14px]">add</span>
                 New case
@@ -76,7 +76,7 @@
                     {% endfor %}
 
                     {% if not active_cases %}
-                        <div class="col-span-full p-10 rounded-lg border border-dashed border-outline-variant/30 text-center text-on-surface-variant text-sm bg-surface-lowest/50">
+                        <div class="col-span-full p-10 rounded-lg border border-dashed border-outline-variant/30 text-center text-on-surface-variant text-sm bg-surface-container/50">
                             No active cases yet.
                         </div>
                     {% endif %}
