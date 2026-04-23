@@ -23,6 +23,8 @@ celery_app = Celery(
     ],
 )
 
+from app.config import SCAN_POLL_INTERVAL_SECONDS
+
 celery_app.conf.beat_schedule = {
     "sync-gmail-every-5-minutes": {
         "task": "app.tasks.gmail_sync.sync_gmail_incremental",
@@ -32,9 +34,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.thread_open_scan.thread_open_scan_task",
         "schedule": 900.0,
     },
-    "scan-folder-every-30-seconds": {
+    "scan-folder-polling": {
         "task": "app.tasks.scan_ingest.scan_folder_tick_task",
-        "schedule": 30.0,
+        "schedule": SCAN_POLL_INTERVAL_SECONDS,
     },
 }
 

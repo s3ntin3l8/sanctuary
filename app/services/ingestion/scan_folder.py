@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -20,7 +21,7 @@ from app.services.ingestion.batch_orchestrator import ingest_scanned_file
 logger = logging.getLogger(__name__)
 
 _IGNORE_SUFFIXES = {".part", ".tmp", ".crdownload"}
-_MTIME_GUARD_SECONDS = 5
+_MTIME_GUARD_SECONDS = int(os.getenv("SCAN_MTIME_GUARD_SECONDS", "5"))
 
 
 def _is_ready(path: Path) -> bool:

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -25,15 +26,14 @@ _THUMBNAIL_DPI = 120
 _TEXT_HEAD_CHARS = 500
 _TEXT_TAIL_CHARS = 500
 
-# Heuristic weights (sum to ≤1.0 per signal)
-_W_PAGE_RESET = 0.30
-_W_LETTERHEAD = 0.20
-_W_SALUTATION = 0.20
-_W_BLANK = 0.15
-_W_AZ_CHANGE = 0.25
-_W_ENCLOSURE = 0.30
+_W_PAGE_RESET = float(os.getenv("SLICE_W_PAGE_RESET", "0.30"))
+_W_LETTERHEAD = float(os.getenv("SLICE_W_LETTERHEAD", "0.20"))
+_W_SALUTATION = float(os.getenv("SLICE_W_SALUTATION", "0.20"))
+_W_BLANK = float(os.getenv("SLICE_W_BLANK", "0.15"))
+_W_AZ_CHANGE = float(os.getenv("SLICE_W_AZ_CHANGE", "0.25"))
+_W_ENCLOSURE = float(os.getenv("SLICE_W_ENCLOSURE", "0.30"))
 
-_HEURISTIC_THRESHOLD = 0.35
+_HEURISTIC_THRESHOLD = float(os.getenv("SLICE_HEURISTIC_THRESHOLD", "0.35"))
 
 
 # ---------------------------------------------------------------------------
@@ -349,5 +349,6 @@ def prepare(batch_id: int) -> None:
                 db.commit()
         except Exception:
             db.rollback()
+        raise
     finally:
         db.close()
