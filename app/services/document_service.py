@@ -80,6 +80,7 @@ class DocumentService:
             return False
 
         file_path = doc.file_path
+        ingest_batch_id = doc.ingest_batch_id
 
         # Remove non-nullable FK dependents first (SQLite FK enforcement is off, but
         # explicit cleanup prevents orphan rows from being recalled by AI later).
@@ -127,6 +128,19 @@ class DocumentService:
                     logging.getLogger(__name__).error(
                         f"Failed to delete file {file_path}: {e}"
                     )
+            # Remove the batch if this was its last document
+            if ingest_batch_id:
+                from app.models.database import IngestBatch
+
+                remaining = (
+                    self.db.query(Document)
+                    .filter(Document.ingest_batch_id == ingest_batch_id)
+                    .count()
+                )
+                if remaining == 0:
+                    self.db.query(IngestBatch).filter(
+                        IngestBatch.id == ingest_batch_id
+                    ).delete(synchronize_session=False)
             self.db.commit()
             return True
         return False
