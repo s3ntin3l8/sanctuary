@@ -201,8 +201,13 @@ def _apply_batch_results(
     db.commit()
 
 
-def analyze(batch_id: int) -> None:
-    """Run the batch-level AI pass for the given IngestBatch."""
+def analyze(batch_id: int) -> bool:
+    """Run the batch-level AI pass for the given IngestBatch.
+
+    Returns True when the AI call ran, False when analysis was skipped
+    (single doc or no healthy content). Raises on AI failure so the
+    Celery task can retry and update the pipeline stage correctly.
+    """
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
@@ -210,33 +215,27 @@ def analyze(batch_id: int) -> None:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             logger.warning(f"Batch {batch_id} not found for analysis")
-            return
+            return False
 
         docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
         if not docs:
             logger.info(f"Batch {batch_id} has no documents to analyze")
-            return
+            return False
 
         healthy_docs = [d for d in docs if d.content and len(d.content.strip()) > 10]
 
-        if not healthy_docs:
+        if not healthy_docs or len(healthy_docs) == 1:
             for d in docs:
                 d.role = DocumentRole.STANDALONE
             db.commit()
-            return
-
-        if len(healthy_docs) == 1:
-            for d in docs:
-                d.role = DocumentRole.STANDALONE
-            db.commit()
-            return
+            return False
 
         candidate = _pick_cover_letter_candidate(healthy_docs)
         if not candidate:
             for d in docs:
                 d.role = DocumentRole.STANDALONE
             db.commit()
-            return
+            return False
 
         debug_dir = DATA_DIR / "ai_debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
@@ -255,5 +254,8 @@ def analyze(batch_id: int) -> None:
             for d in docs:
                 d.role = DocumentRole.STANDALONE
             db.commit()
+            raise  # propagate so analyze_batch_task can retry and mark stage FAILED
+
+        return True
     finally:
         db.close()

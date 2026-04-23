@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 def analyze_batch_task(self, batch_id: int):
     """Run batch-level AI analysis (cover-letter detection + action items), then enqueue per-doc enrichment."""
     from app.services.intelligence.batch_analyzer import analyze
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed,
+        mark_skipped,
+        mark_started,
+    )
 
     # Fetch doc IDs for stage tracking
     db = SessionLocal()
@@ -31,7 +36,7 @@ def analyze_batch_task(self, batch_id: int):
         db.close()
 
     try:
-        analyze(batch_id)
+        ran = analyze(batch_id)
     except Exception as e:
         logger.error(f"Batch {batch_id} analysis failed: {e}")
         db = SessionLocal()
@@ -47,7 +52,15 @@ def analyze_batch_task(self, batch_id: int):
     db = SessionLocal()
     try:
         for doc_id in doc_ids:
-            mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db)
+            if ran:
+                mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db)
+            else:
+                mark_skipped(
+                    doc_id,
+                    PipelineStage.BATCH_ANALYSIS,
+                    db,
+                    reason="single-doc or empty batch",
+                )
     finally:
         db.close()
 

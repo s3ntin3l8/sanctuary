@@ -56,7 +56,10 @@ def process_document_task(self, doc_id: int):
         # Phase 1: metadata extraction + auto-triage
         _run_phase1_summary(doc_id)
 
-        # Batch-ready gating: if all docs in this batch are done, claim and dispatch batch analysis
+        # Batch-ready gating: the last worker to finish METADATA wins the atomic
+        # claim and dispatches analyze_batch_task, which then enqueues
+        # enrich_document_task for every doc in the batch. Workers that don't win
+        # the race do nothing here — their enrichment arrives via analyze_batch_task.
         batch_id = doc.ingest_batch_id
         if batch_id:
             from app.services.intelligence.orchestrator import claim_batch_for_analysis

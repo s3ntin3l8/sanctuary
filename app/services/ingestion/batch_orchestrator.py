@@ -98,6 +98,9 @@ def ingest_raw_email(
         db.add(doc)
         docs_to_process.append(doc)
 
+    if docs_to_process:
+        batch.status = IngestBatchStatus.PROCESSING
+
     db.commit()
 
     for doc in docs_to_process:
