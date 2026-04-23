@@ -71,9 +71,9 @@ def ingest_raw_email(
         )
 
         if existing_doc:
-            # Link existing doc to this batch too?
-            # For now, let's create a new doc entry pointing to same file to keep batch atomic
-            pass
+            existing_doc.ingest_batch_id = batch.id
+            docs_to_process.append(existing_doc)
+            continue
 
         safe_name = "".join(c for c in att["filename"] if c.isalnum() or c in ".-_")
         att_path = case_dir / f"{batch.id}_{safe_name}"

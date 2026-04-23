@@ -10,15 +10,24 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
 
     if msg.is_multipart():
         for part in msg.walk():
+            if part.is_multipart():
+                continue
             content_disposition = str(part.get("Content-Disposition", ""))
-            if "attachment" in content_disposition:
+            filename = part.get_filename()
+            is_attachment = "attachment" in content_disposition or (
+                filename and part.get_content_maintype() not in ("text", "multipart")
+            )
+            if is_attachment and filename:
                 attachments.append(
                     {
-                        "filename": part.get_filename(),
+                        "filename": filename,
                         "content": part.get_payload(decode=True),
                     }
                 )
-            elif part.get_content_type() == "text/plain":
+            elif (
+                part.get_content_type() == "text/plain"
+                and "attachment" not in content_disposition
+            ):
                 payload = part.get_payload(decode=True)
                 if payload:
                     body += payload.decode(errors="ignore")

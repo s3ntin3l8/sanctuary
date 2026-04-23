@@ -121,7 +121,7 @@ class TriageService:
 
     def get_triage_bundles(self, limit: int = 50, offset: int = 0) -> list[BundleView]:
         """All triage documents grouped into bundles."""
-        from sqlalchemy import and_, or_
+        from sqlalchemy import or_
 
         from app.models.database import ActionItem, IngestBatch, IngestBatchStatus
 
@@ -136,12 +136,6 @@ class TriageService:
             .scalar_subquery()
         )
 
-        # Loose docs: no batch, but needs review or unassigned case.
-        loose_docs_condition = and_(
-            Document.ingest_batch_id.is_(None),
-            or_(Document.case_id == "_TRIAGE", Document.needs_review),
-        )
-
         docs = (
             self.db.query(Document)
             .options(
@@ -151,7 +145,8 @@ class TriageService:
             .filter(
                 or_(
                     Document.ingest_batch_id.in_(unresolved_batches_subq),
-                    loose_docs_condition,
+                    Document.case_id == "_TRIAGE",
+                    Document.needs_review,
                 )
             )
             .order_by(Document.created_at.desc())

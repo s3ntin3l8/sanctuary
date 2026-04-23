@@ -11,7 +11,6 @@ from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
 from app.models.database import Case, Document, DocumentRelationship
 from app.models.enums import OriginatorType, UserReactionType
-from app.services.document_service import DocumentService
 from app.services.hud_context import build_triage_hud_context
 from app.services.triage_service import TriageService
 
@@ -378,43 +377,22 @@ async def summarize_document(
     db: Session = Depends(get_db),
 ):
     from app.services.ai_summary import _summarize_document_sync
+    from app.tasks.enrich_document import enrich_document_task
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     try:
+        # Phase 1: metadata extraction (sender, date, originator, internal_id)
         _summarize_document_sync(doc_id, db)
+        # Phase 4: management summary bullets + key passages
+        enrich_document_task.delay(doc_id)
     except Exception as exc:
         doc.ai_summary_status = "failed"
         doc.ai_summary = {"error": str(exc)}
         db.commit()
 
-    db.refresh(doc)
-    return await _render_document_hud(request, doc, db)
-
-
-@router.post("/document/{doc_id}/approve-summary")
-async def approve_summary(
-    request: Request,
-    doc_id: int,
-    action: str,
-    db: Session = Depends(get_db),
-):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
-    if action == "approve":
-        doc.ai_summary_status = "approved"
-        doc.ai_summary_approved_at = datetime.now()
-    elif action == "reject":
-        doc.ai_summary_status = "pending"
-        doc.ai_summary = None
-    else:
-        raise HTTPException(status_code=422, detail=f"Unknown action: {action}")
-
-    db.commit()
     db.refresh(doc)
     return await _render_document_hud(request, doc, db)
 
@@ -507,64 +485,6 @@ async def reject_relationship(
 
 
 # -----------------------------------------------------------------------------
-# Activity log (unchanged — carried over from the old triage.py to keep routes intact)
-# -----------------------------------------------------------------------------
-
-
-@router.get("/activity")
-async def activity_log(request: Request, db: Session = Depends(get_db)):
-    doc_service = DocumentService(db)
-    data = doc_service.get_activity_feed(limit=20)
-
-    total_docs = db.query(Document).count()
-    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
-    all_cases = db.query(Case).order_by(Case.created_at.desc()).all()
-
-    return render_page(
-        request,
-        "pages/activity_log.html",
-        db=db,
-        documents=data["recent_documents"],
-        total_docs=total_docs,
-        pending_docs=data["pending_documents"],
-        case_titles=case_titles,
-        all_cases=all_cases,
-        originator_colors=ORIGINATOR_COLORS,
-        originator_icons=ORIGINATOR_ICONS,
-    )
-
-
-@router.get("/api/activity-feed")
-async def activity_feed_hx(
-    request: Request,
-    limit: int = 20,
-    offset: int = 0,
-    db: Session = Depends(get_db),
-):
-    """HTMX endpoint for infinite scroll activity feed."""
-
-    docs = (
-        db.query(Document)
-        .order_by(Document.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
-
-    return templates.TemplateResponse(
-        request,
-        "partials/activity_feed_items.html",
-        {
-            "documents": docs,
-            "case_titles": case_titles,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-        },
-    )
-
-
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------

@@ -6,17 +6,17 @@
 // ── CaseGraphRenderer ──────────────────────────────────────────────────────────
 
 class CaseGraphRenderer {
-  constructor(containerId, viewportId) {
-    this.container = document.getElementById(containerId);
-    this.viewport = document.getElementById(viewportId);
-    this.axisViewport = document.getElementById('axis-viewport');
-    this.legendViewport = document.getElementById('legend-viewport');
+  constructor(containerOrId, viewportOrId) {
+    this.container = typeof containerOrId === 'string' ? document.getElementById(containerOrId) : containerOrId;
+    this.viewport = typeof viewportOrId === 'string' ? document.getElementById(viewportOrId) : viewportOrId;
 
     if (!this.container || !this.viewport) {
-      console.warn('CaseGraphRenderer: Container or viewport not found', { containerId, viewportId });
+      console.warn('CaseGraphRenderer: Container or viewport not found', { containerOrId, viewportOrId });
       return;
     }
 
+    this.axisViewport = this.container.querySelector('#axis-viewport');
+    this.legendViewport = this.container.querySelector('#legend-viewport');
     this.svg = this.container.querySelector('svg');
 
     // Camera state
@@ -117,18 +117,36 @@ class CaseGraphRenderer {
 
   fit() {
     if (!this.viewport || !this.container) return;
-    const bbox = this.viewport.getBBox();
-    const rect = this.container.getBoundingClientRect();
-    if (bbox.width === 0 || bbox.height === 0) return;
-    const padding = 60;
-    const availableW = rect.width - padding * 2;
-    const availableH = rect.height - padding * 2;
-    const scaleW = availableW / bbox.width;
-    const scaleH = availableH / bbox.height;
-    this.scale = Math.max(0.2, Math.min(scaleW, scaleH, 1.2));
-    this.tx = (rect.width - bbox.width * this.scale) / 2 - bbox.x * this.scale;
-    this.ty = (rect.height - bbox.height * this.scale) / 2 - bbox.y * this.scale;
-    this.applyTransform();
+
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10;
+
+    const tryFit = () => {
+      const bbox = this.viewport.getBBox();
+      const rect = this.container.getBoundingClientRect();
+
+      // If SVG hasn't laid out yet, retry in the next frame
+      if ((bbox.width === 0 || bbox.height === 0) && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        requestAnimationFrame(tryFit);
+        return;
+      }
+
+      if (bbox.width === 0 || bbox.height === 0) return;
+
+      const padding = 60;
+      const availableW = rect.width - padding * 2;
+
+      const scaleW = availableW / bbox.width;
+      this.scale = Math.max(0.6, Math.min(scaleW, 1.1));
+
+      this.tx = (rect.width - bbox.width * this.scale) / 2 - bbox.x * this.scale;
+      this.ty = 32 - bbox.y * this.scale;
+
+      this.applyTransform();
+    };
+
+    tryFit();
   }
 
   setHighlight(nodeId) {
@@ -172,6 +190,7 @@ function registerCaseDashboard() {
     nodeCounts: initial.nodeCounts || {},
     selectedDocId: null,
     chatOpen: false,
+    docChatOpen: false,
     reviewOpen: false,
     procOpen: false,
     partyFilter: null,
@@ -183,16 +202,32 @@ function registerCaseDashboard() {
     init() {
       window._dashOpenDoc = (id) => this.openDoc(id);
       this.$el.addEventListener('set-filter', (e) => { this.filter = e.detail.filter; });
-      this.$nextTick(() => { if (this.view === 'graph') this.initRenderer(); });
-      this.$watch('view', (v) => { if (v === 'graph') this.$nextTick(() => this.initRenderer()); });
+      this.$nextTick(() => {
+        if (this.view === 'graph') {
+          this.initRenderer();
+          this.scrollToBottom(false);
+        }
+      });
+      this.$watch('view', (v) => {
+        if (v === 'graph') {
+          this.$nextTick(() => {
+            this.initRenderer();
+            this.scrollToBottom(true);
+          });
+        }
+      });
     },
 
     initRenderer() {
       if (!this.renderer) {
         try {
-          this.renderer = new CaseGraphRenderer('correspondence-graph-container', 'viewport-content');
-          if (initial.graph && initial.graph.nodes && initial.graph.nodes.length > 0) {
-            this.renderer.fit();
+          const container = this.$el.querySelector('#correspondence-graph-container');
+          const viewport = this.$el.querySelector('#viewport-content');
+          if (container && viewport) {
+            this.renderer = new CaseGraphRenderer(container, viewport);
+            if (initial.graph && initial.graph.nodes && initial.graph.nodes.length > 0) {
+              this.renderer.fit();
+            }
           }
         } catch (err) {
           console.error('Failed to init CaseGraphRenderer:', err);
@@ -200,9 +235,50 @@ function registerCaseDashboard() {
       }
     },
 
+    scrollToBottom(smooth = true) {
+      const container = this.$el.querySelector('#correspondence-graph-container');
+      if (!container) return;
+
+      let lastHeight = container.scrollHeight;
+      let sameCount = 0;
+      const MAX_POLLS = 30; // 3 seconds max
+
+      const poll = () => {
+        const currentHeight = container.scrollHeight;
+
+        // Push to bottom as we go
+        container.scrollTop = currentHeight;
+
+        // If height hasn't changed, increment counter
+        if (currentHeight > 0 && Math.abs(currentHeight - lastHeight) < 1) {
+          sameCount++;
+        } else {
+          sameCount = 0;
+          lastHeight = currentHeight;
+        }
+
+        // We need 5 consecutive frames of stability for a large SVG
+        if (sameCount >= 5) {
+          if (smooth && currentHeight > 0) {
+            container.scrollTo({ top: currentHeight, behavior: 'smooth' });
+          }
+          return;
+        }
+
+        if (sameCount + sameCount > MAX_POLLS * 2) return;
+
+        requestAnimationFrame(poll);
+      };
+
+      requestAnimationFrame(poll);
+    },
     fit() {
-      if (this.renderer) this.renderer.fit();
-      else this.initRenderer();
+      if (this.renderer) {
+        this.renderer.fit();
+        this.scrollToBottom(true);
+      } else {
+        this.initRenderer();
+      }
     },
 
     centerCritical() {
@@ -278,11 +354,12 @@ function registerCaseDashboard() {
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (e.key === 'Escape') {
         if (this.contextMenu.open) { this.closeContextMenu(); return; }
+        if (this.chatOpen || this.docChatOpen) { this.chatOpen = false; this.docChatOpen = false; return; }
         this.closeDoc();
-        this.chatOpen = false; this.reviewOpen = false; this.procOpen = false;
+        this.reviewOpen = false; this.procOpen = false;
         return;
       }
-      if (e.key === '/') { e.preventDefault(); this.chatOpen = true; return; }
+      if (e.key === '/') { e.preventDefault(); this.chatOpen = true; this.docChatOpen = false; return; }
       if (e.key === 'g') this.setView('graph');
       if (e.key === 't') this.setView('truth');
       if (e.key === 'l') this.setView('timeline');

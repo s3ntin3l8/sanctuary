@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
+from app.config import DATA_DIR, SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import Document
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
 from app.models.schemas import (
@@ -16,6 +17,7 @@ from app.models.schemas import (
     CostDeltaSchema,
     KeyPassageSchema,
 )
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._json import parse_json_response
@@ -35,7 +37,7 @@ THREAD_OPEN_TYPES = {
 }
 
 
-def _call_enricher_sync(doc: Document, debug_file: str) -> dict:
+def _call_enricher_sync(doc: Document, debug_file: str, model: str = "") -> dict:
     """Synchronous AI call to enrich a single document."""
     content_preview = get_content_preview(doc, 6000)
 
@@ -45,18 +47,16 @@ def _call_enricher_sync(doc: Document, debug_file: str) -> dict:
 
     prompt = f"Document title: {doc.title}{batch_context}\n\n{content_preview}"
 
-    import asyncio
-
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=model or get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=DOCUMENT_ENRICHER_SYSTEM,
             stream=True,
             options={"num_ctx": 16384, "temperature": 0.2},
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
@@ -160,6 +160,8 @@ def enrich(doc_id: int) -> None:
     """Run AI enrichment for a single document."""
     db: Session = SessionLocal()
     try:
+        cfg = get_effective_config(db)
+        ai_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for enrichment")
@@ -176,7 +178,7 @@ def enrich(doc_id: int) -> None:
         )
 
         try:
-            result = _call_enricher_sync(doc, debug_file)
+            result = _call_enricher_sync(doc, debug_file, model=cfg.summary_model)
             _apply_enrichment(doc, result)
             logger.info(f"Doc {doc_id} enriched successfully")
         except Exception as e:

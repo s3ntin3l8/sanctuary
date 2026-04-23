@@ -12,6 +12,7 @@ from app.models.enums import (
     CaseStatus,
     Jurisdiction,
     ProceedingStatus,
+    SignificanceTier,
 )
 from app.repositories.action_item import ActionItemRepository
 from app.repositories.case import CaseRepository
@@ -163,6 +164,26 @@ class CaseService:
 
         proceeding_name = active_proc.court_name if active_proc else "General"
 
+        # Max significance tier across most recent 20 documents
+        _sig_rank = {
+            SignificanceTier.CRITICAL: 4,
+            SignificanceTier.SIGNIFICANT: 3,
+            SignificanceTier.INFORMATIONAL: 2,
+            SignificanceTier.ADMINISTRATIVE: 1,
+        }
+        recent_docs = (
+            self.db.query(Document.significance_tier)
+            .filter(Document.case_id == case.id, Document.significance_tier.isnot(None))
+            .order_by(Document.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        max_sig = max(
+            (row[0] for row in recent_docs),
+            key=lambda t: _sig_rank.get(t, 0),
+            default=None,
+        )
+
         return {
             "id": case.id,
             "title": case.title,
@@ -178,6 +199,7 @@ class CaseService:
             "days_since_activity": days_since,
             "tier": "delta" if new_docs_count > 0 else "normal",
             "proceeding_name": proceeding_name,
+            "max_significance": max_sig,
         }
 
     def get_all_cases_directory(self) -> dict:

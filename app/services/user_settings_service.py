@@ -100,6 +100,37 @@ def mark_home_visit(db, *, now: datetime | None = None) -> None:
     db.flush()
 
 
+def get_theme(db) -> str:
+    settings = db.query(UserSettings).first()
+    if not settings:
+        return "dark"
+    return settings.settings_json.get("theme", "dark")
+
+
+def set_theme(theme: str, db) -> None:
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json)
+    data["theme"] = theme
+    settings.settings_json = data
+    db.flush()
+
+
+def get_dashboard_cards(db) -> dict:
+    defaults = {"action_items": True, "costs": True, "documents": True}
+    settings = db.query(UserSettings).first()
+    if not settings:
+        return defaults
+    return settings.settings_json.get("dashboard_cards", defaults)
+
+
+def set_dashboard_cards(cards: dict, db) -> None:
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json)
+    data["dashboard_cards"] = cards
+    settings.settings_json = data
+    db.flush()
+
+
 def count_new_since(case_id: str, since: datetime | None, db) -> int:
     """Count documents added to the case after `since`. Returns 0 if since is None."""
     if since is None:

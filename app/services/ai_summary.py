@@ -6,17 +6,17 @@ from datetime import UTC, datetime
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import AI_BASE_URL, AI_SUMMARY_MODEL, AI_SYSTEM_PROMPT
+from app.config import AI_BASE_URL
+from app.core.async_utils import run_async
 from app.core.cache import cache, get_ai_summary_key
 from app.models.database import Document, Proceeding
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = PHASE1_METADATA_SYSTEM
-
-SYSTEM_PROMPT = AI_SYSTEM_PROMPT if AI_SYSTEM_PROMPT else DEFAULT_SYSTEM_PROMPT
 
 
 def _parse_summary_response(raw_text: str) -> dict:
@@ -94,13 +94,16 @@ def get_content_preview(doc: Document, max_chars: int = 4000) -> str:
     return (doc.content or "")[:max_chars]
 
 
-async def generate_summary(doc: Document) -> dict:
+async def generate_summary(doc: Document, db=None) -> dict:
     """Generate a 3-bullet management summary via configured AI provider using streaming."""
+    cfg = get_effective_config(db)
+    if db is not None:
+        ai_provider.reload_from_db(db)
     content_preview = get_content_preview(doc, 4000)
 
     # Heuristic hints for verification
     hints = {
-        "az_court": doc.az_court,
+        "az_court": doc.proceeding.az_court if doc.proceeding else None,
         "sender": doc.sender,
         "received_date": doc.received_date.strftime("%Y-%m-%d")
         if doc.received_date
@@ -117,9 +120,9 @@ async def generate_summary(doc: Document) -> dict:
 
     # Get provider-specific parameters
     params = await ai_provider.get_generate_params(
-        model=AI_SUMMARY_MODEL,
+        model=cfg.summary_model,
         prompt=prompt,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=DEFAULT_SYSTEM_PROMPT,
         stream=True,
         options={
             "num_ctx": 16384,
@@ -143,7 +146,7 @@ async def generate_summary(doc: Document) -> dict:
         try:
             with open(debug_file, "a") as f:
                 f.write(f"--- START REQUEST doc_id={doc.id} Provider={ptype} ---\n")
-                f.write(f"Model: {AI_SUMMARY_MODEL}\n")
+                f.write(f"Model: {cfg.summary_model}\n")
                 f.write(f"Payload: {json.dumps(params['json'])}\n\n")
 
             async with client.stream(
@@ -209,9 +212,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             doc.received_date = parsed_date.replace(tzinfo=UTC)
         except Exception:
             pass
-
-    if summary_data.get("az_court"):
-        doc.az_court = summary_data["az_court"]
 
     if summary_data.get("internal_id"):
         doc.internal_id = summary_data["internal_id"]
@@ -284,7 +284,7 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     db.commit()
 
     try:
-        summary_data = await generate_summary(doc)
+        summary_data = await generate_summary(doc, db=db)
 
         # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
         # The 3-bullet ai_summary is now written by Phase 4 document_enricher
@@ -305,13 +305,16 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     return doc
 
 
-def generate_summary_sync(doc: Document) -> dict:
+def generate_summary_sync(doc: Document, db=None) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
+    cfg = get_effective_config(db)
+    if db is not None:
+        ai_provider.reload_from_db(db)
     content_preview = get_content_preview(doc, 4000)
 
     # Heuristic hints for verification
     hints = {
-        "az_court": doc.az_court,
+        "az_court": doc.proceeding.az_court if doc.proceeding else None,
         "sender": doc.sender,
         "received_date": doc.received_date.strftime("%Y-%m-%d")
         if doc.received_date
@@ -327,11 +330,11 @@ def generate_summary_sync(doc: Document) -> dict:
     )
 
     # Get provider-specific parameters
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=cfg.summary_model,
             prompt=prompt,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=DEFAULT_SYSTEM_PROMPT,
             stream=True,
             options={
                 "num_ctx": 16384,
@@ -339,7 +342,7 @@ def generate_summary_sync(doc: Document) -> dict:
             },
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     # Debug logging setup
     from app.config import DATA_DIR
@@ -355,7 +358,7 @@ def generate_summary_sync(doc: Document) -> dict:
                 f.write(
                     f"--- START REQUEST (SYNC) doc_id={doc.id} Provider={ptype} ---\n"
                 )
-                f.write(f"Model: {AI_SUMMARY_MODEL}\n")
+                f.write(f"Model: {cfg.summary_model}\n")
                 f.write(f"Payload: {json.dumps(params['json'])}\n\n")
 
             with client.stream(
@@ -407,7 +410,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
     db.commit()
 
     try:
-        summary_data = generate_summary_sync(doc)
+        summary_data = generate_summary_sync(doc, db=db)
 
         # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
         # The 3-bullet ai_summary is now written by Phase 4 document_enricher
@@ -467,7 +470,8 @@ async def check_ollama_status() -> dict:
             status["reachable"] = True
 
             # Check for model existence
-            status["summary_model"] = any(AI_SUMMARY_MODEL in m for m in models)
+            cfg = get_effective_config(None)
+            status["summary_model"] = any(cfg.summary_model in m for m in models)
     except Exception as e:
         status["error"] = str(e)
 

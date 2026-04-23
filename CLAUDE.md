@@ -24,15 +24,52 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
 
-## Key data model concepts (target)
+## Key data model concepts
+
 * `IngestBatch` — email/scan group; case assignment cascades to all children
 * `Proceeding` — court level within a case (AG → OLG → BGH); graphs are scoped per proceeding
-* `DocumentRelationship` — typed N:N edges (`replies_to`, `references`, `attaches_as_proof`, `supersedes`)
+* `DocumentRelationship` — typed N:N edges (`replies_to`, `references`, `attaches_as_proof`, `supersedes`, `cited_by`)
 * `Claim` + `ClaimEvidence` — atomic factual assertions and their evidence chain (the Truth Map)
-* `UserReaction` — triage reactions stored and recalled by AI
+* `UserReaction` — triage reactions (🚩/✅/🔍/⚖️) stored and recalled by AI during case brief and document enrichment
 * `ActionItem` — deadlines and court dates extracted from documents, first-class records
 * `Document.significance_tier` — AI-assigned; drives graph visibility
 * `Document.court_relay` + `Document.attributed_originator` — true sender behind court routing
+* `DocumentPin` — passage-anchored margin annotations (distinct from `UserReaction`; stores span offsets)
+* `LegalCost` — German RVG/GKG/JVEG cost tracking per proceeding; `CostCategory` + `CostStatus` enums
+* `Entity` — extracted named entities (`EntityType`: person, org, court, law_firm, …)
+* `UserSettings` — single-user preferences (model selection, UI flags)
+* `SavedSearch` — persisted search queries with optional alert thresholds
+
+## Vector search
+
+Embeddings are stored as f32 blobs in the `document_vectors` sqlite-vec virtual table:
+
+```sql
+CREATE VIRTUAL TABLE document_vectors USING vec0(
+    document_id INTEGER PRIMARY KEY,
+    embedding float[768]
+);
+```
+
+Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text). KNN queries use `WHERE embedding MATCH :blob ORDER BY distance LIMIT :k`. The `alembic/env.py` loads the sqlite-vec extension before running migrations. Search merges vector results with `ilike` results in `app/services/search_service.py`.
+
+## Routes
+
+Standard case/document routes plus these first-class working views:
+
+* `/entities` — named entity browser
+* `/contacts/*` — contact/party directory
+* `/timeline/*` — chronological correspondence view (HTMX-paginated via `partials/timeline_items.html`)
+* `/costs/*` — legal cost tracking (RVG/GKG/JVEG)
+* `/ingest/slice/*` — multi-page PDF slicing review (Docling output review before batch commit)
+* `/api/ingest/gmail/*` — Gmail OAuth + historical backfill
+
+## Navigation and ID conventions
+
+* **Sidebar** is a 56px icon-rail nav (Home, Cases, Search, Settings). It is not a case list.
+* **`Case.id`** (e.g. `ADV-024-A`) is the lead identifier in: top-bar pill, breadcrumb, URLs, chat, reports.
+* **Breadcrumb format:** `Cases › ADV-024-A · Case Title`
+* Per-court Aktenzeichen lives on `Proceeding.az_court` — it is context, never the primary identity.
 
 ## Rules
 * **Pre-release — clean as you go.** Working with test data only. When a field, table, model, route, or template becomes unused or superseded, **remove it in the same change** — no deprecation shims, no backwards-compat layers, no "keep for now" comments. Migrations drop columns; templates lose unused branches; obsolete routes disappear. No dead code accumulates before v1.

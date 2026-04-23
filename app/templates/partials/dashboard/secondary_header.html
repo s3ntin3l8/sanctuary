@@ -6,9 +6,9 @@
   <nav class="flex items-center gap-2" style="color:var(--color-on-surface-variant);">
     <a href="/cases" style="color:var(--color-on-surface-variant); text-decoration:none;">Cases</a>
     <span style="color:var(--color-outline);">›</span>
-    <span>Legal</span>
-    <span style="color:var(--color-outline);">›</span>
-    <span style="color:var(--color-on-surface); font-weight: 500;">{{ case.title | truncate(40, true) }}</span>
+    <span class="font-mono font-semibold" style="color:var(--color-on-surface);">{{ case.id }}</span>
+    <span style="color:var(--color-outline);">·</span>
+    <span style="color:var(--color-on-surface-variant);">{{ case.title | truncate(40, true) }}</span>
   </nav>
 
   <div class="ml-auto flex items-center gap-4 text-[11px]" style="color:var(--color-on-surface-variant);">

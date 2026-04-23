@@ -116,20 +116,19 @@ async def test_generate_summary_mock_http():
     # It's easier to patch the collection logic or the return value
     # But let's try to fix the test to at least match the signature for now.
 
-    with patch("app.services.ai_summary.AI_SUMMARY_MODEL", "test-model"):
-        with patch("httpx.AsyncClient.stream") as mock_stream:
-            # Mock the async context manager and the aiter_lines
-            mock_resp = MagicMock()
-            mock_resp.raise_for_status = MagicMock()
+    with patch("httpx.AsyncClient.stream") as mock_stream:
+        # Mock the async context manager and the aiter_lines
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
 
-            async def mock_aiter():
-                yield json.dumps({"response": json.dumps(data), "done": True})
+        async def mock_aiter():
+            yield json.dumps({"response": json.dumps(data), "done": True})
 
-            mock_resp.aiter_lines = mock_aiter
-            mock_stream.return_value.__aenter__.return_value = mock_resp
+        mock_resp.aiter_lines = mock_aiter
+        mock_stream.return_value.__aenter__.return_value = mock_resp
 
-            result = await generate_summary(mock_doc)
-            assert result == data
+        result = await generate_summary(mock_doc)
+        assert result == data
 
 
 @pytest.mark.asyncio

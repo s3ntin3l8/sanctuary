@@ -7,7 +7,8 @@ from datetime import datetime
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
+from app.config import DATA_DIR, SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import Claim, Document
 from app.models.enums import (
     ClaimEvidenceRole,
@@ -17,6 +18,7 @@ from app.models.enums import (
 )
 from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._json import parse_json_response
@@ -42,7 +44,7 @@ def _format_existing_claims(claims: list[Claim]) -> str:
 
 
 def _call_claim_extractor_sync(
-    doc: Document, existing_claims: list[Claim], debug_file: str
+    doc: Document, existing_claims: list[Claim], debug_file: str, model: str = ""
 ) -> dict:
     content_preview = get_content_preview(doc, 6000)
     mgmt = doc.ai_summary or {}
@@ -56,18 +58,16 @@ def _call_claim_extractor_sync(
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
     )
 
-    import asyncio
-
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=model or get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=CLAIM_EXTRACTOR_SYSTEM,
             stream=True,
             options={"num_ctx": 16384, "temperature": 0.2},
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
@@ -171,6 +171,8 @@ def extract(doc_id: int) -> None:
     """Extract claims from a single document."""
     db: Session = SessionLocal()
     try:
+        cfg = get_effective_config(db)
+        ai_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for claim extraction")
@@ -204,7 +206,9 @@ def extract(doc_id: int) -> None:
         )
 
         try:
-            result = _call_claim_extractor_sync(doc, existing_claims, debug_file)
+            result = _call_claim_extractor_sync(
+                doc, existing_claims, debug_file, model=cfg.summary_model
+            )
             _apply_claims(doc, result, existing_claims, db)
             db.commit()
             new_count = len(result.get("new_claims") or [])

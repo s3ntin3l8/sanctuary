@@ -225,10 +225,17 @@ async def case_graph_partial(
             {
                 "graph": _empty_graph_dict(filter),
                 "case": case,
+                "active_proceeding": None,
             },
         )
 
-    payload = CaseGraphService(db).build_payload(proceeding, filter)
+    # Fetch reaction_map to ensure titles are clipped correctly when reactions are present
+    dash_service = CaseDashboardService(db)
+    reaction_map = dash_service._reaction_map_for_proceeding(proceeding)
+
+    payload = CaseGraphService(db).build_payload(
+        proceeding, filter, reaction_map=reaction_map
+    )
     graph_dict = dataclasses.asdict(payload)
 
     return templates.TemplateResponse(
@@ -237,6 +244,7 @@ async def case_graph_partial(
         {
             "graph": graph_dict,
             "case": case,
+            "active_proceeding": db.get(Proceeding, proceeding),
         },
     )
 
@@ -252,7 +260,13 @@ def _empty_graph_dict(filter_mode: str) -> dict:
         "proof_badges": {},
         "svg_width": LEFT * 2 + len(LANES) * LANE_W,
         "svg_height": TOP + 120,
-        "hidden_counts": {"administrative": 0, "informational": 0},
+        "node_counts": {
+            "critical": 0,
+            "significant": 0,
+            "informational": 0,
+            "administrative_standalone": 0,
+            "administrative_relay": 0,
+        },
         "filter": filter_mode,
         "node_count": 0,
         "edge_count": 0,

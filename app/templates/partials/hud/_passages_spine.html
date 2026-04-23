@@ -82,7 +82,7 @@
           {% if context != 'overlay' %}
           {% set pin_count = passage_pin_counts.get(p_id, 0) if passage_pin_counts is defined else 0 %}
           {% if pin_count > 0 %}
-          <span class="text-[9px] font-bold" style="color: var(--color-amber, #f59e0b);" title="{{ pin_count }} pin(s)">📌 {{ pin_count }}</span>
+          <span class="text-[9px] font-bold text-amber" title="{{ pin_count }} pin(s)">📌 {{ pin_count }}</span>
           {% endif %}
           <button type="button"
                   @click.stop="createPinAt && createPinAt('{{ p_id }}')"

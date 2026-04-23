@@ -6,6 +6,8 @@
 {% block content %}
 {% set header_title = "Master Timeline" %}
 {% set header_subtitle = "Cross-Case Chronological View" %}
+{% set header_back_href = "/" %}
+{% set header_back_title = "Home" %}
 {% set header_actions %}
     <div class="relative">
         <button @click="filterOpen = !filterOpen"
@@ -114,7 +116,7 @@
                         hx-swap="beforeend"
                         hx-target="#timeline-documents"
                         @click="hasMore = false; loading = true"
-                        @htmx:after-request="const data = JSON.parse(event.detail.xhr.responseText); hasMore = data.has_more; cursor = data.next_cursor; loading = false"
+                        @timeline-paginated.window="hasMore = $event.detail.has_more; cursor = $event.detail.next_cursor; loading = false"
                         class="px-6 py-3 text-xs font-bold text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
                     >
                         <span x-show="!loading">Load More Documents</span>

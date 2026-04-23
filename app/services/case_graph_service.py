@@ -270,6 +270,19 @@ class CaseGraphService:
             x = LEFT + lane_idx * LANE_W + (LANE_W - NODE_W) / 2
             y = TOP + row_index * ROW_H
 
+            # Determine max title length based on available flags to prevent overlap
+            # Card width is 180px. Start X is 15px.
+            # Critical flag is at 163px. Reaction is at 174px.
+            max_title_len = 21
+            has_reaction = bool(reaction_map.get(doc.id))
+            is_critical = doc.significance_tier == SignificanceTier.CRITICAL
+
+            if has_reaction:
+                max_title_len = 16
+            if is_critical:
+                # Tighten to 14 (from 15) to be safer with variable-width fonts
+                max_title_len = min(max_title_len, 14)
+
             node: dict = {
                 "id": doc.id,
                 "lane": lane_key,
@@ -278,9 +291,7 @@ class CaseGraphService:
                 "y": y,
                 "w": NODE_W,
                 "h": NODE_H,
-                "title": _clip(
-                    doc.title or "Untitled", 16 if reaction_map.get(doc.id) else 21
-                ),
+                "title": _clip(doc.title or "Untitled", max_title_len),
                 "full_title": doc.title or "Untitled",
                 "role": doc.role.value if doc.role else "standalone",
                 "date_short": doc.received_date.strftime("%m-%d")

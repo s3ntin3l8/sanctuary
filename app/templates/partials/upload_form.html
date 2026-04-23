@@ -1,4 +1,4 @@
-<div id="upload-modal" x-data="{ open: true, fileNames: [], dragOver: false, fileIcon: '', setFileIcon(name) { const ext = name.split('.').pop()?.toLowerCase(); this.fileIcon = {pdf:'picture_as_pdf',docx:'description',txt:'description',md:'code',pptx:'slideshow',xlsx:'table_chart',eml:'email'}[ext] || 'insert_drive_file'; } }" x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-[9999] flex items-center justify-center" @keydown.escape.window="open = false" @close-upload-modal.window="open = false">
+<div id="upload-modal" x-data="{ open: true, fileNames: [], dragOver: false, fileIcon: '', setFileIcon(name) { const ext = name.split('.').pop()?.toLowerCase(); this.fileIcon = {pdf:'picture_as_pdf',docx:'description',txt:'description',md:'code',pptx:'slideshow',xlsx:'table_chart',eml:'email'}[ext] || 'insert_drive_file'; } }" x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-[9999] flex items-center justify-center" @keydown.escape.window="open = false" @close-upload-modal.window="open = false" @open-upload-modal.window="open = true">
     <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="open = false"></div>
 
     <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95 translate-y-4" x-transition:enter-end="opacity-100 scale-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100 scale-100 translate-y-0" x-transition:leave-end="opacity-0 scale-95 translate-y-4" class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
@@ -12,8 +12,8 @@
             hx-encoding="multipart/form-data"
             hx-target="#upload-result"
             hx-swap="innerHTML"
-            hx-indicator="#upload-spinner"
-            hx-on::after-request="if(event.detail.successful) { setTimeout(() => { window.dispatchEvent(new CustomEvent('close-upload-modal')); window.location.href = '/activity'; }, 1500); }"
+            @submit="if(fileNames.length > 0) open = false"
+            hx-on::after-request="if(event.detail.successful) { const cid = this.querySelector('input[name=case_id]')?.value; setTimeout(() => { window.location.href = cid ? `/cases/${cid}` : '/triage'; }, 400); } else { window.dispatchEvent(new CustomEvent('open-upload-modal')); }"
             class="p-6 space-y-4">
             {% if case_id %}
             <input type="hidden" name="case_id" value="{{ case_id }}">
@@ -49,25 +49,23 @@
             </div>
 
             {% if top_level_docs %}
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Link as Child of (optional)</label>
-                <select name="parent_id" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-                    <option value="">Top-level document</option>
-                    {% for doc in top_level_docs %}
-                    <option value="{{ doc.id }}">{{ doc.title[:80] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+            {% from "components/form_field.html" import form_select %}
+            {% call form_select("parent_id", "Link as Child of (optional)") %}
+                <option value="">Top-level document</option>
+                {% for doc in top_level_docs %}
+                <option value="{{ doc.id }}">{{ doc.title[:80] }}</option>
+                {% endfor %}
+            {% endcall %}
             {% endif %}
 
             <div id="upload-result"></div>
 
             <div class="flex gap-3 pt-2">
-                <button type="submit" class="text-sm font-bold text-on-primary bg-primary hover:bg-primary/90 px-5 py-2 rounded transition-colors cursor-pointer flex items-center gap-2">
+                <button type="submit" class="btn btn-primary flex items-center gap-2">
                     <span class="htmx-indicator animate-spin material-symbols-outlined text-sm" id="upload-spinner">progress_activity</span>
                     <span>Upload</span>
                 </button>
-                <button type="button" @click="open = false" class="text-sm font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-5 py-2 rounded transition-colors cursor-pointer">
+                <button type="button" @click="open = false" class="btn btn-secondary">
                     Cancel
                 </button>
             </div>

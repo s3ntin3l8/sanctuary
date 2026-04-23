@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
-from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, Document
@@ -101,10 +100,15 @@ async def upload_document(
             )
             success_count += 1
 
-            try:
-                process_document_task.delay(doc.id)
-            except Exception as e:
-                logger.warning(f"Celery task dispatch failed for doc {doc.id}: {e}")
+            _doc_id = doc.id
+
+            def _dispatch(doc_id: int = _doc_id):
+                try:
+                    process_document_task.delay(doc_id)
+                except Exception as e:
+                    logger.warning(f"Celery task dispatch failed for doc {doc_id}: {e}")
+
+            background_tasks.add_task(_dispatch)
 
             results.append(
                 f'<div class="p-2 text-xs text-green-400">✓ {file.filename} queued for processing</div>'
@@ -161,9 +165,8 @@ async def bulk_delete_documents(request: Request, db: Session = Depends(get_db))
         except Exception as e:
             logger.error(f"Bulk delete failed for doc {doc_id_str}: {e}")
 
-    # Return a refresh trigger or simple success message
     return HTMLResponse(
-        '<div hx-trigger="load" hx-get="/activity" hx-target="body"></div>',
+        '<div hx-trigger="load" hx-get="/triage" hx-target="body"></div>',
         status_code=200,
     )
 
@@ -177,31 +180,6 @@ async def delete_document(doc_id: int, db: Session = Depends(get_db)):
     if doc_service.delete_document(doc_id):
         return HTMLResponse("", status_code=200)
     raise HTTPException(status_code=404, detail="Document not found")
-
-
-@router.get("/document/{doc_id}/activity-item")
-async def document_activity_item(
-    request: Request, doc_id: int, db: Session = Depends(get_db)
-):
-    """Return a single document's activity feed item for polling/updates."""
-    from app.models.database import Case
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        return HTMLResponse("", status_code=404)
-
-    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
-
-    return templates.TemplateResponse(
-        request,
-        "partials/activity_feed_items.html",
-        {
-            "documents": [doc],
-            "case_titles": case_titles,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-        },
-    )
 
 
 @router.get("/document/{doc_id}")
@@ -231,8 +209,6 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         )
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    # HTMX callers (document_card, timeline_item, review_card) get the embedded
-    # read-mode HUD as a self-contained fragment into their preview panes.
     if request.headers.get("hx-request"):
         ctx = build_hud_context(db, doc, mode="read")
         ctx["context"] = "embedded"
@@ -305,12 +281,6 @@ async def hud_toggle_reaction(
         )
 
     return response
-
-
-# ---------------------------------------------------------------------------
-# HUD summary approve/reject — separate from triage's approve-summary so
-# both paths can coexist until Stage B.
-# ---------------------------------------------------------------------------
 
 
 @router.post("/document/{doc_id}/hud/approve-summary")

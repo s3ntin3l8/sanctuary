@@ -10,9 +10,11 @@ import pypdfium2 as pdfium
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.config import AI_SUMMARY_MODEL, SessionLocal
+from app.config import SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchStatus
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
 
@@ -176,7 +178,7 @@ async def _ai_cut_judgment(prev_tail: str, curr_head: str) -> dict:
     )
     try:
         params = await ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=SLICING_CUT_SYSTEM,
             stream=False,
@@ -297,7 +299,7 @@ def prepare(batch_id: int) -> None:
         ai_results: dict[int, dict] = {}
         if heuristic_candidates:
             try:
-                ai_results = asyncio.run(_ai_cut_judgments(heuristic_candidates))
+                ai_results = run_async(_ai_cut_judgments(heuristic_candidates))
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
 

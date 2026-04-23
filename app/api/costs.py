@@ -48,7 +48,7 @@ async def new_cost_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/cases/{case_id:path}/costs/new")
+@router.get("/cases/{case_id}/new")
 async def new_cost_for_case(
     request: Request, case_id: str, db: Session = Depends(get_db)
 ):

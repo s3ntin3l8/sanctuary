@@ -7,9 +7,11 @@ from datetime import datetime
 import httpx
 from sqlalchemy.orm import Session, defer
 
-from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
+from app.config import DATA_DIR, SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import Document, DocumentRelationship
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.intelligence._json import parse_json_response
 from app.services.intelligence.prompts import RELATIONSHIP_DETECTOR_SYSTEM
@@ -30,7 +32,6 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
         db.query(Document)
         .options(
             defer(Document.content),
-            defer(Document.content_embedding),
             defer(Document.cost_delta),
         )
         .filter(
@@ -64,6 +65,7 @@ def _call_relationship_detector_sync(
     doc: Document,
     candidates: list[Document],
     debug_file: str,
+    model: str = "",
 ) -> dict:
     mgmt = doc.ai_summary or {}
     first_passage = ""
@@ -81,18 +83,16 @@ def _call_relationship_detector_sync(
         f"CANDIDATE PRIOR DOCUMENTS (use only these IDs):\n{candidate_text}"
     )
 
-    import asyncio
-
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=model or get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=RELATIONSHIP_DETECTOR_SYSTEM,
             stream=True,
             options={"num_ctx": 8192, "temperature": 0.1},
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
@@ -130,6 +130,8 @@ def detect(doc_id: int) -> None:
     """Detect relationships from doc_id to prior documents in the same proceeding."""
     db: Session = SessionLocal()
     try:
+        cfg = get_effective_config(db)
+        ai_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for relationship detection")
@@ -158,7 +160,9 @@ def detect(doc_id: int) -> None:
         )
 
         try:
-            result = _call_relationship_detector_sync(doc, candidates, debug_file)
+            result = _call_relationship_detector_sync(
+                doc, candidates, debug_file, model=cfg.summary_model
+            )
             relationships = result.get("relationships") or []
 
             for rel in relationships:

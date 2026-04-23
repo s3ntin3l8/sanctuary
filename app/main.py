@@ -1,12 +1,12 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -14,7 +14,6 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-from sqlalchemy.orm import Session
 
 from app.api import api_router
 from app.config import (
@@ -23,21 +22,10 @@ from app.config import (
     SCAN_INCOMING_DIR,
     SCAN_PROCESSED_DIR,
     SCAN_PROCESSING_DIR,
-    SessionLocal,
     templates,
 )
 from app.constants import REVIEW_FIELD_LABELS
-from app.dependencies import get_db
 from app.helpers import format_eur, format_relative_time
-from app.models.database import (
-    ActionItem,
-    Case,
-    CaseStatus,
-    CostCategory,
-    CostStatus,
-    LegalCost,
-)
-from app.models.enums import ActionItemType
 from app.services.normalization import normalize_hm
 
 # --- Logging Configuration ---
@@ -87,85 +75,13 @@ async def lifespan(app: FastAPI):
     ):
         scan_dir.mkdir(parents=True, exist_ok=True)
 
-    db: Session = SessionLocal()
-    try:
-        for seed in _SEED_CASES:
-            if not db.query(Case).filter(Case.id == seed["id"]).first():
-                db.add(Case(**seed))
-        db.commit()
+    # Run migrations so the schema exists even on a fresh/deleted DB.
+    from alembic import command
+    from alembic.config import Config as AlembicConfig
 
-        if (
-            db.query(ActionItem)
-            .filter(ActionItem.case_id.in_([s["id"] for s in _SEED_CASES]))
-            .count()
-            == 0
-        ):
-            now = datetime.now(UTC).replace(second=0, microsecond=0)
-            for seed in _SEED_DEADLINES:
-                db.add(
-                    ActionItem(
-                        case_id=seed["case_id"],
-                        title=seed["title"],
-                        description=seed["description"],
-                        due_date=now + timedelta(days=seed["offset_days"]),
-                        action_type=ActionItemType.DEADLINE,
-                    )
-                )
+    alembic_cfg = AlembicConfig(str(Path(__file__).parent.parent / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
 
-            base_time = datetime.now(UTC).replace(second=0, microsecond=0)
-            for seed in _SEED_HEARINGS:
-                scheduled_day = base_time + timedelta(days=seed["offset_days"])
-                db.add(
-                    ActionItem(
-                        case_id=seed["case_id"],
-                        title=seed["title"],
-                        description=seed["description"],
-                        location=seed["location"],
-                        due_date=scheduled_day.replace(
-                            hour=seed["hour"],
-                            minute=seed["minute"],
-                        ),
-                        action_type=ActionItemType.COURT_DATE,
-                    )
-                )
-
-        if (
-            db.query(LegalCost)
-            .filter(LegalCost.case_id.in_([s["id"] for s in _SEED_CASES]))
-            .count()
-            == 0
-        ):
-            now = datetime.now(UTC).replace(second=0, microsecond=0)
-
-            def _offset_date(offset):
-                return now + timedelta(days=offset) if offset is not None else None
-
-            for seed in _SEED_COSTS:
-                db.add(
-                    LegalCost(
-                        case_id=seed["case_id"],
-                        category=CostCategory(seed["category"]),
-                        status=CostStatus(seed["status"]),
-                        title=seed["title"],
-                        rvg_position=seed.get("rvg_position"),
-                        amount_net=seed["amount_net"],
-                        vat_rate=seed["vat_rate"],
-                        amount_gross=seed["amount_gross"],
-                        amount_paid=seed["amount_paid"],
-                        amount_reimbursed=seed.get("amount_reimbursed", 0.0),
-                        streitwert=seed.get("streitwert"),
-                        gebuehren_faktor=seed.get("gebuehren_faktor"),
-                        is_reimbursable=seed.get("is_reimbursable", True),
-                        notes=seed.get("notes"),
-                        issued_at=_offset_date(seed.get("offset_issued")),
-                        due_at=_offset_date(seed.get("offset_due")),
-                        paid_at=_offset_date(seed.get("offset_paid")),
-                    )
-                )
-
-        db.commit()
-    finally:
-        db.close()
     yield
 
 
@@ -220,114 +136,10 @@ async def favicon():
     return FileResponse(PROJECT_ROOT / "static" / "favicon.png")
 
 
-# -- Seed Data ---
-_SEED_CASES = [
-    {
-        "id": "_TRIAGE",
-        "title": "Triage Inbox",
-        "status": CaseStatus.INTAKE,
-    },
-    {
-        "id": "ADV-992-K",
-        "title": "Vane vs. Vane: Divorce & Assets",
-        "status": CaseStatus.DISCOVERY,
-    },
-    {
-        "id": "ADV-804-M",
-        "title": "Smith Construction vs. City Council",
-        "status": CaseStatus.PRE_TRIAL,
-    },
-    {
-        "id": "REF-441-22",
-        "title": "Mercury Tech IP Dispute",
-        "status": CaseStatus.CLOSED,
-    },
-]
-
-_SEED_DEADLINES = [
-    {
-        "case_id": "ADV-992-K",
-        "title": "File supplemental financial disclosure",
-        "description": "Updated asset schedule requested before the next conference.",
-        "offset_days": 3,
-    },
-    {
-        "case_id": "ADV-804-M",
-        "title": "Respond to interrogatories",
-        "description": "Serve final discovery responses on opposing counsel.",
-        "offset_days": 6,
-    },
-    {
-        "case_id": "ADV-804-M",
-        "title": "Submit witness exhibit list",
-        "description": "Court requires pre-trial exhibit exchange before motion hearing.",
-        "offset_days": 11,
-    },
-]
-
-_SEED_HEARINGS = [
-    {
-        "case_id": "ADV-992-K",
-        "title": "Settlement conference",
-        "description": "Case management conference with both parties present.",
-        "location": "Superior Court, Room 4B",
-        "offset_days": 5,
-        "hour": 9,
-        "minute": 30,
-    },
-    {
-        "case_id": "ADV-804-M",
-        "title": "Pre-trial motions hearing",
-        "description": "Argument on municipal records and expert disclosure motions.",
-        "location": "City Hall, Hearing Room C",
-        "offset_days": 10,
-        "hour": 14,
-        "minute": 0,
-    },
-]
-
-_SEED_COSTS = [
-    {
-        "case_id": "ADV-992-K",
-        "category": CostCategory.ANWALTSKOSTEN,
-        "status": CostStatus.BEZAHLT,
-        "title": "Retainer for Discovery Phase",
-        "amount_net": 5000.0,
-        "vat_rate": 0.19,
-        "amount_gross": 5950.0,
-        "amount_paid": 5950.0,
-        "offset_issued": -30,
-        "offset_due": -15,
-        "offset_paid": -20,
-    },
-    {
-        "case_id": "ADV-804-M",
-        "category": CostCategory.GERICHTSKOSTEN,
-        "status": CostStatus.OFFEN,
-        "title": "Court Filing Fee",
-        "amount_net": 1200.0,
-        "vat_rate": 0.0,
-        "amount_gross": 1200.0,
-        "amount_paid": 0.0,
-        "offset_issued": -5,
-        "offset_due": 10,
-        "offset_paid": None,
-    },
-]
-
-
 @app.get("/health")
 async def health_check():
     """Lightweight endpoint for Docker health checks."""
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
-
-
-@app.get("/")
-async def root_page(request: Request, db: Session = Depends(get_db)):
-    """Root page - serves the proactive home dashboard."""
-    from app.api.home import home
-
-    return await home(request, db)
 
 
 import hashlib
@@ -487,10 +299,16 @@ from app.api import (
     timeline_api_router,
     triage_router,
 )
+from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
+from app.api.settings_ai_config import router as settings_ai_router
+from app.api.settings_appearance import router as settings_appearance_router
+from app.api.settings_maintenance import router as settings_maintenance_router
+from app.api.settings_page import router as settings_page_router
 from app.api.slicing import router as slicing_router
 from app.api.user_settings import router as user_settings_router
 
+app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(home_router)
@@ -504,6 +322,10 @@ app.include_router(contacts.router)
 app.include_router(entities.router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
+app.include_router(settings_page_router)
+app.include_router(settings_ai_router)
+app.include_router(settings_appearance_router)
+app.include_router(settings_maintenance_router)
 
 
 if __name__ == "__main__":

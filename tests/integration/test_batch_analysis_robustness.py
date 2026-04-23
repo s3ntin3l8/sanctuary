@@ -64,7 +64,9 @@ def test_batch_analysis_skips_failed_docs(
     batch, doc1, doc2, doc3 = batch_with_failed_doc
 
     # Mock the AI call to return a result based only on doc1 and doc2
-    def mock_call_batch_analyzer_sync(candidate, sibling_titles, debug_file):
+    def mock_call_batch_analyzer_sync(
+        candidate, sibling_titles, debug_file, model=None
+    ):
         # Verify that candidate is doc1
         assert candidate.id == doc1.id
         # Verify that doc2 title IS in sibling_titles

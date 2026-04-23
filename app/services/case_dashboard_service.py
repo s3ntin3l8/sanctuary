@@ -217,10 +217,12 @@ class CaseDashboardService:
         for reaction, doc_id in rows:
             if doc_id in out:
                 continue
-            try:
-                out[doc_id] = reaction.reaction.value
-            except AttributeError:
-                out[doc_id] = str(reaction.reaction)
+            # Store the raw string value (e.g. 'lies') for template emoji mapping
+            val = reaction.reaction
+            if hasattr(val, "value"):
+                out[doc_id] = val.value
+            else:
+                out[doc_id] = str(val)
         return out
 
 

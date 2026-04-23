@@ -1,6 +1,0 @@
-{% if count > 0 %}
-<div class="rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm text-primary">
-  {{ count }} new document{{ 's' if count != 1 else '' }} since
-  {% if since %}{{ since | format_relative_time }}{% else %}your last visit{% endif %}.
-</div>
-{% endif %}

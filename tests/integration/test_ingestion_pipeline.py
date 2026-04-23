@@ -1,4 +1,3 @@
-import json
 from unittest.mock import patch
 
 import pytest
@@ -26,11 +25,10 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         + "\nAmount: 500 EUR."
     )
     mock_summary = {
-        "legal_significance": "High",
-        "required_action": "Review",
+        "legal_significance": "Significant",
+        "required_action": "Reply within 2 weeks",
         "financial_impact": "500 EUR",
     }
-    mock_embedding = [0.1] * 768
 
     def mock_sum_sync_impl(doc_id, db):
         doc = db.get(Document, doc_id)
@@ -39,17 +37,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         db.commit()
 
     async def mock_emb_async_impl(doc_id):
-        # We need to use the test engine to update the doc
-        from sqlalchemy.orm import sessionmaker
-
-        Session = sessionmaker(bind=test_engine)
-        db = Session()
-        try:
-            doc = db.get(Document, doc_id)
-            doc.content_embedding = json.dumps(mock_embedding)
-            db.commit()
-        finally:
-            db.close()
+        pass  # embedding stored in document_vectors; mocked out here
 
     mock_res = {"content": mock_markdown, "metadata": {"pages": 1}, "chunks": []}
 
@@ -96,8 +84,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         assert doc.content == mock_markdown
         assert doc.ai_summary == mock_summary
         assert doc.ai_summary_status == "generated"
-        assert doc.content_embedding is not None
-        assert json.loads(doc.content_embedding) == mock_embedding
+        # Embedding storage is mocked; verified separately in test_embeddings.py
 
         # Verify extractions
         assert doc.cost_candidates is not None

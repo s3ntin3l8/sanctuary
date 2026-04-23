@@ -85,12 +85,20 @@
   --font-headline: "Manrope", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-label: "Inter", sans-serif;
+  --color-surface-lowest: var(--color-surface-container-lowest);
+  --color-surface-low: var(--color-surface-container-low);
+  --color-surface-high: var(--color-surface-container-high);
+  --color-surface-highest: var(--color-surface-container-highest);
 }
 
 /* ── Dark Mode Overrides (applied when .dark is on <html>) ── */
 @layer base {
   .dark {
     --color-surface-container-lowest: #060e20;
+    --color-surface-lowest: #060e20;
+    --color-surface-low: #131b2e;
+    --color-surface-high: #1d2840;
+    --color-surface-highest: #243050;
     --color-surface: #0b1326;
     --color-surface-dim: #0b1326;
     --color-surface-bright: #31394d;
@@ -218,6 +226,34 @@
   }
   .pulse-amber {
     animation: svgPulseAmber 2.6s ease-in-out infinite;
+  }
+
+  /* ── Button system ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 700; border-radius: 8px; cursor: pointer;
+    transition: background-color 150ms, opacity 150ms, transform 100ms;
+    padding: 10px 20px; font-size: 14px; line-height: 1;
+    &:active { transform: scale(0.97); }
+    &:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  }
+  .btn-primary {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    &:hover:not(:disabled) { background: color-mix(in srgb, var(--color-primary) 90%, transparent); }
+  }
+  .btn-secondary {
+    background: var(--color-surface-container-high);
+    color: var(--color-on-surface-variant);
+    &:hover:not(:disabled) { background: var(--color-surface-container-highest); }
+  }
+  .btn-sm {
+    padding: 6px 16px; font-size: 12px;
+  }
+  .btn-xs {
+    padding: 4px 10px; font-size: 10px; font-weight: 900;
+    letter-spacing: 0.08em; text-transform: uppercase;
   }
 }
 

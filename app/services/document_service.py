@@ -109,16 +109,6 @@ class DocumentService:
         self.db.refresh(doc)
         return doc
 
-    def get_activity_feed(self, limit: int = 50) -> dict:
-        """Get activity feed data."""
-        recent_docs = self.doc_repo.get_recent(limit=limit)
-        pending_docs = self.doc_repo.get_pending_review()
-
-        return {
-            "recent_documents": recent_docs,
-            "pending_documents": pending_docs,
-        }
-
     def get_contacts_data(self) -> dict:
         """Get all contacts with grouping for page rendering."""
         senders = self.get_all_senders()

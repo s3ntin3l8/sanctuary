@@ -145,7 +145,7 @@ class HomeService:
         active_cases_query = (
             self.db.query(Case)
             .options(joinedload(Case.proceedings))
-            .filter(Case.status != CaseStatus.CLOSED)
+            .filter(Case.status != CaseStatus.CLOSED, Case.id != "_TRIAGE")
         )
         active_cases = active_cases_query.order_by(Case.created_at.desc()).all()
 

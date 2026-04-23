@@ -5,6 +5,8 @@
 {% block content %}
 {% set header_title = "Legal Costs" %}
 {% set header_subtitle %}{{ costs_by_case|length }} Cases &middot; Total {{ format_eur(global_summary.total_gross) }}{% endset %}
+{% set header_back_href = "/" %}
+{% set header_back_title = "Home" %}
 {% set header_actions %}
 <button
     hx-get="/costs/new"

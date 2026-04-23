@@ -1,0 +1,88 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block settings_body %}
+
+{# ── Appearance & Layout ───────────────────────────────────────────── #}
+<section class="space-y-6"
+         x-data="{
+             theme: '{{ settings.get('theme', 'dark') }}',
+             saveTheme(t) {
+                 this.theme = t;
+                 document.documentElement.classList.toggle('dark', t === 'dark');
+                 window.saveUserSettings && window.saveUserSettings({theme: t});
+                 fetch('/api/settings/theme', {
+                     method: 'POST',
+                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                     body: 'theme=' + t
+                 });
+             }
+         }">
+    <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-[24px]">palette</span>
+        <h2 class="text-xl font-extrabold text-on-surface tracking-tight">Appearance & Layout</h2>
+    </div>
+
+    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-6">
+        <!-- Theme -->
+        <div class="space-y-3">
+            <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Theme</label>
+            <div class="flex gap-2">
+                <button @click="saveTheme('dark')"
+                        :class="theme === 'dark' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20'"
+                        class="px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[14px]">dark_mode</span>
+                    Dark
+                </button>
+                <button @click="saveTheme('light')"
+                        :class="theme === 'light' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20'"
+                        class="px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[14px]">light_mode</span>
+                    Light
+                </button>
+            </div>
+        </div>
+
+        <!-- Default dashboard view -->
+        <div class="space-y-3">
+            <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Default Dashboard View</label>
+            <select @change="fetch('/api/user-settings/dashboard-view', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({view: $event.target.value})})"
+                    class="bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
+                {% set current_view = settings.get('dashboard_view', 'graph') %}
+                <option value="graph" {% if current_view == 'graph' %}selected{% endif %}>Graph</option>
+                <option value="truth" {% if current_view == 'truth' %}selected{% endif %}>Truth Map</option>
+                <option value="timeline" {% if current_view == 'timeline' %}selected{% endif %}>Timeline</option>
+                <option value="fin" {% if current_view == 'fin' %}selected{% endif %}>Financials</option>
+            </select>
+            <p class="text-[10px] text-on-surface-variant/60 italic">The view opened by default when navigating to a case dashboard.</p>
+        </div>
+
+        <!-- Dashboard cards -->
+        {% set cards = settings.get('dashboard_cards', {'action_items': true, 'costs': true, 'documents': true}) %}
+        <div class="space-y-3">
+            <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Dashboard Panels</label>
+            <form hx-post="/api/settings/dashboard-cards" hx-swap="none" class="space-y-2">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="action_items" value="on" {% if cards.get('action_items', true) %}checked{% endif %}
+                           onchange="this.form.requestSubmit()"
+                           class="w-4 h-4 rounded accent-primary">
+                    <span class="text-sm text-on-surface">Action Items &amp; Deadlines</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="costs" value="on" {% if cards.get('costs', true) %}checked{% endif %}
+                           onchange="this.form.requestSubmit()"
+                           class="w-4 h-4 rounded accent-primary">
+                    <span class="text-sm text-on-surface">Legal Costs</span>
+                </label>
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" name="documents" value="on" {% if cards.get('documents', true) %}checked{% endif %}
+                           onchange="this.form.requestSubmit()"
+                           class="w-4 h-4 rounded accent-primary">
+                    <span class="text-sm text-on-surface">Recent Documents</span>
+                </label>
+            </form>
+            <p class="text-[10px] text-on-surface-variant/60 italic">Takes effect on the next case dashboard load.</p>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

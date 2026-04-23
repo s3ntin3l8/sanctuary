@@ -1,24 +1,13 @@
-{# Ask AI — stub for v1; activates in Phase 7 when document chat is live.
-   In overlay context wires into the dashboard's existing chatOpen Alpine state.
-   In standalone/embedded shows a disabled stub with tooltip.
-   Required: context
+{# Ask AI — toggles docChatOpen in the enclosing Alpine scope.
+   In overlay context: docChatOpen lives on caseDashboard.
+   In standalone/embedded contexts: docChatOpen lives on hudReader().
+   Required: context, doc
 #}
 <div class="px-5 py-4">
-  {% if context == 'overlay' %}
-  <button @click="chatOpen = true"
-          class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12.5px] transition-colors"
+  <button @click="docChatOpen = !docChatOpen; if (docChatOpen && typeof chatOpen !== 'undefined') chatOpen = false"
+          class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12.5px] transition-colors hover:opacity-90"
           style="background:var(--color-surface-container); color:var(--color-on-surface-variant); border:1px solid var(--color-outline-variant);">
     <span style="color:var(--color-primary);">✦</span>
     Ask about this document
   </button>
-  {% else %}
-  <button disabled
-          title="Document chat arrives with Phase 7"
-          class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12.5px] opacity-40 cursor-not-allowed"
-          style="background:var(--color-surface-container); color:var(--color-on-surface-variant); border:1px solid var(--color-outline-variant);">
-    <span class="material-symbols-outlined text-sm">auto_awesome</span>
-    Ask about this document
-    <span class="text-[9px] font-mono ml-1 opacity-70">(Phase 7)</span>
-  </button>
-  {% endif %}
 </div>

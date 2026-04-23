@@ -1,10 +1,9 @@
 {# Variables: graph (dict from CaseGraphService.build_payload), case, active_proceeding #}
 {# Alpine scope: caseDashboard (parent) #}
 
-<div class="relative h-full overflow-auto custom-scrollbar"
+<div class="relative h-full overflow-auto custom-scrollbar flex flex-col"
      id="correspondence-graph-container"
      style="background:var(--color-surface);"
-     x-data="{ zoom: 1 }"
      @graph-fit.window="$el.scrollTo({ top: 0, left: 0, behavior: 'smooth' })"
      @graph-center-critical.window="
        const crit = $el.querySelector('.text-error, .text-critical, text[fill=\'var(--color-critical)\']');

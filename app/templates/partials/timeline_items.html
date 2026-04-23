@@ -1,0 +1,8 @@
+{% from "components/document_card.html" import document_card %}
+{% for doc in docs %}
+{% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
+{% set stripe_icon = originator_icons.get(doc.originator_type, 'help_outline') %}
+<div class="timeline-doc-item" data-doc-id="{{ doc.id }}">
+  {{ document_card(doc, stripe_color, stripe_icon, None, True) }}
+</div>
+{% endfor %}

@@ -103,6 +103,7 @@ function hudReader() {
     focusModeActive: false,
     activePassageId: null,
     observer: null,
+    docChatOpen: false,
 
     init() {
       const root = this.$el;

@@ -1,3 +1,4 @@
+{% from "components/significance_indicator.html" import significance_indicator %}
 <a href="/cases/{{ case.id }}" class="flex flex-col h-full rounded-lg p-4 bg-surface-container border border-outline-variant/30 transition-all duration-300 group no-underline
    {% if case.status.value == 'closed' %}opacity-70 hover:opacity-100{% endif %}"
    data-panel-item="{{ panel_name or 'cases' }}" data-index="{{ loop_index0 }}"
@@ -6,10 +7,13 @@
    :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === '{{ panel_name or 'cases' }}' && focusedIdx === {{ loop_index0 }} }">
     <!-- Header -->
     <div class="flex items-start justify-between mb-2 shrink-0">
-        <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
-              style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
-            {{ case.id }}
-        </span>
+        <div class="flex items-center gap-1.5">
+            <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
+                  style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
+                {{ case.id }}
+            </span>
+            {% if case.max_significance %}{{ significance_indicator(case.max_significance) }}{% endif %}
+        </div>
         {% if case.new_docs > 0 %}
             <span class="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-primary-container/20 text-primary uppercase">
                 +{{ case.new_docs }} new

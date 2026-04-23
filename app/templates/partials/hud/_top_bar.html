@@ -18,13 +18,16 @@
     </a>
 
     {# Case / proceeding breadcrumb #}
-    <div class="text-[9px] font-mono font-bold shrink-0" style="color:var(--color-on-surface-variant);">
-      <span class="text-primary">{{ doc.case_id }}</span>
+    <div class="flex items-center gap-1 text-[9px] font-mono font-bold shrink-0" style="color:var(--color-on-surface-variant);">
+      <span class="font-mono text-[11px] px-2 py-0.5 rounded-full font-semibold"
+            style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
+        {{ doc.case_id }}
+      </span>
       {% if doc.proceeding %}
-      <span class="text-outline"> · </span>
+      <span class="text-outline">·</span>
       <span>{{ doc.proceeding.court_name }}</span>
       {% if doc.proceeding.az_court %}
-      <span class="text-outline"> · </span>
+      <span class="text-outline">·</span>
       <span>{{ doc.proceeding.az_court }}</span>
       {% endif %}
       {% endif %}

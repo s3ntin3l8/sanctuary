@@ -16,8 +16,9 @@
 
 {# ── OVERLAY (slide-in, 480px, scan-primary) ─────────────────────────────── #}
 {% if context == 'overlay' %}
-<div class="fixed inset-y-0 right-0 z-50 flex flex-col slide-in-right"
-     style="width:480px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:-8px 0 32px rgba(0,0,0,0.35);">
+<div class="fixed inset-y-0 z-50 flex flex-col slide-in-right"
+     :class="(typeof chatOpen !== 'undefined' && (chatOpen || docChatOpen)) ? 'right-[400px]' : 'right-0'"
+     style="width:480px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:-8px 0 32px rgba(0,0,0,0.35); transition:right 0.2s ease-out;">
 
   {# Header strip #}
   <div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 border-b border-outline-variant/10">
@@ -96,6 +97,8 @@
     Esc to close · ← → to navigate · ⇱ full text
   </div>
 </div>
+{# Doc chat drawer — mounts in caseDashboard scope using docChatOpen #}
+{% include "partials/hud/_chat_drawer.html" %}
 
 {# ── STANDALONE (full-screen reader) ─────────────────────────────────────── #}
 {% elif context == 'standalone' %}
@@ -119,6 +122,7 @@
       {% include "partials/hud/_ask_ai.html" %}
     </div>
   </div>
+  {% include "partials/hud/_chat_drawer.html" %}
 </div>
 
 {# ── EMBEDDED (triage right pane) ────────────────────────────────────────── #}
@@ -138,6 +142,7 @@
     {% include "partials/hud/_rail.html" %}
     {% include "partials/hud/_ask_ai.html" %}
   </div>
+  {% include "partials/hud/_chat_drawer.html" %}
 </div>
 {% endif %}
 

@@ -1,3 +1,5 @@
+{% from "components/form_field.html" import form_input, form_select, form_textarea %}
+
 <div id="cost-form-container" x-data="{ showForm: true, netAmount: 0, vatRate: 19, grossAmount: 0 }" x-show="showForm" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" @click.away="showForm = false" class="bg-surface-container rounded-2xl border border-primary/30 p-6 shadow-sm">
     <div class="flex items-center justify-between mb-4">
         <h3 class="text-sm font-black text-on-surface">Add Cost Position</h3>
@@ -7,88 +9,58 @@
     <form hx-post="/costs" hx-target="#cost-form-container" hx-swap="outerHTML" class="space-y-4">
         {% if preselected_case_id %}
         <input type="hidden" name="case_id" value="{{ preselected_case_id }}">
-        <div class="mb-2">
+        <div>
             <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Case</label>
             <p class="text-sm font-bold text-on-surface mt-1">{{ preselected_case_title }}</p>
         </div>
-        <div class="mb-4">
-            <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Category</label>
-            <select name="category" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" required>
+        {% call form_select("category", "Category", required=true) %}
+            <option value="">Select category...</option>
+            {% for cat_key, cat_meta in cost_category_meta.items() %}
+            <option value="{{ cat_key.value }}">{{ cat_meta.label }}</option>
+            {% endfor %}
+        {% endcall %}
+        {% else %}
+        <div class="grid grid-cols-2 gap-4">
+            {% call form_select("case_id", "Case", required=true) %}
+                <option value="">Select case...</option>
+                {% for case in all_cases %}
+                <option value="{{ case.id }}">{{ case.title }}</option>
+                {% endfor %}
+            {% endcall %}
+            {% call form_select("category", "Category", required=true) %}
                 <option value="">Select category...</option>
                 {% for cat_key, cat_meta in cost_category_meta.items() %}
                 <option value="{{ cat_key.value }}">{{ cat_meta.label }}</option>
                 {% endfor %}
-            </select>
-        </div>
-        {% else %}
-        <div class="grid grid-cols-2 gap-4">
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Case</label>
-                <select name="case_id" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" required>
-                    <option value="">Select case...</option>
-                    {% for case in all_cases %}
-                    <option value="{{ case.id }}">{{ case.title }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Category</label>
-                <select name="category" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" required>
-                    <option value="">Select category...</option>
-                    {% for cat_key, cat_meta in cost_category_meta.items() %}
-                    <option value="{{ cat_key.value }}">{{ cat_meta.label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
+            {% endcall %}
         </div>
         {% endif %}
 
         <div class="grid grid-cols-2 gap-4">
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Title</label>
-                <input type="text" name="title" placeholder="e.g. Verfahrensgebühr 1. Instanz" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" required>
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Statutory Position</label>
-                <input type="text" name="rvg_position" placeholder="e.g. Nr. 3100 VV RVG" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-            </div>
+            {{ form_input("title", "Title", placeholder="e.g. Verfahrensgebühr 1. Instanz", required=true) }}
+            {{ form_input("rvg_position", "Statutory Position", placeholder="e.g. Nr. 3100 VV RVG") }}
         </div>
 
         <div class="grid grid-cols-3 gap-4">
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Net Amount (€)</label>
-                <input type="number" step="0.01" name="amount_net" x-model.number="netAmount" @input="grossAmount = netAmount * (1 + vatRate / 100)" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono focus:border-primary focus:outline-none" required>
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">VAT Rate (%)</label>
-                <input type="number" step="1" name="vat_rate" x-model.number="vatRate" @input="grossAmount = netAmount * (1 + vatRate / 100)" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono focus:border-primary focus:outline-none">
-            </div>
+            {{ form_input("amount_net", "Net Amount (€)", type="number", step="0.01", required=true, mono=true,
+                          extra='x-model.number="netAmount" @input="grossAmount = netAmount * (1 + vatRate / 100)"') }}
+            {{ form_input("vat_rate", "VAT Rate (%)", type="number", step="1", mono=true,
+                          extra='x-model.number="vatRate" @input="grossAmount = netAmount * (1 + vatRate / 100)"') }}
             <div>
                 <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Gross Amount (€)</label>
-                <input type="text" :value="'€ ' + grossAmount.toFixed(2)" readonly class="w-full mt-1 bg-surface-container-highest border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono cursor-not-allowed">
+                <input type="text" :value="'€ ' + grossAmount.toFixed(2)" readonly
+                       class="w-full mt-1 bg-surface-container-highest border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono cursor-not-allowed">
                 <input type="hidden" name="amount_gross" :value="grossAmount.toFixed(2)">
             </div>
         </div>
 
         <div class="grid grid-cols-3 gap-4">
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Value in Dispute (€)</label>
-                <input type="number" step="0.01" name="streitwert" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono focus:border-primary focus:outline-none">
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Fee Factor</label>
-                <input type="number" step="0.1" name="gebuehren_faktor" placeholder="e.g. 1.3" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface font-mono focus:border-primary focus:outline-none">
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Due Date</label>
-                <input type="datetime-local" name="due_at" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-            </div>
+            {{ form_input("streitwert", "Value in Dispute (€)", type="number", step="0.01", mono=true) }}
+            {{ form_input("gebuehren_faktor", "Fee Factor", type="number", step="0.1", placeholder="e.g. 1.3", mono=true) }}
+            {{ form_input("due_at", "Due Date", type="datetime-local") }}
         </div>
 
-        <div>
-            <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Notes</label>
-            <textarea name="notes" rows="2" class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none"></textarea>
-        </div>
+        {{ form_textarea("notes", "Notes") }}
 
         <div class="flex items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-on-surface-variant">
@@ -98,12 +70,8 @@
         </div>
 
         <div class="flex gap-3 pt-2">
-            <button type="submit" class="text-sm font-bold text-on-primary bg-primary hover:bg-primary/90 px-5 py-2 rounded transition-colors cursor-pointer">
-                Add Cost
-            </button>
-            <button type="button" @click="showForm = false" class="text-sm font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest px-5 py-2 rounded transition-colors cursor-pointer">
-                Cancel
-            </button>
+            <button type="submit" class="btn btn-primary">Add Cost</button>
+            <button type="button" @click="showForm = false" class="btn btn-secondary">Cancel</button>
         </div>
     </form>
 </div>

@@ -24,8 +24,6 @@ from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
-    ConversationRole,
-    ConversationScope,
     CostCategory,
     CostStatus,
     DocumentRole,
@@ -61,9 +59,6 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
     content = Column(Text, nullable=True)
-    content_embedding = Column(
-        Text, nullable=True
-    )  # sqlite-vec f32 binary blob (future semantic search)
     case_id = Column(String, nullable=True, index=True)
     file_path = Column(String, nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex digest
@@ -424,46 +419,6 @@ class DocumentPin(Base):
     document = relationship("Document")
 
 
-class Conversation(Base):
-    """AI chat thread scoped to either a case or a specific document."""
-
-    __tablename__ = "conversations"
-    __table_args__ = (Index("ix_conversations_scope", "scope_type", "scope_id"),)
-
-    id = Column(Integer, primary_key=True, index=True)
-    scope_type = Column(SAEnum(ConversationScope), nullable=False)
-    scope_id = Column(
-        String, nullable=False
-    )  # case.id (str) or document.id (int-as-str)
-    title = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-    messages = relationship(
-        "ConversationMessage",
-        back_populates="conversation",
-        cascade="all, delete-orphan",
-        order_by="ConversationMessage.created_at",
-    )
-
-
-class ConversationMessage(Base):
-    __tablename__ = "conversation_messages"
-    __table_args__ = (
-        Index("ix_conversation_messages_conversation", "conversation_id"),
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(
-        Integer, ForeignKey("conversations.id"), nullable=False, index=True
-    )
-    role = Column(SAEnum(ConversationRole), nullable=False)
-    content = Column(Text, nullable=False)
-    context_document_ids = Column(JSON, nullable=True)  # [int, int, ...] sources
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-
-    conversation = relationship("Conversation", back_populates="messages")
-
-
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
@@ -473,8 +428,6 @@ class UserSettings(Base):
         JSON,
         default=lambda: {
             "theme": "dark",
-            "sidebar_collapsed": False,
-            "default_view": "dashboard",
             "dashboard_cards": {
                 "action_items": True,
                 "costs": True,
@@ -554,6 +507,42 @@ class LegalCost(Base):
 
     case = relationship("Case")
     source_document = relationship("Document")
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_scope", "scope_type", "scope_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope_type = Column(String, nullable=False)  # "document" | "case"
+    scope_id = Column(String, nullable=False)  # doc id (str) or case id (ADV-024-A)
+    title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    messages = relationship(
+        "ConversationMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessage.created_at",
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+    __table_args__ = (
+        Index("ix_conversation_messages_conversation", "conversation_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer, ForeignKey("conversations.id"), nullable=False, index=True
+    )
+    role = Column(String, nullable=False)  # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    context_document_ids = Column(JSON, nullable=True)  # [doc_id, ...] cited
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
 
 
 class Entity(Base):

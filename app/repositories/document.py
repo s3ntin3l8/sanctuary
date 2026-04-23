@@ -12,7 +12,7 @@ from app.repositories.base import BaseRepository
 class DocumentRepository(BaseRepository[Document]):
     """Repository for Document operations."""
 
-    _DEFERRED_CONTENT = [defer(Document.content), defer(Document.content_embedding)]
+    _DEFERRED_CONTENT = [defer(Document.content)]
 
     def __init__(self, db: Session):
         super().__init__(Document, db)

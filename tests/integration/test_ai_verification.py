@@ -25,7 +25,7 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
     db_session.refresh(doc)
 
     # 2. Mock generate_summary_sync to return CORRECT data with high confidence
-    def mock_generate_summary_sync(d):
+    def mock_generate_summary_sync(d, db=None):
         return {
             "az_court": "001 F 123/25",
             "internal_id": "8124/25",

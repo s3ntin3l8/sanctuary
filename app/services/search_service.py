@@ -1,8 +1,12 @@
+import logging
 from collections.abc import Sequence
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
+
+from app.core.async_utils import run_async
 from app.models.database import ActionItem, Case, Document, Entity, LegalCost
 from app.models.enums import ActionItemType
 from app.repositories.action_item import ActionItemRepository
@@ -92,6 +96,64 @@ class SearchService:
             .limit(limit)
             .all()
         )
+
+    def _semantic_document_ids(self, query_text: str, k: int = 10) -> list[int]:
+        """Return up to k document IDs ranked by vector similarity.
+
+        Falls back to an empty list if the embedding model is unavailable or the
+        query embedding fails for any reason.
+        """
+        from app.services.ai_config import get_effective_config
+        from app.services.ai_provider import ai_provider
+        from app.services.embeddings import _serialize
+
+        cfg = get_effective_config(self.db)
+
+        try:
+            import httpx
+
+            params = run_async(
+                ai_provider.get_embedding_params(cfg.embed_model, query_text)
+            )
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(
+                    params["url"], json=params["json"], headers=params["headers"]
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                embedding = data.get("embedding") or (
+                    data.get("data", [{}])[0].get("embedding")
+                    if data.get("data")
+                    else None
+                )
+
+            if not embedding or len(embedding) != cfg.embed_dim:
+                return []
+
+            blob = _serialize(embedding)
+            rows = self.db.execute(
+                text(
+                    "SELECT document_id, distance FROM document_vectors "
+                    "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
+                ),
+                {"blob": blob, "k": k},
+            ).fetchall()
+            return [row[0] for row in rows]
+        except Exception as e:
+            logger.debug(f"Semantic search unavailable: {e}")
+            return []
+
+    def semantic_document_search(
+        self, query_text: str, limit: int = 10
+    ) -> Sequence[Document]:
+        """Return documents ranked by semantic similarity to query_text."""
+        doc_ids = self._semantic_document_ids(query_text, k=limit)
+        if not doc_ids:
+            return []
+        id_order = {doc_id: idx for idx, doc_id in enumerate(doc_ids)}
+        docs = self.db.query(Document).filter(Document.id.in_(doc_ids)).all()
+        docs.sort(key=lambda d: id_order.get(d.id, len(doc_ids)))
+        return docs
 
     def _search_action_items(
         self, query: str, limit: int, action_type: ActionItemType

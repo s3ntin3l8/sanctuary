@@ -5,7 +5,7 @@
     <h3 class="{{ title_class | default('text-lg font-black text-on-surface tracking-tight mb-2') }}">{{ title }}</h3>
     <p class="{{ body_class | default('text-sm text-on-surface-variant max-w-sm leading-relaxed') }}">{{ body }}</p>
     {% if cta_href and cta_label %}
-    <a href="{{ cta_href }}" class="{{ cta_class | default('mt-6 inline-flex items-center gap-2 bg-primary hover:bg-primary/90 text-on-primary px-5 py-2.5 rounded-lg text-sm font-bold transition-all active:scale-95') }}">
+    <a href="{{ cta_href }}" class="{{ cta_class | default('mt-6 btn btn-primary') }}">
         {% if cta_icon %}
         <span class="material-symbols-outlined text-base">{{ cta_icon }}</span>
         {% endif %}

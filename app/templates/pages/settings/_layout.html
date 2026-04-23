@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Settings | The Sanctuary{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col h-full bg-background overflow-hidden">
+    <!-- Header -->
+    <header class="h-14 min-h-[56px] flex items-center px-8 border-b border-outline-variant/10 bg-surface-container-low sticky top-0 z-40">
+        <h1 class="text-lg font-black uppercase tracking-tight text-on-surface">Settings</h1>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left rail nav -->
+        <nav class="w-48 shrink-0 border-r border-outline-variant/10 bg-surface-container-low/50 flex flex-col gap-1 p-3">
+            {% set nav_items = [
+                ('/settings/gmail',      'mail',           'Gmail'),
+                ('/settings/ai',         'model_training', 'AI & Models'),
+                ('/settings/appearance', 'palette',        'Appearance'),
+                ('/settings/data',       'database',       'Data'),
+            ] %}
+            {% for href, icon, label in nav_items %}
+            {% set is_active = request.url.path == href %}
+            <a href="{{ href }}"
+               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-colors
+                      {{ 'bg-primary/10 text-primary' if is_active else 'text-on-surface-variant hover:bg-surface-container-high/60 hover:text-on-surface' }}">
+                <span class="material-symbols-outlined text-[18px]" style="{% if is_active %}color:var(--color-primary){% endif %}">{{ icon }}</span>
+                {{ label }}
+            </a>
+            {% endfor %}
+        </nav>
+
+        <!-- Page body -->
+        <div class="flex-1 overflow-y-auto p-8 max-w-3xl">
+            <div class="space-y-8 pb-24">
+                {% block settings_body %}{% endblock %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

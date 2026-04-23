@@ -1,0 +1,88 @@
+<div id="create-case-modal"
+     x-data="{ open: false }"
+     x-show="open"
+     x-transition:enter="transition ease-out duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-150"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     @open-create-case-modal.window="open = true"
+     @keydown.escape.window="open = false"
+     class="fixed inset-0 z-[9999] flex items-center justify-center">
+    <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="open = false"></div>
+
+    <div x-show="open"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95 translate-y-4"
+         x-transition:enter-end="opacity-100 scale-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100 scale-100 translate-y-0"
+         x-transition:leave-end="opacity-0 scale-95 translate-y-4"
+         class="relative bg-surface-container rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+
+        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
+            <h3 class="text-sm font-black text-on-surface uppercase tracking-wider">New Case</h3>
+            <button @click="open = false" class="material-symbols-outlined text-on-surface-variant hover:text-error cursor-pointer text-sm">close</button>
+        </div>
+
+        <form method="post" action="/cases" class="p-6 space-y-4">
+
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Case ID</label>
+                <input
+                    type="text"
+                    name="case_id"
+                    required
+                    placeholder="e.g. ADV-025-A"
+                    class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-colors font-mono"
+                >
+                <p class="text-[9px] text-on-surface-variant">Permanent identifier — cannot be changed later.</p>
+            </div>
+
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Title</label>
+                <input
+                    type="text"
+                    name="title"
+                    required
+                    placeholder="e.g. Custody Dispute — Schmidt v. Schmidt"
+                    class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-colors"
+                >
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Court</label>
+                    <input
+                        type="text"
+                        name="court_name"
+                        required
+                        placeholder="e.g. AG München"
+                        class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-colors"
+                    >
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Jurisdiction</label>
+                    <select
+                        name="jurisdiction"
+                        class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary transition-colors appearance-none cursor-pointer"
+                    >
+                        <option value="de" selected>Germany (RVG/GKG)</option>
+                        <option value="uk">United Kingdom</option>
+                        <option value="us">United States</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="btn btn-primary flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">create_new_folder</span>
+                    <span>Create Case</span>
+                </button>
+                <button type="button" @click="open = false" class="btn btn-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import threading
 from collections.abc import Callable
 
@@ -13,10 +12,6 @@ CONVERSION_TIMEOUT = 60  # seconds
 
 class TimeoutError(Exception):
     pass
-
-
-def _timeout_handler(signum, frame):
-    raise TimeoutError(f"Conversion timed out after {CONVERSION_TIMEOUT} seconds")
 
 
 _allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
@@ -193,18 +188,6 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
 def _run_with_timeout(func: Callable, timeout: int) -> any:
     """Run a function with a timeout using threading (works in async workers)."""
     return _run_with_timeout_thread(func, timeout)
-
-
-def _run_with_timeout_signal(func: Callable, timeout: int) -> any:
-    """Run a function with signal-based timeout (Unix only)."""
-    old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(timeout)
-    try:
-        result = func()
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
-    return result
 
 
 def _run_with_timeout_thread(func: Callable, timeout: int) -> any:

@@ -194,13 +194,3 @@ class UserReactionType(enum.StrEnum):
     TRUE = "true"  # ✅
     NEEDS_PROOF = "needs_proof"  # 🔍
     PRECEDENT = "precedent"  # ⚖️
-
-
-class ConversationScope(enum.StrEnum):
-    CASE = "case"
-    DOCUMENT = "document"
-
-
-class ConversationRole(enum.StrEnum):
-    USER = "user"
-    ASSISTANT = "assistant"

@@ -8,12 +8,15 @@ from datetime import UTC, datetime
 import httpx
 from sqlalchemy.orm import Session, defer
 
-from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
+from app.config import DATA_DIR, SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import ActionItem, Case, Document
 from app.models.enums import ActionItemStatus
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.intelligence._json import parse_json_response
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
+from app.services.intelligence.reaction_context import format_reactions_for_case
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +80,12 @@ def _mark_processing(case_id: str, db: Session) -> None:
 
 
 def _call_brief_sync(
-    case: Case, docs: list, action_items: list, debug_file: str
+    case: Case,
+    docs: list,
+    action_items: list,
+    reactions_context: str,
+    debug_file: str,
+    model: str = "",
 ) -> dict:
     """Synchronous AI call to generate the case brief."""
     prompt = f"""Case: {case.title} ({case.id}) — Status: {case.status}
@@ -98,20 +106,18 @@ Open action items:
         )
         or "None"
     }
-"""
+{("\n" + reactions_context) if reactions_context else ""}"""
 
-    import asyncio
-
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=model or get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=CASE_BRIEF_SYSTEM,
             stream=True,
             options={"num_ctx": 16384, "temperature": 0.2},
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
@@ -153,6 +159,8 @@ def generate(case_id: str) -> None:
 
     db: Session = SessionLocal()
     try:
+        cfg = get_effective_config(db)
+        ai_provider.reload_from_db(db)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             logger.warning(f"Case {case_id} not found for brief generation")
@@ -170,7 +178,6 @@ def generate(case_id: str) -> None:
             db.query(Document)
             .options(
                 defer(Document.content),
-                defer(Document.content_embedding),
             )
             .filter(Document.case_id == case_id)
             .order_by(Document.received_date.asc())
@@ -187,13 +194,22 @@ def generate(case_id: str) -> None:
             .all()
         )
 
+        reactions_context = format_reactions_for_case(db, case_id)
+
         ts = int(datetime.now().timestamp())
         debug_dir = DATA_DIR / "ai_debug"
         debug_dir.mkdir(parents=True, exist_ok=True)
         debug_file = str(debug_dir / f"case_{case_id}_{ts}_brief.log")
 
         try:
-            result = _call_brief_sync(case, docs, action_items, debug_file)
+            result = _call_brief_sync(
+                case,
+                docs,
+                action_items,
+                reactions_context,
+                debug_file,
+                model=cfg.summary_model,
+            )
             _apply_brief(case, result)
 
             parties = _compute_parties(docs)

@@ -8,11 +8,10 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
-def scan_and_close_threads(db: Session, max_age_days: int | None = None) -> int:
+def scan_and_close_threads(db: Session) -> int:
     """Set thread_open=False on any doc that has a replies_to or references edge pointing at it.
 
     Returns the number of rows updated.
-    max_age_days is reserved for a future auto-close policy and is currently ignored.
     Note: SAEnum stores enum .name (uppercase) — use uppercase literals in SQL.
     """
     result = db.execute(

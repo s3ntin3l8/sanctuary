@@ -1,37 +1,17 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
-from app.helpers import render_page
 from app.models.database import UserSettings
 from app.services.ingestion.gmail import get_oauth_flow
 from app.tasks.gmail_sync import run_gmail_backfill
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingest", tags=["ingestion"])
-
-
-@router.get("/settings", response_class=HTMLResponse)
-async def get_ingest_settings(request: Request, db: Session = Depends(get_db)):
-    settings = (
-        db.query(UserSettings).filter(UserSettings.user_id == "single_user").first()
-    )
-    if not settings:
-        settings = UserSettings(user_id="single_user")
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
-
-    return render_page(
-        request,
-        "pages/gmail_settings.html",
-        db=db,
-        settings=settings.settings_json,
-    )
 
 
 @router.post("/settings/update")
@@ -54,7 +34,7 @@ async def update_ingest_settings(
     settings.settings_json = s_json
     db.commit()
 
-    return RedirectResponse(url="/api/ingest/settings", status_code=303)
+    return RedirectResponse(url="/settings/gmail", status_code=303)
 
 
 @router.get("/gmail/oauth/start")
@@ -87,7 +67,7 @@ async def gmail_oauth_callback(code: str, db: Session = Depends(get_db)):
     settings.settings_json = s_json
     db.commit()
 
-    return RedirectResponse(url="/api/ingest/settings")
+    return RedirectResponse(url="/settings/gmail")
 
 
 @router.post("/gmail/backfill")

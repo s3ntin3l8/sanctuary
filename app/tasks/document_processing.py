@@ -1,6 +1,8 @@
 import logging
+import os
 from datetime import UTC, datetime
 
+from app.core.async_utils import run_async
 from app.dependencies import get_db_session
 from app.models.database import Document, IngestStatus
 from app.tasks.celery_app import celery_app
@@ -59,8 +61,29 @@ def process_document_task(self, doc_id: int):
                 exc=e,
             ) from e
 
-        # Phase 1: metadata extraction + auto-triage
+        # For EML files: extract PDF/document attachments as sibling Documents in
+        # the same batch BEFORE Phase 1 so that when child tasks run eagerly they
+        # can't claim the batch before the parent's Phase 1 has run.
+        child_ids: list[int] = []
+        file_ext = os.path.splitext(doc.file_path or "")[1].lower()
+        if file_ext == ".eml":
+            from app.services.ingestion.service import extract_eml_attachments
+
+            child_ids = extract_eml_attachments(doc, db)
+            if child_ids:
+                logger.info(
+                    f"Document {doc_id}: extracted {len(child_ids)} EML attachment(s)"
+                )
+
+        # Phase 1: metadata extraction + auto-triage (run for the parent before
+        # child tasks are dispatched so enrichment from children can't race it)
         _run_phase1_summary(doc_id)
+
+        # Queue attachment processing tasks.  With CELERY_TASK_ALWAYS_EAGER the
+        # child tasks run synchronously here; the last one to complete will claim
+        # the batch and dispatch analyze_batch_task for the whole group.
+        for child_id in child_ids:
+            process_document_task.delay(child_id)
 
         # Batch-ready gating: if all docs in this batch are done, claim and dispatch batch analysis
         batch_id = doc.ingest_batch_id
@@ -81,11 +104,9 @@ def process_document_task(self, doc_id: int):
 
         # Embeddings
         try:
-            import asyncio
-
             from app.services.embeddings import generate_embedding
 
-            asyncio.run(generate_embedding(doc_id))
+            run_async(generate_embedding(doc_id))
         except Exception as e:
             logger.warning(f"Embedding failed for doc {doc_id}: {e}")
 

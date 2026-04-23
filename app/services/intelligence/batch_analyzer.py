@@ -6,7 +6,8 @@ from datetime import datetime
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import AI_SUMMARY_MODEL, DATA_DIR, SessionLocal
+from app.config import DATA_DIR, SessionLocal
+from app.core.async_utils import run_async
 from app.models.database import ActionItem, Document, IngestBatch
 from app.models.enums import (
     ActionItemStatus,
@@ -14,6 +15,7 @@ from app.models.enums import (
     DocumentRole,
     OriginatorType,
 )
+from app.services.ai_config import get_effective_config
 from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._json import parse_json_response
@@ -54,6 +56,7 @@ def _call_batch_analyzer_sync(
     candidate: Document,
     sibling_titles: list[str],
     debug_file: str,
+    model: str = "",
 ) -> dict:
     """Synchronous AI call for batch analysis."""
     content_preview = get_content_preview(candidate, 4000)
@@ -65,19 +68,18 @@ def _call_batch_analyzer_sync(
         f"Other documents in this batch:\n{sibling_list}"
     )
 
-    import asyncio
     import json
 
-    params = asyncio.run(
+    params = run_async(
         ai_provider.get_generate_params(
-            model=AI_SUMMARY_MODEL,
+            model=model or get_effective_config().summary_model,
             prompt=prompt,
             system_prompt=BATCH_ANALYZER_SYSTEM,
             stream=True,
             options={"num_ctx": 8192, "temperature": 0.1},
         )
     )
-    ptype = asyncio.run(ai_provider.get_type())
+    ptype = run_async(ai_provider.get_type())
 
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
@@ -129,6 +131,7 @@ def _apply_batch_results(
     if cover_letter_doc and is_cover_letter:
         cover_letter_doc.role = DocumentRole.COVER_LETTER
         cover_letter_doc.court_relay = bool(court_relay)
+        cover_letter_doc.attributed_originator = result.get("attributed_originator")
 
         for desc in enclosed_descriptions:
             matched = desc.get("matched_filename")
@@ -149,10 +152,6 @@ def _apply_batch_results(
                 if raw_ot in VALID_ORIGINATOR_TYPES:
                     child.originator_type = OriginatorType(raw_ot)
                 child.attributed_originator = desc.get("attributed_originator")
-
-        for d in docs:
-            if d.id != cover_letter_doc_id and d.role == DocumentRole.STANDALONE:
-                pass
 
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         case_id = batch.case_id if batch else None
@@ -196,6 +195,8 @@ def analyze(batch_id: int) -> None:
     """Run the batch-level AI pass for the given IngestBatch."""
     db: Session = SessionLocal()
     try:
+        cfg = get_effective_config(db)
+        ai_provider.reload_from_db(db)
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             logger.warning(f"Batch {batch_id} not found for analysis")
@@ -234,7 +235,9 @@ def analyze(batch_id: int) -> None:
         sibling_titles = [d.title for d in healthy_docs if d.id != candidate.id]
 
         try:
-            result = _call_batch_analyzer_sync(candidate, sibling_titles, debug_file)
+            result = _call_batch_analyzer_sync(
+                candidate, sibling_titles, debug_file, model=cfg.summary_model
+            )
             _apply_batch_results(batch_id, docs, result, db)
             logger.info(f"Batch {batch_id} analyzed successfully")
         except Exception as e:

@@ -1,0 +1,42 @@
+{#
+form_field.html — shared label+input macros for consistent form field layout.
+Canonical style: bg-surface-container-low, text-sm, py-2, rounded (compact).
+
+Used by: cost_form.html, upload_form.html
+NOT for: triage_metadata_form.html (different density: bg-surface, text-xs, py-1.5, rounded-lg)
+NOT for: create_case_modal.html (different prominence: bg-surface-container, py-2.5, rounded-lg, wider borders)
+#}
+
+{# Standard text/number/date input #}
+{% macro form_input(name, label, type='text', value='', placeholder='', required=false, mono=false, step='', extra='') %}
+<div>
+    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{{ label }}</label>
+    <input type="{{ type }}" name="{{ name }}"
+           {% if value %}value="{{ value }}"{% endif %}
+           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+           {% if step %}step="{{ step }}"{% endif %}
+           {% if required %}required{% endif %}
+           {{ extra | safe }}
+           class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface{% if mono %} font-mono{% endif %} focus:border-primary focus:outline-none">
+</div>
+{% endmacro %}
+
+{# Select — use via {% call form_select(...) %}...options...{% endcall %} #}
+{% macro form_select(name, label, required=false) %}
+<div>
+    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{{ label }}</label>
+    <select name="{{ name }}" {% if required %}required{% endif %}
+            class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+        {{ caller() }}
+    </select>
+</div>
+{% endmacro %}
+
+{# Textarea #}
+{% macro form_textarea(name, label, rows=2, placeholder='') %}
+<div>
+    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">{{ label }}</label>
+    <textarea name="{{ name }}" rows="{{ rows }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+              class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none"></textarea>
+</div>
+{% endmacro %}

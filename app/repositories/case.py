@@ -38,7 +38,7 @@ class CaseRepository(BaseRepository[Case]):
 
     def get_all_sorted_by_date(self, descending: bool = True) -> Sequence[Case]:
         """Get all cases sorted by creation date."""
-        query = self.db.query(Case)
+        query = self.db.query(Case).filter(Case.id != "_TRIAGE")
         if descending:
             query = query.order_by(Case.created_at.desc())
         else:

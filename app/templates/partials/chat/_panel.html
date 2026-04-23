@@ -1,0 +1,150 @@
+{# AI Chat panel — shared by case dashboard and document HUD.
+   Required JS: chat.js (registers Alpine component 'aiChat')
+   Required attrs on parent: x-data="aiChat({scopeType, scopeId, suggestedPrompts})"
+   scope_type ∈ 'case' | 'document'
+   scope_id   = case.id (str) or doc.id (int as str)
+#}
+<div class="flex flex-col h-full" x-data="aiChat({
+       scopeType: '{{ scope_type }}',
+       scopeId:   '{{ scope_id }}',
+       suggestedPrompts: {{ (suggested_prompts | default([])) | tojson }}
+     })"
+     x-init="init()">
+
+  {# Header #}
+  <div class="flex items-center justify-between px-5 py-4 flex-shrink-0 border-b"
+       style="border-color:var(--color-outline-variant);">
+    <div class="flex items-center gap-2">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.8">
+        <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z"/>
+      </svg>
+      <span class="font-semibold text-[13px]" style="color:var(--color-on-surface);">
+        {% if scope_type == 'case' %}Case AI Chat{% else %}Document Chat{% endif %}
+      </span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button @click="newConversation()"
+              title="New conversation"
+              class="p-1 rounded hover:bg-surface-container-high transition-colors"
+              style="color:var(--color-on-surface-variant);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+      <button @click="$dispatch('close-chat')"
+              style="color:var(--color-on-surface-variant);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M6 6l12 12M6 18L18 6"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  {# Message list #}
+  <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4"
+       x-ref="messageList">
+
+    {# Empty state / suggested prompts #}
+    <template x-if="messages.length === 0 && !loading">
+      <div class="flex flex-col items-center justify-center h-full py-8 text-center">
+        <div class="text-[28px] mb-3" style="color:var(--color-primary);">✦</div>
+        <div class="font-semibold text-[14px] mb-1" style="color:var(--color-on-surface);">
+          {% if scope_type == 'case' %}Ask about this case{% else %}Ask about this document{% endif %}
+        </div>
+        <div class="text-[12px] mb-5" style="color:var(--color-on-surface-variant);">
+          Every answer cites source documents.
+        </div>
+        <div class="w-full space-y-2">
+          <template x-for="p in suggestedPrompts" :key="p">
+            <button @click="submitPrompt(p)"
+                    class="w-full text-left px-3 py-2 rounded-lg text-[11.5px] border transition-colors hover:bg-surface-container"
+                    style="border-color:var(--color-outline-variant); color:var(--color-on-surface-variant);"
+                    x-text="p">
+            </button>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    {# Messages #}
+    <template x-for="msg in messages" :key="msg.id || msg._tmpId">
+      <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+        <div :class="msg.role === 'user'
+               ? 'max-w-[85%] px-3 py-2 rounded-xl rounded-tr-sm text-[12.5px]'
+               : 'max-w-[95%] px-3 py-2 rounded-xl rounded-tl-sm text-[12.5px]'"
+             :style="msg.role === 'user'
+               ? 'background:var(--color-primary-container); color:var(--color-on-primary-container);'
+               : 'background:var(--color-surface-container); color:var(--color-on-surface);'">
+          <div x-html="renderContent(msg.content)" class="leading-relaxed whitespace-pre-wrap"></div>
+
+          {# Citation pills #}
+          <template x-if="msg.citations && msg.citations.length > 0">
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <template x-for="cite in msg.citations" :key="cite.doc_id">
+                <a :href="'/document/' + cite.doc_id"
+                   class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-mono border transition-colors hover:bg-surface-container-high"
+                   style="border-color:var(--color-outline-variant); color:var(--color-on-surface-variant);"
+                   x-text="(cite.case_id || '') + ' · #' + cite.doc_id">
+                </a>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    {# Streaming cursor for assistant in-flight #}
+    <template x-if="streaming">
+      <div class="flex justify-start">
+        <div class="max-w-[95%] px-3 py-2 rounded-xl rounded-tl-sm text-[12.5px]"
+             style="background:var(--color-surface-container); color:var(--color-on-surface);">
+          <div x-html="renderContent(streamBuffer)" class="leading-relaxed whitespace-pre-wrap"></div>
+          <span class="inline-block w-1.5 h-3.5 ml-0.5 align-middle animate-pulse rounded-sm"
+                style="background:var(--color-primary);"></span>
+        </div>
+      </div>
+    </template>
+
+    {# Loading skeleton while fetching conversation #}
+    <template x-if="loading && messages.length === 0">
+      <div class="flex flex-col items-center justify-center h-full">
+        <div class="animate-pulse text-[12px]" style="color:var(--color-on-surface-variant);">Loading…</div>
+      </div>
+    </template>
+  </div>
+
+  {# Error banner #}
+  <template x-if="error">
+    <div class="px-4 py-2 text-[11.5px] border-t" style="border-color:var(--color-outline-variant); color:var(--color-error);" x-text="error"></div>
+  </template>
+
+  {# Input #}
+  <div class="px-4 py-3 border-t flex-shrink-0" style="border-color:var(--color-outline-variant);">
+    <div class="flex gap-2 items-end">
+      <textarea
+        x-ref="input"
+        x-model="draft"
+        @keydown.enter.prevent="if (!$event.shiftKey) submit()"
+        :disabled="streaming"
+        rows="2"
+        placeholder="Ask a question… (Enter to send, Shift+Enter for newline)"
+        class="flex-1 resize-none rounded-lg px-3 py-2 text-[12.5px] border outline-none transition-colors custom-scrollbar"
+        style="background:var(--color-surface-container); border-color:var(--color-outline-variant); color:var(--color-on-surface); min-height:56px; max-height:140px;"
+      ></textarea>
+      <button @click="submit()"
+              :disabled="streaming || !draft.trim()"
+              class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+              :style="streaming || !draft.trim()
+                ? 'background:var(--color-surface-container); color:var(--color-outline);'
+                : 'background:var(--color-primary); color:var(--color-on-primary);'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="mt-1 text-[9.5px] text-right" style="color:var(--color-outline);">
+      Answers cite source documents · citations link to document reader
+    </div>
+  </div>
+
+</div>

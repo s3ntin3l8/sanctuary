@@ -44,37 +44,25 @@
             display: none !important;
         }
 
-        /* ── Core Theme Variables Lockdown ── */
+        /* ── No-flicker bootstrap tokens (subset used by stability locks below).
+           Full palette lives in static/input.css @theme — these only need to be
+           defined before the stylesheet loads to prevent FOUC. ── */
         :root {
             --color-primary: #45636b;
             --color-on-surface: #2a3437;
             --color-on-surface-variant: #566164;
             --color-surface-container-low: #f0f4f6;
             --color-surface-container-lowest: #ffffff;
-            --tracking-widest: 0.1em;
-            /* aliases used by templates */
-            --color-surface-lowest: var(--color-surface-container-lowest);
-            --color-surface-low: var(--color-surface-container-low);
-            --color-surface-high: var(--color-surface-container-high);
-            --color-surface-highest: var(--color-surface-container-highest);
+            --color-surface-container: #e8eff1;
         }
 
         .dark {
             --color-primary: #57f1db;
             --color-on-surface: #dae2fd;
             --color-on-surface-variant: #859490;
-            --color-surface: #0d1626;
             --color-surface-container: #171f33;
             --color-surface-container-low: #131b2e;
             --color-surface-container-lowest: #060e20;
-            --color-surface-container-high: #1d2840;
-            --color-surface-container-highest: #243050;
-            --color-surface-lowest: #060e20;
-            --color-surface-low: #131b2e;
-            --color-surface-high: #1d2840;
-            --color-surface-highest: #243050;
-            --color-outline: #3d4d5c;
-            --color-outline-variant: #2a3a4a;
         }
 
         /* Instant Font Definitions */
@@ -348,6 +336,9 @@
 
             const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
             document.body.classList.toggle('dark', theme === 'dark');
+            document.querySelectorAll('[data-theme-icon]').forEach((el) => {
+                el.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+            });
 
             // Enable transitions after first paint
             setTimeout(() => {
@@ -376,6 +367,9 @@
                 root.classList.toggle('dark', isDark);
                 body.classList.toggle('dark', isDark);
                 localStorage.setItem('site-theme', isDark ? 'dark' : 'light');
+                document.querySelectorAll('[data-theme-icon]').forEach((el) => {
+                    el.textContent = isDark ? 'light_mode' : 'dark_mode';
+                });
                 window.dispatchEvent(new CustomEvent('site-theme-changed', {
                     detail: { mode: isDark ? 'dark' : 'light' }
                 }));
@@ -483,9 +477,9 @@
             </div>
             <div class="px-6 py-4 bg-surface-container-high/50 flex justify-end gap-3">
                 <button @click="confirm()"
-                    class="px-4 py-2 rounded-lg text-xs font-bold bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer">Delete</button>
+                    class="btn btn-primary btn-sm">Delete</button>
                 <button @click="close()"
-                    class="px-4 py-2 rounded-lg text-xs font-bold text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer">Cancel</button>
+                    class="btn btn-secondary btn-sm">Cancel</button>
             </div>
         </div>
     </div>
@@ -496,6 +490,7 @@
     <!-- Component JS -->
     <script src="/static/js/components/upload-modal.js?v=1.0.4"></script>
     <script src="/static/js/alpine-utils.js?v=1.0.5"></script>
+    <script src="/static/js/chat.js?v=1.0.0"></script>
 </body>
 
 </html>

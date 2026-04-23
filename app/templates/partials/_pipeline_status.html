@@ -16,7 +16,7 @@
     {% elif _ingest_ok and _ai_busy %}
     <span class="material-symbols-outlined text-base text-tertiary shrink-0" title="AI processing in progress">settings</span>
     {% elif _ingest_ok and _ai_ok %}
-    <span class="material-symbols-outlined text-base text-green-400 shrink-0" title="Ready — all pipelines complete">done_all</span>
+    <span class="material-symbols-outlined text-base text-originator-own shrink-0" title="Ready — all pipelines complete">done_all</span>
     {% else %}
     <span class="material-symbols-outlined text-base text-on-surface-variant/40 shrink-0" title="Pending ingestion">hourglass_empty</span>
     {% endif %}
@@ -37,7 +37,7 @@
         <span class="material-symbols-outlined text-[10px]">settings</span> AI processing
     </span>
     {% elif _ingest_ok and _ai_ok %}
-    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-green-500/10 text-green-400 whitespace-nowrap" title="Ready — all pipelines complete">
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-originator-own/10 text-originator-own whitespace-nowrap" title="Ready — all pipelines complete">
         <span class="material-symbols-outlined text-[10px]">done_all</span> ready
     </span>
     {% else %}
