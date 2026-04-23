@@ -37,7 +37,6 @@ async def stream_answer(
 ) -> AsyncIterator[str]:
     """Persist user message, stream the assistant reply, persist + emit citations."""
     cfg = get_effective_config(db)
-    ai_provider.reload_from_db(db)
     repo = ChatRepository(db)
 
     repo.add_message(conversation.id, "user", user_message)

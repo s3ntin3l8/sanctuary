@@ -12,7 +12,7 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     DocumentRole,
-    OriginatorType,
+    parse_originator_type,
 )
 from app.services.ai_config import get_effective_config
 from app.services.ai_summary import get_content_preview
@@ -30,7 +30,6 @@ COVER_LETTER_KEYWORDS = {
     "cover",
 }
 
-VALID_ORIGINATOR_TYPES = {e.value for e in OriginatorType}
 VALID_ACTION_TYPES = {e.value for e in ActionItemType}
 
 
@@ -134,9 +133,9 @@ def _apply_batch_results(
             if child:
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                raw_ot = (desc.get("originator_type") or "unknown").lower()
-                if raw_ot in VALID_ORIGINATOR_TYPES:
-                    child.originator_type = OriginatorType(raw_ot)
+                child.originator_type = parse_originator_type(
+                    desc.get("originator_type")
+                )
                 child.attributed_originator = desc.get("attributed_originator")
 
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()

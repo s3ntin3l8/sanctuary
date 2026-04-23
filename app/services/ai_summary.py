@@ -54,20 +54,16 @@ def get_content_preview(
 def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> None:
     """Refine document properties based on deep AI extraction."""
     from app.models.database import Case
-    from app.models.enums import OriginatorType
+    from app.models.enums import parse_originator_type
     from app.services.ingestion.service import compute_review_reasons
 
     # 1. Update core fields (AI overrides heuristics)
     if summary_data.get("sender"):
         doc.sender = summary_data["sender"]
 
-    if summary_data.get("originator_type"):
-        try:
-            val = summary_data["originator_type"].lower()
-            if val in [e.value for e in OriginatorType]:
-                doc.originator_type = OriginatorType(val)
-        except Exception:
-            pass
+    parsed_ot = parse_originator_type(summary_data.get("originator_type"))
+    if parsed_ot is not None:
+        doc.originator_type = parsed_ot
 
     if summary_data.get("received_date"):
         try:

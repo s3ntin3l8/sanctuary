@@ -30,6 +30,17 @@ class OriginatorType(enum.StrEnum):
     UNKNOWN = "unknown"  # Neutral — for unclassified docs
 
 
+def parse_originator_type(value: str | None) -> "OriginatorType | None":
+    """Parse a raw string into an OriginatorType, returning None on invalid input."""
+    if not value:
+        return None
+    normalized = value.lower().strip()
+    try:
+        return OriginatorType(normalized)
+    except ValueError:
+        return None
+
+
 class PipelineStage(enum.StrEnum):
     EXTRACT = "extract"
     METADATA = "metadata"
