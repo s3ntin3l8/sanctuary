@@ -70,16 +70,9 @@ def setup_logging():
     root.addHandler(handler)
     root.setLevel(level)
 
-    # Hijack third-party loggers to propagate to root and use our format
-    hijack_loggers = [
-        "uvicorn",
-        "uvicorn.error",
-        "uvicorn.access",
-        "sqlalchemy",
-        "alembic",
-    ]
-    for logger_name in hijack_loggers:
-        target = logging.getLogger(logger_name)
+    # Hijack all existing loggers to propagate to root and use our format
+    for name in logging.root.manager.loggerDict:
+        target = logging.getLogger(name)
         target.handlers = []
         target.propagate = True
         target.setLevel(level)
@@ -111,6 +104,10 @@ async def lifespan(app: FastAPI):
 
     alembic_cfg = AlembicConfig(str(Path(__file__).parent.parent / "alembic.ini"))
     command.upgrade(alembic_cfg, "head")
+
+    # Re-setup logging after alembic might have re-configured it
+    setup_logging()
+    logging.getLogger(__name__).info("Migrations complete, logging re-verified.")
 
     yield
 

@@ -3,9 +3,12 @@ import os
 import threading
 from collections.abc import Callable
 
+from app.config import INGEST_CONVERSION_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
-CONVERSION_TIMEOUT = 60  # seconds
+CONVERSION_TIMEOUT = INGEST_CONVERSION_TIMEOUT  # seconds
+_conversion_lock = threading.Lock()
 
 
 class TimeoutError(Exception):
@@ -163,7 +166,8 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
     def do_convert():
         return conv.convert(file_path)
 
-    result = _run_with_timeout(do_convert, timeout)
+    with _conversion_lock:
+        result = _run_with_timeout(do_convert, timeout)
 
     metadata = {
         "pages": len(result.document.pages) if hasattr(result.document, "pages") else 1,
