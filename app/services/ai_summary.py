@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import AI_BASE_URL
 from app.core.async_utils import run_async
 from app.models.database import Document, Proceeding
 from app.services.ai_config import get_effective_config
@@ -257,28 +256,8 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
         )
         doc.ai_summary = {"error": str(e)}
         db.commit()
-        raise e
+        raise
 
     db.commit()
     db.refresh(doc)
     return doc
-
-
-async def check_ollama_status() -> dict:
-    """Check if Ollama is reachable and models are pulled."""
-    status = {"reachable": False, "summary_model": False, "error": None}
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{AI_BASE_URL}/api/tags")
-            response.raise_for_status()
-            data = response.json()
-            models = [m["name"] for m in data.get("models", [])]
-            status["reachable"] = True
-
-            # Check for model existence
-            cfg = get_effective_config(None)
-            status["summary_model"] = any(cfg.summary_model in m for m in models)
-    except Exception as e:
-        status["error"] = str(e)
-
-    return status

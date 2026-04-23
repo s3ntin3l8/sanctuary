@@ -281,27 +281,6 @@ def clear_cache():
 
 
 @pytest.fixture
-def mock_ai_services():
-    with (
-        patch("app.services.ai_summary.summarize_document") as mock_sum,
-        patch("app.services.embeddings.generate_embedding") as mock_emb,
-        patch("app.services.ai_summary.check_ollama_status") as mock_check_sum,
-        patch("app.services.embeddings.check_embedding_status") as mock_check_emb,
-    ):
-        mock_sum.return_value = MagicMock()
-        mock_emb.return_value = [0.1] * 768
-        mock_check_sum.return_value = {"status": "ok", "model": "test"}
-        mock_check_emb.return_value = {"status": "ok", "model": "test"}
-
-        yield {
-            "summarize": mock_sum,
-            "embedding": mock_emb,
-            "check_sum": mock_check_sum,
-            "check_emb": mock_check_emb,
-        }
-
-
-@pytest.fixture
 def app_client():
     from fastapi.testclient import TestClient
 
