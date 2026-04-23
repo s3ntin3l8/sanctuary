@@ -34,6 +34,7 @@ logging.basicConfig(
     level=getattr(logging, _log_level, logging.INFO),
     format="%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler()],
+    force=True,  # uvicorn resets root.level to WARNING on each reload; force overrides it
 )
 logger = logging.getLogger(__name__)
 

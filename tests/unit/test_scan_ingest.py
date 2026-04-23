@@ -33,9 +33,13 @@ def test_ingest_scanned_file_single_page_dispatches_process_task(db_session, tmp
     pdf_path = _make_minimal_pdf(tmp_path)
     source_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
 
+    dispatched = []
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
-        patch("app.services.ingestion.batch_orchestrator.celery_app") as mock_celery,
+        patch(
+            "app.services.ingestion.batch_orchestrator._dispatch",
+            side_effect=lambda name, doc_id: dispatched.append(name),
+        ),
     ):
         mock_pdf_doc = MagicMock()
         mock_pdf_doc.__len__ = MagicMock(return_value=1)
@@ -49,9 +53,8 @@ def test_ingest_scanned_file_single_page_dispatches_process_task(db_session, tmp
 
     assert batch.source_type == IngestBatchSourceType.SCAN
     assert batch.status == IngestBatchStatus.PROCESSING
-    mock_celery.send_task.assert_called_once()
-    call_args = mock_celery.send_task.call_args
-    assert "process_document_task" in call_args[0][0]
+    assert len(dispatched) == 1
+    assert "process_document_task" in dispatched[0]
 
 
 @pytest.mark.unit
@@ -62,9 +65,13 @@ def test_ingest_scanned_file_multi_page_sets_awaiting_slicing(db_session, tmp_pa
     pdf_path = _make_minimal_pdf(tmp_path)
     source_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
 
+    dispatched = []
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
-        patch("app.services.ingestion.batch_orchestrator.celery_app") as mock_celery,
+        patch(
+            "app.services.ingestion.batch_orchestrator._dispatch",
+            side_effect=lambda name, doc_id: dispatched.append(name),
+        ),
     ):
         mock_pdf_doc = MagicMock()
         mock_pdf_doc.__len__ = MagicMock(return_value=5)
@@ -80,8 +87,8 @@ def test_ingest_scanned_file_multi_page_sets_awaiting_slicing(db_session, tmp_pa
     assert batch.status == IngestBatchStatus.AWAITING_SLICING
     assert batch.meta["slicing"]["status"] == "preparing"
     assert batch.meta["slicing"]["page_count"] == 5
-    mock_celery.send_task.assert_called_once()
-    assert "prepare_slicing" in mock_celery.send_task.call_args[0][0]
+    assert len(dispatched) == 1
+    assert "prepare_slicing" in dispatched[0]
 
     # No Documents should be created
     from app.models.database import Document
@@ -100,7 +107,7 @@ def test_ingest_scanned_file_dedup_returns_none(db_session, tmp_path):
 
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
-        patch("app.services.ingestion.batch_orchestrator.celery_app"),
+        patch("app.services.ingestion.batch_orchestrator._dispatch"),
     ):
         mock_pdf_doc = MagicMock()
         mock_pdf_doc.__len__ = MagicMock(return_value=1)

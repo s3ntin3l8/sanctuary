@@ -12,7 +12,6 @@ from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
-from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +27,22 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _dispatch(task_name: str, doc_id: int) -> None:
-    """Fire a Celery task in a daemon thread so task_always_eager never blocks the caller."""
-    threading.Thread(
-        target=lambda: celery_app.send_task(task_name, args=[doc_id]),
-        daemon=True,
-    ).start()
+    """Fire a Celery task in a daemon thread, respecting task_always_eager.
+
+    send_task() ignores task_always_eager and tries to use the broker.
+    Importing the module and calling apply_async() on the task object correctly
+    runs eagerly in dev mode and uses the broker in production.
+    """
+
+    def _run():
+        import importlib
+
+        module_path, func_name = task_name.rsplit(".", 1)
+        mod = importlib.import_module(module_path)
+        task = getattr(mod, func_name)
+        task.apply_async(args=[doc_id])
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def ingest_raw_email(
