@@ -160,12 +160,6 @@ def get_upstream_blocking(stage: PipelineStage, stages: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _json_encode(obj) -> str:
-    import json
-
-    return json.dumps(obj)
-
-
 def _update_stage(
     doc_id: int,
     stage: PipelineStage,
@@ -173,43 +167,33 @@ def _update_stage(
     status: StageStatus,
     extra_sets: dict,
 ) -> None:
-    """Atomically update a single stage key inside pipeline_stages and recompute pipeline_state."""
-    # Build the json_set path list: status first, then any extra fields.
-    path_prefix = f"$.{stage.value}"
-    sets = [(f"{path_prefix}.status", status.value)]
-    for key, val in extra_sets.items():
-        sets.append((f"{path_prefix}.{key}", val))
+    """Update a single stage key inside pipeline_stages and recompute pipeline_state."""
+    import json
 
-    # Construct json_set(pipeline_stages, '$.<stage>.status', :v0, '$.<stage>.key', :v1, ...)
-    json_set_args = "pipeline_stages"
-    params: dict = {"doc_id": doc_id}
-    for i, (path, val) in enumerate(sets):
-        json_set_args += f", :path_{i}, :val_{i}"
-        params[f"path_{i}"] = path
-        params[f"val_{i}"] = val
-
-    # We need the fresh stages dict to recompute overall state.
     row = db.execute(
-        text(f"SELECT json_set({json_set_args}) FROM documents WHERE id = :doc_id"),
-        params,
+        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+        {"doc_id": doc_id},
     ).fetchone()
 
     if row is None:
         logger.warning(f"pipeline_status: doc {doc_id} not found")
         return
 
-    import json
+    stages: dict = json.loads(row[0]) if row[0] else {}
+    stage_entry = stages.setdefault(stage.value, {})
+    stage_entry["status"] = status.value
+    for key, val in extra_sets.items():
+        if val is None:
+            stage_entry.pop(key, None)
+        else:
+            stage_entry[key] = val
 
-    updated_stages = json.loads(row[0]) if row[0] else {}
-    overall = compute_overall_state(updated_stages)
-
-    # Apply the update atomically.
-    params["overall"] = overall.value
+    overall = compute_overall_state(stages)
     db.execute(
         text(
-            f"UPDATE documents SET pipeline_stages = json_set({json_set_args}), "
-            f"pipeline_state = :overall WHERE id = :doc_id"
+            "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state"
+            " WHERE id = :doc_id"
         ),
-        params,
+        {"stages": json.dumps(stages), "state": overall.value, "doc_id": doc_id},
     )
     db.commit()
