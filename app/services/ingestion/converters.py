@@ -261,8 +261,3 @@ def is_valid_docling_output(content: str | None) -> bool:
     if stripped.startswith("Conversion failed:"):
         return False
     return not len(stripped) < 5
-
-
-def check_file_size(file_size: int, max_mb: int = 50) -> bool:
-    """Check if file size is within limit."""
-    return 0 < file_size <= max_mb * 1024 * 1024

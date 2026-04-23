@@ -196,18 +196,6 @@ def process_uploaded_document(doc: Document, db: Session):
             detail=conversion_error,
         )
 
-    result_case_id = extract_case_id(safe_filename, markdown_content or "")
-    result_originator = extract_originator(safe_filename, markdown_content or "")
-    result_date = extract_received_date(markdown_content or "", safe_filename)
-    result_sender = extract_sender(markdown_content or "")
-
-    extraction_confidence = ExtractionConfidenceSchema(
-        sender=result_sender["confidence"],
-        date=result_date["confidence"],
-        case_id=result_case_id["confidence"],
-        originator=result_originator["confidence"],
-    ).model_dump()
-
     doc.content = markdown_content
     # Prefer H1 from content; fall back to filename-derived title only when no
     # title has been set yet (e.g. subject of an email body doc).
@@ -218,6 +206,28 @@ def process_uploaded_document(doc: Document, db: Session):
         doc.title = extract_clean_title(safe_filename, "")
     doc.meta = conversion_metadata
 
+    _apply_script_extractors(doc, markdown_content or "", db)
+
+    raw_costs = extract_cost_candidates(markdown_content or "")
+    doc.cost_candidates = [
+        CostCandidateSchema(**c).model_dump() for c in raw_costs if isinstance(c, dict)
+    ]
+
+    db.commit()
+
+
+def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
+    """Run the 4 regex extractors and apply their results to doc in-place.
+
+    Also refreshes review_reasons/needs_review since extraction results affect them.
+    """
+    safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
+
+    result_case_id = extract_case_id(safe_filename, content)
+    result_originator = extract_originator(safe_filename, content)
+    result_date = extract_received_date(content, safe_filename)
+    result_sender = extract_sender(content)
+
     if result_case_id["value"]:
         from app.models.database import Case as CaseModel
 
@@ -227,18 +237,16 @@ def process_uploaded_document(doc: Document, db: Session):
     doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
     doc.received_date = result_date["value"]
-
-    raw_costs = extract_cost_candidates(markdown_content or "")
-    doc.cost_candidates = [
-        CostCandidateSchema(**c).model_dump() for c in raw_costs if isinstance(c, dict)
-    ]
-    doc.extraction_confidence = extraction_confidence
+    doc.extraction_confidence = ExtractionConfidenceSchema(
+        sender=result_sender["confidence"],
+        date=result_date["confidence"],
+        case_id=result_case_id["confidence"],
+        originator=result_originator["confidence"],
+    ).model_dump()
 
     reasons = compute_review_reasons(doc)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0
-
-    db.commit()
 
 
 def _create_document(
@@ -252,50 +260,26 @@ def _create_document(
     content: str | None = None,
     markdown_content: str | None = None,
     conversion_metadata: dict | None = None,
-    result_case_id: dict | None = None,
-    result_originator: dict | None = None,
-    result_date: dict | None = None,
-    result_sender: dict | None = None,
 ) -> Document:
     """Shared Document creation logic - reduces duplication between skip_processing paths."""
     from app.services.pipeline_status import initialize as _pipeline_init
 
-    final_case_id = (
-        result_case_id.get("value")
-        if result_case_id and result_case_id.get("value")
-        else case_id
-    )
-
     if markdown_content:
         extracted_title = extract_clean_title(safe_filename, markdown_content)
-        extraction_confidence = {
-            "sender": result_sender.get("confidence") if result_sender else None,
-            "date": result_date.get("confidence") if result_date else None,
-            "case_id": result_case_id.get("confidence") if result_case_id else None,
-            "originator": result_originator.get("confidence")
-            if result_originator
-            else None,
-        }
     else:
         extracted_title = extract_clean_title(safe_filename, "")
-        extraction_confidence = None
 
     new_doc = Document(
         title=extracted_title if extracted_title != safe_filename else safe_filename,
         content=content or markdown_content,
-        case_id=final_case_id,
+        case_id=case_id,
         file_path=file_path,
         content_hash=content_hash,
         parent_id=parent_id,
-        originator_type=result_originator.get("value")
-        if result_originator
-        else OriginatorType.UNKNOWN,
-        sender=result_sender.get("value") if result_sender else None,
-        received_date=result_date.get("value") if result_date else None,
+        originator_type=OriginatorType.UNKNOWN,
         cost_candidates=extract_cost_candidates(markdown_content or "")
         if markdown_content
         else [],
-        extraction_confidence=extraction_confidence,
         meta=conversion_metadata,
         ingest_batch_id=ingest_batch_id,
     )
@@ -436,11 +420,6 @@ async def ingest_file(
                 detail=conversion_error,
             )
 
-        result_case_id = extract_case_id(safe_filename, markdown_content or "")
-        result_originator = extract_originator(safe_filename, markdown_content or "")
-        result_date = extract_received_date(markdown_content or "", safe_filename)
-        result_sender = extract_sender(markdown_content or "")
-
         new_doc = _create_document(
             db=db,
             file_path=file_path,
@@ -451,11 +430,8 @@ async def ingest_file(
             ingest_batch_id=ingest_batch_id,
             markdown_content=markdown_content,
             conversion_metadata=conversion_metadata,
-            result_case_id=result_case_id,
-            result_originator=result_originator,
-            result_date=result_date,
-            result_sender=result_sender,
         )
+        _apply_script_extractors(new_doc, markdown_content or "", db)
         db.add(new_doc)
         db.flush()
         db.commit()
