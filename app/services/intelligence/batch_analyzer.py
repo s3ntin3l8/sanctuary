@@ -133,9 +133,9 @@ def _apply_batch_results(
             if child:
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                child.originator_type = parse_originator_type(
-                    desc.get("originator_type")
-                )
+                parsed_ot = parse_originator_type(desc.get("originator_type"))
+                if parsed_ot is not None:
+                    child.originator_type = parsed_ot
                 child.attributed_originator = desc.get("attributed_originator")
 
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
