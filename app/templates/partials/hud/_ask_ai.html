@@ -1,6 +1,7 @@
 {# Ask AI — toggles docChatOpen in the enclosing Alpine scope.
-   In overlay context: docChatOpen lives on caseDashboard.
-   In standalone/embedded contexts: docChatOpen lives on hudReader().
+   overlay:    docChatOpen lives on caseDashboard (dashboard.js)
+   standalone: docChatOpen lives on hudReader() (hud.js)
+   embedded:   docChatOpen lives on the bare { docChatOpen: false } scope on the container
    Required: context, doc
 #}
 <div class="px-5 py-4">
