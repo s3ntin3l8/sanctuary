@@ -37,7 +37,7 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
     if case_id:
         top_level_docs = (
             db.query(Document)
-            .filter(Document.case_id == case_id, Document.parent_id is None)
+            .filter(Document.case_id == case_id, Document.parent_id.is_(None))
             .all()
         )
 

@@ -253,10 +253,6 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
         return doc
 
-    if doc.ai_summary:
-        cache.set(cache_key, doc, ttl=3600)
-        return doc
-
     db.commit()
 
     try:

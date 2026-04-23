@@ -137,7 +137,17 @@ def _apply_batch_results(
     if cover_letter_doc and is_cover_letter:
         cover_letter_doc.role = DocumentRole.COVER_LETTER
         cover_letter_doc.court_relay = bool(court_relay)
-        cover_letter_doc.attributed_originator = result.get("attributed_originator")
+        # Derive cover-letter originator from the first enclosed document — the prompt
+        # schema only emits attributed_originator inside enclosed_descriptions[], never
+        # at the top level.
+        cover_letter_doc.attributed_originator = next(
+            (
+                desc.get("attributed_originator")
+                for desc in enclosed_descriptions
+                if desc.get("attributed_originator")
+            ),
+            None,
+        )
 
         def _norm(s: str) -> str:
             s = re.sub(r"\.[a-zA-Z]{2,5}$", "", s)  # strip extension

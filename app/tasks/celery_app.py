@@ -16,6 +16,8 @@ celery_app = Celery(
         "app.tasks.enrich_document",
         "app.tasks.detect_relationships",
         "app.tasks.extract_claims",
+        "app.tasks.extract_entities",
+        "app.tasks.generate_embedding",
         "app.tasks.thread_open_scan",
         "app.tasks.scan_ingest",
         "app.tasks.prepare_slicing",
