@@ -79,6 +79,7 @@ Standard case/document routes plus these first-class working views:
 * **Graph first:** primary case view is the correspondence swim-lane graph, not a document list.
 * **AI answers cite sources** — every AI response references the document and passage it drew from.
 * **Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
+* **Email body is transport-only.** When an email has attachments, the email body is intentionally discarded during ingest — the body is a cover note only; all substantive correspondence from the lawyer arrives as attached PDF letters. Do not "fix" this.
 
 ## Run
 ```bash
