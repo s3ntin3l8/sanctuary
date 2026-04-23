@@ -123,7 +123,7 @@ class AIProvider:
                     "messages": messages,
                     "stream": stream,
                     "temperature": options.get("temperature", 0.1) if options else 0.1,
-                    "max_tokens": -1,  # LM Studio convention for unlimited
+                    "max_tokens": options.get("max_tokens", -1) if options else -1,
                 },
                 "headers": {"Authorization": f"Bearer {self.api_key}"}
                 if self.api_key != "not-needed"
@@ -192,18 +192,28 @@ class AIProvider:
                 return None
         else:
             # OpenAI format: "data: {...}"
-            if line.startswith("data: "):
-                data_str = line[6:].strip()
+            line = line.strip()
+            if line.startswith("data:"):
+                data_str = line[len("data:") :].strip()
                 if data_str == "[DONE]":
                     return {"done": True}
                 try:
                     chunk = json.loads(data_str)
-                    content = (
-                        chunk.get("choices", [{}])[0]
-                        .get("delta", {})
-                        .get("content", "")
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        return {"response": "", "done": False}
+
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content") or ""
+                    thinking = (
+                        delta.get("reasoning_content") or delta.get("reasoning") or ""
                     )
-                    return {"response": content, "done": False}
+
+                    return {
+                        "response": content,
+                        "thinking": thinking,
+                        "done": False,
+                    }
                 except json.JSONDecodeError:
                     return None
         return None

@@ -130,6 +130,7 @@ async def generate_summary(doc: Document, db=None) -> dict:
             "repeat_penalty": 1.2,
             "top_p": 0.9,
             "num_predict": 1000,
+            "max_tokens": 1000,
         },
     )
     ptype = await ai_provider.get_type()
@@ -141,6 +142,7 @@ async def generate_summary(doc: Document, db=None) -> dict:
     debug_dir.mkdir(parents=True, exist_ok=True)
     debug_file = debug_dir / f"doc_{doc.id}_{int(datetime.now().timestamp())}.log"
 
+    full_thinking = ""
     full_response = ""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=60.0)) as client:
         try:
@@ -161,31 +163,40 @@ async def generate_summary(doc: Document, db=None) -> dict:
                     if not chunk:
                         continue
 
-                    # Log only the actual tokens
+                    # Log tokens to debug file
                     token = chunk.get("thinking", "") + chunk.get("response", "")
                     if token:
                         with open(debug_file, "a") as f:
                             f.write(token)
 
+                    if "thinking" in chunk:
+                        full_thinking += chunk["thinking"]
                     if "response" in chunk:
                         full_response += chunk["response"]
+
                     if chunk.get("done"):
                         break
 
             with open(debug_file, "a") as f:
-                f.write(f"\n--- END STREAM. Full Length: {len(full_response)} ---\n")
+                f.write(
+                    f"\n--- END STREAM. Full Length: {len(full_response)} Thinking Length: {len(full_thinking)} ---\n"
+                )
         except Exception as e:
             with open(debug_file, "a") as f:
                 f.write(f"\n--- ERROR DURING STREAM: {str(e)} ---\n")
             raise
 
-        if not full_response or not full_response.strip():
-            raise ValueError(
-                f"AI returned an empty response for '{doc.title}'. See {debug_file} for details."
-            )
+    if not full_response or not full_response.strip():
+        # If we have thinking but no response, the model might be stuck or refusing
+        refusal_msg = ""
+        if full_thinking:
+            refusal_msg = f" (Thinking was present: {full_thinking[:100]}...)"
+        raise ValueError(
+            f"AI returned an empty response for '{doc.title}'.{refusal_msg} See {debug_file} for details."
+        )
 
-        logger.debug(f"AI raw response for '{doc.title}': {full_response}")
-        return _parse_summary_response(full_response)
+    logger.debug(f"AI raw response for '{doc.title}': {full_response}")
+    return _parse_summary_response(full_response)
 
 
 def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> None:
@@ -335,6 +346,8 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             options={
                 "num_ctx": 16384,
                 "temperature": 0.1,
+                "num_predict": 1000,
+                "max_tokens": 1000,
             },
         )
     )
@@ -347,6 +360,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
     debug_dir.mkdir(parents=True, exist_ok=True)
     debug_file = debug_dir / f"doc_{doc.id}_{int(datetime.now().timestamp())}_sync.log"
 
+    full_thinking = ""
     full_response = ""
     with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
         try:
@@ -369,31 +383,38 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
                     if not chunk:
                         continue
 
-                    # Log only the actual tokens
+                    # Log tokens to debug file
                     token = chunk.get("thinking", "") + chunk.get("response", "")
                     if token:
                         with open(debug_file, "a") as f:
                             f.write(token)
 
+                    if "thinking" in chunk:
+                        full_thinking += chunk["thinking"]
                     if "response" in chunk:
                         full_response += chunk["response"]
                     if chunk.get("done"):
                         break
 
             with open(debug_file, "a") as f:
-                f.write(f"\n--- END STREAM. Full Length: {len(full_response)} ---\n")
+                f.write(
+                    f"\n--- END STREAM. Full Length: {len(full_response)} Thinking Length: {len(full_thinking)} ---\n"
+                )
         except Exception as e:
             with open(debug_file, "a") as f:
                 f.write(f"\n--- ERROR DURING STREAM: {str(e)} ---\n")
             raise
 
-        if not full_response or not full_response.strip():
-            raise ValueError(
-                f"AI returned an empty response for '{doc.title}'. See {debug_file} for details."
-            )
+    if not full_response or not full_response.strip():
+        refusal_msg = ""
+        if full_thinking:
+            refusal_msg = f" (Thinking was present: {full_thinking[:100]}...)"
+        raise ValueError(
+            f"AI returned an empty response for '{doc.title}'.{refusal_msg} See {debug_file} for details."
+        )
 
-        logger.debug(f"AI raw response for '{doc.title}': {full_response}")
-        return _parse_summary_response(full_response)
+    logger.debug(f"AI raw response for '{doc.title}': {full_response}")
+    return _parse_summary_response(full_response)
 
 
 def _summarize_document_sync(doc_id: int, db: Session) -> Document:
@@ -415,6 +436,8 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
             f"Failed to generate summary for doc {doc_id} (sync): {e}", exc_info=True
         )
         doc.ai_summary = {"error": str(e)}
+        db.commit()
+        raise e
 
     db.commit()
     db.refresh(doc)

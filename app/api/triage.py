@@ -348,7 +348,7 @@ async def confirm_bundle(
 
 
 @router.post("/document/{doc_id}/reingest")
-async def reingest_document(
+def reingest_document(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
@@ -367,7 +367,7 @@ async def reingest_document(
         ) from exc
 
     # Re-render the HUD
-    return await _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db)
 
 
 @router.post("/document/{doc_id}/summarize")
@@ -376,7 +376,7 @@ async def summarize_document(
     doc_id: int,
     db: Session = Depends(get_db),
 ):
-    from app.services.ai_summary import _summarize_document_sync
+    from app.services.ai_summary import summarize_document
     from app.tasks.enrich_document import enrich_document_task
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -385,7 +385,7 @@ async def summarize_document(
 
     try:
         # Phase 1: metadata extraction (sender, date, originator, internal_id)
-        _summarize_document_sync(doc_id, db)
+        await summarize_document(doc, db)
         # Phase 4: management summary bullets + key passages
         enrich_document_task.delay(doc_id)
     except Exception as exc:
@@ -393,7 +393,7 @@ async def summarize_document(
         db.commit()
 
     db.refresh(doc)
-    return await _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db)
 
 
 @router.post("/triage/document/{doc_id}/retry-ai")
@@ -415,7 +415,7 @@ async def retry_ai(
     process_document_task.delay(doc.id)
 
     db.refresh(doc)
-    return await _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db)
 
 
 # -----------------------------------------------------------------------------
@@ -423,9 +423,7 @@ async def retry_ai(
 # -----------------------------------------------------------------------------
 
 
-async def _render_document_hud(
-    request: Request, doc: Document, db: Session
-) -> HTMLResponse:
+def _render_document_hud(request: Request, doc: Document, db: Session) -> HTMLResponse:
     """Render the embedded HUD — reused by reingest/summarize/approve-summary/retry-ai."""
     triage_service = TriageService(db)
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()

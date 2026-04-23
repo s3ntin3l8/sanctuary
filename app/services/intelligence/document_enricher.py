@@ -53,7 +53,12 @@ def _call_enricher_sync(doc: Document, debug_file: str, model: str = "") -> dict
             prompt=prompt,
             system_prompt=DOCUMENT_ENRICHER_SYSTEM,
             stream=True,
-            options={"num_ctx": 16384, "temperature": 0.2},
+            options={
+                "num_ctx": 16384,
+                "temperature": 0.2,
+                "num_predict": 2000,
+                "max_tokens": 2000,
+            },
         )
     )
     ptype = run_async(ai_provider.get_type())

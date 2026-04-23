@@ -26,6 +26,20 @@ MAGIC_BYTES = {
     b"From ": ".eml",
 }
 
+# Known Docling glyph mapping artifacts (Common in German legal PDFs)
+_GLYPH_MAP = {
+    "GLYPH(cmap:df00)": "G",
+}
+
+
+def _apply_glyph_fixes(text: str | None) -> str | None:
+    """Fix common Docling extraction artifacts like GLYPH(cmap:df00)."""
+    if not text:
+        return text
+    for glyph, char in _GLYPH_MAP.items():
+        text = text.replace(glyph, char)
+    return text
+
 
 def validate_file_magic(file_path: str) -> str | None:
     """Validate file by magic bytes. Returns expected extension or None."""
@@ -200,6 +214,12 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         logger.warning(f"Chunking failed for {file_path}: {e}")
 
     markdown = result.document.export_to_markdown()
+
+    # Apply glyph fixes to both full content and chunks
+    markdown = _apply_glyph_fixes(markdown)
+    for chunk in chunks:
+        chunk["text"] = _apply_glyph_fixes(chunk["text"])
+
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
 

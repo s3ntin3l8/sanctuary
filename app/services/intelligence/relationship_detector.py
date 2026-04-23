@@ -89,7 +89,12 @@ def _call_relationship_detector_sync(
             prompt=prompt,
             system_prompt=RELATIONSHIP_DETECTOR_SYSTEM,
             stream=True,
-            options={"num_ctx": 8192, "temperature": 0.1},
+            options={
+                "num_ctx": 8192,
+                "temperature": 0.1,
+                "num_predict": 1000,
+                "max_tokens": 1000,
+            },
         )
     )
     ptype = run_async(ai_provider.get_type())

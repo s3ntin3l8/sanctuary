@@ -77,7 +77,12 @@ def _call_batch_analyzer_sync(
             prompt=prompt,
             system_prompt=BATCH_ANALYZER_SYSTEM,
             stream=True,
-            options={"num_ctx": 8192, "temperature": 0.1},
+            options={
+                "num_ctx": 8192,
+                "temperature": 0.1,
+                "num_predict": 2000,
+                "max_tokens": 2000,
+            },
         )
     )
     ptype = run_async(ai_provider.get_type())

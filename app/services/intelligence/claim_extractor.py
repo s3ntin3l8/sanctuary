@@ -64,7 +64,12 @@ def _call_claim_extractor_sync(
             prompt=prompt,
             system_prompt=CLAIM_EXTRACTOR_SYSTEM,
             stream=True,
-            options={"num_ctx": 16384, "temperature": 0.2},
+            options={
+                "num_ctx": 8192,
+                "temperature": 0.1,
+                "num_predict": 1500,
+                "max_tokens": 1500,
+            },
         )
     )
     ptype = run_async(ai_provider.get_type())

@@ -229,34 +229,62 @@ async def delete_document(
         else:
             bundle_key = f"loose-{doc.id}"
 
+    # Identify the next document to advance to before we delete the current one.
+    next_doc_id = None
+    if context == "triage":
+        from app.services.triage_service import TriageService
+
+        triage_service = TriageService(db)
+        next_doc = triage_service.find_next_review_doc(doc_id)
+        if next_doc:
+            next_doc_id = next_doc.id
+
     doc_service = DocumentService(db)
     if not doc_service.delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
 
     if context == "triage" and bundle_key:
+        import json
+
         from app.api.triage import _render_bundle_group_oob, _render_triage_feed_oob
-        from app.services.triage_service import TriageService
 
         triage_service = TriageService(db)
         bundles = triage_service.get_triage_bundles()
 
+        trigger = {}
+        if next_doc_id:
+            trigger["triage:advance"] = {"next_doc_id": next_doc_id, "scroll": False}
+        else:
+            trigger["triage:clear"] = {}
+
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
-            return HTMLResponse(_render_triage_feed_oob(request, triage_service, db))
-
-        bundle = next((b for b in bundles if b.key == bundle_key), None)
-
-        if bundle:
-            # Bundle still has documents — return the updated bundle group OOB.
-            # This updates doc count, badge, and footer in one shot.
-            return HTMLResponse(
-                _render_bundle_group_oob(request, bundle, triage_service)
+            res_content = _render_triage_feed_oob(request, triage_service, db)
+            # Clear the HUD pane too since nothing is left.
+            res_content += (
+                '<div id="triage-doc-pane" hx-swap-oob="innerHTML">'
+                '<div class="flex items-center justify-center flex-1">'
+                '<div class="text-center p-8">'
+                '<span class="material-symbols-outlined text-4xl text-outline mb-3">check_circle</span>'
+                '<h3 class="text-sm font-black text-on-surface uppercase tracking-widest">Queue Clear</h3>'
+                "</div></div></div>"
             )
+            response = HTMLResponse(res_content)
         else:
-            # This bundle is now empty, but others remain — delete the group from DOM.
-            return HTMLResponse(
-                f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
-            )
+            bundle = next((b for b in bundles if b.key == bundle_key), None)
+            if bundle:
+                # Bundle still has documents — return the updated bundle group OOB.
+                response = HTMLResponse(
+                    _render_bundle_group_oob(request, bundle, triage_service)
+                )
+            else:
+                # This bundle is now empty, but others remain — delete the group from DOM.
+                response = HTMLResponse(
+                    f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
+                )
+
+        response.headers["HX-Trigger"] = json.dumps(trigger)
+        return response
 
     return HTMLResponse("", status_code=200)
 

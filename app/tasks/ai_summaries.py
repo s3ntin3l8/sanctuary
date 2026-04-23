@@ -26,8 +26,13 @@ def generate_document_summary_task(self, doc_id: int):
         from app.services.ai_summary import summarize_document
 
         try:
-            summary = summarize_document(doc, db)
-            doc.ai_summary = summary
+            from app.core.async_utils import run_async
+
+            run_async(summarize_document(doc, db))
+            # The async summarize_document already handles assignment and commit if successful,
+            # but here it's being used as a helper.
+            # Actually, summarize_document returns the doc.
+            db.commit()
             doc.ai_summary_created_at = datetime.now(UTC)
             db.commit()
             logger.info(f"Summary generated for document {doc_id}")
