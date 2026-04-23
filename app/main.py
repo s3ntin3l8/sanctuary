@@ -28,17 +28,8 @@ from app.constants import REVIEW_FIELD_LABELS
 from app.helpers import format_eur, format_relative_time
 from app.services.normalization import normalize_hm
 
+
 # --- Logging Configuration ---
-_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, _log_level, logging.INFO),
-    format="%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()],
-    force=True,  # uvicorn resets root.level to WARNING on each reload; force overrides it
-)
-logger = logging.getLogger(__name__)
-
-
 class RequestIDLogRecord(logging.LogRecord):
     """LogRecord with default request_id."""
 
@@ -57,8 +48,46 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
-logging.setLogRecordFactory(RequestIDLogRecord)
-logging.getLogger().addFilter(RequestIDFilter())
+def setup_logging():
+    """Configure robust logging by hijacking third-party loggers."""
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level_str, logging.INFO)
+
+    # Use our custom LogRecord factory globally
+    logging.setLogRecordFactory(RequestIDLogRecord)
+
+    # Reconfigure the root logger
+    root = logging.getLogger()
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s"
+    )
+    handler.setFormatter(formatter)
+    handler.addFilter(RequestIDFilter())
+    root.addHandler(handler)
+    root.setLevel(level)
+
+    # Hijack third-party loggers to propagate to root and use our format
+    hijack_loggers = [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "sqlalchemy",
+        "alembic",
+    ]
+    for logger_name in hijack_loggers:
+        target = logging.getLogger(logger_name)
+        target.handlers = []
+        target.propagate = True
+        target.setLevel(level)
+
+
+setup_logging()
+logger = logging.getLogger(__name__)
+logger.info("Logging initialized.")
 
 
 # --- Rate Limiter ---
