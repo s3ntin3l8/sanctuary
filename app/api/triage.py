@@ -376,7 +376,7 @@ async def summarize_document(
     doc_id: int,
     db: Session = Depends(get_db),
 ):
-    from app.services.ai_summary import summarize_document
+    from app.services.ai_summary import _summarize_document_sync
     from app.tasks.enrich_document import enrich_document_task
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -385,7 +385,7 @@ async def summarize_document(
 
     try:
         # Phase 1: metadata extraction (sender, date, originator, internal_id)
-        await summarize_document(doc, db)
+        _summarize_document_sync(doc_id, db)
         # Phase 4: management summary bullets + key passages
         enrich_document_task.delay(doc_id)
     except Exception as exc:
