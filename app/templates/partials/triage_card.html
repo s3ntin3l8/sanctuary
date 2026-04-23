@@ -48,6 +48,7 @@
                     <button hx-delete="/document/{{ doc.id }}"
                             hx-target="#triage-wrapper-{{ doc.id }}"
                             hx-swap="delete"
+                            hx-on::after-settle="window.location.reload()"
                             class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
                             style="background:var(--color-error); color:var(--color-on-error);">
                         Delete
