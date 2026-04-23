@@ -10,6 +10,7 @@ from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_effective_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,7 @@ def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict
     return call_json_ai(
         system_prompt=ENTITY_EXTRACTOR_SYSTEM,
         user_prompt=prompt,
-        options={
-            "num_ctx": 8192,
-            "temperature": 0.1,
-            "num_predict": 1500,
-            "max_tokens": 1500,
-        },
+        options=STAGE_OPTIONS["entities"],
         debug_label=f"doc_{doc.id}_entities",
         model=model or None,
         db=db,

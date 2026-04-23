@@ -11,6 +11,7 @@ from app.models.database import ActionItem, Case, Document
 from app.models.enums import ActionItemStatus
 from app.services.ai_config import get_effective_config
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
 
@@ -107,12 +108,7 @@ Open action items:
     return call_json_ai(
         system_prompt=CASE_BRIEF_SYSTEM,
         user_prompt=prompt,
-        options={
-            "num_ctx": 8192,
-            "temperature": 0.2,
-            "num_predict": 1000,
-            "max_tokens": 1000,
-        },
+        options=STAGE_OPTIONS["case_brief"],
         debug_label=f"case_{case.id}_brief",
         model=model or None,
         db=db,
