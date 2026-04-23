@@ -20,7 +20,10 @@ def process_document_task(self, doc_id: int):
             logger.warning(f"Document {doc_id} not found")
             return {"status": "not_found", "doc_id": doc_id}
 
-        from app.services.ingestion import IngestionError, process_uploaded_document
+        from app.services.ingestion.service import (
+            IngestionError,
+            process_uploaded_document,
+        )
 
         mark_started(doc_id, PipelineStage.EXTRACT, db)
         try:

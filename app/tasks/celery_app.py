@@ -10,7 +10,6 @@ celery_app = Celery(
     backend=REDIS_URL,
     include=[
         "app.tasks.document_processing",
-        "app.tasks.ai_summaries",
         "app.tasks.gmail_sync",
         "app.tasks.analyze_batch",
         "app.tasks.enrich_document",

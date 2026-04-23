@@ -5,7 +5,6 @@ from app.services.ingestion import (
     extract_case_id,
     extract_cost_candidates,
     extract_originator,
-    extract_schedule_candidates,
     extract_sender,
 )
 
@@ -45,13 +44,6 @@ def test_extract_sender():
     content = "From: John Doe <john@example.com>\nTo: Jane Smith\nSubject: Hello"
     result = extract_sender(content)
     assert result["value"] == "john@example.com"
-
-
-@pytest.mark.unit
-def test_extract_schedule_candidates():
-    content = "frist bis 31.12.2024 deadline"
-    candidates = extract_schedule_candidates(content)
-    assert isinstance(candidates, list)
 
 
 @pytest.mark.unit

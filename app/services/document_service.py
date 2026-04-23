@@ -6,7 +6,8 @@ from app.models.database import Document
 from app.models.enums import OriginatorType
 from app.repositories.document import DocumentRepository
 from app.repositories.entity import EntityRepository
-from app.services.ingestion import extract_case_id, extract_clean_title
+from app.services.ingestion.extractors import extract_case_id
+from app.services.ingestion.service import extract_clean_title
 
 
 class DocumentService:

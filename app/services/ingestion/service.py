@@ -149,29 +149,6 @@ def extract_cost_candidates(content: str) -> list[dict]:
     return candidates[:20]
 
 
-def extract_legal_categories(content: str) -> list[dict]:
-    """Extract legal categories from content."""
-    import re
-
-    categories = []
-    text = content[:5000] if content else ""
-
-    patterns = {
-        "RVG": r"\b(RVG|Rechtsanwaltsvergütungsgesetz)\b",
-        "GKG": r"\b(GKG|Gerichtskostengesetz)\b",
-        "ZPO": r"\b(§\s*\d+\s*ZPO|Zivilprozessordnung)\b",
-        "JVEG": r"\b(JVEG|Justizvergütungs-?und-?entschädigungsgesetz)\b",
-        "BGB": r"\b(BGB|Bürgerliches Gesetzbuch)\b",
-        "StPO": r"\b(StPO|Strafprozessordnung)\b",
-    }
-
-    for category, pattern in patterns.items():
-        if re.search(pattern, text, re.IGNORECASE):
-            categories.append({"category": category.lower()})
-
-    return categories
-
-
 def process_uploaded_document(doc: Document, db: Session):
     """Process a pending document in the background."""
     import os

@@ -15,7 +15,9 @@ from app.tasks.extract_claims import extract_claims_task
 def test_process_document_task_success(db_session, sample_document):
     with (
         patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,
-        patch("app.services.ingestion.process_uploaded_document") as mock_process_doc,
+        patch(
+            "app.services.ingestion.service.process_uploaded_document"
+        ) as mock_process_doc,
         patch("app.tasks.document_processing._run_phase1_summary"),
         patch("app.tasks.enrich_document.enrich_document_task.delay"),
         patch("app.tasks.generate_embedding.generate_embedding_task.delay"),

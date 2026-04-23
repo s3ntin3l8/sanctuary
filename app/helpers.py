@@ -216,45 +216,6 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
-def build_document_extraction_context(db: Session, doc: Document | None) -> dict:
-    """Builds extracted schedule candidates and already-promoted records for a document."""
-    if not doc:
-        return {
-            "schedule_candidates": [],
-            "linked_deadlines": [],
-            "linked_hearings": [],
-        }
-
-    from app.services.ingestion import extract_schedule_candidates
-
-    schedule_candidates = extract_schedule_candidates(
-        doc.content or "", base_date=doc.received_date
-    )
-    linked_deadlines = (
-        db.query(ActionItem)
-        .filter(
-            ActionItem.source_document_id == doc.id,
-            ActionItem.action_type == ActionItemType.DEADLINE,
-        )
-        .order_by(ActionItem.due_date.asc())
-        .all()
-    )
-    linked_hearings = (
-        db.query(ActionItem)
-        .filter(
-            ActionItem.source_document_id == doc.id,
-            ActionItem.action_type == ActionItemType.COURT_DATE,
-        )
-        .order_by(ActionItem.due_date.asc())
-        .all()
-    )
-    return {
-        "schedule_candidates": schedule_candidates,
-        "linked_deadlines": linked_deadlines,
-        "linked_hearings": linked_hearings,
-    }
-
-
 def build_cost_summary(costs: list, CostStatus) -> dict:
     total_gross = sum(c.amount_gross or 0 for c in costs)
     total_paid = sum(c.amount_paid or 0 for c in costs)
