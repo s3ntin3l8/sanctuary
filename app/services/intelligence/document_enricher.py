@@ -1,15 +1,12 @@
 """4a — Per-document AI enrichment: significance_tier, document_type, key_passages, cost_delta."""
 
 import hashlib
-import json
 import logging
 from datetime import UTC, datetime
 
-import httpx
 from sqlalchemy.orm import Session
 
-from app.config import DATA_DIR, SessionLocal
-from app.core.async_utils import run_async
+from app.config import SessionLocal
 from app.models.database import Document
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
 from app.models.schemas import (
@@ -18,9 +15,8 @@ from app.models.schemas import (
     KeyPassageSchema,
 )
 from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -37,7 +33,7 @@ THREAD_OPEN_TYPES = {
 }
 
 
-def _call_enricher_sync(doc: Document, debug_file: str, model: str = "") -> dict:
+def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     """Synchronous AI call to enrich a single document."""
     content_preview = get_content_preview(doc, 6000)
 
@@ -47,50 +43,19 @@ def _call_enricher_sync(doc: Document, debug_file: str, model: str = "") -> dict
 
     prompt = f"Document title: {doc.title}{batch_context}\n\n{content_preview}"
 
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=model or get_effective_config().summary_model,
-            prompt=prompt,
-            system_prompt=DOCUMENT_ENRICHER_SYSTEM,
-            stream=True,
-            options={
-                "num_ctx": 16384,
-                "temperature": 0.2,
-                "num_predict": 2000,
-                "max_tokens": 2000,
-            },
-        )
+    return call_json_ai(
+        system_prompt=DOCUMENT_ENRICHER_SYSTEM,
+        user_prompt=prompt,
+        options={
+            "num_ctx": 16384,
+            "temperature": 0.2,
+            "num_predict": 2000,
+            "max_tokens": 2000,
+        },
+        debug_label=f"doc_{doc.id}_enricher",
+        model=model or None,
+        db=db,
     )
-    ptype = run_async(ai_provider.get_type())
-
-    full_response = ""
-    with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
-        with open(debug_file, "a") as f:
-            f.write(f"--- ENRICHER doc_id={doc.id} ---\n")
-            f.write(f"Payload: {json.dumps(params['json'])}\n\n")
-
-        with client.stream(
-            "POST", params["url"], json=params["json"], headers=params["headers"]
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                chunk = ai_provider.parse_stream_line(line, ptype)
-                if not chunk:
-                    continue
-                if "response" in chunk:
-                    full_response += chunk["response"]
-                if chunk.get("done"):
-                    break
-
-        with open(debug_file, "a") as f:
-            f.write(f"\n--- END. Length: {len(full_response)} ---\n")
-
-    if not full_response.strip():
-        raise ValueError(f"Enricher returned empty response for doc {doc.id}")
-
-    return parse_json_response(full_response)
 
 
 def _apply_enrichment(doc: Document, result: dict) -> None:
@@ -165,7 +130,6 @@ def enrich(doc_id: int) -> None:
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
-        ai_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for enrichment")
@@ -175,14 +139,8 @@ def enrich(doc_id: int) -> None:
             logger.info(f"Doc {doc_id} has no usable content, skipping enrichment")
             return
 
-        debug_dir = DATA_DIR / "ai_debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_file = str(
-            debug_dir / f"doc_{doc_id}_{int(datetime.now().timestamp())}_enricher.log"
-        )
-
         try:
-            result = _call_enricher_sync(doc, debug_file, model=cfg.summary_model)
+            result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
             _apply_enrichment(doc, result)
             logger.info(f"Doc {doc_id} enriched successfully")
         except Exception as e:

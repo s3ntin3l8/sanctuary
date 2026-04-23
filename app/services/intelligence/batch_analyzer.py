@@ -4,11 +4,9 @@ import logging
 import re
 from datetime import datetime
 
-import httpx
 from sqlalchemy.orm import Session
 
-from app.config import DATA_DIR, SessionLocal
-from app.core.async_utils import run_async
+from app.config import SessionLocal
 from app.models.database import ActionItem, Document, IngestBatch
 from app.models.enums import (
     ActionItemStatus,
@@ -17,9 +15,8 @@ from app.models.enums import (
     OriginatorType,
 )
 from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.prompts import BATCH_ANALYZER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -56,8 +53,9 @@ def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
 def _call_batch_analyzer_sync(
     candidate: Document,
     sibling_titles: list[str],
-    debug_file: str,
+    batch_id: int,
     model: str = "",
+    db=None,
 ) -> dict:
     """Synchronous AI call for batch analysis."""
     content_preview = get_content_preview(candidate, 4000, include_tail=False)
@@ -69,52 +67,19 @@ def _call_batch_analyzer_sync(
         f"Other documents in this batch:\n{sibling_list}"
     )
 
-    import json
-
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=model or get_effective_config().summary_model,
-            prompt=prompt,
-            system_prompt=BATCH_ANALYZER_SYSTEM,
-            stream=True,
-            options={
-                "num_ctx": 8192,
-                "temperature": 0.1,
-                "num_predict": 2000,
-                "max_tokens": 2000,
-            },
-        )
+    return call_json_ai(
+        system_prompt=BATCH_ANALYZER_SYSTEM,
+        user_prompt=prompt,
+        options={
+            "num_ctx": 8192,
+            "temperature": 0.1,
+            "num_predict": 2000,
+            "max_tokens": 2000,
+        },
+        debug_label=f"batch_{batch_id}_analyzer",
+        model=model or None,
+        db=db,
     )
-    ptype = run_async(ai_provider.get_type())
-
-    full_response = ""
-    with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
-        with open(debug_file, "a") as f:
-            f.write(f"--- BATCH ANALYZER doc_id={candidate.id} ---\n")
-            f.write(f"Payload: {json.dumps(params['json'])}\n\n")
-
-        with client.stream(
-            "POST", params["url"], json=params["json"], headers=params["headers"]
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                chunk = ai_provider.parse_stream_line(line, ptype)
-                if not chunk:
-                    continue
-                if "response" in chunk:
-                    full_response += chunk["response"]
-                if chunk.get("done"):
-                    break
-
-        with open(debug_file, "a") as f:
-            f.write(f"\n--- END. Length: {len(full_response)} ---\n")
-
-    if not full_response.strip():
-        raise ValueError("Batch analyzer returned empty response")
-
-    return parse_json_response(full_response)
 
 
 def _apply_batch_results(
@@ -226,7 +191,6 @@ def analyze(batch_id: int) -> bool:
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
-        ai_provider.reload_from_db(db)
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             logger.warning(f"Batch {batch_id} not found for analysis")
@@ -252,15 +216,11 @@ def analyze(batch_id: int) -> bool:
             db.commit()
             return False
 
-        debug_dir = DATA_DIR / "ai_debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_file = str(debug_dir / f"batch_{batch_id}_analyzer.log")
-
         sibling_titles = [d.title for d in healthy_docs if d.id != candidate.id]
 
         try:
             result = _call_batch_analyzer_sync(
-                candidate, sibling_titles, debug_file, model=cfg.summary_model
+                candidate, sibling_titles, batch_id, model=cfg.summary_model, db=db
             )
             _apply_batch_results(batch_id, docs, result, db)
             logger.info(f"Batch {batch_id} analyzed successfully")

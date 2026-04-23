@@ -1,14 +1,10 @@
 """4c — Per-document claim extraction: new Claim rows + ClaimEvidence stances on existing claims."""
 
-import json
 import logging
-from datetime import datetime
 
-import httpx
 from sqlalchemy.orm import Session
 
-from app.config import DATA_DIR, SessionLocal
-from app.core.async_utils import run_async
+from app.config import SessionLocal
 from app.models.database import Claim, Document
 from app.models.enums import (
     ClaimEvidenceRole,
@@ -19,9 +15,8 @@ from app.models.enums import (
 from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
 from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
 from app.services.ai_summary import get_content_preview
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.prompts import CLAIM_EXTRACTOR_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -44,7 +39,7 @@ def _format_existing_claims(claims: list[Claim]) -> str:
 
 
 def _call_claim_extractor_sync(
-    doc: Document, existing_claims: list[Claim], debug_file: str, model: str = ""
+    doc: Document, existing_claims: list[Claim], model: str = "", db=None
 ) -> dict:
     content_preview = get_content_preview(doc, 6000)
     mgmt = doc.ai_summary or {}
@@ -58,50 +53,19 @@ def _call_claim_extractor_sync(
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
     )
 
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=model or get_effective_config().summary_model,
-            prompt=prompt,
-            system_prompt=CLAIM_EXTRACTOR_SYSTEM,
-            stream=True,
-            options={
-                "num_ctx": 8192,
-                "temperature": 0.1,
-                "num_predict": 1500,
-                "max_tokens": 1500,
-            },
-        )
+    return call_json_ai(
+        system_prompt=CLAIM_EXTRACTOR_SYSTEM,
+        user_prompt=prompt,
+        options={
+            "num_ctx": 8192,
+            "temperature": 0.1,
+            "num_predict": 1500,
+            "max_tokens": 1500,
+        },
+        debug_label=f"doc_{doc.id}_claims",
+        model=model or None,
+        db=db,
     )
-    ptype = run_async(ai_provider.get_type())
-
-    full_response = ""
-    with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
-        with open(debug_file, "a") as f:
-            f.write(f"--- CLAIM EXTRACTOR doc_id={doc.id} ---\n")
-            f.write(f"Payload: {json.dumps(params['json'])}\n\n")
-
-        with client.stream(
-            "POST", params["url"], json=params["json"], headers=params["headers"]
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                chunk = ai_provider.parse_stream_line(line, ptype)
-                if not chunk:
-                    continue
-                if "response" in chunk:
-                    full_response += chunk["response"]
-                if chunk.get("done"):
-                    break
-
-        with open(debug_file, "a") as f:
-            f.write(f"\n--- END. Length: {len(full_response)} ---\n")
-
-    if not full_response.strip():
-        raise ValueError(f"Claim extractor returned empty response for doc {doc.id}")
-
-    return parse_json_response(full_response)
 
 
 def _apply_claims(
@@ -177,7 +141,6 @@ def extract(doc_id: int) -> None:
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
-        ai_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for claim extraction")
@@ -204,15 +167,9 @@ def extract(doc_id: int) -> None:
             claim_repo.get_open_in_case(doc.case_id, limit=MAX_EXISTING_CLAIMS)
         )
 
-        debug_dir = DATA_DIR / "ai_debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_file = str(
-            debug_dir / f"doc_{doc_id}_{int(datetime.now().timestamp())}_claims.log"
-        )
-
         try:
             result = _call_claim_extractor_sync(
-                doc, existing_claims, debug_file, model=cfg.summary_model
+                doc, existing_claims, model=cfg.summary_model, db=db
             )
             _apply_claims(doc, result, existing_claims, db)
             db.commit()

@@ -1,20 +1,16 @@
 """5a — Case-level AI brief: posture, pressure_points, next_move."""
 
-import json
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
 
-import httpx
 from sqlalchemy.orm import Session, defer
 
-from app.config import DATA_DIR, SessionLocal
-from app.core.async_utils import run_async
+from app.config import SessionLocal
 from app.models.database import ActionItem, Case, Document
 from app.models.enums import ActionItemStatus
 from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
 
@@ -84,8 +80,8 @@ def _call_brief_sync(
     docs: list,
     action_items: list,
     reactions_context: str,
-    debug_file: str,
     model: str = "",
+    db=None,
 ) -> dict:
     """Synchronous AI call to generate the case brief."""
     prompt = f"""Case: {case.title} ({case.id}) — Status: {case.status}
@@ -108,52 +104,19 @@ Open action items:
     }
 {("\n" + reactions_context) if reactions_context else ""}"""
 
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=model or get_effective_config().summary_model,
-            prompt=prompt,
-            system_prompt=CASE_BRIEF_SYSTEM,
-            stream=True,
-            options={
-                "num_ctx": 8192,
-                "temperature": 0.2,
-                "num_predict": 1000,
-                "max_tokens": 1000,
-            },
-        )
+    return call_json_ai(
+        system_prompt=CASE_BRIEF_SYSTEM,
+        user_prompt=prompt,
+        options={
+            "num_ctx": 8192,
+            "temperature": 0.2,
+            "num_predict": 1000,
+            "max_tokens": 1000,
+        },
+        debug_label=f"case_{case.id}_brief",
+        model=model or None,
+        db=db,
     )
-    ptype = run_async(ai_provider.get_type())
-
-    full_response = ""
-    with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
-        with open(debug_file, "a") as f:
-            f.write(f"--- CASE BRIEF case_id={case.id} ---\n")
-            f.write(f"Payload: {json.dumps(params['json'])}\n\n")
-
-        with client.stream(
-            "POST", params["url"], json=params["json"], headers=params["headers"]
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                chunk = ai_provider.parse_stream_line(line, ptype)
-                if not chunk:
-                    continue
-                if "response" in chunk:
-                    full_response += chunk["response"]
-                if chunk.get("done"):
-                    break
-
-        with open(debug_file, "a") as f:
-            f.write(f"\n--- END. Length: {len(full_response)} ---\n")
-
-    if not full_response.strip():
-        raise ValueError(
-            f"Case brief generator returned empty response for case {case.id}"
-        )
-
-    return parse_json_response(full_response)
 
 
 def generate(case_id: str) -> None:
@@ -165,7 +128,6 @@ def generate(case_id: str) -> None:
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
-        ai_provider.reload_from_db(db)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             logger.warning(f"Case {case_id} not found for brief generation")
@@ -201,19 +163,14 @@ def generate(case_id: str) -> None:
 
         reactions_context = format_reactions_for_case(db, case_id)
 
-        ts = int(datetime.now().timestamp())
-        debug_dir = DATA_DIR / "ai_debug"
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        debug_file = str(debug_dir / f"case_{case_id}_{ts}_brief.log")
-
         try:
             result = _call_brief_sync(
                 case,
                 docs,
                 action_items,
                 reactions_context,
-                debug_file,
                 model=cfg.summary_model,
+                db=db,
             )
             _apply_brief(case, result)
 

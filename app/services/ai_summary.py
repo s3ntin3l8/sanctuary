@@ -2,14 +2,11 @@ import json
 import logging
 from datetime import UTC, datetime
 
-import httpx
 from sqlalchemy.orm import Session
 
-from app.core.async_utils import run_async
 from app.models.database import Document, Proceeding
 from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -134,8 +131,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 def generate_summary_sync(doc: Document, db=None) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_effective_config(db)
-    if db is not None:
-        ai_provider.reload_from_db(db)
     content_preview = get_content_preview(doc, 4000)
 
     # Heuristic hints for verification
@@ -155,85 +150,21 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         f"### Document Content Preview:\n{content_preview}"
     )
 
-    # Get provider-specific parameters
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=cfg.summary_model,
-            prompt=prompt,
-            system_prompt=PHASE1_METADATA_SYSTEM,
-            stream=True,
-            options={
-                "num_ctx": 16384,
-                "temperature": 0.1,
-                "num_predict": 1000,
-                "max_tokens": 1000,
-            },
-        )
+    result = call_json_ai(
+        system_prompt=PHASE1_METADATA_SYSTEM,
+        user_prompt=prompt,
+        options={
+            "num_ctx": 16384,
+            "temperature": 0.1,
+            "num_predict": 1000,
+            "max_tokens": 1000,
+        },
+        debug_label=f"doc_{doc.id}_sync",
+        model=cfg.summary_model,
+        db=db,
     )
-    ptype = run_async(ai_provider.get_type())
-
-    # Debug logging setup
-    from app.config import DATA_DIR
-
-    debug_dir = DATA_DIR / "ai_debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    debug_file = debug_dir / f"doc_{doc.id}_{int(datetime.now().timestamp())}_sync.log"
-
-    full_thinking = ""
-    full_response = ""
-    with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
-        try:
-            with open(debug_file, "a") as f:
-                f.write(
-                    f"--- START REQUEST (SYNC) doc_id={doc.id} Provider={ptype} ---\n"
-                )
-                f.write(f"Model: {cfg.summary_model}\n")
-                f.write(f"Payload: {json.dumps(params['json'])}\n\n")
-
-            with client.stream(
-                "POST", params["url"], json=params["json"], headers=params["headers"]
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-
-                    chunk = ai_provider.parse_stream_line(line, ptype)
-                    if not chunk:
-                        continue
-
-                    # Log tokens to debug file
-                    token = chunk.get("thinking", "") + chunk.get("response", "")
-                    if token:
-                        with open(debug_file, "a") as f:
-                            f.write(token)
-
-                    if "thinking" in chunk:
-                        full_thinking += chunk["thinking"]
-                    if "response" in chunk:
-                        full_response += chunk["response"]
-                    if chunk.get("done"):
-                        break
-
-            with open(debug_file, "a") as f:
-                f.write(
-                    f"\n--- END STREAM. Full Length: {len(full_response)} Thinking Length: {len(full_thinking)} ---\n"
-                )
-        except Exception as e:
-            with open(debug_file, "a") as f:
-                f.write(f"\n--- ERROR DURING STREAM: {str(e)} ---\n")
-            raise
-
-    if not full_response or not full_response.strip():
-        refusal_msg = ""
-        if full_thinking:
-            refusal_msg = f" (Thinking was present: {full_thinking[:100]}...)"
-        raise ValueError(
-            f"AI returned an empty response for '{doc.title}'.{refusal_msg} See {debug_file} for details."
-        )
-
-    logger.debug(f"AI raw response for '{doc.title}': {full_response}")
-    return parse_json_response(full_response)
+    logger.debug(f"AI response parsed for '{doc.title}'")
+    return result
 
 
 def _summarize_document_sync(doc_id: int, db: Session) -> Document:
