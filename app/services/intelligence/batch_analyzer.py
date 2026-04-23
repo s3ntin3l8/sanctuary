@@ -60,7 +60,7 @@ def _call_batch_analyzer_sync(
     model: str = "",
 ) -> dict:
     """Synchronous AI call for batch analysis."""
-    content_preview = get_content_preview(candidate, 4000)
+    content_preview = get_content_preview(candidate, 4000, include_tail=False)
     sibling_list = "\n".join(f"- {t}" for t in sibling_titles)
     prompt = (
         f"Cover letter candidate (doc_id={candidate.id}):\n"

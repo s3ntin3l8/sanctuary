@@ -19,9 +19,17 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = PHASE1_METADATA_SYSTEM
 
+_TAIL_CHARS = 2000
 
-def get_content_preview(doc: Document, max_chars: int = 4000) -> str:
-    """Get a representative preview of document content using chunks if available."""
+
+def get_content_preview(
+    doc: Document, max_chars: int = 4000, include_tail: bool = True
+) -> str:
+    """Get a representative preview of document content using chunks if available.
+
+    For long documents with include_tail=True, returns head + tail window to ensure
+    operative decisions (e.g., Tenor in German rulings) at document end are visible.
+    """
     if doc.meta and "chunks" in doc.meta and doc.meta["chunks"]:
         content = ""
         current_len = 0
@@ -34,7 +42,23 @@ def get_content_preview(doc: Document, max_chars: int = 4000) -> str:
         if content:
             return content
 
-    return (doc.content or "")[:max_chars]
+    content = doc.content or ""
+
+    # If content fits within max_chars, return as-is
+    if len(content) <= max_chars:
+        return content
+
+    # For long content with include_tail, use head+tail window
+    if include_tail and max_chars > _TAIL_CHARS:
+        head_chars = max_chars - _TAIL_CHARS
+        return (
+            content[:head_chars]
+            + "\n\n[... truncated middle ...]\n\n"
+            + content[-_TAIL_CHARS:]
+        )
+
+    # Fallback: return head-only (include_tail=False or max_chars <= _TAIL_CHARS)
+    return content[:max_chars]
 
 
 async def generate_summary(doc: Document, db=None) -> dict:
