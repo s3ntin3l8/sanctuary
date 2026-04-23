@@ -63,7 +63,7 @@ def create_manual_upload_batch(
         subject=subject,
         case_id=case_id,
     )
-    batch.status = IngestBatchStatus.COMPLETED
+    batch.status = IngestBatchStatus.PROCESSING
     db.flush()
     return batch.id
 
@@ -268,7 +268,13 @@ def process_uploaded_document(doc: Document, db: Session):
     ).model_dump()
 
     doc.content = markdown_content
-    doc.title = extract_clean_title(safe_filename, markdown_content or "")
+    # Prefer H1 from content; fall back to filename-derived title only when no
+    # title has been set yet (e.g. subject of an email body doc).
+    h1 = re.search(r"^#\s+(.+)$", markdown_content or "", re.MULTILINE)
+    if h1 and len(h1.group(1).strip()) < 100:
+        doc.title = h1.group(1).strip()
+    elif not doc.title:
+        doc.title = extract_clean_title(safe_filename, "")
     doc.meta = conversion_metadata
 
     if result_case_id["value"]:
@@ -386,6 +392,10 @@ async def ingest_file(
 
         _pipeline_init(new_doc, batched=ingest_batch_id is not None)
         db.add(new_doc)
+        db.flush()
+        reasons = compute_review_reasons(new_doc)
+        new_doc.review_reasons = reasons
+        new_doc.needs_review = len(reasons) > 0
         db.commit()
         db.refresh(new_doc)
         return new_doc

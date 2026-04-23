@@ -55,6 +55,7 @@ def ingest_raw_email(
             content_hash=body_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
+            sender=parsed["sender"] or None,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
@@ -63,7 +64,7 @@ def ingest_raw_email(
         docs_to_process.append(doc)
 
     for att in parsed["attachments"]:
-        if not att["content"]:
+        if not att["content"] or not att["filename"]:
             continue
         att_hash = hashlib.sha256(att["content"]).hexdigest()
 

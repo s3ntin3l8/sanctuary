@@ -17,7 +17,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             is_attachment = "attachment" in content_disposition or (
                 filename and part.get_content_maintype() not in ("text", "multipart")
             )
-            if is_attachment and filename:
+            if is_attachment:
                 attachments.append(
                     {
                         "filename": filename,
