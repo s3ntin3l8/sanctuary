@@ -228,6 +228,24 @@ class IngestBatch(Base):
     proceeding = relationship("Proceeding")
     documents = relationship("Document", back_populates="ingest_batch")
 
+    @property
+    def key(self) -> str:
+        return f"batch-{self.id}"
+
+    @property
+    def batch_id(self) -> int:
+        return self.id
+
+    @property
+    def pipeline_summary(self) -> dict:
+        from collections import Counter
+
+        counts = Counter(
+            (d.pipeline_state.value if d.pipeline_state else "pending")
+            for d in self.documents
+        )
+        return {"total": len(self.documents), **counts}
+
 
 class DocumentRelationship(Base):
     """Typed N:N edge between two documents (replaces the single in_reply_to FK idea)."""

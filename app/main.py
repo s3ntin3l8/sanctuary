@@ -90,14 +90,19 @@ async def add_request_id(request: Request, call_next):
     request_id = str(uuid4())[:8]
     request.state.request_id = request_id
 
-    logger.info(f"Request started: {request.method} {request.url.path}")
+    logger.info(f"→ {request.method} {request.url.path}")
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(f"Unhandled exception on {request.method} {request.url.path}")
+        raise
+
     response.headers["X-Request-ID"] = request_id
 
-    logger.info(
-        f"Request completed: {request.method} {request.url.path} -> {response.status_code}"
-    )
+    status = response.status_code
+    level = logging.WARNING if status >= 400 else logging.INFO
+    logger.log(level, f"← {status} {request.method} {request.url.path}")
 
     return response
 
