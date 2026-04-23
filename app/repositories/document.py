@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document
-from app.models.enums import IngestStatus, OriginatorType, SignificanceTier
+from app.models.enums import OriginatorType, SignificanceTier
 from app.repositories.base import BaseRepository
 
 
@@ -84,12 +84,6 @@ class DocumentRepository(BaseRepository[Document]):
             self.db.query(Document).filter(Document.originator_type == originator)
         ).all()
 
-    def get_by_ingest_status(self, status: IngestStatus) -> Sequence[Document]:
-        """Get documents by ingest status."""
-        return self._with_content_deferred(
-            self.db.query(Document).filter(Document.ingest_status == status)
-        ).all()
-
     def search(self, query: str) -> Sequence[Document]:
         """Search documents by title or content."""
         query_lower = f"%{query.lower()}%"
@@ -151,22 +145,6 @@ class DocumentRepository(BaseRepository[Document]):
     def update_case(self, doc_id: int, case_id: str) -> Document | None:
         """Update document's case."""
         return self.update(doc_id, case_id=case_id, needs_review=False)
-
-    def update_ingest_status(
-        self,
-        doc_id: int,
-        status: IngestStatus,
-        error: str | None = None,
-    ) -> Document | None:
-        """Update ingest status."""
-        updates = {"ingest_status": status}
-        if status == IngestStatus.PROCESSING:
-            updates["ingest_started_at"] = datetime.now()
-        elif status == IngestStatus.COMPLETED:
-            updates["ingest_completed_at"] = datetime.now()
-        elif status == IngestStatus.FAILED:
-            updates["ingest_error"] = error
-        return self.update(doc_id, **updates)
 
     def create_document(
         self,

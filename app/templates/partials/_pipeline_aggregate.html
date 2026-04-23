@@ -1,0 +1,35 @@
+{# Pipeline aggregate — "N running · M failed" chip for bundle headers and home panel.
+   API response for GET /triage/bundle/{batch_id}/pipeline
+   Required: bundle (BundleView with pipeline_summary property and key + batch_id attrs)
+   Self-disarming: polling attrs vanish when no stages are running.
+#}
+{% set summary = bundle.pipeline_summary %}
+{% set n_running = summary.get('running', 0) %}
+{% set n_failed  = summary.get('failed', 0) %}
+{% set n_total   = summary.get('total', 0) %}
+{% set n_done    = summary.get('completed', 0) %}
+
+<span id="pipeline-agg-{{ bundle.key }}"
+      {% if n_running > 0 and bundle.batch_id %}
+      hx-get="/triage/bundle/{{ bundle.batch_id }}/pipeline"
+      hx-trigger="every 4s"
+      hx-swap="outerHTML"
+      {% endif %}
+      class="inline-flex items-center gap-1">
+  {% if n_failed > 0 %}
+  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error-container/20 text-error">
+    <span class="material-symbols-outlined text-[10px]">error_outline</span>
+    {{ n_failed }} failed
+  </span>
+  {% endif %}
+  {% if n_running > 0 %}
+  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-tertiary/10 text-tertiary">
+    <span class="material-symbols-outlined text-[10px] animate-pulse">settings</span>
+    {{ n_running }} processing
+  </span>
+  {% elif n_failed == 0 and n_done == n_total and n_total > 0 %}
+  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-originator-own/10 text-originator-own">
+    <span class="material-symbols-outlined text-[10px]">done_all</span> ready
+  </span>
+  {% endif %}
+</span>

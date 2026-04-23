@@ -7,7 +7,6 @@ import pytest
 
 from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import (
-    IngestStatus,
     OriginatorType,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -36,7 +35,6 @@ def proceeding_with_docs(db_session, sample_case):
         case_id=sample_case.id,
         proceeding_id=proceeding.id,
         significance_tier=SignificanceTier.CRITICAL,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.OPPOSING,
         received_date=datetime(2025, 1, 10),
     )
@@ -46,7 +44,6 @@ def proceeding_with_docs(db_session, sample_case):
         case_id=sample_case.id,
         proceeding_id=proceeding.id,
         significance_tier=SignificanceTier.SIGNIFICANT,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
         received_date=datetime(2025, 2, 15),
     )
@@ -56,7 +53,6 @@ def proceeding_with_docs(db_session, sample_case):
         case_id=sample_case.id,
         proceeding_id=proceeding.id,
         significance_tier=SignificanceTier.SIGNIFICANT,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.OWN,
         received_date=datetime(2025, 3, 1),
     )
@@ -204,7 +200,6 @@ def test_skips_low_significance_doc(db_session, sample_case):
         content="Acknowledgement of receipt.",
         case_id=sample_case.id,
         significance_tier=SignificanceTier.ADMINISTRATIVE,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(doc)

@@ -15,15 +15,7 @@ def trigger_all_missing_summaries():
     db: Session = SessionLocal()
     try:
         # Find documents with no summary or failed summary
-        docs = (
-            db.query(Document)
-            .filter(
-                (Document.ai_summary_status == "pending")
-                | (Document.ai_summary_status == "failed")
-                | (Document.ai_summary is None)
-            )
-            .all()
-        )
+        docs = db.query(Document).filter(Document.ai_summary.is_(None)).all()
 
         print(f"[*] Found {len(docs)} documents without valid AI summaries.")
 

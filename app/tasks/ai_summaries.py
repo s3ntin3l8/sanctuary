@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from app.config import SessionLocal
 from app.models.database import Document
+from app.models.enums import PipelineState
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,11 @@ def generate_document_summary_task(self, doc_id: int):
         try:
             summary = summarize_document(doc, db)
             doc.ai_summary = summary
-            doc.ai_summary_status = "generated"
             doc.ai_summary_created_at = datetime.now(UTC)
             db.commit()
             logger.info(f"Summary generated for document {doc_id}")
             return {"status": "success", "doc_id": doc_id}
         except Exception as e:
-            doc.ai_summary_status = "failed"
             logger.error(f"Summary generation failed for document {doc_id}: {e}")
 
             if self.request.retries < self.max_retries:
@@ -47,7 +46,7 @@ def generate_document_summary_task(self, doc_id: int):
 
 @celery_app.task
 def generate_summaries_for_case_task(case_id: str):
-    """Generate summaries for all documents in a case."""
+    """Generate summaries for all documents in a case that lack enrichment."""
     db = SessionLocal()
     try:
         docs = (
@@ -55,7 +54,7 @@ def generate_summaries_for_case_task(case_id: str):
             .filter(
                 Document.case_id == case_id,
                 Document.content.isnot(None),
-                Document.ai_summary_status.in_(["pending", "failed"]),
+                Document.pipeline_state != PipelineState.COMPLETED,
             )
             .all()
         )

@@ -5,11 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models.database import ActionItem, Document, IngestBatch
-from app.models.enums import (
-    IngestBatchSourceType,
-    IngestBatchStatus,
-    IngestStatus,
-)
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.services.intelligence.batch_analyzer import _apply_batch_results, analyze
 
 
@@ -32,7 +28,6 @@ def batch_with_failed_doc(db_session, sample_case):
         content="This is the cover letter. It encloses Doc 2.",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
     )
     # Doc 2: Successful conversion (Enclosure)
     doc2 = Document(
@@ -40,14 +35,12 @@ def batch_with_failed_doc(db_session, sample_case):
         content="This is the enclosure content.",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
     )
     # Doc 3: Failed conversion (simulating Docling error)
     doc3 = Document(
         title="Corrupted.pdf",
         content=None,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.FAILED,
     )
 
     db_session.add(doc1)
@@ -126,7 +119,6 @@ def test_action_items_created_for_triage_case(db_session):
         content="Deadline: 2025-12-31",
         case_id="_TRIAGE",
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
     )
     db_session.add(doc)
     db_session.commit()

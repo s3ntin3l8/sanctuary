@@ -16,7 +16,6 @@ from app.models.enums import (
     DocumentRole,
     IngestBatchSourceType,
     IngestBatchStatus,
-    IngestStatus,
     OriginatorType,
 )
 
@@ -44,7 +43,6 @@ def email_batch(db_session, sample_case):
         content="Begleitschreiben des Amtsgerichts Berlin. Anlage: Urteil.",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     enclosure = Document(
@@ -52,7 +50,6 @@ def email_batch(db_session, sample_case):
         content="Das Gericht entscheidet: Klage abgewiesen. Kosten trägt der Kläger.",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(cover)

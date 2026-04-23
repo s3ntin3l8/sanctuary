@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchStatus, IngestStatus
+from app.models.enums import IngestBatchStatus
 
 router = APIRouter(prefix="/ingest/slice", tags=["slicing"])
 
@@ -137,9 +137,11 @@ async def slicing_confirm(
                 content_hash=content_hash,
                 case_id="_TRIAGE",
                 ingest_batch_id=batch.id,
-                ingest_status=IngestStatus.PENDING,
                 meta={"slice_range": [start_page, end_page]},
             )
+            from app.services.pipeline_status import initialize as _pipeline_init
+
+            _pipeline_init(doc, batched=True)
             db.add(doc)
             db.flush()
             docs_to_process.append(doc)

@@ -1,0 +1,33 @@
+{# Pipeline status pill — compact overall state. API response for GET /document/{id}/pipeline?view=pill
+   Required: doc (Document with pipeline_state + pipeline_stages)
+   Self-disarming: polling attrs vanish once terminal state is reached.
+#}
+{% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+<div id="pipeline-pill-{{ doc.id }}"
+     {% if state in ('pending', 'running') %}
+     hx-get="/document/{{ doc.id }}/pipeline?view=pill"
+     hx-trigger="every 4s"
+     hx-swap="outerHTML"
+     {% endif %}>
+  {% if state == 'failed' %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-error-container/20 text-error whitespace-nowrap" title="Pipeline failed — open stepper for details">
+    <span class="material-symbols-outlined text-[10px]">error_outline</span> failed
+  </span>
+  {% elif state == 'running' %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-tertiary/10 text-tertiary whitespace-nowrap" title="Pipeline running">
+    <span class="material-symbols-outlined text-[10px]">settings</span> processing
+  </span>
+  {% elif state == 'completed' %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-originator-own/10 text-originator-own whitespace-nowrap" title="All stages complete">
+    <span class="material-symbols-outlined text-[10px]">done_all</span> ready
+  </span>
+  {% elif state == 'partial' %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-400 whitespace-nowrap" title="Some stages incomplete">
+    <span class="material-symbols-outlined text-[10px]">incomplete_circle</span> partial
+  </span>
+  {% else %}
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-surface-container-highest text-on-surface-variant/60 whitespace-nowrap" title="Pending ingestion">
+    <span class="material-symbols-outlined text-[10px]">hourglass_empty</span> pending
+  </span>
+  {% endif %}
+</div>

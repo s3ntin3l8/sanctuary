@@ -8,15 +8,15 @@ from app.models.database import Document, IngestBatch
 from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
-    IngestStatus,
     OriginatorType,
+    PipelineState,
 )
 from app.repositories.ingest_batch import IngestBatchRepository
 
 
 @pytest.fixture
 def ready_batch(db_session, sample_case):
-    """A batch whose docs are all COMPLETED."""
+    """A batch whose docs have completed the metadata stage."""
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id=sample_case.id,
@@ -32,8 +32,9 @@ def ready_batch(db_session, sample_case):
         content="Content",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
+        pipeline_stages={"metadata": {"status": "completed"}},
+        pipeline_state=PipelineState.COMPLETED,
     )
     db_session.add(doc)
     db_session.commit()
@@ -59,7 +60,6 @@ def pending_batch(db_session, sample_case):
         content="Content",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.PENDING,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(doc)

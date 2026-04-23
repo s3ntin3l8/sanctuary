@@ -68,6 +68,9 @@
             <span class="text-[9px] text-on-surface-variant">{{ bundle.proceeding.court_name }}</span>
             {% endif %}
 
+            {# Pipeline aggregate chip (self-disarming polling) #}
+            {% include "partials/_pipeline_aggregate.html" %}
+
             {# Warning indicator — stable ID so per-doc confirms can OOB-swap just this badge #}
             <span id="triage-bundle-badge-{{ bundle.key }}">
                 {% if bundle.needs_review_count %}

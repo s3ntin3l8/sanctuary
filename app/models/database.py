@@ -31,9 +31,9 @@ from app.models.enums import (
     EntityType,
     IngestBatchSourceType,
     IngestBatchStatus,
-    IngestStatus,
     Jurisdiction,
     OriginatorType,
+    PipelineState,
     ProceedingCourtLevel,
     ProceedingStatus,
     RelationshipConfidence,
@@ -54,6 +54,7 @@ class Document(Base):
         Index("ix_documents_proceeding", "proceeding_id"),
         Index("ix_documents_ingest_batch", "ingest_batch_id"),
         Index("ix_documents_significance", "significance_tier"),
+        Index("ix_documents_pipeline_state", "pipeline_state"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -77,22 +78,21 @@ class Document(Base):
         JSON, default=list
     )  # e.g. ["missing_case_id", "missing_sender"]
 
-    # Ingest pipeline status fields
-    ingest_status = Column(
-        SAEnum(IngestStatus), default=IngestStatus.PENDING, nullable=False
+    # Pipeline tracking
+    pipeline_state = Column(
+        SAEnum(PipelineState, values_callable=lambda obj: [e.value for e in obj]),
+        default=PipelineState.PENDING,
+        nullable=False,
     )
-    ingest_error = Column(Text, nullable=True)
-    ingest_started_at = Column(DateTime, nullable=True)
-    ingest_completed_at = Column(DateTime, nullable=True)
+    pipeline_stages = Column(
+        JSON, default=dict
+    )  # per-stage records keyed by stage name
 
     # AI Management Summary fields
     ai_summary = Column(
         JSON, nullable=True
     )  # {"legal_significance": "...", "required_action": "...", "financial_impact": "..."}
     ai_summary_created_at = Column(DateTime, nullable=True)
-    ai_summary_status = Column(
-        String, default="pending", nullable=False
-    )  # pending, generated, failed, stale, approved
     ai_summary_approved_at = Column(
         DateTime, nullable=True
     )  # timestamp when human approved

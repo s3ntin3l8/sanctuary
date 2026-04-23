@@ -1,11 +1,18 @@
 {# AI Summary section — 3-bullet management summary with approve/reject controls.
    Required: doc, summary_bullets (list[{kind, text}])
+   Approved state:   doc.ai_summary_approved_at is not None
+   Generated state:  doc.ai_summary is not None (and not approved)
+   Enrich state:     doc.pipeline_stages.enrich.status
 #}
+{% set enrich_status = (doc.pipeline_stages or {}).get('enrich', {}).get('status', 'pending') %}
+{% set is_approved = doc.ai_summary_approved_at is not none %}
+{% set has_summary = doc.ai_summary is not none %}
+
 <div id="hud-summary-{{ doc.id }}" class="px-5 py-4 border-b border-outline-variant/10">
   <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
     <span class="material-symbols-outlined text-sm text-primary">smart_toy</span>
     AI Summary
-    {% if doc.ai_summary_status == 'generated' %}
+    {% if has_summary and not is_approved %}
     <div class="ml-auto flex items-center gap-1.5">
       <button hx-post="/document/{{ doc.id }}/hud/approve-summary?action=approve"
               hx-target="#hud-summary-{{ doc.id }}"
@@ -20,13 +27,13 @@
         reject
       </button>
     </div>
-    {% elif doc.ai_summary_status == 'approved' %}
+    {% elif is_approved %}
     <span class="ml-auto text-[9px] font-bold text-originator-own flex items-center gap-0.5">
       <span class="material-symbols-outlined text-[10px]">check_circle</span>approved
     </span>
-    {% elif doc.ai_summary_status == 'pending' %}
+    {% elif enrich_status == 'running' %}
     <span class="ml-auto text-[9px] font-medium text-outline animate-pulse">generating…</span>
-    {% elif doc.ai_summary_status == 'failed' %}
+    {% elif enrich_status == 'failed' %}
     <span class="ml-auto text-[9px] font-bold text-error">failed</span>
     {% endif %}
   </h4>
@@ -50,10 +57,10 @@
   </ul>
   {% else %}
   <p class="text-[11px] italic" style="color:var(--color-outline);">
-    {% if not doc.ai_summary_status or doc.ai_summary_status == 'pending' %}
-      Summary pending — AI enrichment runs after ingest.
-    {% elif doc.ai_summary_status == 'failed' %}
-      Summary generation failed. Retry via the ↺ button above.
+    {% if enrich_status == 'failed' %}
+      Summary generation failed. Retry via the pipeline stepper.
+    {% elif enrich_status in ('pending', 'running') %}
+      Summary pending — AI enrichment in progress.
     {% else %}
       No summary available.
     {% endif %}

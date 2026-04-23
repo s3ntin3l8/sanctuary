@@ -40,7 +40,6 @@ from app.models.database import (
     IngestBatch,
     IngestBatchSourceType,
     IngestBatchStatus,
-    IngestStatus,
     OriginatorType,
     Proceeding,
     SignificanceTier,
@@ -210,8 +209,6 @@ def make_doc(
     court_relay=False,
     attributed_originator=None,
     doc_type=DocumentType.RELAY,
-    ingest_status=IngestStatus.COMPLETED,
-    ai_summary_status="generated",
     ai_summary=None,
     key_passages=None,
     cost_candidates=None,
@@ -244,8 +241,6 @@ def make_doc(
         court_relay=court_relay,
         attributed_originator=attributed_originator,
         document_type=doc_type,
-        ingest_status=ingest_status,
-        ai_summary_status=ai_summary_status,
         ai_summary=ai_summary,
         key_passages=key_passages,
         cost_candidates=cost_candidates,
@@ -339,7 +334,6 @@ b1_cover = make_doc(
     court_relay=True,
     attributed_originator="court",
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
     ai_summary={
         "legal_significance": "Gerichtliche Zustellung eines Beschlusses nach §1671 BGB.",
         "required_action": "Stellungnahme binnen zwei Wochen einreichen.",
@@ -366,7 +360,6 @@ b1_ruling = make_doc(
     review_reasons=[],
     significance=SignificanceTier.CRITICAL,
     doc_type=DocumentType.RULING,
-    ai_summary_status="generated",
     ai_summary={
         "legal_significance": "Beschluss über elterliche Sorge. Entscheidung zugunsten der Mutter.",
         "required_action": "Frist zur Beschwerde: 4 Wochen ab Zustellung (§63 FamFG).",
@@ -434,7 +427,6 @@ b2_cover = make_doc(
     court_relay=True,
     attributed_originator="Dr. Müller, Rechtsanwalt",
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
 )
 
 b2_statement = make_doc(
@@ -449,7 +441,6 @@ b2_statement = make_doc(
     review_reasons=["missing_sender"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.STATEMENT,
-    ai_summary_status="generated",
     extraction_confidence={
         "sender": "low",
         "date": "high",
@@ -478,7 +469,6 @@ b2_annex = make_doc(
     review_reasons=["missing_case_id", "missing_received_date"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.ANNEX,
-    ai_summary_status="pending",
     extraction_confidence={
         "sender": "medium",
         "date": "low",
@@ -512,8 +502,6 @@ b3_cover = make_doc(
     significance=SignificanceTier.INFORMATIONAL,
     court_relay=True,
     doc_type=DocumentType.RELAY,
-    ingest_status=IngestStatus.PENDING,
-    ai_summary_status="pending",
     # ⏳ pending: ingest not yet run
 )
 
@@ -529,8 +517,6 @@ b3_motion = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.CRITICAL,
     doc_type=DocumentType.MOTION,
-    ingest_status=IngestStatus.COMPLETED,
-    ai_summary_status="pending",
     # ⚙ AI processing: docling done, AI not yet
 )
 
@@ -546,8 +532,6 @@ b3_exhibit = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.REPORT,
-    ingest_status=IngestStatus.COMPLETED,
-    ai_summary_status="generated",
     # ✓ ready: full pipeline done
     ai_summary={
         "legal_significance": "Sachverständigengutachten zum Bebauungsplan.",
@@ -574,8 +558,6 @@ b3_invoice = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.ADMINISTRATIVE,
     doc_type=DocumentType.INVOICE,
-    ingest_status=IngestStatus.FAILED,
-    ai_summary_status="failed",
     # ⚠ failed: ingestion error
 )
 db.commit()
@@ -604,7 +586,6 @@ b4_cover = make_doc(
     court_relay=True,
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
 )
 
 b4_statement = make_doc(
@@ -619,7 +600,6 @@ b4_statement = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.STATEMENT,
-    ai_summary_status="generated",
     key_passages=[
         {
             "text": "Der Beklagte war am 10.01.2026 ortsabwesend",
@@ -641,7 +621,6 @@ b4_proof = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.ANNEX,
-    ai_summary_status="generated",
     extraction_confidence={
         "sender": "medium",
         "date": "medium",
@@ -702,7 +681,6 @@ b5_cover_a = make_doc(
     attributed_originator="Dr. Müller, Rechtsanwalt",
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
 )
 
 b5_statement = make_doc(
@@ -717,7 +695,6 @@ b5_statement = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.STATEMENT,
-    ai_summary_status="generated",
     key_passages=[
         {
             "text": "§1671 BGB ist nicht gerechtfertigt",
@@ -739,7 +716,6 @@ b5_annex = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.ANNEX,
-    ai_summary_status="generated",
     cost_candidates=[
         {"type": "amount", "value": 505.00, "context": "Betreuungskosten 505,00 EUR"},
     ],
@@ -759,7 +735,6 @@ b5_cover_b = make_doc(
     attributed_originator="Jugendamt Hamburg",
     significance=SignificanceTier.ADMINISTRATIVE,
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
 )
 
 b5_report = make_doc(
@@ -774,7 +749,6 @@ b5_report = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.REPORT,
-    ai_summary_status="generated",
     key_passages=[
         {
             "text": "Empfehlung: gemeinsame elterliche Sorge beibehalten",
@@ -819,7 +793,6 @@ b6_cover = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.MOTION,
-    ai_summary_status="generated",
 )
 
 b6_child = make_doc(
@@ -834,7 +807,6 @@ b6_child = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.REPORT,
-    ai_summary_status="generated",
 )
 
 b6_grandchild = make_doc(
@@ -849,7 +821,6 @@ b6_grandchild = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.ADMINISTRATIVE,
     doc_type=DocumentType.ANNEX,
-    ai_summary_status="pending",
     extraction_confidence={
         "sender": "medium",
         "date": "low",
@@ -881,8 +852,6 @@ b7_ruling = make_doc(
     review_reasons=["missing_case_id", "missing_received_date"],
     significance=SignificanceTier.CRITICAL,
     doc_type=DocumentType.RULING,
-    ingest_status=IngestStatus.FAILED,
-    ai_summary_status="failed",
     extraction_confidence={
         "sender": "low",
         "date": "low",
@@ -919,7 +888,6 @@ b8_doc = make_doc(
     ],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.OTHER,
-    ai_summary_status="pending",
     extraction_confidence={
         "sender": "low",
         "date": "low",
@@ -953,7 +921,6 @@ b9_cover = make_doc(
     court_relay=True,
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.RELAY,
-    ai_summary_status="generated",
 )
 
 b9_lies = make_doc(
@@ -968,7 +935,6 @@ b9_lies = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.STATEMENT,
-    ai_summary_status="generated",
     key_passages=[
         {
             "text": "Der Beklagte war am 10.01.2026 ortsabwesend",
@@ -990,7 +956,6 @@ b9_needs_proof = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.SIGNIFICANT,
     doc_type=DocumentType.STATEMENT,
-    ai_summary_status="generated",
 )
 
 b9_precedent = make_doc(
@@ -1005,7 +970,6 @@ b9_precedent = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.CORRESPONDENCE,
-    ai_summary_status="generated",
 )
 
 b9_true = make_doc(
@@ -1020,7 +984,6 @@ b9_true = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.INVOICE,
-    ai_summary_status="generated",
 )
 
 db.add_all(
@@ -1059,7 +1022,6 @@ b10_doc = make_doc(
     review_reasons=["missing_case_id"],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.CORRESPONDENCE,
-    ai_summary_status="generated",
 )
 db.commit()
 
@@ -1088,7 +1050,6 @@ make_doc(
     review_reasons=[],
     significance=SignificanceTier.INFORMATIONAL,
     doc_type=DocumentType.CORRESPONDENCE,
-    ai_summary_status="generated",
 )
 db.commit()
 
@@ -1109,8 +1070,6 @@ def _p8_doc(**kwargs):
         "proceeding_id": proc_a.id,
         "needs_review": False,
         "review_reasons": [],
-        "ingest_status": IngestStatus.COMPLETED,
-        "ai_summary_status": "generated",
         "role": DocumentRole.STANDALONE,
         "court_relay": False,
         "thread_open": False,
@@ -1426,7 +1385,6 @@ p8_stellungnahme = _p8_doc(
     created_at=datetime(2026, 4, 19),
     significance_tier=SignificanceTier.CRITICAL,
     thread_open=True,
-    ai_summary_status="pending",
     ai_summary=[
         {
             "kind": "action",
@@ -2133,8 +2091,6 @@ def _p8_olg(**kwargs):
         "proceeding_id": proc_a2.id,
         "needs_review": False,
         "review_reasons": [],
-        "ingest_status": IngestStatus.COMPLETED,
-        "ai_summary_status": "generated",
         "role": DocumentRole.STANDALONE,
         "court_relay": False,
         "thread_open": False,
@@ -2397,7 +2353,6 @@ p8_olg_beschluss = _p8_olg(
     received_date=None,  # ghost — not yet received
     created_at=datetime(2026, 8, 20),
     significance_tier=SignificanceTier.CRITICAL,
-    ai_summary_status="pending",
     ai_summary=[
         {
             "kind": "action",

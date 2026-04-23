@@ -3,7 +3,7 @@
 import pytest
 
 from app.models.database import Case, Document
-from app.models.enums import CaseStatus, IngestStatus, Jurisdiction, OriginatorType
+from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
 from app.services.case_service import recompute_total_cost_exposure
 
 
@@ -22,7 +22,6 @@ def case_with_costs(db_session):
         Document(
             title="Invoice 1",
             case_id="COST-TEST-001",
-            ingest_status=IngestStatus.COMPLETED,
             originator_type=OriginatorType.COURT,
             cost_delta={
                 "amount": 450.50,
@@ -33,7 +32,6 @@ def case_with_costs(db_session):
         Document(
             title="Invoice 2",
             case_id="COST-TEST-001",
-            ingest_status=IngestStatus.COMPLETED,
             originator_type=OriginatorType.OPPOSING,
             cost_delta={
                 "amount": 1200.0,
@@ -44,7 +42,6 @@ def case_with_costs(db_session):
         Document(
             title="No cost doc",
             case_id="COST-TEST-001",
-            ingest_status=IngestStatus.COMPLETED,
             originator_type=OriginatorType.COURT,
             cost_delta=None,
         ),

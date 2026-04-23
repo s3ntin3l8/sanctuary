@@ -389,7 +389,6 @@ async def summarize_document(
         # Phase 4: management summary bullets + key passages
         enrich_document_task.delay(doc_id)
     except Exception as exc:
-        doc.ai_summary_status = "failed"
         doc.ai_summary = {"error": str(exc)}
         db.commit()
 
@@ -403,22 +402,19 @@ async def retry_ai(
     doc_id: int,
     db: Session = Depends(get_db),
 ):
-    """Clear AI status and re-enqueue processing task."""
+    """Re-enqueue enrichment for a document (forwards to per-stage retry)."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    # Reset statuses
-    doc.ai_summary_status = "pending"
-    doc.ai_summary = None
-    doc.ingest_status = "pending"
-    db.commit()
-
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import reset_stage
     from app.tasks.document_processing import process_document_task
 
+    reset_stage(doc.id, PipelineStage.EXTRACT, db)
     process_document_task.delay(doc.id)
 
-    # Return the HUD (will show as "pending")
+    db.refresh(doc)
     return await _render_document_hud(request, doc, db)
 
 
@@ -485,6 +481,30 @@ async def reject_relationship(
 
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Bundle pipeline aggregate endpoint
+# -----------------------------------------------------------------------------
+
+
+@router.get("/triage/bundle/{batch_id}/pipeline")
+async def bundle_pipeline_status(
+    request: Request,
+    batch_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return pipeline aggregate chip for a bundle (triage bundle header polling)."""
+    triage_service = TriageService(db)
+    bundle = triage_service.get_bundle_by_batch_id(batch_id)
+    if not bundle:
+        return HTMLResponse("", status_code=404)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/_pipeline_aggregate.html",
+        {"bundle": bundle},
+    )
+
+
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------

@@ -2,6 +2,7 @@
    Required: doc, case_id, prev_doc_id, next_doc_id, originator_color
 #}
 {% from "components/significance_indicator.html" import significance_indicator %}
+{% from "partials/_pipeline_status.html" import pipeline_status_pill %}
 {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
 {% set ot_class = ot.replace('_', '-') %}
 
@@ -52,6 +53,7 @@
         <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
               style="background:var(--color-surface-container); color:var(--color-amber);">thread open</span>
         {% endif %}
+        {{ pipeline_status_pill(doc) }}
       </div>
     </div>
 

@@ -124,17 +124,18 @@
     </p>
     <div class="flex items-center justify-between">
         <div class="flex gap-2 items-center">
-            {% if doc.ai_summary_status == 'generated' %}
+            {% set ps = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+            {% if ps == 'completed' and doc.ai_summary %}
                 <span class="text-[9px] bg-primary-container/20 text-primary px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
                     <span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>Summary Ready
                 </span>
-            {% elif doc.ai_summary_status == 'pending' %}
-                <span class="text-[9px] bg-outline-container/20 text-on-surface-variant px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant inline-block animate-pulse"></span>Pending
-                </span>
-            {% elif doc.ai_summary_status == 'failed' %}
+            {% elif ps == 'failed' %}
                 <span class="text-[9px] bg-error-container/20 text-error px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
                     <span class="w-1.5 h-1.5 rounded-full bg-error inline-block"></span>Failed
+                </span>
+            {% elif ps in ('pending', 'running') %}
+                <span class="text-[9px] bg-outline-container/20 text-on-surface-variant px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant inline-block animate-pulse"></span>Processing
                 </span>
             {% else %}
                 <span class="text-[9px] bg-outline-container/20 text-on-surface-variant px-3 py-1 rounded-full font-bold uppercase tracking-wider flex items-center gap-1">

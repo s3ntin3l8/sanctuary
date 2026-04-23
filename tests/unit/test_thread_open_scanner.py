@@ -7,7 +7,6 @@ import pytest
 from app.models.database import Document, DocumentRelationship
 from app.models.enums import (
     DocumentType,
-    IngestStatus,
     OriginatorType,
     RelationshipConfidence,
     RelationshipType,
@@ -24,7 +23,6 @@ def thread_open_doc(db_session, sample_case):
         document_type=DocumentType.STATEMENT,
         thread_open=True,
         significance_tier=SignificanceTier.SIGNIFICANT,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.OWN,
     )
     db_session.add(doc)
@@ -42,7 +40,6 @@ def reply_doc(db_session, sample_case):
         document_type=DocumentType.MOTION,
         thread_open=True,
         significance_tier=SignificanceTier.SIGNIFICANT,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.OPPOSING,
     )
     db_session.add(doc)

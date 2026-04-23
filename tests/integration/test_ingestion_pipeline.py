@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Case, CaseStatus, Document, IngestStatus
+from app.models.database import Case, CaseStatus, Document
 from app.tasks.document_processing import process_document_task
 
 client = TestClient(app)
@@ -33,7 +33,6 @@ def test_full_ingestion_pipeline(db_session, test_engine):
     def mock_sum_sync_impl(doc_id, db):
         doc = db.get(Document, doc_id)
         doc.ai_summary = mock_summary
-        doc.ai_summary_status = "generated"
         db.commit()
 
     async def mock_emb_async_impl(doc_id):
@@ -70,20 +69,14 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         # 4. Get the created document
         doc = db_session.query(Document).filter(Document.case_id == "ADV-123-K").first()
         assert doc is not None
-        # TestClient runs background tasks synchronously, so it might already be COMPLETED
-        # or still in a transition state depending on the mock behavior.
-        # Let's just ensure we have it.
 
         # 5. Manually run the background task (to ensure it runs exactly as we expect)
-        # In a real app, this is triggered via .delay()
         process_document_task(doc.id)
 
         # 6. Verify Results
         db_session.refresh(doc)
-        assert doc.ingest_status == IngestStatus.COMPLETED
         assert doc.content == mock_markdown
         assert doc.ai_summary == mock_summary
-        assert doc.ai_summary_status == "generated"
         # Embedding storage is mocked; verified separately in test_embeddings.py
 
         # Verify extractions

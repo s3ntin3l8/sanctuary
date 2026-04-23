@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.models.database import Case, Document
-from app.models.enums import CaseStatus, IngestStatus, OriginatorType
+from app.models.enums import CaseStatus, OriginatorType
 
 
 @pytest.mark.integration
@@ -21,7 +21,6 @@ def test_extract_claims_task_enqueues_brief_for_normal_case(db_session):
         title="Test Doc",
         content="Some content about the case.",
         case_id="BRIEF-001",
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(doc)
@@ -57,7 +56,6 @@ def test_extract_claims_task_skips_brief_for_triage(db_session):
         title="Triage Doc",
         content="Some triage content.",
         case_id="_TRIAGE",
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.UNKNOWN,
     )
     db_session.add(doc)

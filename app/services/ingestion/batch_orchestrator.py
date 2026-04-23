@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchSourceType, IngestBatchStatus, IngestStatus
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
 from app.tasks.celery_app import celery_app
@@ -53,8 +53,10 @@ def ingest_raw_email(
             content_hash=body_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
-            ingest_status=IngestStatus.PENDING,
         )
+        from app.services.pipeline_status import initialize as _pipeline_init
+
+        _pipeline_init(doc, batched=True)
         db.add(doc)
         docs_to_process.append(doc)
 
@@ -86,8 +88,10 @@ def ingest_raw_email(
             content_hash=att_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
-            ingest_status=IngestStatus.PENDING,
         )
+        from app.services.pipeline_status import initialize as _pipeline_init
+
+        _pipeline_init(doc, batched=True)
         db.add(doc)
         docs_to_process.append(doc)
 
@@ -143,8 +147,10 @@ def ingest_scanned_file(
             content_hash=content_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
-            ingest_status=IngestStatus.PENDING,
         )
+        from app.services.pipeline_status import initialize as _pipeline_init
+
+        _pipeline_init(doc, batched=False)
         db.add(doc)
         batch.status = IngestBatchStatus.PROCESSING
         db.commit()

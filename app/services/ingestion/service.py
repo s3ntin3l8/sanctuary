@@ -11,7 +11,6 @@ from app.models.database import (
     Document,
     Entity,
     EntityType,
-    IngestStatus,
     OriginatorType,
 )
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
@@ -120,8 +119,10 @@ def extract_eml_attachments(doc: Document, db: Session) -> list[int]:
             content_hash=att_hash,
             case_id=doc.case_id,
             ingest_batch_id=doc.ingest_batch_id,
-            ingest_status=IngestStatus.PENDING,
         )
+        from app.services.pipeline_status import initialize as _pipeline_init
+
+        _pipeline_init(child, batched=doc.ingest_batch_id is not None)
         db.add(child)
         db.flush()
         new_ids.append(child.id)
@@ -444,10 +445,11 @@ async def ingest_file(
             originator_type=OriginatorType.UNKNOWN,
             sender=None,
             received_date=None,
-            ingest_status=IngestStatus.PENDING,
             ingest_batch_id=ingest_batch_id,
         )
+        from app.services.pipeline_status import initialize as _pipeline_init
 
+        _pipeline_init(new_doc, batched=ingest_batch_id is not None)
         db.add(new_doc)
         db.commit()
         db.refresh(new_doc)
@@ -502,12 +504,14 @@ async def ingest_file(
         originator_type=result_originator["value"],
         sender=result_sender["value"],
         received_date=result_date["value"],
-        ingest_status=IngestStatus.COMPLETED,
         cost_candidates=extract_cost_candidates(markdown_content or ""),
         extraction_confidence=extraction_confidence,
         meta=conversion_metadata,
         ingest_batch_id=ingest_batch_id,
     )
+    from app.services.pipeline_status import initialize as _pipeline_init
+
+    _pipeline_init(new_doc, batched=ingest_batch_id is not None)
 
     db.add(new_doc)
     db.flush()

@@ -126,8 +126,12 @@ def _call_relationship_detector_sync(
     return parse_json_response(full_response)
 
 
-def detect(doc_id: int) -> None:
-    """Detect relationships from doc_id to prior documents in the same proceeding."""
+def detect(doc_id: int) -> str | None:
+    """Detect relationships from doc_id to prior documents in the same proceeding.
+
+    Returns a non-empty skip reason if the stage was intentionally skipped,
+    or None if it ran (successfully or with a handled exception).
+    """
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
@@ -135,20 +139,18 @@ def detect(doc_id: int) -> None:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for relationship detection")
-            return
+            return "document not found"
 
         if doc.significance_tier not in CANDIDATE_TIERS:
-            logger.info(
-                f"Doc {doc_id} has tier {doc.significance_tier}, skipping relationship detection"
-            )
-            return
+            reason = f"significance_tier={doc.significance_tier} not in candidate tiers"
+            logger.info(f"Doc {doc_id}: {reason}, skipping relationship detection")
+            return reason
 
         candidates = _get_prior_docs(doc, db)
         if not candidates:
-            logger.info(
-                f"Doc {doc_id} has no prior candidates in proceeding {doc.proceeding_id}"
-            )
-            return
+            reason = f"no prior candidates in proceeding {doc.proceeding_id}"
+            logger.info(f"Doc {doc_id}: {reason}")
+            return reason
 
         valid_candidate_ids = {c.id for c in candidates}
 
@@ -216,3 +218,4 @@ def detect(doc_id: int) -> None:
             )
     finally:
         db.close()
+    return None

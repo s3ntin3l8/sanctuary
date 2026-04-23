@@ -295,11 +295,10 @@ async def hud_approve_summary(
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     if action == "approve":
-        doc.ai_summary_status = "approved"
         doc.ai_summary_approved_at = datetime.now()
     elif action == "reject":
-        doc.ai_summary_status = "pending"
         doc.ai_summary = None
+        doc.ai_summary_approved_at = None
     else:
         raise HTTPException(status_code=422, detail=f"Unknown action: {action}")
 
@@ -314,6 +313,123 @@ async def hud_approve_summary(
 
 
 # ---------------------------------------------------------------------------
+# Pipeline status endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/document/{doc_id}/pipeline")
+async def get_pipeline_status(
+    request: Request,
+    doc_id: int,
+    view: str = "pill",
+    db: Session = Depends(get_db),
+):
+    """Return the rendered pipeline status partial (pill or stepper)."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    template = (
+        "partials/_pipeline_stepper.html"
+        if view == "stepper"
+        else "partials/_pipeline_pill.html"
+    )
+    return templates.TemplateResponse(request, template, {"doc": doc})
+
+
+@router.post("/document/{doc_id}/pipeline/{stage}/retry")
+async def retry_pipeline_stage(
+    request: Request,
+    doc_id: int,
+    stage: str,
+    db: Session = Depends(get_db),
+):
+    """Retry a specific pipeline stage. Returns 409 if upstream is running."""
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import get_upstream_blocking, reset_stage
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    try:
+        pipeline_stage = PipelineStage(stage)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Unknown stage: {stage}") from exc
+
+    stages = doc.pipeline_stages or {}
+
+    # Guard: reject if this stage itself is running
+    current = stages.get(stage, {}).get("status")
+    if current == "running":
+        return templates.TemplateResponse(
+            request,
+            "partials/_pipeline_stepper.html",
+            {"doc": doc, "retry_error": f"Stage '{stage}' is already running."},
+            status_code=409,
+        )
+
+    # Guard: reject if any upstream stage is running
+    blocking = get_upstream_blocking(pipeline_stage, stages)
+    if blocking:
+        return templates.TemplateResponse(
+            request,
+            "partials/_pipeline_stepper.html",
+            {
+                "doc": doc,
+                "retry_error": f"Cannot retry '{stage}' — upstream stage(s) running: {', '.join(blocking)}",
+            },
+            status_code=409,
+        )
+
+    # Reset stage (and dependents) to PENDING and dispatch the appropriate task
+    reset_stage(doc_id, pipeline_stage, db)
+    db.refresh(doc)
+
+    _dispatch_retry_task(doc, pipeline_stage, db)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/_pipeline_stepper.html",
+        {"doc": doc},
+    )
+
+
+def _dispatch_retry_task(doc: Document, stage, db) -> None:
+    from app.models.enums import PipelineStage
+
+    if stage in (PipelineStage.EXTRACT, PipelineStage.METADATA):
+        from app.tasks.document_processing import process_document_task
+
+        process_document_task.delay(doc.id)
+
+    elif stage == PipelineStage.BATCH_ANALYSIS:
+        if doc.ingest_batch_id:
+            from app.tasks.analyze_batch import analyze_batch_task
+
+            analyze_batch_task.delay(doc.ingest_batch_id)
+
+    elif stage == PipelineStage.ENRICH:
+        from app.tasks.enrich_document import enrich_document_task
+
+        enrich_document_task.delay(doc.id)
+
+    elif stage == PipelineStage.RELATIONSHIPS:
+        from app.tasks.detect_relationships import detect_relationships_task
+
+        detect_relationships_task.delay(doc.id)
+
+    elif stage == PipelineStage.CLAIMS:
+        from app.tasks.extract_claims import extract_claims_task
+
+        extract_claims_task.delay(doc.id)
+
+    elif stage == PipelineStage.EMBEDDINGS:
+        from app.tasks.generate_embedding import generate_embedding_task
+
+        generate_embedding_task.delay(doc.id)
+
+
 # ---------------------------------------------------------------------------
 # Margin pins — passage-anchored annotations.
 # ---------------------------------------------------------------------------

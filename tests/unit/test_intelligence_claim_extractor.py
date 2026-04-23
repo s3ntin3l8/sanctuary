@@ -10,7 +10,6 @@ from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
-    IngestStatus,
     OriginatorType,
     RelationshipConfidence,
     SignificanceTier,
@@ -24,7 +23,6 @@ def significant_doc(db_session, sample_case):
         content="Die Beklagte widerspricht der Klage. Sie bestreitet, an jenem Tag am Ort gewesen zu sein.",
         case_id=sample_case.id,
         significance_tier=SignificanceTier.SIGNIFICANT,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.OWN,
         ai_summary={
             "legal_significance": "Defense response",
@@ -284,7 +282,6 @@ def test_skips_administrative_tier(db_session, sample_case):
         content="Wir bestätigen den Eingang.",
         case_id=sample_case.id,
         significance_tier=SignificanceTier.ADMINISTRATIVE,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(doc)

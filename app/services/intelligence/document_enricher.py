@@ -152,7 +152,6 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
     except Exception as e:
         logger.warning(f"Doc {doc.id}: invalid ai_summary skipped: {e}")
 
-    doc.ai_summary_status = "generated"
     doc.ai_summary_created_at = datetime.now(UTC)
 
 
@@ -183,7 +182,6 @@ def enrich(doc_id: int) -> None:
             logger.info(f"Doc {doc_id} enriched successfully")
         except Exception as e:
             logger.error(f"Doc {doc_id} enrichment failed: {e}", exc_info=True)
-            doc.ai_summary_status = "failed"
             doc.ai_summary = {"error": str(e)}
 
         db.commit()

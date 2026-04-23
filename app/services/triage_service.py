@@ -73,6 +73,17 @@ class BundleView:
         return self.batch_id is None
 
     @property
+    def pipeline_summary(self) -> dict:
+        """Aggregate pipeline_state counts for bundle header display."""
+        from collections import Counter
+
+        counts = Counter(
+            (d.pipeline_state.value if d.pipeline_state else "pending")
+            for d in self.documents
+        )
+        return {"total": len(self.documents), **counts}
+
+    @property
     def parent_groups(self) -> list[list[tuple[int, Document]]]:
         """Group the bundle's documents by their parent-root subtree.
 
@@ -257,6 +268,14 @@ class TriageService:
             .order_by(IngestBatch.received_at.desc())
             .all()
         )
+
+    def get_bundle_by_batch_id(self, batch_id: int) -> BundleView | None:
+        """Return a BundleView for a specific batch_id, or None if not found."""
+        bundles = self.get_triage_bundles(limit=1000)
+        for b in bundles:
+            if b.batch_id == batch_id:
+                return b
+        return None
 
     def get_reactions(self, document_id: int) -> Sequence[UserReaction]:
         return self.reaction_repo.get_by_document(document_id)

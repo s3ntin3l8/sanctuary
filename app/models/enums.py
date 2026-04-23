@@ -30,11 +30,30 @@ class OriginatorType(enum.StrEnum):
     UNKNOWN = "unknown"  # Neutral — for unclassified docs
 
 
-class IngestStatus(enum.StrEnum):
+class PipelineStage(enum.StrEnum):
+    EXTRACT = "extract"
+    METADATA = "metadata"
+    BATCH_ANALYSIS = "batch_analysis"
+    ENRICH = "enrich"
+    RELATIONSHIPS = "relationships"
+    CLAIMS = "claims"
+    EMBEDDINGS = "embeddings"
+
+
+class StageStatus(enum.StrEnum):
     PENDING = "pending"
-    PROCESSING = "processing"
+    RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class PipelineState(enum.StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    PARTIAL = "partial"
 
 
 class CostCategory(enum.StrEnum):

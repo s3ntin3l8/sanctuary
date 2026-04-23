@@ -151,13 +151,8 @@ async def test_summarize_document_success(db_session, sample_document):
 
         updated_doc = await summarize_document(sample_document.id, db_session)
 
-        # Phase 1 sets status to "pending" (Phase 4 enricher writes "generated")
-        assert updated_doc.ai_summary_status == "pending"
         # Phase 1 does NOT set ai_summary (that's Phase 4's job)
-        assert (
-            updated_doc.ai_summary is None
-            or updated_doc.ai_summary_status != "generated"
-        )
+        assert updated_doc.ai_summary is None or "error" not in updated_doc.ai_summary
 
 
 @pytest.mark.asyncio
@@ -171,5 +166,5 @@ async def test_summarize_document_failure(db_session, sample_document):
         await summarize_document(sample_document.id, db_session)
         updated_doc = db_session.get(Document, sample_document.id)
 
-        assert updated_doc.ai_summary_status == "failed"
+        assert updated_doc.ai_summary is not None
         assert "Ollama Error" in updated_doc.ai_summary["error"]

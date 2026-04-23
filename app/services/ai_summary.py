@@ -276,11 +276,10 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
     if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
         return doc
 
-    if doc.ai_summary and doc.ai_summary_status == "generated":
+    if doc.ai_summary:
         cache.set(cache_key, doc, ttl=3600)
         return doc
 
-    doc.ai_summary_status = "pending"
     db.commit()
 
     try:
@@ -289,17 +288,14 @@ async def summarize_document(doc_id: int, db: Session) -> Document:
         # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
         # The 3-bullet ai_summary is now written by Phase 4 document_enricher
         enrich_document_with_ai(doc, summary_data, db)
-
-        doc.ai_summary_status = "pending"  # Phase 4 enricher will set to "generated"
     except Exception as e:
         logger.error(f"Failed to generate summary for doc {doc_id}: {e}", exc_info=True)
-        doc.ai_summary_status = "failed"
         doc.ai_summary = {"error": str(e)}
 
     db.commit()
     db.refresh(doc)
 
-    if doc.ai_summary_status == "generated":
+    if doc.ai_summary:
         cache.set(cache_key, doc, ttl=3600)
 
     return doc
@@ -406,7 +402,6 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
     if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
         return doc
 
-    doc.ai_summary_status = "pending"
     db.commit()
 
     try:
@@ -415,13 +410,10 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
         # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
         # The 3-bullet ai_summary is now written by Phase 4 document_enricher
         enrich_document_with_ai(doc, summary_data, db)
-
-        doc.ai_summary_status = "pending"  # Phase 4 enricher will set to "generated"
     except Exception as e:
         logger.error(
             f"Failed to generate summary for doc {doc_id} (sync): {e}", exc_info=True
         )
-        doc.ai_summary_status = "failed"
         doc.ai_summary = {"error": str(e)}
 
     db.commit()

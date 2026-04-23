@@ -16,6 +16,9 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
     Uses a single UPDATE ... WHERE analysis_queued_at IS NULL to prevent
     duplicate analyze_batch_task dispatch when multiple workers complete
     the last two docs near-simultaneously.
+
+    Readiness condition: every document in the batch has metadata stage
+    completed or failed (i.e. Phase 1 is done for all docs).
     """
     result = db.execute(
         text(
@@ -27,7 +30,8 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
               AND NOT EXISTS (
                 SELECT 1 FROM documents
                 WHERE ingest_batch_id = :batch_id
-                  AND ingest_status NOT IN ('COMPLETED', 'FAILED')
+                  AND json_extract(pipeline_stages, '$.metadata.status')
+                      NOT IN ('completed', 'failed')
               )
             """
         ),

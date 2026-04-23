@@ -8,7 +8,6 @@ from app.models.database import Document
 from app.models.enums import (
     DocumentRole,
     DocumentType,
-    IngestStatus,
     OriginatorType,
     SignificanceTier,
 )
@@ -21,7 +20,6 @@ def doc_with_content(db_session, sample_case):
         title="Test Ruling",
         content="Das Gericht ordnet an, dass die Klage abgewiesen wird.",
         case_id=sample_case.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
         role=DocumentRole.STANDALONE,
     )
@@ -67,7 +65,7 @@ def test_apply_enrichment_populates_fields(doc_with_content):
     assert (
         doc_with_content.ai_summary["financial_impact"] == "450.50 EUR court fee due."
     )
-    assert doc_with_content.ai_summary_status == "generated"
+    assert doc_with_content.ai_summary is not None
 
 
 @pytest.mark.unit
@@ -156,7 +154,7 @@ def test_invalid_cost_delta_direction_normalized(doc_with_content):
 
 @pytest.mark.unit
 def test_malformed_ai_response_sets_failed_status(db_session, doc_with_content):
-    """If enrich() catches an error, ai_summary_status must be 'failed' without crashing."""
+    """If enrich() catches an error, ai_summary must contain the error without crashing."""
     with (
         patch(
             "app.services.intelligence.document_enricher.SessionLocal",
@@ -174,5 +172,5 @@ def test_malformed_ai_response_sets_failed_status(db_session, doc_with_content):
 
     db_session.expire_all()
     doc = db_session.get(Document, doc_with_content.id)
-    assert doc.ai_summary_status == "failed"
+    assert doc.ai_summary is not None
     assert "Malformed JSON" in doc.ai_summary["error"]

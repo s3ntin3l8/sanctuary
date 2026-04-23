@@ -9,7 +9,6 @@ from app.models.enums import (
     DocumentRole,
     IngestBatchSourceType,
     IngestBatchStatus,
-    IngestStatus,
     OriginatorType,
 )
 from app.services.intelligence.batch_analyzer import _apply_batch_results
@@ -34,7 +33,6 @@ def batch_with_two_docs(db_session, sample_case):
         content="Im Auftrag des Gerichts übersende ich anliegend...",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     enclosure = Document(
@@ -42,7 +40,6 @@ def batch_with_two_docs(db_session, sample_case):
         content="Die Beklagte widerspricht der Klage...",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.UNKNOWN,
     )
     db_session.add(cover)
@@ -104,7 +101,6 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
         content="Das Urteil lautet...",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        ingest_status=IngestStatus.COMPLETED,
         originator_type=OriginatorType.COURT,
     )
     db_session.add(doc)

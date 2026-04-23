@@ -1,10 +1,9 @@
 import logging
 import os
-from datetime import UTC, datetime
 
-from app.core.async_utils import run_async
 from app.dependencies import get_db_session
-from app.models.database import Document, IngestStatus
+from app.models.database import Document
+from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -13,6 +12,8 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True, max_retries=3)
 def process_document_task(self, doc_id: int):
     """Process a document: Docling conversion, then trigger Phase 4 AI pipeline."""
+    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+
     db = get_db_session()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -20,34 +21,26 @@ def process_document_task(self, doc_id: int):
             logger.warning(f"Document {doc_id} not found")
             return {"status": "not_found", "doc_id": doc_id}
 
-        doc.ingest_status = IngestStatus.PROCESSING
-        doc.ingest_started_at = datetime.now(UTC)
-        db.commit()
-
         from app.services.ingestion import IngestionError, process_uploaded_document
 
+        mark_started(doc_id, PipelineStage.EXTRACT, db)
         try:
             process_uploaded_document(doc, db)
-            doc.ingest_status = IngestStatus.COMPLETED
-            doc.ingest_completed_at = datetime.now(UTC)
-            db.commit()
-            logger.info(f"Document {doc_id} processed successfully")
+            mark_completed(doc_id, PipelineStage.EXTRACT, db)
+            logger.info(f"Document {doc_id} extracted successfully")
         except IngestionError as e:
             db.rollback()
-            doc.ingest_status = IngestStatus.FAILED
-            doc.ingest_error = f"Ingestion error: {e.message}"
+            error_msg = f"Ingestion error: {e.message}"
             if e.detail:
-                doc.ingest_error += f" ({e.detail})"
-            doc.ingest_completed_at = datetime.now(UTC)
-            db.commit()
+                error_msg += f" ({e.detail})"
+            mark_failed(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
             logger.warning(f"Document {doc_id} ingestion failed: {e}")
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         except Exception as e:
             db.rollback()
-            doc.ingest_status = IngestStatus.FAILED
-            doc.ingest_error = f"System error: {str(e)}"
-            doc.ingest_completed_at = datetime.now(UTC)
-            db.commit()
+            mark_failed(
+                doc_id, PipelineStage.EXTRACT, db, error=f"System error: {str(e)}"
+            )
             logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)
 
             if self.request.retries < self.max_retries:
@@ -102,13 +95,10 @@ def process_document_task(self, doc_id: int):
 
             enrich_document_task.delay(doc_id)
 
-        # Embeddings
-        try:
-            from app.services.embeddings import generate_embedding
+        # Embeddings — now a real Celery task for proper stage tracking
+        from app.tasks.generate_embedding import generate_embedding_task
 
-            run_async(generate_embedding(doc_id))
-        except Exception as e:
-            logger.warning(f"Embedding failed for doc {doc_id}: {e}")
+        generate_embedding_task.delay(doc_id)
 
         return {"status": "success", "doc_id": doc_id}
     finally:
@@ -117,16 +107,22 @@ def process_document_task(self, doc_id: int):
 
 def _run_phase1_summary(doc_id: int) -> None:
     """Run Phase 1 metadata extraction (az_court, sender, received_date, originator_type)."""
-    try:
-        from app.services.ai_summary import _summarize_document_sync
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
 
-        db2 = get_db_session()
+    db2 = get_db_session()
+    try:
+        mark_started(doc_id, PipelineStage.METADATA, db2)
         try:
+            from app.services.ai_summary import _summarize_document_sync
+
             _summarize_document_sync(doc_id, db2)
-        finally:
-            db2.close()
-    except Exception as e:
-        logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+            mark_completed(doc_id, PipelineStage.METADATA, db2)
+        except Exception as e:
+            mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
+            logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+    finally:
+        db2.close()
 
 
 @celery_app.task

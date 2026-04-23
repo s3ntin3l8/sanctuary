@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.database import Case, Document
-from app.models.enums import CaseStatus, IngestStatus, ProceedingStatus
+from app.models.enums import CaseStatus, PipelineState, ProceedingStatus
 
 DORMANCY_THRESHOLD_DAYS = 90
 
@@ -124,7 +124,7 @@ def _get_dormancy_signals(db: Session) -> list[dict[str, Any]]:
 def _get_ingest_failure_signals(db: Session) -> list[dict[str, Any]]:
     signals = []
     failed_docs = (
-        db.query(Document).filter(Document.ingest_status == IngestStatus.FAILED).all()
+        db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED).all()
     )
     if failed_docs:
         signals.append(
@@ -132,7 +132,7 @@ def _get_ingest_failure_signals(db: Session) -> list[dict[str, Any]]:
                 "id": "ingest-failed",
                 "kind": "ingest_failed",
                 "severity": "warn",
-                "title": f"{len(failed_docs)} document{'s' if len(failed_docs) > 1 else ''} stuck in ingest_status=FAILED",
+                "title": f"{len(failed_docs)} document{'s' if len(failed_docs) > 1 else ''} with pipeline failures",
                 "detail": "Pipeline errors detected in triage queue.",
                 "action": "review",
                 "link": "/triage",
