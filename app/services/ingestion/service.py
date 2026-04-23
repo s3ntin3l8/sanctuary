@@ -9,8 +9,6 @@ from sqlalchemy.orm import Session
 from app.config import DATA_DIR
 from app.models.database import (
     Document,
-    Entity,
-    EntityType,
     OriginatorType,
 )
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
@@ -172,41 +170,6 @@ def extract_legal_categories(content: str) -> list[dict]:
             categories.append({"category": category.lower()})
 
     return categories
-
-
-def _extract_and_save_entities(db: Session, doc: Document, content: str) -> None:
-    """Extract and save entities from document content."""
-
-    if not doc.case_id or doc.case_id == "_TRIAGE":
-        return
-
-    text = content[:5000] if content else ""
-
-    email_pattern = r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"
-    import re
-
-    for match in re.finditer(email_pattern, text):
-        email = match.group(1).lower()
-        existing = (
-            db.query(Entity)
-            .filter(
-                Entity.case_id == doc.case_id,
-                Entity.name == email,
-                Entity.type == EntityType.PERSON,
-            )
-            .first()
-        )
-
-        if not existing:
-            entity = Entity(
-                case_id=doc.case_id,
-                type=EntityType.PERSON,
-                name=email,
-                source_document_id=doc.id,
-            )
-            db.add(entity)
-
-    db.flush()
 
 
 def process_uploaded_document(doc: Document, db: Session):

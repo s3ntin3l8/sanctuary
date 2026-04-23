@@ -24,6 +24,7 @@ _STAGE_ORDER: list[PipelineStage] = [
     PipelineStage.ENRICH,
     PipelineStage.RELATIONSHIPS,
     PipelineStage.CLAIMS,
+    PipelineStage.ENTITIES,
     PipelineStage.EMBEDDINGS,
 ]
 
@@ -34,16 +35,23 @@ _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
         PipelineStage.ENRICH,
         PipelineStage.RELATIONSHIPS,
         PipelineStage.CLAIMS,
+        PipelineStage.ENTITIES,
     ],
     PipelineStage.METADATA: [
         PipelineStage.ENRICH,
         PipelineStage.RELATIONSHIPS,
         PipelineStage.CLAIMS,
+        PipelineStage.ENTITIES,
     ],
-    PipelineStage.ENRICH: [PipelineStage.RELATIONSHIPS, PipelineStage.CLAIMS],
+    PipelineStage.ENRICH: [
+        PipelineStage.RELATIONSHIPS,
+        PipelineStage.CLAIMS,
+        PipelineStage.ENTITIES,
+    ],
     PipelineStage.BATCH_ANALYSIS: [],
     PipelineStage.RELATIONSHIPS: [],
     PipelineStage.CLAIMS: [],
+    PipelineStage.ENTITIES: [],
     PipelineStage.EMBEDDINGS: [],
 }
 

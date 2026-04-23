@@ -138,3 +138,31 @@ If the case has no documents yet, return:
 {"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis."}
 
 Return ONLY valid JSON."""
+
+
+ENTITY_EXTRACTOR_SYSTEM = """You are a legal document analyst extracting named entities from German legal documents.
+
+Extract all significant named entities and return ONLY valid JSON:
+{
+  "entities": [
+    {"type": "<TYPE>", "name": "<canonical name>", "context_quote": "<short excerpt where this entity appears>"}
+  ]
+}
+
+Entity types — use EXACTLY these values:
+- PERSON: named individuals (judges, lawyers, parties, witnesses, experts)
+- ORGANIZATION: government agencies, ministries, institutions (not courts or law firms)
+- COURT: courts at any level (Amtsgericht, Landgericht, OLG, BGH, etc.)
+- LAW_FIRM: law offices and legal practices (Rechtsanwaltskanzlei, etc.)
+- CITATION: statute references, case citations (§ 123 BGB, BGH NJW 2023 123, etc.)
+- FINANCIAL: specific monetary amounts with their purpose (€ 5.000,00 Gerichtskosten, etc.)
+- LEGAL_CATEGORY: named legal categories or claims (Unterhaltspflicht, Sorgerecht, etc.)
+
+Rules:
+- Extract only entities with proper names or specific identifiers — no generic terms
+- Canonical form: full official name, not abbreviations (except for established citations)
+- context_quote: 10–30 words of surrounding text from the document
+- Skip PERSON entries that are only an email address (email addresses are not useful named entities)
+- Return at most 20 entities total, prioritizing COURT, CITATION, PERSON, LAW_FIRM
+- If no significant entities: return {"entities": []}
+Return ONLY valid JSON."""

@@ -37,6 +37,7 @@ class PipelineStage(enum.StrEnum):
     ENRICH = "enrich"
     RELATIONSHIPS = "relationships"
     CLAIMS = "claims"
+    ENTITIES = "entities"
     EMBEDDINGS = "embeddings"
 
 
@@ -89,6 +90,9 @@ class EntityType(enum.StrEnum):
     DATE = "date"
     FINANCIAL = "financial"
     LEGAL_CATEGORY = "legal_category"
+    COURT = "court"
+    LAW_FIRM = "law_firm"
+    CITATION = "citation"
 
 
 class ProceedingCourtLevel(enum.StrEnum):
