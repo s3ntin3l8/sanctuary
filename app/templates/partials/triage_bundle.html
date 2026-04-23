@@ -123,6 +123,8 @@
                         {% set indent_class = 'pl-6' if depth == 1 else 'pl-12' if depth == 2 else 'pl-18' if depth > 2 else '' %}
                         <div id="triage-wrapper-{{ doc.id }}"
                              x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (third_party && '{{ doc_type }}' === 'third_party') || (unknown && '{{ doc_type }}' === 'unknown')"
+                             hx-on::before-request="if(event.detail.requestConfig?.verb==='delete') this._bg=this.closest('[id^=triage-bundle-group-]')"
+                             hx-on::after-settle="if(this._bg&&!this._bg.querySelector('[id^=triage-wrapper-]'))this._bg.remove()"
                              class="relative {{ indent_class }}">
                             {% if depth > 0 %}
                             <svg class="absolute top-0 w-4 h-full text-outline-variant/40"
