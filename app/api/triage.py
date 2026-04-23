@@ -481,6 +481,25 @@ async def reject_relationship(
 
 
 # -----------------------------------------------------------------------------
+# Card live-update endpoint (polled by self-disarming probe in triage_card.html)
+# -----------------------------------------------------------------------------
+
+
+@router.get("/triage/card/{doc_id}/live")
+async def triage_card_live(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return OOB card+footer+badge+case-chip for a single doc (polling refresh)."""
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        return HTMLResponse("", status_code=404)
+
+    triage_service = TriageService(db)
+    return HTMLResponse(_render_doc_targeted_oob(request, doc, triage_service, db))
+
+
 # -----------------------------------------------------------------------------
 # Bundle pipeline aggregate endpoint
 # -----------------------------------------------------------------------------
