@@ -1,7 +1,8 @@
 import logging
+import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,8 @@ from app.tasks.gmail_sync import run_gmail_backfill
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingest", tags=["ingestion"])
+
+OAUTH_STATE_COOKIE = "oauth_state"
 
 
 @router.post("/settings/update")
@@ -37,18 +40,31 @@ async def update_ingest_settings(
     return RedirectResponse(url="/settings/gmail", status_code=303)
 
 
-@router.get("/gmail/oauth/start")
-async def gmail_oauth_start():
+@router.get("/gmail/oauth_start")
+async def gmail_oauth_start(request: Request):
+    state = secrets.token_urlsafe(32)
+    request.session[OAUTH_STATE_COOKIE] = state
     flow = get_oauth_flow()
-    authorization_url, state = flow.authorization_url(
-        access_type="offline", include_granted_scopes="true"
+    authorization_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        state=state,
     )
-    # In a real app, save 'state' in session/secure cookie to prevent CSRF
     return RedirectResponse(url=authorization_url)
 
 
 @router.get("/gmail/oauth/callback")
-async def gmail_oauth_callback(code: str, db: Session = Depends(get_db)):
+async def gmail_oauth_callback(
+    request: Request,
+    code: str,
+    state: str | None = None,
+    db: Session = Depends(get_db),
+):
+    saved_state = request.session.pop(OAUTH_STATE_COOKIE, None)
+    if state != saved_state:
+        logger.warning("OAuth state mismatch: expected=%s got=%s", saved_state, state)
+        raise HTTPException(status_code=400, detail="OAuth state mismatch")
+
     flow = get_oauth_flow()
     flow.fetch_token(code=code)
     creds = flow.credentials
@@ -72,6 +88,5 @@ async def gmail_oauth_callback(code: str, db: Session = Depends(get_db)):
 
 @router.post("/gmail/backfill")
 async def gmail_backfill(days: int = Form(90)):
-    # Trigger Celery task
     run_gmail_backfill.delay("single_user", days=days)
     return {"status": "Backfill task enqueued"}

@@ -1,5 +1,42 @@
 import email
+import email.utils
+import re
+from datetime import datetime
 from email.policy import default
+
+
+def parse_email_date(date_str: str) -> datetime | None:
+    """Parse RFC 5322 date string to datetime object."""
+    if not date_str:
+        return None
+    try:
+        return email.utils.parsedate_to_datetime(date_str)
+    except Exception:
+        pass
+    patterns = [
+        r"%d %b %Y %H:%M:%S",
+        r"%d %B %Y %H:%M:%S",
+        r"%Y-%m-%d %H:%M:%S",
+        r"%Y-%m-%d",
+    ]
+    date_str = date_str.strip()
+    date_str = re.sub(r"[\+\-]\d{4}\s*$", "", date_str)
+    date_str = re.sub(r"\s+\([^)]+\)$", "", date_str)
+    for pattern in patterns:
+        try:
+            return datetime.strptime(date_str, pattern)
+        except ValueError:
+            continue
+    match = re.search(r"(\d{1,2})[\.\-](\d{1,2})[\.\-](\d{2,4})", date_str)
+    if match:
+        try:
+            day, month, year = match.groups()
+            if len(year) == 2:
+                year = "20" + year if int(year) < 50 else "19" + year
+            return datetime(int(year), int(month), int(day))
+        except ValueError:
+            pass
+    return None
 
 
 def parse_rfc822(raw_bytes: bytes) -> dict:
@@ -47,6 +84,10 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         "subject": msg.get("Subject", ""),
         "message_id": msg.get("Message-ID", ""),
         "date": msg.get("Date", ""),
+        "received_date": parse_email_date(msg.get("Date", "")),
         "body": body,
         "attachments": attachments,
+        "reply_to": msg.get("Reply-To", ""),
+        "in_reply_to": msg.get("In-Reply-To", ""),
+        "references": msg.get("References", ""),
     }

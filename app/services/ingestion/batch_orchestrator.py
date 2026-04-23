@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import threading
+import unicodedata
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -14,6 +15,16 @@ from app.services.ingestion.email_parser import parse_rfc822
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize filename while preserving Unicode characters (e.g. German umlauts)."""
+    if not name:
+        return "unnamed"
+    name = unicodedata.normalize("NFC", name)
+    safe_chars = "-_.() "
+    result = "".join(c if c.isalnum() or c in safe_chars else "_" for c in name)
+    return result.strip() or "unnamed"
 
 
 def _dispatch(task_name: str, doc_id: int) -> None:
@@ -52,13 +63,46 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
-            # Orphaned batch (docs were deleted) — remove it and re-ingest
             logger.info(
                 "Email batch #%d has 0 docs (orphaned) — deleting and re-ingesting",
                 existing.id,
             )
             db.delete(existing)
             db.flush()
+    else:
+        fallback_hash = hashlib.sha256(
+            (
+                parsed.get("body", "")
+                + parsed.get("sender", "")
+                + parsed.get("subject", "")
+            ).encode()
+        ).hexdigest()
+        existing = (
+            db.query(IngestBatch)
+            .filter(
+                IngestBatch.source_type == IngestBatchSourceType.EMAIL,
+                IngestBatch.source_hash == fallback_hash,
+            )
+            .first()
+        )
+        if existing:
+            doc_count = (
+                db.query(Document)
+                .filter(Document.ingest_batch_id == existing.id)
+                .count()
+            )
+            if doc_count > 0:
+                logger.info(
+                    "Email duplicate (fallback hash): already in batch #%d (%d docs) — skipping",
+                    existing.id,
+                    doc_count,
+                )
+                return existing
+            db.delete(existing)
+            db.flush()
+            source_hash = fallback_hash
+        else:
+            source_hash = fallback_hash if not msg_id else None
 
     batch = batch_repo.create_batch(
         source_type=source_type,
@@ -66,6 +110,8 @@ def ingest_raw_email(
         sender_email=sender[:255] if sender != "unknown" else None,
     )
     batch.message_id = msg_id
+    if source_hash:
+        batch.source_hash = source_hash
     db.flush()
 
     logger.info(
@@ -90,6 +136,14 @@ def ingest_raw_email(
         with open(body_path, "w") as f:
             f.write(parsed["body"])
 
+        received_date = parsed.get("received_date")
+        threading_meta = None
+        if parsed.get("in_reply_to") or parsed.get("references"):
+            threading_meta = {
+                "in_reply_to": parsed.get("in_reply_to"),
+                "references": parsed.get("references"),
+            }
+
         doc = Document(
             title=subject,
             file_path=str(body_path),
@@ -97,6 +151,8 @@ def ingest_raw_email(
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
             sender=parsed["sender"] or None,
+            received_date=received_date,
+            meta={"threading": threading_meta} if threading_meta else None,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
@@ -128,7 +184,7 @@ def ingest_raw_email(
             docs_to_process.append(existing_doc)
             continue
 
-        safe_name = "".join(c for c in att["filename"] if c.isalnum() or c in ".-_")
+        safe_name = _sanitize_filename(att["filename"])
         att_path = case_dir / f"{batch.id}_{safe_name}"
         with open(att_path, "wb") as f:
             f.write(att["content"])
