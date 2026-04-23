@@ -172,6 +172,10 @@ def _boundary_heuristic_score(
 
 
 async def _ai_cut_judgment(prev_tail: str, curr_head: str) -> dict:
+    # Does not use call_json_ai: this runs as async tasks via asyncio.gather for
+    # parallel boundary detection, uses non-streaming with a tight 30s timeout,
+    # and silently falls back to "no cut" on failure — different semantics from
+    # the sequential intelligence pipeline helpers.
     prompt = (
         f"Previous page last {_TEXT_TAIL_CHARS} chars:\n{prev_tail}\n\n"
         f"Current page first {_TEXT_HEAD_CHARS} chars:\n{curr_head}"
