@@ -14,8 +14,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 continue
             content_disposition = str(part.get("Content-Disposition", ""))
             filename = part.get_filename()
-            is_attachment = "attachment" in content_disposition or (
-                filename and part.get_content_maintype() not in ("text", "multipart")
+            content_id = part.get("Content-ID", "")
+            # Parts with a Content-ID are inline-embedded (logos, signatures) — skip.
+            is_attachment = not content_id and (
+                "attachment" in content_disposition
+                or (
+                    filename
+                    and part.get_content_maintype() not in ("text", "multipart")
+                )
             )
             if is_attachment:
                 attachments.append(

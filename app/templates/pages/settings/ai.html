@@ -129,24 +129,20 @@
         </form>
 
         <div class="border-t border-outline-variant/10 pt-4 space-y-3">
-            <p class="text-xs text-on-surface-variant leading-relaxed">
-                Current index dim: <span class="font-mono font-bold text-on-surface">{{ cfg.embed_dim }}</span>.
-                Change the dim below and rebuild when switching to a different embedding model.
-                <span class="italic">Rebuilding drops all existing vectors.</span>
-            </p>
-
             <form hx-post="/api/settings/ai/rebuild-index"
                   hx-target="#rebuild-result"
                   hx-swap="innerHTML"
                   class="space-y-3">
-                <div class="flex items-end gap-4">
+                <div class="flex items-start gap-4">
                     <div class="space-y-2">
                         <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Dim</label>
+                        <p class="text-[10px] text-on-surface-variant/60 italic">Current: {{ cfg.embed_dim }}. Rebuild when switching models.</p>
                         <input type="number" name="embed_dim" value="{{ cfg.embed_dim }}" min="64" max="4096"
                                class="bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface font-mono w-28 focus:outline-none focus:border-primary/50 transition-colors">
                     </div>
                     <div class="flex-1 space-y-2">
                         <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Model</label>
+                        <p class="text-[10px] text-on-surface-variant/60 italic">Dropping all existing vectors.</p>
                         <input type="text" name="embed_model" value="{{ cfg.embed_model }}"
                                class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
                     </div>

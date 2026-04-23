@@ -86,9 +86,6 @@ class DocumentService:
         self.db.query(UserReaction).filter(UserReaction.document_id == doc_id).delete(
             synchronize_session=False
         )
-        self.db.query(ActionItem).filter(ActionItem.document_id == doc_id).delete(
-            synchronize_session=False
-        )
         self.db.query(DocumentPin).filter(DocumentPin.document_id == doc_id).delete(
             synchronize_session=False
         )
@@ -107,6 +104,9 @@ class DocumentService:
         )
 
         # Nullable FKs: null out rather than delete the parent record.
+        self.db.query(ActionItem).filter(
+            ActionItem.source_document_id == doc_id
+        ).update({"source_document_id": None}, synchronize_session=False)
         self.db.query(Claim).filter(Claim.source_document_id == doc_id).update(
             {"source_document_id": None}, synchronize_session=False
         )

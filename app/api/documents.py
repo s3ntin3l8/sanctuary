@@ -1,8 +1,9 @@
 import logging
 import os
+import threading
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
@@ -55,7 +56,6 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/upload")
 async def upload_document(
     request: Request,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     form = await request.form()
@@ -145,7 +145,7 @@ async def upload_document(
                 except Exception as e:
                     logger.warning(f"Celery task dispatch failed for doc {doc_id}: {e}")
 
-            background_tasks.add_task(_dispatch)
+            threading.Thread(target=_dispatch, daemon=True).start()
 
             results.append(
                 f'<div class="p-2 text-xs text-green-400">✓ {file.filename} queued for processing</div>'
@@ -423,7 +423,14 @@ async def retry_pipeline_stage(
     reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
-    _dispatch_retry_task(doc, pipeline_stage, db)
+    # Capture primitives — db session is request-scoped and must not be passed to a thread
+    _doc_id = doc.id
+    _batch_id = doc.ingest_batch_id
+    threading.Thread(
+        target=_dispatch_retry_task,
+        args=(_doc_id, _batch_id, pipeline_stage),
+        daemon=True,
+    ).start()
 
     return templates.TemplateResponse(
         request,
@@ -432,39 +439,39 @@ async def retry_pipeline_stage(
     )
 
 
-def _dispatch_retry_task(doc: Document, stage, db) -> None:
+def _dispatch_retry_task(doc_id: int, batch_id, stage) -> None:
     from app.models.enums import PipelineStage
 
     if stage in (PipelineStage.EXTRACT, PipelineStage.METADATA):
         from app.tasks.document_processing import process_document_task
 
-        process_document_task.delay(doc.id)
+        process_document_task.delay(doc_id)
 
     elif stage == PipelineStage.BATCH_ANALYSIS:
-        if doc.ingest_batch_id:
+        if batch_id:
             from app.tasks.analyze_batch import analyze_batch_task
 
-            analyze_batch_task.delay(doc.ingest_batch_id)
+            analyze_batch_task.delay(batch_id)
 
     elif stage == PipelineStage.ENRICH:
         from app.tasks.enrich_document import enrich_document_task
 
-        enrich_document_task.delay(doc.id)
+        enrich_document_task.delay(doc_id)
 
     elif stage == PipelineStage.RELATIONSHIPS:
         from app.tasks.detect_relationships import detect_relationships_task
 
-        detect_relationships_task.delay(doc.id)
+        detect_relationships_task.delay(doc_id)
 
     elif stage == PipelineStage.CLAIMS:
         from app.tasks.extract_claims import extract_claims_task
 
-        extract_claims_task.delay(doc.id)
+        extract_claims_task.delay(doc_id)
 
     elif stage == PipelineStage.EMBEDDINGS:
         from app.tasks.generate_embedding import generate_embedding_task
 
-        generate_embedding_task.delay(doc.id)
+        generate_embedding_task.delay(doc_id)
 
 
 # ---------------------------------------------------------------------------

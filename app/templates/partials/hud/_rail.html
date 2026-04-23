@@ -13,7 +13,10 @@
 {% include "partials/hud/_review_actions.html" %}
 {% endif %}
 
-{# 3. Metadata form — review mode only (triage embedded context) #}
+{# 3. Pipeline status #}
+{% include "partials/hud/_pipeline.html" %}
+
+{# 4. Metadata form — review mode only (triage embedded context) #}
 {% if mode == 'review' %}
 {% include "partials/triage_metadata_form.html" %}
 {% endif %}

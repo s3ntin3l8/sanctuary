@@ -1,0 +1,107 @@
+{# Pipeline section — collapsible stepper in the HUD right rail.
+   Required: doc (Document with pipeline_state + pipeline_stages)
+#}
+{% from "partials/_pipeline_status.html" import pipeline_status_pill %}
+{% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+
+<div x-data="{ open: {{ 'true' if state in ('running', 'failed') else 'false' }} }"
+     class="border-b border-outline-variant/10">
+
+  {# Section header — always visible, click to toggle #}
+  <button @click="open = !open"
+          class="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-surface-container-high/50 transition-colors">
+    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex-1">Pipeline</span>
+    {{ pipeline_status_pill(doc) }}
+    <span class="material-symbols-outlined text-sm text-on-surface-variant/50 shrink-0"
+          x-text="open ? 'expand_more' : 'chevron_right'"></span>
+  </button>
+
+  <div x-show="open" x-cloak class="px-4 pb-3">
+    {% set stages_data = doc.pipeline_stages or {} %}
+    {% set stage_defs = [
+      ('extract',        'file_upload',              'Extract'),
+      ('metadata',       'description',              'Metadata'),
+      ('batch_analysis', 'batch_predict',            'Batch Analysis'),
+      ('enrich',         'auto_fix_high',            'Enrich'),
+      ('relationships',  'account_tree',             'Relationships'),
+      ('claims',         'format_list_bulleted',     'Claims'),
+      ('embeddings',     'workspaces',               'Embeddings'),
+    ] %}
+
+    <div id="pipeline-stepper-{{ doc.id }}"
+         {% if state in ('pending', 'running') %}
+         hx-get="/document/{{ doc.id }}/pipeline?view=stepper"
+         hx-trigger="every 4s"
+         hx-swap="outerHTML"
+         {% endif %}
+         class="space-y-0.5 py-1">
+
+      {% for stage_key, stage_icon, stage_label in stage_defs %}
+      {% set s = stages_data.get(stage_key, {}) %}
+      {% set s_status = s.get('status', 'pending') %}
+
+      {# Row background: amber tint for running, red tint for failed #}
+      {% if s_status == 'running' %}
+      {% set row_bg = 'bg-tertiary/8 rounded-md' %}
+      {% elif s_status == 'failed' %}
+      {% set row_bg = 'bg-error/8 rounded-md' %}
+      {% else %}
+      {% set row_bg = '' %}
+      {% endif %}
+
+      <div class="flex items-center gap-2 text-[10px] min-w-0 px-1 py-1 {{ row_bg }} transition-colors">
+
+        {# State icon #}
+        {% if s_status == 'completed' %}
+        <span class="material-symbols-outlined text-[13px] text-originator-own shrink-0">check_circle</span>
+        {% elif s_status == 'failed' %}
+        <span class="material-symbols-outlined text-[13px] text-error shrink-0">error_outline</span>
+        {% elif s_status == 'running' %}
+        <span class="material-symbols-outlined text-[13px] text-tertiary shrink-0 animate-spin" style="animation-duration:1.4s">autorenew</span>
+        {% elif s_status == 'skipped' %}
+        <span class="material-symbols-outlined text-[13px] text-on-surface-variant/30 shrink-0">remove_circle</span>
+        {% else %}
+        <span class="material-symbols-outlined text-[13px] text-on-surface-variant/20 shrink-0">radio_button_unchecked</span>
+        {% endif %}
+
+        {# Stage icon + label #}
+        <span class="material-symbols-outlined text-[11px] text-on-surface-variant/40 shrink-0">{{ stage_icon }}</span>
+        <span class="font-medium w-[88px] shrink-0
+                     {{ 'text-tertiary' if s_status == 'running' else 'text-error' if s_status == 'failed' else 'text-on-surface-variant/70' }}">
+          {{ stage_label }}
+        </span>
+
+        {# Detail text #}
+        <span class="flex-1 min-w-0 truncate">
+          {% if s_status == 'running' %}
+          <span class="text-tertiary/70 font-medium text-[9px] uppercase tracking-wider animate-pulse">processing</span>
+          {% elif s_status == 'completed' and s.get('completed_at') %}
+          <span class="text-on-surface-variant/40 font-mono">{{ s['completed_at'][:16].replace('T', ' ') }}</span>
+          {% elif s_status == 'failed' %}
+          <span class="text-error/80 font-medium" title="{{ s.get('error', '') }}">{{ (s.get('error', 'error'))[:36] }}</span>
+          {% elif s_status == 'skipped' %}
+          <span class="text-on-surface-variant/40 italic">{{ s.get('reason', 'skipped') }}</span>
+          {% endif %}
+        </span>
+
+        {# Retry button — hidden for running/skipped; spins its icon while the HTMX request is in-flight #}
+        {% if s_status not in ('running', 'skipped') %}
+        <button class="shrink-0 p-0.5 rounded transition-colors
+                       text-on-surface-variant/30 hover:text-on-surface-variant hover:bg-surface-container-high
+                       [&.htmx-request]:text-tertiary [&.htmx-request]:bg-tertiary/10
+                       [&.htmx-request>span]:animate-spin"
+                title="Retry {{ stage_label }}"
+                hx-post="/document/{{ doc.id }}/pipeline/{{ stage_key }}/retry"
+                hx-target="#pipeline-stepper-{{ doc.id }}"
+                hx-swap="outerHTML"
+                hx-disabled-elt="this">
+          <span class="material-symbols-outlined text-[12px]">refresh</span>
+        </button>
+        {% else %}
+        <span class="shrink-0 w-[20px]"></span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>

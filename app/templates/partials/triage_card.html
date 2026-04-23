@@ -44,22 +44,19 @@
                         title="Delete document">
                     <span class="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-error">delete</span>
                 </button>
-                <template x-if="confirmDelete">
-                    <span class="flex items-center gap-1">
-                        <button hx-delete="/document/{{ doc.id }}"
-                                hx-target="#triage-card-{{ doc.id }}"
-                                hx-swap="outerHTML swap:150ms"
-                                hx-on::after-request="htmx.ajax('GET', '/triage', {target: '#triage-feed', swap: 'outerHTML'})"
-                                class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
-                                style="background:var(--color-error); color:var(--color-on-error);">
-                            Delete
-                        </button>
-                        <button @click="confirmDelete = false"
-                                class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant">
-                            Cancel
-                        </button>
-                    </span>
-                </template>
+                <span x-show="confirmDelete" class="flex items-center gap-1">
+                    <button hx-delete="/document/{{ doc.id }}"
+                            hx-target="#triage-wrapper-{{ doc.id }}"
+                            hx-swap="delete"
+                            class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                            style="background:var(--color-error); color:var(--color-on-error);">
+                        Delete
+                    </button>
+                    <button @click="confirmDelete = false"
+                            class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant">
+                        Cancel
+                    </button>
+                </span>
             </div>
         </div>
     </div>
