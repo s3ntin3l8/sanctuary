@@ -13,7 +13,8 @@ from app.models.database import (
 
 config = context.config
 
-if config.config_file_name is not None:
+# Only configure logging if we are running standalone (not via the app)
+if config.config_file_name is not None and not os.getenv("SANCTUARY_APP"):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
