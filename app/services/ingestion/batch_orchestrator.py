@@ -47,6 +47,7 @@ def ingest_raw_email(
 
     batch_repo = IngestBatchRepository(db)
 
+    source_hash = None
     if msg_id:
         existing = batch_repo.get_by_message_id(msg_id)
         if existing:

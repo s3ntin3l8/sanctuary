@@ -429,7 +429,13 @@ async def ingest_file(
         content_hash = sha256.hexdigest()
 
         magic_ext = validate_file_magic(file_path)
-        if magic_ext and magic_ext != ext:
+        # docx/pptx/xlsx are ZIP-based — magic returns ".zip" for all of them, which is correct
+        _zip_based = {".docx", ".pptx", ".xlsx"}
+        if (
+            magic_ext
+            and magic_ext != ext
+            and not (magic_ext == ".zip" and ext in _zip_based)
+        ):
             os.remove(file_path)
             raise HTTPException(
                 status_code=400,
