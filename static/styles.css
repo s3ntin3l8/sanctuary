@@ -3934,6 +3934,13 @@
       }
     }
   }
+  .group-hover\:bg-surface-low {
+    &:is(:where(.group):hover *) {
+      @media (hover: hover) {
+        background-color: var(--color-surface-low);
+      }
+    }
+  }
   .group-hover\:text-amber-600 {
     &:is(:where(.group):hover *) {
       @media (hover: hover) {

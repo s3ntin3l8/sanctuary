@@ -14,7 +14,7 @@
 
     <div class="space-y-0">
         {% for signal in signals %}
-        <div class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group"
+        <a href="{{ signal.link }}" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group no-underline"
              data-panel-item="signals" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'signals'; focusedIdx = {{ loop.index0 }}"
              :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === 'signals' && focusedIdx === {{ loop.index0 }} }">
@@ -33,12 +33,12 @@
                     {{ signal.detail }}
                 </div>
             </div>
-            <a href="{{ signal.link }}" class="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded transition-colors ml-2
-                        {% if signal.severity == 'warn' %}bg-primary text-on-primary hover:bg-primary/90
-                        {% else %}border border-outline-variant/30 text-primary hover:bg-surface-low{% endif %}">
+            <span class="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded transition-colors ml-2
+                        {% if signal.severity == 'warn' %}bg-primary text-on-primary group-hover:bg-primary/90
+                        {% else %}border border-outline-variant/30 text-primary group-hover:bg-surface-low{% endif %}">
                 {{ signal.action }} <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
-            </a>
-        </div>
+            </span>
+        </a>
         {% endfor %}
     </div>
 </section>
