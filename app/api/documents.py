@@ -209,14 +209,56 @@ async def bulk_delete_documents(request: Request, db: Session = Depends(get_db))
 
 
 @router.delete("/document/{doc_id}")
-async def delete_document(doc_id: int, db: Session = Depends(get_db)):
+async def delete_document(
+    request: Request,
+    doc_id: int,
+    context: str | None = None,
+    db: Session = Depends(get_db),
+):
     """Delete a document and its associated file."""
     from app.services.document_service import DocumentService
 
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    bundle_key = None
+    if context == "triage":
+        if doc.ingest_batch_id:
+            bundle_key = f"batch-{doc.ingest_batch_id}"
+        else:
+            bundle_key = f"loose-{doc.id}"
+
     doc_service = DocumentService(db)
-    if doc_service.delete_document(doc_id):
-        return HTMLResponse("", status_code=200)
-    raise HTTPException(status_code=404, detail="Document not found")
+    if not doc_service.delete_document(doc_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if context == "triage" and bundle_key:
+        from app.api.triage import _render_bundle_group_oob, _render_triage_feed_oob
+        from app.services.triage_service import TriageService
+
+        triage_service = TriageService(db)
+        bundles = triage_service.get_triage_bundles()
+
+        if not bundles:
+            # Entire queue is now empty — swap the full feed to show empty state message.
+            return HTMLResponse(_render_triage_feed_oob(request, triage_service, db))
+
+        bundle = next((b for b in bundles if b.key == bundle_key), None)
+
+        if bundle:
+            # Bundle still has documents — return the updated bundle group OOB.
+            # This updates doc count, badge, and footer in one shot.
+            return HTMLResponse(
+                _render_bundle_group_oob(request, bundle, triage_service)
+            )
+        else:
+            # This bundle is now empty, but others remain — delete the group from DOM.
+            return HTMLResponse(
+                f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
+            )
+
+    return HTMLResponse("", status_code=200)
 
 
 @router.get("/document/{doc_id}")

@@ -25,6 +25,29 @@ TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 @pytest.fixture(scope="session")
 def test_engine():
     engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+    # Create virtual tables manually as Base.metadata.create_all doesn't support them
+    from sqlalchemy import event as sa_event
+    from sqlalchemy import text
+
+    def _load_extensions(dbapi_conn, _):
+        try:
+            import sqlite_vec
+
+            dbapi_conn.enable_load_extension(True)
+            sqlite_vec.load(dbapi_conn)
+            dbapi_conn.enable_load_extension(False)
+        except Exception:
+            pass
+
+    sa_event.listen(engine, "connect", _load_extensions)
+
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS document_vectors USING vec0(document_id INTEGER PRIMARY KEY, embedding float[768])"
+            )
+        )
+        conn.commit()
     Base.metadata.create_all(bind=engine)
     yield engine
     if os.path.exists(TEST_DB_PATH):
