@@ -21,6 +21,7 @@ celery_app = Celery(
         "app.tasks.scan_ingest",
         "app.tasks.prepare_slicing",
         "app.tasks.generate_case_brief",
+        "app.tasks.maintenance",
     ],
 )
 
@@ -38,6 +39,10 @@ celery_app.conf.beat_schedule = {
     "scan-folder-polling": {
         "task": "app.tasks.scan_ingest.scan_folder_tick_task",
         "schedule": SCAN_POLL_INTERVAL_SECONDS,
+    },
+    "prune-ai-debug-logs-daily": {
+        "task": "app.tasks.maintenance.prune_ai_debug_logs_task",
+        "schedule": 86400.0,  # daily
     },
 }
 

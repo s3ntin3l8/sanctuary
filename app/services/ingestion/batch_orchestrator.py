@@ -9,11 +9,45 @@ from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus, PipelineState
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
 
 logger = logging.getLogger(__name__)
+
+
+def close_batch_if_complete(batch_id: int, db: Session) -> None:
+    """Mark an IngestBatch COMPLETED when every sibling doc has reached a terminal pipeline state.
+
+    Terminal document states are COMPLETED, FAILED, and PARTIAL (no more tasks will fire).
+    This is idempotent: if the batch is already in a terminal status it exits immediately.
+    Call after any per-document pipeline stage that might be the last to complete.
+    """
+    batch = db.get(IngestBatch, batch_id)
+    if batch is None:
+        return
+    # Already closed — nothing to do.
+    if batch.status == IngestBatchStatus.COMPLETED:
+        return
+
+    terminal_states = {
+        PipelineState.COMPLETED.value,
+        PipelineState.FAILED.value,
+        PipelineState.PARTIAL.value,
+    }
+    docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+    if not docs:
+        return
+
+    all_done = all(
+        (d.pipeline_state.value if d.pipeline_state else PipelineState.PENDING.value)
+        in terminal_states
+        for d in docs
+    )
+    if all_done:
+        batch.status = IngestBatchStatus.COMPLETED
+        db.commit()
+        logger.info("Batch #%d: all docs terminal — marked COMPLETED", batch_id)
 
 
 def _sanitize_filename(name: str) -> str:
@@ -81,13 +115,9 @@ def ingest_raw_email(
             db.delete(existing)
             db.flush()
     else:
-        fallback_hash = hashlib.sha256(
-            (
-                parsed.get("body", "")
-                + parsed.get("sender", "")
-                + parsed.get("subject", "")
-            ).encode()
-        ).hexdigest()
+        # Hash the raw email bytes directly — avoids collisions from emails with the
+        # same sender/subject but empty bodies (T3.11).
+        fallback_hash = hashlib.sha256(raw_bytes).hexdigest()
         existing = (
             db.query(IngestBatch)
             .filter(
@@ -135,6 +165,7 @@ def ingest_raw_email(
 
     case_dir = DATA_DIR / "_TRIAGE"
     case_dir.mkdir(parents=True, exist_ok=True)
+    # Attachment paths written here are immutable — case assignment never moves files.
 
     docs_to_process = []
     has_attachments = bool(parsed["attachments"])

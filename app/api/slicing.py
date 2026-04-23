@@ -77,7 +77,6 @@ async def slicing_confirm(
     db: Session = Depends(get_db),
 ):
     from app.services.ingestion.cover_letter_wiring import wire_cover_letter
-    from app.tasks.celery_app import celery_app
 
     batch = _get_batch(batch_id, db)
 
@@ -163,10 +162,10 @@ async def slicing_confirm(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Slicing failed: {exc}") from exc
 
+    from app.tasks.document_processing import process_document_task
+
     for doc in docs_to_process:
-        celery_app.send_task(
-            "app.tasks.document_processing.process_document_task", args=[doc.id]
-        )
+        process_document_task.delay(doc.id)
 
     return RedirectResponse("/triage", status_code=303)
 
@@ -174,8 +173,6 @@ async def slicing_confirm(
 @router.post("/{batch_id}/retry")
 async def slicing_retry(batch_id: int, db: Session = Depends(get_db)):
     """Re-enqueue prepare_slicing_task for a failed batch."""
-    from app.tasks.celery_app import celery_app
-
     batch = _get_batch(batch_id, db)
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
         raise HTTPException(status_code=409, detail="Batch is not awaiting slicing")
@@ -185,7 +182,7 @@ async def slicing_retry(batch_id: int, db: Session = Depends(get_db)):
     batch.meta = meta
     db.commit()
 
-    celery_app.send_task(
-        "app.tasks.prepare_slicing.prepare_slicing_task", args=[batch_id]
-    )
+    from app.tasks.prepare_slicing import prepare_slicing_task
+
+    prepare_slicing_task.delay(batch_id)
     return RedirectResponse(f"/ingest/slice/{batch_id}", status_code=303)

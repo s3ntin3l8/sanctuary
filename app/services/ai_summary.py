@@ -85,8 +85,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 new_conf[key] = val
         doc.extraction_confidence = new_conf
 
-    # 3. Auto-Triage: match by Proceeding.az_court (per-court Aktenzeichen),
-    # fallback to internal_id against Case.id.
+    # 3. Auto-Triage: two distinct signals, tried in order:
+    #   - az_court  → matches Proceeding.az_court (per-court Aktenzeichen, context identifier)
+    #   - internal_id → matches Case.id (internal primary identity per CLAUDE.md)
     az_court = summary_data.get("az_court")
     internal_id = summary_data.get("internal_id")
 

@@ -179,7 +179,9 @@ def _update_stage(
     import json
 
     row = db.execute(
-        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+        text(
+            "SELECT pipeline_stages, ingest_batch_id FROM documents WHERE id = :doc_id"
+        ),
         {"doc_id": doc_id},
     ).fetchone()
 
@@ -188,6 +190,7 @@ def _update_stage(
         return
 
     stages: dict = json.loads(row[0]) if row[0] else {}
+    batch_id: int | None = row[1]
     stage_entry = stages.setdefault(stage.value, {})
     stage_entry["status"] = status.value
     for key, val in extra_sets.items():
@@ -205,3 +208,15 @@ def _update_stage(
         {"stages": json.dumps(stages), "state": overall.value, "doc_id": doc_id},
     )
     db.commit()
+
+    # After any stage update, check if the doc's batch can now be closed.
+    # Whichever task happens to be last for a given doc triggers this; the function
+    # is idempotent so concurrent calls from sibling docs are safe.
+    if batch_id and overall in (
+        PipelineState.COMPLETED,
+        PipelineState.FAILED,
+        PipelineState.PARTIAL,
+    ):
+        from app.services.ingestion.batch_orchestrator import close_batch_if_complete
+
+        close_batch_if_complete(batch_id, db)
