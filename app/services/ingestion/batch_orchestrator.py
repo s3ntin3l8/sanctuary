@@ -39,16 +39,18 @@ def ingest_raw_email(
     case_dir.mkdir(parents=True, exist_ok=True)
 
     docs_to_process = []
+    has_attachments = bool(parsed["attachments"])
 
-    # Save body
-    if parsed["body"].strip():
+    # Create a body document only when the email itself is the content (no attachments).
+    # With attachments the body is a transport cover note; metadata lives on the batch.
+    if parsed["body"].strip() and not has_attachments:
         body_hash = hashlib.sha256(parsed["body"].encode()).hexdigest()
         body_path = case_dir / f"email_body_{batch.id}.txt"
         with open(body_path, "w") as f:
             f.write(parsed["body"])
 
         doc = Document(
-            title="Email Body",
+            title=parsed["subject"] or "Email",
             file_path=str(body_path),
             content_hash=body_hash,
             case_id="_TRIAGE",

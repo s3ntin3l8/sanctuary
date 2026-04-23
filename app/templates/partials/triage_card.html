@@ -38,6 +38,29 @@
             {% endif %}
             {% if doc.significance_tier %}{{ significance_indicator(doc.significance_tier) }}{% endif %}
             <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap ml-1">{{ (doc.received_date or doc.created_at).strftime('%Y-%m-%d') }}</span>
+            <div class="flex items-center gap-1" x-data="{ confirmDelete: false }" @click.stop>
+                <button x-show="!confirmDelete" @click="confirmDelete = true"
+                        class="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"
+                        title="Delete document">
+                    <span class="material-symbols-outlined text-[14px] text-on-surface-variant hover:text-error">delete</span>
+                </button>
+                <template x-if="confirmDelete">
+                    <span class="flex items-center gap-1">
+                        <button hx-delete="/document/{{ doc.id }}"
+                                hx-target="#triage-card-{{ doc.id }}"
+                                hx-swap="outerHTML swap:150ms"
+                                hx-on::after-request="htmx.ajax('GET', '/triage', {target: '#triage-feed', swap: 'outerHTML'})"
+                                class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                                style="background:var(--color-error); color:var(--color-on-error);">
+                            Delete
+                        </button>
+                        <button @click="confirmDelete = false"
+                                class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant">
+                            Cancel
+                        </button>
+                    </span>
+                </template>
+            </div>
         </div>
     </div>
 

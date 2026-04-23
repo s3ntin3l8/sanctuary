@@ -29,9 +29,6 @@ def _stats(db):
         "case_count": db.query(Case).count(),
         "claim_count": db.query(Claim).count(),
         "cost_count": db.query(LegalCost).count(),
-        "triage_count": db.query(Document)
-        .filter(Document.case_id.is_(None), Document.parent_id.is_(None))
-        .count(),
     }
 
 

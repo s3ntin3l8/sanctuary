@@ -1,6 +1,7 @@
 """4a — Per-batch AI pass: cover-letter detection, originator attribution, action items."""
 
 import logging
+import re
 from datetime import datetime
 
 import httpx
@@ -133,15 +134,24 @@ def _apply_batch_results(
         cover_letter_doc.court_relay = bool(court_relay)
         cover_letter_doc.attributed_originator = result.get("attributed_originator")
 
+        def _norm(s: str) -> str:
+            s = re.sub(r"\.[a-zA-Z]{2,5}$", "", s)  # strip extension
+            return re.sub(r"[-_.\s]+", " ", s).lower().strip()
+
         for desc in enclosed_descriptions:
             matched = desc.get("matched_filename")
             child = None
             if matched:
+                matched_norm = _norm(matched)
                 child = next(
                     (
                         d
                         for d in docs
-                        if d.id != cover_letter_doc_id and matched in (d.title or "")
+                        if d.id != cover_letter_doc_id
+                        and (
+                            matched_norm in _norm(d.title or "")
+                            or _norm(d.title or "") in matched_norm
+                        )
                     ),
                     None,
                 )

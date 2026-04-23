@@ -3,8 +3,6 @@ import os
 import threading
 from collections.abc import Callable
 
-from app.services.normalization import normalize_hm
-
 logger = logging.getLogger(__name__)
 
 CONVERSION_TIMEOUT = 60  # seconds
@@ -92,29 +90,24 @@ def _get_converter():
                     from docling.datamodel.base_models import InputFormat
                     from docling.datamodel.pipeline_options import (
                         PdfPipelineOptions,
-                        RapidOcrOptions,
                         TableFormerMode,
+                        TesseractCliOcrOptions,
                     )
                     from docling.document_converter import (
                         DocumentConverter,
                         PdfFormatOption,
                     )
 
-                    # Configure Pipeline Options
                     pipeline_options = PdfPipelineOptions()
                     pipeline_options.do_table_structure = True
                     pipeline_options.table_structure_options.mode = (
                         TableFormerMode.ACCURATE
                     )
                     pipeline_options.do_ocr = True
-
-                    # Use RapidOCR - force OCR on every page for reliable extraction.
-                    # This is slower but handles PDF/A with embedded text, pure scans, etc.
-                    pipeline_options.ocr_options = RapidOcrOptions(
-                        force_full_page_ocr=True
+                    pipeline_options.ocr_options = TesseractCliOcrOptions(
+                        lang=["deu", "eng"]
                     )
 
-                    # Initialize Converter with PDF format options
                     _converter = DocumentConverter(
                         format_options={
                             InputFormat.PDF: PdfFormatOption(
@@ -182,7 +175,7 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         logger.warning(f"Chunking failed for {file_path}: {e}")
 
     markdown = result.document.export_to_markdown()
-    return {"content": normalize_hm(markdown), "metadata": metadata, "chunks": chunks}
+    return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
 
 def _run_with_timeout(func: Callable, timeout: int) -> any:

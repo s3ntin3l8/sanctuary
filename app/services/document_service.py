@@ -59,14 +59,64 @@ class DocumentService:
         return doc
 
     def delete_document(self, doc_id: int) -> bool:
-        """Delete document from database and filesystem."""
+        """Delete document and all dependent rows from the database and filesystem."""
         import os
+
+        from sqlalchemy import or_, text
+
+        from app.models.database import (
+            ActionItem,
+            Claim,
+            ClaimEvidence,
+            DocumentPin,
+            DocumentRelationship,
+            Entity,
+            LegalCost,
+            UserReaction,
+        )
 
         doc = self.doc_repo.get(doc_id)
         if not doc:
             return False
 
         file_path = doc.file_path
+
+        # Remove non-nullable FK dependents first (SQLite FK enforcement is off, but
+        # explicit cleanup prevents orphan rows from being recalled by AI later).
+        self.db.query(UserReaction).filter(UserReaction.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(ActionItem).filter(ActionItem.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(DocumentPin).filter(DocumentPin.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(ClaimEvidence).filter(ClaimEvidence.document_id == doc_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(DocumentRelationship).filter(
+            or_(
+                DocumentRelationship.from_document_id == doc_id,
+                DocumentRelationship.to_document_id == doc_id,
+            )
+        ).delete(synchronize_session=False)
+        self.db.execute(
+            text("DELETE FROM document_vectors WHERE document_id = :id"),
+            {"id": doc_id},
+        )
+
+        # Nullable FKs: null out rather than delete the parent record.
+        self.db.query(Claim).filter(Claim.source_document_id == doc_id).update(
+            {"source_document_id": None}, synchronize_session=False
+        )
+        self.db.query(LegalCost).filter(LegalCost.source_document_id == doc_id).update(
+            {"source_document_id": None}, synchronize_session=False
+        )
+        self.db.query(Entity).filter(Entity.source_document_id == doc_id).update(
+            {"source_document_id": None}, synchronize_session=False
+        )
+
         if self.doc_repo.delete(doc_id):
             if file_path and os.path.exists(file_path):
                 try:

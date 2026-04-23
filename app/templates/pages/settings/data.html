@@ -29,10 +29,6 @@
                 <p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Cost Entries</p>
             </div>
             <div class="p-4 bg-surface-container-high/40 rounded-xl space-y-1 text-center">
-                <p class="text-2xl font-black text-on-surface">{{ stats.triage_count }}</p>
-                <p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">In Triage</p>
-            </div>
-            <div class="p-4 bg-surface-container-high/40 rounded-xl space-y-1 text-center">
                 <p class="text-2xl font-black text-on-surface">{{ stats.db_size_mb }}</p>
                 <p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">DB size (MB)</p>
             </div>
@@ -63,36 +59,6 @@
         <!-- Destructive actions -->
         <div class="space-y-3 pt-2 border-t border-outline-variant/10">
             <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Danger Zone</p>
-
-            <!-- Clear triage -->
-            <div class="flex items-center justify-between p-4 rounded-xl border border-outline-variant/20" x-data="{confirm: false}">
-                <div class="space-y-0.5">
-                    <p class="text-sm font-bold text-on-surface">Clear Triage Queue</p>
-                    <p class="text-xs text-on-surface-variant">Delete all {{ stats.triage_count }} unassigned documents from the inbox.</p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button x-show="!confirm" @click="confirm = true"
-                            {% if stats.triage_count == 0 %}disabled{% endif %}
-                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                            style="border-color:var(--color-error); color:var(--color-error);">
-                        Clear
-                    </button>
-                    <div x-show="confirm" class="flex items-center gap-2">
-                        <span class="text-xs text-on-surface-variant">Sure?</span>
-                        <button hx-post="/api/settings/maintenance/clear-triage"
-                                hx-target="#triage-result"
-                                hx-swap="innerHTML"
-                                @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary"
-                                style="background:var(--color-error);">Yes</button>
-                        <button @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div id="triage-result" class="px-4"></div>
 
             <!-- Reset AI enrichment -->
             <div class="flex items-center justify-between p-4 rounded-xl border border-outline-variant/20" x-data="{confirm: false}">

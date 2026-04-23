@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
@@ -9,11 +10,12 @@ from app.config import templates
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, Document
-from app.models.enums import OriginatorType, UserReactionType
+from app.models.enums import IngestBatchSourceType, OriginatorType, UserReactionType
 from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 from app.services.hud_context import build_hud_context, build_triage_hud_context
+from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
@@ -76,17 +78,52 @@ async def upload_document(
     error_count = 0
 
     valid_files = [f for f in files if f.filename]
+
+    # Non-EML files share a single manual batch; EML files create their own batch
+    # via ingest_raw_email (same path as Gmail import).
+    non_eml_files = [
+        f for f in valid_files if os.path.splitext(f.filename)[1].lower() != ".eml"
+    ]
     ingest_batch_id = None
-    if valid_files:
+    if non_eml_files:
         ingest_batch_id = create_manual_upload_batch(
             db,
-            filenames=[f.filename for f in valid_files],
+            filenames=[f.filename for f in non_eml_files],
             case_id=case_id,
         )
         db.commit()
 
     for file in files:
         if not file.filename:
+            continue
+
+        ext = os.path.splitext(file.filename)[1].lower()
+
+        if ext == ".eml":
+            # Route through the unified email ingestion path — same as Gmail import.
+            # No Document is created for the .eml envelope itself.
+            try:
+                raw_bytes = await file.read()
+                batch = ingest_raw_email(
+                    db, raw_bytes, source_type=IngestBatchSourceType.MANUAL
+                )
+                if batch:
+                    success_count += 1
+                    results.append(
+                        f'<div class="p-2 text-xs text-green-400">✓ {file.filename} — batch #{batch.id} queued</div>'
+                    )
+                else:
+                    results.append(
+                        f'<div class="p-2 text-xs text-on-surface-variant">↩ {file.filename} already ingested</div>'
+                    )
+            except Exception as e:
+                error_count += 1
+                logger.error(
+                    f"EML ingest failed for {file.filename}: {e}", exc_info=True
+                )
+                results.append(
+                    f'<div class="p-2 text-xs text-error">✗ {file.filename}: {e}</div>'
+                )
             continue
 
         try:
