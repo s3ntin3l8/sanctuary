@@ -1,6 +1,6 @@
 import logging
 
-from app.models.enums import PipelineStage
+from app.models.enums import PipelineStage, StageStatus
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,34 @@ def detect_relationships_task(self, doc_id: int):
         db.close()
 
     logger.info("Doc #%d: relationships started", doc_id)
+
+    # Gate: skip if enrichment failed (relationships need key_passages + ai_summary)
+    db = get_db_session()
+    try:
+        from app.models.database import Document
+
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        stages = (doc.pipeline_stages or {}) if doc else {}
+        enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
+        if enrich_status != StageStatus.COMPLETED.value:
+            mark_skipped(
+                doc_id, PipelineStage.RELATIONSHIPS, db, reason="missing_enrichment"
+            )
+            from app.tasks.extract_claims import extract_claims_task
+
+            logger.info(
+                "Doc #%d: relationships skipped (missing_enrichment) — still dispatching claims",
+                doc_id,
+            )
+            extract_claims_task.delay(doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "missing_enrichment",
+            }
+    finally:
+        db.close()
+
     try:
         skipped = detect(doc_id)
     except Exception as e:
@@ -42,6 +70,13 @@ def detect_relationships_task(self, doc_id: int):
             db.close()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
+        from app.tasks.extract_claims import extract_claims_task
+
+        logger.info(
+            "Doc #%d: relationships failed permanently — still dispatching claims",
+            doc_id,
+        )
+        extract_claims_task.delay(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()

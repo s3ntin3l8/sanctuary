@@ -33,6 +33,14 @@ def enrich_document_task(self, doc_id: int):
             db.close()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
+        from app.tasks.detect_relationships import detect_relationships_task
+
+        logger.info(
+            "Doc #%d: enrich failed permanently — still dispatching relationships",
+            doc_id,
+        )
+        detect_relationships_task.delay(doc_id)
+        _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()

@@ -27,9 +27,8 @@ def get_content_preview(
 ) -> str:
     """Get a representative preview of document content using chunks if available.
 
-    For long documents with include_tail=True, returns head + tail window to ensure
-    operative decisions (e.g., Tenor in German rulings) at document end are visible.
-    """
+    When include_tail=True and content exceeds max_chars, returns a head+tail window.
+    Output length may exceed max_chars by the length of the truncation marker."""
     if doc.meta and "chunks" in doc.meta and doc.meta["chunks"]:
         content = ""
         current_len = 0

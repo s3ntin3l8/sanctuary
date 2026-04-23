@@ -48,6 +48,13 @@ def analyze_batch_task(self, batch_id: int):
             db.close()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
+        logger.info(
+            "Batch #%d: batch_analysis failed — still enqueueing enrich for %d doc(s)",
+            batch_id,
+            len(doc_ids),
+        )
+        for doc_id in doc_ids:
+            enrich_document_task.delay(doc_id)
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
 
     db = SessionLocal()

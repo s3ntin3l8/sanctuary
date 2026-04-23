@@ -49,6 +49,10 @@ def extract_claims_task(self, doc_id: int):
             db.close()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
+        logger.info(
+            "Doc #%d: claims failed permanently — still triggering case brief", doc_id
+        )
+        _trigger_case_brief(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()
