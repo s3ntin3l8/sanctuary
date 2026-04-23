@@ -221,8 +221,8 @@ def extract(doc_id: int) -> None:
             logger.info(
                 f"Doc {doc_id}: claim extraction done — {new_count} new, {link_count} evidence links"
             )
-        except Exception as e:
-            logger.error(f"Doc {doc_id} claim extraction failed: {e}", exc_info=True)
+        except Exception:
             db.rollback()
+            raise
     finally:
         db.close()

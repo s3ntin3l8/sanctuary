@@ -68,12 +68,10 @@ def detect_relationships_task(self, doc_id: int):
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
         finally:
             db.close()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
         from app.tasks.extract_claims import extract_claims_task
 
         logger.info(
-            "Doc #%d: relationships failed permanently — still dispatching claims",
+            "Doc #%d: relationships failed — still dispatching claims",
             doc_id,
         )
         extract_claims_task.delay(doc_id)

@@ -166,61 +166,56 @@ def detect(doc_id: int) -> str | None:
             / f"doc_{doc_id}_{int(datetime.now().timestamp())}_relationships.log"
         )
 
-        try:
-            result = _call_relationship_detector_sync(
-                doc, candidates, debug_file, model=cfg.summary_model
-            )
-            relationships = result.get("relationships") or []
+        result = _call_relationship_detector_sync(
+            doc, candidates, debug_file, model=cfg.summary_model
+        )
+        relationships = result.get("relationships") or []
 
-            for rel in relationships:
-                to_id = rel.get("to_document_id")
-                rel_type_raw = (rel.get("relationship_type") or "").lower()
+        for rel in relationships:
+            to_id = rel.get("to_document_id")
+            rel_type_raw = (rel.get("relationship_type") or "").lower()
 
-                if to_id not in valid_candidate_ids:
-                    logger.info(
-                        f"Doc {doc_id}: relationship to ID {to_id} not in candidates, dropping"
-                    )
-                    continue
-
-                if rel_type_raw not in VALID_RELATIONSHIP_TYPES:
-                    logger.info(
-                        f"Doc {doc_id}: invalid relationship_type '{rel_type_raw}', dropping"
-                    )
-                    continue
-
-                existing = (
-                    db.query(DocumentRelationship)
-                    .filter(
-                        DocumentRelationship.from_document_id == doc_id,
-                        DocumentRelationship.to_document_id == to_id,
-                        DocumentRelationship.relationship_type
-                        == RelationshipType(rel_type_raw),
-                    )
-                    .first()
+            if to_id not in valid_candidate_ids:
+                logger.info(
+                    f"Doc {doc_id}: relationship to ID {to_id} not in candidates, dropping"
                 )
-                if existing:
-                    continue
+                continue
 
-                notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
-                db.add(
-                    DocumentRelationship(
-                        from_document_id=doc_id,
-                        to_document_id=to_id,
-                        relationship_type=RelationshipType(rel_type_raw),
-                        confidence=RelationshipConfidence.AI_DETECTED,
-                        notes=notes[:500],
-                        created_at=datetime.now(),
-                    )
+            if rel_type_raw not in VALID_RELATIONSHIP_TYPES:
+                logger.info(
+                    f"Doc {doc_id}: invalid relationship_type '{rel_type_raw}', dropping"
                 )
+                continue
 
-            db.commit()
-            logger.info(
-                f"Doc {doc_id}: relationship detection complete, {len(relationships)} proposed"
+            existing = (
+                db.query(DocumentRelationship)
+                .filter(
+                    DocumentRelationship.from_document_id == doc_id,
+                    DocumentRelationship.to_document_id == to_id,
+                    DocumentRelationship.relationship_type
+                    == RelationshipType(rel_type_raw),
+                )
+                .first()
             )
-        except Exception as e:
-            logger.error(
-                f"Doc {doc_id} relationship detection failed: {e}", exc_info=True
+            if existing:
+                continue
+
+            notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
+            db.add(
+                DocumentRelationship(
+                    from_document_id=doc_id,
+                    to_document_id=to_id,
+                    relationship_type=RelationshipType(rel_type_raw),
+                    confidence=RelationshipConfidence.AI_DETECTED,
+                    notes=notes[:500],
+                    created_at=datetime.now(),
+                )
             )
+
+        db.commit()
+        logger.info(
+            f"Doc {doc_id}: relationship detection complete, {len(relationships)} proposed"
+        )
     finally:
         db.close()
     return None

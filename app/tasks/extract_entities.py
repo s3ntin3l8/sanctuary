@@ -36,8 +36,6 @@ def extract_entities_task(self, doc_id: int):
             mark_failed(doc_id, PipelineStage.ENTITIES, db, error=str(e))
         finally:
             db.close()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()

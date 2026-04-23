@@ -181,14 +181,9 @@ def extract(doc_id: int) -> str | None:
             / f"doc_{doc_id}_{int(datetime.now(UTC).timestamp())}_entities.log"
         )
 
-        try:
-            result = _call_entity_extractor_sync(
-                doc, debug_file, model=cfg.summary_model
-            )
-            count = _save_entities(doc, result, db)
-            logger.info(f"Doc {doc_id}: extracted {count} entities")
-        except Exception as e:
-            logger.error(f"Doc {doc_id} entity extraction failed: {e}", exc_info=True)
+        result = _call_entity_extractor_sync(doc, debug_file, model=cfg.summary_model)
+        count = _save_entities(doc, result, db)
+        logger.info(f"Doc {doc_id}: extracted {count} entities")
 
         return None
     finally:
