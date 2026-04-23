@@ -35,10 +35,11 @@ def analyze_batch_task(self, batch_id: int):
     finally:
         db.close()
 
+    logger.info("Batch #%d: batch_analysis started (%d docs)", batch_id, len(doc_ids))
     try:
         ran = analyze(batch_id)
     except Exception as e:
-        logger.error(f"Batch {batch_id} analysis failed: {e}")
+        logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
         db = SessionLocal()
         try:
             for doc_id in doc_ids:
@@ -64,6 +65,12 @@ def analyze_batch_task(self, batch_id: int):
     finally:
         db.close()
 
+    logger.info(
+        "Batch #%d: batch_analysis %s — enqueueing enrich for %d doc(s)",
+        batch_id,
+        "complete" if ran else "skipped",
+        len(doc_ids),
+    )
     for doc_id in doc_ids:
         enrich_document_task.delay(doc_id)
 

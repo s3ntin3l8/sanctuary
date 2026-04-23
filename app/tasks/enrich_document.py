@@ -21,10 +21,11 @@ def enrich_document_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: enrich started", doc_id)
     try:
         enrich(doc_id)
     except Exception as e:
-        logger.error(f"Doc {doc_id} enrichment task failed: {e}")
+        logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.ENRICH, db, error=str(e))
@@ -40,6 +41,7 @@ def enrich_document_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: enrich complete — dispatching relationships", doc_id)
     from app.tasks.detect_relationships import detect_relationships_task
 
     detect_relationships_task.delay(doc_id)

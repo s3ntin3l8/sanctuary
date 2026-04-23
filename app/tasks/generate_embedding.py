@@ -24,6 +24,7 @@ def generate_embedding_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: embeddings started", doc_id)
     try:
         run_async(generate_embedding(doc_id))
     except Exception as e:
@@ -43,4 +44,5 @@ def generate_embedding_task(self, doc_id: int):
     finally:
         db3.close()
 
+    logger.info("Doc #%d: embeddings complete", doc_id)
     return {"status": "success", "doc_id": doc_id}

@@ -28,10 +28,13 @@ def detect_relationships_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: relationships started", doc_id)
     try:
         skipped = detect(doc_id)
     except Exception as e:
-        logger.error(f"Doc {doc_id} relationship detection task failed: {e}")
+        logger.error(
+            f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
@@ -50,6 +53,11 @@ def detect_relationships_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info(
+        "Doc #%d: relationships %s — dispatching claims",
+        doc_id,
+        "skipped" if skipped else "complete",
+    )
     from app.tasks.extract_claims import extract_claims_task
 
     extract_claims_task.delay(doc_id)

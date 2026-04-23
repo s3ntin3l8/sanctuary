@@ -37,10 +37,11 @@ def extract_claims_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: claims started", doc_id)
     try:
         extract(doc_id)
     except Exception as e:
-        logger.error(f"Doc {doc_id} claim extraction task failed: {e}")
+        logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
@@ -56,5 +57,6 @@ def extract_claims_task(self, doc_id: int):
     finally:
         db.close()
 
+    logger.info("Doc #%d: claims complete", doc_id)
     _trigger_case_brief(doc_id)
     return {"status": "success", "doc_id": doc_id}
