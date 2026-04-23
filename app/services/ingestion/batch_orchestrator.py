@@ -39,12 +39,26 @@ def ingest_raw_email(
     if msg_id:
         existing = batch_repo.get_by_message_id(msg_id)
         if existing:
+            doc_count = (
+                db.query(Document)
+                .filter(Document.ingest_batch_id == existing.id)
+                .count()
+            )
+            if doc_count > 0:
+                logger.info(
+                    "Email duplicate: message-id %s already in batch #%d (%d docs) — skipping",
+                    msg_id,
+                    existing.id,
+                    doc_count,
+                )
+                return existing
+            # Orphaned batch (docs were deleted) — remove it and re-ingest
             logger.info(
-                "Email duplicate: message-id %s already in batch #%d — skipping",
-                msg_id,
+                "Email batch #%d has 0 docs (orphaned) — deleting and re-ingesting",
                 existing.id,
             )
-            return existing
+            db.delete(existing)
+            db.flush()
 
     batch = batch_repo.create_batch(
         source_type=source_type,
