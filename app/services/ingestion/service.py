@@ -24,6 +24,7 @@ from app.services.ingestion.converters import (
     MAX_FILE_SIZE,
     convert_file,
     is_valid_docling_output,
+    validate_file_magic,
 )
 from app.services.ingestion.extractors import (
     extract_case_id,
@@ -300,6 +301,74 @@ def process_uploaded_document(doc: Document, db: Session):
     db.commit()
 
 
+def _create_document(
+    db: Session,
+    file_path: str,
+    content_hash: str,
+    case_id: str,
+    safe_filename: str,
+    parent_id: int | None,
+    ingest_batch_id: int | None,
+    content: str | None = None,
+    markdown_content: str | None = None,
+    conversion_metadata: dict | None = None,
+    result_case_id: dict | None = None,
+    result_originator: dict | None = None,
+    result_date: dict | None = None,
+    result_sender: dict | None = None,
+) -> Document:
+    """Shared Document creation logic - reduces duplication between skip_processing paths."""
+    from app.services.pipeline_status import initialize as _pipeline_init
+
+    final_case_id = (
+        result_case_id.get("value")
+        if result_case_id and result_case_id.get("value")
+        else case_id
+    )
+
+    if markdown_content:
+        extracted_title = extract_clean_title(safe_filename, markdown_content)
+        extraction_confidence = {
+            "sender": result_sender.get("confidence") if result_sender else None,
+            "date": result_date.get("confidence") if result_date else None,
+            "case_id": result_case_id.get("confidence") if result_case_id else None,
+            "originator": result_originator.get("confidence")
+            if result_originator
+            else None,
+        }
+    else:
+        extracted_title = extract_clean_title(safe_filename, "")
+        extraction_confidence = None
+
+    new_doc = Document(
+        title=extracted_title if extracted_title != safe_filename else safe_filename,
+        content=content or markdown_content,
+        case_id=final_case_id,
+        file_path=file_path,
+        content_hash=content_hash,
+        parent_id=parent_id,
+        originator_type=result_originator.get("value")
+        if result_originator
+        else OriginatorType.UNKNOWN,
+        sender=result_sender.get("value") if result_sender else None,
+        received_date=result_date.get("value") if result_date else None,
+        cost_candidates=extract_cost_candidates(markdown_content or "")
+        if markdown_content
+        else [],
+        extraction_confidence=extraction_confidence,
+        meta=conversion_metadata,
+        ingest_batch_id=ingest_batch_id,
+    )
+
+    _pipeline_init(new_doc, batched=ingest_batch_id is not None)
+
+    reasons = compute_review_reasons(new_doc)
+    new_doc.review_reasons = reasons
+    new_doc.needs_review = len(reasons) > 0
+
+    return new_doc
+
+
 async def ingest_file(
     file: UploadFile,
     case_id: str | None = None,
@@ -309,55 +378,63 @@ async def ingest_file(
     ingest_batch_id: int | None = None,
 ) -> Document:
     """Save uploaded file, optionally process it."""
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided.")
+    file_path: str | None = None
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        allowed_ext_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {allowed_ext_str}",
-        )
-
-    safe_filename = os.path.basename(file.filename)
-    extracted_case_obj = extract_case_id(safe_filename, "")
-    extracted_case_id = (
-        extracted_case_obj.get("value")
-        if isinstance(extracted_case_obj, dict)
-        else None
-    )
-    preliminary_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
-    case_dir = DATA_DIR / preliminary_case_id
-    case_dir.mkdir(parents=True, exist_ok=True)
-    file_path = str(case_dir / safe_filename)
-
-    sha256 = hashlib.sha256()
     try:
-        async with aiofiles.open(file_path, "wb") as out_file:
-            total_size = 0
-            while content := await file.read(1024 * 1024):
-                total_size += len(content)
-                if total_size > MAX_FILE_SIZE:
-                    max_mb = MAX_FILE_SIZE // (1024 * 1024)
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File too large. Maximum size: {max_mb}MB",
-                    )
-                sha256.update(content)
-                await out_file.write(content)
-    except HTTPException:
-        raise
-    except OSError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to save uploaded file: {e}",
-        ) from e
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided.")
 
-    content_hash = sha256.hexdigest()
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            allowed_ext_str = ", ".join(sorted(ALLOWED_EXTENSIONS))
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ext}'. Allowed: {allowed_ext_str}",
+            )
 
-    if skip_processing:
-        extracted_title = extract_clean_title(safe_filename, "")
+        safe_filename = os.path.basename(file.filename)
+        extracted_case_obj = extract_case_id(safe_filename, "")
+        extracted_case_id = (
+            extracted_case_obj.get("value")
+            if isinstance(extracted_case_obj, dict)
+            else None
+        )
+        preliminary_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
+        case_dir = DATA_DIR / preliminary_case_id
+        case_dir.mkdir(parents=True, exist_ok=True)
+        file_path = str(case_dir / safe_filename)
+
+        sha256 = hashlib.sha256()
+        try:
+            async with aiofiles.open(file_path, "wb") as out_file:
+                total_size = 0
+                while content := await file.read(1024 * 1024):
+                    total_size += len(content)
+                    if total_size > MAX_FILE_SIZE:
+                        max_mb = MAX_FILE_SIZE // (1024 * 1024)
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"File too large. Maximum size: {max_mb}MB",
+                        )
+                    sha256.update(content)
+                    await out_file.write(content)
+        except HTTPException:
+            raise
+        except OSError as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save uploaded file: {e}",
+            ) from e
+
+        content_hash = sha256.hexdigest()
+
+        magic_ext = validate_file_magic(file_path)
+        if magic_ext and magic_ext != ext:
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content does not match extension. Expected {ext}, got {magic_ext}",
+            )
 
         existing = (
             db.query(Document)
@@ -374,97 +451,79 @@ async def ingest_file(
                 detail=f"Duplicate document: '{existing.title}' (ID: {existing.id})",
             )
 
-        new_doc = Document(
-            title=extracted_title
-            if extracted_title != safe_filename
-            else safe_filename,
-            content=None,
-            case_id=preliminary_case_id,
+        if skip_processing:
+            new_doc = _create_document(
+                db=db,
+                file_path=file_path,
+                content_hash=content_hash,
+                case_id=preliminary_case_id,
+                safe_filename=safe_filename,
+                parent_id=parent_id,
+                ingest_batch_id=ingest_batch_id,
+                content=None,
+            )
+            db.add(new_doc)
+            db.flush()
+            db.commit()
+            db.refresh(new_doc)
+            return new_doc
+
+        markdown_content: str | None = None
+        conversion_metadata: dict | None = None
+        conversion_error: str | None = None
+
+        try:
+            conversion_result = convert_file(file_path)
+            markdown_content = conversion_result["content"]
+            conversion_metadata = conversion_result["metadata"]
+            conversion_metadata["chunks"] = conversion_result.get("chunks", [])
+        except TimeoutError:
+            conversion_error = "Conversion timed out after 60 seconds"
+            markdown_content = f"Conversion failed: {conversion_error}"
+        except Exception as e:
+            conversion_error = str(e)
+            markdown_content = f"Conversion failed: {conversion_error}"
+
+        if not is_valid_docling_output(markdown_content):
+            raise IngestionError(
+                "Docling conversion failed or produced empty content.",
+                detail=conversion_error,
+            )
+
+        result_case_id = extract_case_id(safe_filename, markdown_content or "")
+        result_originator = extract_originator(safe_filename, markdown_content or "")
+        result_date = extract_received_date(markdown_content or "", safe_filename)
+        result_sender = extract_sender(markdown_content or "")
+
+        new_doc = _create_document(
+            db=db,
             file_path=file_path,
             content_hash=content_hash,
+            case_id=preliminary_case_id,
+            safe_filename=safe_filename,
             parent_id=parent_id,
-            originator_type=OriginatorType.UNKNOWN,
-            sender=None,
-            received_date=None,
             ingest_batch_id=ingest_batch_id,
+            markdown_content=markdown_content,
+            conversion_metadata=conversion_metadata,
+            result_case_id=result_case_id,
+            result_originator=result_originator,
+            result_date=result_date,
+            result_sender=result_sender,
         )
-        from app.services.pipeline_status import initialize as _pipeline_init
-
-        _pipeline_init(new_doc, batched=ingest_batch_id is not None)
         db.add(new_doc)
         db.flush()
-        reasons = compute_review_reasons(new_doc)
-        new_doc.review_reasons = reasons
-        new_doc.needs_review = len(reasons) > 0
         db.commit()
         db.refresh(new_doc)
         return new_doc
 
-    markdown_content: str | None = None
-    conversion_metadata: dict | None = None
-    conversion_error: str | None = None
-
-    try:
-        conversion_result = convert_file(file_path)
-        markdown_content = conversion_result["content"]
-        conversion_metadata = conversion_result["metadata"]
-        # Add chunks to metadata
-        conversion_metadata["chunks"] = conversion_result.get("chunks", [])
-    except TimeoutError:
-        conversion_error = "Conversion timed out after 60 seconds"
-        markdown_content = f"Conversion failed: {conversion_error}"
-    except Exception as e:
-        conversion_error = str(e)
-        markdown_content = f"Conversion failed: {conversion_error}"
-
-    if not is_valid_docling_output(markdown_content):
-        raise IngestionError(
-            "Docling conversion failed or produced empty content.",
-            detail=conversion_error,
-        )
-
-    result_case_id = extract_case_id(safe_filename, markdown_content or "")
-    result_originator = extract_originator(safe_filename, markdown_content or "")
-    result_date = extract_received_date(markdown_content or "", safe_filename)
-    result_sender = extract_sender(markdown_content or "")
-
-    extraction_confidence = {
-        "sender": result_sender["confidence"],
-        "date": result_date["confidence"],
-        "case_id": result_case_id["confidence"],
-        "originator": result_originator["confidence"],
-    }
-
-    final_case_id = (
-        result_case_id["value"] if result_case_id["value"] else preliminary_case_id
-    )
-
-    new_doc = Document(
-        title=extract_clean_title(safe_filename, markdown_content or ""),
-        content=markdown_content,
-        case_id=final_case_id,
-        file_path=file_path,
-        content_hash=content_hash,
-        parent_id=parent_id,
-        originator_type=result_originator["value"],
-        sender=result_sender["value"],
-        received_date=result_date["value"],
-        cost_candidates=extract_cost_candidates(markdown_content or ""),
-        extraction_confidence=extraction_confidence,
-        meta=conversion_metadata,
-        ingest_batch_id=ingest_batch_id,
-    )
-    from app.services.pipeline_status import initialize as _pipeline_init
-
-    _pipeline_init(new_doc, batched=ingest_batch_id is not None)
-
-    db.add(new_doc)
-    db.flush()
-
-    reasons = compute_review_reasons(new_doc)
-    new_doc.review_reasons = reasons
-    new_doc.needs_review = len(reasons) > 0
-
-    db.commit()
-    db.refresh(new_doc)
-    return new_doc
+    except HTTPException:
+        raise
+    except IngestionError:
+        raise
+    except Exception:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise

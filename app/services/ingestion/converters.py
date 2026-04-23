@@ -15,19 +15,40 @@ class TimeoutError(Exception):
 _allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
+MAGIC_BYTES = {
+    b"%PDF": ".pdf",
+    b"PK\x03\x04": ".zip",
+    b"PK\x05\x06": ".zip",
+    b"\xd0\xcf\x11\xe0": ".doc",
+    b"From ": ".eml",
+}
 
-def get_allowed_extensions() -> set:
-    """Get allowed file extensions."""
-    return _allowed_extensions
 
-
-ALLOWED_EXTENSIONS = _allowed_extensions
+def validate_file_magic(file_path: str) -> str | None:
+    """Validate file by magic bytes. Returns expected extension or None."""
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(8)
+        for magic, ext in MAGIC_BYTES.items():
+            if header.startswith(magic):
+                return ext
+        return None
+    except OSError:
+        return None
 
 
 def is_allowed_extension(filename: str) -> bool:
     """Check if file extension is allowed."""
     ext = os.path.splitext(filename)[1].lower()
     return ext in _allowed_extensions
+
+
+ALLOWED_EXTENSIONS = _allowed_extensions
+
+
+def get_allowed_extensions() -> set:
+    """Get allowed file extensions."""
+    return _allowed_extensions
 
 
 def parse_eml_file(file_path: str) -> str:
