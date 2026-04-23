@@ -6,12 +6,8 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    bind=True,
-    max_retries=3,
-    name="app.tasks.detect_relationships.detect_relationships_task",
-)
-def detect_relationships_task(self, doc_id: int):
+@celery_app.task(name="app.tasks.detect_relationships.detect_relationships_task")
+def detect_relationships_task(doc_id: int):
     """Detect AI relationships from this doc to prior docs in the same proceeding."""
     from app.dependencies import get_db_session
     from app.services.intelligence.relationship_detector import detect

@@ -6,10 +6,8 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(
-    bind=True, max_retries=3, name="app.tasks.extract_entities.extract_entities_task"
-)
-def extract_entities_task(self, doc_id: int):
+@celery_app.task(name="app.tasks.extract_entities.extract_entities_task")
+def extract_entities_task(doc_id: int):
     """Extract named entities (persons, courts, law firms, citations) from a document."""
     from app.dependencies import get_db_session
     from app.services.intelligence.entity_extractor import extract

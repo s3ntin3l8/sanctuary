@@ -22,10 +22,8 @@ def _trigger_case_brief(doc_id: int) -> None:
         db.close()
 
 
-@celery_app.task(
-    bind=True, max_retries=3, name="app.tasks.extract_claims.extract_claims_task"
-)
-def extract_claims_task(self, doc_id: int):
+@celery_app.task(name="app.tasks.extract_claims.extract_claims_task")
+def extract_claims_task(doc_id: int):
     """Extract factual/legal/procedural claims from a document and link evidence to existing claims."""
     from app.dependencies import get_db_session
     from app.services.intelligence.claim_extractor import extract

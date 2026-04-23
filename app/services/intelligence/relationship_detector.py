@@ -217,5 +217,6 @@ def detect(doc_id: int) -> str | None:
             f"Doc {doc_id}: relationship detection complete, {len(relationships)} proposed"
         )
     finally:
+        db.rollback()
         db.close()
     return None
