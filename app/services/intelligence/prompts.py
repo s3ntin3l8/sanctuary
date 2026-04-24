@@ -114,6 +114,8 @@ Extract metadata from the document and return a JSON object with these keys:
 - originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
 
+Email subject: If an email_subject hint is provided, treat it as a primary source (not a verification hint) for internal_id and az_court. Email subjects reliably carry the lawyer's reference number verbatim. When the subject contains a value that differs from what you'd infer from the PDF body, prefer the subject and set confidence to "high".
+
 Verification Task:
 You will be provided with "Heuristic Hints" found by simple regex patterns.
 - If a hint is correct, use it and set confidence to "high".

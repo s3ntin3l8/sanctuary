@@ -106,7 +106,31 @@
                 <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
             </div>
         </dl>
-        {# Auto-create case prompt when AI extracted a reference but no case matched #}
+        {# Draft case banner: AI auto-created a case, pending user confirmation #}
+        {% if is_draft_case %}
+        <div class="mt-3 px-3 py-2 bg-amber-500/5 border border-amber-500/30 rounded-lg flex items-center justify-between gap-2">
+            <div class="min-w-0">
+                <p class="text-[9px] font-bold text-amber-600 dark:text-amber-400">KI-Entwurf: {{ doc.case_id }}</p>
+                <p class="text-[8px] text-on-surface-variant">Akte wurde von der KI angelegt. Bitte bestätigen oder ablehnen.</p>
+            </div>
+            <div class="flex gap-1.5 shrink-0">
+                <button hx-post="/cases/{{ doc.case_id }}/confirm-draft"
+                        hx-target="#triage-doc-pane"
+                        hx-swap="innerHTML"
+                        class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer whitespace-nowrap">
+                    Bestätigen
+                </button>
+                <button hx-post="/cases/{{ doc.case_id }}/reject-draft"
+                        hx-target="#triage-doc-pane"
+                        hx-swap="innerHTML"
+                        hx-confirm="Akte {{ doc.case_id }} löschen und Dokumente zurück in die Triage schicken?"
+                        class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 cursor-pointer whitespace-nowrap">
+                    Ablehnen
+                </button>
+            </div>
+        </div>
+        {% endif %}
+        {# Manual create prompt when AI extracted a reference but no case matched #}
         {% if doc.case_id == '_TRIAGE' and doc.internal_id %}
         <div class="mt-3 px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between gap-2">
             <div class="min-w-0">

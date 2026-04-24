@@ -337,62 +337,36 @@ async def create_case_from_triage(
     db: Session = Depends(get_db),
 ):
     """Create a new case from the triage metadata form and cascade to the full batch."""
+    import json
+
     from app.models.database import IngestBatch
     from app.models.enums import OriginatorType
+    from app.services.case_service import get_or_create_case_from_reference
     from app.services.hud_context import build_triage_hud_context
     from app.services.ingestion.extractors import extract_az_court_from_subject
 
-    # Derive case title from batch subject when not provided
     batch = db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).first()
-    if batch and not case_title and batch.subject:
-        subj = batch.subject
-        # Strip leading internal_id token (e.g. "8372/25 - " or "8372/25: ")
-        stripped = subj.lstrip()
-        if stripped.startswith(internal_id):
-            remainder = stripped[len(internal_id) :].lstrip(" -:/")
-        else:
-            remainder = subj
-        # Trim at common German subject separators
-        for sep in (" vor dem ", " wg. ", " bzgl. ", " betr. "):
-            idx = remainder.lower().find(sep)
-            if idx != -1:
-                remainder = remainder[:idx]
-        case_title = remainder.strip()[:80] or None
 
     # Resolve az_court: use provided value or extract from batch subject
     if not az_court and batch and batch.subject:
         az_court = extract_az_court_from_subject(batch.subject)
 
-    # Create or retrieve the case
-    existing_case = db.query(Case).filter(Case.id == internal_id).first()
-    if not existing_case:
-        new_case = Case(
-            id=internal_id,
-            title=case_title or f"Neuer Fall {internal_id}",
-            status=CaseStatus.INTAKE,
-            jurisdiction=Jurisdiction.DE,
-        )
-        db.add(new_case)
-        db.flush()
+    case, matched_proceeding, _ = get_or_create_case_from_reference(
+        db,
+        internal_id=internal_id,
+        az_court=az_court,
+        court_name=court_name,
+        batch_subject=batch.subject if batch else None,
+        is_draft=False,
+    )
+    # If a title was explicitly provided and the case is new (or still titled "Neuer Fall …"),
+    # override with the supplied title.
+    if case_title and (case.title.startswith("Neuer Fall") or not case.title):
+        case.title = case_title[:80]
 
-    # Create a Proceeding if we have an az_court
-    matched_proceeding = None
-    if az_court:
-        matched_proceeding = (
-            db.query(Proceeding)
-            .filter(Proceeding.case_id == internal_id, Proceeding.az_court == az_court)
-            .first()
-        )
-        if not matched_proceeding:
-            matched_proceeding = Proceeding(
-                case_id=internal_id,
-                az_court=az_court,
-                court_name=court_name or "(Gericht folgt)",
-                court_level=ProceedingCourtLevel.AG,
-                status=ProceedingStatus.ACTIVE,
-            )
-            db.add(matched_proceeding)
-            db.flush()
+    # If the case was previously a draft, confirm it now since user clicked Anlegen.
+    if case.is_draft:
+        case.is_draft = False
 
     proceeding_id = matched_proceeding.id if matched_proceeding else None
 
@@ -411,14 +385,11 @@ async def create_case_from_triage(
 
     db.commit()
 
-    # Re-trigger ENRICH and downstream for newly assigned docs so that
-    # relationships, claims, and entities run with the correct case context.
     if reassigned_docs:
         from app.services.triage_service import _reset_and_reenrich
 
         _reset_and_reenrich(db, reassigned_docs)
 
-    # Identify the first doc in this batch to render in the HUD
     first_doc = None
     if batch and batch.documents:
         first_doc = batch.documents[0]
@@ -437,23 +408,148 @@ async def create_case_from_triage(
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    # OOB: update sidebar badges + status bar
-    from app.api.triage import _render_sidebar_badges_oob
+    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
     from app.services.triage_service import TriageService
 
     triage_service = TriageService(db)
-    from app.api.triage import _render_triage_status_bar_oob
-
     response.body += (
         _render_sidebar_badges_oob(db)
         + _render_triage_status_bar_oob(request, triage_service)
     ).encode("utf-8")
 
+    response.headers["HX-Trigger"] = json.dumps(
+        {"triage:advance": {"next_doc_id": first_doc.id}}
+    )
+    return response
+
+
+@router.post("/{case_id}/confirm-draft")
+async def confirm_draft_case(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Confirm an AI-created draft case (flip is_draft=False)."""
     import json
+
+    from app.models.database import Document as Doc
+    from app.models.enums import OriginatorType
+    from app.services.hud_context import build_triage_hud_context
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    if case.is_draft:
+        case.is_draft = False
+        db.commit()
+
+    first_doc = (
+        db.query(Doc).filter(Doc.case_id == case_id).order_by(Doc.id.asc()).first()
+    )
+    if not first_doc:
+        return HTMLResponse("", status_code=204)
+
+    db.refresh(first_doc)
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    ctx = build_triage_hud_context(
+        db, first_doc, cases=cases, OriginatorType=OriginatorType
+    )
+    from app.config import templates as _templates
+
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+
+    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
+    from app.services.triage_service import TriageService
+
+    response.body += (
+        _render_sidebar_badges_oob(db)
+        + _render_triage_status_bar_oob(request, TriageService(db))
+    ).encode("utf-8")
 
     response.headers["HX-Trigger"] = json.dumps(
         {"triage:advance": {"next_doc_id": first_doc.id}}
     )
+    return response
+
+
+@router.post("/{case_id}/reject-draft")
+async def reject_draft_case(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete an AI-created draft case and revert its documents to _TRIAGE."""
+    from fastapi import HTTPException
+
+    from app.models.database import ActionItem, Claim, Entity, IngestBatch, LegalCost
+    from app.models.enums import OriginatorType
+    from app.services.hud_context import build_triage_hud_context
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if not case.is_draft:
+        raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
+
+    # Collect affected docs before deletion
+    docs = db.query(Document).filter(Document.case_id == case_id).all()
+
+    # Revert docs and batches to _TRIAGE
+    batch_ids = {d.ingest_batch_id for d in docs if d.ingest_batch_id}
+    for doc in docs:
+        doc.case_id = "_TRIAGE"
+        doc.proceeding_id = None
+
+    for batch_id in batch_ids:
+        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+        if batch and batch.case_id == case_id:
+            batch.case_id = None
+            batch.proceeding_id = None
+
+    # Explicit deletes (no cascade from Case to these tables today)
+    db.query(Entity).filter(Entity.case_id == case_id).delete(synchronize_session=False)
+    db.query(ActionItem).filter(ActionItem.case_id == case_id).delete(
+        synchronize_session=False
+    )
+    db.query(LegalCost).filter(LegalCost.case_id == case_id).delete(
+        synchronize_session=False
+    )
+    for claim in db.query(Claim).filter(Claim.case_id == case_id).all():
+        db.delete(claim)  # ORM delete so ClaimEvidence cascade fires
+
+    db.delete(case)  # cascades to Proceeding via relationship
+    db.commit()
+
+    # Re-enrich reverted docs so pipeline stages reset cleanly
+    if docs:
+        from app.services.triage_service import _reset_and_reenrich
+
+        _reset_and_reenrich(db, docs)
+
+    # Render the first reverted doc in the triage HUD
+    first_doc = docs[0] if docs else None
+    if not first_doc:
+        return HTMLResponse("", status_code=204)
+
+    db.refresh(first_doc)
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    ctx = build_triage_hud_context(
+        db, first_doc, cases=cases, OriginatorType=OriginatorType
+    )
+    from app.config import templates as _templates
+
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+
+    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
+    from app.services.triage_service import TriageService
+
+    response.body += (
+        _render_sidebar_badges_oob(db)
+        + _render_triage_status_bar_oob(request, TriageService(db))
+    ).encode("utf-8")
     return response
 
 

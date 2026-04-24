@@ -128,6 +128,17 @@ def build_triage_hud_context(
     ctx["case_id"] = doc.case_id
     ctx["cases"] = cases
     ctx["OriginatorType"] = OriginatorType
+
+    # Determine if the current case is an AI-created draft awaiting confirmation
+    is_draft_case = False
+    if doc.case_id and doc.case_id != "_TRIAGE":
+        from app.models.database import Case
+
+        _case = db.query(Case).filter(Case.id == doc.case_id).first()
+        if _case:
+            is_draft_case = _case.is_draft
+    ctx["is_draft_case"] = is_draft_case
+
     return ctx
 
 

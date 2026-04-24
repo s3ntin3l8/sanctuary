@@ -145,45 +145,67 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                     else ""
                 )
             )
+            _cascade_case_to_batch(db, doc, matching_case, matching_proceeding)
 
-            # Cascade to sibling docs in the same batch still in _TRIAGE.
-            if doc.ingest_batch_id:
-                from app.models.database import IngestBatch
+        elif internal_id:
+            # No existing case matched — auto-create a draft for user confirmation.
+            from app.services.case_service import get_or_create_case_from_reference
 
-                siblings = (
-                    db.query(Document)
-                    .filter(
-                        Document.ingest_batch_id == doc.ingest_batch_id,
-                        Document.case_id == "_TRIAGE",
-                        Document.id != doc.id,
-                    )
-                    .all()
+            batch_subject = doc.ingest_batch.subject if doc.ingest_batch else None
+            draft_case, draft_proc, created = get_or_create_case_from_reference(
+                db,
+                internal_id=internal_id,
+                az_court=az_court,
+                batch_subject=batch_subject,
+                is_draft=True,
+            )
+            db.flush()
+            doc.case_id = draft_case.id
+            if draft_proc:
+                doc.proceeding_id = draft_proc.id
+            _cascade_case_to_batch(db, doc, draft_case, draft_proc)
+            if created:
+                logger.info(
+                    f"AI Auto-Triage: draft case {draft_case.id} created for doc {doc.id}"
                 )
-                for sib in siblings:
-                    sib.case_id = matching_case.id
-                    if matching_proceeding and not sib.proceeding_id:
-                        sib.proceeding_id = matching_proceeding.id
-
-                batch = (
-                    db.query(IngestBatch)
-                    .filter(IngestBatch.id == doc.ingest_batch_id)
-                    .first()
-                )
-                if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
-                    batch.case_id = matching_case.id
-                    if matching_proceeding and not batch.proceeding_id:
-                        batch.proceeding_id = matching_proceeding.id
-
-                if siblings:
-                    logger.info(
-                        f"AI Auto-Triage: cascaded case {matching_case.id} to "
-                        f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
-                    )
 
     # 4. Re-evaluate review status
     reasons = compute_review_reasons(doc)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0
+
+
+def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
+    """Cascade a case assignment to sibling docs and the ingest batch."""
+    if not doc.ingest_batch_id:
+        return
+    from app.models.database import IngestBatch
+
+    siblings = (
+        db.query(Document)
+        .filter(
+            Document.ingest_batch_id == doc.ingest_batch_id,
+            Document.case_id == "_TRIAGE",
+            Document.id != doc.id,
+        )
+        .all()
+    )
+    for sib in siblings:
+        sib.case_id = case.id
+        if proceeding and not sib.proceeding_id:
+            sib.proceeding_id = proceeding.id
+
+    batch = db.query(IngestBatch).filter(IngestBatch.id == doc.ingest_batch_id).first()
+    if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
+        batch.case_id = case.id
+        if proceeding and not batch.proceeding_id:
+            batch.proceeding_id = proceeding.id
+
+    if siblings:
+        logger.info(
+            f"AI Auto-Triage: cascaded case {case.id} to "
+            f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
+        )
 
 
 def generate_summary_sync(doc: Document, db=None) -> dict:
@@ -192,6 +214,15 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
     content_preview = get_content_preview(doc, 4000)
 
     # Heuristic hints for verification
+    batch_subject = None
+    if doc.ingest_batch_id and db is not None:
+        from app.models.database import IngestBatch
+
+        batch_subject = (
+            db.query(IngestBatch.subject)
+            .filter(IngestBatch.id == doc.ingest_batch_id)
+            .scalar()
+        )
     hints = {
         "az_court": doc.proceeding.az_court if doc.proceeding else None,
         "sender": doc.sender,
@@ -199,6 +230,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         if doc.received_date
         else None,
         "originator_type": doc.originator_type.value if doc.originator_type else None,
+        "email_subject": batch_subject,
     }
     hints_str = json.dumps(hints, indent=2)
 

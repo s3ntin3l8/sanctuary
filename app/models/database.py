@@ -154,6 +154,7 @@ class Case(Base):
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
+    is_draft = Column(Boolean, default=False, nullable=False)
 
     # Phase 1: cumulative AI intelligence + parties + exposure
     ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case

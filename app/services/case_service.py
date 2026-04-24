@@ -5,12 +5,13 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.database import ActionItem, Case, Document
+from app.models.database import ActionItem, Case, Document, Proceeding
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     CaseStatus,
     Jurisdiction,
+    ProceedingCourtLevel,
     ProceedingStatus,
     SignificanceTier,
 )
@@ -23,6 +24,80 @@ from app.repositories.legal_cost import LegalCostRepository
 logger = logging.getLogger(__name__)
 
 DORMANCY_DAYS = 90
+
+
+def _derive_case_title_from_subject(
+    subject: str | None, internal_id: str
+) -> str | None:
+    """Derive a short case title from an email subject line."""
+    if not subject:
+        return None
+    stripped = subject.lstrip()
+    if stripped.startswith(internal_id):
+        remainder = stripped[len(internal_id) :].lstrip(" -:/")
+    else:
+        remainder = subject
+    for sep in (" vor dem ", " wg. ", " bzgl. ", " betr. "):
+        idx = remainder.lower().find(sep)
+        if idx != -1:
+            remainder = remainder[:idx]
+    return remainder.strip()[:80] or None
+
+
+def get_or_create_case_from_reference(
+    db: Session,
+    internal_id: str,
+    *,
+    az_court: str | None = None,
+    court_name: str | None = None,
+    batch_subject: str | None = None,
+    is_draft: bool = False,
+) -> tuple[Case, Proceeding | None, bool]:
+    """Return (case, proceeding, created).
+
+    Race-safe: SELECT first, then INSERT only when missing. Never overwrites
+    an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
+    """
+    existing = db.query(Case).filter(Case.id == internal_id).first()
+    if existing:
+        matched_proc = None
+        if az_court:
+            matched_proc = (
+                db.query(Proceeding)
+                .filter(
+                    Proceeding.case_id == internal_id, Proceeding.az_court == az_court
+                )
+                .first()
+            )
+        return existing, matched_proc, False
+
+    title = (
+        _derive_case_title_from_subject(batch_subject, internal_id)
+        or f"Neuer Fall {internal_id}"
+    )
+    new_case = Case(
+        id=internal_id,
+        title=title,
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        is_draft=is_draft,
+    )
+    db.add(new_case)
+    db.flush()
+
+    new_proc = None
+    if az_court:
+        new_proc = Proceeding(
+            case_id=internal_id,
+            az_court=az_court,
+            court_name=court_name or "(Gericht folgt)",
+            court_level=ProceedingCourtLevel.AG,
+            status=ProceedingStatus.ACTIVE,
+        )
+        db.add(new_proc)
+        db.flush()
+
+    return new_case, new_proc, True
 
 
 def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
