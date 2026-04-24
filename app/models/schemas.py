@@ -19,7 +19,7 @@ class ExtractionConfidenceSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     sender: str = "low"
-    date: str = "low"
+    issued_date: str = "low"
     originator: str = "low"
     az_court: str = "low"
     internal_id: str = "low"

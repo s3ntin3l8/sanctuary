@@ -82,17 +82,14 @@ async def confirm_document(
     originator_type: str | None = Form(None),
     sender: str | None = Form(None),
     received_date: str | None = Form(None),
+    issued_date: str | None = Form(None),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
-    parsed_date = None
-    if received_date:
-        try:
-            parsed_date = datetime.strptime(received_date, "%Y-%m-%d")
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Invalid date: {received_date}"
-            ) from exc
+    resolved_case_id = case_id if case_id else None
+
+    pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
+    pre_confirm_case_id = pre_confirm_doc.case_id if pre_confirm_doc else None
 
     parsed_originator = None
     if originator_type:
@@ -103,11 +100,23 @@ async def confirm_document(
                 status_code=422, detail=f"Unknown originator: {originator_type}"
             ) from exc
 
-    resolved_case_id = case_id if case_id else None
+    parsed_issued_date = None
+    if issued_date:
+        try:
+            parsed_issued_date = datetime.strptime(issued_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid date: {issued_date}"
+            ) from exc
 
-    # Capture pre-confirm case_id to detect _TRIAGE → real case transition.
-    pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
-    pre_confirm_case_id = pre_confirm_doc.case_id if pre_confirm_doc else None
+    parsed_received_date = None
+    if received_date:
+        try:
+            parsed_received_date = datetime.strptime(received_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid date: {received_date}"
+            ) from exc
 
     doc = triage_service.confirm_document(
         doc_id,
@@ -115,7 +124,8 @@ async def confirm_document(
         case_id=resolved_case_id,
         originator_type=parsed_originator,
         sender=sender,
-        received_date=parsed_date,
+        issued_date=parsed_issued_date,
+        received_date=parsed_received_date,
         finalize=True,
     )
     if not doc:

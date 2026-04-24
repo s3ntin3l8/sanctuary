@@ -40,9 +40,9 @@ class CaseRepository(BaseRepository[Case]):
         """Get all cases sorted by creation date."""
         query = self.db.query(Case).filter(Case.id != "_TRIAGE")
         if descending:
-            query = query.order_by(Case.created_at.desc())
+            query = query.order_by(Case.ingest_date.desc())
         else:
-            query = query.order_by(Case.created_at.asc())
+            query = query.order_by(Case.ingest_date.asc())
         return query.all()
 
     def get_by_status(self, status: CaseStatus) -> Sequence[Case]:
@@ -94,7 +94,7 @@ class CaseRepository(BaseRepository[Case]):
             title=title,
             status=status,
             jurisdiction=jurisdiction,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def update_status(self, case_id: str, status: CaseStatus) -> Case | None:
@@ -131,7 +131,7 @@ class CaseRepository(BaseRepository[Case]):
         total = query.count()
 
         cases = (
-            query.order_by(Case.created_at.desc())
+            query.order_by(Case.ingest_date.desc())
             .offset((page - 1) * per_page)
             .limit(per_page)
             .all()

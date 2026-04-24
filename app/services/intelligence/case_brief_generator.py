@@ -91,7 +91,7 @@ Cost exposure: {case.total_cost_exposure or 0} cents
 Documents ({len(docs)}):
 {
         chr(10).join(
-            f"- [{d.significance_tier}] {d.title or 'Untitled'} ({d.received_date}) — by {d.attributed_originator or 'unknown'} ({d.originator_type})\n  Summary: {(d.ai_summary or {}).get('legal_significance', 'N/A')}"
+            f"- [{d.significance_tier}] {d.title or 'Untitled'} ({d.issued_date}) — by {d.attributed_originator or 'unknown'} ({d.originator_type})\n  Summary: {(d.ai_summary or {}).get('legal_significance', 'N/A')}"
             for d in docs
         )
     }
@@ -143,7 +143,7 @@ def generate(case_id: str) -> None:
                 defer(Document.content),
             )
             .filter(Document.case_id == case_id)
-            .order_by(Document.received_date.asc())
+            .order_by(Document.issued_date.asc())
             .all()
         )
 

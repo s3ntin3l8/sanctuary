@@ -181,6 +181,7 @@ def _make_batch_with_docs(db_session, triage_case, target_case, docs_spec):
             role=spec.get("role", DocumentRole.COVER_LETTER),
             originator_type=OriginatorType.COURT,
             sender=spec.get("sender", "sender@example.com"),
+            issued_date=spec.get("issued_date", datetime(2026, 1, 1, tzinfo=UTC)),
             received_date=spec.get("received_date", datetime(2026, 1, 1, tzinfo=UTC)),
             ingest_batch_id=batch.id,
             parent_id=spec.get("parent_id"),
@@ -502,13 +503,14 @@ def test_confirm_document_clears_needs_review_when_all_fields_present(db_session
         role=DocumentRole.COVER_LETTER,
         originator_type=None,
         sender=None,
+        issued_date=None,
         received_date=None,
         needs_review=True,
         review_reasons=[
             "missing_case_id",
             "missing_originator",
             "missing_sender",
-            "missing_received_date",
+            "missing_issued_date",
         ],
     )
     db_session.add(doc)
@@ -524,6 +526,7 @@ def test_confirm_document_clears_needs_review_when_all_fields_present(db_session
         case_id=target_case.id,
         originator_type=OriginatorType.COURT,
         sender="court@example.com",
+        issued_date=datetime(2026, 4, 1, tzinfo=UTC),
         received_date=datetime(2026, 4, 1, tzinfo=UTC),
         finalize=True,
     )

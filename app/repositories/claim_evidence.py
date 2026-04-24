@@ -25,7 +25,7 @@ class ClaimEvidenceRepository(BaseRepository[ClaimEvidence]):
             role=role,
             excerpt=excerpt,
             confidence=confidence,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def evidence_exists(

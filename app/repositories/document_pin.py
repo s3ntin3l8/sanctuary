@@ -16,7 +16,7 @@ class DocumentPinRepository:
             document_id=document_id,
             passage_id=passage_id,
             note=note,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
             updated_at=datetime.now(),
         )
         self.db.add(pin)
@@ -30,7 +30,7 @@ class DocumentPinRepository:
         return (
             self.db.query(DocumentPin)
             .filter(DocumentPin.document_id == document_id)
-            .order_by(DocumentPin.created_at.asc())
+            .order_by(DocumentPin.ingest_date.asc())
             .all()
         )
 

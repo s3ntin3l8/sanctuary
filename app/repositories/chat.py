@@ -20,7 +20,7 @@ class ChatRepository:
                     Conversation.scope_type == scope_type,
                     Conversation.scope_id == scope_id,
                 )
-                .order_by(Conversation.created_at.desc())
+                .order_by(Conversation.ingest_date.desc())
                 .first()
             )
             if conv:
@@ -28,7 +28,7 @@ class ChatRepository:
         conv = Conversation(
             scope_type=scope_type,
             scope_id=scope_id,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
         self.db.add(conv)
         self.db.commit()
@@ -50,7 +50,7 @@ class ChatRepository:
             role=role,
             content=content,
             context_document_ids=context_document_ids,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
         self.db.add(msg)
         self.db.commit()
@@ -61,6 +61,6 @@ class ChatRepository:
         return (
             self.db.query(ConversationMessage)
             .filter(ConversationMessage.conversation_id == conversation_id)
-            .order_by(ConversationMessage.created_at.asc())
+            .order_by(ConversationMessage.ingest_date.asc())
             .all()
         )

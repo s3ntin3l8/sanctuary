@@ -221,7 +221,7 @@ def proceeding_with_graph(db_session, sample_case) -> Proceeding:
         court_level=ProceedingCourtLevel.AG,
         az_court="003 F 426/25",
         status=ProceedingStatus.ACTIVE,
-        created_at=datetime(2025, 1, 1),
+        ingest_date=datetime(2025, 1, 1),
     )
     db_session.add(proceeding)
     db_session.flush()
@@ -295,7 +295,7 @@ class TestCaseGraphServiceBuildPayload:
             court_name="AG",
             court_level=ProceedingCourtLevel.AG,
             status=ProceedingStatus.ACTIVE,
-            created_at=datetime(2025, 1, 1),
+            ingest_date=datetime(2025, 1, 1),
         )
         db_session.add(proc)
         db_session.commit()

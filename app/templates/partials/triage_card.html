@@ -50,7 +50,7 @@
             <span class="material-symbols-outlined text-base text-warning shrink-0" title="Metadata needs review: {{ _real_reasons | join(', ') }}">priority_high</span>
             {% endif %}
             {% if doc.significance_tier %}{{ significance_indicator(doc.significance_tier) }}{% endif %}
-            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap ml-1">{{ (doc.received_date or doc.created_at).strftime('%Y-%m-%d') }}</span>
+            <span class="font-mono text-[10px] text-on-surface-variant whitespace-nowrap ml-1">{{ (doc.issued_date or doc.ingest_date).strftime('%Y-%m-%d') }}</span>
             <div class="flex items-center gap-1" x-data="{ confirmDelete: false }" @click.stop>
                 <button x-show="!confirmDelete" @click="confirmDelete = true"
                         class="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-0.5 rounded"

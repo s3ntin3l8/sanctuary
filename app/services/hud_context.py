@@ -157,7 +157,7 @@ def build_hud_context(
     reactions = (
         db.query(UserReaction)
         .filter(UserReaction.document_id == doc.id)
-        .order_by(UserReaction.created_at.asc())
+        .order_by(UserReaction.ingest_date.asc())
         .all()
     )
 
@@ -196,7 +196,7 @@ def build_hud_context(
     pins = (
         db.query(DocumentPin)
         .filter(DocumentPin.document_id == doc.id)
-        .order_by(DocumentPin.created_at.asc())
+        .order_by(DocumentPin.ingest_date.asc())
         .all()
     )
     passage_pin_counts: dict[str, int] = {}

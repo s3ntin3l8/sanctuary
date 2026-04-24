@@ -156,7 +156,7 @@ def test_document_repository_get_recent(db_session, sample_document):
     repo = DocumentRepository(db_session)
     results = repo.get_recent(limit=10)
     assert len(results) >= 1
-    assert results[0].created_at is not None
+    assert results[0].ingest_date is not None
 
 
 # ActionItem (formerly Deadline) Repository Tests

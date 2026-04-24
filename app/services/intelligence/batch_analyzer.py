@@ -191,7 +191,7 @@ def _apply_batch_results(
                         due_date=due_date,
                         action_type=ActionItemType(raw_type),
                         status=ActionItemStatus.OPEN,
-                        created_at=datetime.now(),
+                        ingest_date=datetime.now(),
                     )
                 )
     else:

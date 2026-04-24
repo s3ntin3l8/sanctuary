@@ -197,8 +197,8 @@ def _parse_date_string(date_str: str) -> datetime | None:
     return None
 
 
-def extract_received_date(content: str, filename: str) -> ExtractionResult:
-    """Extract received date from content."""
+def extract_issued_date(content: str, filename: str) -> ExtractionResult:
+    """Extract the date on the document itself (Datum:, Date: header, Bescheiddatum)."""
     value = None
     confidence = "low"
 

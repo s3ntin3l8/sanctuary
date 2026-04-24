@@ -78,7 +78,7 @@ async def retrieve_top_docs(
         docs = (
             db.query(Document)
             .filter(Document.case_id == case_id)
-            .order_by(Document.received_date.desc())
+            .order_by(Document.issued_date.desc())
             .limit(k)
             .all()
         )

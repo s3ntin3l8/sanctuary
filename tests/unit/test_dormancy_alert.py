@@ -10,14 +10,14 @@ def make_proceeding(
     court_name="AG Berlin",
     az="001 F 1/24",
     started_at=None,
-    created_at=None,
+    ingest_date=None,
 ):
     p = MagicMock()
     p.status = status
     p.court_name = court_name
     p.az_court = az
     p.started_at = started_at
-    p.created_at = created_at
+    p.ingest_date = ingest_date
     return p
 
 
@@ -105,7 +105,7 @@ def test_fallback_to_started_at_when_no_docs():
         court_name="OLG Frankfurt",
         az="5 UF 200/24",
         started_at=datetime.now() - timedelta(days=150),
-        created_at=datetime.now() - timedelta(days=200),
+        ingest_date=datetime.now() - timedelta(days=200),
     )
     case = make_case([proc])
     db = make_db(None)  # no documents

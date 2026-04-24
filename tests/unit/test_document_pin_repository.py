@@ -63,7 +63,7 @@ def test_pin_get_by_document(db_session, doc_with_case):
 
     pins = repo.get_by_document(doc_with_case.id)
     assert len(pins) == 2
-    # Ordered by created_at asc
+    # Ordered by ingest_date asc
     assert pins[0].passage_id == "pid1"
     assert pins[1].passage_id == "pid2"
 

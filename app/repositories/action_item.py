@@ -143,7 +143,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
             proceeding_id=proceeding_id,
             source_document_id=source_document_id,
             status=ActionItemStatus.OPEN,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def mark_completed(self, item_id: int) -> ActionItem | None:

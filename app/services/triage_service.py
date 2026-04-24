@@ -180,7 +180,7 @@ class TriageService:
                     Document.needs_review,
                 )
             )
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
             .all()
         )
 
@@ -228,7 +228,7 @@ class TriageService:
                     source_type=IngestBatchSourceType.MANUAL,
                     subject=doc.title,
                     sender_email=None,
-                    received_at=doc.created_at or datetime.now(),
+                    received_at=doc.ingest_date or datetime.now(),
                     confirmed_case_id=confirmed,
                     proceeding=doc.proceeding,
                     documents=[doc],
@@ -252,7 +252,7 @@ class TriageService:
                 key=lambda d: (
                     _SIG_ORDER.get(d.significance_tier, 99),
                     0 if d.role == DocumentRole.COVER_LETTER else 1,
-                    d.created_at or datetime.min,
+                    d.ingest_date or datetime.min,
                 )
             )
             doc_ids = [d.id for d in bundle.documents]
@@ -322,7 +322,7 @@ class TriageService:
                     Document.id != after_doc_id,
                     or_(Document.case_id == "_TRIAGE", Document.needs_review),
                 )
-                .order_by(Document.created_at.asc())
+                .order_by(Document.ingest_date.asc())
                 .first()
             )
             if sibling:
@@ -361,6 +361,7 @@ class TriageService:
         case_id: str | None = None,
         originator_type=None,
         sender: str | None = None,
+        issued_date: datetime | None = None,
         received_date: datetime | None = None,
         finalize: bool = False,
     ) -> Document | None:
@@ -377,6 +378,8 @@ class TriageService:
             doc.originator_type = originator_type
         if sender is not None:
             doc.sender = sender
+        if issued_date is not None:
+            doc.issued_date = issued_date
         if received_date is not None:
             doc.received_date = received_date
 

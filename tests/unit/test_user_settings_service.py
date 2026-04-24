@@ -141,13 +141,13 @@ def test_count_new_since_excludes_old_documents(db_session, case_a, settings_row
         title="Old Doc",
         case_id=case_a.id,
         originator_type=OriginatorType.COURT,
-        created_at=datetime(2026, 4, 9, 0, 0, 0),  # before since
+        ingest_date=datetime(2026, 4, 9, 0, 0, 0),  # before since
     )
     new_doc = Document(
         title="New Doc",
         case_id=case_a.id,
         originator_type=OriginatorType.COURT,
-        created_at=datetime(2026, 4, 11, 0, 0, 0),  # after since
+        ingest_date=datetime(2026, 4, 11, 0, 0, 0),  # after since
     )
     db_session.add_all([old_doc, new_doc])
     db_session.commit()
@@ -166,13 +166,13 @@ def test_count_new_since_counts_only_this_case(db_session, case_a, case_b):
         title="Doc for A",
         case_id=case_a.id,
         originator_type=OriginatorType.OWN,
-        created_at=datetime(2026, 4, 5, 0, 0, 0),
+        ingest_date=datetime(2026, 4, 5, 0, 0, 0),
     )
     doc_b = Document(
         title="Doc for B",
         case_id=case_b.id,
         originator_type=OriginatorType.OWN,
-        created_at=datetime(2026, 4, 5, 0, 0, 0),
+        ingest_date=datetime(2026, 4, 5, 0, 0, 0),
     )
     db_session.add_all([doc_a, doc_b])
     db_session.commit()
@@ -190,7 +190,7 @@ def test_count_new_since_zero_when_no_new_docs(db_session, case_a):
         title="Old Doc",
         case_id=case_a.id,
         originator_type=OriginatorType.COURT,
-        created_at=datetime(2026, 4, 1, 0, 0, 0),
+        ingest_date=datetime(2026, 4, 1, 0, 0, 0),
     )
     db_session.add(doc)
     db_session.commit()

@@ -68,8 +68,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if parsed_ot is not None:
         doc.originator_type = parsed_ot
 
-    if summary_data.get("date"):
-        raw_date = str(summary_data["date"]).strip()
+    if summary_data.get("issued_date"):
+        raw_date = str(summary_data["issued_date"]).strip()
         parsed_date = None
         for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
             try:
@@ -84,11 +84,17 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             except ValueError:
                 pass
         if parsed_date is not None:
-            doc.received_date = parsed_date.replace(tzinfo=UTC)
+            doc.issued_date = parsed_date.replace(tzinfo=UTC)
 
     # 2. Update confidence scores — only accept schema keys; drop unknown ones
     #    (e.g. case_id) so prompt drift can't inject bogus confidence values.
-    _KNOWN_CONF_KEYS = {"sender", "date", "originator", "az_court", "internal_id"}
+    _KNOWN_CONF_KEYS = {
+        "sender",
+        "issued_date",
+        "originator",
+        "az_court",
+        "internal_id",
+    }
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):
         new_conf = dict(doc.extraction_confidence or {})
@@ -251,7 +257,9 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         "az_court": az_hint,
         "internal_id": internal_id_hint,
         "sender": doc.sender,
-        "date": doc.received_date.strftime("%Y-%m-%d") if doc.received_date else None,
+        "issued_date": doc.issued_date.strftime("%Y-%m-%d")
+        if doc.issued_date
+        else None,
         "originator": (
             doc.originator_type.value
             if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN
@@ -290,7 +298,7 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
     try:
         summary_data = generate_summary_sync(doc, db=db)
 
-        # Phase 1: only apply metadata fields (az_court, sender, received_date, originator_type)
+        # Phase 1: only apply metadata fields (az_court, sender, issued_date, originator_type)
         # The 3-bullet ai_summary is now written by Phase 4 document_enricher
         enrich_document_with_ai(doc, summary_data, db)
     except Exception as e:

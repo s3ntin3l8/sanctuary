@@ -90,7 +90,7 @@ def _build_notifications(db: Session) -> dict:
     pending_docs = (
         db.query(Document)
         .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
-        .order_by(Document.created_at.desc())
+        .order_by(Document.ingest_date.desc())
         .limit(5)
         .all()
     )

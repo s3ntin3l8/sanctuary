@@ -78,7 +78,7 @@ class ProceedingRepository(BaseRepository[Proceeding]):
             az_court=az_court,
             started_at=started_at,
             status=ProceedingStatus.ACTIVE,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def close(self, proceeding_id: int) -> Proceeding | None:

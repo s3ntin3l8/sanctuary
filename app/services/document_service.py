@@ -186,7 +186,7 @@ class DocumentService:
                 originator = sender_docs[0].originator_type
                 needs_review = sum(1 for d in sender_docs if d.needs_review)
                 last_contact = max(
-                    (d.created_at for d in sender_docs if d.created_at), default=None
+                    (d.ingest_date for d in sender_docs if d.ingest_date), default=None
                 )
                 contacts.append(
                     {
@@ -225,13 +225,13 @@ class DocumentService:
         query = (
             self.db.query(Document)
             .options(joinedload(Document.children))
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
         )
 
         if cursor:
             cursor_doc = self.doc_repo.get(cursor)
             if cursor_doc:
-                query = query.filter(Document.created_at < cursor_doc.created_at)
+                query = query.filter(Document.ingest_date < cursor_doc.ingest_date)
 
         docs = query.limit(limit + 1).all()
         has_more = len(docs) > limit

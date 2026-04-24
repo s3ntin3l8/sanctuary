@@ -1,6 +1,7 @@
 import hashlib
 import os
 import re
+from datetime import UTC, datetime
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
@@ -26,8 +27,8 @@ from app.services.ingestion.converters import (
 )
 from app.services.ingestion.extractors import (
     extract_case_id,
+    extract_issued_date,
     extract_originator,
-    extract_received_date,
     extract_sender,
 )
 
@@ -93,13 +94,16 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
     if not doc.received_date:
         reasons.append("missing_received_date")
 
+    if not doc.issued_date:
+        reasons.append("missing_issued_date")
+
     if doc.role == DocumentRole.ENCLOSURE and not doc.parent_id:
         reasons.append("missing_parent")
 
     # 3. Extraction Confidence
     conf = doc.extraction_confidence or {}
     # If any primary field is low/medium confidence, flag it
-    for field in ["internal_id", "az_court", "sender", "date", "originator"]:
+    for field in ["internal_id", "az_court", "sender", "issued_date", "originator"]:
         if conf.get(field) in ("low", "medium"):
             reasons.append("low_confidence")
             break
@@ -108,9 +112,10 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
     # Check for unconfirmed AI relationships
     # We check the DocumentRelationship table for any AI_DETECTED edges from this doc.
     try:
+        from sqlalchemy import inspect
+
         from app.models.database import DocumentRelationship
         from app.models.enums import RelationshipConfidence
-        from sqlalchemy import inspect
 
         db = inspect(doc).session
         if db:
@@ -118,7 +123,8 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
                 db.query(DocumentRelationship)
                 .filter(
                     DocumentRelationship.from_document_id == doc.id,
-                    DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+                    DocumentRelationship.confidence
+                    == RelationshipConfidence.AI_DETECTED,
                 )
                 .first()
             )
@@ -270,7 +276,7 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
 
     result_case_id = extract_case_id(safe_filename, content)
     result_originator = extract_originator(safe_filename, content)
-    result_date = extract_received_date(content, safe_filename)
+    result_date = extract_issued_date(content, safe_filename)
     result_sender = extract_sender(content)
     if result_case_id["value"]:
         from app.models.database import Case as CaseModel
@@ -280,10 +286,11 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
 
     doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
-    doc.received_date = result_date["value"]
+    doc.issued_date = result_date["value"]
+    doc.received_date = datetime.now(UTC)
     doc.extraction_confidence = ExtractionConfidenceSchema(
         sender=result_sender["confidence"],
-        date=result_date["confidence"],
+        issued_date=result_date["confidence"],
         originator=result_originator["confidence"],
     ).model_dump()
 

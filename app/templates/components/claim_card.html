@@ -64,8 +64,8 @@
       {# Doc title + date #}
       <span class="text-on-surface-variant flex-1 truncate">
         {{ doc.title or 'Untitled' }}
-        {% if doc.received_date %}
-        <span class="text-outline">· {{ doc.received_date | format_relative_time }}</span>
+        {% if doc.issued_date %}
+        <span class="text-outline">· {{ doc.issued_date | format_relative_time }}</span>
         {% endif %}
       </span>
       {# Reaction emojis from triage #}

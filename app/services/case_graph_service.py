@@ -258,7 +258,7 @@ class CaseGraphService:
                 node_counts["informational"] += 1
 
         # ------------------------------------------------------------------
-        # Row assignment: docs are already sorted by received_date ASC NULLS LAST,
+        # Row assignment: docs are already sorted by issued_date ASC NULLS LAST,
         # then id ASC (guaranteed by get_by_proceeding).
         # ------------------------------------------------------------------
         nodes: list[dict] = []
@@ -294,8 +294,8 @@ class CaseGraphService:
                 "title": _clip(doc.title or "Untitled", max_title_len),
                 "full_title": doc.title or "Untitled",
                 "role": doc.role.value if doc.role else "standalone",
-                "date_short": doc.received_date.strftime("%m-%d")
-                if doc.received_date
+                "date_short": doc.issued_date.strftime("%m-%d")
+                if doc.issued_date
                 else "\u2014",
                 "tier": doc.significance_tier.value
                 if doc.significance_tier
@@ -303,7 +303,7 @@ class CaseGraphService:
                 "thread_open": bool(doc.thread_open)
                 if hasattr(doc, "thread_open")
                 else False,
-                "ghost": doc.received_date is None,
+                "ghost": doc.issued_date is None,
                 "is_bundle": _is_bundle_header(doc),
                 "is_new_since_last_visit": doc.id in new_doc_ids,
                 "reaction": reaction_map.get(doc.id),
@@ -337,8 +337,8 @@ class CaseGraphService:
                 "y": TOP + node["row"] * ROW_H - 6,
                 "header": "\u2691 COURT RELAY",
                 "footer": (
-                    f"zugestellt {doc_obj.received_date.strftime('%d.%m')}"
-                    if doc_obj.received_date
+                    f"zugestellt {doc_obj.issued_date.strftime('%d.%m')}"
+                    if doc_obj.issued_date
                     else "zugestellt \u2014"
                 ),
                 "children": [
@@ -392,8 +392,8 @@ class CaseGraphService:
                     ),
                     "full_title": doc.title or "Untitled",
                     "role": doc.role.value if doc.role else "standalone",
-                    "date_short": doc.received_date.strftime("%m-%d")
-                    if doc.received_date
+                    "date_short": doc.issued_date.strftime("%m-%d")
+                    if doc.issued_date
                     else "\u2014",
                     "tier": "administrative",
                     "ghost": True,

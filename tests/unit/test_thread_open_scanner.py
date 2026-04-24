@@ -55,7 +55,7 @@ def test_closes_thread_when_reply_exists(db_session, thread_open_doc, reply_doc)
         to_document_id=thread_open_doc.id,
         relationship_type=RelationshipType.REPLIES_TO,
         confidence=RelationshipConfidence.AI_DETECTED,
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(rel)
     db_session.commit()
@@ -89,7 +89,7 @@ def test_closes_thread_on_references_edge(db_session, thread_open_doc, reply_doc
         to_document_id=thread_open_doc.id,
         relationship_type=RelationshipType.REFERENCES,
         confidence=RelationshipConfidence.USER_CONFIRMED,
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(rel)
     db_session.commit()
@@ -114,7 +114,7 @@ def test_only_affects_thread_open_docs(
         to_document_id=thread_open_doc.id,
         relationship_type=RelationshipType.REPLIES_TO,
         confidence=RelationshipConfidence.AI_DETECTED,
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(rel)
     db_session.commit()

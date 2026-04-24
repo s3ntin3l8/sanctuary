@@ -36,7 +36,7 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
             Document.id != doc.id,
             Document.significance_tier.in_(list(CANDIDATE_TIERS)),
         )
-        .order_by(Document.received_date.desc().nullslast())
+        .order_by(Document.issued_date.desc().nullslast())
         .limit(MAX_CANDIDATES)
         .all()
     )
@@ -52,7 +52,7 @@ def _build_candidate_summary(candidate: Document) -> str:
 
     return (
         f"ID={candidate.id} | {candidate.title} | "
-        f"Date={candidate.received_date.date() if candidate.received_date else 'unknown'} | "
+        f"Date={candidate.issued_date.date() if candidate.issued_date else 'unknown'} | "
         f"Author={candidate.attributed_originator or candidate.sender or 'unknown'} | "
         f"Summary={sig} | Key passage: {first_passage}"
     )
@@ -160,7 +160,7 @@ def detect(doc_id: int) -> str | None:
                     relationship_type=RelationshipType(rel_type_raw),
                     confidence=RelationshipConfidence.AI_DETECTED,
                     notes=notes[:500],
-                    created_at=datetime.now(),
+                    ingest_date=datetime.now(),
                 )
             )
 

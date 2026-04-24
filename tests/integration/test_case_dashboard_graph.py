@@ -62,7 +62,7 @@ def graph_proceeding(db_session, graph_case) -> Proceeding:
         az_court="003 F 426/25",
         status=ProceedingStatus.ACTIVE,
         started_at=datetime(2025, 1, 1),
-        created_at=datetime(2025, 1, 1),
+        ingest_date=datetime(2025, 1, 1),
     )
     db_session.add(proceeding)
     db_session.flush()

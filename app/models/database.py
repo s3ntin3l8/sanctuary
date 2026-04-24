@@ -49,8 +49,8 @@ class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
         Index("ix_documents_case_needs_review", "case_id", "needs_review"),
-        Index("ix_documents_case_created", "case_id", "created_at"),
-        Index("ix_documents_needs_review_created", "needs_review", "created_at"),
+        Index("ix_documents_case_created", "case_id", "ingest_date"),
+        Index("ix_documents_needs_review_created", "needs_review", "ingest_date"),
         Index("ix_documents_proceeding", "proceeding_id"),
         Index("ix_documents_ingest_batch", "ingest_batch_id"),
         Index("ix_documents_significance", "significance_tier"),
@@ -72,7 +72,10 @@ class Document(Base):
     received_date = Column(
         DateTime, nullable=True
     )  # When the physical document was received
-    created_at = Column(DateTime, default=datetime.now)
+    issued_date = Column(
+        DateTime, nullable=True, index=True
+    )  # Date on the document itself (Datum:, Date: header, Bescheiddatum)
+    ingest_date = Column(DateTime, default=datetime.now)
     needs_review = Column(Boolean, default=True, index=True)
     review_reasons = Column(
         JSON, default=list
@@ -92,7 +95,7 @@ class Document(Base):
     ai_summary = Column(
         JSON, nullable=True
     )  # {"legal_significance": "...", "required_action": "...", "financial_impact": "..."}
-    ai_summary_created_at = Column(DateTime, nullable=True)
+    ai_summary_ingest_date = Column(DateTime, nullable=True)
     ai_summary_approved_at = Column(
         DateTime, nullable=True
     )  # timestamp when human approved
@@ -152,7 +155,7 @@ class Case(Base):
     title = Column(String, nullable=False)
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
+    ingest_date = Column(DateTime, default=datetime.now)
     closed_at = Column(DateTime, nullable=True)
     is_draft = Column(Boolean, default=False, nullable=False)
 
@@ -189,7 +192,7 @@ class Proceeding(Base):
     )
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case", back_populates="proceedings")
     documents = relationship("Document", back_populates="proceeding")
@@ -220,7 +223,7 @@ class IngestBatch(Base):
         default=IngestBatchStatus.PENDING,
         nullable=False,
     )
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
     analysis_queued_at = Column(DateTime, nullable=True)
     source_hash = Column(String, index=True, nullable=True)
     meta = Column(JSON, nullable=True)
@@ -275,7 +278,7 @@ class DocumentRelationship(Base):
         nullable=False,
     )
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     from_document = relationship("Document", foreign_keys=[from_document_id])
     to_document = relationship("Document", foreign_keys=[to_document_id])
@@ -316,7 +319,7 @@ class ActionItem(Base):
         SAEnum(ActionItemStatus), default=ActionItemStatus.OPEN, nullable=False
     )
     location = Column(String, nullable=True)  # for court_date entries
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
@@ -379,7 +382,7 @@ class ClaimEvidence(Base):
         default=RelationshipConfidence.AI_DETECTED,
         nullable=False,
     )
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     claim = relationship("Claim", back_populates="evidence")
     document = relationship("Document")
@@ -405,7 +408,7 @@ class UserReaction(Base):
     user_id = Column(String, default="single_user", nullable=False)
     reaction = Column(SAEnum(UserReactionType), nullable=False)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     document = relationship("Document")
 
@@ -430,7 +433,7 @@ class DocumentPin(Base):
     passage_id = Column(String(12), nullable=False)
     note = Column(Text, nullable=True)
     user_id = Column(String, default="single_user", nullable=False)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
@@ -464,7 +467,7 @@ class SavedSearch(Base):
     user_id = Column(String, default="single_user", nullable=False)
     name = Column(String, nullable=False)
     filter_json = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
+    ingest_date = Column(DateTime, default=datetime.now)
 
 
 class LegalCost(Base):
@@ -522,7 +525,7 @@ class LegalCost(Base):
 
     source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")
@@ -536,13 +539,13 @@ class Conversation(Base):
     scope_type = Column(String, nullable=False)  # "document" | "case"
     scope_id = Column(String, nullable=False)  # doc id (str) or case id (ADV-024-A)
     title = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     messages = relationship(
         "ConversationMessage",
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="ConversationMessage.created_at",
+        order_by="ConversationMessage.ingest_date",
     )
 
 
@@ -559,7 +562,7 @@ class ConversationMessage(Base):
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     context_document_ids = Column(JSON, nullable=True)  # [doc_id, ...] cited
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -587,7 +590,7 @@ class Entity(Base):
     # Additional metadata (confidence, positions, extracted context)
     extra_data = Column(JSON, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")

@@ -30,7 +30,7 @@ def build_document_chat_prompt(
 
     context = f"""Document: [{doc.id}] {doc.title}
 Case: {doc.case_id or "unassigned"}
-Received: {doc.received_date.strftime("%d.%m.%Y") if doc.received_date else "unknown"}
+Issued: {doc.issued_date.strftime("%d.%m.%Y") if doc.issued_date else "unknown"}
 Significance: {doc.significance_tier.value if doc.significance_tier else "unset"}
 
 {passages_block}

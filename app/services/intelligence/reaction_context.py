@@ -27,7 +27,7 @@ def format_reactions_for_case(db: Session, case_id: str) -> str:
         db.query(UserReaction)
         .join(Document, Document.id == UserReaction.document_id)
         .filter(Document.case_id == case_id)
-        .order_by(UserReaction.created_at.asc())
+        .order_by(UserReaction.ingest_date.asc())
         .all()
     )
 
@@ -58,7 +58,7 @@ def format_reactions_for_document(db: Session, document_id: int) -> str:
     reactions = (
         db.query(UserReaction)
         .filter(UserReaction.document_id == document_id)
-        .order_by(UserReaction.created_at.asc())
+        .order_by(UserReaction.ingest_date.asc())
         .all()
     )
 

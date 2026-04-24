@@ -23,7 +23,7 @@ class UserReactionRepository(BaseRepository[UserReaction]):
         return (
             self.db.query(UserReaction)
             .filter(UserReaction.document_id == document_id)
-            .order_by(UserReaction.created_at.desc())
+            .order_by(UserReaction.ingest_date.desc())
             .all()
         )
 
@@ -32,7 +32,7 @@ class UserReactionRepository(BaseRepository[UserReaction]):
             self.db.query(UserReaction)
             .join(Document, Document.id == UserReaction.document_id)
             .filter(Document.case_id == case_id)
-            .order_by(UserReaction.created_at.desc())
+            .order_by(UserReaction.ingest_date.desc())
             .all()
         )
 
@@ -71,7 +71,7 @@ class UserReactionRepository(BaseRepository[UserReaction]):
         return (
             self.db.query(UserReaction)
             .filter(UserReaction.document_id.in_(document_ids))
-            .order_by(UserReaction.created_at.desc())
+            .order_by(UserReaction.ingest_date.desc())
             .all()
         )
 

@@ -23,7 +23,7 @@ def batch_with_two_docs(db_session, sample_case):
         case_id=sample_case.id,
         status=IngestBatchStatus.PENDING,
         received_at=datetime.now(),
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(batch)
     db_session.flush()
@@ -91,7 +91,7 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
         case_id=sample_case.id,
         status=IngestBatchStatus.PENDING,
         received_at=datetime.now(),
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(batch)
     db_session.flush()

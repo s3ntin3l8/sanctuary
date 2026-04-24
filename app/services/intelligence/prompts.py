@@ -20,6 +20,7 @@ DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the prov
 
 Return ONLY valid JSON with these exact keys:
 - title: A short (≤80 chars) human-readable title in the document's language. Avoid raw filenames, serial numbers, and dates unless they are the only identity. Good examples: "Antragsschrift Unterhaltsanpassung", "Beschluss § 1568a BGB", "Klageerwiderung Liu".
+- issued_date: the date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - significance_tier: one of "critical", "significant", "informational", "administrative"
   * critical: rulings, decisions, orders with legal force or hard deadlines
   * significant: substantive motions, statements, reports that shape the case
@@ -110,7 +111,7 @@ Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
 - sender: The organization or person who authored/sent the document.
-- date: The date of the document or when it was received (YYYY-MM-DD).
+- issued_date: The date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
 - contradictions: A list of strings describing any factual or procedural contradictions with existing case knowledge (if provided). Set to [] if none.

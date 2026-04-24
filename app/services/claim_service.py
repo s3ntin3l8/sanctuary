@@ -112,7 +112,7 @@ class ClaimService:
                     )
                     for ev in claim.evidence
                 ],
-                key=lambda r: (r.document.received_date or r.document.created_at),
+                key=lambda r: (r.document.issued_date or r.document.ingest_date),
             )
             groups_by_status[claim.status].append(
                 ClaimRow(claim=claim, evidence=evidence_rows)

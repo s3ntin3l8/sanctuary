@@ -78,7 +78,7 @@ class HomeService:
             cases_with_new_docs = (
                 self.db.query(Case)
                 .join(Document, Case.id == Document.case_id)
-                .filter(Document.created_at > last_home_visit)
+                .filter(Document.ingest_date > last_home_visit)
                 .distinct()
                 .all()
             )
@@ -88,9 +88,9 @@ class HomeService:
                     self.db.query(Document)
                     .filter(
                         Document.case_id == case.id,
-                        Document.created_at > last_home_visit,
+                        Document.ingest_date > last_home_visit,
                     )
-                    .order_by(Document.created_at.desc())
+                    .order_by(Document.ingest_date.desc())
                     .all()
                 )
 
@@ -121,7 +121,7 @@ class HomeService:
                         "new_actions": self.db.query(ActionItem)
                         .filter(
                             ActionItem.case_id == case.id,
-                            ActionItem.created_at > last_home_visit,
+                            ActionItem.ingest_date > last_home_visit,
                         )
                         .count(),
                     }
@@ -147,7 +147,7 @@ class HomeService:
             .options(joinedload(Case.proceedings))
             .filter(Case.status != CaseStatus.CLOSED, Case.id != "_TRIAGE")
         )
-        active_cases = active_cases_query.order_by(Case.created_at.desc()).all()
+        active_cases = active_cases_query.order_by(Case.ingest_date.desc()).all()
 
         # Enrich active cases with some metadata for the card
         enriched_cases = [
@@ -175,6 +175,6 @@ def count_new_since(case_id: str, since: datetime | None, db) -> int:
         return 0
     return (
         db.query(Document)
-        .filter(Document.case_id == case_id, Document.created_at > since)
+        .filter(Document.case_id == case_id, Document.ingest_date > since)
         .count()
     )

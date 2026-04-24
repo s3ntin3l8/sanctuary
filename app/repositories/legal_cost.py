@@ -134,7 +134,7 @@ class LegalCostRepository(BaseRepository[LegalCost]):
             issued_at=issued_at,
             due_at=due_at,
             source_document_id=source_document_id,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def update_status(

@@ -125,10 +125,26 @@ def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
 
 def _apply_enrichment(doc: Document, result: dict) -> None:
     """Write AI enrichment results to the document (caller commits)."""
+
     # title — only overwrite when AI returns a clean, non-empty title
     ai_title = (result.get("title") or "").strip()
     if ai_title and len(ai_title) <= 255:
         doc.title = ai_title
+
+    # issued_date — parse ISO date from document content (skip if already set by METADATA)
+    if not doc.issued_date:
+        issued_date_str = (result.get("issued_date") or "").strip()
+        if issued_date_str:
+            try:
+                parsed = datetime.strptime(issued_date_str[:10], "%Y-%m-%d")
+                doc.issued_date = parsed
+            except (ValueError, TypeError):
+                pass
+
+    # Update extraction confidence for issued_date to high (AI confirmation)
+    conf = doc.extraction_confidence or {}
+    conf["issued_date"] = "high" if doc.issued_date else "low"
+    doc.extraction_confidence = conf
 
     # significance_tier
     tier_raw = (result.get("significance_tier") or "").lower()

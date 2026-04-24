@@ -120,6 +120,11 @@ REVIEW_FIELD_LABELS = {
         "field": "originator_type",
     },
     "missing_sender": {"label": "Sender / Source", "icon": "mail", "field": "sender"},
+    "missing_issued_date": {
+        "label": "Issued Date",
+        "icon": "calendar_today",
+        "field": "issued_date",
+    },
     "missing_received_date": {
         "label": "Received Date",
         "icon": "calendar_today",

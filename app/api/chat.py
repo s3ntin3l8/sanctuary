@@ -47,7 +47,7 @@ def get_or_create_conversation(req: ConversationRequest, db: Session = Depends(g
                 "role": m.role,
                 "content": m.content,
                 "context_document_ids": m.context_document_ids,
-                "created_at": m.created_at.isoformat(),
+                "ingest_date": m.ingest_date.isoformat(),
             }
             for m in messages
         ],

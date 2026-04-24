@@ -94,13 +94,13 @@ def _get_dormancy_signals(db: Session) -> list[dict[str, Any]]:
                 last_doc = (
                     db.query(Document)
                     .filter(Document.proceeding_id == proc.id)
-                    .order_by(Document.created_at.desc())
+                    .order_by(Document.ingest_date.desc())
                     .first()
                 )
                 last_activity = (
-                    last_doc.created_at
+                    last_doc.ingest_date
                     if last_doc
-                    else (proc.started_at or proc.created_at)
+                    else (proc.started_at or proc.ingest_date)
                 )
 
                 if last_activity:

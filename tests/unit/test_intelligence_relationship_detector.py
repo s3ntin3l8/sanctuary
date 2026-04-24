@@ -24,7 +24,7 @@ def proceeding_with_docs(db_session, sample_case):
         court_level=ProceedingCourtLevel.AG,
         az_court="003 F 426/25",
         status=ProceedingStatus.ACTIVE,
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(proceeding)
     db_session.flush()

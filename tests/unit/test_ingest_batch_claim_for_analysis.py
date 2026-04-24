@@ -22,7 +22,7 @@ def ready_batch(db_session, sample_case):
         case_id=sample_case.id,
         status=IngestBatchStatus.PENDING,
         received_at=datetime.now(),
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(batch)
     db_session.flush()
@@ -50,7 +50,7 @@ def pending_batch(db_session, sample_case):
         case_id=sample_case.id,
         status=IngestBatchStatus.PENDING,
         received_at=datetime.now(),
-        created_at=datetime.now(),
+        ingest_date=datetime.now(),
     )
     db_session.add(batch)
     db_session.flush()

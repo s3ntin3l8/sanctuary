@@ -39,7 +39,7 @@ class DocumentRepository(BaseRepository[Document]):
             query = query.options(*options)
         return (
             self._with_content_deferred(query)
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
             .all()
         )
 
@@ -48,7 +48,7 @@ class DocumentRepository(BaseRepository[Document]):
         return (
             self.db.query(Document)
             .filter(Document.needs_review)
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
             .all()
         )
 
@@ -75,7 +75,7 @@ class DocumentRepository(BaseRepository[Document]):
         return self._with_content_deferred(
             self.db.query(Document)
             .filter(Document.sender.isnot(None))
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
         ).all()
 
     def get_by_originator(self, originator: OriginatorType) -> Sequence[Document]:
@@ -101,13 +101,13 @@ class DocumentRepository(BaseRepository[Document]):
     def get_recent(self, limit: int = 10) -> Sequence[Document]:
         """Get recently created documents."""
         return self._with_content_deferred(
-            self.db.query(Document).order_by(Document.created_at.desc()).limit(limit)
+            self.db.query(Document).order_by(Document.ingest_date.desc()).limit(limit)
         ).all()
 
     def get_since(self, since: datetime) -> Sequence[Document]:
         """Get documents created since given datetime."""
         return self._with_content_deferred(
-            self.db.query(Document).filter(Document.created_at >= since)
+            self.db.query(Document).filter(Document.ingest_date >= since)
         ).all()
 
     def get_children(self, parent_id: int) -> Sequence[Document]:
@@ -164,7 +164,7 @@ class DocumentRepository(BaseRepository[Document]):
             sender=sender,
             file_path=file_path,
             needs_review=case_id is None or case_id == "_TRIAGE",
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def get_by_proceeding(
@@ -173,14 +173,14 @@ class DocumentRepository(BaseRepository[Document]):
         tiers: list["SignificanceTier"] | None = None,
         options: list | None = None,
     ) -> list["Document"]:
-        """Return all documents for a proceeding, ordered by received_date asc nulls last, id asc."""
+        """Return all documents for a proceeding, ordered by issued_date asc nulls last, id asc."""
         q = self.db.query(Document).filter(Document.proceeding_id == proceeding_id)
         if tiers:
             q = q.filter(Document.significance_tier.in_(tiers))
         if options:
             q = q.options(*options)
         return q.order_by(
-            Document.received_date.asc().nullslast(),
+            Document.issued_date.asc().nullslast(),
             Document.id.asc(),
         ).all()
 
@@ -198,7 +198,7 @@ class DocumentRepository(BaseRepository[Document]):
         )
         if tiers:
             q = q.filter(Document.significance_tier.in_(tiers))
-        return q.order_by(Document.received_date.desc().nullslast()).limit(limit).all()
+        return q.order_by(Document.issued_date.desc().nullslast()).limit(limit).all()
 
     def get_paginated(
         self,
@@ -219,7 +219,7 @@ class DocumentRepository(BaseRepository[Document]):
         total = query.count()
 
         docs = (
-            query.order_by(Document.created_at.desc())
+            query.order_by(Document.ingest_date.desc())
             .offset((page - 1) * per_page)
             .limit(per_page)
             .all()

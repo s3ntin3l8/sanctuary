@@ -67,7 +67,7 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
             relationship_type=relationship_type,
             confidence=confidence,
             notes=notes,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def confirm(self, rel_id: int) -> DocumentRelationship | None:

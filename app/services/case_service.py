@@ -224,13 +224,13 @@ class CaseService:
         last_doc = (
             self.db.query(Document)
             .filter(Document.case_id == case.id)
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
             .first()
         )
         days_since = (
-            (now - last_doc.created_at).days
+            (now - last_doc.ingest_date).days
             if last_doc
-            else (now - case.created_at).days
+            else (now - case.ingest_date).days
         )
 
         # Get active proceeding name
@@ -250,7 +250,7 @@ class CaseService:
         recent_docs = (
             self.db.query(Document.significance_tier)
             .filter(Document.case_id == case.id, Document.significance_tier.isnot(None))
-            .order_by(Document.created_at.desc())
+            .order_by(Document.ingest_date.desc())
             .limit(20)
             .all()
         )
@@ -443,12 +443,12 @@ def _compute_dormancy_alert(case, db) -> str | None:
 
     for proc in active_procs:
         last_activity = (
-            db.query(func.max(Document.created_at))
+            db.query(func.max(Document.ingest_date))
             .filter(Document.proceeding_id == proc.id)
             .scalar()
         )
         if last_activity is None:
-            last_activity = proc.started_at or proc.created_at
+            last_activity = proc.started_at or proc.ingest_date
         if last_activity is None:
             continue
         days = (now - last_activity).days

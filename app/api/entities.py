@@ -12,7 +12,7 @@ async def entities_page(request: Request, db: Session = Depends(get_db)):
     from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
     from app.models.database import Entity
 
-    entities = db.query(Entity).order_by(Entity.created_at.desc()).all()
+    entities = db.query(Entity).order_by(Entity.ingest_date.desc()).all()
 
     grouped = {}
     for entity in entities:

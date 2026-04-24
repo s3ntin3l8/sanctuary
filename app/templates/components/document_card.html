@@ -24,7 +24,7 @@
             <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2">
                     <span class="material-symbols-outlined text-sm" style="color: {{ stripe_color }};">{{ stripe_icon }}</span>
-                    <span class="font-mono text-[10px] text-on-surface-variant">{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    <span class="font-mono text-[10px] text-on-surface-variant">{{ doc.ingest_date.strftime('%Y-%m-%d %H:%M') }}</span>
                 </div>
                 {% if doc.case_id %}
                 <a href="/cases/{{ doc.case_id|urlencode }}" @click.stop=""
@@ -48,7 +48,7 @@
             <!-- Footer: Provenance + Status -->
             <div class="flex items-center justify-between pt-3 border-t border-outline-variant/10">
                 <p class="text-[9px] text-on-surface-variant font-medium truncate max-w-[70%]">
-                    {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}
+                    {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.issued_date %} on {{ doc.issued_date.strftime('%b %d, %Y') }}{% endif %}
                     {% else %}Document ID: {{ doc.id }}{% endif %}
                 </p>
                 <div class="flex items-center gap-2">
@@ -93,12 +93,12 @@
                         <span class="material-symbols-outlined text-xs" style="color: {{ child_color }};">{{ child_icon }}</span>
                         <span class="text-[8px] bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-sm font-bold uppercase tracking-wider">Nested</span>
                     </div>
-                    <span class="font-mono text-[10px] text-on-surface-variant">{{ child.created_at.strftime('%Y-%m-%d') }}</span>
+                    <span class="font-mono text-[10px] text-on-surface-variant">{{ child.ingest_date.strftime('%Y-%m-%d') }}</span>
                 </div>
                 <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors mb-2">{{ child.title }}</p>
                 <p class="text-xs text-on-surface-variant font-medium leading-relaxed line-clamp-2">{{ (child.content or '')[:120] | striptags }}...</p>
                 <p class="mt-3 text-[9px] text-on-surface-variant font-medium truncate">
-                    {% if child.sender %}Via: Email from {{ child.sender }}{% if child.received_date %} on {{ child.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}ID: {{ child.id }}{% endif %}
+                    {% if child.sender %}Via: Email from {{ child.sender }}{% if child.issued_date %} on {{ child.issued_date.strftime('%b %d, %Y') }}{% endif %}{% else %}ID: {{ child.id }}{% endif %}
                 </p>
             </div>
         </div>
@@ -117,7 +117,7 @@
     hx-swap="innerHTML">
     <div class="flex justify-between items-start mb-2">
         <p class="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{{ doc.title }}</p>
-        <span class="font-mono text-[10px] text-on-surface-variant">{{ (doc.received_date or doc.created_at).strftime('%b %d, %Y') }}</span>
+        <span class="font-mono text-[10px] text-on-surface-variant">{{ (doc.issued_date or doc.ingest_date).strftime('%b %d, %Y') }}</span>
     </div>
     <p class="text-xs text-on-surface-variant mb-4 leading-relaxed max-w-4xl line-clamp-2">
         {{ (doc.content or '')[:150] | striptags }}...
@@ -147,7 +147,7 @@
             style="color: {{ stripe_color }}; font-variation-settings: 'FILL' 1;">{{ stripe_icon }}</span>
     </div>
     <p class="mt-3 text-[9px] text-on-surface-variant font-medium">
-        {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.received_date %} on {{ doc.received_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ doc.case_id or 'Unknown' }} &bull; Document ID: {{ doc.id }}{% endif %}
+        {% if doc.sender %}Via: Email from {{ doc.sender }}{% if doc.issued_date %} on {{ doc.issued_date.strftime('%b %d, %Y') }}{% endif %}{% else %}Case: {{ doc.case_id or 'Unknown' }} &bull; Document ID: {{ doc.id }}{% endif %}
     </p>
 </div>
 {% endmacro %}

@@ -30,7 +30,7 @@ async def timeline_page(
     query = (
         db.query(Document)
         .options(joinedload(Document.children))
-        .order_by(Document.created_at.desc())
+        .order_by(Document.ingest_date.desc())
     )
     documents = query.offset(offset).limit(limit + 1).all()
     has_more = len(documents) > limit
@@ -41,7 +41,7 @@ async def timeline_page(
 
     grouped_docs = {}
     for doc in documents:
-        period = doc.created_at.strftime("%B %Y")
+        period = doc.ingest_date.strftime("%B %Y")
         if period not in grouped_docs:
             grouped_docs[period] = []
         grouped_docs[period].append(doc)

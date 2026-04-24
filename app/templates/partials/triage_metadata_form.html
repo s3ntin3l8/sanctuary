@@ -31,7 +31,7 @@
     'case_id':    'high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low',
     'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
     'sender':     conf.get('sender')     or ('high' if doc.sender else 'low'),
-    'date':       conf.get('date')       or ('high' if doc.received_date else 'low'),
+    'issued_date': conf.get('issued_date') or ('high' if doc.issued_date else 'low'),
 } %}
 {% set high_fields = [] %}
 {% for k, v in field_confs.items() %}{% if v == 'high' %}{% set _ = high_fields.append(k) %}{% endif %}{% endfor %}
@@ -94,8 +94,8 @@
                 <dd class="text-on-surface-variant font-medium truncate" title="{{ doc.sender or '' }}">{{ doc.sender or '—' }}</dd>
             </div>
             <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Received</dt>
-                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—' }}</dd>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Issued</dt>
+                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '—' }}</dd>
             </div>
             <div>
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
@@ -243,15 +243,24 @@
                        class="{{ input_base }} {{ low_border if field_confs.sender == 'low' else med_border if field_confs.sender == 'medium' else ok_border }}">
             </div>
 
-            {# Date #}
+            {# Issued Date #}
             <div class="space-y-1"
-                 {% if field_confs.date == 'high' %}x-show="showAll"{% endif %}>
+                 {% if field_confs.issued_date == 'high' %}x-show="showAll"{% endif %}>
                 <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Received {{ conf_chip(field_confs.date) }}
+                    Issued {{ conf_chip(field_confs.issued_date) }}
+                </label>
+                <input type="date" name="issued_date" value="{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '' }}"
+                       {% if field_confs.issued_date in ('low', 'medium') %}data-needs-review{% endif %}
+                       class="{{ input_base }} {{ low_border if field_confs.issued_date == 'low' else med_border if field_confs.issued_date == 'medium' else ok_border }}">
+            </div>
+
+            {# Received Date (secondary, preselected) #}
+            <div class="space-y-1" x-show="showAll">
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Received
                 </label>
                 <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
-                       {% if field_confs.date in ('low', 'medium') %}data-needs-review{% endif %}
-                       class="{{ input_base }} {{ low_border if field_confs.date == 'low' else med_border if field_confs.date == 'medium' else ok_border }}">
+                       class="{{ input_base }} opacity-60">
             </div>
 
             {# Read-only: internal_id, az_court, significance_tier, document_type — always visible #}

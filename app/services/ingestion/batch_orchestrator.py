@@ -2,6 +2,7 @@ import hashlib
 import logging
 import threading
 import unicodedata
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -251,6 +252,7 @@ def ingest_raw_email(
             ingest_batch_id=batch.id,
             sender=parsed["sender"] or None,
             received_date=received_date,
+            issued_date=received_date,
             meta={"threading": threading_meta} if threading_meta else None,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
@@ -295,6 +297,7 @@ def ingest_raw_email(
             case_id=batch.case_id or "_TRIAGE",
             proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
+            received_date=datetime.now(UTC),
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 

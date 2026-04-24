@@ -77,7 +77,7 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             proceeding_id=proceeding_id,
             received_at=received_at or datetime.now(),
             status=IngestBatchStatus.PENDING,
-            created_at=datetime.now(),
+            ingest_date=datetime.now(),
         )
 
     def assign_case(

@@ -73,7 +73,7 @@ class CaseDashboardService:
             .outerjoin(Document, Document.proceeding_id == Proceeding.id)
             .filter(Proceeding.case_id == case_id)
             .group_by(Proceeding.id)
-            .order_by(Proceeding.created_at.asc().nullslast(), Proceeding.id.asc())
+            .order_by(Proceeding.ingest_date.asc().nullslast(), Proceeding.id.asc())
             .all()
         )
 
@@ -99,9 +99,9 @@ class CaseDashboardService:
                 .options(joinedload(Document.proceeding))
                 .filter(
                     Document.proceeding_id == active_proceeding.id,
-                    Document.created_at > last_visit,
+                    Document.ingest_date > last_visit,
                 )
-                .order_by(Document.created_at.desc())
+                .order_by(Document.ingest_date.desc())
                 .all()
             )
         new_doc_ids = {d.id for d in new_docs}
@@ -157,7 +157,7 @@ class CaseDashboardService:
         # --- Legacy keys preserved so the existing template keeps rendering
         documents_sorted = sorted(
             data["documents"],
-            key=lambda d: d.received_date or d.created_at,
+            key=lambda d: d.issued_date or d.ingest_date,
             reverse=True,
         )
 
@@ -210,7 +210,7 @@ class CaseDashboardService:
             self.db.query(UserReaction, Document.id)
             .join(Document, UserReaction.document_id == Document.id)
             .filter(Document.proceeding_id == proceeding_id)
-            .order_by(UserReaction.created_at.desc())
+            .order_by(UserReaction.ingest_date.desc())
             .all()
         )
         out: dict[int, str] = {}
@@ -304,7 +304,7 @@ def neighbor_doc_ids(db: Session, doc) -> tuple[int | None, int | None]:
         db.query(Document.id)
         .filter(Document.proceeding_id == doc.proceeding_id)
         .order_by(
-            Document.received_date.asc().nullslast(),
+            Document.issued_date.asc().nullslast(),
             Document.id.asc(),
         )
         .all()

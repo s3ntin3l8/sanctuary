@@ -22,7 +22,7 @@ def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
     if now is None:
         now = datetime.now(UTC).replace(
             tzinfo=None
-        )  # naive UTC, consistent with Document.created_at
+        )  # naive UTC, consistent with Document.ingest_date
     settings = db.query(UserSettings).first()
     if not settings:
         return
@@ -139,6 +139,6 @@ def count_new_since(case_id: str, since: datetime | None, db) -> int:
 
     return (
         db.query(Document)
-        .filter(Document.case_id == case_id, Document.created_at > since)
+        .filter(Document.case_id == case_id, Document.ingest_date > since)
         .count()
     )
