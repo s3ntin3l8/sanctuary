@@ -151,6 +151,13 @@
     {# ── REVIEW STATE: edit form ── #}
     <div x-show="state === 'review'">
 
+        {% if doc.pipeline_state.value == 'failed' %}
+        <div class="mb-4 p-3 bg-error/10 text-error rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border border-error/20">
+            <span class="material-symbols-outlined text-sm">warning</span>
+            <span>AI enrichment failed or is offline. Please fill in metadata manually.</span>
+        </div>
+        {% endif %}
+
         {# Pre-confirmed summary row #}
         {% if high_fields %}
         <div class="flex items-center justify-between gap-2 mb-3 px-2.5 py-1.5 bg-originator-own/5 border border-originator-own/20 rounded-lg"
