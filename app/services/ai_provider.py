@@ -221,3 +221,41 @@ class AIProvider:
 
 # Global instance
 ai_provider = AIProvider()
+
+
+def call_llm(
+    prompt: str,
+    model: str,
+    system_prompt: str | None = None,
+    temperature: float = 0.0,
+    response_format: dict | None = None,
+) -> str:
+    """Synchronous non-streaming LLM call."""
+    from app.core.async_utils import run_async
+
+    options = {"temperature": temperature}
+    # Note: response_format is handled by provider-specific logic if supported
+
+    params = run_async(
+        ai_provider.get_generate_params(
+            model=model,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            stream=False,
+            options=options,
+        )
+    )
+
+    with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
+        resp = client.post(
+            params["url"], json=params["json"], headers=params["headers"]
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Handle Ollama vs OpenAI format
+        if "response" in data:  # Ollama
+            return data["response"]
+        elif "choices" in data:  # OpenAI
+            return data["choices"][0]["message"]["content"]
+        return ""

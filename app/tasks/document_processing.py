@@ -89,25 +89,12 @@ def process_document_task(self, doc_id: int):
             )
             return {"status": "metadata_failed", "doc_id": doc_id}
 
-        # Batch-ready gating: the last worker to finish METADATA wins the atomic
-        # claim and dispatches analyze_batch_task, which then enqueues
-        # enrich_document_task for every doc in the batch. Workers that don't win
-        # the race do nothing here — their enrichment arrives via analyze_batch_task.
-        batch_id = doc.ingest_batch_id
-        if batch_id:
-            from app.services.intelligence.orchestrator import claim_batch_for_analysis
-            from app.tasks.analyze_batch import analyze_batch_task
+        # Proceeding-ready gating: metadata is done, now check for proceeding changes.
+        # This replaces the direct batch analyzer call — the proceeding analyzer
+        # will trigger the batch analyzer once it finishes (or skips).
+        from app.tasks.analyze_proceeding import analyze_proceeding_task
 
-            if claim_batch_for_analysis(batch_id, db):
-                logger.info(
-                    f"Batch {batch_id}: all docs done, dispatching analyze_batch_task"
-                )
-                analyze_batch_task.delay(batch_id)
-        else:
-            # No batch — dispatch enrichment directly
-            from app.tasks.enrich_document import enrich_document_task
-
-            enrich_document_task.delay(doc_id)
+        analyze_proceeding_task.delay(doc_id)
 
         # Embeddings — now a real Celery task for proper stage tracking
         from app.tasks.generate_embedding import generate_embedding_task

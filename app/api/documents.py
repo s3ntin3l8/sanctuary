@@ -527,6 +527,11 @@ def _dispatch_retry_task(doc_id: int, batch_id, stage) -> None:
 
         process_document_task.delay(doc_id)
 
+    elif stage == PipelineStage.PROCEEDING_ANALYSIS:
+        from app.tasks.analyze_proceeding import analyze_proceeding_task
+
+        analyze_proceeding_task.delay(doc_id)
+
     elif stage == PipelineStage.BATCH_ANALYSIS:
         if batch_id:
             from app.tasks.analyze_batch import analyze_batch_task
