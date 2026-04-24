@@ -121,7 +121,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = summary_data.get("az_court")
-    internal_id = summary_data.get("internal_id")
+    from app.core.validators import normalize_case_id
+
+    internal_id = normalize_case_id(summary_data.get("internal_id"))
     ai_case_title = summary_data.get("case_title")
 
     if doc.case_id == "_TRIAGE":

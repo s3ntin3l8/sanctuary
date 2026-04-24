@@ -4,14 +4,21 @@ from pathlib import Path
 
 from app.models.enums import CaseStatus, Jurisdiction
 
-CASE_ID_PATTERN = re.compile(r"^[A-Z]{2,4}-\d{1,6}(-[A-Z0-9]+)?$")
+CASE_ID_PATTERN = re.compile(r"^[A-Z0-9]{1,10}-\d{1,6}(-[A-Z0-9]+)?$")
+
+
+def normalize_case_id(case_id: str | None) -> str | None:
+    """Sanitize case_id: replace / with -, strip, uppercase."""
+    if not case_id:
+        return case_id
+    return case_id.replace("/", "-").strip().upper()
 
 
 def validate_case_id(case_id: str | None) -> str | None:
     """Validate case ID format. Returns normalized ID or None if invalid."""
     if not case_id:
         return None
-    case_id = case_id.strip().upper()
+    case_id = normalize_case_id(case_id)
     if case_id == "_TRIAGE":
         return "_TRIAGE"
     if CASE_ID_PATTERN.match(case_id):

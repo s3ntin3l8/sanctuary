@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship, validates
 
+from app.core.validators import normalize_case_id
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
@@ -145,6 +146,10 @@ class Document(Base):
     ingest_batch = relationship("IngestBatch", back_populates="documents")
     proceeding = relationship("Proceeding", back_populates="documents")
 
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
+
 
 class Case(Base):
     __tablename__ = "cases"
@@ -173,10 +178,7 @@ class Case(Base):
 
     @validates("id")
     def validate_id(self, key, case_id):
-        """Sanitize case_id: replace / with -, strip, uppercase."""
-        if not case_id:
-            return case_id
-        return case_id.replace("/", "-").strip().upper()
+        return normalize_case_id(case_id)
 
 
 class Proceeding(Base):
@@ -203,6 +205,10 @@ class Proceeding(Base):
 
     case = relationship("Case", back_populates="proceedings")
     documents = relationship("Document", back_populates="proceeding")
+
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
 
 
 class IngestBatch(Base):
@@ -238,6 +244,10 @@ class IngestBatch(Base):
     case = relationship("Case")
     proceeding = relationship("Proceeding")
     documents = relationship("Document", back_populates="ingest_batch")
+
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
 
     @property
     def key(self) -> str:
@@ -332,6 +342,10 @@ class ActionItem(Base):
     proceeding = relationship("Proceeding")
     source_document = relationship("Document")
 
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
+
 
 class Claim(Base):
     """An atomic factual or legal assertion made in a document (the Truth Map)."""
@@ -366,6 +380,10 @@ class Claim(Base):
     evidence = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
     )
+
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
 
 
 class ClaimEvidence(Base):
@@ -537,6 +555,10 @@ class LegalCost(Base):
     case = relationship("Case")
     source_document = relationship("Document")
 
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
+
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -554,6 +576,12 @@ class Conversation(Base):
         cascade="all, delete-orphan",
         order_by="ConversationMessage.ingest_date",
     )
+
+    @validates("scope_id")
+    def validate_scope_id(self, key, scope_id):
+        if self.scope_type == "case":
+            return normalize_case_id(scope_id)
+        return scope_id
 
 
 class ConversationMessage(Base):
@@ -601,3 +629,7 @@ class Entity(Base):
 
     case = relationship("Case")
     source_document = relationship("Document")
+
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
