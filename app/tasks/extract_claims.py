@@ -26,6 +26,8 @@ def _trigger_case_brief(doc_id: int) -> None:
 def extract_claims_task(doc_id: int):
     """Extract factual/legal/procedural claims from a document and link evidence to existing claims."""
     from app.dependencies import get_db_session
+    from app.models.database import Document
+    from app.models.enums import StageStatus
     from app.services.intelligence.claim_extractor import extract
     from app.services.pipeline_status import (
         mark_completed,
@@ -33,6 +35,36 @@ def extract_claims_task(doc_id: int):
         mark_skipped,
         mark_started,
     )
+
+    # Gate: CLAIMS uses doc.ai_summary — must have been written by ENRICH.
+    # Check before mark_started so the stage is not recorded as "started" for a skip.
+    db = get_db_session()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        stages = (doc.pipeline_stages or {}) if doc else {}
+        enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
+        if enrich_status != StageStatus.COMPLETED.value:
+            mark_skipped(
+                doc_id, PipelineStage.CLAIMS, db, reason="enrich_not_completed"
+            )
+            logger.info("Doc #%d: claims skipped (enrich_not_completed)", doc_id)
+            _trigger_case_brief(doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "enrich_not_completed",
+            }
+        if not doc.ai_summary_created_at:
+            mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="missing_ai_summary")
+            logger.info("Doc #%d: claims skipped (missing_ai_summary)", doc_id)
+            _trigger_case_brief(doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "missing_ai_summary",
+            }
+    finally:
+        db.close()
 
     db = get_db_session()
     try:

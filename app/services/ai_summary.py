@@ -192,11 +192,20 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
 
 def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
-    """Cascade a case assignment to sibling docs and the ingest batch."""
+    """Cascade a case assignment to the ingest batch and (single-doc only) siblings.
+
+    For multi-doc batches: BATCH_ANALYSIS is the cross-doc authority and runs after all
+    METADATA tasks finish. METADATA cascades to the batch record only — sibling docs are left
+    with _TRIAGE so BATCH_ANALYSIS can assign the cover letter's case.
+    For single-doc / unbatched docs: cascade to siblings (there are none) and the batch.
+    """
     if not doc.ingest_batch_id:
         return
     from app.models.database import IngestBatch
 
+    # For batched docs: BATCH_ANALYSIS runs after all METADATA complete.
+    # METADATA assigns the doc's own case_id but does NOT overwrite sibling case_ids —
+    # BATCH_ANALYSIS is the authoritative cascade for multi-doc batches.
     siblings = (
         db.query(Document)
         .filter(
@@ -206,6 +215,7 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
         )
         .all()
     )
+    # Only cascade to siblings when this is the only doc in the batch (BATCH_ANALYSIS is skipped)
     for sib in siblings:
         sib.case_id = case.id
         if proceeding and not sib.proceeding_id:

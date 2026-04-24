@@ -26,7 +26,8 @@ def detect_relationships_task(doc_id: int):
 
     logger.info("Doc #%d: relationships started", doc_id)
 
-    # Gate: skip if enrichment failed (relationships need key_passages + ai_summary)
+    # Gate: skip if ENRICH failed or did not produce ai_summary.
+    # RELATIONSHIPS uses doc.ai_summary and doc.key_passages — both are only written by ENRICH.
     db = get_db_session()
     try:
         from app.models.database import Document
@@ -36,19 +37,35 @@ def detect_relationships_task(doc_id: int):
         enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
         if enrich_status != StageStatus.COMPLETED.value:
             mark_skipped(
-                doc_id, PipelineStage.RELATIONSHIPS, db, reason="missing_enrichment"
+                doc_id, PipelineStage.RELATIONSHIPS, db, reason="enrich_not_completed"
             )
             from app.tasks.extract_claims import extract_claims_task
 
             logger.info(
-                "Doc #%d: relationships skipped (missing_enrichment) — still dispatching claims",
+                "Doc #%d: relationships skipped (enrich_not_completed) — still dispatching claims",
                 doc_id,
             )
             extract_claims_task.delay(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
-                "reason": "missing_enrichment",
+                "reason": "enrich_not_completed",
+            }
+        if not doc.ai_summary_created_at:
+            mark_skipped(
+                doc_id, PipelineStage.RELATIONSHIPS, db, reason="missing_ai_summary"
+            )
+            from app.tasks.extract_claims import extract_claims_task
+
+            logger.info(
+                "Doc #%d: relationships skipped (missing_ai_summary) — still dispatching claims",
+                doc_id,
+            )
+            extract_claims_task.delay(doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "missing_ai_summary",
             }
     finally:
         db.close()

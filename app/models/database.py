@@ -95,7 +95,7 @@ class Document(Base):
     ai_summary = Column(
         JSON, nullable=True
     )  # {"legal_significance": "...", "required_action": "...", "financial_impact": "..."}
-    ai_summary_ingest_date = Column(DateTime, nullable=True)
+    ai_summary_created_at = Column(DateTime, nullable=True)
     ai_summary_approved_at = Column(
         DateTime, nullable=True
     )  # timestamp when human approved

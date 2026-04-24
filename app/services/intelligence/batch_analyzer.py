@@ -143,9 +143,12 @@ def _apply_batch_results(
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                parsed_ot = parse_originator_type(desc.get("originator_type"))
-                if parsed_ot is not None:
-                    child.originator_type = parsed_ot
+                # BATCH_ANALYSIS has cross-doc context — authoritative over METADATA for
+                # enclosures (the cover letter reveals the true originator of enclosures).
+                child.originator_type = (
+                    parse_originator_type(desc.get("originator_type"))
+                    or child.originator_type
+                )
                 child.attributed_originator = desc.get("attributed_originator")
 
         # Cascade cover-letter's case/proceeding to all sibling docs and the batch.

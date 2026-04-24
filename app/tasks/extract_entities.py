@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 def extract_entities_task(doc_id: int):
     """Extract named entities (persons, courts, law firms, citations) from a document."""
     from app.dependencies import get_db_session
+    from app.models.database import Document
+    from app.models.enums import StageStatus
     from app.services.intelligence.entity_extractor import extract
     from app.services.pipeline_status import (
         mark_completed,
@@ -17,6 +19,36 @@ def extract_entities_task(doc_id: int):
         mark_skipped,
         mark_started,
     )
+
+    # Gate: ENTITIES uses doc.ai_summary — must have been written by ENRICH.
+    # Check before mark_started so the stage is not recorded as "started" for a skip.
+    db = get_db_session()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        stages = (doc.pipeline_stages or {}) if doc else {}
+        enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
+        if enrich_status != StageStatus.COMPLETED.value:
+            mark_skipped(
+                doc_id, PipelineStage.ENTITIES, db, reason="enrich_not_completed"
+            )
+            logger.info("Doc #%d: entities skipped (enrich_not_completed)", doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "enrich_not_completed",
+            }
+        if not doc.ai_summary_created_at:
+            mark_skipped(
+                doc_id, PipelineStage.ENTITIES, db, reason="missing_ai_summary"
+            )
+            logger.info("Doc #%d: entities skipped (missing_ai_summary)", doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "missing_ai_summary",
+            }
+    finally:
+        db.close()
 
     db = get_db_session()
     try:

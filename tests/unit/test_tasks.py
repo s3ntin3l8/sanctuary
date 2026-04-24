@@ -1,3 +1,4 @@
+from datetime import UTC
 from unittest.mock import patch
 
 import pytest
@@ -91,7 +92,6 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
     """detect_relationships_task skips itself and dispatches extract_claims_task when enrichment is not completed."""
     from app.models.enums import PipelineStage, StageStatus
 
-    # Set pipeline_stages so enrichment shows as failed
     sample_document.pipeline_stages = {
         PipelineStage.ENRICH.value: {"status": StageStatus.FAILED.value}
     }
@@ -111,7 +111,40 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
         result = detect_relationships_task.run(sample_document.id)
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "missing_enrichment"
+    assert result["reason"] == "enrich_not_completed"
+    mock_mark_skipped.assert_called_once()
+    mock_claims_delay.assert_called_once_with(sample_document.id)
+
+
+@pytest.mark.unit
+def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missing(
+    db_session, sample_document
+):
+    """detect_relationships_task skips when ENRICH completed but produced no ai_summary."""
+    from app.models.enums import PipelineStage, StageStatus
+
+    sample_document.pipeline_stages = {
+        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
+    }
+    # ai_summary_created_at is None — ENRICH ran but didn't produce a summary
+    sample_document.ai_summary_created_at = None
+    db_session.commit()
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_skipped") as mock_mark_skipped,
+        patch(
+            "app.tasks.extract_claims.extract_claims_task.delay"
+        ) as mock_claims_delay,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+
+        result = detect_relationships_task.run(sample_document.id)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "missing_ai_summary"
     mock_mark_skipped.assert_called_once()
     mock_claims_delay.assert_called_once_with(sample_document.id)
 
@@ -119,6 +152,16 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
 @pytest.mark.unit
 def test_extract_claims_failure_triggers_case_brief(db_session, sample_document):
     """When claim extraction fails permanently (retries exhausted), _trigger_case_brief is still called."""
+    from datetime import datetime
+
+    from app.models.enums import PipelineStage, StageStatus
+
+    sample_document.pipeline_stages = {
+        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
+    }
+    sample_document.ai_summary_created_at = datetime.now(UTC)
+    db_session.commit()
+
     with (
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch(

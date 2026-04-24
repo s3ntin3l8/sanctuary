@@ -132,6 +132,7 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
         doc.title = ai_title
 
     # issued_date — parse ISO date from document content (skip if already set by METADATA)
+    # Confidence is tracked in METADATA; ENRICH does not override it.
     if not doc.issued_date:
         issued_date_str = (result.get("issued_date") or "").strip()
         if issued_date_str:
@@ -140,11 +141,6 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
                 doc.issued_date = parsed
             except (ValueError, TypeError):
                 pass
-
-    # Update extraction confidence for issued_date to high (AI confirmation)
-    conf = doc.extraction_confidence or {}
-    conf["issued_date"] = "high" if doc.issued_date else "low"
-    doc.extraction_confidence = conf
 
     # significance_tier
     tier_raw = (result.get("significance_tier") or "").lower()
