@@ -55,8 +55,48 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     )
 
 
+def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
+    """Validate AI-supplied offsets; repair via text search if missing or wrong."""
+    text = passage_dict.get("text", "")
+    start = passage_dict.get("start_offset")
+    end = passage_dict.get("end_offset")
+    content = doc.content or ""
+
+    # Validate exact match at claimed position
+    if (
+        start is not None
+        and end is not None
+        and isinstance(start, int)
+        and isinstance(end, int)
+        and 0 <= start < end <= len(content)
+        and content[start:end] == text
+    ):
+        return passage_dict  # offsets are correct
+
+    # Repair: find unique occurrence in content
+    idx = content.find(text)
+    if idx != -1 and content.find(text, idx + 1) == -1:
+        passage_dict["start_offset"] = idx
+        passage_dict["end_offset"] = idx + len(text)
+    else:
+        passage_dict["start_offset"] = None
+        passage_dict["end_offset"] = None
+        if idx == -1:
+            logger.debug(f"Doc {doc.id}: passage text not found in content, no offset")
+        else:
+            logger.debug(
+                f"Doc {doc.id}: passage text appears multiple times, no offset"
+            )
+    return passage_dict
+
+
 def _apply_enrichment(doc: Document, result: dict) -> None:
     """Write AI enrichment results to the document (caller commits)."""
+    # title — only overwrite when AI returns a clean, non-empty title
+    ai_title = (result.get("title") or "").strip()
+    if ai_title and len(ai_title) <= 255:
+        doc.title = ai_title
+
     # significance_tier
     tier_raw = (result.get("significance_tier") or "").lower()
     if tier_raw in VALID_SIGNIFICANCE_TIERS:
@@ -71,7 +111,7 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
     if doc.document_type in THREAD_OPEN_TYPES:
         doc.thread_open = True
 
-    # key_passages
+    # key_passages — validate schema and repair offsets
     passages = result.get("key_passages")
     if isinstance(passages, list):
         validated = []
@@ -85,6 +125,7 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
                         passage_dict["id"] = hashlib.sha1(
                             f"{text}|{kind}".encode()
                         ).hexdigest()[:12]
+                    passage_dict = _repair_passage_offsets(doc, passage_dict)
                     validated.append(passage_dict)
                 except Exception as e:
                     logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")

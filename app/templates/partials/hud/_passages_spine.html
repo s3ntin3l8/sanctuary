@@ -67,9 +67,9 @@
       {% set claim_id = pcm.get(p_id) %}
       <div role="button" tabindex="0"
               data-spine-passage="{{ p_id }}"
-              @click="focusPassage && focusPassage('{{ p.id }}')"
-              @keydown.enter.prevent="focusPassage && focusPassage('{{ p.id }}')"
-              @keydown.space.prevent="focusPassage && focusPassage('{{ p.id }}')"
+              @click="focusPassage && focusPassage('{{ p_id }}')"
+              @keydown.enter.prevent="focusPassage && focusPassage('{{ p_id }}')"
+              @keydown.space.prevent="focusPassage && focusPassage('{{ p_id }}')"
               class="w-full text-left px-2 py-1.5 rounded hover:bg-surface-container-high transition-colors group cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40">
         <p class="text-[11px] leading-snug line-clamp-2 italic" style="color:var(--color-on-surface);">"{{ p.text | truncate(100, true) }}"</p>
         <div class="flex items-center gap-2 mt-1 flex-wrap">

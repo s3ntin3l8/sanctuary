@@ -133,8 +133,11 @@ def _apply_claims(
             claim_repo.update_status(claim_id, ClaimStatus.REFUTED)
 
 
-def extract(doc_id: int) -> None:
-    """Extract claims from a single document."""
+def extract(doc_id: int) -> str | None:
+    """Extract claims from a single document.
+
+    Returns a non-empty skip reason if skipped, or None if it ran.
+    """
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
@@ -144,20 +147,19 @@ def extract(doc_id: int) -> None:
             return
 
         if doc.significance_tier not in ELIGIBLE_TIERS:
-            logger.info(
-                f"Doc {doc_id} tier {doc.significance_tier} ineligible for claim extraction"
-            )
-            return
+            reason = f"ineligible_tier:{doc.significance_tier}"
+            logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
+            return reason
 
         if not doc.content or doc.content.startswith("Conversion failed:"):
-            logger.info(
-                f"Doc {doc_id} has no usable content, skipping claim extraction"
-            )
-            return
+            reason = "no_content"
+            logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
+            return reason
 
         if not doc.case_id or doc.case_id == "_TRIAGE":
-            logger.info(f"Doc {doc_id} in triage/unassigned, skipping claim extraction")
-            return
+            reason = "triage_pending"
+            logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
+            return reason
 
         claim_repo = ClaimRepository(db)
         existing_claims = list(

@@ -216,37 +216,63 @@ def render_highlighted(
 ) -> Markup:
     """Render markdown then wrap key_passage text in semantic <mark> spans.
 
-    key_passages is a list of {text, rationale, span, kind?, id?} dicts.
+    key_passages is a list of {text, rationale, kind?, id?, start_offset?, end_offset?} dicts.
     passage_claim_ids maps passage_id → claim_id for the ⚖ chip.
     No-ops gracefully when the list is empty or None (pre-Phase 4).
+
+    When start_offset/end_offset are available, the exact source text slice is
+    used as the search pattern (avoids AI paraphrasing drift).  Falls back to
+    passage["text"] when offsets are missing or invalid.
     """
     import hashlib as _hl
     import re as _re
 
-    html = _md.render(str(value)) if value else ""
-    if key_passages:
-        for passage in key_passages:
-            text = (passage.get("text") or "").strip()
-            if not text:
-                continue
-            kind = (passage.get("kind") or "neutral").lower()
-            pid = (
-                passage.get("id")
-                or _hl.sha1(f"{text}|{kind}".encode()).hexdigest()[:12]
-            )
-            chip = ""
-            if passage_claim_ids and pid in passage_claim_ids:
-                claim_id = passage_claim_ids[pid]
-                chip = f'<a href="#claim-{claim_id}" class="hud-claim-chip ml-0.5 text-[10px] no-underline">⚖</a>'
-            mark = (
-                f'<mark id="p-{pid}" data-passage-id="{pid}" data-kind="{kind}" '
-                f'class="hud-mark hud-mark--{kind} '
-                f"bg-[color:var(--color-key-passage-bg)] text-[color:var(--color-key-passage-fg)] "
-                f'rounded px-0.5 ring-1 ring-[color:var(--color-key-passage-ring)]">'
-                f"{text}</mark>{chip}"
-            )
-            pattern = _re.escape(text)
-            html = _re.sub(pattern, lambda _m, m=mark: m, html, count=1)
+    raw = str(value) if value else ""
+    html = _md.render(raw)
+    if not key_passages:
+        return Markup(html)
+
+    for passage in key_passages:
+        text = (passage.get("text") or "").strip()
+        if not text:
+            continue
+        kind = (passage.get("kind") or "neutral").lower()
+        pid = passage.get("id") or _hl.sha1(f"{text}|{kind}".encode()).hexdigest()[:12]
+
+        chip = ""
+        if passage_claim_ids and pid in passage_claim_ids:
+            claim_id = passage_claim_ids[pid]
+            chip = f'<a href="#claim-{claim_id}" class="hud-claim-chip ml-0.5 text-[10px] no-underline">⚖</a>'
+        mark_open = (
+            f'<mark id="p-{pid}" data-passage-id="{pid}" data-kind="{kind}" '
+            f'class="hud-mark hud-mark--{kind} '
+            f"bg-[color:var(--color-key-passage-bg)] text-[color:var(--color-key-passage-fg)] "
+            f'rounded px-0.5 ring-1 ring-[color:var(--color-key-passage-ring)]">'
+        )
+        mark_close = f"</mark>{chip}"
+
+        # Prefer exact source text from validated offsets over AI-quoted text.
+        start = passage.get("start_offset")
+        end = passage.get("end_offset")
+        search_text = text
+        if (
+            start is not None
+            and end is not None
+            and isinstance(start, int)
+            and isinstance(end, int)
+            and 0 <= start < end <= len(raw)
+        ):
+            search_text = raw[start:end]
+
+        def _replace(m, mo=mark_open, mc=mark_close):
+            return mo + m.group(0) + mc
+
+        new_html = _re.sub(_re.escape(search_text), _replace, html, count=1)
+        if new_html == html and search_text != text:
+            # Offset-derived text didn't survive markdown rendering; fall back.
+            new_html = _re.sub(_re.escape(text), _replace, html, count=1)
+        html = new_html
+
     return Markup(html)
 
 

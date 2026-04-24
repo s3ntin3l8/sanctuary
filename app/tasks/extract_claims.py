@@ -27,7 +27,12 @@ def extract_claims_task(doc_id: int):
     """Extract factual/legal/procedural claims from a document and link evidence to existing claims."""
     from app.dependencies import get_db_session
     from app.services.intelligence.claim_extractor import extract
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed,
+        mark_skipped,
+        mark_started,
+    )
 
     db = get_db_session()
     try:
@@ -37,7 +42,7 @@ def extract_claims_task(doc_id: int):
 
     logger.info("Doc #%d: claims started", doc_id)
     try:
-        extract(doc_id)
+        skipped = extract(doc_id)
     except Exception as e:
         logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
         db = get_db_session()
@@ -51,10 +56,17 @@ def extract_claims_task(doc_id: int):
 
     db = get_db_session()
     try:
-        mark_completed(doc_id, PipelineStage.CLAIMS, db)
+        if skipped:
+            mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason=skipped)
+        else:
+            mark_completed(doc_id, PipelineStage.CLAIMS, db)
     finally:
         db.close()
 
-    logger.info("Doc #%d: claims complete", doc_id)
+    logger.info(
+        "Doc #%d: claims %s",
+        doc_id,
+        f"skipped ({skipped})" if skipped else "complete",
+    )
     _trigger_case_brief(doc_id)
     return {"status": "success", "doc_id": doc_id}

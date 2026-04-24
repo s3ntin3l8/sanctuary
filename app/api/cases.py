@@ -326,6 +326,128 @@ async def case_document_fullscreen(
     return render_page(request, "pages/document.html", db=db, **ctx)
 
 
+@router.post("/create-from-triage")
+async def create_case_from_triage(
+    request: Request,
+    internal_id: str = Form(...),
+    ingest_batch_id: int = Form(...),
+    az_court: str | None = Form(None),
+    court_name: str | None = Form(None),
+    case_title: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Create a new case from the triage metadata form and cascade to the full batch."""
+    from app.models.database import IngestBatch
+    from app.models.enums import OriginatorType
+    from app.services.hud_context import build_triage_hud_context
+    from app.services.ingestion.extractors import extract_az_court_from_subject
+
+    # Derive case title from batch subject when not provided
+    batch = db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).first()
+    if batch and not case_title and batch.subject:
+        subj = batch.subject
+        # Strip leading internal_id token (e.g. "8372/25 - " or "8372/25: ")
+        stripped = subj.lstrip()
+        if stripped.startswith(internal_id):
+            remainder = stripped[len(internal_id) :].lstrip(" -:/")
+        else:
+            remainder = subj
+        # Trim at common German subject separators
+        for sep in (" vor dem ", " wg. ", " bzgl. ", " betr. "):
+            idx = remainder.lower().find(sep)
+            if idx != -1:
+                remainder = remainder[:idx]
+        case_title = remainder.strip()[:80] or None
+
+    # Resolve az_court: use provided value or extract from batch subject
+    if not az_court and batch and batch.subject:
+        az_court = extract_az_court_from_subject(batch.subject)
+
+    # Create or retrieve the case
+    existing_case = db.query(Case).filter(Case.id == internal_id).first()
+    if not existing_case:
+        new_case = Case(
+            id=internal_id,
+            title=case_title or f"Neuer Fall {internal_id}",
+            status=CaseStatus.INTAKE,
+            jurisdiction=Jurisdiction.DE,
+        )
+        db.add(new_case)
+        db.flush()
+
+    # Create a Proceeding if we have an az_court
+    matched_proceeding = None
+    if az_court:
+        matched_proceeding = (
+            db.query(Proceeding)
+            .filter(Proceeding.case_id == internal_id, Proceeding.az_court == az_court)
+            .first()
+        )
+        if not matched_proceeding:
+            matched_proceeding = Proceeding(
+                case_id=internal_id,
+                az_court=az_court,
+                court_name=court_name or "(Gericht folgt)",
+                court_level=ProceedingCourtLevel.AG,
+                status=ProceedingStatus.ACTIVE,
+            )
+            db.add(matched_proceeding)
+            db.flush()
+
+    proceeding_id = matched_proceeding.id if matched_proceeding else None
+
+    # Cascade to the batch and all its docs still in _TRIAGE
+    if batch:
+        batch.case_id = internal_id
+        if proceeding_id:
+            batch.proceeding_id = proceeding_id
+        for doc in batch.documents:
+            if not doc.case_id or doc.case_id == "_TRIAGE":
+                doc.case_id = internal_id
+                if proceeding_id:
+                    doc.proceeding_id = proceeding_id
+
+    db.commit()
+
+    # Identify the first doc in this batch to render in the HUD
+    first_doc = None
+    if batch and batch.documents:
+        first_doc = batch.documents[0]
+        db.refresh(first_doc)
+
+    if not first_doc:
+        from fastapi.responses import RedirectResponse as _Redirect
+
+        return _Redirect(url=f"/cases/{internal_id}", status_code=303)
+
+    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    ctx = build_triage_hud_context(
+        db, first_doc, cases=cases, OriginatorType=OriginatorType
+    )
+    from app.config import templates as _templates
+
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+
+    # OOB: update sidebar badges + status bar
+    from app.api.triage import _render_sidebar_badges_oob
+    from app.services.triage_service import TriageService
+
+    triage_service = TriageService(db)
+    from app.api.triage import _render_triage_status_bar_oob
+
+    response.body += (
+        _render_sidebar_badges_oob(db)
+        + _render_triage_status_bar_oob(request, triage_service)
+    ).encode("utf-8")
+
+    import json
+
+    response.headers["HX-Trigger"] = json.dumps(
+        {"triage:advance": {"next_doc_id": first_doc.id}}
+    )
+    return response
+
+
 @router.post("")
 async def create_case(
     case_id: str = Form(...),

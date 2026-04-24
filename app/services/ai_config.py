@@ -52,9 +52,9 @@ def get_effective_config(db=None) -> AIEffectiveConfig:
 
     env = _env_defaults()
     return AIEffectiveConfig(
-        base_url=stored.get("base_url") or env["base_url"],
-        provider=stored.get("provider") or env["provider"],
-        api_key=stored.get("api_key") or env["api_key"],
+        base_url=(stored.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        provider=(stored.get("provider") or env["provider"]).strip(),
+        api_key=(stored.get("api_key") or env["api_key"]).strip(),
         summary_model=(stored.get("summary_model") or env["summary_model"]).strip(),
         embed_model=(stored.get("embed_model") or env["embed_model"]).strip(),
         embed_dim=int(stored.get("embed_dim") or env["embed_dim"]),

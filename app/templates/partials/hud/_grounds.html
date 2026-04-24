@@ -1,5 +1,5 @@
 {# Claims grounded in this document — sourced from this doc.
-   Required: doc, grounds (list[Claim])
+   Required: doc, grounds (list[Claim]), claims_status (pending_triage|pending|ran|skipped)
 #}
 <div class="px-5 py-4 border-b border-outline-variant/10">
   <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
@@ -43,6 +43,13 @@
   </a>
   {% endif %}
   {% else %}
-  <p class="text-[11px] italic" style="color:var(--color-outline);">No claims grounded in this document yet.</p>
+  <p class="text-[11px] italic" style="color:var(--color-outline);">
+    {% set cs = claims_status if claims_status is defined else 'pending' %}
+    {% if cs == 'skipped' %}Not applicable for this document type.
+    {% elif cs == 'pending_triage' %}Waiting for case assignment before claim extraction.
+    {% elif cs == 'ran' %}No claims grounded in this document.
+    {% else %}Claim extraction pending.
+    {% endif %}
+  </p>
   {% endif %}
 </div>

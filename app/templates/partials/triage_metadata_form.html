@@ -27,11 +27,11 @@
 {% set input_base  = 'w-full px-3 py-1.5 bg-surface rounded-lg border text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all' %}
 
 {% set field_confs = {
-    'title':      'high' if doc.title else 'low',
-    'case_id':    (conf.get('case_id') or 'high') if (doc.case_id and doc.case_id != '_TRIAGE') else 'low',
+    'title':      conf.get('title')      or ('high' if doc.title else 'low'),
+    'case_id':    conf.get('case_id')    or (('high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low')),
     'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
-    'sender':     conf.get('sender') or ('high' if doc.sender else 'low'),
-    'date':       conf.get('date') or ('high' if doc.received_date else 'low'),
+    'sender':     conf.get('sender')     or ('high' if doc.sender else 'low'),
+    'date':       conf.get('date')       or ('high' if doc.received_date else 'low'),
 } %}
 {% set high_fields = [] %}
 {% for k, v in field_confs.items() %}{% if v == 'high' %}{% set _ = high_fields.append(k) %}{% endif %}{% endfor %}
@@ -78,6 +78,14 @@
                 <dd class="text-on-surface font-medium font-mono">{{ doc.case_id if doc.case_id and doc.case_id != '_TRIAGE' else '—' }}</dd>
             </div>
             <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">AZ</dt>
+                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Ref.-Nr.</dt>
+                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.internal_id or '—' }}</dd>
+            </div>
+            <div>
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Originator</dt>
                 <dd class="text-on-surface font-medium capitalize">{{ doc.originator_type.value if doc.originator_type else '—' }}</dd>
             </div>
@@ -89,7 +97,35 @@
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Received</dt>
                 <dd class="text-on-surface-variant font-medium font-mono">{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—' }}</dd>
             </div>
+            {% if doc.significance_tier %}
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
+                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.significance_tier.value }}</dd>
+            </div>
+            {% endif %}
+            {% if doc.document_type %}
+            <div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
+                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value }}</dd>
+            </div>
+            {% endif %}
         </dl>
+        {# Auto-create case prompt when AI extracted a reference but no case matched #}
+        {% if doc.case_id == '_TRIAGE' and doc.internal_id %}
+        <div class="mt-3 px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between gap-2">
+            <div class="min-w-0">
+                <p class="text-[9px] font-bold text-primary">Keine Akte: {{ doc.internal_id }}</p>
+                <p class="text-[8px] text-on-surface-variant">Akte anlegen und alle Dokumente dieser E-Mail zuordnen.</p>
+            </div>
+            <button hx-post="/cases/create-from-triage"
+                    hx-vals='{"internal_id": "{{ doc.internal_id }}", "ingest_batch_id": "{{ doc.ingest_batch_id or '' }}"}'
+                    hx-target="#triage-doc-pane"
+                    hx-swap="innerHTML"
+                    class="shrink-0 text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer whitespace-nowrap">
+                Anlegen →
+            </button>
+        </div>
+        {% endif %}
     </div>
 
     {# ── REVIEW STATE: edit form ── #}
@@ -190,6 +226,36 @@
                        {% if field_confs.date in ('low', 'medium') %}data-needs-review{% endif %}
                        class="{{ input_base }} {{ low_border if field_confs.date == 'low' else med_border if field_confs.date == 'medium' else ok_border }}">
             </div>
+
+            {# Read-only: internal_id, az_court, significance_tier, document_type #}
+            {% if doc.internal_id or (doc.proceeding and doc.proceeding.az_court) or doc.significance_tier or doc.document_type %}
+            <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]">
+                {% if doc.internal_id %}
+                <div>
+                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">Ref.-Nr. {{ conf_chip(conf.get('internal_id', 'high' if doc.internal_id else 'low')) }}</dt>
+                    <dd class="font-mono text-on-surface-variant">{{ doc.internal_id }}</dd>
+                </div>
+                {% endif %}
+                {% if doc.proceeding and doc.proceeding.az_court %}
+                <div>
+                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high')) }}</dt>
+                    <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court }}</dd>
+                </div>
+                {% endif %}
+                {% if doc.significance_tier %}
+                <div>
+                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
+                    <dd class="text-on-surface-variant capitalize">{{ doc.significance_tier.value }}</dd>
+                </div>
+                {% endif %}
+                {% if doc.document_type %}
+                <div>
+                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
+                    <dd class="text-on-surface-variant capitalize">{{ doc.document_type.value }}</dd>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
 
             {# Footer — single primary action, no checkbox #}
             <div class="md:col-span-2 pt-3 flex justify-end border-t border-outline-variant/5 mt-1">

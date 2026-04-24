@@ -258,3 +258,33 @@ def extract_sender(content: str) -> ExtractionResult:
 def _parse_candidate_date(raw_value: str) -> datetime | None:
     """Parse date from cost candidate."""
     return _parse_date_string(raw_value)
+
+
+# Compiled once — used for subject-line case matching at email ingest time.
+_SUBJECT_AZ_COURT_RE = re.compile(
+    r"\b(\d{1,3}\s?[A-Z]{1,2}\s?\d{1,5}/\d{2,4})\b", re.IGNORECASE
+)
+# Internal IDs are purely numeric: digits / digits (no embedded letters).
+# Anchored to the very start of the subject so we don't pick up year-like tokens.
+_SUBJECT_INTERNAL_ID_RE = re.compile(r"^\s*(\d{1,6}/\d{2,4})\b")
+
+
+def extract_internal_id_from_subject(subject: str) -> str | None:
+    """Return the lawyer internal reference (e.g. '8372/25') from an email subject.
+
+    Matches a purely numeric NNN/YY token at the start of the subject — the
+    conventional German law-firm file number format.  Returns None when no
+    leading token is found.
+    """
+    m = _SUBJECT_INTERNAL_ID_RE.match(subject)
+    return m.group(1) if m else None
+
+
+def extract_az_court_from_subject(subject: str) -> str | None:
+    """Return the court Aktenzeichen (e.g. '003 F 426/25') from an email subject.
+
+    Searches anywhere in the subject — court AZ often appears after a dash or
+    later in the subject line.  Returns None when no AZ is found.
+    """
+    m = _SUBJECT_AZ_COURT_RE.search(subject)
+    return m.group(1) if m else None

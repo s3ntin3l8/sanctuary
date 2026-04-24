@@ -22,6 +22,8 @@ class ExtractionConfidenceSchema(BaseModel):
     date: str = "low"
     case_id: str = "low"
     originator: str = "low"
+    az_court: str = "low"
+    internal_id: str = "low"
 
 
 class CostCandidateSchema(BaseModel):
@@ -55,3 +57,5 @@ class KeyPassageSchema(BaseModel):
     span: Any | None = None
     kind: str | None = None
     id: str | None = None
+    start_offset: int | None = None
+    end_offset: int | None = None

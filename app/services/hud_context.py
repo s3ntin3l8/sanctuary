@@ -157,6 +157,17 @@ def build_hud_context(
         .all()
     )
 
+    _claims_stage = (doc.pipeline_stages or {}).get("claims", {})
+    _claims_stage_status = _claims_stage.get("status", "pending")
+    if _claims_stage_status == "skipped":
+        claims_status = "skipped"
+    elif _claims_stage_status == "completed":
+        claims_status = "ran"
+    elif not doc.case_id or doc.case_id == "_TRIAGE":
+        claims_status = "pending_triage"
+    else:
+        claims_status = "pending"
+
     actions = (
         db.query(ActionItem)
         .filter(ActionItem.source_document_id == doc.id)
@@ -214,6 +225,7 @@ def build_hud_context(
         "key_passages": key_passages,
         "reactions": reactions,
         "grounds": grounds,
+        "claims_status": claims_status,
         "actions": actions,
         "relationships_out": relationships_out,
         "relationships_in": relationships_in,

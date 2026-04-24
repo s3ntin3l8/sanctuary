@@ -66,28 +66,43 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         doc.originator_type = parsed_ot
 
     if summary_data.get("received_date"):
-        try:
-            parsed_date = datetime.strptime(summary_data["received_date"], "%Y-%m-%d")
+        raw_date = str(summary_data["received_date"]).strip()
+        parsed_date = None
+        for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
+            try:
+                parsed_date = datetime.strptime(raw_date[:10], fmt)
+                break
+            except ValueError:
+                pass
+        if parsed_date is None:
+            # ISO-8601 with time component: "2025-03-11T00:00:00"
+            try:
+                parsed_date = datetime.fromisoformat(raw_date)
+            except ValueError:
+                pass
+        if parsed_date is not None:
             doc.received_date = parsed_date.replace(tzinfo=UTC)
-        except Exception:
-            pass
 
     if summary_data.get("internal_id"):
         doc.internal_id = summary_data["internal_id"]
 
-    # 2. Update confidence scores
+    # 2. Update confidence scores — normalize case and remap received_date → date
+    #    so the UI template's conf.get('date') lookup always finds the AI value.
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):
-        # Create a new dict to ensure SQLAlchemy detects the change
         new_conf = dict(doc.extraction_confidence or {})
         for key, val in ai_conf.items():
-            if val in ("high", "medium", "low"):
-                new_conf[key] = val
+            if not isinstance(val, str):
+                continue
+            v = val.strip().lower()
+            if v not in ("high", "medium", "low"):
+                continue
+            canonical_key = "date" if key == "received_date" else key
+            new_conf[canonical_key] = v
         doc.extraction_confidence = new_conf
 
-    # 3. Auto-Triage: two distinct signals, tried in order:
-    #   - az_court  → matches Proceeding.az_court (per-court Aktenzeichen, context identifier)
-    #   - internal_id → matches Case.id (internal primary identity per CLAUDE.md)
+    # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
+    #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = summary_data.get("az_court")
     internal_id = summary_data.get("internal_id")
 
@@ -95,15 +110,24 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         matching_case = None
         matching_proceeding = None
 
-        if az_court:
+        if internal_id:
+            matching_case = db.query(Case).filter(Case.id == internal_id).first()
+            if matching_case and az_court:
+                matching_proceeding = (
+                    db.query(Proceeding)
+                    .filter(
+                        Proceeding.case_id == matching_case.id,
+                        Proceeding.az_court == az_court,
+                    )
+                    .first()
+                )
+
+        if not matching_case and az_court:
             matching_proceeding = (
                 db.query(Proceeding).filter(Proceeding.az_court == az_court).first()
             )
             if matching_proceeding:
                 matching_case = matching_proceeding.case
-
-        if not matching_case and internal_id:
-            matching_case = db.query(Case).filter(Case.id == internal_id).first()
 
         if matching_case:
             doc.case_id = matching_case.id
@@ -117,6 +141,40 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                     else ""
                 )
             )
+
+            # Cascade to sibling docs in the same batch still in _TRIAGE.
+            if doc.ingest_batch_id:
+                from app.models.database import IngestBatch
+
+                siblings = (
+                    db.query(Document)
+                    .filter(
+                        Document.ingest_batch_id == doc.ingest_batch_id,
+                        Document.case_id == "_TRIAGE",
+                        Document.id != doc.id,
+                    )
+                    .all()
+                )
+                for sib in siblings:
+                    sib.case_id = matching_case.id
+                    if matching_proceeding and not sib.proceeding_id:
+                        sib.proceeding_id = matching_proceeding.id
+
+                batch = (
+                    db.query(IngestBatch)
+                    .filter(IngestBatch.id == doc.ingest_batch_id)
+                    .first()
+                )
+                if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
+                    batch.case_id = matching_case.id
+                    if matching_proceeding and not batch.proceeding_id:
+                        batch.proceeding_id = matching_proceeding.id
+
+                if siblings:
+                    logger.info(
+                        f"AI Auto-Triage: cascaded case {matching_case.id} to "
+                        f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
+                    )
 
     # 4. Re-evaluate review status
     reasons = compute_review_reasons(doc)

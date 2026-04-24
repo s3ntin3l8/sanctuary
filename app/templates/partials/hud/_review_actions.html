@@ -1,27 +1,27 @@
-{# Triage review-mode action strip: per-stage pipeline retry buttons.
-   Only rendered when mode == 'review'. Required: doc
+{# Pipeline retry action strip. Required: doc
+   Targets the pipeline stepper widget so only that section refreshes.
 #}
 <div class="px-5 py-2.5 border-b border-outline-variant/10 flex items-center gap-2">
-  <span class="text-[9px] font-bold uppercase tracking-widest flex-1" style="color:var(--color-outline);">Document</span>
+  <span class="text-[9px] font-bold uppercase tracking-widest flex-1" style="color:var(--color-outline);">Retry</span>
   <button hx-post="/document/{{ doc.id }}/pipeline/enrich/retry"
-          hx-target="#triage-doc-pane"
-          hx-swap="innerHTML"
+          hx-target="#pipeline-stepper-{{ doc.id }}"
+          hx-swap="outerHTML"
           class="p-1 rounded hover:bg-surface-container-high transition-colors"
           style="color:var(--color-on-surface-variant);"
           title="Retry AI enrichment (summary, significance, key passages)">
     <span class="material-symbols-outlined text-base">auto_fix_high</span>
   </button>
   <button hx-post="/document/{{ doc.id }}/pipeline/relationships/retry"
-          hx-target="#triage-doc-pane"
-          hx-swap="innerHTML"
+          hx-target="#pipeline-stepper-{{ doc.id }}"
+          hx-swap="outerHTML"
           class="p-1 rounded hover:bg-surface-container-high transition-colors"
           style="color:var(--color-on-surface-variant);"
           title="Retry relationship detection">
     <span class="material-symbols-outlined text-base">account_tree</span>
   </button>
   <button hx-post="/document/{{ doc.id }}/pipeline/extract/retry"
-          hx-target="#triage-doc-pane"
-          hx-swap="innerHTML"
+          hx-target="#pipeline-stepper-{{ doc.id }}"
+          hx-swap="outerHTML"
           class="p-1 rounded hover:bg-surface-container-high transition-colors"
           style="color:var(--color-on-surface-variant);"
           title="Re-run extraction (Docling)">

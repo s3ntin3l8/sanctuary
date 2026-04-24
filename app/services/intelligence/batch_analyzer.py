@@ -114,24 +114,33 @@ def _apply_batch_results(
             s = re.sub(r"\.[a-zA-Z]{2,5}$", "", s)  # strip extension
             return re.sub(r"[-_.\s]+", " ", s).lower().strip()
 
+        claimed_ids: set[int] = set()
         for desc in enclosed_descriptions:
             matched = desc.get("matched_filename")
             child = None
             if matched:
                 matched_norm = _norm(matched)
+                candidates = [
+                    d
+                    for d in docs
+                    if d.id != cover_letter_doc_id and d.id not in claimed_ids
+                ]
+                # Exact normalized match wins; only fall back to substring when unambiguous.
                 child = next(
-                    (
-                        d
-                        for d in docs
-                        if d.id != cover_letter_doc_id
-                        and (
-                            matched_norm in _norm(d.title or "")
-                            or _norm(d.title or "") in matched_norm
-                        )
-                    ),
+                    (d for d in candidates if _norm(d.title or "") == matched_norm),
                     None,
                 )
+                if not child:
+                    subs = [
+                        d
+                        for d in candidates
+                        if matched_norm in _norm(d.title or "")
+                        or _norm(d.title or "") in matched_norm
+                    ]
+                    if len(subs) == 1:
+                        child = subs[0]
             if child:
+                claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
                 parsed_ot = parse_originator_type(desc.get("originator_type"))
@@ -139,7 +148,22 @@ def _apply_batch_results(
                     child.originator_type = parsed_ot
                 child.attributed_originator = desc.get("attributed_originator")
 
-        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+        # Cascade cover-letter's case/proceeding to all sibling docs and the batch.
+        if cover_letter_doc.case_id and cover_letter_doc.case_id != "_TRIAGE":
+            for d in docs:
+                if d.id != cover_letter_doc_id and (
+                    not d.case_id or d.case_id == "_TRIAGE"
+                ):
+                    d.case_id = cover_letter_doc.case_id
+                    if cover_letter_doc.proceeding_id and not d.proceeding_id:
+                        d.proceeding_id = cover_letter_doc.proceeding_id
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
+                batch.case_id = cover_letter_doc.case_id
+                if cover_letter_doc.proceeding_id and not batch.proceeding_id:
+                    batch.proceeding_id = cover_letter_doc.proceeding_id
+        else:
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         case_id = batch.case_id if batch else None
 
         if case_id:

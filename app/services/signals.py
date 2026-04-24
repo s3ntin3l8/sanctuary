@@ -43,14 +43,15 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
     #     "link": "/settings"
     # })
 
-    # AI Provider Check — uses DB-overridden base_url so LAN / remote backends are probed too
+    # AI Provider Check — probe /v1/models which both Ollama and LM Studio handle
     import requests
 
     from app.services.ai_config import get_effective_config
 
     base_url = get_effective_config(db).base_url
+    probe_url = f"{base_url}/v1/models"
     try:
-        resp = requests.get(base_url, timeout=0.5)
+        resp = requests.get(probe_url, timeout=1.5)
         if resp.status_code >= 500:
             raise Exception("Provider error")
     except Exception:

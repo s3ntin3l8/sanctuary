@@ -52,7 +52,8 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
     assert doc.sender == "AG Hamburg"
     assert doc.received_date.strftime("%Y-%m-%d") == "2025-05-20"
     assert doc.originator_type == OriginatorType.COURT
-    assert doc.az_court == "001 F 123/25"
+    # az_court lives on Proceeding, not Document — verify triage matching instead
     assert doc.extraction_confidence["sender"] == "high"
-    assert doc.extraction_confidence["received_date"] == "high"
+    # received_date is canonicalized to 'date' key at write time
+    assert doc.extraction_confidence["date"] == "high"
     assert doc.extraction_confidence["az_court"] == "high"

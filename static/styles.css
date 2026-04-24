@@ -1648,6 +1648,9 @@
   .grid-cols-\[120px_1fr_1fr_120px_100px\] {
     grid-template-columns: 120px 1fr 1fr 120px 100px;
   }
+  .grid-cols-\[max-content_1fr\] {
+    grid-template-columns: max-content 1fr;
+  }
   .flex-col {
     flex-direction: column;
   }
@@ -1800,6 +1803,9 @@
   }
   .gap-y-1\.5 {
     row-gap: calc(var(--spacing) * 1.5);
+  }
+  .gap-y-2 {
+    row-gap: calc(var(--spacing) * 2);
   }
   .divide-y {
     :where(& > :not(:last-child)) {

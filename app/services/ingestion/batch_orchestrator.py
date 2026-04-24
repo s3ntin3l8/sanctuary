@@ -12,6 +12,10 @@ from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus, PipelineState
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.ingestion.email_parser import parse_rfc822
+from app.services.ingestion.extractors import (
+    extract_az_court_from_subject,
+    extract_internal_id_from_subject,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,54 @@ def _dispatch(task_name: str, doc_id: int) -> None:
         task.apply_async(args=[doc_id])
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def _try_assign_case_from_subject(
+    db: Session, batch: IngestBatch, subject: str
+) -> None:
+    """Set batch.case_id / batch.proceeding_id from the email subject line if possible.
+
+    Tries internal_id (lawyer's file number, e.g. '8372/25') first — it maps 1:1 to
+    Case.id per CLAUDE.md.  Falls back to az_court (court Aktenzeichen) if present.
+    Only sets fields when a matching DB row is found; never creates records here.
+    """
+    from app.models.database import Case, Proceeding
+
+    internal_id = extract_internal_id_from_subject(subject)
+    az_court = extract_az_court_from_subject(subject)
+
+    if internal_id:
+        case = db.query(Case).filter(Case.id == internal_id).first()
+        if case:
+            batch.case_id = case.id
+            if az_court:
+                proc = (
+                    db.query(Proceeding)
+                    .filter(
+                        Proceeding.case_id == case.id,
+                        Proceeding.az_court == az_court,
+                    )
+                    .first()
+                )
+                if proc:
+                    batch.proceeding_id = proc.id
+            logger.info(
+                "Batch #%d: auto-assigned to case %s via subject internal_id",
+                batch.id,
+                case.id,
+            )
+            return
+
+    if az_court:
+        proc = db.query(Proceeding).filter(Proceeding.az_court == az_court).first()
+        if proc:
+            batch.case_id = proc.case_id
+            batch.proceeding_id = proc.id
+            logger.info(
+                "Batch #%d: auto-assigned to case %s via subject az_court",
+                batch.id,
+                proc.case_id,
+            )
 
 
 def ingest_raw_email(
@@ -155,6 +207,10 @@ def ingest_raw_email(
         batch.source_hash = source_hash
     db.flush()
 
+    # Attempt to auto-assign case from the email subject so downstream stages
+    # receive a case_id/proceeding_id without waiting for AI metadata.
+    _try_assign_case_from_subject(db, batch, subject)
+
     logger.info(
         "Email batch #%d created: from=%s subject=%r attachments=%d",
         batch.id,
@@ -190,7 +246,8 @@ def ingest_raw_email(
             title=subject,
             file_path=str(body_path),
             content_hash=body_hash,
-            case_id="_TRIAGE",
+            case_id=batch.case_id or "_TRIAGE",
+            proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
             sender=parsed["sender"] or None,
             received_date=received_date,
@@ -235,7 +292,8 @@ def ingest_raw_email(
             title=att["filename"],
             file_path=str(att_path),
             content_hash=att_hash,
-            case_id="_TRIAGE",
+            case_id=batch.case_id or "_TRIAGE",
+            proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
         )
         from app.services.pipeline_status import initialize as _pipeline_init

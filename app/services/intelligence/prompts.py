@@ -19,14 +19,16 @@ Return ONLY valid JSON."""
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.
 
 Return ONLY valid JSON with these exact keys:
+- title: A short (≤80 chars) human-readable title in the document's language. Avoid raw filenames, serial numbers, and dates unless they are the only identity. Good examples: "Antragsschrift Unterhaltsanpassung", "Beschluss § 1568a BGB", "Klageerwiderung Liu".
 - significance_tier: one of "critical", "significant", "informational", "administrative"
   * critical: rulings, decisions, orders with legal force or hard deadlines
   * significant: substantive motions, statements, reports that shape the case
   * informational: factual updates, acknowledgments, routine correspondence
   * administrative: pure relay letters, receipts, cover pages
 - document_type: one of "ruling", "motion", "statement", "annex", "relay", "correspondence", "report", "invoice", "other"
-- key_passages: list of up to 3 most important passages:
-  [{"text": "exact quote from document", "rationale": "why this matters legally", "span": "approximate location"}]
+- key_passages: list of up to 3 most important passages. For each passage, provide character offsets into the raw document text so the UI can highlight it exactly:
+  [{"text": "exact quote from document", "rationale": "why this matters legally", "start_offset": <integer>, "end_offset": <integer>}]
+  start_offset and end_offset are zero-based character positions in the document text. If you cannot determine precise offsets, omit them (do not guess).
 - cost_delta: if the document introduces a specific financial amount, object with:
   {"amount": float_in_euros, "direction": "incoming|outgoing|ruling|none", "description": "what this amount is"}
   direction: "incoming" = money we must pay, "outgoing" = money we are owed/claiming, "ruling" = court-determined amount, "none" = no direction

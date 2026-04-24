@@ -134,8 +134,13 @@ async def save_ai_config(
 
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))
+    base_url = base_url.strip().rstrip("/")
+    provider = provider.strip()
+    api_key = api_key.strip()
+    summary_model = summary_model.strip()
+    embed_model = embed_model.strip()
     if base_url:
-        ai["base_url"] = base_url.rstrip("/")
+        ai["base_url"] = base_url
     if provider:
         ai["provider"] = provider
     if api_key:
