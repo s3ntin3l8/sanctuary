@@ -17,12 +17,13 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **No magic numbers** — cost deltas are factual; timelines are ranges with rationale; no synthetic probabilities
 
 ## Stack
-* **Backend:** Python 3.12+ / FastAPI
+* **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
 * **Frontend:** HTMX + Alpine.js
 * **Styling:** Tailwind CSS v4 (`static/input.css` dual light/dark tokens)
 * **DB:** SQLite + Alembic + `sqlite-vec`
 * **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
+* **Rate limiting:** `slowapi`
 
 ## Key data model concepts
 
@@ -39,6 +40,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * `Entity` — extracted named entities (`EntityType`: person, org, court, law_firm, …)
 * `UserSettings` — single-user preferences (model selection, UI flags)
 * `SavedSearch` — persisted search queries with optional alert thresholds
+* `Conversation` + `ConversationMessage` — chat sessions with case context
 
 ## Vector search
 
@@ -55,14 +57,9 @@ Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for n
 
 ## Routes
 
-Standard case/document routes plus these first-class working views:
+All routes follow REST conventions. See `app/api/` for the complete listing.
 
-* `/entities` — named entity browser
-* `/contacts/*` — contact/party directory
-* `/timeline/*` — chronological correspondence view (HTMX-paginated via `partials/timeline_items.html`)
-* `/costs/*` — legal cost tracking (RVG/GKG/JVEG)
-* `/ingest/slice/*` — multi-page PDF slicing review (Docling output review before batch commit)
-* `/api/ingest/gmail/*` — Gmail OAuth + historical backfill
+**First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Entity browser (`/entities`), Contacts (`/contacts`), Timeline (`/timeline`), Costs (`/costs`), Settings (`/settings*`, `/api/settings/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
 
 ## Navigation and ID conventions
 
@@ -88,5 +85,7 @@ make run        # Terminal 1: App
 make watch-css  # Terminal 2: CSS
 make seed       # Seed Data
 make test       # Run Tests
+make lint       # Pre-commit hooks
+make migrate    # Run migrations
 ```
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
