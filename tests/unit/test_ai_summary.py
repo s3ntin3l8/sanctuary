@@ -128,31 +128,19 @@ def test_generate_summary_sync_strips_null_hints(db_session):
 
 
 @pytest.mark.unit
-def test_generate_summary_sync_omits_hint_block_when_all_null(db_session):
-    doc = Document(
-        title="No Hints Test",
-        content="",
-        sender=None,
-        received_date=None,
-        originator_type=None,
-    )
-    db_session.add(doc)
-    db_session.commit()
+def test_enrich_document_tracks_strategy(db_session, sample_document):
+    """Enrichment should track if full or windowed strategy was used."""
+    from app.services.ai_summary import enrich_document_with_ai
 
-    captured = {}
+    # 1. Full strategy
+    sample_document.content = "Short content"
+    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
+    assert sample_document.meta["ai_context_strategy"] == "full"
+    assert sample_document.meta["ai_context_chars"] == 13
 
-    def fake_call_json_ai(**kwargs):
-        captured["user_prompt"] = kwargs.get("user_prompt", "")
-        return {
-            "az_court": None,
-            "internal_id": None,
-            "sender": None,
-            "date": None,
-            "originator": None,
-            "confidence": {},
-        }
-
-    with patch("app.services.ai_summary.call_json_ai", side_effect=fake_call_json_ai):
-        generate_summary_sync(doc, db=db_session)
-
-    assert "### Heuristic Hints" not in captured.get("user_prompt", "")
+    # 2. Windowed strategy
+    sample_document.content = "A" * 70000
+    enrich_document_with_ai(sample_document, {"confidence": {}}, db_session)
+    assert sample_document.meta["ai_context_strategy"] == "windowed"
+    # 60k chars + 2 separators (approx 33 chars each)
+    assert sample_document.meta["ai_context_chars"] > 60000

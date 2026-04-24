@@ -112,6 +112,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         new_meta["contradiction_notes"] = contradictions
     else:
         new_meta["ai_contradiction"] = False
+
+    # Track strategy and character count for UI transparency
+    content_len = len(doc.content or "")
+    new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
+    new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
+
     doc.meta = new_meta
 
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
