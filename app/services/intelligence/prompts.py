@@ -105,7 +105,7 @@ A new document starts when: letterhead changes, a new Aktenzeichen or docket num
 Return ONLY valid JSON."""
 
 
-PHASE1_METADATA_SYSTEM = """You are a legal document analyst for Björn Hansen (client) and his lawyer Mr. Funk.
+PHASE1_METADATA_SYSTEM = """You are a legal document analyst.
 Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
@@ -113,6 +113,9 @@ Extract metadata from the document and return a JSON object with these keys:
 - date: The date of the document or when it was received (YYYY-MM-DD).
 - originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
+
+Court is Infrastructure Rule (CRITICAL):
+If the document has a court letterhead but the main text describes a submission or statement by a party (e.g., "Die Antragstellerin reicht hiermit...", "Wir überreichen..."), the court is merely relaying the document. In this case, `originator` MUST be the party who wrote the submission (e.g., "opposing" or "own"), and `sender` MUST be that party, NOT the court.
 
 Email subject: If an email_subject hint is provided, treat it as a primary source (not a verification hint) for internal_id and az_court. Email subjects reliably carry the lawyer's reference number verbatim. When the subject contains a value that differs from what you'd infer from the PDF body, prefer the subject and set confidence to "high".
 
