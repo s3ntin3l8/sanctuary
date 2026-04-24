@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session, defer
 
 from app.config import SessionLocal
-from app.models.database import Document, DocumentRelationship
+from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
 from app.services.ai_config import get_effective_config
 from app.services.intelligence._ai_call import call_json_ai
@@ -20,9 +20,29 @@ VALID_RELATIONSHIP_TYPES = {e.value for e in RelationshipType}
 MAX_CANDIDATES = 15
 
 
+def _get_first_passage(doc: Document) -> str:
+    """Safely extract and truncate the first key passage."""
+    if (
+        doc.key_passages
+        and isinstance(doc.key_passages, list)
+        and len(doc.key_passages) > 0
+    ):
+        return doc.key_passages[0].get("text", "")[:200]
+    return ""
+
+
 def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
-    """Return up to MAX_CANDIDATES prior docs in the same proceeding."""
-    if not doc.proceeding_id:
+    """Return up to MAX_CANDIDATES prior docs in the same case."""
+    case_id = doc.case_id
+    if not case_id and doc.proceeding_id:
+        # Fallback if case_id is missing but proceeding_id is present
+        proceeding = (
+            db.query(Proceeding).filter(Proceeding.id == doc.proceeding_id).first()
+        )
+        if proceeding:
+            case_id = proceeding.case_id
+
+    if not case_id:
         return []
 
     return (
@@ -32,20 +52,18 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
             defer(Document.cost_delta),
         )
         .filter(
-            Document.proceeding_id == doc.proceeding_id,
-            Document.id != doc.id,
+            Document.case_id == case_id,
+            Document.id < doc.id,  # Strictly prior documents
             Document.significance_tier.in_(list(CANDIDATE_TIERS)),
         )
-        .order_by(Document.issued_date.desc().nullslast())
+        .order_by(Document.id.desc())
         .limit(MAX_CANDIDATES)
         .all()
     )
 
 
 def _build_candidate_summary(candidate: Document) -> str:
-    first_passage = ""
-    if candidate.key_passages and isinstance(candidate.key_passages, list):
-        first_passage = candidate.key_passages[0].get("text", "")[:200]
+    first_passage = _get_first_passage(candidate)
 
     mgmt = candidate.ai_summary or {}
     sig = mgmt.get("legal_significance", "")[:150]
@@ -65,9 +83,7 @@ def _call_relationship_detector_sync(
     db=None,
 ) -> dict:
     mgmt = doc.ai_summary or {}
-    first_passage = ""
-    if doc.key_passages and isinstance(doc.key_passages, list):
-        first_passage = doc.key_passages[0].get("text", "")[:200]
+    first_passage = _get_first_passage(doc)
 
     candidate_text = "\n".join(
         f"{i + 1}. {_build_candidate_summary(c)}" for i, c in enumerate(candidates)
@@ -92,15 +108,20 @@ def _call_relationship_detector_sync(
 
 
 def detect(doc_id: int) -> str | None:
-    """Detect relationships from doc_id to prior documents in the same proceeding.
+    """Detect relationships from doc_id to prior documents in the same case.
 
     Returns a non-empty skip reason if the stage was intentionally skipped,
-    or None if it ran (successfully or with a handled exception).
+    None if it ran successfully, or an error string if an exception occurred.
     """
     db: Session = SessionLocal()
     try:
         cfg = get_effective_config(db)
-        doc = db.query(Document).filter(Document.id == doc_id).first()
+        doc = (
+            db.query(Document)
+            .options(defer(Document.content))
+            .filter(Document.id == doc_id)
+            .first()
+        )
         if not doc:
             logger.warning(f"Doc {doc_id} not found for relationship detection")
             return "document not found"
@@ -112,17 +133,29 @@ def detect(doc_id: int) -> str | None:
 
         candidates = _get_prior_docs(doc, db)
         if not candidates:
-            reason = f"no prior candidates in proceeding {doc.proceeding_id}"
+            reason = "no prior candidates in case"
             logger.info(f"Doc {doc_id}: {reason}")
             return reason
 
         valid_candidate_ids = {c.id for c in candidates}
+
+        # Fetch existing relationships to avoid N+1 queries in the loop
+        existing_rels = (
+            db.query(
+                DocumentRelationship.to_document_id,
+                DocumentRelationship.relationship_type,
+            )
+            .filter(DocumentRelationship.from_document_id == doc_id)
+            .all()
+        )
+        existing_set = {(r.to_document_id, r.relationship_type) for r in existing_rels}
 
         result = _call_relationship_detector_sync(
             doc, candidates, model=cfg.summary_model, db=db
         )
         relationships = result.get("relationships") or []
 
+        new_count = 0
         for rel in relationships:
             to_id = rel.get("to_document_id")
             rel_type_raw = (rel.get("relationship_type") or "").lower()
@@ -139,17 +172,8 @@ def detect(doc_id: int) -> str | None:
                 )
                 continue
 
-            existing = (
-                db.query(DocumentRelationship)
-                .filter(
-                    DocumentRelationship.from_document_id == doc_id,
-                    DocumentRelationship.to_document_id == to_id,
-                    DocumentRelationship.relationship_type
-                    == RelationshipType(rel_type_raw),
-                )
-                .first()
-            )
-            if existing:
+            rel_type_enum = RelationshipType(rel_type_raw)
+            if (to_id, rel_type_enum) in existing_set:
                 continue
 
             notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
@@ -157,18 +181,22 @@ def detect(doc_id: int) -> str | None:
                 DocumentRelationship(
                     from_document_id=doc_id,
                     to_document_id=to_id,
-                    relationship_type=RelationshipType(rel_type_raw),
+                    relationship_type=rel_type_enum,
                     confidence=RelationshipConfidence.AI_DETECTED,
                     notes=notes[:500],
                     ingest_date=datetime.now(),
                 )
             )
+            new_count += 1
 
         db.commit()
         logger.info(
-            f"Doc {doc_id}: relationship detection complete, {len(relationships)} proposed"
+            f"Doc {doc_id}: relationship detection complete, {new_count} new links created"
         )
-    finally:
+        return None
+    except Exception as e:
         db.rollback()
+        logger.exception(f"Doc {doc_id}: failed relationship detection: {e}")
+        return f"error: {str(e)}"
+    finally:
         db.close()
-    return None
