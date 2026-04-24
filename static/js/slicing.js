@@ -118,16 +118,20 @@ function slicingGrid(initialData, batchId) {
             const key = e.key.toLowerCase();
             const maxGutter = this.pageCount - 2; // index of last gutter
 
-            if (key === 'arrowdown') {
+            if (key === 'arrowdown' || key === 'arrowright') {
                 e.preventDefault();
-                this.focusedGutter = Math.min(this.focusedGutter + 1, this.pageCount - 2);
+                this.focusedGutter = Math.min(this.focusedGutter + 1, maxGutter);
                 this.scrollToFocused();
-            } else if (key === 'arrowup') {
+            } else if (key === 'arrowup' || key === 'arrowleft') {
                 e.preventDefault();
                 this.focusedGutter = Math.max(this.focusedGutter - 1, 0);
                 this.scrollToFocused();
             } else if (key === 'c') {
                 this.toggleCut(this.focusedGutter + 1);
+            } else if (key === 'backspace' || key === 'delete') {
+                if (this.hasCut(this.focusedGutter + 1)) {
+                    this.toggleCut(this.focusedGutter + 1);
+                }
             } else if (key === 'enter') {
                 this.confirm();
             } else if (key === 'escape') {
