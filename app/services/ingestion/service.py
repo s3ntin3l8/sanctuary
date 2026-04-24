@@ -26,7 +26,6 @@ from app.services.ingestion.converters import (
 )
 from app.services.ingestion.extractors import (
     extract_case_id,
-    extract_internal_id,
     extract_originator,
     extract_received_date,
     extract_sender,
@@ -228,8 +227,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     result_originator = extract_originator(safe_filename, content)
     result_date = extract_received_date(content, safe_filename)
     result_sender = extract_sender(content)
-    result_internal_id = extract_internal_id(content)
-
     if result_case_id["value"]:
         from app.models.database import Case as CaseModel
 
@@ -239,8 +236,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
     doc.received_date = result_date["value"]
-    if result_internal_id["value"] and not doc.internal_id:
-        doc.internal_id = result_internal_id["value"]
     doc.extraction_confidence = ExtractionConfidenceSchema(
         sender=result_sender["confidence"],
         date=result_date["confidence"],

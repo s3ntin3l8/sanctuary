@@ -18,7 +18,7 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
         sender="Wrong Sender",
         received_date=datetime(2020, 1, 1, tzinfo=UTC),
         originator_type=OriginatorType.OPPOSING,
-        extraction_confidence={"sender": "low", "received_date": "low"},
+        extraction_confidence={"sender": "low", "date": "low"},
     )
     db_session.add(doc)
     db_session.commit()
@@ -30,13 +30,13 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
             "az_court": "001 F 123/25",
             "internal_id": "8124/25",
             "sender": "AG Hamburg",
-            "received_date": "2025-05-20",
-            "originator_type": "court",
+            "date": "2025-05-20",
+            "originator": "court",
             "confidence": {
                 "az_court": "high",
                 "sender": "high",
-                "received_date": "high",
-                "originator_type": "high",
+                "date": "high",
+                "originator": "high",
             },
         }
 
@@ -54,6 +54,6 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
     assert doc.originator_type == OriginatorType.COURT
     # az_court lives on Proceeding, not Document — verify triage matching instead
     assert doc.extraction_confidence["sender"] == "high"
-    # received_date is canonicalized to 'date' key at write time
     assert doc.extraction_confidence["date"] == "high"
+    assert doc.extraction_confidence["originator"] == "high"
     assert doc.extraction_confidence["az_court"] == "high"

@@ -110,17 +110,23 @@ Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
 - sender: The organization or person who authored/sent the document.
-- received_date: The date of the document or when it was received (YYYY-MM-DD).
-- originator_type: Categorize as "court", "opposing", "own", "third_party", or "unknown".
+- date: The date of the document or when it was received (YYYY-MM-DD).
+- originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
 
 Email subject: If an email_subject hint is provided, treat it as a primary source (not a verification hint) for internal_id and az_court. Email subjects reliably carry the lawyer's reference number verbatim. When the subject contains a value that differs from what you'd infer from the PDF body, prefer the subject and set confidence to "high".
 
-Verification Task:
-You will be provided with "Heuristic Hints" found by simple regex patterns.
-- If a hint is correct, use it and set confidence to "high".
-- If a hint is wrong (e.g. matched a random number as Aktenzeichen), correct it and set confidence to "medium" or "low".
-- If no hint is provided, extract from scratch.
+Heuristic Hints (optional):
+You may be provided with a "Heuristic Hints" block containing regex-matched values for some fields.
+Use a hint as your starting point and verify it against the document text. If the hint is wrong, correct it.
+If no hint is provided for a field, extract from scratch.
+
+Confidence scoring:
+For each field, set confidence based on how clearly the value is supported by the document text:
+- "high" — the value is stated explicitly and unambiguously in the document.
+- "medium" — the value is inferable but not stated verbatim, or you chose among plausible candidates.
+- "low" — the value is a best guess from weak evidence, or you set the field to null.
+Hints are a starting point, not a confidence input. A plainly-stated value is "high" whether or not a hint was provided.
 
 Be concise. If information is not available, use null.
 Return ONLY valid JSON."""

@@ -1,11 +1,14 @@
 import json
 import logging
+import os
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
+from app.models.enums import OriginatorType
 from app.services.ai_config import get_effective_config
+from app.services.ingestion.extractors import extract_case_id, extract_internal_id
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import _TAIL_CHARS, STAGE_OPTIONS
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
@@ -61,12 +64,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if summary_data.get("sender"):
         doc.sender = summary_data["sender"]
 
-    parsed_ot = parse_originator_type(summary_data.get("originator_type"))
+    parsed_ot = parse_originator_type(summary_data.get("originator"))
     if parsed_ot is not None:
         doc.originator_type = parsed_ot
 
-    if summary_data.get("received_date"):
-        raw_date = str(summary_data["received_date"]).strip()
+    if summary_data.get("date"):
+        raw_date = str(summary_data["date"]).strip()
         parsed_date = None
         for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
             try:
@@ -83,12 +86,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         if parsed_date is not None:
             doc.received_date = parsed_date.replace(tzinfo=UTC)
 
-    if summary_data.get("internal_id"):
-        doc.internal_id = summary_data["internal_id"]
-
-    # 2. Update confidence scores — normalize case and remap received_date → date.
-    #    Only accept keys that are in the schema; drop unknown ones (e.g. case_id)
-    #    so prompt drift can't inject bogus confidence values.
+    # 2. Update confidence scores — only accept schema keys; drop unknown ones
+    #    (e.g. case_id) so prompt drift can't inject bogus confidence values.
     _KNOWN_CONF_KEYS = {"sender", "date", "originator", "az_court", "internal_id"}
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):
@@ -99,10 +98,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             v = val.strip().lower()
             if v not in ("high", "medium", "low"):
                 continue
-            canonical_key = "date" if key == "received_date" else key
-            if canonical_key not in _KNOWN_CONF_KEYS:
+            if key not in _KNOWN_CONF_KEYS:
                 continue
-            new_conf[canonical_key] = v
+            new_conf[key] = v
         doc.extraction_confidence = new_conf
 
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
@@ -223,22 +221,38 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             .filter(IngestBatch.id == doc.ingest_batch_id)
             .scalar()
         )
+    safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
+    content_for_hints = doc.content or ""
+
+    az_hint = (
+        doc.proceeding.az_court
+        if doc.proceeding
+        else extract_case_id(safe_filename, content_for_hints)["value"]
+    )
+    internal_id_hint = (
+        doc.case_id
+        if doc.case_id and doc.case_id != "_TRIAGE"
+        else extract_internal_id(content_for_hints)["value"]
+    )
+
     hints = {
-        "az_court": doc.proceeding.az_court if doc.proceeding else None,
+        "az_court": az_hint,
+        "internal_id": internal_id_hint,
         "sender": doc.sender,
-        "received_date": doc.received_date.strftime("%Y-%m-%d")
-        if doc.received_date
-        else None,
-        "originator_type": doc.originator_type.value if doc.originator_type else None,
+        "date": doc.received_date.strftime("%Y-%m-%d") if doc.received_date else None,
+        "originator": (
+            doc.originator_type.value
+            if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN
+            else None
+        ),
         "email_subject": batch_subject,
     }
-    hints_str = json.dumps(hints, indent=2)
+    hints = {k: v for k, v in hints.items() if v is not None}
 
-    prompt = (
-        f"Document: {doc.title}\n\n"
-        f"### Heuristic Hints (found by regex, please verify):\n{hints_str}\n\n"
-        f"### Document Content Preview:\n{content_preview}"
-    )
+    prompt = f"Document: {doc.title}\n\n"
+    if hints:
+        prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
+    prompt += f"### Document Content Preview:\n{content_preview}"
 
     result = call_json_ai(
         system_prompt=PHASE1_METADATA_SYSTEM,
