@@ -61,6 +61,7 @@ def _call_claim_extractor_sync(
         debug_label=f"doc_{doc.id}_claims",
         model=model or None,
         db=db,
+        ingest_batch_id=doc.ingest_batch_id,
     )
 
 

@@ -246,7 +246,12 @@ async def delete_document(
     if context == "triage" and bundle_key:
         import json
 
-        from app.api.triage import _render_bundle_group_oob, _render_triage_feed_oob
+        from app.api.triage import (
+            _render_bundle_group_oob,
+            _render_sidebar_badges_oob,
+            _render_triage_feed_oob,
+            _render_triage_status_bar_oob,
+        )
 
         triage_service = TriageService(db)
         bundles = triage_service.get_triage_bundles()
@@ -256,6 +261,10 @@ async def delete_document(
             trigger["triage:advance"] = {"next_doc_id": next_doc_id, "scroll": False}
         else:
             trigger["triage:clear"] = {}
+
+        # Global synchronization: Sidebar badges and Triage status bar
+        global_oob = _render_sidebar_badges_oob(db)
+        global_oob += _render_triage_status_bar_oob(request, triage_service)
 
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
@@ -269,19 +278,20 @@ async def delete_document(
                 '<h3 class="text-sm font-black text-on-surface uppercase tracking-widest">Queue Clear</h3>'
                 "</div></div></div>"
             )
+            res_content += global_oob
             response = HTMLResponse(res_content)
         else:
             bundle = next((b for b in bundles if b.key == bundle_key), None)
             if bundle:
                 # Bundle still has documents — return the updated bundle group OOB.
-                response = HTMLResponse(
-                    _render_bundle_group_oob(request, bundle, triage_service)
-                )
+                res_content = _render_bundle_group_oob(request, bundle, triage_service)
+                res_content += global_oob
+                response = HTMLResponse(res_content)
             else:
                 # This bundle is now empty, but others remain — delete the group from DOM.
-                response = HTMLResponse(
-                    f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
-                )
+                res_content = f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
+                res_content += global_oob
+                response = HTMLResponse(res_content)
 
         response.headers["HX-Trigger"] = json.dumps(trigger)
         return response

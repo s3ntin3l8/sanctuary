@@ -49,6 +49,7 @@ def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict
         debug_label=f"doc_{doc.id}_entities",
         model=model or None,
         db=db,
+        ingest_batch_id=doc.ingest_batch_id,
     )
 
 

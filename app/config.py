@@ -26,7 +26,7 @@ INGEST_CONVERSION_TIMEOUT = int(os.getenv("INGEST_CONVERSION_TIMEOUT", "300"))
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5:9b")
-AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text")
+AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text:v1.5")
 AI_EMBED_DIM = int(os.getenv("AI_EMBED_DIM", "768"))  # nomic-embed-text default
 AI_SYSTEM_PROMPT = os.getenv("AI_SYSTEM_PROMPT", "")
 

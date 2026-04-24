@@ -3,11 +3,14 @@ import logging
 import httpx
 from fastapi import BackgroundTasks
 
-from app.config import AI_BASE_URL, SessionLocal
+from app.config import SessionLocal
 from app.models.database import Document
 from app.services.ai_config import get_effective_config
 
 logger = logging.getLogger(__name__)
+
+# nomic-embed-text:v1.5 has an 8192-token context window; ~3 chars/token for German legal text
+_EMBED_MAX_CHARS = 22000
 
 from app.services.ai_provider import ai_provider
 
@@ -33,13 +36,13 @@ async def generate_embedding(doc_id: int):
             current_len = 0
             for chunk in doc.meta["chunks"]:
                 text = chunk.get("text", "")
-                if current_len + len(text) > 16000:
+                if current_len + len(text) > _EMBED_MAX_CHARS:
                     break
                 content_snippet += text + "\n\n"
                 current_len += len(text)
 
         if not content_snippet:
-            content_snippet = doc.content[:16000]
+            content_snippet = doc.content[:_EMBED_MAX_CHARS]
 
         params = await ai_provider.get_embedding_params(
             cfg.embed_model, content_snippet
@@ -104,12 +107,12 @@ async def reindex_all_docs(db) -> dict:
                 current_len = 0
                 for chunk in doc.meta["chunks"]:
                     chunk_text = chunk.get("text", "")
-                    if current_len + len(chunk_text) > 16000:
+                    if current_len + len(chunk_text) > _EMBED_MAX_CHARS:
                         break
                     content_snippet += chunk_text + "\n\n"
                     current_len += len(chunk_text)
             if not content_snippet:
-                content_snippet = doc.content[:16000]
+                content_snippet = doc.content[:_EMBED_MAX_CHARS]
             params = await ai_provider.get_embedding_params(
                 cfg.embed_model, content_snippet
             )
@@ -139,24 +142,3 @@ async def reindex_all_docs(db) -> dict:
             failed += 1
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
-
-
-async def check_embedding_status() -> dict:
-    """Check if embedding model is pulled."""
-    import httpx
-
-    from app.config import AI_EMBED_MODEL
-
-    status = {"reachable": False, "embedding_model": False, "error": None}
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.get(f"{AI_BASE_URL}/api/tags")
-            response.raise_for_status()
-            data = response.json()
-            models = [m["name"] for m in data.get("models", [])]
-            status["reachable"] = True
-            status["embedding_model"] = any(AI_EMBED_MODEL in m for m in models)
-    except Exception as e:
-        status["error"] = str(e)
-
-    return status

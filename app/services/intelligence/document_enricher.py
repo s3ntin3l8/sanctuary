@@ -51,6 +51,7 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
         debug_label=f"doc_{doc.id}_enricher",
         model=model or None,
         db=db,
+        ingest_batch_id=doc.ingest_batch_id,
     )
 
 
@@ -135,14 +136,9 @@ def enrich(doc_id: int) -> None:
             logger.info(f"Doc {doc_id} has no usable content, skipping enrichment")
             return
 
-        try:
-            result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
-            _apply_enrichment(doc, result)
-            logger.info(f"Doc {doc_id} enriched successfully")
-        except Exception as e:
-            logger.error(f"Doc {doc_id} enrichment failed: {e}", exc_info=True)
-            doc.ai_summary = {"error": str(e)}
-
+        result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
+        _apply_enrichment(doc, result)
         db.commit()
+        logger.info(f"Doc {doc_id} enriched successfully")
     finally:
         db.close()

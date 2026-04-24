@@ -153,8 +153,10 @@ def test_invalid_cost_delta_direction_normalized(doc_with_content):
 
 
 @pytest.mark.unit
-def test_malformed_ai_response_sets_failed_status(db_session, doc_with_content):
-    """If enrich() catches an error, ai_summary must contain the error without crashing."""
+def test_malformed_ai_response_propagates_exception(db_session, doc_with_content):
+    """AI call errors must propagate from enrich() so the Celery wrapper can mark_failed."""
+    import pytest
+
     with (
         patch(
             "app.services.intelligence.document_enricher.SessionLocal",
@@ -165,12 +167,8 @@ def test_malformed_ai_response_sets_failed_status(db_session, doc_with_content):
             "app.services.intelligence.document_enricher._call_enricher_sync",
             side_effect=ValueError("Malformed JSON"),
         ),
+        pytest.raises(ValueError, match="Malformed JSON"),
     ):
         from app.services.intelligence.document_enricher import enrich
 
         enrich(doc_with_content.id)
-
-    db_session.expire_all()
-    doc = db_session.get(Document, doc_with_content.id)
-    assert doc.ai_summary is not None
-    assert "Malformed JSON" in doc.ai_summary["error"]

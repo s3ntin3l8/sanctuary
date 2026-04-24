@@ -74,6 +74,7 @@ def _call_batch_analyzer_sync(
         debug_label=f"batch_{batch_id}_analyzer",
         model=model or None,
         db=db,
+        ingest_batch_id=batch_id,
     )
 
 

@@ -87,6 +87,7 @@ def _call_relationship_detector_sync(
         debug_label=f"doc_{doc.id}_relationships",
         model=model or None,
         db=db,
+        ingest_batch_id=doc.ingest_batch_id,
     )
 
 

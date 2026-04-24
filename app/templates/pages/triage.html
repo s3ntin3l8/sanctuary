@@ -163,58 +163,8 @@
     {% include "partials/page_header.html" %}
 
     {# Secondary Status Bar #}
-    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6 shrink-0">
-        <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm text-error">pending_actions</span>
-            <span class="text-[10px] font-bold text-on-surface">{{ counts_by_type.bundles }}</span>
-            <span class="text-[10px] text-on-surface-variant font-medium">Bundles</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm text-on-surface-variant">description</span>
-            <span class="text-[10px] font-bold text-on-surface">{{ total_docs }}</span>
-            <span class="text-[10px] text-on-surface-variant font-medium">Documents</span>
-        </div>
-        <div class="h-3 w-px bg-outline-variant/40"></div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-originator-court"></span>
-            <span class="text-[10px] font-bold text-originator-court">{{ counts_by_type.court }}</span>
-            <span class="text-[10px] text-on-surface-variant">Court</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-originator-opposing"></span>
-            <span class="text-[10px] font-bold text-originator-opposing">{{ counts_by_type.opposing }}</span>
-            <span class="text-[10px] text-on-surface-variant">Opposing</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-originator-own"></span>
-            <span class="text-[10px] font-bold text-originator-own">{{ counts_by_type.own }}</span>
-            <span class="text-[10px] text-on-surface-variant">Own Counsel</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-originator-third-party"></span>
-            <span class="text-[10px] font-bold text-originator-third-party">{{ counts_by_type.third_party }}</span>
-            <span class="text-[10px] text-on-surface-variant">Third Party</span>
-        </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-outline"></span>
-            <span class="text-[10px] font-bold text-on-surface-variant">{{ counts_by_type.unknown }}</span>
-            <span class="text-[10px] text-on-surface-variant">Unknown</span>
-        </div>
-        <div class="flex-1"></div>
-        <div class="flex items-center gap-2 text-[9px] text-on-surface-variant uppercase tracking-wider">
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">↑↓</kbd>
-            <span class="font-medium">nav</span>
-            <span class="text-outline">·</span>
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">1-4</kbd>
-            <span class="font-medium">react</span>
-            <span class="text-outline">·</span>
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface">↵</kbd>
-            <span class="font-medium">next</span>
-            <span class="text-outline">·</span>
-            <kbd class="bg-surface-container px-1.5 py-0.5 rounded font-mono font-bold text-on-surface"><span class="cmd-glyph">⌘</span>↵</kbd>
-            <span class="font-medium">bundle</span>
-        </div>
-    </div>
+    {# Secondary Status Bar #}
+    {% include "partials/triage_status_bar.html" %}
 
     {% if bundles %}
     {# Two-Column Split: Feed (38%) + HUD (62%) #}

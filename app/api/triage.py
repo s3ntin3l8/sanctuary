@@ -122,7 +122,11 @@ async def confirm_document(
     response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
     targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
-    response.body += targeted_oob.encode("utf-8")
+    # Global OOB: sidebar badges + status bar
+    global_oob = _render_sidebar_badges_oob(db)
+    global_oob += _render_triage_status_bar_oob(request, triage_service)
+
+    response.body += (targeted_oob + global_oob).encode("utf-8")
 
     # Confirm-and-next: if the doc is now out of triage, tell the client which
     # doc to advance to. Alpine listener picks this up from the HX-Trigger
@@ -252,6 +256,10 @@ async def confirm(
             trigger["triage:advance"] = {"next_doc_id": first_doc_id, "scroll": False}
         else:
             trigger["triage:clear"] = {}
+
+    # Global OOB: sidebar badges + status bar
+    oob_parts.append(_render_sidebar_badges_oob(db))
+    oob_parts.append(_render_triage_status_bar_oob(request, triage_service))
 
     response = HTMLResponse(content="".join(oob_parts))
     response.headers["HX-Trigger"] = json.dumps(trigger)
@@ -677,3 +685,69 @@ def _render_doc_targeted_oob(
     )
 
     return card_html + footer_html + badge_html + chip_html
+
+
+def _render_sidebar_badges_oob(db: Session) -> str:
+    """Render global sidebar badges (triage, notifications) as OOB swaps."""
+    from app.helpers import _build_notifications, build_sidebar_counts
+
+    counts = build_sidebar_counts(db)
+    notif_data = _build_notifications(db)
+    notif_count = notif_data["notification_count"]
+
+    # Triage Badge
+    triage_badge_inner = ""
+    if counts["triage_count"] > 0:
+        triage_badge_inner = (
+            f'<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">'
+            f"{counts['triage_count']}</span>"
+        )
+    triage_oob = f'<div id="sidebar-triage-badge-container" hx-swap-oob="true">{triage_badge_inner}</div>'
+
+    # Notifications Badge
+    notif_badge_inner = ""
+    if notif_count > 0:
+        notif_badge_inner = (
+            f'<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">'
+            f"{notif_count}</span>"
+        )
+    notif_oob = f'<div id="sidebar-notifications-badge-container" hx-swap-oob="true">{notif_badge_inner}</div>'
+
+    return triage_oob + notif_oob
+
+
+def _render_triage_status_bar_oob(
+    request: Request, triage_service: TriageService
+) -> str:
+    """Render the triage status bar (with counts) as an OOB swap."""
+    bundles = triage_service.get_triage_bundles()
+    total_docs = sum(len(b.documents) for b in bundles)
+    counts = {
+        "court": 0,
+        "opposing": 0,
+        "own": 0,
+        "third_party": 0,
+        "unknown": 0,
+        "bundles": len(bundles),
+    }
+    for b in bundles:
+        for doc in b.documents:
+            if doc.originator_type == OriginatorType.COURT:
+                counts["court"] += 1
+            elif doc.originator_type == OriginatorType.OPPOSING:
+                counts["opposing"] += 1
+            elif doc.originator_type == OriginatorType.OWN:
+                counts["own"] += 1
+            elif doc.originator_type == OriginatorType.THIRD_PARTY:
+                counts["third_party"] += 1
+            else:
+                counts["unknown"] += 1
+
+    return templates.get_template("partials/triage_status_bar.html").render(
+        {
+            "request": request,
+            "counts_by_type": counts,
+            "total_docs": total_docs,
+            "as_oob": True,
+        }
+    )

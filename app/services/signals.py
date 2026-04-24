@@ -43,18 +43,16 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
     #     "link": "/settings"
     # })
 
-    # AI Provider Check (Basic reachability placeholder)
+    # AI Provider Check — uses DB-overridden base_url so LAN / remote backends are probed too
     import requests
 
-    from app.config import AI_BASE_URL
+    from app.services.ai_config import get_effective_config
 
+    base_url = get_effective_config(db).base_url
     try:
-        # Quick health check for Ollama/LM Studio if local
-        if "localhost" in AI_BASE_URL or "127.0.0.1" in AI_BASE_URL:
-            # Short timeout to avoid blocking Home page
-            resp = requests.get(AI_BASE_URL, timeout=0.5)
-            if resp.status_code >= 500:
-                raise Exception("Provider error")
+        resp = requests.get(base_url, timeout=0.5)
+        if resp.status_code >= 500:
+            raise Exception("Provider error")
     except Exception:
         signals.append(
             {
@@ -62,7 +60,7 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
                 "kind": "ai_provider",
                 "severity": "warn",
                 "title": "AI Backend unreachable",
-                "detail": f"Connection failed to {AI_BASE_URL}. Automatic analysis paused.",
+                "detail": f"Connection failed to {base_url}. Automatic analysis paused.",
                 "action": "check settings",
                 "link": "/settings",
             }

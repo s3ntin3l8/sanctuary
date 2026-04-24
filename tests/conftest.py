@@ -22,6 +22,29 @@ TEST_DB_PATH = "./test_sanctuary.db"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolate_data_dir(tmp_path_factory):
+    """Redirect DATA_DIR to a session tmp dir so tests don't pollute ./data/."""
+    tmp_data = tmp_path_factory.mktemp("data_session")
+    mpatch = pytest.MonkeyPatch()
+
+    import app.config
+
+    mpatch.setattr(app.config, "DATA_DIR", tmp_data)
+
+    for modname in (
+        "app.services.ingestion.service",
+        "app.services.ingestion.batch_orchestrator",
+        "app.services.intelligence._ai_call",
+    ):
+        mod = __import__(modname, fromlist=["DATA_DIR"])
+        if hasattr(mod, "DATA_DIR"):
+            mpatch.setattr(mod, "DATA_DIR", tmp_data)
+
+    yield tmp_data
+    mpatch.undo()
+
+
 @pytest.fixture(scope="session")
 def test_engine():
     engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})

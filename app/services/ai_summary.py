@@ -153,6 +153,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         debug_label=f"doc_{doc.id}_sync",
         model=cfg.summary_model,
         db=db,
+        ingest_batch_id=doc.ingest_batch_id,
     )
     logger.debug(f"AI response parsed for '{doc.title}'")
     return result
