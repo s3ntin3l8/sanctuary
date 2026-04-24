@@ -23,48 +23,62 @@ class CaseRepository(BaseRepository[Case]):
         """Escape SQL LIKE wildcards in user input."""
         return s.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
 
-    def get_all_active(self) -> Sequence[Case]:
+    def get_all_active(self, include_drafts: bool = False) -> Sequence[Case]:
         """Get all non-closed cases."""
-        return self.db.query(Case).filter(Case.status != CaseStatus.CLOSED).all()
+        query = self.db.query(Case).filter(Case.status != CaseStatus.CLOSED)
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
+        return query.all()
 
-    def get_all_sorted_by_title(self) -> Sequence[Case]:
+    def get_all_sorted_by_title(self, include_drafts: bool = False) -> Sequence[Case]:
         """Get all cases sorted by title."""
-        return (
-            self.db.query(Case)
-            .filter(Case.id != "_TRIAGE")
-            .order_by(Case.title.asc())
-            .all()
-        )
+        query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
+        return query.order_by(Case.title.asc()).all()
 
-    def get_all_sorted_by_date(self, descending: bool = True) -> Sequence[Case]:
+    def get_all_sorted_by_date(
+        self, descending: bool = True, include_drafts: bool = False
+    ) -> Sequence[Case]:
         """Get all cases sorted by creation date."""
         query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
         if descending:
             query = query.order_by(Case.ingest_date.desc())
         else:
             query = query.order_by(Case.ingest_date.asc())
         return query.all()
 
-    def get_by_status(self, status: CaseStatus) -> Sequence[Case]:
+    def get_by_status(
+        self, status: CaseStatus, include_drafts: bool = False
+    ) -> Sequence[Case]:
         """Get cases by status."""
-        return self.db.query(Case).filter(Case.status == status).all()
+        query = self.db.query(Case).filter(Case.status == status)
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
+        return query.all()
 
-    def get_by_jurisdiction(self, jurisdiction: Jurisdiction) -> Sequence[Case]:
+    def get_by_jurisdiction(
+        self, jurisdiction: Jurisdiction, include_drafts: bool = False
+    ) -> Sequence[Case]:
         """Get cases by jurisdiction."""
-        return self.db.query(Case).filter(Case.jurisdiction == jurisdiction).all()
+        query = self.db.query(Case).filter(Case.jurisdiction == jurisdiction)
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
+        return query.all()
 
-    def search(self, query: str) -> Sequence[Case]:
+    def search(self, query: str, include_drafts: bool = False) -> Sequence[Case]:
         """Search cases by title or ID."""
         escaped = self._escape_wildcards(query.lower())
         query_pattern = f"%{escaped}%"
-        return (
-            self.db.query(Case)
-            .filter(
-                (Case.id.ilike(query_pattern, escape="\\"))
-                | (Case.title.ilike(query_pattern, escape="\\"))
-            )
-            .all()
+        db_query = self.db.query(Case).filter(
+            (Case.id.ilike(query_pattern, escape="\\"))
+            | (Case.title.ilike(query_pattern, escape="\\"))
         )
+        if not include_drafts:
+            db_query = db_query.filter(Case.is_draft.is_(False))
+        return db_query.all()
 
     def count_by_status(self, status: CaseStatus) -> int:
         """Count cases by status."""
@@ -88,7 +102,6 @@ class CaseRepository(BaseRepository[Case]):
         jurisdiction: Jurisdiction = Jurisdiction.DE,
     ) -> Case:
         """Create a new case."""
-        case_id = case_id.replace("/", "-").strip()
         return self.create(
             id=case_id,
             title=title,
@@ -121,9 +134,13 @@ class CaseRepository(BaseRepository[Case]):
         page: int = 1,
         per_page: int = 20,
         status: CaseStatus | None = None,
+        include_drafts: bool = False,
     ) -> tuple[Sequence[Case], int]:
         """Get paginated cases with total count."""
         query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+
+        if not include_drafts:
+            query = query.filter(Case.is_draft.is_(False))
 
         if status:
             query = query.filter(Case.status == status)

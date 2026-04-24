@@ -1,5 +1,5 @@
 <div id="create-case-modal"
-     x-data="{ open: false }"
+     x-data="{ open: false, case_id: '', title: '' }"
      x-show="open"
      x-transition:enter="transition ease-out duration-200"
      x-transition:enter-start="opacity-0"
@@ -7,7 +7,7 @@
      x-transition:leave="transition ease-in duration-150"
      x-transition:leave-start="opacity-100"
      x-transition:leave-end="opacity-0"
-     @open-create-case-modal.window="open = true"
+     @open-create-case-modal.window="open = true; case_id = $event.detail.case_id || ''; title = $event.detail.title || ''"
      @keydown.escape.window="open = false"
      class="fixed inset-0 z-[9999] flex items-center justify-center">
     <div class="absolute inset-0 bg-background/80 backdrop-blur-sm" @click="open = false"></div>
@@ -34,6 +34,7 @@
                     type="text"
                     name="case_id"
                     required
+                    x-model="case_id"
                     placeholder="e.g. ADV-025-A"
                     class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-colors font-mono"
                 >
@@ -46,6 +47,7 @@
                     type="text"
                     name="title"
                     required
+                    x-model="title"
                     placeholder="e.g. Custody Dispute — Schmidt v. Schmidt"
                     class="w-full bg-surface-container-high border border-outline-variant/30 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary transition-colors"
                 >

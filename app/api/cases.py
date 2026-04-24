@@ -2,7 +2,7 @@ import dataclasses
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
@@ -345,12 +345,9 @@ async def create_case_from_triage(
     from app.services.hud_context import build_triage_hud_context
     from app.services.ingestion.extractors import extract_az_court_from_subject
 
-    # Sanitize internal_id
-    internal_id = internal_id.replace("/", "-").strip()
-
+    # Resolve az_court: use provided value or extract from batch subject
     batch = db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).first()
 
-    # Resolve az_court: use provided value or extract from batch subject
     if not az_court and batch and batch.subject:
         az_court = extract_az_court_from_subject(batch.subject)
 
@@ -359,12 +356,11 @@ async def create_case_from_triage(
         internal_id=internal_id,
         az_court=az_court,
         court_name=court_name,
-        batch_subject=batch.subject if batch else None,
+        batch_subject=case_title or (batch.subject if batch else None),
         is_draft=False,
     )
-    # If a title was explicitly provided and the case is new (or still titled "Neuer Fall …"),
-    # override with the supplied title.
-    if case_title and (case.title.startswith("Neuer Fall") or not case.title):
+    # If a title was explicitly provided, override with the supplied title.
+    if case_title:
         case.title = case_title[:80]
 
     # If the case was previously a draft, confirm it now since user clicked Anlegen.
@@ -485,6 +481,18 @@ async def reject_draft_case(
     db: Session = Depends(get_db),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
+    # We delegate to the full delete_case logic
+    return await delete_case(case_id, db, request=request, is_rejection=True)
+
+
+@router.delete("/{case_id}", response_model=None)
+async def delete_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    request: Request = None,
+    is_rejection: bool = False,
+):
+    """Delete a case and revert all its documents and batches to _TRIAGE."""
     from fastapi import HTTPException
 
     from app.models.database import ActionItem, Claim, Entity, IngestBatch, LegalCost
@@ -494,7 +502,8 @@ async def reject_draft_case(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    if not case.is_draft:
+
+    if is_rejection and not case.is_draft:
         raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
 
     # Collect affected docs before deletion
@@ -505,6 +514,7 @@ async def reject_draft_case(
     for doc in docs:
         doc.case_id = "_TRIAGE"
         doc.proceeding_id = None
+        doc.needs_review = True  # Ensure they reappear in triage
 
     for batch_id in batch_ids:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
@@ -532,28 +542,41 @@ async def reject_draft_case(
 
         _reset_and_reenrich(db, docs)
 
-    # Render the first reverted doc in the triage HUD
-    first_doc = docs[0] if docs else None
-    if not first_doc:
-        return HTMLResponse("", status_code=204)
+    if is_rejection and request:
+        # Render the first reverted doc in the triage HUD
+        first_doc = docs[0] if docs else None
+        if not first_doc:
+            return HTMLResponse("", status_code=204)
 
-    db.refresh(first_doc)
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    ctx = build_triage_hud_context(
-        db, first_doc, cases=cases, OriginatorType=OriginatorType
-    )
-    from app.config import templates as _templates
+        db.refresh(first_doc)
+        cases = (
+            db.query(Case)
+            .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+            .order_by(Case.title.asc())
+            .all()
+        )
+        ctx = build_triage_hud_context(
+            db, first_doc, cases=cases, OriginatorType=OriginatorType
+        )
+        from app.config import templates as _templates
 
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+        response = _templates.TemplateResponse(
+            request, "partials/hud/_container.html", ctx
+        )
 
-    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
-    from app.services.triage_service import TriageService
+        from app.api.triage import (
+            _render_sidebar_badges_oob,
+            _render_triage_status_bar_oob,
+        )
+        from app.services.triage_service import TriageService
 
-    response.body += (
-        _render_sidebar_badges_oob(db)
-        + _render_triage_status_bar_oob(request, TriageService(db))
-    ).encode("utf-8")
-    return response
+        response.body += (
+            _render_sidebar_badges_oob(db)
+            + _render_triage_status_bar_oob(request, TriageService(db))
+        ).encode("utf-8")
+        return response
+
+    return JSONResponse(content={"status": "success", "reverted_docs": len(docs)})
 
 
 @router.post("")
@@ -565,9 +588,6 @@ async def create_case(
     db: Session = Depends(get_db),
 ):
     """Create a new case and its initial active proceeding."""
-    # Sanitize case_id
-    case_id = case_id.replace("/", "-").strip()
-
     # 1. Create the Case
     new_case = Case(
         id=case_id,

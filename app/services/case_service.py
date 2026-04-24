@@ -58,7 +58,6 @@ def get_or_create_case_from_reference(
     Race-safe: SELECT first, then INSERT only when missing. Never overwrites
     an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
     """
-    internal_id = internal_id.replace("/", "-").strip()
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
         matched_proc = None
@@ -86,17 +85,16 @@ def get_or_create_case_from_reference(
     db.add(new_case)
     db.flush()
 
-    new_proc = None
-    if az_court:
-        new_proc = Proceeding(
-            case_id=internal_id,
-            az_court=az_court,
-            court_name=court_name or "(Gericht folgt)",
-            court_level=ProceedingCourtLevel.AG,
-            status=ProceedingStatus.ACTIVE,
-        )
-        db.add(new_proc)
-        db.flush()
+    # Always ensure a default proceeding exists
+    new_proc = Proceeding(
+        case_id=internal_id,
+        az_court=az_court,
+        court_name=court_name or "General",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+    )
+    db.add(new_proc)
+    db.flush()
 
     return new_case, new_proc, True
 
@@ -280,7 +278,7 @@ class CaseService:
 
     def get_all_cases_directory(self) -> dict:
         """Get all cases with counts for directory view."""
-        all_cases = self.case_repo.get_all_sorted_by_date()
+        all_cases = self.case_repo.get_all_sorted_by_date(include_drafts=False)
         now = datetime.now()
 
         # Fetch last_home_visit from user settings for enrichment
@@ -324,7 +322,9 @@ class CaseService:
         self, page: int = 1, per_page: int = 20
     ) -> dict:
         """Get paginated cases with counts for directory view."""
-        cases, total = self.case_repo.get_paginated(page=page, per_page=per_page)
+        cases, total = self.case_repo.get_paginated(
+            page=page, per_page=per_page, include_drafts=False
+        )
         now = datetime.now()
 
         # Fetch last_home_visit from user settings for enrichment
@@ -374,7 +374,6 @@ class CaseService:
         jurisdiction: Jurisdiction = Jurisdiction.DE,
     ) -> Case:
         """Create a new case."""
-        case_id = case_id.replace("/", "-").strip()
         return self.case_repo.create_case(
             case_id=case_id,
             title=title,

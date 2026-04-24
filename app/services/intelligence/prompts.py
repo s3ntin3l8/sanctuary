@@ -110,6 +110,7 @@ PHASE1_METADATA_SYSTEM = """You are a legal document analyst.
 Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
+- case_title: A short, descriptive title for the WHOLE legal case (not just this doc). e.g. "Schmidt ./. Schmidt (Sorgerecht)" or "Müller vs. Stadt Hamburg".
 - sender: The organization or person who authored/sent the document.
 - issued_date: The date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".

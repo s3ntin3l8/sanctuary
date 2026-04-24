@@ -110,22 +110,22 @@
         {% if is_draft_case %}
         <div class="mt-3 px-3 py-2 bg-amber-500/5 border border-amber-500/30 rounded-lg flex items-center justify-between gap-2">
             <div class="min-w-0">
-                <p class="text-[9px] font-bold text-amber-600 dark:text-amber-400">KI-Entwurf: {{ doc.case_id }}</p>
-                <p class="text-[8px] text-on-surface-variant">Akte wurde von der KI angelegt. Bitte bestätigen oder ablehnen.</p>
+                <p class="text-[9px] font-bold text-amber-600 dark:text-amber-400">AI Draft: {{ doc.case_id }}</p>
+                <p class="text-[8px] text-on-surface-variant">Case was auto-created by AI. Please confirm or reject.</p>
             </div>
             <div class="flex gap-1.5 shrink-0">
                 <button hx-post="/cases/{{ doc.case_id }}/confirm-draft"
                         hx-target="#triage-doc-pane"
                         hx-swap="innerHTML"
                         class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer whitespace-nowrap">
-                    Bestätigen
+                    Confirm
                 </button>
                 <button hx-post="/cases/{{ doc.case_id }}/reject-draft"
                         hx-target="#triage-doc-pane"
                         hx-swap="innerHTML"
-                        hx-confirm="Akte {{ doc.case_id }} löschen und Dokumente zurück in die Triage schicken?"
+                        hx-confirm="Delete case {{ doc.case_id }} and revert documents to triage?"
                         class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 cursor-pointer whitespace-nowrap">
-                    Ablehnen
+                    Reject
                 </button>
             </div>
         </div>
@@ -134,15 +134,15 @@
         {% if doc.case_id == '_TRIAGE' and doc.internal_id %}
         <div class="mt-3 px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between gap-2">
             <div class="min-w-0">
-                <p class="text-[9px] font-bold text-primary">Keine Akte: {{ doc.internal_id }}</p>
-                <p class="text-[8px] text-on-surface-variant">Akte anlegen und alle Dokumente dieser E-Mail zuordnen.</p>
+                <p class="text-[9px] font-bold text-primary">No Case: {{ doc.internal_id }}</p>
+                <p class="text-[8px] text-on-surface-variant">Create case and assign all documents from this email.</p>
             </div>
             <button hx-post="/cases/create-from-triage"
                     hx-vals='{"internal_id": "{{ doc.internal_id }}", "ingest_batch_id": "{{ doc.ingest_batch_id or '' }}"}'
                     hx-target="#triage-doc-pane"
                     hx-swap="innerHTML"
                     class="shrink-0 text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer whitespace-nowrap">
-                Anlegen →
+                Create →
             </button>
         </div>
         {% endif %}
@@ -204,9 +204,16 @@
             {# Case #}
             <div class="space-y-1"
                  {% if field_confs.case_id == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Case {{ conf_chip(field_confs.case_id) }}
-                </label>
+                <div class="flex items-center justify-between">
+                    <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                        Case {{ conf_chip(field_confs.case_id) }}
+                    </label>
+                    <button type="button"
+                            @click="$dispatch('open-create-case-modal', { case_id: '{{ doc.internal_id or '' }}', title: '{{ doc.title or '' }}' })"
+                            class="text-[8px] font-bold text-primary hover:underline cursor-pointer">
+                        + New
+                    </button>
+                </div>
                 <select name="case_id" data-triage-case-select
                         {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
                         class="{{ input_base }} {{ low_border if field_confs.case_id == 'low' else med_border if field_confs.case_id == 'medium' else ok_border }}">

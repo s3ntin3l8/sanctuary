@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SAEnum,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, validates
 
 from app.models.enums import (
     ActionItemStatus,
@@ -170,6 +170,13 @@ class Case(Base):
     proceedings = relationship(
         "Proceeding", back_populates="case", cascade="all, delete-orphan"
     )
+
+    @validates("id")
+    def validate_id(self, key, case_id):
+        """Sanitize case_id: replace / with -, strip, uppercase."""
+        if not case_id:
+            return case_id
+        return case_id.replace("/", "-").strip().upper()
 
 
 class Proceeding(Base):

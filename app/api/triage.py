@@ -35,7 +35,10 @@ async def triage_page(
     bundles = triage_service.get_triage_bundles(limit=limit, offset=offset)
     slicing_queue = triage_service.get_slicing_queue()
     all_cases = (
-        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+        .order_by(Case.title.asc())
+        .all()
     )
     total_docs = sum(b.doc_count for b in bundles)
 
@@ -141,7 +144,12 @@ async def confirm_document(
 
         _reset_and_reenrich(db, [doc])
 
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    cases = (
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+        .order_by(Case.title.asc())
+        .all()
+    )
     ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
     response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
@@ -353,7 +361,10 @@ async def confirm_bundle(
                 r.reaction for r in triage_service.get_reactions(doc.id)
             }  # set for card-level membership check only
     all_cases = (
-        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+        .order_by(Case.title.asc())
+        .all()
     )
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
@@ -478,7 +489,12 @@ async def retry_ai(
 def _render_document_hud(request: Request, doc: Document, db: Session) -> HTMLResponse:
     """Render the embedded HUD — reused by reingest/summarize/approve-summary/retry-ai."""
     triage_service = TriageService(db)
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    cases = (
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+        .order_by(Case.title.asc())
+        .all()
+    )
     ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
     response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
@@ -619,7 +635,10 @@ def _render_triage_feed_oob(
                 r.reaction for r in triage_service.get_reactions(doc.id)
             }
     all_cases = (
-        db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+        db.query(Case)
+        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+        .order_by(Case.title.asc())
+        .all()
     )
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 

@@ -122,8 +122,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = summary_data.get("az_court")
     internal_id = summary_data.get("internal_id")
-    if internal_id and isinstance(internal_id, str):
-        internal_id = internal_id.replace("/", "-").strip()
+    ai_case_title = summary_data.get("case_title")
 
     if doc.case_id == "_TRIAGE":
         matching_case = None
@@ -167,11 +166,14 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             from app.services.case_service import get_or_create_case_from_reference
 
             batch_subject = doc.ingest_batch.subject if doc.ingest_batch else None
+            # Use AI-extracted case title if available
+            case_title = ai_case_title or batch_subject
+
             draft_case, draft_proc, created = get_or_create_case_from_reference(
                 db,
                 internal_id=internal_id,
                 az_court=az_court,
-                batch_subject=batch_subject,
+                batch_subject=case_title,
                 is_draft=True,
             )
             db.flush()
