@@ -397,6 +397,7 @@ async def create_case_from_triage(
     proceeding_id = matched_proceeding.id if matched_proceeding else None
 
     # Cascade to the batch and all its docs still in _TRIAGE
+    reassigned_docs = []
     if batch:
         batch.case_id = internal_id
         if proceeding_id:
@@ -406,8 +407,16 @@ async def create_case_from_triage(
                 doc.case_id = internal_id
                 if proceeding_id:
                     doc.proceeding_id = proceeding_id
+                reassigned_docs.append(doc)
 
     db.commit()
+
+    # Re-trigger ENRICH and downstream for newly assigned docs so that
+    # relationships, claims, and entities run with the correct case context.
+    if reassigned_docs:
+        from app.services.triage_service import _reset_and_reenrich
+
+        _reset_and_reenrich(db, reassigned_docs)
 
     # Identify the first doc in this batch to render in the HUD
     first_doc = None

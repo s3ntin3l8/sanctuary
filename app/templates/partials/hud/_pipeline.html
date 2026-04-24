@@ -2,9 +2,12 @@
    Required: doc (Document with pipeline_state + pipeline_stages)
 #}
 {% from "partials/_pipeline_status.html" import pipeline_status_pill %}
-{% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+{% set stages = doc.pipeline_stages or {} %}
+{% set _completed_count = stages.values() | selectattr('status', 'equalto', 'completed') | list | length %}
+{% set _skipped_count = stages.values() | selectattr('status', 'equalto', 'skipped') | list | length %}
+{% set _all_terminal = stages | length > 0 and (_completed_count + _skipped_count) == stages | length %}
 
-<div x-data="{ open: {{ 'true' if state in ('running', 'failed') else 'false' }} }"
+<div x-data="{ open: {{ 'false' if _all_terminal else 'true' }} }"
      class="border-b border-outline-variant/10">
 
   {# Section header — always visible, click to toggle #}

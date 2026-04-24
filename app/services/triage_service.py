@@ -120,6 +120,26 @@ class BundleView:
         return groups
 
 
+def _reset_and_reenrich(db: Session, docs: list) -> None:
+    """Reset ENRICH (and its downstream) to pending, then dispatch enrichment.
+
+    Called whenever docs transition from _TRIAGE to a real case so that
+    relationship/claims/entities stages run with the correct case context.
+    Only processes docs whose METADATA completed successfully (failed metadata
+    means no enrichment output would be meaningful).
+    """
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import reset_stage
+    from app.tasks.enrich_document import enrich_document_task
+
+    for doc in docs:
+        metadata_status = (doc.pipeline_stages or {}).get("metadata", {}).get("status")
+        if metadata_status != "completed":
+            continue
+        reset_stage(doc.id, PipelineStage.ENRICH, db)
+        enrich_document_task.delay(doc.id)
+
+
 class TriageService:
     def __init__(self, db: Session):
         self.db = db

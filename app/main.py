@@ -271,6 +271,14 @@ def render_highlighted(
         if new_html == html and search_text != text:
             # Offset-derived text didn't survive markdown rendering; fall back.
             new_html = _re.sub(_re.escape(text), _replace, html, count=1)
+        if new_html == html:
+            # Neither attempt matched (markdown escaping / AI paraphrase).
+            # Inject a hidden anchor at the start so clicks scroll to the top
+            # of the body — better than a no-op.
+            new_html = (
+                f'<a id="p-{pid}" class="passage-anchor-unmatched" aria-hidden="true"></a>'
+                + html
+            )
         html = new_html
 
     return Markup(html)

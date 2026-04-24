@@ -23,10 +23,13 @@
      style="border-left-color: {{ stripe_color }};"
      {% if hx_swap_oob is defined and hx_swap_oob %}hx-swap-oob="true"{% endif %}>
 
-    {# Self-disarming polling probe — fires every 4 s while pipeline is active,
-       swaps the whole card OOB, disappears once a terminal state is rendered. #}
-    {% set _pstate = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
-    {% if _pstate in ('pending', 'running') %}
+    {# Self-disarming polling probe — fires every 4 s until every stage is terminal.
+       Using stage-level check (vs pipeline_state) catches late batch-analyzer writes
+       that can arrive after pipeline_state flips to 'completed'. #}
+    {% set _stages = doc.pipeline_stages or {} %}
+    {% set _done_count = (_stages.values() | selectattr('status', 'equalto', 'completed') | list | length) + (_stages.values() | selectattr('status', 'equalto', 'skipped') | list | length) + (_stages.values() | selectattr('status', 'equalto', 'failed') | list | length) %}
+    {% set _keep_polling = not _stages or _done_count != _stages | length %}
+    {% if _keep_polling %}
     <span hx-get="/triage/card/{{ doc.id }}/live"
           hx-trigger="every 4s"
           hx-swap="none"

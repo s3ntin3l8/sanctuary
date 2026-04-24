@@ -105,6 +105,10 @@ async def confirm_document(
 
     resolved_case_id = case_id if case_id else None
 
+    # Capture pre-confirm case_id to detect _TRIAGE → real case transition.
+    pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
+    pre_confirm_case_id = pre_confirm_doc.case_id if pre_confirm_doc else None
+
     doc = triage_service.confirm_document(
         doc_id,
         title=title,
@@ -116,6 +120,16 @@ async def confirm_document(
     )
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    # If this confirm moved the doc out of _TRIAGE, re-trigger downstream enrichment.
+    if (
+        (not pre_confirm_case_id or pre_confirm_case_id == "_TRIAGE")
+        and doc.case_id
+        and doc.case_id != "_TRIAGE"
+    ):
+        from app.services.triage_service import _reset_and_reenrich
+
+        _reset_and_reenrich(db, [doc])
 
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
@@ -186,9 +200,12 @@ async def confirm(
     finalize = action == "confirm_bundle"
 
     # ---- perform the DB update ----
+    from app.services.triage_service import _reset_and_reenrich
+
     if is_synthetic == "true" and doc_id:
         _doc_id = int(doc_id)
         bundle_key = f"loose-{_doc_id}"
+        pre_case = db.query(Document.case_id).filter(Document.id == _doc_id).scalar()
         updated_doc = triage_service.confirm_document(_doc_id, case_id=case_id)
         if not updated_doc:
             raise HTTPException(status_code=404, detail=f"Document {_doc_id} not found")
@@ -196,6 +213,8 @@ async def confirm(
             updated_doc.proceeding_id = parsed_proceeding_id
             db.commit()
             db.refresh(updated_doc)
+        if (not pre_case or pre_case == "_TRIAGE") and case_id and case_id != "_TRIAGE":
+            _reset_and_reenrich(db, [updated_doc])
     else:
         if not batch_id:
             raise HTTPException(
@@ -203,6 +222,15 @@ async def confirm(
             )
         _batch_id = int(batch_id)
         bundle_key = f"batch-{_batch_id}"
+        # Capture which docs are still _TRIAGE before the cascade.
+        pre_triage_docs = (
+            db.query(Document)
+            .filter(
+                Document.ingest_batch_id == _batch_id,
+                Document.case_id == "_TRIAGE",
+            )
+            .all()
+        )
         batch = triage_service.confirm_bundle(
             _batch_id,
             case_id=case_id,
@@ -211,6 +239,10 @@ async def confirm(
         )
         if not batch:
             raise HTTPException(status_code=404, detail=f"Batch {_batch_id} not found")
+        if case_id and case_id != "_TRIAGE" and pre_triage_docs:
+            for d in pre_triage_docs:
+                db.refresh(d)
+            _reset_and_reenrich(db, pre_triage_docs)
 
     # ---- build targeted OOB response (no full feed replacement) ----
     bundles = triage_service.get_triage_bundles()

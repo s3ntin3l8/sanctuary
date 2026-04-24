@@ -79,6 +79,9 @@
           {% if p.rationale %}
           <span class="text-[9px]" style="color:var(--color-on-surface-variant);">{{ p.rationale | truncate(50, true) }}</span>
           {% endif %}
+          {% if not p.start_offset %}
+          <span class="text-[8px] font-mono" style="color:var(--color-outline);" title="Approximate scroll position — original text not matched in rendered output">⚠ approx</span>
+          {% endif %}
           {% if context != 'overlay' %}
           {% set pin_count = passage_pin_counts.get(p_id, 0) if passage_pin_counts is defined else 0 %}
           {% if pin_count > 0 %}

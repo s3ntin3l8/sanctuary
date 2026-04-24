@@ -28,7 +28,7 @@
 
 {% set field_confs = {
     'title':      conf.get('title')      or ('high' if doc.title else 'low'),
-    'case_id':    conf.get('case_id')    or (('high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low')),
+    'case_id':    'high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low',
     'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
     'sender':     conf.get('sender')     or ('high' if doc.sender else 'low'),
     'date':       conf.get('date')       or ('high' if doc.received_date else 'low'),
@@ -97,18 +97,14 @@
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Received</dt>
                 <dd class="text-on-surface-variant font-medium font-mono">{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—' }}</dd>
             </div>
-            {% if doc.significance_tier %}
             <div>
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
-                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.significance_tier.value }}</dd>
+                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.significance_tier.value if doc.significance_tier else '—' }}</dd>
             </div>
-            {% endif %}
-            {% if doc.document_type %}
             <div>
                 <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
-                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value }}</dd>
+                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
             </div>
-            {% endif %}
         </dl>
         {# Auto-create case prompt when AI extracted a reference but no case matched #}
         {% if doc.case_id == '_TRIAGE' and doc.internal_id %}
@@ -227,35 +223,25 @@
                        class="{{ input_base }} {{ low_border if field_confs.date == 'low' else med_border if field_confs.date == 'medium' else ok_border }}">
             </div>
 
-            {# Read-only: internal_id, az_court, significance_tier, document_type #}
-            {% if doc.internal_id or (doc.proceeding and doc.proceeding.az_court) or doc.significance_tier or doc.document_type %}
+            {# Read-only: internal_id, az_court, significance_tier, document_type — always visible #}
             <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]">
-                {% if doc.internal_id %}
                 <div>
                     <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">Ref.-Nr. {{ conf_chip(conf.get('internal_id', 'high' if doc.internal_id else 'low')) }}</dt>
-                    <dd class="font-mono text-on-surface-variant">{{ doc.internal_id }}</dd>
+                    <dd class="font-mono text-on-surface-variant">{{ doc.internal_id or '—' }}</dd>
                 </div>
-                {% endif %}
-                {% if doc.proceeding and doc.proceeding.az_court %}
                 <div>
-                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high')) }}</dt>
-                    <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court }}</dd>
+                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
+                    <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
                 </div>
-                {% endif %}
-                {% if doc.significance_tier %}
                 <div>
                     <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
-                    <dd class="text-on-surface-variant capitalize">{{ doc.significance_tier.value }}</dd>
+                    <dd class="text-on-surface-variant capitalize">{{ doc.significance_tier.value if doc.significance_tier else '—' }}</dd>
                 </div>
-                {% endif %}
-                {% if doc.document_type %}
                 <div>
                     <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
-                    <dd class="text-on-surface-variant capitalize">{{ doc.document_type.value }}</dd>
+                    <dd class="text-on-surface-variant capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
                 </div>
-                {% endif %}
             </div>
-            {% endif %}
 
             {# Footer — single primary action, no checkbox #}
             <div class="md:col-span-2 pt-3 flex justify-end border-t border-outline-variant/5 mt-1">

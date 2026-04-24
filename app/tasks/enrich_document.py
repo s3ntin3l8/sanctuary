@@ -12,8 +12,35 @@ logger = logging.getLogger(__name__)
 def enrich_document_task(self, doc_id: int):
     """Run per-document AI enrichment, then enqueue relationship detection and cost rollup."""
     from app.dependencies import get_db_session
+    from app.models.database import Document
     from app.services.intelligence.document_enricher import enrich
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed,
+        mark_skipped,
+        mark_started,
+    )
+
+    # Secondary gate: skip enrichment when METADATA failed.
+    # This prevents batch-dispatched enrichment from running against docs
+    # that have no sender/tier/summary (pipeline would fly blind).
+    db = get_db_session()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if doc:
+            metadata_status = (
+                (doc.pipeline_stages or {}).get("metadata", {}).get("status")
+            )
+            if metadata_status == "failed":
+                mark_skipped(doc_id, PipelineStage.ENRICH, db, reason="metadata_failed")
+                logger.info("Doc #%d: skipping enrich — METADATA failed", doc_id)
+                return {
+                    "status": "skipped",
+                    "doc_id": doc_id,
+                    "reason": "metadata_failed",
+                }
+    finally:
+        db.close()
 
     db = get_db_session()
     try:

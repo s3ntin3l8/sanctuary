@@ -55,8 +55,21 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     )
 
 
+def _normalize_text(s: str) -> str:
+    """Collapse whitespace and normalize curly quotes for fuzzy offset search."""
+    import re as _re
+
+    s = s.replace("‘", "'").replace("’", "'")
+    s = s.replace("“", '"').replace("”", '"')
+    return _re.sub(r"\s+", " ", s).strip()
+
+
 def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
-    """Validate AI-supplied offsets; repair via text search if missing or wrong."""
+    """Validate AI-supplied offsets; repair via text search if missing or wrong.
+
+    Falls back to normalized (whitespace/quote-collapsed) search when exact
+    search finds no unique match.
+    """
     text = passage_dict.get("text", "")
     start = passage_dict.get("start_offset")
     end = passage_dict.get("end_offset")
@@ -73,20 +86,40 @@ def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
     ):
         return passage_dict  # offsets are correct
 
-    # Repair: find unique occurrence in content
+    # Repair pass 1: exact substring search for a unique occurrence
     idx = content.find(text)
     if idx != -1 and content.find(text, idx + 1) == -1:
         passage_dict["start_offset"] = idx
         passage_dict["end_offset"] = idx + len(text)
+        return passage_dict
+
+    # Repair pass 2: normalized search — strip/collapse whitespace and curly quotes
+    norm_text = _normalize_text(text)
+    norm_content = _normalize_text(content)
+    norm_idx = norm_content.find(norm_text)
+    if norm_idx != -1 and norm_content.find(norm_text, norm_idx + 1) == -1:
+        # Map normalized index back to original content by character walk
+        orig_idx = 0
+        norm_walked = 0
+        import re as _re
+
+        for m in _re.finditer(r"\S+|\s+", content):
+            token = _normalize_text(m.group())
+            if norm_walked + len(token) > norm_idx:
+                orig_idx = m.start()
+                break
+            norm_walked += len(token) + 1  # +1 for collapsed space
+        passage_dict["start_offset"] = orig_idx
+        passage_dict["end_offset"] = min(orig_idx + len(text), len(content))
+        logger.debug(f"Doc {doc.id}: passage offset repaired via normalized search")
+        return passage_dict
+
+    passage_dict["start_offset"] = None
+    passage_dict["end_offset"] = None
+    if idx == -1:
+        logger.debug(f"Doc {doc.id}: passage text not found in content, no offset")
     else:
-        passage_dict["start_offset"] = None
-        passage_dict["end_offset"] = None
-        if idx == -1:
-            logger.debug(f"Doc {doc.id}: passage text not found in content, no offset")
-        else:
-            logger.debug(
-                f"Doc {doc.id}: passage text appears multiple times, no offset"
-            )
+        logger.debug(f"Doc {doc.id}: passage text appears multiple times, no offset")
     return passage_dict
 
 

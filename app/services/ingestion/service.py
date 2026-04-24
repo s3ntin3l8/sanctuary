@@ -240,7 +240,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     doc.extraction_confidence = ExtractionConfidenceSchema(
         sender=result_sender["confidence"],
         date=result_date["confidence"],
-        case_id=result_case_id["confidence"],
         originator=result_originator["confidence"],
     ).model_dump()
 

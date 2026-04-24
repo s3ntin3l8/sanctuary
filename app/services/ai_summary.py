@@ -86,8 +86,10 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if summary_data.get("internal_id"):
         doc.internal_id = summary_data["internal_id"]
 
-    # 2. Update confidence scores — normalize case and remap received_date → date
-    #    so the UI template's conf.get('date') lookup always finds the AI value.
+    # 2. Update confidence scores — normalize case and remap received_date → date.
+    #    Only accept keys that are in the schema; drop unknown ones (e.g. case_id)
+    #    so prompt drift can't inject bogus confidence values.
+    _KNOWN_CONF_KEYS = {"sender", "date", "originator", "az_court", "internal_id"}
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):
         new_conf = dict(doc.extraction_confidence or {})
@@ -98,6 +100,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             if v not in ("high", "medium", "low"):
                 continue
             canonical_key = "date" if key == "received_date" else key
+            if canonical_key not in _KNOWN_CONF_KEYS:
+                continue
             new_conf[canonical_key] = v
         doc.extraction_confidence = new_conf
 

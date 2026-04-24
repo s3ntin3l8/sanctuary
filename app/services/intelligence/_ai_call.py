@@ -231,6 +231,18 @@ def call_json_ai(
                             full_response += token
                     if chunk.get("done"):
                         break
+    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
+        # Compact one-liner for expected transient provider errors — no stack trace.
+        duration_so_far = int((time.perf_counter() - start_perf) * 1000)
+        ttfb_so_far = (
+            int((ttfb_perf - start_perf) * 1000) if ttfb_perf is not None else None
+        )
+        stream_error = (
+            f"timeout after {duration_so_far}ms"
+            + (f", ttfb={ttfb_so_far}ms" if ttfb_so_far is not None else "")
+            + f": {type(e).__name__}"
+        )
+        raise
     except Exception as e:
         stream_error = "".join(traceback.format_exception(type(e), e, e.__traceback__))
         raise
