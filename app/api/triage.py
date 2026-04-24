@@ -632,7 +632,7 @@ async def bundle_pipeline_status(
     if not bundle:
         return HTMLResponse("", status_code=404)
 
-    summary = bundle.get_pipeline_summary()
+    summary = bundle.pipeline_summary
     n_running = summary.get("running", 0)
     n_pending = summary.get("pending", 0)
     n_active = n_running + n_pending
