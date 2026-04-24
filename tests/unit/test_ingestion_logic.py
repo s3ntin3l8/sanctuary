@@ -110,7 +110,7 @@ def test_extract_case_id_anchor_geschaeftszeichen():
 def test_extract_internal_id_unser_zeichen():
     content = "Unser Zeichen: 8124/25\nIhr Zeichen: XYZ"
     result = extract_internal_id(content)
-    assert result["value"] == "8124/25"
+    assert result["value"] == "8124-25"
     assert result["confidence"] == "high"
 
 
@@ -118,7 +118,7 @@ def test_extract_internal_id_unser_zeichen():
 def test_extract_internal_id_unser_az():
     content = "Unser Az.: 8124/25\nBetreff: Klage"
     result = extract_internal_id(content)
-    assert result["value"] == "8124/25"
+    assert result["value"] == "8124-25"
     assert result["confidence"] == "high"
 
 

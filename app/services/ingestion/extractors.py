@@ -314,7 +314,9 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
     leading token is found.
     """
     m = _SUBJECT_INTERNAL_ID_RE.match(subject)
-    return m.group(1) if m else None
+    if not m:
+        return None
+    return m.group(1).replace("/", "-")
 
 
 def extract_az_court_from_subject(subject: str) -> str | None:
@@ -347,5 +349,5 @@ def extract_internal_id(content: str) -> ExtractionResult:
     text = content[:20000] if content else ""
     match = _INTERNAL_ID_ANCHOR_RE.search(text)
     if match:
-        return {"value": match.group(1), "confidence": "high"}
+        return {"value": match.group(1).replace("/", "-"), "confidence": "high"}
     return {"value": None, "confidence": "low"}

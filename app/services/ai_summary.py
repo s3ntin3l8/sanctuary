@@ -107,6 +107,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = summary_data.get("az_court")
     internal_id = summary_data.get("internal_id")
+    if internal_id and isinstance(internal_id, str):
+        internal_id = internal_id.replace("/", "-").strip()
 
     if doc.case_id == "_TRIAGE":
         matching_case = None

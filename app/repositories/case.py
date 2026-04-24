@@ -88,6 +88,7 @@ class CaseRepository(BaseRepository[Case]):
         jurisdiction: Jurisdiction = Jurisdiction.DE,
     ) -> Case:
         """Create a new case."""
+        case_id = case_id.replace("/", "-").strip()
         return self.create(
             id=case_id,
             title=title,

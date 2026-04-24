@@ -58,6 +58,7 @@ def get_or_create_case_from_reference(
     Race-safe: SELECT first, then INSERT only when missing. Never overwrites
     an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
     """
+    internal_id = internal_id.replace("/", "-").strip()
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
         matched_proc = None
@@ -373,6 +374,7 @@ class CaseService:
         jurisdiction: Jurisdiction = Jurisdiction.DE,
     ) -> Case:
         """Create a new case."""
+        case_id = case_id.replace("/", "-").strip()
         return self.case_repo.create_case(
             case_id=case_id,
             title=title,

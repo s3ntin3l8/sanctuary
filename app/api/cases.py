@@ -345,6 +345,9 @@ async def create_case_from_triage(
     from app.services.hud_context import build_triage_hud_context
     from app.services.ingestion.extractors import extract_az_court_from_subject
 
+    # Sanitize internal_id
+    internal_id = internal_id.replace("/", "-").strip()
+
     batch = db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).first()
 
     # Resolve az_court: use provided value or extract from batch subject
@@ -562,6 +565,9 @@ async def create_case(
     db: Session = Depends(get_db),
 ):
     """Create a new case and its initial active proceeding."""
+    # Sanitize case_id
+    case_id = case_id.replace("/", "-").strip()
+
     # 1. Create the Case
     new_case = Case(
         id=case_id,
