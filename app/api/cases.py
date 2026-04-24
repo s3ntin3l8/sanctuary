@@ -1,7 +1,7 @@
 import dataclasses
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
@@ -194,6 +194,32 @@ async def case_detail(
     mark_viewed(case_id, db)
     db.commit()
     return response
+
+
+@router.patch("/{case_id}")
+async def update_case(
+    case_id: str,
+    title: str = Form(None),
+    status: CaseStatus = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Update a case and return HX-Refresh header."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    if title is not None:
+        case.title = title
+    if status is not None:
+        case.status = status
+        if status == CaseStatus.CLOSED:
+            # Close all proceedings of this case
+            db.query(Proceeding).filter(Proceeding.case_id == case_id).update(
+                {"status": ProceedingStatus.CLOSED}
+            )
+
+    db.commit()
+    return Response(headers={"HX-Refresh": "true"})
 
 
 # ---------------------------------------------------------------------------

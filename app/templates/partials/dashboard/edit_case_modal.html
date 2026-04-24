@@ -1,0 +1,64 @@
+<div x-data="{ open: false }" @open-edit-case-modal.window="open = true">
+    <template x-teleport="body">
+        <div x-show="open" class="relative z-50" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+            <div x-show="open" x-transition.opacity class="fixed inset-0 bg-black/60 transition-opacity"></div>
+            <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+                <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+                    <div x-show="open" @click.away="open = false" x-transition
+                         class="relative transform overflow-hidden rounded-lg bg-surface-container text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg border border-outline-variant/30">
+                        <div class="px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                            <h3 class="text-base font-semibold leading-6 text-on-surface" id="modal-title">Edit Case & Proceeding</h3>
+
+                            <!-- Case Edit Form -->
+                            <form hx-patch="/cases/{{ case.id }}" class="mt-4 space-y-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Case Title</label>
+                                    <input type="text" name="title" value="{{ case.title }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Case Status</label>
+                                    <select name="status" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                        <option value="active" {% if case.status == 'active' %}selected{% endif %}>Active</option>
+                                        <option value="closed" {% if case.status == 'closed' %}selected{% endif %}>Closed</option>
+                                    </select>
+                                </div>
+                                <div class="flex justify-end pt-2">
+                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium">Save Case</button>
+                                </div>
+                            </form>
+
+                            <hr class="my-6 border-outline-variant/30">
+
+                            <!-- Proceeding Edit Form -->
+                            {% if active_proceeding %}
+                            <form hx-patch="/api/proceedings/{{ active_proceeding.id }}" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Proceeding Court Name</label>
+                                    <input type="text" name="court_name" value="{{ active_proceeding.court_name }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Court Level</label>
+                                    <select name="court_level" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                        <option value="AG" {% if active_proceeding.court_level == 'AG' %}selected{% endif %}>AG</option>
+                                        <option value="LG" {% if active_proceeding.court_level == 'LG' %}selected{% endif %}>LG</option>
+                                        <option value="OLG" {% if active_proceeding.court_level == 'OLG' %}selected{% endif %}>OLG</option>
+                                        <option value="BGH" {% if active_proceeding.court_level == 'BGH' %}selected{% endif %}>BGH</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Aktenzeichen (Court File No)</label>
+                                    <input type="text" name="az_court" value="{{ active_proceeding.az_court or '' }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                </div>
+                                <div class="flex justify-end pt-2 space-x-2">
+                                    <button type="button" @click="open = false" class="px-3 py-1.5 text-sm font-medium text-on-surface-variant">Cancel</button>
+                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium">Save Proceeding</button>
+                                </div>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+</div>
