@@ -12,6 +12,13 @@
   <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
     <span class="material-symbols-outlined text-sm text-primary">smart_toy</span>
     AI Summary
+    {% set strategy = (doc.meta or {}).get('ai_context_strategy') %}
+    {% if strategy == 'windowed' %}
+    <span class="px-1.5 py-0.5 rounded bg-outline-variant/10 text-outline text-[8px] font-bold uppercase tracking-tighter"
+          title="This document was too large for a full pass. AI analyzed Head, Middle, and Tail sections.">
+        Split View
+    </span>
+    {% endif %}
     {% if has_summary and not is_approved %}
     <div class="ml-auto flex items-center gap-1.5">
       <button hx-post="/document/{{ doc.id }}/hud/approve-summary?action=approve"
