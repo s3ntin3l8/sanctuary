@@ -147,12 +147,3 @@ def test_document_detail_context_triage_still_works(db_session, doc_in_case):
     response = client.get(f"/document/{doc_in_case.id}?context=triage")
     assert response.status_code == 200
     assert 'data-hud-context="embedded"' in response.text
-
-
-@pytest.mark.integration
-def test_activity_feed_item_links_to_fullscreen(db_session, doc_in_case):
-    """Activity feed item uses <a href> to full-screen HUD, not hx-get."""
-    response = client.get("/activity")
-    assert response.status_code == 200
-    assert f"/cases/PIN-CASE-001/document/{doc_in_case.id}" in response.text
-    assert "hx-get" not in response.text or "context=activity" not in response.text

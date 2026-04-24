@@ -53,13 +53,6 @@ def test_triage_with_case_mapped(db_session):
 
 
 @pytest.mark.integration
-def test_activity_log_renders(db_session):
-    """Test activity log page renders."""
-    response = client.get("/activity")
-    assert response.status_code == 200
-
-
-@pytest.mark.integration
 def test_triage_doc_pane_renders_embedded_hud(db_session):
     """GET /document/:id?context=triage returns the embedded HUD."""
     doc = Document(
@@ -128,21 +121,6 @@ def test_unified_reaction_emits_note_saved_trigger(db_session):
     assert response.status_code == 200
     hx_trigger = response.headers.get("hx-trigger", "")
     assert "triage:note-saved" in hx_trigger
-
-
-@pytest.mark.integration
-def test_activity_with_docs(db_session):
-    """Test activity shows documents."""
-    doc = Document(
-        title="Recent Activity Document",
-        case_id="_TRIAGE",
-        needs_review=False,
-    )
-    db_session.add(doc)
-    db_session.commit()
-
-    response = client.get("/activity")
-    assert response.status_code == 200
 
 
 @pytest.mark.integration

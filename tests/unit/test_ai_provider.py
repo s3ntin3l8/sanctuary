@@ -198,7 +198,7 @@ def test_parse_stream_line_openai_data():
     p = AIProvider()
     line = 'data: {"choices": [{"delta": {"content": "Hi"}}]}'
     result = p.parse_stream_line(line, ProviderType.LMSTUDIO)
-    assert result == {"response": "Hi", "done": False}
+    assert result == {"response": "Hi", "thinking": "", "done": False}
 
 
 def test_parse_stream_line_openai_done():

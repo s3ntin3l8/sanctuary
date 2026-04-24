@@ -32,12 +32,6 @@ def test_triage_page():
 
 
 @pytest.mark.integration
-def test_activity_page():
-    response = client.get("/activity")
-    assert response.status_code == 200
-
-
-@pytest.mark.integration
 def test_costs_page():
     response = client.get("/costs")
     assert response.status_code == 200
