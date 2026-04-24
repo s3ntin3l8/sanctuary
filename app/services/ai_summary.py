@@ -16,9 +16,7 @@ from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 logger = logging.getLogger(__name__)
 
 
-def get_content_preview(
-    doc: Document, max_chars: int = 60000, include_tail: bool = True
-) -> str:
+def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
     """Get a representative preview of document content using proportional windowing.
 
     When content exceeds max_chars, returns a composite view:
@@ -238,7 +236,7 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
 def generate_summary_sync(doc: Document, db=None) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_effective_config(db)
-    content_preview = get_content_preview(doc, 4000)
+    content_preview = get_content_preview(doc, 60000)
 
     # Heuristic hints for verification
     batch_subject = None

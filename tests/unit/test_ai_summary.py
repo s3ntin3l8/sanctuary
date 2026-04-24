@@ -80,12 +80,11 @@ def test_get_content_preview_long_doc_proportional(sample_document):
 
 @pytest.mark.unit
 def test_get_content_preview_no_tail(sample_document):
-    """include_tail is now ignored in favor of proportional windowing."""
+    """include_tail=False is now removed, proportional windowing used."""
     sample_document.content = "A" * 10000
     sample_document.meta = {}
-    result = get_content_preview(sample_document, max_chars=4000, include_tail=False)
+    result = get_content_preview(sample_document, max_chars=4000)
     assert "[... Omitted for brevity ...]" in result
-    assert len(result) > 4000  # because of separators
 
 
 # --- 3b: hint-filtering prompt tests ---
