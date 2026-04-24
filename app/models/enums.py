@@ -44,6 +44,7 @@ def parse_originator_type(value: str | None) -> "OriginatorType | None":
 class PipelineStage(enum.StrEnum):
     EXTRACT = "extract"
     METADATA = "metadata"
+    PROCEEDING_ANALYSIS = "proceeding_analysis"
     BATCH_ANALYSIS = "batch_analysis"
     ENRICH = "enrich"
     RELATIONSHIPS = "relationships"
