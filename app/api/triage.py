@@ -206,7 +206,9 @@ async def confirm(
         _doc_id = int(doc_id)
         bundle_key = f"loose-{_doc_id}"
         pre_case = db.query(Document.case_id).filter(Document.id == _doc_id).scalar()
-        updated_doc = triage_service.confirm_document(_doc_id, case_id=case_id)
+        updated_doc = triage_service.confirm_document(
+            _doc_id, case_id=case_id, finalize=finalize
+        )
         if not updated_doc:
             raise HTTPException(status_code=404, detail=f"Document {_doc_id} not found")
         if parsed_proceeding_id is not None:
@@ -327,7 +329,7 @@ async def confirm_bundle(
             ) from exc
 
     batch = triage_service.confirm_bundle(
-        batch_id, case_id=case_id, proceeding_id=parsed_proceeding_id
+        batch_id, case_id=case_id, proceeding_id=parsed_proceeding_id, finalize=True
     )
     if not batch:
         raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")

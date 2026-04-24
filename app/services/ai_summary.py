@@ -103,6 +103,16 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             new_conf[key] = v
         doc.extraction_confidence = new_conf
 
+    # Update intelligence flags in meta
+    new_meta = dict(doc.meta or {})
+    contradictions = summary_data.get("contradictions", [])
+    if contradictions:
+        new_meta["ai_contradiction"] = True
+        new_meta["contradiction_notes"] = contradictions
+    else:
+        new_meta["ai_contradiction"] = False
+    doc.meta = new_meta
+
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
     az_court = summary_data.get("az_court")
@@ -170,7 +180,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 )
 
     # 4. Re-evaluate review status
-    reasons = compute_review_reasons(doc)
+    reasons = compute_review_reasons(doc, confirmed=False)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0
 

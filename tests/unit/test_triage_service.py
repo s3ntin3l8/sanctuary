@@ -51,7 +51,9 @@ def test_compute_review_reasons_missing_parent_only_for_enclosure(db_session):
     db_session.refresh(cover)
 
     reasons = compute_review_reasons(cover)
-    # missing_case_id is expected because case_id == '_TRIAGE'
+    # pending_confirmation is now mandatory if not explicitly confirmed
+    assert "pending_confirmation" in reasons
+    assert "missing_case_id" in reasons
     assert "missing_parent" not in reasons
 
 
@@ -84,7 +86,75 @@ def test_compute_review_reasons_enclosure_without_parent_flagged(db_session):
     db_session.refresh(enclosure)
 
     reasons = compute_review_reasons(enclosure)
+    assert "pending_confirmation" in reasons
     assert "missing_parent" in reasons
+
+
+@pytest.mark.unit
+def test_compute_review_reasons_low_confidence(db_session):
+    """Low extraction confidence should trigger low_confidence reason."""
+    from app.models.database import Document
+
+    doc = Document(
+        title="Test",
+        case_id="ADV-123",
+        originator_type=OriginatorType.OWN,
+        sender="me@example.com",
+        received_date=datetime.now(UTC),
+        extraction_confidence={"sender": "low"},
+    )
+    reasons = compute_review_reasons(doc)
+    assert "pending_confirmation" in reasons
+    assert "low_confidence" in reasons
+
+
+@pytest.mark.unit
+def test_compute_review_reasons_unresolved_relationship(db_session):
+    """Unconfirmed AI relationships should trigger unresolved_relationship reason."""
+    from app.models.database import Document, DocumentRelationship
+    from app.models.enums import RelationshipConfidence
+
+    doc = Document(
+        title="Test",
+        case_id="ADV-123",
+        originator_type=OriginatorType.OWN,
+        sender="me@example.com",
+        received_date=datetime.now(UTC),
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    rel = DocumentRelationship(
+        from_document_id=doc.id,
+        to_document_id=9999,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+    db_session.add(rel)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    reasons = compute_review_reasons(doc)
+    assert "pending_confirmation" in reasons
+    assert "unresolved_relationship" in reasons
+
+
+@pytest.mark.unit
+def test_compute_review_reasons_contradiction(db_session):
+    """AI contradiction flag in meta should trigger contradiction_detected reason."""
+    from app.models.database import Document
+
+    doc = Document(
+        title="Test",
+        case_id="ADV-123",
+        originator_type=OriginatorType.OWN,
+        sender="me@example.com",
+        received_date=datetime.now(UTC),
+        meta={"ai_contradiction": True},
+    )
+    reasons = compute_review_reasons(doc)
+    assert "pending_confirmation" in reasons
+    assert "contradiction_detected" in reasons
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +233,7 @@ def test_confirm_bundle_clears_doc_with_only_missing_case_id(db_session):
     from app.services.triage_service import TriageService
 
     svc = TriageService(db_session)
-    svc.confirm_bundle(batch.id, target_case.id)
+    svc.confirm_bundle(batch.id, target_case.id, finalize=True)
 
     db_session.refresh(docs[0])
     assert docs[0].needs_review is False

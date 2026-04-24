@@ -382,8 +382,10 @@ class TriageService:
 
         from app.services.ingestion.service import compute_review_reasons
 
-        reasons = compute_review_reasons(doc)
+        reasons = compute_review_reasons(doc, confirmed=finalize)
         doc.review_reasons = reasons
+        # Only clear needs_review if there are no reasons left (including pending_confirmation)
+        # except for missing_parent which is non-blocking for triage removal.
         actionable = [r for r in reasons if r != "missing_parent"]
         doc.needs_review = bool(actionable)
 
@@ -420,7 +422,7 @@ class TriageService:
             doc.case_id = case_id
             if proceeding_id is not None:
                 doc.proceeding_id = proceeding_id
-            reasons = compute_review_reasons(doc)
+            reasons = compute_review_reasons(doc, confirmed=finalize)
             doc.review_reasons = reasons
             actionable = [r for r in reasons if r != "missing_parent"]
             doc.needs_review = bool(actionable)

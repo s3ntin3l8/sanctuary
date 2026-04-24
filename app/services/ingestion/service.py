@@ -67,10 +67,20 @@ def create_manual_upload_batch(
     return batch.id
 
 
-def compute_review_reasons(doc: Document) -> list[str]:
-    """Compute reasons why document needs review."""
+def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
+    """Compute reasons why document needs review.
+
+    A document remains in triage if it has any review reasons.
+    'pending_confirmation' is the master flag that ensures human eyes
+    always see the document at least once.
+    """
     reasons = []
 
+    # 1. Mandatory Human Confirmation
+    if not confirmed:
+        reasons.append("pending_confirmation")
+
+    # 2. Structural Missing Data
     if not doc.case_id or doc.case_id == "_TRIAGE":
         reasons.append("missing_case_id")
 
@@ -86,7 +96,42 @@ def compute_review_reasons(doc: Document) -> list[str]:
     if doc.role == DocumentRole.ENCLOSURE and not doc.parent_id:
         reasons.append("missing_parent")
 
-    return reasons
+    # 3. Extraction Confidence
+    conf = doc.extraction_confidence or {}
+    # If any primary field is low/medium confidence, flag it
+    for field in ["internal_id", "az_court", "sender", "date", "originator"]:
+        if conf.get(field) in ("low", "medium"):
+            reasons.append("low_confidence")
+            break
+
+    # 4. Intelligence Flags
+    # Check for unconfirmed AI relationships
+    # We check the DocumentRelationship table for any AI_DETECTED edges from this doc.
+    try:
+        from app.models.database import DocumentRelationship
+        from app.models.enums import RelationshipConfidence
+        from sqlalchemy import inspect
+
+        db = inspect(doc).session
+        if db:
+            unconfirmed = (
+                db.query(DocumentRelationship)
+                .filter(
+                    DocumentRelationship.from_document_id == doc.id,
+                    DocumentRelationship.confidence == RelationshipConfidence.AI_DETECTED,
+                )
+                .first()
+            )
+            if unconfirmed:
+                reasons.append("unresolved_relationship")
+    except Exception:
+        pass
+
+    # Hook for AI-detected contradictions (requires AI to populate this in doc.meta)
+    if doc.meta and doc.meta.get("ai_contradiction"):
+        reasons.append("contradiction_detected")
+
+    return list(set(reasons))  # Unique reasons
 
 
 def extract_clean_title(filename: str, content: str = "") -> str:
@@ -242,7 +287,7 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
         originator=result_originator["confidence"],
     ).model_dump()
 
-    reasons = compute_review_reasons(doc)
+    reasons = compute_review_reasons(doc, confirmed=False)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0
 
@@ -284,7 +329,7 @@ def _create_document(
 
     _pipeline_init(new_doc, batched=ingest_batch_id is not None)
 
-    reasons = compute_review_reasons(new_doc)
+    reasons = compute_review_reasons(new_doc, confirmed=False)
     new_doc.review_reasons = reasons
     new_doc.needs_review = len(reasons) > 0
 

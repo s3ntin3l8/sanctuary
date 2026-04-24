@@ -113,6 +113,7 @@ Extract metadata from the document and return a JSON object with these keys:
 - date: The date of the document or when it was received (YYYY-MM-DD).
 - originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".
 - confidence: A JSON object mapping each key above to a confidence score: "high", "medium", or "low".
+- contradictions: A list of strings describing any factual or procedural contradictions with existing case knowledge (if provided). Set to [] if none.
 
 Court is Infrastructure Rule (CRITICAL):
 If the document has a court letterhead but the main text describes a submission or statement by a party (e.g., "Die Antragstellerin reicht hiermit...", "Wir überreichen..."), the court is merely relaying the document. In this case, `originator` MUST be the party who wrote the submission (e.g., "opposing" or "own"), and `sender` MUST be that party, NOT the court.

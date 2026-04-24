@@ -143,8 +143,8 @@ class DocumentRepository(BaseRepository[Document]):
         return self.db.query(Document).filter(Document.needs_review).count()
 
     def update_case(self, doc_id: int, case_id: str) -> Document | None:
-        """Update document's case."""
-        return self.update(doc_id, case_id=case_id, needs_review=False)
+        """Update document's case. Does NOT clear needs_review — that requires explicit confirmation."""
+        return self.update(doc_id, case_id=case_id)
 
     def create_document(
         self,
