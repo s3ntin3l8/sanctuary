@@ -42,6 +42,10 @@ def upgrade() -> None:
         ("entities", "created_at"),
         ("conversations", "created_at"),
         ("conversation_messages", "created_at"),
+        ("proceedings", "created_at"),
+        ("ingest_batches", "created_at"),
+        ("document_relationships", "created_at"),
+        ("action_items", "created_at"),
     ]
     for table, old_col in _tables_with_created_at:
         cols = [
@@ -66,6 +70,10 @@ def downgrade() -> None:
         ("entities", "ingest_date"),
         ("conversations", "ingest_date"),
         ("conversation_messages", "ingest_date"),
+        ("proceedings", "ingest_date"),
+        ("ingest_batches", "ingest_date"),
+        ("document_relationships", "ingest_date"),
+        ("action_items", "ingest_date"),
     ]
     for table, old_col in _tables_with_ingest_date:
         cols = [

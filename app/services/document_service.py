@@ -109,9 +109,22 @@ class DocumentService:
         self.db.query(ActionItem).filter(
             ActionItem.source_document_id == doc_id
         ).update({"source_document_id": None}, synchronize_session=False)
-        self.db.query(Claim).filter(Claim.source_document_id == doc_id).update(
-            {"source_document_id": None}, synchronize_session=False
+
+        # Remove Claims that originated from this document (and their evidence)
+        # We must delete because source_document_id is NOT NULL on Claims.
+        claims_to_delete = (
+            self.db.query(Claim.id).filter(Claim.source_document_id == doc_id).all()
         )
+        claim_ids = [c[0] for c in claims_to_delete]
+
+        if claim_ids:
+            self.db.query(ClaimEvidence).filter(
+                ClaimEvidence.claim_id.in_(claim_ids)
+            ).delete(synchronize_session=False)
+            self.db.query(Claim).filter(Claim.id.in_(claim_ids)).delete(
+                synchronize_session=False
+            )
+
         self.db.query(LegalCost).filter(LegalCost.source_document_id == doc_id).update(
             {"source_document_id": None}, synchronize_session=False
         )

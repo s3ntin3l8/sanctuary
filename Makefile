@@ -56,6 +56,20 @@ seed: ## Reset database and seed with advanced triage combinations
 	rm -f data/sanctuary.db
 	$(PYTHON) scripts/seed_dummy_data.py
 
+reset: ## Delete all data (database, files, vectors) and start fresh
+	@echo "Resetting data..."
+	rm -f data/sanctuary.db*
+	rm -rf data/_TRIAGE
+	rm -rf data/ai_debug
+	rm -rf data/scans/*
+	# Delete all case directories (ADV-XXX-X)
+	find data -maxdepth 1 -type d -name "ADV-*" -exec rm -rf {} +
+	# Ensure scan directories exist
+	mkdir -p data/scans/incoming data/scans/processing data/scans/processed data/scans/failed
+	@echo "Data cleared. Running migrations..."
+	$(MAKE) migrate
+	@echo "Reset complete."
+
 migrate: ## Run database migrations
 	$(ALEMBIC) upgrade head
 

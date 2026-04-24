@@ -75,7 +75,12 @@ def setup_logging():
         target = logging.getLogger(name)
         target.handlers = []
         target.propagate = True
-        target.setLevel(level)
+
+        # Suppress SQLAlchemy INFO noise (like executed queries) by default
+        if name.startswith("sqlalchemy") and level != logging.DEBUG:
+            target.setLevel(logging.WARNING)
+        else:
+            target.setLevel(level)
 
 
 setup_logging()
