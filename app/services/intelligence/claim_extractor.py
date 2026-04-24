@@ -42,7 +42,7 @@ def _format_existing_claims(claims: list[Claim]) -> str:
 def _call_claim_extractor_sync(
     doc: Document, existing_claims: list[Claim], model: str = "", db=None
 ) -> dict:
-    content_preview = get_content_preview(doc, 6000)
+    content_preview = get_content_preview(doc, 60000)
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
 

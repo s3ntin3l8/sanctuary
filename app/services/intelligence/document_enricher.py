@@ -36,7 +36,7 @@ THREAD_OPEN_TYPES = {
 
 def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     """Synchronous AI call to enrich a single document."""
-    content_preview = get_content_preview(doc, 6000)
+    content_preview = get_content_preview(doc, 60000)
 
     batch_context = ""
     if doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
@@ -204,6 +204,14 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
         doc.ai_summary = validated_summary.model_dump()
     except Exception as e:
         logger.warning(f"Doc {doc.id}: invalid ai_summary skipped: {e}")
+
+    # Track strategy and character count for UI transparency
+    content_len = len(doc.content or "")
+    new_meta = dict(doc.meta or {})
+    new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
+    # We re-fetch the preview length to be accurate
+    new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
+    doc.meta = new_meta
 
     doc.ai_summary_created_at = datetime.now(UTC)
 

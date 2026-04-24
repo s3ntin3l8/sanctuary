@@ -24,7 +24,7 @@ VALID_ENTITY_TYPES = {e.name for e in EntityType}  # SAEnum stores .name (upperc
 
 
 def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict:
-    content_preview = get_content_preview(doc, 6000)
+    content_preview = get_content_preview(doc, 60000)
 
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
