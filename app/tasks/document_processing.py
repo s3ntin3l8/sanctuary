@@ -144,6 +144,7 @@ def _run_phase1_summary(doc_id: int) -> None:
                 )
                 time.sleep(wait)
         except Exception as e:
+            db2.rollback()
             mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
             logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
             return

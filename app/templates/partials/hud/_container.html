@@ -127,12 +127,11 @@
 
 {# ── EMBEDDED (triage right pane) ────────────────────────────────────────── #}
 {% elif context == 'embedded' %}
-<div class="flex-1 flex overflow-hidden min-h-0" x-data="{ docChatOpen: false }" data-hud-root data-hud-context="embedded"
-     data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
-     data-first-child-doc-id="{{ first_child_id or '' }}"
-     data-bundle-prev="{{ bundle_prev_id or '' }}"
-     data-bundle-next="{{ bundle_next_id or '' }}">
-  {# Body column #}
+<div class="flex-1 flex overflow-hidden min-h-0" x-data="hudReader()" data-hud-root data-hud-context="embedded"
+      data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
+      data-first-child-doc-id="{{ first_child_id or '' }}"
+      data-bundle-prev="{{ bundle_prev_id or '' }}"
+      data-bundle-next="{{ bundle_next_id or '' }}">  {# Body column #}
   <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container/20">
     {% include "partials/hud/_body.html" %}
   </div>

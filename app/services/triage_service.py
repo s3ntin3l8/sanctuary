@@ -417,8 +417,13 @@ class TriageService:
         docs = (
             self.db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
         )
-        from app.models.database import ActionItem
+        from app.models.database import ActionItem, Case
         from app.services.ingestion.service import compute_review_reasons
+
+        # If assigning to an AI-suggested draft case, promote it to a real case.
+        case = self.db.query(Case).filter(Case.id == case_id).first()
+        if case and case.is_draft:
+            case.is_draft = False
 
         doc_ids = [doc.id for doc in docs]
         for doc in docs:

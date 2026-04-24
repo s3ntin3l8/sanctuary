@@ -46,16 +46,20 @@
   <div class="flex items-center gap-2 text-[10px] min-w-0 px-1 py-1 {{ row_bg }} transition-colors">
 
     {# State icon #}
+    {% set s_title = s_status | capitalize %}
+    {% if s_status == 'failed' and s.get('error') %}{% set s_title = s_title + ': ' + s.get('error') %}
+    {% elif s_status == 'skipped' and s.get('reason') %}{% set s_title = s_title + ': ' + s.get('reason') %}{% endif %}
+
     {% if s_status == 'completed' %}
-    <span class="material-symbols-outlined text-[13px] text-originator-own shrink-0">check_circle</span>
+    <span class="material-symbols-outlined text-[13px] text-originator-own shrink-0" title="{{ s_title }}">check_circle</span>
     {% elif s_status == 'failed' %}
-    <span class="material-symbols-outlined text-[13px] text-error shrink-0">error_outline</span>
+    <span class="material-symbols-outlined text-[13px] text-error shrink-0" title="{{ s_title }}">error_outline</span>
     {% elif s_status == 'running' %}
-    <span class="material-symbols-outlined text-[13px] text-tertiary shrink-0 animate-spin" style="animation-duration:1.4s">autorenew</span>
+    <span class="material-symbols-outlined text-[13px] text-tertiary shrink-0 animate-spin" style="animation-duration:1.4s" title="{{ s_title }}">autorenew</span>
     {% elif s_status == 'skipped' %}
-    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/30 shrink-0">remove_circle</span>
+    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/30 shrink-0" title="{{ s_title }}">remove_circle</span>
     {% else %}
-    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/20 shrink-0">radio_button_unchecked</span>
+    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/20 shrink-0" title="{{ s_title }}">radio_button_unchecked</span>
     {% endif %}
 
     {# Stage icon + label #}

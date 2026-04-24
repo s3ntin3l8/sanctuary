@@ -72,18 +72,35 @@ def analyze_proceeding_task(self, doc_id: int):
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
 
-        # Continue to batch analysis even if failed, if we have a batch_id
+        # Continue to batch analysis even if failed, if we have a batch_id and all siblings are done
         if batch_id:
-            from app.tasks.analyze_batch import analyze_batch_task
+            from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
-            analyze_batch_task.delay(batch_id)
+            db_claim = get_db_session()
+            try:
+                if claim_batch_for_analysis(batch_id, db_claim):
+                    from app.tasks.analyze_batch import analyze_batch_task
+
+                    analyze_batch_task.delay(batch_id)
+            finally:
+                db_claim.close()
 
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
-    # Trigger next step: Batch analysis
+    # Trigger next step: Batch analysis (only if all docs in batch are ready)
     if batch_id:
-        from app.tasks.analyze_batch import analyze_batch_task
+        from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
-        analyze_batch_task.delay(batch_id)
+        db = get_db_session()
+        try:
+            if claim_batch_for_analysis(batch_id, db):
+                from app.tasks.analyze_batch import analyze_batch_task
+
+                analyze_batch_task.delay(batch_id)
+                logger.info(
+                    "Batch #%d: all docs ready, batch analysis dispatched", batch_id
+                )
+        finally:
+            db.close()
 
     return {"status": "success", "doc_id": doc_id}

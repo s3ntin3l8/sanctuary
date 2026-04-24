@@ -188,7 +188,9 @@ async def confirm(
     is_synthetic: str = Form("false"),
     action: str = Form("confirm_bundle"),
     active_doc_id: str | None = Form(None),
-    case_id: str = Form(...),
+    case_id: str | None = Form(None),
+    new_case_id: str | None = Form(None),
+    new_case_title: str | None = Form(None),
     proceeding_id: str | None = Form(None),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
@@ -203,6 +205,22 @@ async def confirm(
     action=assign_case   → cascade case_id, batch stays in triage
     action=confirm_bundle → cascade case_id + mark batch COMPLETED
     """
+    from app.services.case_service import CaseService
+
+    case_service = CaseService(db)
+
+    # If user chose to create a new case
+    if new_case_id and new_case_title:
+        # Check if it already exists (might have been created by another doc's Phase 1)
+        existing = case_service.case_repo.get_by_id(new_case_id)
+        if existing:
+            case_id = existing.id
+        else:
+            new_case = case_service.create_case(
+                case_id=new_case_id, title=new_case_title
+            )
+            case_id = new_case.id
+
     if not case_id:
         raise HTTPException(status_code=422, detail="case_id is required")
 
@@ -567,6 +585,37 @@ async def triage_card_live(
 
 
 # -----------------------------------------------------------------------------
+@router.get("/triage/bundle/{batch_id}")
+async def get_bundle(
+    request: Request,
+    batch_id: int,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Return the rendered HTML for a single bundle group (no OOB)."""
+    bundle = triage_service.get_bundle_by_batch_id(batch_id)
+    if not bundle:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
+
+    reactions_by_doc = {
+        doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
+        for doc in bundle.documents
+    }
+
+    return templates.TemplateResponse(
+        request,
+        "partials/triage_bundle.html",
+        {
+            "bundle": bundle,
+            "reactions_by_doc": reactions_by_doc,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+            "OriginatorType": OriginatorType,
+            "UserReactionType": UserReactionType,
+        },
+    )
+
+
 # Bundle pipeline aggregate endpoint
 # -----------------------------------------------------------------------------
 
@@ -583,11 +632,23 @@ async def bundle_pipeline_status(
     if not bundle:
         return HTMLResponse("", status_code=404)
 
-    return templates.TemplateResponse(
+    summary = bundle.get_pipeline_summary()
+    n_running = summary.get("running", 0)
+    n_pending = summary.get("pending", 0)
+    n_active = n_running + n_pending
+
+    response = templates.TemplateResponse(
         request,
         "partials/_pipeline_aggregate.html",
         {"bundle": bundle},
     )
+
+    if n_active == 0:
+        import json
+
+        response.headers["HX-Trigger"] = json.dumps({f"reload-bundle-{batch_id}": {}})
+
+    return response
 
 
 # -----------------------------------------------------------------------------

@@ -24,9 +24,16 @@
     </div>
 
     {# Status badge #}
-    <span class="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider {{ meta.color if meta else 'bg-surface-container-high text-on-surface-variant' }}">
-        {{ meta.label if meta else case.status.value }}
-    </span>
+    <div class="flex items-center gap-1.5 shrink-0">
+        {% if case.is_draft %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-tertiary/10 text-tertiary border border-tertiary/20">
+            Draft
+        </span>
+        {% endif %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider {{ meta.color if meta else 'bg-surface-container-high text-on-surface-variant' }}">
+            {{ meta.label if meta else case.status.value }}
+        </span>
+    </div>
 
     {# Next action / urgency #}
     {% if case.next_action and case.status.value != 'closed' %}

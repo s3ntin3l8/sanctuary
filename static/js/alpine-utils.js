@@ -43,15 +43,22 @@ document.addEventListener('alpine:init', () => {
         remove(id) {
             this.messages = this.messages.filter(m => m.id !== id);
         },
+success(message) {
+    this.show(message, 'success');
+},
 
-        success(message) {
-            this.show(message, 'success');
-        },
+error(message) {
+    this.show(message, 'error');
+}
+});
+});
 
-        error(message) {
-            this.show(message, 'error', 5000);
-        },
-
+// Re-initialize Alpine on OOB swaps to ensure directives like :class work on injected elements
+document.addEventListener('htmx:oobAfterSwap', (event) => {
+if (window.Alpine && event.detail.target) {
+window.Alpine.initTree(event.detail.target);
+}
+});
         warning(message) {
             this.show(message, 'warning', 4000);
         }

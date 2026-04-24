@@ -154,7 +154,7 @@
          "
          @triage:open-bundle-confirm.document="
              const d = $event.detail || {};
-             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', action: d.action || 'confirm_bundle' };
+             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
          "
          @triage:bundle-confirmed.document="bundleConfirm.open = false"
          class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">

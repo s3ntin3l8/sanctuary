@@ -43,6 +43,11 @@
 
     <!-- Line 3: Detailed CaseStatus -->
     <div class="flex items-center gap-2 mb-2.5 shrink-0">
+        {% if case.is_draft %}
+        <span class="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-tertiary/10 text-tertiary border border-tertiary/20">
+            Draft
+        </span>
+        {% endif %}
         {% set meta = status_meta[case.status] %}
         <span class="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider {{ meta.color if meta else 'bg-surface-container text-on-surface-variant' }}">
             {{ meta.label if meta else case.status }}

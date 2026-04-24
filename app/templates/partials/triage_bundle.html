@@ -19,6 +19,10 @@
     bindings like `activeDoc` on the cards inside.                          #}
 
 <div id="triage-bundle-group-{{ bundle.key }}"
+     hx-get="/triage/bundle/{{ bundle.batch_id }}"
+     hx-trigger="reload-bundle-{{ bundle.batch_id }} from:body"
+     hx-target="this"
+     hx-swap="outerHTML"
      class="space-y-2"
      data-bundle-key="{{ bundle.key }}"
      {% if as_oob %}hx-swap-oob="true"{% endif %}>
