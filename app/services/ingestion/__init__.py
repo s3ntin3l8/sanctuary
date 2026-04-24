@@ -9,6 +9,7 @@ from app.services.ingestion.converters import (
 )
 from app.services.ingestion.extractors import (
     extract_case_id,
+    extract_internal_id,
     extract_originator,
     extract_received_date,
     extract_sender,
@@ -32,6 +33,7 @@ __all__ = [
     "parse_eml_file",
     "extract_case_id",
     "extract_cost_candidates",
+    "extract_internal_id",
     "extract_originator",
     "extract_received_date",
     "extract_sender",
