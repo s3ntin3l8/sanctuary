@@ -53,27 +53,39 @@ def test_get_content_preview_short_doc(sample_document):
 
 
 @pytest.mark.unit
-def test_get_content_preview_long_doc_head_tail(sample_document):
-    """Long docs get head+tail window."""
-    head = "A" * 3000
-    tail = "Z" * 2000
-    middle = "M" * 5000
-    sample_document.content = head + middle + tail
+def test_get_content_preview_long_doc_proportional(sample_document):
+    """Long docs get proportional 25/50/25 window."""
+    # 1000 chars total: 0123456789...
+    content = "".join([str(i % 10) for i in range(1000)])
+    sample_document.content = content
     sample_document.meta = {}
-    result = get_content_preview(sample_document, max_chars=4000)
-    assert result.startswith("A" * 2000)  # head portion (4000 - 2000 = 2000 head chars)
-    assert "[... truncated middle ...]" in result
-    assert result.endswith("Z" * 2000)  # last 2000 chars exactly
+
+    # Request 400 chars: 100 head, 200 middle, 100 tail
+    result = get_content_preview(sample_document, max_chars=400)
+
+    separator = "[... Omitted for brevity ...]"
+    assert separator in result
+
+    # Head (25% of 400 = 100)
+    assert result.startswith(content[:100])
+
+    # Tail (25% of 400 = 100)
+    assert result.endswith(content[-100:])
+
+    # Middle (50% of 400 = 200)
+    # Content mid is 500. Mid-size is 200. Start = 500 - 100 = 400.
+    mid_content = content[400:600]
+    assert mid_content in result
 
 
 @pytest.mark.unit
 def test_get_content_preview_no_tail(sample_document):
-    """include_tail=False returns head-only even for long docs."""
+    """include_tail is now ignored in favor of proportional windowing."""
     sample_document.content = "A" * 10000
     sample_document.meta = {}
     result = get_content_preview(sample_document, max_chars=4000, include_tail=False)
-    assert result == "A" * 4000
-    assert "[... truncated middle ...]" not in result
+    assert "[... Omitted for brevity ...]" in result
+    assert len(result) > 4000  # because of separators
 
 
 # --- 3b: hint-filtering prompt tests ---

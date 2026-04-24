@@ -10,48 +10,43 @@ from app.models.enums import OriginatorType
 from app.services.ai_config import get_effective_config
 from app.services.ingestion.extractors import extract_case_id, extract_internal_id
 from app.services.intelligence._ai_call import call_json_ai
-from app.services.intelligence.ai_options import _TAIL_CHARS, STAGE_OPTIONS
+from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 
 logger = logging.getLogger(__name__)
 
 
 def get_content_preview(
-    doc: Document, max_chars: int = 4000, include_tail: bool = True
+    doc: Document, max_chars: int = 60000, include_tail: bool = True
 ) -> str:
-    """Get a representative preview of document content using chunks if available.
+    """Get a representative preview of document content using proportional windowing.
 
-    When include_tail=True and content exceeds max_chars, returns a head+tail window.
-    Output length may exceed max_chars by the length of the truncation marker."""
-    if doc.meta and "chunks" in doc.meta and doc.meta["chunks"]:
-        content = ""
-        current_len = 0
-        for chunk in doc.meta["chunks"]:
-            text = chunk.get("text", "")
-            if current_len + len(text) > max_chars:
-                break
-            content += text + "\n\n"
-            current_len += len(text)
-        if content:
-            return content
-
+    When content exceeds max_chars, returns a composite view:
+    - Head: 25% of max_chars
+    - Middle: 50% of max_chars (centered)
+    - Tail: 25% of max_chars
+    """
     content = doc.content or ""
 
     # If content fits within max_chars, return as-is
     if len(content) <= max_chars:
         return content
 
-    # For long content with include_tail, use head+tail window
-    if include_tail and max_chars > _TAIL_CHARS:
-        head_chars = max_chars - _TAIL_CHARS
-        return (
-            content[:head_chars]
-            + "\n\n[... truncated middle ...]\n\n"
-            + content[-_TAIL_CHARS:]
-        )
+    # Calculate window sizes
+    head_size = int(max_chars * 0.25)
+    tail_size = int(max_chars * 0.25)
+    mid_size = max_chars - head_size - tail_size
 
-    # Fallback: return head-only (include_tail=False or max_chars <= _TAIL_CHARS)
-    return content[:max_chars]
+    head = content[:head_size]
+
+    # Center the middle window
+    mid_start = (len(content) // 2) - (mid_size // 2)
+    mid = content[mid_start : mid_start + mid_size]
+
+    tail = content[-tail_size:]
+
+    separator = "\n\n[... Omitted for brevity ...]\n\n"
+    return f"{head}{separator}{mid}{separator}{tail}"
 
 
 def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> None:
