@@ -74,7 +74,7 @@ ADV-024-A  Musterklage GmbH vs. XY        ● Active  · AG Hamburg · 12 days
 - **Title** (`Case.title`): `Musterklage GmbH vs. XY`
 - **Status dot**: color-coded from `Case.status` (active/dormant/closed); `dormant` is amber, `closed` is muted
 - **Active proceeding name**: `AG Hamburg` — mirrors the proceeding switcher
-- **Tempo hint**: `12 days` since last activity — computed from the most recent document's `created_at`. Goes red past Case Clock dormancy threshold.
+- **Tempo hint**: `12 days` since last activity — computed from the most recent document's `ingest_date`. Goes red past Case Clock dormancy threshold.
 
 ### Middle group — controls
 - **Proceeding switcher** dropdown — lists all `Proceeding` rows for this case with their court level + Az. Keyboard shortcut: `Cmd+P` (or `Ctrl+P` on Linux).
@@ -317,7 +317,7 @@ Store per-user per-case timestamp in `UserSettings.settings_json`:
 
 On dashboard load:
 ```
-new_docs = documents.filter(created_at > last_viewed_cases.get(case_id, 0))
+new_docs = documents.filter(ingest_date > last_viewed_cases.get(case_id, 0))
 ```
 
 When multi-user lands later, this moves to a dedicated table.
@@ -460,7 +460,7 @@ What populates which zone, from which Phase 1 table.
 |---|---|---|
 | Top bar identity | `Case.id`, `Case.title`, `Case.status` | Phase 1 (existing) |
 | Active proceeding chip | `Proceeding` rows + UserSettings active | Phase 1 |
-| Tempo hint | `Document.created_at` (MAX over case) | Phase 1 (existing) |
+| Tempo hint | `Document.ingest_date` (MAX over case) | Phase 1 (existing) |
 | AI Brief | `Case.ai_brief` (JSON) | Phase 5 |
 | Key risks / open threads | derived from `Case.ai_brief` | Phase 5 |
 | Parties strip | `Case.parties` (JSON) | Phase 5 |
@@ -475,7 +475,7 @@ What populates which zone, from which Phase 1 table.
 | Dormancy alert | comparison of silent time vs. typical | Phase 5 |
 | Financial exposure total | `Case.total_cost_exposure` | Phase 4 (update trigger) |
 | Cost delta rows | `Document.cost_delta` | Phase 4 |
-| Delta banner | compare `Document.created_at` vs. `UserSettings.last_viewed_cases[case_id]` | Phase 5 |
+| Delta banner | compare `Document.ingest_date` vs. `UserSettings.last_viewed_cases[case_id]` | Phase 5 |
 | Truth Map (tab) | `Claim` + `ClaimEvidence` + `UserReaction` | Phase 6 |
 | Case Chat | `Conversation` + `ConversationMessage` + AI context | Phase 7 |
 | Document HUD slide-in | `Document` + `Document.key_passages` + reactions | Phase 2 (component) + Phase 4 (content) |

@@ -224,7 +224,7 @@ Ambient alerts that don't fit the other panels — dormancy warnings, Case Clock
 ⚠ ADV-031-B quiet 6 months — longer than typical for OLG      [check →]
 ◦ ADV-024-A entering typical hearing window (Jul–Nov)        [details →]
 ⚠ Gmail sync: auth expired, reconnect                        [reconnect]
-⚠ 2 documents stuck in ingest_status=FAILED                  [review →]
+⚠ 2 documents stuck in pipeline_state=failed                 [review →]
 ```
 
 ### Signal types
@@ -234,7 +234,7 @@ Ambient alerts that don't fit the other panels — dormancy warnings, Case Clock
 | **Dormancy alert** | Proceeding silent longer than Case Clock typical range | Opens case dashboard |
 | **Case Clock window** | Entering a typical-event window (hearing, ruling, etc.) | Shows the Case Clock prediction detail |
 | **Gmail sync issue** | OAuth expired/revoked or sync failing | Opens Gmail settings to reconnect |
-| **Ingest failures** | N documents with `ingest_status=FAILED` | Opens triage with failed filter |
+| **Ingest failures** | N documents with `pipeline_state=failed` | Opens triage with failed filter |
 | **Ingest backfill progress** | Bulk Gmail backfill running | Shows progress bar |
 | **AI provider unreachable** | Ollama/LM Studio/OpenAI endpoint failing | Opens AI provider settings |
 
@@ -405,12 +405,12 @@ Shift+key jumps to the *end* of each panel (e.g., `Shift+T` = last item in Today
 | Greeting / date | local system clock | — |
 | Today panel | `ActionItem` rows across cases, `due_date <= now + 30d`, `status=open` | Phase 1/3 |
 | Awaiting Triage panel | `IngestBatch` rows with `status != completed` | Phase 3 |
-| Delta feed row per case | compare `Document.created_at` vs. `UserSettings.last_home_visit` per case | Phase 5 |
+| Delta feed row per case | compare `Document.ingest_date` vs. `UserSettings.last_home_visit` per case | Phase 5 |
 | Delta row significance | max `Document.significance_tier` of new docs | Phase 4 |
 | Signals — dormancy | `Proceeding` silence vs. Case Clock typical range | Phase 5 |
 | Signals — Case Clock windows | derived per proceeding + `ActionItem` history | Phase 5 |
 | Signals — Gmail auth | OAuth token state | Phase 3 |
-| Signals — ingest failures | `Document.ingest_status=FAILED` count | Phase 1 |
+| Signals — ingest failures | `Document.pipeline_state=failed` count | Phase 1 |
 | Active Cases card — status line | `Case.ai_brief.status_line` | Phase 5 |
 | Active Cases card — next action | closest open `ActionItem` by case | Phase 1/3 |
 | Active Cases card — exposure | `Case.total_cost_exposure` | Phase 4 |

@@ -46,14 +46,17 @@ Parent-child tree shown inline (uses existing `parent_id`).
 
 ### Per-document pipeline status
 
-Four states, derived from `Document.ingest_status` + `Document.ai_summary_status`:
+Five states, derived from `Document.pipeline_state` (computed from `Document.pipeline_stages`):
 
-| Marker | Meaning | Source fields |
+| Marker | Meaning | Source |
 |---|---|---|
-| `⏳ pending` | Docling not yet run | `ingest_status=pending` |
-| `⚙ AI processing` | Docling done, but AI summary / extraction still running | `ingest_status=COMPLETED`, `ai_summary_status in (pending, null)` |
-| `✓ ready` | All pipelines done; `key_passages`, `ai_summary`, `cost_delta` populated (or confirmed empty) | `ingest_status=COMPLETED`, `ai_summary_status in (generated, approved)` |
-| `⚠ failed` | Ingestion or AI failed — offer retry | `ingest_status=FAILED` OR `ai_summary_status=failed` |
+| `⏳ pending` | No stage has started yet | `pipeline_state=pending` |
+| `⚙ processing` | At least one stage is currently running | `pipeline_state=running` |
+| `✓ ready` | All stages completed or skipped | `pipeline_state=completed` |
+| `⚠ partial` | Some stages done but at least one still pending | `pipeline_state=partial` |
+| `⚠ failed` | One or more stages failed — retry available per stage | `pipeline_state=failed` |
+
+`pipeline_stages` is a JSON dict with one entry per `PipelineStage` enum value (`extract`, `metadata`, `proceeding_analysis`, `batch_analysis`, `enrich`, `relationships`, `claims`, `entities`, `embeddings`). Each entry records `status`, `started_at`, `completed_at`, and any error message.
 
 Without this, a user would see an empty Reaction/AI-Extracted block and not know if the AI failed, is still running, or just didn't find anything. The marker makes the system transparent.
 

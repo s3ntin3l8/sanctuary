@@ -82,7 +82,8 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 ```bash
 make setup      # Install/Update
 make run        # Terminal 1: App
-make watch-css  # Terminal 2: CSS
+make worker     # Terminal 2: Celery worker (required when CELERY_TASK_ALWAYS_EAGER=false)
+make watch-css  # Terminal 3: CSS
 make seed       # Seed Data
 make test       # Run Tests
 make lint       # Pre-commit hooks

@@ -381,7 +381,7 @@ Each attachment (from an email) or each slice (from a scanned PDF) becomes one `
 3. Create Document with `ingest_batch_id`, `parent_id` (if enclosed under a cover letter), `file_path`, `content_hash`
 4. Kick off Docling conversion (async background task)
 5. Docling result → `content` (markdown), `meta` (pages, headings, chunks)
-6. Flip `ingest_status` from `processing` → `completed` on success
+6. Mark `pipeline_stages.extract` → `completed`; `pipeline_state` recomputes to `completed` (or `partial` if later AI stages pending)
 7. Trigger AI enrichment (Phase 4)
 
 Parent-child wiring:
@@ -581,7 +581,7 @@ Every failure surfaces in triage with context and a retry affordance. Never sile
 | OAuth revoked | Same as expired; requires user action |
 | Rate limit hit | Exponential backoff; retry automatically; log a warning |
 | Message fetch failed | Record batch as `failed` with error; individual retry button in UI |
-| Attachment download failed | Document created with `ingest_status=failed`; retry button |
+| Attachment download failed | Document created with `pipeline_state=failed` (extract stage failed); retry button |
 
 ### 15.2 Scan folder path
 
@@ -603,10 +603,10 @@ Every failure surfaces in triage with context and a retry affordance. Never sile
 
 | Failure | Handling |
 |---|---|
-| Docling conversion failed | Document created with `ingest_status=FAILED`, `ingest_error=<msg>`; shows in triage with retry |
-| OCR returned empty content | Document created, `content=null`, triage flag `conversion_failed` |
-| AI provider unavailable | Document has no AI summary; `ai_summary_status=pending`; retries via background task queue |
-| AI returned malformed JSON | Same; logged for debugging; retry automatically up to 3 times |
+| Docling conversion failed | `pipeline_stages.extract` → `failed`; document shows in triage with stage-level retry button |
+| OCR returned empty content | Extract stage completes but `content=null`; triage flag `conversion_failed` |
+| AI provider unavailable | AI pipeline stages stay `pending`; document arrives in triage without enrichment; retry once provider is back (see §23) |
+| AI returned malformed JSON | Stage marked `failed`; logged for debugging; retry automatically up to 3 times |
 
 ---
 
@@ -757,13 +757,35 @@ Phase 3 is done when:
 - `docs/triage.md` — where ingested batches land for user review (Phase 2)
 - `docs/dashboard.md` — how ingested documents surface in the case command center (Phase 5+)
 
-## OPEN QUESTIONS
+## 22. Slicing UI — keyboard shortcuts
 
-- Ingest (docs/ingest.md) - Slicing UI Keyboard Shortcuts:
-  Both the Dashboard and Triage interfaces have excellent keyboard-first interaction models mapped out. You should add a similar keyboard shortcuts section for the Slicing UI (e.g., using arrows to navigate pages, c to insert a cut, backspace to remove a cut, and enter to confirm) to keep the data entry frictionless.
+The slicing review screen supports keyboard-first operation:
 
-- Ingest (docs/ingest.md) - AI Down Graceful Degradation:
-  In Section 15.4 (Failure modes), you mention ai_summary_status=pending if the AI provider is unavailable. It would be helpful to explicitly note if the triage queue allows a user to "force confirm" and bypass AI enrichment if they are working entirely offline/without Ollama running, or if AI enrichment is a strict blocker for completing triage.
+| Key | Action |
+|---|---|
+| `←` / `→` | Move focus to previous / next page thumbnail |
+| `↑` / `↓` | Jump to previous / next document group |
+| `c` | Insert a cut line before the focused page |
+| `Backspace` / `Delete` | Remove the cut line before the focused page (merges with previous group) |
+| `Enter` | Confirm all cuts and proceed to document creation |
+| `Esc` | Cancel slicing and discard the uploaded file |
+| `1` | Accept all AI-proposed cuts (`[keep all proposed cuts]`) |
+| `0` | Treat entire PDF as a single document (reject all cuts) |
+| `e` | Edit the focused document group's title/role before confirming |
 
-- Vision (docs/vision.md) - Document Hashes:
-  You mention deduplication via content_hash in ingest.md, which links documents if the hash exists in the same case, but creates a new row if it's in a different case. It might be worth adding a note to the vision.md Data Model that content_hash is not a UNIQUE constraint in the database, to prevent future schema regressions.
+---
+
+## 23. AI-down graceful degradation
+
+AI enrichment is **not** a blocker for completing triage. The pipeline stages can be in `pending` or `failed` state while a bundle is confirmed:
+
+- Triage allows per-document metadata confirmation and bundle confirmation regardless of `pipeline_state`.
+- If the AI provider is unreachable, documents arrive in triage with `pipeline_state=partial` (extraction done, AI stages pending). All form fields that would normally be AI-prefilled are empty — the user fills them manually.
+- Once the AI provider comes back online, failed/pending stages can be retried via the per-stage retry button in the pipeline status chip (stepper UI). The retry re-runs only the failed or pending stages; already-completed stages are skipped.
+- Force-confirming a bundle whose AI stages never ran is safe — the user's manual metadata edits are authoritative.
+
+---
+
+## 24. `content_hash` — not a unique constraint
+
+`Document.content_hash` stores a SHA-256 of the raw file bytes for deduplication purposes. It is **not** a `UNIQUE` constraint in the database. The same file may legally appear in multiple cases (e.g., an exhibit submitted to two different proceedings). The dedup logic in `batch_orchestrator.py` checks for an existing document with the same hash **within the same case** and links rather than duplicates; cross-case matches still create a new row. Migrations must not add a UNIQUE index on this column.
