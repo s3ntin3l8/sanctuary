@@ -82,7 +82,7 @@
                 <dd class="text-on-surface-variant font-medium font-mono">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
             </div>
             <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Lawyer Reference</dt>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case ID</dt>
                 <dd class="text-on-surface-variant font-medium font-mono">{{ doc.internal_id or '—' }}</dd>
             </div>
             <div>
@@ -158,6 +158,14 @@
         </div>
         {% endif %}
 
+        {% set rel_stage = (doc.pipeline_stages or {}).get('relationships', {}) %}
+        {% if rel_stage.get('reason') == 'no prior candidates in case' %}
+        <div class="mb-3 p-2.5 bg-surface-container-high rounded-lg text-[10px] text-on-surface-variant flex items-center gap-2 border border-outline-variant/10">
+            <span class="material-symbols-outlined text-sm text-outline">device_hub</span>
+            <span>No prior critical/significant documents in this case yet — relationship extraction skipped.</span>
+        </div>
+        {% endif %}
+
         {# Pre-confirmed summary row #}
         {% if high_fields %}
         <div class="flex items-center justify-between gap-2 mb-3 px-2.5 py-1.5 bg-originator-own/5 border border-originator-own/20 rounded-lg"
@@ -206,7 +214,7 @@
                  {% if field_confs.case_id == 'high' %}x-show="showAll"{% endif %}>
                 <div class="flex items-center justify-between">
                     <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                        Case {{ conf_chip(field_confs.case_id) }}
+                        Existing Case {{ conf_chip(field_confs.case_id) }}
                     </label>
                     <button type="button"
                             @click="$dispatch('open-create-case-modal', { case_id: '{{ doc.internal_id or '' }}', title: '{{ doc.title or '' }}' })"
@@ -270,12 +278,19 @@
                        class="{{ input_base }} opacity-60">
             </div>
 
-            {# Read-only: internal_id, az_court, significance_tier, document_type — always visible #}
+            {# Case ID — editable so user can set/correct the extracted reference #}
+            <div class="space-y-1"
+                 {% if (conf.get('internal_id') or 'low') == 'high' %}x-show="showAll"{% endif %}>
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Case ID {{ conf_chip(conf.get('internal_id', 'high' if doc.internal_id else 'low')) }}
+                </label>
+                <input type="text" name="internal_id" value="{{ doc.internal_id or '' }}" placeholder="e.g. 8124-25"
+                       {% if (conf.get('internal_id') or 'low') in ('low', 'medium') %}data-needs-review{% endif %}
+                       class="{{ input_base }} font-mono {{ low_border if (conf.get('internal_id') or 'low') == 'low' else med_border if (conf.get('internal_id') or 'low') == 'medium' else ok_border }}">
+            </div>
+
+            {# Read-only: az_court, significance_tier, document_type — always visible #}
             <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]">
-                <div>
-                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">Lawyer Reference {{ conf_chip(conf.get('internal_id', 'high' if doc.internal_id else 'low')) }}</dt>
-                    <dd class="font-mono text-on-surface-variant">{{ doc.internal_id or '—' }}</dd>
-                </div>
                 <div>
                     <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
                     <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>

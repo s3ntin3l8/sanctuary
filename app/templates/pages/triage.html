@@ -66,7 +66,7 @@
              court: true, opposing: true, own: true, third_party: true, unknown: true,
              activeDoc: '{{ (first_bundle_doc.id if first_bundle_doc else '') }}',
              collapsedBundles: {},
-             bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', action: 'confirm_bundle' },
+             bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', is_new_case: false, action: 'confirm_bundle' },
              isBundleExpanded(key) { return !this.collapsedBundles[key]; },
              toggleBundle(key) {
                  this.collapsedBundles = { ...this.collapsedBundles, [key]: !this.collapsedBundles[key] };
@@ -154,7 +154,7 @@
          "
          @triage:open-bundle-confirm.document="
              const d = $event.detail || {};
-             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
+             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', suggested_case_title: d.suggested_case_title || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
          "
          @triage:bundle-confirmed.document="bundleConfirm.open = false"
          class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
@@ -208,6 +208,8 @@
     {% include "partials/triage_feed.html" %}
     {% endif %}
 </section>
+
+<script src="/static/js/hud.js"></script>
 
 {# Preserve the queue scroll position across HTMX swaps (bundle replaces / deletes).
    htmx:beforeSwap fires before any DOM change; htmx:afterSettle fires after all

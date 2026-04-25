@@ -244,12 +244,14 @@ def render_highlighted(
         kind = (passage.get("kind") or "neutral").lower()
         pid = passage.get("id") or _hl.sha1(f"{text}|{kind}".encode()).hexdigest()[:12]
 
+        claim_anchor = ""
         chip = ""
         if passage_claim_ids and pid in passage_claim_ids:
             claim_id = passage_claim_ids[pid]
             chip = f'<a href="#claim-{claim_id}" class="hud-claim-chip ml-0.5 text-[10px] no-underline">⚖</a>'
+            claim_anchor = f'<span id="claim-{claim_id}" class="claim-anchor" aria-hidden="true"></span>'
         mark_open = (
-            f'<mark id="p-{pid}" data-passage-id="{pid}" data-kind="{kind}" '
+            f'{claim_anchor}<mark id="p-{pid}" data-passage-id="{pid}" data-kind="{kind}" '
             f'class="hud-mark hud-mark--{kind} '
             f"bg-[color:var(--color-key-passage-bg)] text-[color:var(--color-key-passage-fg)] "
             f'rounded px-0.5 ring-1 ring-[color:var(--color-key-passage-ring)]">'

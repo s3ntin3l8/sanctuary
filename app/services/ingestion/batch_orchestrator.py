@@ -243,6 +243,7 @@ def ingest_raw_email(
                 "references": parsed.get("references"),
             }
 
+        _subject_internal_id = extract_internal_id_from_subject(subject)
         doc = Document(
             title=subject,
             file_path=str(body_path),
@@ -250,6 +251,7 @@ def ingest_raw_email(
             case_id=batch.case_id or "_TRIAGE",
             proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
+            internal_id=_subject_internal_id or None,
             sender=parsed["sender"] or None,
             received_date=received_date,
             issued_date=received_date,
@@ -297,6 +299,7 @@ def ingest_raw_email(
             case_id=batch.case_id or "_TRIAGE",
             proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
+            internal_id=extract_internal_id_from_subject(subject) or None,
             received_date=datetime.now(UTC),
         )
         from app.services.pipeline_status import initialize as _pipeline_init

@@ -19,7 +19,9 @@
       'refuted':    'var(--color-error)',
       'established':'var(--color-originator-own)',
     }.get(claim.status.value if claim.status else 'asserted', 'var(--color-on-surface-variant)') %}
-    <li class="text-[11px]">
+    <li class="text-[11px] -mx-1 px-1 py-0.5 rounded-lg cursor-pointer hover:bg-surface-container/50 transition-colors"
+        @click="focusClaim && focusClaim({{ claim.id }})"
+        title="Scroll to passage in document">
       <div class="flex items-start gap-2">
         <span class="text-base leading-none flex-shrink-0">⚖</span>
         <div class="flex-1 min-w-0">

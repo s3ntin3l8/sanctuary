@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.database import (
+    Case,
     Document,
     DocumentRelationship,
     IngestBatch,
@@ -54,6 +55,13 @@ class BundleView:
     # Case chip state (§5a display rules)
     confirmed_case_id: str | None = None  # set after batch cascade
     suggested_case_id: str | None = None  # AI-suggested, awaiting confirmation
+    suggested_case_title: str | None = (
+        None  # title of the suggested case (or AI-derived)
+    )
+    suggested_case_is_draft: bool = False  # True when the suggested case is an AI draft
+    suggested_case_exists: bool = (
+        False  # True when a Case row exists for suggested_case_id
+    )
     proceeding: object | None = None  # Proceeding ORM instance if known
     # Set of doc IDs that are targets of ATTACHES_AS_PROOF edges (→ [proof] pill)
     proof_doc_ids: set = field(default_factory=set)
@@ -276,6 +284,35 @@ class TriageService:
                 )
                 bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
 
+            # Resolve suggested case metadata for the single-button confirm UX.
+            if bundle.suggested_case_id and not bundle.confirmed_case_id:
+                _case = (
+                    self.db.query(Case)
+                    .filter(Case.id == bundle.suggested_case_id)
+                    .first()
+                )
+                if _case:
+                    bundle.suggested_case_exists = True
+                    bundle.suggested_case_title = _case.title
+                    bundle.suggested_case_is_draft = bool(_case.is_draft)
+
+            # When AI auto-created a draft case and cascaded it to the batch,
+            # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
+            # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
+            # the modal opens pre-filled rather than as a blank create-new form.
+            if bundle.confirmed_case_id and not bundle.suggested_case_id:
+                _case = (
+                    self.db.query(Case)
+                    .filter(Case.id == bundle.confirmed_case_id)
+                    .first()
+                )
+                if _case and _case.is_draft:
+                    bundle.suggested_case_id = bundle.confirmed_case_id
+                    bundle.suggested_case_title = _case.title
+                    bundle.suggested_case_is_draft = True
+                    bundle.suggested_case_exists = True
+                    bundle.confirmed_case_id = None
+
         return ordered[offset : offset + limit]
 
     def get_slicing_queue(self) -> list:
@@ -361,6 +398,7 @@ class TriageService:
         case_id: str | None = None,
         originator_type=None,
         sender: str | None = None,
+        internal_id: str | None = None,
         issued_date: datetime | None = None,
         received_date: datetime | None = None,
         finalize: bool = False,
@@ -378,6 +416,8 @@ class TriageService:
             doc.originator_type = originator_type
         if sender is not None:
             doc.sender = sender
+        if internal_id is not None:
+            doc.internal_id = internal_id or None
         if issued_date is not None:
             doc.issued_date = issued_date
         if received_date is not None:

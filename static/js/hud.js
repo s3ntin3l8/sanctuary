@@ -203,6 +203,20 @@ function hudReader() {
       this._syncSpine(pid);
     },
 
+    focusClaim(cid) {
+      const anchor = document.getElementById(`claim-${cid}`);
+      if (!anchor) return;
+      // The mark element immediately follows the claim anchor span.
+      const mark = anchor.nextElementSibling;
+      const target = (mark && mark.tagName === 'MARK') ? mark : anchor;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (mark && mark.tagName === 'MARK') {
+        mark.style.animation = 'none';
+        mark.classList.add('hud-mark-flash');
+        mark.addEventListener('animationend', () => mark.classList.remove('hud-mark-flash'), { once: true });
+      }
+    },
+
     _flashMark(pid) {
       const mark = document.getElementById(`p-${pid}`);
       if (!mark) return;

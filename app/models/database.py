@@ -67,6 +67,9 @@ class Document(Base):
     originator_type = Column(
         SAEnum(OriginatorType), default=OriginatorType.UNKNOWN, nullable=False
     )
+    internal_id = Column(
+        String, nullable=True, index=True
+    )  # lawyer's file ref, e.g. "8124-25"
     sender = Column(
         String, nullable=True, index=True
     )  # "Via: Email from [Sender] on [Date]"

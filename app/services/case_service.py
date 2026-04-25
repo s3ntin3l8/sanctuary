@@ -58,6 +58,9 @@ def get_or_create_case_from_reference(
     Race-safe: SELECT first, then INSERT only when missing. Never overwrites
     an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
     """
+    from app.services.ingestion.extractors import normalize_az_court
+
+    az_court = normalize_az_court(az_court)
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
         matched_proc = None

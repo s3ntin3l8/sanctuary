@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType
 from app.services.ai_config import get_effective_config
-from app.services.ingestion.extractors import extract_case_id, extract_internal_id
+from app.services.ingestion.extractors import (
+    extract_case_id,
+    extract_internal_id,
+    normalize_az_court,
+)
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
@@ -120,11 +124,16 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
     # 3. Auto-Triage: internal_id leads (Case.id is primary identity per CLAUDE.md);
     #    az_court (Proceeding.az_court) is secondary context used as fallback.
-    az_court = summary_data.get("az_court")
+    az_court = normalize_az_court(summary_data.get("az_court"))
     from app.core.validators import normalize_case_id
 
     internal_id = normalize_case_id(summary_data.get("internal_id"))
     ai_case_title = summary_data.get("case_title")
+
+    # Persist the extracted reference so the triage form can display and edit it
+    # independently of whether auto-triage resolves to an existing Case.
+    if internal_id and not doc.internal_id:
+        doc.internal_id = internal_id
 
     if doc.case_id == "_TRIAGE":
         matching_case = None

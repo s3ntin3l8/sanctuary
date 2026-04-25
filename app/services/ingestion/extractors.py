@@ -319,6 +319,16 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
     return m.group(1).replace("/", "-")
 
 
+def normalize_az_court(value: str | None) -> str | None:
+    """Collapse whitespace and uppercase letters in a court Aktenzeichen.
+
+    "003 F 426/25" / "003F  426/25" / "003 f 426/25" → "003 F 426/25"
+    """
+    if not value:
+        return None
+    return re.sub(r"\s+", " ", value.strip()).upper()
+
+
 def extract_az_court_from_subject(subject: str) -> str | None:
     """Return the court Aktenzeichen (e.g. '003 F 426/25') from an email subject.
 
@@ -326,7 +336,7 @@ def extract_az_court_from_subject(subject: str) -> str | None:
     later in the subject line.  Returns None when no AZ is found.
     """
     m = _SUBJECT_AZ_COURT_RE.search(subject)
-    return m.group(1) if m else None
+    return normalize_az_court(m.group(1)) if m else None
 
 
 # "Unser Zeichen" / "Unser Az." is the standard German heading for a law firm's own

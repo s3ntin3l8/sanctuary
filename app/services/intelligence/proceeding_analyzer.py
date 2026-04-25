@@ -69,7 +69,9 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
     if not data.get("is_court_document"):
         return "not a court document"
 
-    extracted_az = data.get("az_court")
+    from app.services.ingestion.extractors import normalize_az_court
+
+    extracted_az = normalize_az_court(data.get("az_court"))
     extracted_level_str = data.get("court_level")
 
     try:
@@ -101,30 +103,47 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
         is_new_instance = True
 
     if is_new_instance:
-        # Create new proceeding
-        new_proc = Proceeding(
-            case_id=current_proc.case_id,
-            court_name=data.get("court_name") or "Unknown Court",
-            court_level=extracted_level or ProceedingCourtLevel.AG,
-            az_court=extracted_az,
-            subject_matter=data.get("subject_matter"),
-            status=ProceedingStatus.ACTIVE,
-            started_at=datetime.now(),
-        )
-        db.add(new_proc)
+        # Before creating, check if a proceeding with this AZ already exists in the case.
+        existing_match = None
+        if extracted_az:
+            existing_match = (
+                db.query(Proceeding)
+                .filter(
+                    Proceeding.case_id == current_proc.case_id,
+                    Proceeding.az_court == extracted_az,
+                    Proceeding.id != current_proc.id,
+                )
+                .first()
+            )
 
-        # Close old
-        current_proc.status = ProceedingStatus.CLOSED
-        current_proc.ended_at = datetime.now()
+        if existing_match:
+            # Reuse the existing proceeding — avoids duplicates from whitespace-variant AZ extractions.
+            new_proc = existing_match
+            if current_proc.az_court != extracted_az:
+                current_proc.status = ProceedingStatus.CLOSED
+                current_proc.ended_at = datetime.now()
+        else:
+            new_proc = Proceeding(
+                case_id=current_proc.case_id,
+                court_name=data.get("court_name") or "Unknown Court",
+                court_level=extracted_level or ProceedingCourtLevel.AG,
+                az_court=extracted_az,
+                subject_matter=data.get("subject_matter"),
+                status=ProceedingStatus.ACTIVE,
+                started_at=datetime.now(),
+            )
+            db.add(new_proc)
 
-        db.flush()  # Get new_proc.id
+            # Close old
+            current_proc.status = ProceedingStatus.CLOSED
+            current_proc.ended_at = datetime.now()
+
+            db.flush()  # Get new_proc.id
 
         # Update doc
         doc.proceeding_id = new_proc.id
         if doc.ingest_batch:
             doc.ingest_batch.proceeding_id = new_proc.id
-            # Optionally update all documents in the same batch?
-            # The prompt says: "re-assign the doc/batch"
             for batch_doc in doc.ingest_batch.documents:
                 batch_doc.proceeding_id = new_proc.id
     else:

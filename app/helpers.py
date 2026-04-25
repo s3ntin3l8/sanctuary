@@ -5,17 +5,32 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import templates
-from app.models.database import ActionItem, Case, CaseStatus, Document
-from app.models.enums import ActionItemStatus, ActionItemType
+from app.models.database import ActionItem, Case, CaseStatus, Document, IngestBatch
+from app.models.enums import ActionItemStatus, ActionItemType, IngestBatchStatus
 
 
 def build_sidebar_counts(db: Session) -> dict:
     """Computes sidebar badge counts using the active request session."""
-    triage_count = (
-        db.query(Document)
-        .filter(or_(Document.case_id == "_TRIAGE", Document.needs_review))
+    # Count bundles (IngestBatches) pending triage rather than documents, to stay
+    # consistent with the feed which groups docs into bundles. Loose docs without a
+    # batch (historical pre-batch data) are counted individually as fallback.
+    batch_count = (
+        db.query(IngestBatch)
+        .filter(
+            IngestBatch.status != IngestBatchStatus.COMPLETED,
+            IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+        )
         .count()
     )
+    loose_count = (
+        db.query(Document)
+        .filter(
+            Document.ingest_batch_id.is_(None),
+            or_(Document.case_id == "_TRIAGE", Document.needs_review),
+        )
+        .count()
+    )
+    triage_count = batch_count + loose_count
     total_docs = db.query(Document).count()
     case_count = db.query(Case).filter(Case.status != CaseStatus.CLOSED).count()
     return {

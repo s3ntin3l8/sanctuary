@@ -84,6 +84,7 @@ async def confirm_document(
     case_id: str | None = Form(None),
     originator_type: str | None = Form(None),
     sender: str | None = Form(None),
+    internal_id: str | None = Form(None),
     received_date: str | None = Form(None),
     issued_date: str | None = Form(None),
     db: Session = Depends(get_db),
@@ -127,6 +128,7 @@ async def confirm_document(
         case_id=resolved_case_id,
         originator_type=parsed_originator,
         sender=sender,
+        internal_id=internal_id if internal_id else None,
         issued_date=parsed_issued_date,
         received_date=parsed_received_date,
         finalize=True,
@@ -632,10 +634,15 @@ async def bundle_pipeline_status(
     if not bundle:
         return HTMLResponse("", status_code=404)
 
+    import json
+
     summary = bundle.pipeline_summary
-    n_running = summary.get("running", 0)
-    n_pending = summary.get("pending", 0)
-    n_active = n_running + n_pending
+    n_total = summary.get("total", 0)
+    n_done = (
+        summary.get("completed", 0)
+        + summary.get("failed", 0)
+        + summary.get("skipped", 0)
+    )
 
     response = templates.TemplateResponse(
         request,
@@ -643,9 +650,11 @@ async def bundle_pipeline_status(
         {"bundle": bundle},
     )
 
-    if n_active == 0:
-        import json
-
+    # Only trigger a full bundle reload once all stages have reached a terminal
+    # state (completed / failed / skipped). Firing on n_active == 0 was too
+    # loose and caused the bundle to be re-fetched during every inter-stage gap,
+    # making docs flicker out of the queue mid-ingestion.
+    if n_total > 0 and n_done == n_total:
         response.headers["HX-Trigger"] = json.dumps({f"reload-bundle-{batch_id}": {}})
 
     return response

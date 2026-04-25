@@ -13,6 +13,7 @@ from app.services.ingestion.extractors import (
     extract_issued_date,
     extract_originator,
     extract_sender,
+    normalize_az_court,
 )
 from app.services.ingestion.service import (
     IngestionError,
@@ -37,6 +38,7 @@ __all__ = [
     "extract_internal_id",
     "extract_originator",
     "extract_sender",
+    "normalize_az_court",
     "IngestionError",
     "compute_review_reasons",
     "extract_clean_title",

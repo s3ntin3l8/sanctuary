@@ -15,36 +15,59 @@
     {% set _subject = bundle.subject or (bundle.documents[0].title if bundle.documents else 'Bundle') %}
     {% set _doc_id  = bundle.documents[0].id if bundle.documents else '' %}
     {% set _case_id = bundle.confirmed_case_id or bundle.suggested_case_id or '' %}
-    {% if bundle.needs_review_count > 0 %}
+    {% set _case_title = bundle.suggested_case_title or '' %}
+    {% set _case_exists = bundle.suggested_case_exists %}
+    {% if bundle.needs_review_count > 0 or not bundle.confirmed_case_id %}
     <span class="text-[9px] text-on-surface-variant">
-        {{ bundle.needs_review_count }} doc{{ 's' if bundle.needs_review_count != 1 else '' }} still need{{ '' if bundle.needs_review_count != 1 else 's' }} metadata review
+        {% if bundle.needs_review_count > 0 %}{{ bundle.needs_review_count }} doc{{ 's' if bundle.needs_review_count != 1 else '' }} still need{{ '' if bundle.needs_review_count != 1 else 's' }} metadata review{% else %}All metadata confirmed{% endif %}
     </span>
-    <div class="flex items-center gap-2">
-        <button type="button"
-                data-batch-id="{{ bundle.batch_id }}"
-                data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
-                data-doc-id="{{ _doc_id }}"
-                data-subject="{{ _subject | e }}"
-                data-doc-count="{{ bundle.doc_count }}"
-                data-case-id="{{ _case_id }}"
-                data-action="assign_case"
-                onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, action:d.action, is_new_case: true}}))"
-                class="text-[10px] font-bold text-on-surface-variant hover:text-on-surface px-3 py-1.5 rounded-lg border border-outline-variant/30 hover:border-outline-variant/60 transition-all cursor-pointer">
-            + Create case
-        </button>
-        <button type="button"
-                data-batch-id="{{ bundle.batch_id }}"
-                data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
-                data-doc-id="{{ _doc_id }}"
-                data-subject="{{ _subject | e }}"
-                data-doc-count="{{ bundle.doc_count }}"
-                data-case-id="{{ _case_id }}"
-                data-action="assign_case"
-                onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, action:d.action}}))"
-                class="text-[10px] font-bold text-primary hover:text-primary/80 px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60 transition-all cursor-pointer">
-            Assign case &rarr;
-        </button>
-    </div>
+    {# Single context-aware button: label and modal mode depend on whether the system has a case suggestion #}
+    {% if _case_id and _case_exists %}
+    {# AI matched or created a (draft) case — offer to confirm it #}
+    <button type="button"
+            data-batch-id="{{ bundle.batch_id }}"
+            data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+            data-doc-id="{{ _doc_id }}"
+            data-subject="{{ _subject | e }}"
+            data-doc-count="{{ bundle.doc_count }}"
+            data-case-id="{{ _case_id }}"
+            data-case-title="{{ _case_title | e }}"
+            data-action="assign_case"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, action:d.action, is_new_case:false}}))"
+            class="btn btn-primary btn-xs">
+        Confirm case {{ _case_id }} &rarr;
+    </button>
+    {% elif _case_id %}
+    {# AI extracted an ID but no Case row exists yet — offer to create #}
+    <button type="button"
+            data-batch-id="{{ bundle.batch_id }}"
+            data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+            data-doc-id="{{ _doc_id }}"
+            data-subject="{{ _subject | e }}"
+            data-doc-count="{{ bundle.doc_count }}"
+            data-case-id="{{ _case_id }}"
+            data-case-title="{{ _case_title | e }}"
+            data-action="assign_case"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, action:d.action, is_new_case:true}}))"
+            class="btn btn-primary btn-xs">
+        Create case {{ _case_id }} &rarr;
+    </button>
+    {% else %}
+    {# No suggestion at all — open blank create modal #}
+    <button type="button"
+            data-batch-id="{{ bundle.batch_id }}"
+            data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+            data-doc-id="{{ _doc_id }}"
+            data-subject="{{ _subject | e }}"
+            data-doc-count="{{ bundle.doc_count }}"
+            data-case-id=""
+            data-case-title=""
+            data-action="assign_case"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', action:d.action, is_new_case:true}}))"
+            class="text-[10px] font-bold text-primary hover:text-primary/80 px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60 transition-all cursor-pointer">
+        Create case…
+    </button>
+    {% endif %}
     {% else %}
     <span class="text-[9px] font-bold text-originator-own flex items-center gap-1">
         <span class="material-symbols-outlined text-xs">check_circle</span>
