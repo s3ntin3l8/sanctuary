@@ -148,6 +148,15 @@ class Document(Base):
     parent = relationship("Document", back_populates="children", remote_side=[id])
     ingest_batch = relationship("IngestBatch", back_populates="documents")
     proceeding = relationship("Proceeding", back_populates="documents")
+    pins = relationship(
+        "DocumentPin", back_populates="document", cascade="all, delete-orphan"
+    )
+    reactions = relationship(
+        "UserReaction", back_populates="document", cascade="all, delete-orphan"
+    )
+    claim_evidence = relationship(
+        "ClaimEvidence", back_populates="document", cascade="all, delete-orphan"
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -413,7 +422,7 @@ class ClaimEvidence(Base):
     ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     claim = relationship("Claim", back_populates="evidence")
-    document = relationship("Document")
+    document = relationship("Document", back_populates="claim_evidence")
 
 
 class UserReaction(Base):
@@ -438,7 +447,7 @@ class UserReaction(Base):
     notes = Column(Text, nullable=True)
     ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
-    document = relationship("Document")
+    document = relationship("Document", back_populates="reactions")
 
 
 class DocumentPin(Base):
@@ -466,7 +475,7 @@ class DocumentPin(Base):
         DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
 
-    document = relationship("Document")
+    document = relationship("Document", back_populates="pins")
 
 
 class UserSettings(Base):

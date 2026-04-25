@@ -136,7 +136,7 @@
                  const card = document.getElementById('triage-card-' + nextId);
                  if (!card) return;
                  activeDoc = String(nextId);
-                 htmx.ajax('GET', '/document/' + nextId + '?context=triage', {target: '#triage-doc-pane', swap: 'innerHTML'});
+                 htmx.ajax('GET', '/document/' + nextId, {target: '#triage-doc-pane', swap: 'innerHTML'});
                  if (!noScroll) card.scrollIntoView({behavior:'smooth', block:'nearest'});
              });
          "
@@ -182,7 +182,7 @@
         <div class="flex-1 bg-surface-container-low/40">
             <div id="triage-doc-pane" class="h-full flex flex-col min-h-0"
                  {% if first_bundle_doc %}
-                 hx-get="/document/{{ first_bundle_doc.id }}?context=triage"
+                 hx-get="/document/{{ first_bundle_doc.id }}"
                  hx-trigger="load"
                  hx-swap="innerHTML"
                  {% endif %}>

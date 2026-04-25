@@ -54,7 +54,7 @@ def test_triage_with_case_mapped(db_session):
 
 @pytest.mark.integration
 def test_triage_doc_pane_renders_embedded_hud(db_session):
-    """GET /document/:id?context=triage returns the embedded HUD."""
+    """HX request to /document/:id returns the embedded HUD (no ?context=triage needed)."""
     doc = Document(
         title="Embedded HUD Test Doc",
         content="Some content",
@@ -64,10 +64,13 @@ def test_triage_doc_pane_renders_embedded_hud(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get(f"/document/{doc.id}?context=triage")
+    response = client.get(
+        f"/document/{doc.id}",
+        headers={"HX-Request": "true"},
+    )
     assert response.status_code == 200
     assert 'data-hud-context="embedded"' in response.text
-    assert "Embedded HUD Test Doc" in response.text
+    assert f'data-doc-id="{doc.id}"' in response.text
 
 
 @pytest.mark.integration

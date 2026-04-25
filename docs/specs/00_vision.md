@@ -529,7 +529,7 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 
 ## Implementation Roadmap
 
-### Phase 1 — Data foundation
+### Phase 1 — Data foundation | Status: Implemented ✅
 - Add `Proceeding`, `DocumentRelationship`, `IngestBatch`, `ActionItem` tables
 - Add `Claim`, `ClaimEvidence`, `UserReaction` tables
 - Add `Conversation`, `ConversationMessage` tables
@@ -537,7 +537,7 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 - Add `Case.ai_brief`, `Case.parties`, `Case.status`, `Case.total_cost_exposure`
 - Alembic migrations; update services and repositories
 
-### Phase 2 — Triage redesign
+### Phase 2 — Triage redesign | Status: Implemented ✅
 - Bundle-aware triage list: group by `ingest_batch_id`, show parent-child tree
 - Document HUD layout: AI-highlighted text view (left) + focused metadata form (right)
 - Reaction Bar: 🚩 / ✅ / 🔍 / ⚖️ stored as `UserReaction`; free-text note field
@@ -545,35 +545,35 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 - AI presents claims identified in document, financial delta, relationship suggestions
 - Action items surface inline from cover letter deadline extraction
 
-### Phase 3 — Email ingest pipeline
+### Phase 3 — Email ingest pipeline | Status: Implemented ✅
 - EML parser: extract subject, sender, all attachments → create `IngestBatch`
 - AI step on cover letter: detect `court_relay`, `attributed_originator` for enclosed docs, `attaches_as_proof` flags, deadlines → `ActionItem` records
 - Auto-detect proceeding from court name and file number in cover letter
 
-### Phase 4 — Document intelligence
+### Phase 4 — Document intelligence | Status: Implemented ✅
 - AI step at ingest: extract `key_passages`, assign `significance_tier`, compute `cost_delta`
 - Identify which prior documents this responds to / references → `DocumentRelationship` records
 - Extract factual claims → `Claim` records linked to source passages
 - Thread-open detection: document with no follow-up after N days flagged
 
-### Phase 5 — Case AI intelligence
+### Phase 5 — Case AI intelligence | Status: Implemented ✅
 - On document ingest: update `Case.ai_brief` (existing brief + new document + user reactions)
 - Extract delta: significance to case, new action items, cost impact, claim updates
 - Case Clock: populate typical duration ranges per proceeding type + court
 - Case dashboard: graph + brief panel + action items + financial exposure
 
-### Phase 6 — Truth Map
+### Phase 6 — Truth Map | Status: Implemented ✅
 - `Claim` / `ClaimEvidence` view: contested claims per case, evidence chain per claim
 - Link user reactions from triage to relevant claims
 - Claim status lifecycle (asserted → contested → refuted / established)
 
-### Phase 7 — AI Chat
+### Phase 7 — AI Chat | Status: Implemented ✅
 - Document chat: key passages + document content as context, Ollama streaming
 - Case chat: `ai_brief` + user reactions + semantic retrieval from embeddings
 - Every answer cites source documents; conversation persisted
 - UI: sliding panel on document HUD and case dashboard
 
-### Phase 8 — Correspondence graph
+### Phase 8 — Correspondence graph | Status: Implemented ✅
 - Swim-lane SVG renderer (D3.js or custom SVG)
 - Proceeding switcher; graph scoped per proceeding
 - N:N edges from `DocumentRelationship` table; multi-parent convergence rendering

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import (
     ActionItem,
+    Case,
     Claim,
     ClaimEvidence,
     Document,
@@ -17,6 +18,7 @@ from app.models.database import (
     DocumentRelationship,
     UserReaction,
 )
+from app.models.enums import OriginatorType as _OriginatorType
 from app.services.case_dashboard_service import (
     key_passages_for_template,
     neighbor_doc_ids,
@@ -110,49 +112,22 @@ def _build_relationships(db: Session, doc: Document) -> tuple[list[dict], list[d
     return _flatten(rels_out, side="out"), _flatten(rels_in, side="in")
 
 
-def build_triage_hud_context(
-    db: Session,
-    doc: Document,
-    *,
-    cases: list,
-    OriginatorType,  # the enum class — passed from caller to avoid circular import
-) -> dict:
-    """Wrapper for the triage embedded HUD (mode=review).
-
-    Augments the base context with the keys the metadata form needs.
-    Caller supplies ``cases`` and ``OriginatorType`` because they come from
-    the route's already-open imports.
-    """
-    ctx = build_hud_context(db, doc, mode="review")
-    ctx["context"] = "embedded"
-    ctx["case_id"] = doc.case_id
-    ctx["cases"] = cases
-    ctx["OriginatorType"] = OriginatorType
-
-    # Determine if the current case is an AI-created draft awaiting confirmation
-    is_draft_case = False
-    if doc.case_id and doc.case_id != "_TRIAGE":
-        from app.models.database import Case
-
-        _case = db.query(Case).filter(Case.id == doc.case_id).first()
-        if _case:
-            is_draft_case = _case.is_draft
-    ctx["is_draft_case"] = is_draft_case
-
-    return ctx
-
-
 def build_hud_context(
     db: Session,
     doc: Document,
     *,
     mode: str = "read",
+    context: str = "overlay",
+    cases: list | None = None,
 ) -> dict:
     """Aggregate all data needed to render any HUD context.
 
-    ``mode`` is ``"read"`` (default) or ``"review"`` (triage right pane).
-    The ``context`` key (overlay/standalone/embedded) is supplied by the
-    caller when it adds it to the returned dict before the TemplateResponse.
+    ``mode``: ``"read"`` (default) or ``"review"`` (triage right pane, shows
+    metadata form for case assignment and originator editing).
+    ``context``: ``"overlay"`` | ``"standalone"`` | ``"embedded"``.
+    ``cases``: when ``context="embedded"`` (triage right pane), pass the list
+    of active cases for the case-assignment select; also triggers addition of
+    ``OriginatorType`` and ``is_draft_case`` keys.
     """
     reactions = (
         db.query(UserReaction)
@@ -214,24 +189,23 @@ def build_hud_context(
     if doc.ingest_batch_id:
         siblings = (
             db.query(Document.id)
-            .filter(
-                Document.ingest_batch_id == doc.ingest_batch_id,
-                Document.id != doc.id,
-            )
+            .filter(Document.ingest_batch_id == doc.ingest_batch_id)
             .order_by(Document.id)
             .all()
         )
         sibling_ids = [s.id for s in siblings]
-        if sibling_ids and doc.id in sibling_ids:
+        if doc.id in sibling_ids:
             current_idx = sibling_ids.index(doc.id)
             if current_idx > 0:
                 bundle_prev_id = sibling_ids[current_idx - 1]
             if current_idx < len(sibling_ids) - 1:
                 bundle_next_id = sibling_ids[current_idx + 1]
 
-    return {
+    ctx = {
         "doc": doc,
         "mode": mode,
+        "context": context,
+        "case_id": doc.case_id,
         "summary_bullets": summary_bullets,
         "key_passages": key_passages,
         "reactions": reactions,
@@ -250,3 +224,15 @@ def build_hud_context(
         "bundle_prev_id": bundle_prev_id,
         "bundle_next_id": bundle_next_id,
     }
+
+    if cases is not None:
+        is_draft_case = False
+        if doc.case_id and doc.case_id != "_TRIAGE":
+            _case = db.query(Case).filter(Case.id == doc.case_id).first()
+            if _case:
+                is_draft_case = _case.is_draft
+        ctx["cases"] = cases
+        ctx["OriginatorType"] = _OriginatorType
+        ctx["is_draft_case"] = is_draft_case
+
+    return ctx

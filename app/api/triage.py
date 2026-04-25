@@ -11,7 +11,7 @@ from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
 from app.models.database import Case, Document, DocumentRelationship
 from app.models.enums import OriginatorType, UserReactionType
-from app.services.hud_context import build_triage_hud_context
+from app.services.hud_context import build_hud_context
 from app.services.triage_service import TriageService
 
 router = APIRouter(tags=["pages"])
@@ -152,7 +152,7 @@ async def confirm_document(
         .order_by(Case.title.asc())
         .all()
     )
-    ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
+    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
     response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
     targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
@@ -515,7 +515,7 @@ def _render_document_hud(request: Request, doc: Document, db: Session) -> HTMLRe
         .order_by(Case.title.asc())
         .all()
     )
-    ctx = build_triage_hud_context(db, doc, cases=cases, OriginatorType=OriginatorType)
+    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
     response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
     targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)

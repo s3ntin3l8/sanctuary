@@ -1,12 +1,14 @@
 {# Cost delta — fixed direction vocabulary (enricher writes incoming|outgoing|ruling|none).
    Required: doc
 #}
-{% if doc.cost_delta or doc.cost_candidates %}
 <div class="px-5 py-4 border-b border-outline-variant/10">
   <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
     <span class="material-symbols-outlined text-sm">euro</span>
     Cost Delta
   </h4>
+  {% if not doc.cost_delta and not doc.cost_candidates %}
+  <p class="text-[11px] italic text-outline">No cost data extracted.</p>
+  {% else %}
 
   {% if doc.cost_delta %}
   {% set amount = doc.cost_delta.amount if doc.cost_delta is not mapping else doc.cost_delta.get('amount', 0) %}
@@ -69,5 +71,5 @@
   <p class="text-[11px] italic text-outline">No cost amounts extracted.</p>
   {% endif %}
   {% endif %}
+  {% endif %}
 </div>
-{% endif %}

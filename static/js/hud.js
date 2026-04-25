@@ -6,33 +6,7 @@
 // ── HUD component registration (waits for Alpine) ─────────────────────────
 
 document.addEventListener('alpine:init', () => {
-  Alpine.store('shortcuts', {
-    showHud: false,
-    handlers: [],
-    hudReader: null,
-    register(keys, handler) {
-      this.handlers.push({ keys: Array.isArray(keys) ? keys : [keys], handler });
-    },
-    setHudReader(reader) {
-      this.hudReader = reader;
-    },
-    handle(event) {
-      const tagName = event.target.tagName;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName)) return;
-      if (event.target.isContentEditable) return;
-      const key = (event.ctrlKey ? 'ctrl+' : '') + (event.metaKey ? 'meta+' : '') + event.key;
-      for (const { keys, handler } of this.handlers) {
-        if (keys.includes(event.key) || keys.includes(key)) {
-          event.preventDefault();
-          handler(event);
-          return;
-        }
-      }
-    },
-    showModal() {
-      this.showHud = true;
-    },
-  });
+  Alpine.store('shortcuts', { showHud: false });
 });
 
 // ── Direct keydown listener (runs immediately, checks for reader lazily) ─────────────────────────
@@ -92,6 +66,9 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === '?') {
     e.preventDefault();
     reader.showShortcuts();
+  } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    reader.confirmPrimary();
   }
 });
 
@@ -110,11 +87,6 @@ function hudReader() {
       const context = root.dataset.hudContext;
       if (!context || context === 'overlay') return;
 
-      // Register with shortcuts store for direct keydown handling
-      if (window.Alpine && Alpine.store('shortcuts')) {
-        Alpine.store('shortcuts').setHudReader(this);
-      }
-      // Also store on window for direct keydown access
       window.__hudReader = this;
 
       // Deep-link scroll — if URL has #p=<id>, scroll to that mark on load.
@@ -125,9 +97,6 @@ function hudReader() {
 
       // Delegated click on highlighted marks in body.
       this._initMarkClicks();
-
-      // Register keyboard shortcuts.
-      this._registerShortcuts();
 
       // Position existing margin pins after layout settles.
       this.$nextTick(() => this._positionPins());
@@ -288,7 +257,7 @@ function hudReader() {
     },
 
     showShortcuts() {
-      window.dispatchEvent(new CustomEvent('toggle-hud-shortcuts'));
+      if (Alpine.store('shortcuts')) Alpine.store('shortcuts').showHud = true;
     },
 
     confirmPrimary() {
@@ -364,36 +333,6 @@ function hudReader() {
       const idx = spineRows.findIndex(r => r.dataset.spinePassage === this.activePassageId);
       const target = idx < spineRows.length - 1 ? spineRows[idx + 1] : spineRows[0];
       this.focusPassage(target.dataset.spinePassage);
-    },
-
-    _registerShortcuts() {
-      if (!Alpine.store('shortcuts')) return;
-      const store = Alpine.store('shortcuts');
-      store.register(['ArrowLeft'], () => this.navigatePrev());
-      store.register(['ArrowRight'], () => this.navigateNext());
-      store.register(['ArrowUp'], () => this.movePrevPassage());
-      store.register(['ArrowDown'], () => this.moveNextPassage());
-      store.register(['f'], () => this.toggleFocusMode());
-      store.register(['Escape'], () => {
-        if (this.focusModeActive) {
-          this.toggleFocusMode();
-        } else {
-          const caseId = this.$el.dataset.caseId;
-          if (caseId) window.location.href = `/cases/${caseId}`;
-        }
-      });
-      store.register(['['], () => this.navigateParent());
-      store.register([']'], () => this.navigateFirstChild());
-      store.register(['{'], () => this.navigateBundlePrev());
-      store.register(['}'], () => this.navigateBundleNext());
-      store.register(['o'], () => {
-        const docId = this.$el.dataset.docId;
-        if (docId) window.open(`/document/${docId}/original`, '_blank', 'noopener');
-      });
-      store.register(['n'], () => this.createPinAtActive());
-      store.register(['r'], () => this.focusReactionBar());
-      store.register(['?'], () => this.showShortcuts());
-      store.register(['ctrl+Enter'], (e) => this.confirmPrimary());
     },
 
     destroy() {

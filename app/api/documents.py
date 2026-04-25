@@ -11,11 +11,11 @@ from app.config import templates
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, Document
-from app.models.enums import IngestBatchSourceType, OriginatorType, UserReactionType
+from app.models.enums import IngestBatchSourceType, UserReactionType
 from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
-from app.services.hud_context import build_hud_context, build_triage_hud_context
+from app.services.hud_context import build_hud_context
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.service import (
     create_manual_upload_batch,
@@ -315,24 +315,8 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
             status_code=404,
         )
 
-    context_type = request.query_params.get("context")
-
-    if context_type == "triage":
-        cases = (
-            db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-        )
-        ctx = build_triage_hud_context(
-            db, doc, cases=cases, OriginatorType=OriginatorType
-        )
-        return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
     if request.headers.get("hx-request"):
-        ctx = build_hud_context(db, doc, mode="read")
-        ctx["context"] = "embedded"
-        ctx["case_id"] = doc.case_id
-        ctx["first_child_id"] = ctx.get("first_child_id")
-        ctx["bundle_prev_id"] = ctx.get("bundle_prev_id")
-        ctx["bundle_next_id"] = ctx.get("bundle_next_id")
+        ctx = build_hud_context(db, doc, mode="read", context="embedded")
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
     # Full-page navigations redirect to the canonical full-screen HUD URL.

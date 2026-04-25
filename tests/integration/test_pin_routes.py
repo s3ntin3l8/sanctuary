@@ -142,8 +142,11 @@ def test_document_detail_unassigned_redirects_to_triage(db_session):
 
 
 @pytest.mark.integration
-def test_document_detail_context_triage_still_works(db_session, doc_in_case):
-    """GET /document/:id?context=triage still returns embedded review-mode HUD."""
-    response = client.get(f"/document/{doc_in_case.id}?context=triage")
+def test_document_hx_request_returns_embedded_hud(db_session, doc_in_case):
+    """HX request to /document/:id returns the embedded HUD without ?context=triage."""
+    response = client.get(
+        f"/document/{doc_in_case.id}",
+        headers={"HX-Request": "true"},
+    )
     assert response.status_code == 200
     assert 'data-hud-context="embedded"' in response.text

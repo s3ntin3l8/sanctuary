@@ -366,9 +366,7 @@ async def create_case_from_triage(
     import json
 
     from app.models.database import IngestBatch
-    from app.models.enums import OriginatorType
     from app.services.case_service import get_or_create_case_from_reference
-    from app.services.hud_context import build_triage_hud_context
     from app.services.ingestion.extractors import extract_az_court_from_subject
 
     # Resolve az_court: use provided value or extract from batch subject
@@ -426,8 +424,8 @@ async def create_case_from_triage(
         return _Redirect(url=f"/cases/{internal_id}", status_code=303)
 
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    ctx = build_triage_hud_context(
-        db, first_doc, cases=cases, OriginatorType=OriginatorType
+    ctx = build_hud_context(
+        db, first_doc, mode="review", context="embedded", cases=cases
     )
     from app.config import templates as _templates
 
@@ -458,8 +456,6 @@ async def confirm_draft_case(
     import json
 
     from app.models.database import Document as Doc
-    from app.models.enums import OriginatorType
-    from app.services.hud_context import build_triage_hud_context
 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
@@ -479,8 +475,8 @@ async def confirm_draft_case(
 
     db.refresh(first_doc)
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    ctx = build_triage_hud_context(
-        db, first_doc, cases=cases, OriginatorType=OriginatorType
+    ctx = build_hud_context(
+        db, first_doc, mode="review", context="embedded", cases=cases
     )
     from app.config import templates as _templates
 
@@ -522,8 +518,6 @@ async def delete_case(
     from fastapi import HTTPException
 
     from app.models.database import ActionItem, Claim, Entity, IngestBatch, LegalCost
-    from app.models.enums import OriginatorType
-    from app.services.hud_context import build_triage_hud_context
 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
@@ -581,8 +575,8 @@ async def delete_case(
             .order_by(Case.title.asc())
             .all()
         )
-        ctx = build_triage_hud_context(
-            db, first_doc, cases=cases, OriginatorType=OriginatorType
+        ctx = build_hud_context(
+            db, first_doc, mode="review", context="embedded", cases=cases
         )
         from app.config import templates as _templates
 

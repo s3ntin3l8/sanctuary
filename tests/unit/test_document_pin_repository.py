@@ -1,7 +1,8 @@
 import pytest
 
-from app.models.database import Case, CaseStatus, Document
+from app.models.database import Case, CaseStatus, Document, DocumentPin
 from app.repositories.document_pin import DocumentPinRepository
+from app.services.document_service import DocumentService
 
 
 @pytest.fixture
@@ -138,3 +139,21 @@ def test_hud_context_includes_pins_key(db_session, doc_with_case):
     assert "passage_pin_counts" in ctx
     assert isinstance(ctx["pins"], list)
     assert isinstance(ctx["passage_pin_counts"], dict)
+
+
+@pytest.mark.unit
+def test_delete_document_removes_pins(db_session, doc_with_case):
+    """Cascade symmetry: delete_document removes pins for the deleted doc."""
+    repo = DocumentPinRepository(db_session)
+    repo.create(doc_with_case.id, "pid999999999", note="Will be deleted")
+    db_session.commit()
+
+    svc = DocumentService(db_session)
+    svc.delete_document(doc_with_case.id)
+
+    remaining = (
+        db_session.query(DocumentPin)
+        .filter(DocumentPin.document_id == doc_with_case.id)
+        .count()
+    )
+    assert remaining == 0

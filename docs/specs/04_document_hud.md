@@ -330,7 +330,7 @@ The HUD exposes **three navigation vectors** from the top bar and keyboard:
 
 | Axis | Source | Default keys | Chrome |
 |---|---|---|---|
-| Proceeding prev/next | `neighbor_doc_ids(doc)` — siblings in same proceeding by `received_date, id` | `← / →` | Top bar `n/N` counter + arrow buttons |
+| Proceeding prev/next | `neighbor_doc_ids(doc)` — siblings in same proceeding by `issued_date nullslast, id` | `← / →` | Top bar `n/N` counter + arrow buttons |
 | Parent / children | `Document.parent_id` / `children` | `[ / ]` | Breadcrumb shows parent; `[` goes up; `]` enters first child |
 | Bundle siblings | `Document.ingest_batch_id` → `IngestBatch.documents` | `{ / }` | Not rendered visually in v1; keyboard-only. Phase 4+ may surface a collapsed chip |
 
@@ -349,7 +349,7 @@ Everything the spec buys at the passage level:
 | Focus + spine sync | Click `<mark>` | Stable `passage_id` on `key_passages[i]` (§12) |
 | Ask AI about passage | Shift-click `<mark>` or spine `[ask AI]` | Chat drawer with passage context (Phase 7) |
 | Claim anchor badge | Inline `⚖` chip | `ClaimEvidence.excerpt` matched to passage, or future `ClaimEvidence.passage_id` FK |
-| Pin a note | `n` on a selected `<mark>`, or spine `[+ pin]` | **New** `DocumentAnnotation` table (§12) |
+| Pin a note | `n` on a selected `<mark>`, or spine `[+ pin]` | `DocumentPin` table (§12) |
 | Scroll-to-anchor | URL fragment `#p=<passage_id>` | Same stable `passage_id` |
 
 Out of scope v1: passage-scoped reactions (would require `UserReaction.passage_id` — v2); passage-scoped AI re-prompt (v2); passage quote-to-clipboard with cite string (trivial; could land opportunistically).
@@ -415,21 +415,26 @@ Today each passage is `{text, rationale, span, kind?, page?}`. Add a required `i
 
 No DB migration required — `key_passages` is a JSON column.
 
-### 12b. New table `DocumentAnnotation`
+### 12b. `DocumentPin` table (margin annotations)
+
+The table exists as `document_pins` in the DB. Canonical model name: `DocumentPin` (see `app/models/database.py` and CLAUDE.md). The spec originally called this `DocumentAnnotation` — that name was never used in code.
 
 ```
-DocumentAnnotation:
+DocumentPin:
   id              PK
-  document_id     FK Document, indexed
-  passage_id      str, nullable  -- points at key_passages[*].id when set
+  document_id     FK Document (indexed; ORM cascade delete-orphan via Document.pins)
+  passage_id      str(12), NOT NULL  -- stable sha1 key from key_passages[i].id
   user_id         str, default "single_user"
-  kind            enum(note, pin)   -- note = inline body text note; pin = margin sticky
-  text            Text, not null
-  created_at      datetime
+  note            Text, nullable     -- free-form annotation text
+  ingest_date     datetime
   updated_at      datetime, onupdate
 ```
 
-`Document.annotations` relationship (back_populates) added to the model. Repository `app/repositories/document_annotation.py` (new) with `get_by_document`, `create`, `update`, `delete`. Routes `POST/PATCH/DELETE /document/:id/annotation[/:ann_id]` in `app/api/documents.py`. Alembic migration auto-generated.
+Repository: `app/repositories/document_pin.py`. Routes: `POST /document/:id/pin`, `PATCH /document/:id/pin/:pin_id`, `DELETE /document/:id/pin/:pin_id`.
+
+The `kind enum(note, pin)` and nullable `passage_id` proposed in the original spec are deferred until a second annotation type (inline body note vs. margin sticky) ships — the UI today only exercises passage-anchored margin pins (YAGNI). `Document.pins` relationship is live with `cascade="all, delete-orphan"`.
+
+ORM cascade (`Document.pins`, `Document.reactions`, `Document.claim_evidence`) is set via SQLAlchemy `relationship(cascade="all, delete-orphan")`. Note: `PRAGMA foreign_keys=ON` is not enabled in the engine configuration, so DB-level `ON DELETE CASCADE` on the FK columns is not active — the ORM relationships and explicit pre-delete cleanup in `document_service.delete_document` ensure child rows are removed.
 
 ### 12c. Consolidate reaction route
 
@@ -482,12 +487,11 @@ Cheat-sheet modal reuses the `partials/home/shortcuts_modal.html` pattern; the H
 | `app/templates/partials/hud/_cost_delta.html` | Cost delta panel |
 | `app/templates/partials/hud/_reactions.html` | Reaction bar (replaces `triage_reaction_bar.html`) |
 | `app/templates/partials/hud/_ask_ai.html` | Ask-AI affordance (stub in v1) |
-| `app/templates/partials/hud/_margin_pin.html` | Single margin-pin callout |
+| `app/templates/partials/hud/_pin_card.html` | Single margin-pin callout (was `_margin_pin.html` in the original spec draft) |
 | `app/templates/partials/hud/_shortcuts.html` | Keyboard cheat-sheet modal |
-| `app/services/hud_context.py` | `build_hud_context(db, doc, mode)` — aggregates reactions, rels, grounds, actions, neighbors, parties |
-| `app/repositories/document_annotation.py` | CRUD for pinned notes |
+| `app/services/hud_context.py` | `build_hud_context(db, doc, *, mode, context, cases)` — aggregates reactions, rels, grounds, actions, neighbors, pins; when `cases` provided (embedded/triage context), also adds `OriginatorType` and `is_draft_case` |
+| `app/repositories/document_pin.py` | CRUD for `DocumentPin` margin annotations |
 | `static/js/hud.js` | Scroll-spy, focus mode, shortcut registry, pin-editor Alpine component |
-| `alembic/versions/*_document_annotation.py` | Migration for new table |
 
 ### Modified
 
@@ -501,8 +505,7 @@ Cheat-sheet modal reuses the `partials/home/shortcuts_modal.html` pattern; the H
 | `app/services/intelligence/document_enricher.py` | Assign stable `id` on each `key_passages[i]` at write time |
 | `static/input.css` | Add `--color-key-passage-*`, `--color-warning`, `--color-warning-container` tokens; define `.slide-in-right` |
 | `app/templates/pages/triage.html` | Right pane uses `partials/hud/_container.html` with `context=embedded`, `mode=review`; retire the separate pane swap target |
-| `app/models/database.py` | Add `Document.annotations` relationship |
-| `app/models/enums.py` | Add `AnnotationKind(note, pin)` |
+| `app/models/database.py` | Added `Document.pins`, `Document.reactions`, `Document.claim_evidence` relationships (`cascade="all, delete-orphan"`); `DocumentPin`, `UserReaction`, `ClaimEvidence` updated to use `back_populates` |
 
 ### Deleted (clean as you go)
 
@@ -526,7 +529,7 @@ The HUD is built in stages; each adds capability without breaking earlier ones.
 | Phase | What lights up |
 |---|---|
 | **Spec lands (now)** | `docs/document_hud.md` merged. Implementation begins. No runtime change. |
-| **Phase 2½** (UI consolidation; immediate next step) | `partials/hud/*` shipped. `/cases/:id/document/:id/hud` returns new container in `context=overlay`. `/cases/:id/document/:id` serves full-screen. Triage pane switches to `context=embedded mode=review`. Old partials deleted. Pinned notes work. Scroll-spy works. All three contexts share one reaction path. Claim anchors render if `ClaimEvidence` rows match. |
+| **Phase 2½** (UI consolidation; shipped) | `partials/hud/*` shipped. `/cases/:id/document/:id/hud` returns new container in `context=overlay`. `/cases/:id/document/:id` serves full-screen. Triage pane switches to `context=embedded mode=review` (no `?context=triage` param; `build_hud_context` adds triage keys when `cases` provided). Old partials deleted. `DocumentPin` margin annotations work. Scroll-spy works. All three contexts share one reaction path. Claim anchors render if `ClaimEvidence` rows match. Bundle `{`/`}` nav fixed. |
 | **Phase 4** (doc intelligence) | Key passages auto-populate with stable IDs; claim grounding fills Grounds section; cost_delta drives Cost Delta section; AI relationship suggestions fill review-mode confirm/reject. |
 | **Phase 5** (case AI brief) | Summary section gains proper refresh; Grounds gains claim-status transitions. |
 | **Phase 6** (Truth Map) | Grounds section `⚖ chip` → Truth Map deep link; claim evidence expansion fully live. |
@@ -557,7 +560,7 @@ The HUD is done when:
 - **Identical section order** across slide-in / full-screen / embedded (chrome differs; section sequence does not).
 - **Scroll-spy correctness.** Scrolling the full-screen body updates the active passage spine row with ≤16ms lag (one frame).
 - **Click-to-focus.** Clicking any `<mark>` updates URL fragment, scrolls body, flashes focus ring, activates spine row — end-to-end in one keyframe loop.
-- **Pinned notes.** Creating a pin via `n` persists to `DocumentAnnotation` and renders as a margin callout aligned to the passage. Deleting clears the callout.
+- **Pinned notes.** Creating a pin via `n` persists to `DocumentPin` and renders as a margin callout aligned to the passage. Deleting clears the callout.
 - **Unified reaction path.** All three contexts POST to the same `/document/:id/reaction` endpoint; no `/api/reactions/toggle` or `/triage/.../reaction` remains.
 - **Deep linkability.** `/cases/ADV-024-A/document/47#p=abc123` opens the HUD, loads the page, scrolls to passage `abc123`, and flashes focus — without needing the user to navigate from the dashboard first.
 - **Tokens.** `--color-key-passage-*`, `--color-warning`, `.slide-in-right` defined in `static/input.css`; no template references undefined tokens.
@@ -584,12 +587,12 @@ End-to-end manual test once implemented:
 10. Press `o` in full-screen → original file opens in a new tab.
 11. Light-mode toggle (`⌘D`) → no visual regressions; all tokens swap.
 12. Delete a passage's claim evidence → ⚖ chip disappears on next render.
-13. `make test` — new tests cover: reaction consolidation route, annotation CRUD, `hud_context` aggregation, `neighbor_doc_ids` continuity across empty `received_date`.
+13. `make test` — new tests cover: reaction consolidation route, `DocumentPin` CRUD, `hud_context` aggregation, `neighbor_doc_ids` continuity across empty `issued_date`, cascade-delete of pins/reactions/claim_evidence on document removal.
 
 Automated coverage:
-- Route tests: new `GET /cases/:id/document/:id` returns 200 and includes `partials/hud/_container`.
-- Repository tests: `DocumentAnnotationRepository` create/list/update/delete; cascade delete on document removal.
-- Service tests: `hud_context.build_hud_context(...)` assembles reactions, rels in/out, prev/next, grounds, actions under a single query budget (≤N+1 per section).
+- Route tests: `GET /cases/:id/document/:id` returns 200 and includes `partials/hud/_container`.
+- Repository tests: `DocumentPin` create/list/update/delete; cascade delete on document removal.
+- Service tests: `hud_context.build_hud_context(...)` assembles reactions, rels in/out, prev/next, grounds, actions; bundle nav returns correct prev/next for the middle doc of a 3-doc bundle.
 - Template tests: snapshot rendering for `read` and `review` modes given a fixture document.
 
 ---

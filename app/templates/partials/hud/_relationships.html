@@ -20,9 +20,14 @@
     {% for rel in relationships_out %}
     {% set is_ai = rel.confidence == 'ai_detected' %}
     {% set rel_id = rel.rel_obj.id if rel.rel_obj else ('out-' ~ loop.index) %}
+    {% if rel.rel_type == 'replies_to' %}{% set arrow = '←' %}
+    {% elif rel.rel_type == 'references' %}{% set arrow = '→' %}
+    {% elif rel.rel_type == 'attaches_as_proof' %}{% set arrow = '⫸' %}
+    {% elif rel.rel_type == 'supersedes' %}{% set arrow = '⊃' %}
+    {% else %}{% set arrow = '→' %}{% endif %}
     <li id="hud-rel-{{ rel_id }}"
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
-      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">→</span>
+      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">{{ arrow }}</span>
       <div class="flex-1 min-w-0">
         <button {% if context != 'overlay' %}
                 onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
@@ -51,9 +56,14 @@
     {% for rel in relationships_in %}
     {% set is_ai = rel.confidence == 'ai_detected' %}
     {% set rel_id = rel.rel_obj.id if rel.rel_obj else ('in-' ~ loop.index) %}
+    {% if rel.rel_type == 'replies_to' %}{% set arrow = '→' %}
+    {% elif rel.rel_type == 'references' %}{% set arrow = '←' %}
+    {% elif rel.rel_type == 'attaches_as_proof' %}{% set arrow = '⫷' %}
+    {% elif rel.rel_type == 'supersedes' %}{% set arrow = '⊂' %}
+    {% else %}{% set arrow = '←' %}{% endif %}
     <li id="hud-rel-{{ rel_id }}"
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
-      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">←</span>
+      <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">{{ arrow }}</span>
       <div class="flex-1 min-w-0">
         <button {% if context != 'overlay' %}
                 onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
