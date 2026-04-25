@@ -162,7 +162,7 @@ class TriageService:
         """All triage documents grouped into bundles."""
         from sqlalchemy import or_
 
-        from app.models.database import ActionItem, IngestBatch, IngestBatchStatus
+        from app.models.database import IngestBatch, IngestBatchStatus
 
         # Batch subquery: any batch that is NOT completed and NOT awaiting slicing is in triage.
         # AWAITING_SLICING batches have no Documents yet and appear in the slicing queue instead.
@@ -254,66 +254,66 @@ class TriageService:
         )
 
         for bundle in ordered:
-            # Significance-first within the bundle (§5b), cover-letter as in-tier
-            # tiebreaker so the user's eye lands on high-impact docs first.
-            bundle.documents.sort(
-                key=lambda d: (
-                    _SIG_ORDER.get(d.significance_tier, 99),
-                    0 if d.role == DocumentRole.COVER_LETTER else 1,
-                    d.ingest_date or datetime.min,
-                )
-            )
-            doc_ids = [d.id for d in bundle.documents]
-            if doc_ids:
-                bundle.action_items = (
-                    self.db.query(ActionItem)
-                    .filter(ActionItem.source_document_id.in_(doc_ids))
-                    .order_by(ActionItem.due_date.asc())
-                    .all()
-                )
-                # Build proof_doc_ids: docs that are the *target* of an
-                # ATTACHES_AS_PROOF edge within this bundle.
-                proof_rels = (
-                    self.db.query(DocumentRelationship)
-                    .filter(
-                        DocumentRelationship.to_document_id.in_(doc_ids),
-                        DocumentRelationship.relationship_type
-                        == RelationshipType.ATTACHES_AS_PROOF,
-                    )
-                    .all()
-                )
-                bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
-
-            # Resolve suggested case metadata for the single-button confirm UX.
-            if bundle.suggested_case_id and not bundle.confirmed_case_id:
-                _case = (
-                    self.db.query(Case)
-                    .filter(Case.id == bundle.suggested_case_id)
-                    .first()
-                )
-                if _case:
-                    bundle.suggested_case_exists = True
-                    bundle.suggested_case_title = _case.title
-                    bundle.suggested_case_is_draft = bool(_case.is_draft)
-
-            # When AI auto-created a draft case and cascaded it to the batch,
-            # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
-            # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
-            # the modal opens pre-filled rather than as a blank create-new form.
-            if bundle.confirmed_case_id and not bundle.suggested_case_id:
-                _case = (
-                    self.db.query(Case)
-                    .filter(Case.id == bundle.confirmed_case_id)
-                    .first()
-                )
-                if _case and _case.is_draft:
-                    bundle.suggested_case_id = bundle.confirmed_case_id
-                    bundle.suggested_case_title = _case.title
-                    bundle.suggested_case_is_draft = True
-                    bundle.suggested_case_exists = True
-                    bundle.confirmed_case_id = None
+            self._enrich_bundle(bundle)
 
         return ordered[offset : offset + limit]
+
+    def _enrich_bundle(self, bundle: BundleView) -> None:
+        """Sort documents and resolve action items, proof edges, and case metadata in-place."""
+        from app.models.database import ActionItem
+
+        # Significance-first within the bundle (§5b), cover-letter as in-tier
+        # tiebreaker so the user's eye lands on high-impact docs first.
+        bundle.documents.sort(
+            key=lambda d: (
+                _SIG_ORDER.get(d.significance_tier, 99),
+                0 if d.role == DocumentRole.COVER_LETTER else 1,
+                d.ingest_date or datetime.min,
+            )
+        )
+        doc_ids = [d.id for d in bundle.documents]
+        if doc_ids:
+            bundle.action_items = (
+                self.db.query(ActionItem)
+                .filter(ActionItem.source_document_id.in_(doc_ids))
+                .order_by(ActionItem.due_date.asc())
+                .all()
+            )
+            proof_rels = (
+                self.db.query(DocumentRelationship)
+                .filter(
+                    DocumentRelationship.to_document_id.in_(doc_ids),
+                    DocumentRelationship.relationship_type
+                    == RelationshipType.ATTACHES_AS_PROOF,
+                )
+                .all()
+            )
+            bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
+
+        # Resolve suggested case metadata for the single-button confirm UX.
+        if bundle.suggested_case_id and not bundle.confirmed_case_id:
+            _case = (
+                self.db.query(Case).filter(Case.id == bundle.suggested_case_id).first()
+            )
+            if _case:
+                bundle.suggested_case_exists = True
+                bundle.suggested_case_title = _case.title
+                bundle.suggested_case_is_draft = bool(_case.is_draft)
+
+        # When AI auto-created a draft case and cascaded it to the batch,
+        # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
+        # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
+        # the modal opens pre-filled rather than as a blank create-new form.
+        if bundle.confirmed_case_id and not bundle.suggested_case_id:
+            _case = (
+                self.db.query(Case).filter(Case.id == bundle.confirmed_case_id).first()
+            )
+            if _case and _case.is_draft:
+                bundle.suggested_case_id = bundle.confirmed_case_id
+                bundle.suggested_case_title = _case.title
+                bundle.suggested_case_is_draft = True
+                bundle.suggested_case_exists = True
+                bundle.confirmed_case_id = None
 
     def get_slicing_queue(self) -> list:
         """Batches awaiting document slicing review."""
@@ -327,12 +327,50 @@ class TriageService:
         )
 
     def get_bundle_by_batch_id(self, batch_id: int) -> BundleView | None:
-        """Return a BundleView for a specific batch_id, or None if not found."""
-        bundles = self.get_triage_bundles(limit=1000)
-        for b in bundles:
-            if b.batch_id == batch_id:
-                return b
-        return None
+        """Return a BundleView for a single batch without rebuilding the full triage feed."""
+        from app.models.database import IngestBatch
+
+        batch = (
+            self.db.query(IngestBatch)
+            .options(joinedload(IngestBatch.proceeding))
+            .filter(IngestBatch.id == batch_id)
+            .first()
+        )
+        if not batch:
+            return None
+
+        docs = (
+            self.db.query(Document)
+            .options(joinedload(Document.proceeding))
+            .filter(Document.ingest_batch_id == batch_id)
+            .order_by(Document.ingest_date.desc())
+            .all()
+        )
+
+        confirmed = (
+            batch.case_id if batch.case_id and batch.case_id != "_TRIAGE" else None
+        )
+        bundle = BundleView(
+            key=f"batch-{batch.id}",
+            batch_id=batch.id,
+            source_type=batch.source_type,
+            subject=batch.subject,
+            sender_email=batch.sender_email,
+            received_at=batch.received_at,
+            confirmed_case_id=confirmed,
+            proceeding=batch.proceeding,
+            documents=docs,
+        )
+        for doc in docs:
+            if (
+                not bundle.confirmed_case_id
+                and doc.case_id
+                and doc.case_id != "_TRIAGE"
+            ):
+                bundle.suggested_case_id = doc.case_id
+
+        self._enrich_bundle(bundle)
+        return bundle
 
     def get_reactions(self, document_id: int) -> Sequence[UserReaction]:
         return self.reaction_repo.get_by_document(document_id)

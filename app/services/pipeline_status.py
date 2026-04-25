@@ -3,10 +3,17 @@
 Each mutation issues a single SQL UPDATE using SQLite's json_set so that
 concurrent Celery workers writing different stages of the same document
 never race each other via Python read-modify-write.
+
+Stage DAG lives in STAGE_REGISTRY — the single source of truth for ordering,
+downstream cascades, and retry-task dispatch. _STAGE_ORDER and _DOWNSTREAM
+are derived from it so they stay in sync automatically.
 """
 
+import json
 import logging
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -15,53 +22,124 @@ from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
 
-# DAG order used for upstream-running guard in retry endpoint.
-# Stages earlier in this list block stages later in it when running.
-_STAGE_ORDER: list[PipelineStage] = [
-    PipelineStage.EXTRACT,
-    PipelineStage.METADATA,
-    PipelineStage.BATCH_ANALYSIS,
-    PipelineStage.ENRICH,
-    PipelineStage.RELATIONSHIPS,
-    PipelineStage.CLAIMS,
-    PipelineStage.ENTITIES,
-    PipelineStage.EMBEDDINGS,
-]
 
-# Stages that, when retried, should also reset their dependents to PENDING.
-_DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
-    PipelineStage.EXTRACT: [
-        PipelineStage.METADATA,
-        PipelineStage.ENRICH,
-        PipelineStage.RELATIONSHIPS,
-        PipelineStage.CLAIMS,
-        PipelineStage.ENTITIES,
-    ],
-    PipelineStage.METADATA: [
-        PipelineStage.ENRICH,
-        PipelineStage.RELATIONSHIPS,
-        PipelineStage.CLAIMS,
-        PipelineStage.ENTITIES,
-    ],
-    PipelineStage.ENRICH: [
-        PipelineStage.RELATIONSHIPS,
-        PipelineStage.CLAIMS,
-        PipelineStage.ENTITIES,
-    ],
-    PipelineStage.BATCH_ANALYSIS: [],
-    PipelineStage.RELATIONSHIPS: [],
-    PipelineStage.CLAIMS: [],
-    PipelineStage.ENTITIES: [],
-    PipelineStage.EMBEDDINGS: [],
+# ---------------------------------------------------------------------------
+# Stage registry — single source of truth for the pipeline DAG.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StageSpec:
+    stage: PipelineStage
+    order: int  # lower = earlier; used for upstream-blocking checks
+    downstream: tuple[PipelineStage, ...] = field(default_factory=tuple)
+    retry_task: str = ""  # dotted Celery task name
+    dispatch_arg: Literal["doc_id", "batch_id"] = "doc_id"
+
+
+STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
+    PipelineStage.EXTRACT: StageSpec(
+        stage=PipelineStage.EXTRACT,
+        order=0,
+        downstream=(
+            PipelineStage.METADATA,
+            PipelineStage.PROCEEDING_ANALYSIS,
+            PipelineStage.ENRICH,
+            PipelineStage.RELATIONSHIPS,
+            PipelineStage.CLAIMS,
+            PipelineStage.ENTITIES,
+        ),
+        retry_task="app.tasks.document_processing.process_document_task",
+    ),
+    PipelineStage.METADATA: StageSpec(
+        stage=PipelineStage.METADATA,
+        order=1,
+        downstream=(
+            PipelineStage.PROCEEDING_ANALYSIS,
+            PipelineStage.ENRICH,
+            PipelineStage.RELATIONSHIPS,
+            PipelineStage.CLAIMS,
+            PipelineStage.ENTITIES,
+        ),
+        retry_task="app.tasks.document_processing.process_document_task",
+    ),
+    PipelineStage.PROCEEDING_ANALYSIS: StageSpec(
+        stage=PipelineStage.PROCEEDING_ANALYSIS,
+        order=2,
+        downstream=(
+            PipelineStage.BATCH_ANALYSIS,
+            PipelineStage.ENRICH,
+            PipelineStage.RELATIONSHIPS,
+            PipelineStage.CLAIMS,
+            PipelineStage.ENTITIES,
+        ),
+        retry_task="app.tasks.analyze_proceeding.analyze_proceeding_task",
+    ),
+    PipelineStage.BATCH_ANALYSIS: StageSpec(
+        stage=PipelineStage.BATCH_ANALYSIS,
+        order=3,
+        downstream=(),
+        retry_task="app.tasks.analyze_batch.analyze_batch_task",
+        dispatch_arg="batch_id",
+    ),
+    PipelineStage.ENRICH: StageSpec(
+        stage=PipelineStage.ENRICH,
+        order=4,
+        downstream=(
+            PipelineStage.RELATIONSHIPS,
+            PipelineStage.CLAIMS,
+            PipelineStage.ENTITIES,
+        ),
+        retry_task="app.tasks.enrich_document.enrich_document_task",
+    ),
+    PipelineStage.RELATIONSHIPS: StageSpec(
+        stage=PipelineStage.RELATIONSHIPS,
+        order=5,
+        downstream=(),
+        retry_task="app.tasks.detect_relationships.detect_relationships_task",
+    ),
+    PipelineStage.CLAIMS: StageSpec(
+        stage=PipelineStage.CLAIMS,
+        order=6,
+        downstream=(),
+        retry_task="app.tasks.extract_claims.extract_claims_task",
+    ),
+    PipelineStage.ENTITIES: StageSpec(
+        stage=PipelineStage.ENTITIES,
+        order=7,
+        downstream=(),
+        retry_task="app.tasks.extract_entities.extract_entities_task",
+    ),
+    PipelineStage.EMBEDDINGS: StageSpec(
+        stage=PipelineStage.EMBEDDINGS,
+        order=8,
+        downstream=(),
+        retry_task="app.tasks.generate_embedding.generate_embedding_task",
+    ),
 }
+
+# Guard: every PipelineStage member must have a registry entry.
+_missing = set(PipelineStage) - set(STAGE_REGISTRY)
+if _missing:
+    raise RuntimeError(
+        f"STAGE_REGISTRY is missing entries for: {_missing}. "
+        "Add a StageSpec for each new PipelineStage member."
+    )
+
+# Derived structures — kept for backward compat with any code that imports them directly.
+_STAGE_ORDER: list[StageSpec] = sorted(STAGE_REGISTRY.values(), key=lambda s: s.order)
+_DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
+    s.stage: list(s.downstream) for s in STAGE_REGISTRY.values()
+}
+
+
+# ---------------------------------------------------------------------------
+# Public helpers
+# ---------------------------------------------------------------------------
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _stage_record(status: StageStatus, **extra) -> dict:
-    return {"status": status.value, **extra}
 
 
 def initialize(doc, batched: bool) -> None:
@@ -91,21 +169,30 @@ def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
         db,
         status=StageStatus.RUNNING,
         extra_sets={"started_at": _now_iso()},
+        commit=True,  # early commit so the UI flips to RUNNING immediately
     )
 
 
-def mark_completed(doc_id: int, stage: PipelineStage, db: Session) -> None:
+def mark_completed(
+    doc_id: int, stage: PipelineStage, db: Session, *, commit: bool = True
+) -> None:
     _update_stage(
         doc_id,
         stage,
         db,
         status=StageStatus.COMPLETED,
         extra_sets={"completed_at": _now_iso(), "error": None},
+        commit=commit,
     )
 
 
 def mark_failed(
-    doc_id: int, stage: PipelineStage, db: Session, error: str = ""
+    doc_id: int,
+    stage: PipelineStage,
+    db: Session,
+    error: str = "",
+    *,
+    commit: bool = True,
 ) -> None:
     _update_stage(
         doc_id,
@@ -113,14 +200,25 @@ def mark_failed(
         db,
         status=StageStatus.FAILED,
         extra_sets={"completed_at": _now_iso(), "error": error},
+        commit=commit,
     )
 
 
 def mark_skipped(
-    doc_id: int, stage: PipelineStage, db: Session, reason: str = ""
+    doc_id: int,
+    stage: PipelineStage,
+    db: Session,
+    reason: str = "",
+    *,
+    commit: bool = True,
 ) -> None:
     _update_stage(
-        doc_id, stage, db, status=StageStatus.SKIPPED, extra_sets={"reason": reason}
+        doc_id,
+        stage,
+        db,
+        status=StageStatus.SKIPPED,
+        extra_sets={"reason": reason},
+        commit=commit,
     )
 
 
@@ -128,7 +226,10 @@ def reset_stage(doc_id: int, stage: PipelineStage, db: Session) -> None:
     """Reset a stage (and its downstream dependents) to PENDING for retry."""
     stages_to_reset = [stage] + _DOWNSTREAM.get(stage, [])
     for s in stages_to_reset:
-        _update_stage(doc_id, s, db, status=StageStatus.PENDING, extra_sets={})
+        _update_stage(
+            doc_id, s, db, status=StageStatus.PENDING, extra_sets={}, commit=False
+        )
+    db.commit()
 
 
 def compute_overall_state(stages: dict) -> PipelineState:
@@ -153,14 +254,29 @@ def get_upstream_blocking(stage: PipelineStage, stages: dict) -> list[str]:
 
     Used by the retry endpoint to reject 409 when an upstream stage is active.
     """
-    idx = _STAGE_ORDER.index(stage)
-    upstream = _STAGE_ORDER[:idx]
+    spec = STAGE_REGISTRY[stage]
+    upstream = [s for s in _STAGE_ORDER if s.order < spec.order]
     blocking = []
     for s in upstream:
-        record = stages.get(s.value, {})
+        record = stages.get(s.stage.value, {})
         if record.get("status") == StageStatus.RUNNING.value:
-            blocking.append(s.value)
+            blocking.append(s.stage.value)
     return blocking
+
+
+def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
+    """Compute aggregate stage-status counts across all docs in a bundle.
+
+    Accepts a list of pipeline_stages dicts (one per document). Returns the
+    same shape as BundleView.pipeline_summary so callers are interchangeable.
+    """
+    from collections import Counter
+
+    counts: Counter = Counter()
+    for stages in stages_per_doc:
+        state = compute_overall_state(stages)
+        counts[state.value] += 1
+    return {"total": len(stages_per_doc), **counts}
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +290,10 @@ def _update_stage(
     db: Session,
     status: StageStatus,
     extra_sets: dict,
+    *,
+    commit: bool = True,
 ) -> None:
     """Update a single stage key inside pipeline_stages and recompute pipeline_state."""
-    import json
-
     row = db.execute(
         text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
         {"doc_id": doc_id},
@@ -204,4 +320,5 @@ def _update_stage(
         ),
         {"stages": json.dumps(stages), "state": overall.value, "doc_id": doc_id},
     )
-    db.commit()
+    if commit:
+        db.commit()

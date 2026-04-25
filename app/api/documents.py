@@ -503,14 +503,7 @@ async def retry_pipeline_stage(
     reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
-    # Capture primitives — db session is request-scoped and must not be passed to a thread
-    _doc_id = doc.id
-    _batch_id = doc.ingest_batch_id
-    threading.Thread(
-        target=_dispatch_retry_task,
-        args=(_doc_id, _batch_id, pipeline_stage),
-        daemon=True,
-    ).start()
+    _dispatch_retry_task(doc.id, doc.ingest_batch_id, pipeline_stage)
 
     return templates.TemplateResponse(
         request,
@@ -519,44 +512,18 @@ async def retry_pipeline_stage(
     )
 
 
-def _dispatch_retry_task(doc_id: int, batch_id, stage) -> None:
-    from app.models.enums import PipelineStage
+def _dispatch_retry_task(doc_id: int, batch_id: int | None, stage) -> None:
+    from app.services.pipeline_status import STAGE_REGISTRY
+    from app.tasks.celery_app import celery_app
 
-    if stage in (PipelineStage.EXTRACT, PipelineStage.METADATA):
-        from app.tasks.document_processing import process_document_task
-
-        process_document_task.delay(doc_id)
-
-    elif stage == PipelineStage.PROCEEDING_ANALYSIS:
-        from app.tasks.analyze_proceeding import analyze_proceeding_task
-
-        analyze_proceeding_task.delay(doc_id)
-
-    elif stage == PipelineStage.BATCH_ANALYSIS:
-        if batch_id:
-            from app.tasks.analyze_batch import analyze_batch_task
-
-            analyze_batch_task.delay(batch_id)
-
-    elif stage == PipelineStage.ENRICH:
-        from app.tasks.enrich_document import enrich_document_task
-
-        enrich_document_task.delay(doc_id)
-
-    elif stage == PipelineStage.RELATIONSHIPS:
-        from app.tasks.detect_relationships import detect_relationships_task
-
-        detect_relationships_task.delay(doc_id)
-
-    elif stage == PipelineStage.CLAIMS:
-        from app.tasks.extract_claims import extract_claims_task
-
-        extract_claims_task.delay(doc_id)
-
-    elif stage == PipelineStage.EMBEDDINGS:
-        from app.tasks.generate_embedding import generate_embedding_task
-
-        generate_embedding_task.delay(doc_id)
+    spec = STAGE_REGISTRY[stage]
+    arg = batch_id if spec.dispatch_arg == "batch_id" else doc_id
+    if arg is None:
+        logger.warning(
+            "Cannot dispatch retry for %s — no %s available", stage, spec.dispatch_arg
+        )
+        return
+    celery_app.send_task(spec.retry_task, args=[arg])
 
 
 # ---------------------------------------------------------------------------

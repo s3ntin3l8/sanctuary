@@ -43,6 +43,9 @@ run: ## Start the FastAPI development server
 run-debug: ## Start server with DEBUG logging enabled
 	LOG_LEVEL=debug DEBUG=True $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug
 
+worker: ## Start the Celery worker (required when CELERY_TASK_ALWAYS_EAGER=false)
+	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery
+
 watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
 

@@ -628,15 +628,27 @@ async def bundle_pipeline_status(
     batch_id: int,
     db: Session = Depends(get_db),
 ):
-    """Return pipeline aggregate chip for a bundle (triage bundle header polling)."""
-    triage_service = TriageService(db)
-    bundle = triage_service.get_bundle_by_batch_id(batch_id)
-    if not bundle:
+    """Return pipeline aggregate chip for a bundle (triage bundle header polling).
+
+    Uses a focused single-table query — does not rebuild the full triage feed.
+    """
+    import json
+    from types import SimpleNamespace
+
+    from sqlalchemy import text
+
+    from app.services.pipeline_status import aggregate_pipeline_summary
+
+    rows = db.execute(
+        text("SELECT pipeline_stages FROM documents WHERE ingest_batch_id = :b"),
+        {"b": batch_id},
+    ).fetchall()
+    if not rows:
         return HTMLResponse("", status_code=404)
 
-    import json
+    stages_per_doc = [json.loads(r[0] or "{}") for r in rows]
+    summary = aggregate_pipeline_summary(stages_per_doc)
 
-    summary = bundle.pipeline_summary
     n_total = summary.get("total", 0)
     n_done = (
         summary.get("completed", 0)
@@ -644,10 +656,17 @@ async def bundle_pipeline_status(
         + summary.get("skipped", 0)
     )
 
+    # Minimal stub — template only needs .pipeline_summary, .key, .batch_id
+    bundle_stub = SimpleNamespace(
+        batch_id=batch_id,
+        key=f"batch-{batch_id}",
+        pipeline_summary=summary,
+    )
+
     response = templates.TemplateResponse(
         request,
         "partials/_pipeline_aggregate.html",
-        {"bundle": bundle},
+        {"bundle": bundle_stub},
     )
 
     # Only trigger a full bundle reload once all stages have reached a terminal
