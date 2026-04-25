@@ -106,6 +106,49 @@ def test_relationships_created(db_session, proceeding_with_docs):
 
 
 @pytest.mark.unit
+def test_ai_detected_edge_does_not_close_target_thread(
+    db_session, proceeding_with_docs
+):
+    """AI-detected REPLIES_TO edges must NOT close the target's thread — only USER_CONFIRMED
+    edges count. The user must explicitly confirm before the thread resolves."""
+    from app.models.enums import DocumentType
+
+    proceeding, prior1, _prior2, new_doc = proceeding_with_docs
+    prior1.document_type = DocumentType.STATEMENT
+    prior1.thread_open = True
+    db_session.commit()
+
+    ai_result = {
+        "relationships": [
+            {
+                "to_document_id": prior1.id,
+                "relationship_type": "replies_to",
+                "confidence": "high",
+                "notes": "Reply",
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.relationship_detector.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.relationship_detector._call_relationship_detector_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.relationship_detector import detect
+
+        detect(new_doc.id)
+
+    db_session.expire_all()
+    assert db_session.get(Document, prior1.id).thread_open is True
+
+
+@pytest.mark.unit
 def test_hallucination_guard_drops_invalid_id(db_session, proceeding_with_docs):
     """AI returns an ID not in candidate list → relationship must be dropped."""
     proceeding, prior1, prior2, new_doc = proceeding_with_docs

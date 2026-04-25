@@ -55,7 +55,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     """Refine document properties based on deep AI extraction."""
     from app.models.database import Case
     from app.models.enums import parse_originator_type
-    from app.services.ingestion.service import compute_review_reasons
+    from app.services.ingestion.service import refresh_review_reasons
 
     # 1. Update core fields (AI overrides heuristics)
     if summary_data.get("sender"):
@@ -198,9 +198,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 )
 
     # 4. Re-evaluate review status
-    reasons = compute_review_reasons(doc, confirmed=False)
-    doc.review_reasons = reasons
-    doc.needs_review = len(reasons) > 0
+    refresh_review_reasons(doc, db, commit=False)
 
 
 def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:

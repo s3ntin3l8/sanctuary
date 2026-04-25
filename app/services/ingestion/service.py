@@ -110,13 +110,11 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
             break
 
     # 4. Intelligence Flags
-    # Check for unconfirmed AI relationships
-    # We check the DocumentRelationship table for any AI_DETECTED edges from this doc.
     try:
         from sqlalchemy import inspect
 
-        from app.models.database import DocumentRelationship
-        from app.models.enums import RelationshipConfidence
+        from app.models.database import ClaimEvidence, DocumentRelationship
+        from app.models.enums import ClaimEvidenceRole, RelationshipConfidence
 
         db = inspect(doc).session
         if db:
@@ -131,6 +129,20 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
             )
             if unconfirmed:
                 reasons.append("unresolved_relationship")
+
+            contested = (
+                db.query(ClaimEvidence)
+                .filter(
+                    ClaimEvidence.document_id == doc.id,
+                    ClaimEvidence.role.in_(
+                        [ClaimEvidenceRole.CONTESTS, ClaimEvidenceRole.REFUTES]
+                    ),
+                    ClaimEvidence.confidence == RelationshipConfidence.AI_DETECTED,
+                )
+                .first()
+            )
+            if contested:
+                reasons.append("contests_existing_claim")
     except Exception:
         pass
 
@@ -139,6 +151,18 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
         reasons.append("contradiction_detected")
 
     return list(set(reasons))  # Unique reasons
+
+
+def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
+    """Recompute and persist `review_reasons` / `needs_review` for one document.
+
+    Pass commit=False when called inside a larger transaction that will commit later.
+    """
+    reasons = compute_review_reasons(doc, confirmed=False)
+    doc.review_reasons = reasons
+    doc.needs_review = len(reasons) > 0
+    if commit:
+        db.commit()
 
 
 def extract_clean_title(filename: str, content: str = "") -> str:

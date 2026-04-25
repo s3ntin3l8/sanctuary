@@ -96,6 +96,12 @@ def detect_relationships_task(doc_id: int):
             mark_skipped(doc_id, PipelineStage.RELATIONSHIPS, db, reason=skipped)
         else:
             mark_completed(doc_id, PipelineStage.RELATIONSHIPS, db)
+            from app.models.database import Document
+            from app.services.ingestion.service import refresh_review_reasons
+
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                refresh_review_reasons(doc, db)
     finally:
         db.close()
 

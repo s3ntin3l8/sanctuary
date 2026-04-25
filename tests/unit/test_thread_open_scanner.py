@@ -49,12 +49,14 @@ def reply_doc(db_session, sample_case):
 
 
 @pytest.mark.unit
-def test_closes_thread_when_reply_exists(db_session, thread_open_doc, reply_doc):
+def test_closes_thread_when_confirmed_reply_exists(
+    db_session, thread_open_doc, reply_doc
+):
     rel = DocumentRelationship(
         from_document_id=reply_doc.id,
         to_document_id=thread_open_doc.id,
         relationship_type=RelationshipType.REPLIES_TO,
-        confidence=RelationshipConfidence.AI_DETECTED,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
         ingest_date=datetime.now(),
     )
     db_session.add(rel)
@@ -105,6 +107,59 @@ def test_closes_thread_on_references_edge(db_session, thread_open_doc, reply_doc
 
 
 @pytest.mark.unit
+def test_reopens_thread_when_confirmed_edge_removed(
+    db_session, thread_open_doc, reply_doc
+):
+    """If a confirmed edge is later removed, the next scan reopens the thread."""
+    rel = DocumentRelationship(
+        from_document_id=reply_doc.id,
+        to_document_id=thread_open_doc.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
+        ingest_date=datetime.now(),
+    )
+    db_session.add(rel)
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import scan_and_close_threads
+
+    scan_and_close_threads(db_session)
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is False
+
+    db_session.delete(rel)
+    db_session.commit()
+
+    scan_and_close_threads(db_session)
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is True
+
+
+@pytest.mark.unit
+def test_ai_detected_edge_does_not_close_via_scanner(
+    db_session, thread_open_doc, reply_doc
+):
+    """AI_DETECTED edges are ignored by the scanner — thread stays open until user confirms."""
+    rel = DocumentRelationship(
+        from_document_id=reply_doc.id,
+        to_document_id=thread_open_doc.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.AI_DETECTED,
+        ingest_date=datetime.now(),
+    )
+    db_session.add(rel)
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import scan_and_close_threads
+
+    updated = scan_and_close_threads(db_session)
+    assert updated == 0
+
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is True
+
+
+@pytest.mark.unit
 def test_only_affects_thread_open_docs(
     db_session, sample_case, thread_open_doc, reply_doc
 ):
@@ -113,7 +168,7 @@ def test_only_affects_thread_open_docs(
         from_document_id=reply_doc.id,
         to_document_id=thread_open_doc.id,
         relationship_type=RelationshipType.REPLIES_TO,
-        confidence=RelationshipConfidence.AI_DETECTED,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
         ingest_date=datetime.now(),
     )
     db_session.add(rel)
@@ -127,3 +182,42 @@ def test_only_affects_thread_open_docs(
     # reply_doc is the source, not a target of any edge — its thread_open should stay True
     source = db_session.get(Document, reply_doc.id)
     assert source.thread_open is True
+
+
+@pytest.mark.unit
+def test_recompute_thread_open_closes_on_confirm(
+    db_session, thread_open_doc, reply_doc
+):
+    """recompute_thread_open closes thread when a USER_CONFIRMED edge exists."""
+    rel = DocumentRelationship(
+        from_document_id=reply_doc.id,
+        to_document_id=thread_open_doc.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.USER_CONFIRMED,
+        ingest_date=datetime.now(),
+    )
+    db_session.add(rel)
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import recompute_thread_open
+
+    result = recompute_thread_open(thread_open_doc.id, db_session)
+    assert result is False
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is False
+
+
+@pytest.mark.unit
+def test_recompute_thread_open_reopens_on_reject(
+    db_session, thread_open_doc, reply_doc
+):
+    """recompute_thread_open reopens thread after the last USER_CONFIRMED edge is removed."""
+    thread_open_doc.thread_open = False
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import recompute_thread_open
+
+    result = recompute_thread_open(thread_open_doc.id, db_session)
+    assert result is True
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is True

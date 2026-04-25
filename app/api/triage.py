@@ -534,8 +534,10 @@ async def confirm_relationship(
     rel_id: int,
     db: Session = Depends(get_db),
 ):
-    """Promote an AI-detected relationship to user-confirmed."""
+    """Promote an AI-detected relationship to user-confirmed, closing the target's thread."""
     from app.models.enums import RelationshipConfidence
+    from app.services.ingestion.service import refresh_review_reasons
+    from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
     rel = (
         db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
@@ -543,8 +545,13 @@ async def confirm_relationship(
     if not rel:
         raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
 
+    source_id = rel.from_document_id
     rel.confidence = RelationshipConfidence.USER_CONFIRMED
     db.commit()
+    recompute_thread_open(rel.to_document_id, db)
+    source_doc = db.query(Document).filter(Document.id == source_id).first()
+    if source_doc:
+        refresh_review_reasons(source_doc, db)
     return HTMLResponse("")
 
 
@@ -554,15 +561,24 @@ async def reject_relationship(
     rel_id: int,
     db: Session = Depends(get_db),
 ):
-    """Remove an AI-detected relationship suggestion."""
+    """Remove a relationship suggestion, reopening the target's thread if no confirmed edges remain."""
+    from app.services.ingestion.service import refresh_review_reasons
+    from app.services.intelligence.thread_open_scanner import recompute_thread_open
+
     rel = (
         db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
     )
     if not rel:
         raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
 
+    target_id = rel.to_document_id
+    source_id = rel.from_document_id
     db.delete(rel)
     db.commit()
+    recompute_thread_open(target_id, db)
+    source_doc = db.query(Document).filter(Document.id == source_id).first()
+    if source_doc:
+        refresh_review_reasons(source_doc, db)
     return HTMLResponse("")
 
 

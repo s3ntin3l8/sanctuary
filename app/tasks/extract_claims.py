@@ -92,6 +92,11 @@ def extract_claims_task(doc_id: int):
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason=skipped)
         else:
             mark_completed(doc_id, PipelineStage.CLAIMS, db)
+            from app.services.ingestion.service import refresh_review_reasons
+
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                refresh_review_reasons(doc, db)
     finally:
         db.close()
 
