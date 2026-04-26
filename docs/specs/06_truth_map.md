@@ -7,7 +7,7 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 ## Implementation Status
 
 **Last Updated:** April 26, 2026
-**Status:** 🟡 IMPLEMENTED — three known gaps require remediation (badge, deep-link, refute button)
+**Status:** 🟢 IMPLEMENTED (v1 complete)
 
 | Layer | Status |
 |---|---|
@@ -21,9 +21,9 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 | `partials/case_view_truthmap.html` + `components/claim_card.html` | ✅ |
 | HUD Grounds rail (`partials/hud/_grounds.html`) | ✅ |
 | Inline ⚖ chips on passages via `_build_passage_claim_map` | ✅ |
-| Top-bar tab open-count badge | ⚠ backend OOB-swaps `#truthmap-badge` but the DOM element is absent from `top_bar.html` |
-| HUD "View in Truth Map →" deep link | ⚠ uses `#truthmap` fragment — dashboard tabs are Alpine state, not URL anchors |
-| HUD `[✗ refute]` button in Grounds rail | ⚠ POSTs `status=refuted` which always 422s — `refuted` is AI-owned |
+| Top-bar tab open-count badge | ✅ |
+| HUD "View in Truth Map →" deep link | ✅ |
+| HUD `[✓ confirm]` button in Grounds rail | ✅ |
 | Per-claim user reactions | ❌ reactions are document-scoped only |
 | Manual claim creation / edit by user | ❌ AI-only in v1 |
 | Filter beyond status (type, originator, proceeding) | ❌ status-only in v1 |

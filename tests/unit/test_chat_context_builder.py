@@ -1,8 +1,9 @@
-import pytest
 from datetime import datetime
-from app.services.chat.context_builder import build_case_chat_prompt
+
 from app.models.database import ActionItem, Claim, ClaimEvidence
-from app.models.enums import ActionItemStatus, ClaimStatus, ClaimEvidenceRole
+from app.models.enums import ActionItemStatus, ClaimEvidenceRole, ClaimStatus
+from app.services.chat.context_builder import build_case_chat_prompt
+
 
 def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_case):
     # Setup: Create an ActionItem and a Claim
@@ -11,7 +12,7 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         title="Test Deadline",
         description="Frist test",
         due_date=datetime(2026, 4, 30),
-        status=ActionItemStatus.OPEN
+        status=ActionItemStatus.OPEN,
     )
     claim = Claim(
         case_id=sample_case.id,
@@ -19,17 +20,17 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         status=ClaimStatus.CONTESTED,
         source_document_id=1,
         first_made_at=datetime.now(),
-        last_updated_at=datetime.now()
+        last_updated_at=datetime.now(),
     )
     db_session.add_all([action, claim])
     db_session.commit()
-    
+
     # Also add evidence for the claim to verify counts
     evidence = ClaimEvidence(
         claim_id=claim.id,
         document_id=1,
         role=ClaimEvidenceRole.SUPPORTS,
-        ingest_date=datetime.now()
+        ingest_date=datetime.now(),
     )
     db_session.add(evidence)
     db_session.commit()
@@ -39,7 +40,7 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         db=db_session,
         history=[],
         user_message="Test query",
-        retrieved_hits=[]
+        retrieved_hits=[],
     )
 
     assert "Open Action Items / Deadlines:" in prompt

@@ -4,6 +4,24 @@ Companion document to `docs/vision.md`. Covers the UI design and implementation 
 
 ---
 
+## Implementation Status
+
+**Last Updated:** April 26, 2026
+**Status:** 🟢 IMPLEMENTED (v1 complete)
+
+| Layer | Status |
+|---|---|
+| Bundle-aware queue (sidebar) | ✅ |
+| HUD layout (annotated view + form) | ✅ |
+| Reaction Bar (🚩/✅/🔍/⚖️) | ✅ |
+| Confidence-aware metadata form | ✅ |
+| Confirm bundle cascade logic | ✅ |
+| ActionItem extraction from cover letters | ✅ |
+| Keyboard navigation (←/→, 1-4, Enter) | ✅ |
+| Pipeline status indicators | ✅ |
+
+---
+
 ## The core shift
 
 **Current triage:** flat list of documents → click one → edit metadata fields. Pure data entry.

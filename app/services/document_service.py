@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.models.database import Document
 from app.models.enums import OriginatorType

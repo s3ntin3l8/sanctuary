@@ -145,7 +145,10 @@ async def mark_cost_paid(request: Request, cost_id: int, db: Session = Depends(g
 
 @router.post("/{cost_id}/reimburse")
 async def mark_cost_reimbursed(
-    request: Request, cost_id: int, amount: float | None = Form(None), db: Session = Depends(get_db)
+    request: Request,
+    cost_id: int,
+    amount: float | None = Form(None),
+    db: Session = Depends(get_db),
 ):
     cost_service = CostService(db)
     target_cost = db.get(LegalCost, cost_id)

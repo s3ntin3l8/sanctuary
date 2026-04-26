@@ -4,6 +4,23 @@ Companion document to `docs/vision.md`, `docs/triage.md`, `docs/dashboard.md`, a
 
 ---
 
+## Implementation Status
+
+**Last Updated:** April 26, 2026
+**Status:** 🟢 IMPLEMENTED (v1 complete)
+
+| Layer | Status |
+|---|---|
+| Today panel (cross-case deadlines) | ✅ |
+| Awaiting Triage panel (pending bundles) | ✅ |
+| Delta feed (since last visit) | ✅ |
+| Signals panel (alerts/health) | ✅ |
+| Active Cases strip (case cards) | ✅ |
+| Attention scoring logic | ✅ |
+| Keyboard navigation (j/k, Enter) | ✅ |
+
+---
+
 ## The core shift
 
 **Traditional legal DMS home**: recently-opened files, pinned folders, new uploads, a generic activity feed.

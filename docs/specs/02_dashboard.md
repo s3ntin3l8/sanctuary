@@ -4,6 +4,25 @@ Companion document to `docs/vision.md` and `docs/triage.md`. Covers the primary 
 
 ---
 
+## Implementation Status
+
+**Last Updated:** April 26, 2026
+**Status:** 🟢 IMPLEMENTED (v1 complete)
+
+| Layer | Status |
+|---|---|
+| Correspondence Graph (SVG/D3) | ✅ |
+| AI Brief panel (living memo) | ✅ |
+| Action Items panel (open/completed) | ✅ |
+| Financial Exposure panel (signalled/booked) | ✅ |
+| Proceeding switcher | ✅ |
+| View mode tabs (Graph/Truth/Time/Fin) | ✅ |
+| Delta banner (new docs since visit) | ✅ |
+| Document HUD slide-in | ✅ |
+| Case AI Chat (✦ Ask AI) | ✅ |
+
+---
+
 ## The core shift
 
 **Traditional legal DMS:** open the case → see a list of files → pick one → read it.
