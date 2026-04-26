@@ -202,10 +202,25 @@ function registerCaseDashboard() {
     init() {
       window._dashOpenDoc = (id) => this.openDoc(id);
       this.$el.addEventListener('set-filter', (e) => { this.filter = e.detail.filter; });
+
+      // Handle deep-linking to specific views or claims via URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewParam = urlParams.get('view');
+      if (viewParam) {
+        this.view = viewParam;
+      }
+
       this.$nextTick(() => {
         if (this.view === 'graph') {
           this.initRenderer();
           this.scrollToBottom(false);
+        } else if (this.view === 'truth') {
+          const hash = window.location.hash;
+          if (hash.startsWith('#claim-')) {
+            const claimId = hash.replace('#claim-', '');
+            const el = document.getElementById(`claim-card-${claimId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }
       });
       this.$watch('view', (v) => {

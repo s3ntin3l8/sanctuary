@@ -102,8 +102,10 @@ async def update_claim_status(
     # OOB swap to update the tab badge
     open_count = truth_map.open_claim_count
     badge_html = (
-        f'<span id="truthmap-badge" hx-swap-oob="outerHTML:#truthmap-badge">'
-        f"Truth Map{'&thinsp;·&thinsp;' + str(open_count) if open_count else ''}"
+        f'<span id="truthmap-badge" hx-swap-oob="outerHTML:#truthmap-badge" '
+        f'class="ml-1 text-[9px] font-bold px-1 rounded-full bg-primary/20 text-primary" '
+        f'x-show="nodeCounts && nodeCounts.open_claims > 0" x-text="nodeCounts.open_claims">'
+        f"{str(open_count) if open_count else ''}"
         f"</span>"
     )
 

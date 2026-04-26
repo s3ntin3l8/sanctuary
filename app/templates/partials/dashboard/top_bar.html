@@ -85,8 +85,16 @@
     <button @click="setView('{{ v }}')"
             :class="view === '{{ v }}' ? 'text-[var(--color-primary)]' : 'text-[var(--color-on-surface-variant)]'"
             :style="view === '{{ v }}' ? 'background:var(--color-surface-highest)' : ''"
-            class="px-3 py-1 rounded-md text-[12px] font-medium transition-colors">
+            class="px-3 py-1 rounded-md text-[12px] font-medium transition-colors relative">
       {{ label }}
+      {% if v == 'truth' %}
+      <span id="truthmap-badge"
+            class="ml-1 text-[9px] font-bold px-1 rounded-full bg-primary/20 text-primary"
+            x-show="nodeCounts && nodeCounts.open_claims > 0"
+            x-text="nodeCounts.open_claims">
+        {{ truth_map.open_claim_count if (truth_map and truth_map.open_claim_count > 0) else '' }}
+      </span>
+      {% endif %}
     </button>
     {% endfor %}
   </div>

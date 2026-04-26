@@ -49,14 +49,6 @@
                 class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">
           ✓ confirm
         </button>
-        <button x-show="!done"
-                hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
-                hx-vals='{"status": "refuted"}'
-                hx-swap="none"
-                @htmx:after-request="done = true"
-                class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-error/30 text-error hover:bg-error/10 transition-colors">
-          ✗ refute
-        </button>
         <span x-show="done" class="text-[9px] text-originator-own font-bold">✓ updated</span>
       </div>
       {% endif %}
@@ -64,7 +56,8 @@
     {% endfor %}
   </ul>
   {% if doc.case_id %}
-  <a href="/cases/{{ doc.case_id }}#truthmap"
+  <a href="/cases/{{ doc.case_id }}?view=truth{% if grounds %}#claim-{{ grounds[0].id }}{% endif %}"
+     @click="view = 'truth'; {% if grounds %}$nextTick(() => { document.getElementById('claim-card-{{ grounds[0].id }}')?.scrollIntoView({behavior:'smooth', block:'center'}) }){% endif %}"
      class="mt-3 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
     View in Truth Map →
   </a>
