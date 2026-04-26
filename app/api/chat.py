@@ -24,6 +24,60 @@ class ConversationRequest(BaseModel):
 
 class MessageRequest(BaseModel):
     content: str
+    proceeding_id: int | None = None
+
+
+class TitleRequest(BaseModel):
+    title: str
+
+
+@router.get("/conversations")
+def list_conversations(
+    scope_type: str,
+    scope_id: str,
+    db: Session = Depends(get_db),
+):
+    """List all conversations for a given scope."""
+    if scope_type not in ("document", "case"):
+        raise HTTPException(
+            status_code=400, detail="scope_type must be 'document' or 'case'"
+        )
+    repo = ChatRepository(db)
+    convs = repo.list_by_scope(scope_type, scope_id)
+    return [
+        {
+            "id": c.id,
+            "title": c.title,
+            "ingest_date": c.ingest_date.isoformat(),
+        }
+        for c in convs
+    ]
+
+
+@router.get("/conversations/{conversation_id}")
+def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
+    """Get a specific conversation by ID."""
+    repo = ChatRepository(db)
+    conv = repo.get(conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    messages = repo.messages(conv.id)
+    return {
+        "id": conv.id,
+        "scope_type": conv.scope_type,
+        "scope_id": conv.scope_id,
+        "title": conv.title,
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "context_document_ids": m.context_document_ids,
+                "ingest_date": m.ingest_date.isoformat(),
+            }
+            for m in messages
+        ],
+    }
 
 
 @router.post("/conversations")
@@ -54,6 +108,20 @@ def get_or_create_conversation(req: ConversationRequest, db: Session = Depends(g
     }
 
 
+@router.post("/conversations/{conversation_id}/title")
+def update_conversation_title(
+    conversation_id: int,
+    req: TitleRequest,
+    db: Session = Depends(get_db),
+):
+    """Update conversation title."""
+    repo = ChatRepository(db)
+    conv = repo.update_title(conversation_id, req.title)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"id": conv.id, "title": conv.title}
+
+
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
     conversation_id: int,
@@ -70,7 +138,7 @@ async def send_message(
         raise HTTPException(status_code=400, detail="Message content is empty")
 
     return StreamingResponse(
-        stream_answer(conv, req.content.strip(), db),
+        stream_answer(conv, req.content.strip(), db, proceeding_id=req.proceeding_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

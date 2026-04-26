@@ -27,13 +27,14 @@ from app.services.chat.retrieval import retrieve_top_docs
 
 logger = logging.getLogger(__name__)
 
-_DOC_REF_RE = re.compile(r"\[DOC:(\d+)\]")
+_DOC_REF_RE = re.compile(r"\[DOC:(\d+)(?:#p=(\d+))?\]")
 
 
 async def stream_answer(
     conversation: Conversation,
     user_message: str,
     db: Session,
+    proceeding_id: int | None = None,
 ) -> AsyncIterator[str]:
     """Persist user message, stream the assistant reply, persist + emit citations."""
     cfg = get_effective_config(db)
@@ -60,7 +61,9 @@ async def stream_answer(
             yield _sse({"type": "token", "t": f"Case {scope_id} not found."})
             yield _sse({"type": "done"})
             return
-        hits = await retrieve_top_docs(user_message, scope_id, db)
+        hits = await retrieve_top_docs(
+            user_message, scope_id, db, proceeding_id=proceeding_id
+        )
         prompt = build_case_chat_prompt(case, db, history, user_message, hits)
         system_prompt = CASE_CHAT_SYSTEM
 
@@ -104,13 +107,14 @@ async def stream_answer(
             logger.error(f"Chat stream error: {e}")
             yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
 
-    cited_ids = _extract_doc_ids(full_response)
+    cited_ids, cited_refs = _extract_citations(full_response)
 
     citation_docs = []
     if cited_ids:
         docs_cited = db.query(Document).filter(Document.id.in_(cited_ids)).all()
         doc_map = {d.id: d for d in docs_cited}
-        for doc_id in cited_ids:
+        for ref in cited_refs:
+            doc_id = ref["doc_id"]
             d = doc_map.get(doc_id)
             if d:
                 citation_docs.append(
@@ -118,6 +122,7 @@ async def stream_answer(
                         "doc_id": d.id,
                         "case_id": d.case_id,
                         "title": d.title or "Untitled",
+                        "passage_idx": ref["passage_idx"],
                     }
                 )
 
@@ -134,12 +139,17 @@ async def stream_answer(
     yield _sse({"type": "done"})
 
 
-def _extract_doc_ids(text: str) -> list[int]:
-    seen: dict[int, int] = {}
+def _extract_citations(text: str) -> tuple[set[int], list[dict]]:
+    doc_ids = set()
+    unique_refs = {}
     for m in _DOC_REF_RE.finditer(text):
         doc_id = int(m.group(1))
-        seen[doc_id] = seen.get(doc_id, 0) + 1
-    return list(seen.keys())
+        passage_idx = m.group(2)
+        doc_ids.add(doc_id)
+        ref_key = f"{doc_id}#p={passage_idx}" if passage_idx else str(doc_id)
+        if ref_key not in unique_refs:
+            unique_refs[ref_key] = {"doc_id": doc_id, "passage_idx": passage_idx}
+    return doc_ids, list(unique_refs.values())
 
 
 def _sse(payload: dict) -> str:

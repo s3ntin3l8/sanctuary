@@ -7,7 +7,8 @@
 <div class="flex flex-col h-full" x-data="aiChat({
        scopeType: '{{ scope_type }}',
        scopeId:   '{{ scope_id }}',
-       suggestedPrompts: {{ (suggested_prompts | default([])) | tojson }}
+       suggestedPrompts: {{ (suggested_prompts | default([])) | tojson }},
+       extraParams: {{ (extra_params | default({})) | tojson }}
      })"
      x-init="init()">
 
@@ -23,6 +24,35 @@
       </span>
     </div>
     <div class="flex items-center gap-2">
+      {# History dropdown #}
+      <div class="relative" x-data="{ open: false }">
+        <button @click="open = !open"
+                :disabled="history.length === 0"
+                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-bold uppercase tracking-wider transition-colors hover:bg-surface-container-high disabled:opacity-30"
+                :style="open ? 'background:var(--color-surface-container-high);' : ''"
+                style="color:var(--color-on-surface-variant);">
+          History
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="transition-transform" :class="open ? 'rotate-180' : ''">
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </button>
+        <div x-show="open" @click.outside="open = false" x-cloak
+             class="absolute right-0 top-full mt-1 z-50 w-[240px] rounded-lg shadow-xl border overflow-hidden fade-in"
+             style="background:var(--color-surface-container); border-color:var(--color-outline-variant);">
+          <div class="max-h-[320px] overflow-y-auto custom-scrollbar">
+            <template x-for="h in history" :key="h.id">
+              <button @click="loadConversation(h.id); open = false"
+                      class="w-full text-left px-3 py-2 border-b last:border-0 transition-colors hover:bg-surface-container-high"
+                      :class="h.id === conversationId ? 'bg-surface-container-highest' : ''"
+                      style="border-color:var(--color-outline-variant);">
+                <div class="text-[11.5px] font-semibold truncate" style="color:var(--color-on-surface);" x-text="h.title || 'Untitled conversation'"></div>
+                <div class="text-[9px] font-mono mt-0.5" style="color:var(--color-outline);" x-text="new Date(h.ingest_date).toLocaleDateString() + ' ' + new Date(h.ingest_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <button @click="newConversation()"
               title="New conversation"
               class="p-1 rounded hover:bg-surface-container-high transition-colors"
@@ -80,11 +110,11 @@
           {# Citation pills #}
           <template x-if="msg.citations && msg.citations.length > 0">
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <template x-for="cite in msg.citations" :key="cite.doc_id">
-                <a :href="'/document/' + cite.doc_id"
+              <template x-for="cite in msg.citations" :key="cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')">
+                <a :href="'/document/' + cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')"
                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-mono border transition-colors hover:bg-surface-container-high"
                    style="border-color:var(--color-outline-variant); color:var(--color-on-surface-variant);"
-                   x-text="(cite.case_id || '') + ' · #' + cite.doc_id">
+                   x-text="(cite.case_id || '') + ' · #' + cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')">
                 </a>
               </template>
             </div>

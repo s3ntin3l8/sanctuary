@@ -64,3 +64,24 @@ class ChatRepository:
             .order_by(ConversationMessage.ingest_date.asc())
             .all()
         )
+
+    def list_by_scope(self, scope_type: str, scope_id: str) -> list[Conversation]:
+        """List all conversations for a given scope."""
+        return (
+            self.db.query(Conversation)
+            .filter(
+                Conversation.scope_type == scope_type,
+                Conversation.scope_id == scope_id,
+            )
+            .order_by(Conversation.ingest_date.desc())
+            .all()
+        )
+
+    def update_title(self, conversation_id: int, title: str) -> Conversation | None:
+        """Update conversation title."""
+        conv = self.get(conversation_id)
+        if conv:
+            conv.title = title
+            self.db.commit()
+            self.db.refresh(conv)
+        return conv

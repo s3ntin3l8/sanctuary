@@ -5,29 +5,37 @@
  * opts = { scopeType: 'case'|'document', scopeId: string, suggestedPrompts: string[] }
  */
 function registerAiChat() {
-  Alpine.data('aiChat', ({ scopeType, scopeId, suggestedPrompts }) => ({
+  Alpine.data('aiChat', ({ scopeType, scopeId, suggestedPrompts, extraParams }) => ({
     conversationId: null,
     messages: [],
+    history: [],
     draft: '',
     streaming: false,
     streamBuffer: '',
     error: null,
     loading: true,
     suggestedPrompts: suggestedPrompts || [],
+    currentProceedingId: extraParams?.currentProceedingId || null,
+    limitToProceeding: false,
 
     async init() {
       await this.loadConversation();
+      await this.loadHistory();
       this.$nextTick(() => this.scrollToBottom());
     },
 
-    async loadConversation() {
+    async loadConversation(id = null) {
       this.loading = true;
       this.error = null;
       try {
-        const res = await fetch('/api/chat/conversations', {
-          method: 'POST',
+        const url = id ? `/api/chat/conversations/${id}` : '/api/chat/conversations';
+        const method = id ? 'GET' : 'POST';
+        const body = id ? null : JSON.stringify({ scope_type: scopeType, scope_id: String(scopeId) });
+
+        const res = await fetch(url, {
+          method,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope_type: scopeType, scope_id: String(scopeId) }),
+          body,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -45,6 +53,17 @@ function registerAiChat() {
       }
     },
 
+    async loadHistory() {
+      try {
+        const res = await fetch(`/api/chat/conversations?scope_type=${scopeType}&scope_id=${scopeId}`);
+        if (res.ok) {
+          this.history = await res.json();
+        }
+      } catch (e) {
+        console.warn('Failed to load chat history:', e);
+      }
+    },
+
     async newConversation() {
       this.loading = true;
       this.messages = [];
@@ -59,6 +78,7 @@ function registerAiChat() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.conversationId = data.id;
+        await this.loadHistory();
       } catch (e) {
         this.error = `Failed to create conversation: ${e.message}`;
       } finally {
@@ -79,6 +99,7 @@ function registerAiChat() {
       }
 
       const userMsg = this.draft.trim();
+      const isFirstMessage = this.messages.length === 0;
       this.draft = '';
       this.error = null;
 
@@ -95,12 +116,17 @@ function registerAiChat() {
       this.streamBuffer = '';
 
       try {
+        const payload = { content: userMsg };
+        if (this.limitToProceeding && this.currentProceedingId) {
+          payload.proceeding_id = this.currentProceedingId;
+        }
+
         const res = await fetch(
           `/api/chat/conversations/${this.conversationId}/messages`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: userMsg }),
+            body: JSON.stringify(payload),
           }
         );
 
@@ -145,6 +171,17 @@ function registerAiChat() {
               });
               this.streamBuffer = '';
               this.$nextTick(() => this.scrollToBottom());
+
+              // Update title if it was first message
+              if (isFirstMessage) {
+                const title = userMsg.length > 50 ? userMsg.substring(0, 47) + '...' : userMsg;
+                await fetch(`/api/chat/conversations/${this.conversationId}/title`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ title }),
+                });
+                await this.loadHistory();
+              }
             }
           }
         }
@@ -163,13 +200,16 @@ function registerAiChat() {
 
     renderContent(text) {
       if (!text) return '';
-      // Highlight [DOC:n] citations inline
+      // Highlight [DOC:n#p=m] citations inline
       return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/\[DOC:(\d+)\]/g,
-          '<span class="inline-block px-1 py-0.5 text-[9px] font-mono rounded" style="background:var(--color-primary-container);color:var(--color-primary);">[DOC:$1]</span>');
+        .replace(/\[DOC:(\d+)(?:#p=(\d+))?\]/g, (match, docId, passageIdx) => {
+          const label = passageIdx ? `[DOC:${docId}#p=${passageIdx}]` : `[DOC:${docId}]`;
+          const hash = passageIdx ? `#p=${passageIdx}` : '';
+          return `<a href="/document/${docId}${hash}" class="inline-block px-1 py-0.5 text-[9px] font-mono rounded hover:underline" style="background:var(--color-primary-container);color:var(--color-primary);">${label}</a>`;
+        });
     },
   }));
 }

@@ -24,7 +24,7 @@ class RetrievalHit:
 
 
 async def retrieve_top_docs(
-    query: str, case_id: str, db: Session, k: int = 6
+    query: str, case_id: str, db: Session, k: int = 6, proceeding_id: int | None = None
 ) -> list[RetrievalHit]:
     """Return up to k RetrievalHits for this case, ranked by semantic similarity.
 
@@ -60,28 +60,28 @@ async def retrieve_top_docs(
                 "SELECT document_id, distance FROM document_vectors "
                 "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
             ),
-            {"blob": blob, "k": k * 3},
+            {"blob": blob, "k": k * 5},  # increase k to account for filtering
         ).fetchall()
 
         ranked_ids = [row[0] for row in rows]
-        docs = (
-            db.query(Document)
-            .filter(Document.id.in_(ranked_ids), Document.case_id == case_id)
-            .all()
+        query = db.query(Document).filter(
+            Document.id.in_(ranked_ids), Document.case_id == case_id
         )
+        if proceeding_id:
+            query = query.filter(Document.proceeding_id == proceeding_id)
+
+        docs = query.all()
         id_order = {doc_id: idx for idx, doc_id in enumerate(ranked_ids)}
         docs.sort(key=lambda d: id_order.get(d.id, len(ranked_ids)))
         docs = docs[:k]
 
     except Exception as e:
         logger.debug(f"Vector retrieval failed ({e}), falling back to recency")
-        docs = (
-            db.query(Document)
-            .filter(Document.case_id == case_id)
-            .order_by(Document.issued_date.desc())
-            .limit(k)
-            .all()
-        )
+        query = db.query(Document).filter(Document.case_id == case_id)
+        if proceeding_id:
+            query = query.filter(Document.proceeding_id == proceeding_id)
+
+        docs = query.order_by(Document.issued_date.desc()).limit(k).all()
 
     return [
         RetrievalHit(
