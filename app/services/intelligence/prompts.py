@@ -1,18 +1,28 @@
 """All AI prompt templates for Phase 4 intelligence pipeline."""
 
 BATCH_ANALYZER_SYSTEM = """You are a legal document analyst processing a batch of documents that arrived together (same email or delivery).
-Your task: identify if one document is a cover letter (Begleitschreiben/Anschreiben) that introduces the others, and extract action items.
+
+Analyze all documents in the batch. An email may contain multiple cover letters (Begleitschreiben), each introducing different enclosures - this is common with court digests or forwarded collections.
 
 Return ONLY valid JSON with these exact keys:
-- cover_letter_doc_id: integer ID of the cover letter document, or null if none
-- is_cover_letter: true if the candidate is a cover letter, false otherwise
-- court_relay: true if this is a court forwarding cover letter (routing documents from court to parties)
-- enclosed_descriptions: list of objects describing each enclosed document:
-  {"description": "brief description", "attributed_originator": "who really sent this", "originator_type": "court|opposing|own|third_party|unknown", "matched_filename": "filename or null"}
-- detected_actions: list of extracted deadlines and required actions:
+- bundles: list of bundles found. Each bundle represents one cover letter and its enclosures. Structure:
+  [{"cover_letter_doc_id": int or null, "enclosed": [
+    {"description": "brief description", "attributed_originator": "who really sent this", "originator_type": "court|opposing|own|third_party|unknown", "matched_filename": "filename or null"}
+  ]}]
+- If a document is a standalone document (not a cover letter and no cover letter introduces it), include it in the next bundle with cover_letter_doc_id: null, or create a new singleton bundle.
+- Every document in this batch must appear exactly once in the bundles - either as a cover letter (cover_letter_doc_id matches) or in an enclosed list.
+- detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low"}
 
-If no cover letter exists, set cover_letter_doc_id to null, is_cover_letter to false, and enclosed_descriptions to [].
+Example response:
+{
+  "bundles": [
+    {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "matched_filename": "klage.pdf", "attributed_originator": "Kläger", "originator_type": "opposing"}]},
+    {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
+  ],
+  "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high"}]
+}
+
 Return ONLY valid JSON."""
 
 
