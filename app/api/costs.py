@@ -81,6 +81,7 @@ async def new_cost_for_case(
 
 @router.post("")
 async def create_cost(
+    request: Request,
     case_id: str = Form(...),
     category: CostCategory = Form(...),
     title: str = Form(...),
@@ -116,7 +117,7 @@ async def create_cost(
 
     # Return the new row for HTMX swap
     return render_page(
-        None,
+        request,
         "partials/cost_row.html",
         cost=cost,
         cost_status_meta=COST_STATUS_META,
@@ -125,7 +126,7 @@ async def create_cost(
 
 
 @router.post("/{cost_id}/pay")
-async def mark_cost_paid(cost_id: int, db: Session = Depends(get_db)):
+async def mark_cost_paid(request: Request, cost_id: int, db: Session = Depends(get_db)):
     cost_service = CostService(db)
     cost = cost_service.mark_as_paid(cost_id)
     if not cost:
@@ -134,7 +135,7 @@ async def mark_cost_paid(cost_id: int, db: Session = Depends(get_db)):
     recompute_total_cost_exposure(cost.case_id, db)
 
     return render_page(
-        None,
+        request,
         "partials/cost_row.html",
         cost=cost,
         cost_status_meta=COST_STATUS_META,
@@ -144,7 +145,7 @@ async def mark_cost_paid(cost_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{cost_id}/reimburse")
 async def mark_cost_reimbursed(
-    cost_id: int, amount: float | None = Form(None), db: Session = Depends(get_db)
+    request: Request, cost_id: int, amount: float | None = Form(None), db: Session = Depends(get_db)
 ):
     cost_service = CostService(db)
     target_cost = db.get(LegalCost, cost_id)
@@ -157,7 +158,7 @@ async def mark_cost_reimbursed(
     recompute_total_cost_exposure(cost.case_id, db)
 
     return render_page(
-        None,
+        request,
         "partials/cost_row.html",
         cost=cost,
         cost_status_meta=COST_STATUS_META,
@@ -167,6 +168,7 @@ async def mark_cost_reimbursed(
 
 @router.post("/{cost_id}/update-field")
 async def update_cost_field(
+    request: Request,
     cost_id: int,
     field: str = Form(...),
     value: str = Form(...),
@@ -195,7 +197,7 @@ async def update_cost_field(
     recompute_total_cost_exposure(cost.case_id, db)
 
     return render_page(
-        None,
+        request,
         "partials/cost_row.html",
         cost=cost,
         cost_status_meta=COST_STATUS_META,
