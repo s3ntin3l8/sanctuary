@@ -370,7 +370,6 @@ from app.api import (
     home_router,
     ingestion_settings,
     search,
-    timeline_api_router,
     triage_router,
 )
 from app.api.chat import router as chat_router
@@ -386,7 +385,6 @@ app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(home_router)
-app.include_router(timeline_api_router)
 app.include_router(triage_router)
 app.include_router(slicing_router)
 app.include_router(costs_router)

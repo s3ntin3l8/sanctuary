@@ -230,25 +230,3 @@ class DocumentService:
             "documents": all_docs,
             "summary": summary,
         }
-
-    def get_documents_paginated(
-        self, cursor: int | None = None, limit: int = 20
-    ) -> tuple:
-        """Get paginated documents for timeline with cursor-based pagination."""
-        query = (
-            self.db.query(Document)
-            .options(joinedload(Document.children))
-            .order_by(Document.ingest_date.desc())
-        )
-
-        if cursor:
-            cursor_doc = self.doc_repo.get(cursor)
-            if cursor_doc:
-                query = query.filter(Document.ingest_date < cursor_doc.ingest_date)
-
-        docs = query.limit(limit + 1).all()
-        has_more = len(docs) > limit
-        if has_more:
-            docs = docs[:limit]
-
-        return docs, has_more

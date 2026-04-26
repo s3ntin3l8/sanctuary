@@ -1,6 +1,10 @@
 <div class="space-y-2">
   {% for doc in documents %}
-  <div class="flex items-start gap-3 rounded-lg border border-surface-container-high bg-surface-container p-3 text-sm">
+  <div class="flex items-start gap-3 rounded-lg border border-surface-container-high bg-surface-container p-3 text-sm cursor-pointer hover:bg-surface-container-high transition-colors"
+       hx-get="/cases/{{ case.id }}/document/{{ doc.id }}/hud"
+       hx-target="#case-dashboard-hud"
+       hx-swap="innerHTML"
+       @click="selectedDocId = {{ doc.id }}">
     <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded
       {{ 'bg-error/20 text-error' if doc.significance_tier and doc.significance_tier.value == 'critical'
          else 'bg-secondary/20 text-secondary' if doc.significance_tier and doc.significance_tier.value == 'significant'

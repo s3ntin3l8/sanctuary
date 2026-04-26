@@ -153,6 +153,14 @@ class CaseDashboardService:
         }
 
         # --- Alpine bootstrap payload ----------------------------------
+        # Auto-switch to timeline if graph has zero edges (and no view is explicitly persisted)
+        # Note: active_view here is already resolved from UserSettings in the API layer.
+        # But we can override it if it's the default 'graph' and we have no edges.
+        if active_view == "graph" and graph_dict and graph_dict.get("edge_count", 0) == 0:
+            # Only auto-fallback if there are actually documents to show
+            if data["documents"]:
+                active_view = "timeline"
+
         initial = {
             "caseId": case.id,
             "view": active_view,
