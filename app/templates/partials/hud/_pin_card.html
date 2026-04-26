@@ -1,25 +1,50 @@
 {# Margin pin card — rendered in the left gutter of _body.html.
    Required: pin (DocumentPin). Positioned by hud.js._positionPins().
+
+   Layout:
+     - On xl viewports (gutter ≈208px): full card visible inline in the gutter.
+     - On narrow viewports (gutter 80px): only a small 📌 marker shows; clicking
+       opens the editable card as a popover anchored next to the marker.
 #}
 <div id="pin-{{ pin.id }}" data-pin-id="{{ pin.id }}" data-passage-id="{{ pin.passage_id }}"
-     class="hud-pin-card absolute left-1 right-1 p-2 rounded-md bg-surface-container-low border border-outline-variant/20 pointer-events-auto"
-     style="top: 0px;">
-  <div class="flex items-start gap-1.5">
-    <span class="material-symbols-outlined text-[12px] shrink-0 mt-0.5 text-amber">push_pin</span>
-    <textarea name="note" rows="2"
-              hx-patch="/pin/{{ pin.id }}"
-              hx-include="this"
-              hx-trigger="blur changed delay:300ms"
-              hx-swap="none"
-              class="flex-1 bg-transparent text-[10px] leading-snug resize-none focus:outline-none text-on-surface-variant"
-              placeholder="Add note…">{{ pin.note or '' }}</textarea>
-    <button hx-delete="/pin/{{ pin.id }}"
-            hx-target="#pin-{{ pin.id }}"
-            hx-swap="outerHTML"
-            class="shrink-0 opacity-50 hover:opacity-100 transition-opacity"
-            style="color: var(--color-outline);"
-            title="Remove pin">
-      <span class="material-symbols-outlined text-[12px]">close</span>
-    </button>
+     class="hud-pin-card absolute left-1 w-6 xl:right-1 xl:w-auto"
+     style="top: 0px;"
+     x-data="{ open: false }">
+
+  {# Compact marker — narrow viewports only #}
+  <button type="button"
+          @click.stop="open = !open"
+          class="xl:hidden inline-flex items-center justify-center w-6 h-6 rounded bg-amber-50/80 dark:bg-amber-500/10 border-l-2 border-amber-500 pointer-events-auto"
+          :class="open ? 'ring-2 ring-amber-500' : ''"
+          title="{{ pin.note | truncate(60, true) if pin.note else 'Pin' }}">
+    <span class="material-symbols-outlined text-[14px] text-amber">push_pin</span>
+  </button>
+
+  {# Editable card body — popover on narrow (when open), inline on xl always.
+     `hidden` is toggled via :class for narrow; `xl:block` wins at xl via cascade order. #}
+  <div :class="open ? '' : 'hidden'"
+       @click.outside="open = false"
+       class="xl:block absolute xl:relative left-full xl:left-auto top-0 ml-2 xl:ml-0 w-56 xl:w-auto z-30 xl:z-auto shadow-lg xl:shadow-none
+              bg-amber-50/80 dark:bg-amber-500/10 border-l-2 border-amber-500 rounded-r-md px-3 py-2 text-[11px] text-on-surface font-medium pointer-events-auto">
+    <div class="flex items-start gap-1.5">
+      <span class="material-symbols-outlined text-[12px] shrink-0 mt-0.5 text-amber hidden xl:inline-block">push_pin</span>
+      <div class="flex-1 min-w-0">
+        <textarea name="note" rows="2"
+                  hx-patch="/pin/{{ pin.id }}"
+                  hx-include="this"
+                  hx-trigger="blur changed delay:300ms"
+                  hx-swap="none"
+                  class="w-full bg-transparent text-[10px] leading-snug resize-none focus:outline-none text-on-surface-variant"
+                  placeholder="Add note…">{{ pin.note or '' }}</textarea>
+        <p class="text-[9px] mt-1 text-outline">— {{ pin.updated_at | format_relative_time }}</p>
+      </div>
+      <button hx-delete="/pin/{{ pin.id }}"
+              hx-target="#pin-{{ pin.id }}"
+              hx-swap="outerHTML"
+              class="shrink-0 opacity-50 hover:opacity-100 transition-opacity text-outline"
+              title="Remove pin">
+        <span class="material-symbols-outlined text-[12px]">close</span>
+      </button>
+    </div>
   </div>
 </div>

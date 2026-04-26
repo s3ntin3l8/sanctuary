@@ -6,16 +6,20 @@
 <div class="relative">
   {# Left gutter — margin pins anchored to passage marks by hud.js._positionPins() #}
   {% if context != 'overlay' and pins %}
-  <div id="hud-pin-gutter-{{ doc.id }}" class="absolute left-0 top-0 bottom-0 w-20 pointer-events-none" aria-label="Margin pins">
+  <div id="hud-pin-gutter-{{ doc.id }}" class="absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none" aria-label="Margin pins">
     {% for pin in pins %}
     {% include "partials/hud/_pin_card.html" %}
     {% endfor %}
   </div>
   {% else %}
-  <div class="absolute left-0 top-0 bottom-0 w-20" aria-hidden="true"></div>
+  <div class="absolute left-0 top-0 bottom-0 w-20 xl:w-52" aria-hidden="true"></div>
   {% endif %}
 
-  <article class="prose prose-sm max-w-[78ch] mx-auto pl-24 pr-8 py-8
+  {# SVG overlay for leader lines drawn by hud.js._drawLeaders() #}
+  <svg id="hud-leader-lines-{{ doc.id }}" class="absolute inset-0 pointer-events-none" aria-hidden="true"
+       style="width:100%;height:100%;overflow:visible;"></svg>
+
+  <article class="prose prose-sm max-w-[78ch] ml-20 xl:ml-52 pl-4 pr-8 py-8
                   prose-headings:text-on-surface prose-headings:font-black
                   prose-p:text-on-surface-variant prose-p:leading-relaxed
                   prose-strong:text-on-surface prose-em:text-on-surface
