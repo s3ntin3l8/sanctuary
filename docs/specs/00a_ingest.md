@@ -231,7 +231,9 @@ Users can AirDrop / share from their phone to a sync folder (Dropbox, Syncthing,
 
 ---
 
-## 4. Document slicing (new primitive)
+## 4. Document slicing
+
+**Implementation:** `app/api/slicing.py` (5 routes, `prefix="/ingest/slice"`) + `app/templates/pages/slicing_review.html` + `app/tasks/prepare_slicing.py` (heuristic + AI pass) + `app/services/ingestion/slicer.py` (7 heuristic signals).
 
 The hardest part of scan ingest: **one scanned PDF usually contains multiple documents.** A typical incoming scan from the lawyer:
 
@@ -345,13 +347,16 @@ Interactions:
 
 ### 4.5 Slice output
 
-After user confirms, N `Document` rows are created:
+`POST /ingest/slice/{batch_id}/confirm` (form field: `cuts` — JSON array of 1-indexed cut positions):
 
-- First slice (typically the cover letter) → `role=cover_letter`, `court_relay=True`, `parent_id=NULL`
-- Subsequent slices → `role=enclosure`, `parent_id=<first_slice.id>`
-- Each slice's pages are extracted to a per-slice PDF for archival
-- Each slice runs through Docling → content, meta, chunks
-- AI enrichment proceeds per-slice normally
+- Creates N `Document` rows, each with `meta.slice_range = [start_page, end_page]`
+- First slice → `wire_cover_letter()` sets `court_relay=True`; remaining slices wired as children
+- `batch.status` → `PROCESSING`; each slice queued via `process_document_task.delay(doc.id)`
+- Redirects to `/triage` on success
+
+`POST /ingest/slice/{batch_id}/retry` — re-enqueues `prepare_slicing_task` for a batch stuck in `AWAITING_SLICING`. Resets `slicing.status` to `"preparing"` before re-enqueue.
+
+AI enrichment proceeds per-slice normally after the Celery tasks pick them up.
 
 ### 4.6 Slicing is optional
 

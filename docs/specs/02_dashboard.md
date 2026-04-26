@@ -158,98 +158,21 @@ Backed by `Case.ai_brief` JSON:
 
 ## 3. Correspondence graph (main canvas)
 
-The primary navigation surface — everything the user does starts here.
+The primary navigation surface — everything the user does starts here. Four swim lanes (YOU / COURT / OPPOSING / THIRD PARTY) map the parties; nodes are documents; arrows show reply and reference relationships. Court-relay cover letters collapse into bundle containers that expose their enclosed pleadings on click.
 
-See `docs/vision.md` §UI.3 for the full visual grammar (nodes, edges, N:N convergence, proceeding scope, significance filter). This section adds **interaction behavior** specific to the dashboard.
+**Full spec: `docs/specs/03_correspondence_graph.md`** — covers `GraphPayload`, lane assignment, bundle collapse, edge typing, Bezier routing, `CaseGraphRenderer` class, keyboard shortcuts, and all interaction details.
 
-### Default state
-
-- Graph scope: **current proceeding only**
-- Significance filter: `significant+` (critical + significant visible; informational collapsed; administrative hidden)
-- Layout: swim-lane vertical time axis
-- Auto-fit zoom to show all visible nodes on first render
-
-### Interactions
-
-| Action | Effect |
-|---|---|
-| Click a node | Opens Document HUD as right-side slide-in (dashboard stays behind, dimmed) |
-| Double-click a node | Full-screen document HUD (dashboard fully hidden) |
-| Hover a node | Highlights all its incoming + outgoing edges; fades others |
-| Click an edge | Pans/zooms to show both endpoints |
-| Hover a bundle node (collapsed relay) | Expands inline to show enclosed documents |
-| Right-click a node | Context menu: `View`, `Change proceeding`, `Add reaction`, `Copy link to doc` |
-| Ctrl+scroll / pinch | Zoom |
-| Drag empty area | Pan |
-| `f` (keyboard) | Fit to screen |
-| `c` (keyboard) | Center on critical nodes |
-
-### Hidden-tier indicator
-
-When the significance filter hides nodes, a small strip at the bottom of the graph states what's hidden:
-
-```
-ℹ 2 administrative documents hidden  [show all]
-```
-
-Clicking `[show all]` temporarily switches to filter=`all`; state persists only for this session.
-
-### Thread-open indicator
-
-Nodes where `Document.thread_open=True` (waiting for a response from the other side) render with a subtle amber glow. Helps spot "stuck" threads at a glance.
-
-### Cross-proceeding references
-
-When a document in the current proceeding references a document in another proceeding, a grayed edge points off-canvas to a small collapsed-proceeding node:
-
-```
-[Beschwerdeschrift OLG] ─ ─ ─ ─► [→ AG Hamburg · Beschluss 02.04]
-```
-
-Clicking that node switches the proceeding.
+Default state: graph scoped to the active proceeding, `significant+` filter, auto-fit on first render. When `edge_count == 0` (no detected relationships) and no user view preference is set, the dashboard auto-selects the Timeline view instead.
 
 ---
 
 ## 4. Action Items panel (bottom right)
 
-Extracted deadlines, court dates, response-required, filing-required actions — all case-wide by default (not scoped to the current proceeding), because a Frist at AG matters even while you're viewing OLG.
+Deadlines, court dates, response-required, and filing-required action items extracted from documents during ingest and enrichment. Case-wide by default (not proceeding-scoped) — a Frist at AG level matters even while viewing OLG.
 
-```
-ACTION ITEMS                                         [open] [completed] [all]
+**Full spec: `docs/specs/11_action_items.md`** — covers `ActionItem` data model, extraction sources, status lifecycle, panel anatomy, dormancy alert, Case Clock signals, and notification badge logic.
 
- ⚑  Apr 30 (12d)     Stellungnahme zu Beschluss vom 02.04      [open doc]
- ·   Jun 15 (58d)     Verhandlungstermin AG Hamburg             [court date]
- ◦   typical: hearing follows Klageerwiderung by 4–8 months
-                 → window Jul–Nov 2026  (Case Clock)
-
-```
-
-### Row anatomy
-
-- **Urgency icon**: `⚑` critical (overdue or <7 days); `·` near (7–30 days); ` ` far (>30 days)
-- **Due date** + **relative days** — `Apr 30 (12d)`
-- **Title** + **source link** — clicking opens the source document HUD
-- **Action type badge**: `[deadline]` / `[court date]` / `[response required]` / `[filing required]`
-
-### Filters
-
-Tabs: `[open]` (default) · `[completed]` · `[all]`. Completed items cross out but remain visible in `[all]`.
-
-### Case Clock hints
-
-Below the concrete action items, the **Case Clock** inserts anticipated events based on court-specific tempo — always framed as ranges, never point predictions:
-
-> **typical**: hearing follows Klageerwiderung by 4–8 months → window Jul–Nov 2026
-
-Shown only when the AI has high-confidence temporal signals from prior proceedings at this court level. Phase 5 work; empty until then.
-
-### Dormancy alert
-
-If the current proceeding has been silent longer than typical, an alert rows appears:
-
-> ⚠ This proceeding has been quiet 6 months — longer than typical. Is something pending outside the system?
-
-Clickable to dismiss or to open a note.
+Three-tab filter (`open` default / `completed` / `all`). Each row shows a type badge, title, relative due date, and a `source ↗` link that opens the Document HUD for the source document. Keyboard shortcut `a` scrolls to the panel.
 
 ---
 

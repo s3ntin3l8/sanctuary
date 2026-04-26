@@ -315,7 +315,7 @@ The left edge of the app is a **thin icon rail** (~56px), not a wide sidebar. La
 │ ⌘K │ ← Command palette
 │ ⬆ │ ← Upload
 │ 🔔 │ ← Notifications
-│ ⚙  │ ← Settings (incl. Gmail config)
+│ ⚙  │ ← Settings (incl. Gmail config) — see `docs/specs/10_settings.md`
 │ 🙂 │ ← User menu
 └────┘
 ```
@@ -379,8 +379,8 @@ Each of these was a top-level destination in an earlier sidebar. Each pulled the
 |---|---|
 | Master Timeline (cross-case flat list) | Deleted. Timeline exists as a view mode inside each case dashboard. See `docs/specs/09_timeline.md`. |
 | Legal Costs (cross-case cost browser) | Case dashboard's Financials view mode; global pending-costs widget on Home; ⌘K aggregates. |
-| Contacts (cross-case contact directory) | ⌘K search. A dedicated contacts page implies a file-manager mental model. |
-| Entities (cross-case entity browser) | ⌘K search, same reason. |
+| Contacts (cross-case contact directory) | ⌘K search. `/contacts` index deleted; `/contacts/{name}` detail-on-demand kept for ⌘K drill-in. `SavedSearch` model removed. |
+| Entities (cross-case entity browser) | ⌘K search. `/entities` page and `app/api/entities.py` deleted. |
 | Activity Log (cross-case feed) | Notifications panel (rail 🔔) and Home feed. Not a navigation destination. |
 
 The principle: **the primary nav never leads to a flat list.** If what you want is a flat list, you're always going through ⌘K or through a specific case's view mode — which keeps the case-as-object intact.
@@ -452,6 +452,8 @@ ADV-024-A  [Proceeding: AG Hamburg ▾]    [critical] [significant+] [all]
 
 ### 3. Correspondence graph — design details
 
+**Full spec: `docs/specs/03_correspondence_graph.md`**
+
 **Nodes:**
 - One node per `significant` or `critical` document (`administrative` hidden by default)
 - Court relay cover letters collapsed into a bundle node showing their enclosed documents
@@ -512,6 +514,8 @@ Each claim shows its current status (asserted/contested/refuted/established), th
 **Full spec: `docs/specs/06_truth_map.md`**
 
 ### 6. Case Clock — temporal context
+
+**Full spec: `docs/specs/11_action_items.md`** — covers `ActionItem` data model, extraction sources (Frist from cover letters, court dates from enrichment), status lifecycle (`PATCH /action-item/{id}/status`), panel anatomy, notification badge logic, and dormancy alert (90-day threshold).
 
 Below the action items panel, a **Case Clock** section shows:
 
