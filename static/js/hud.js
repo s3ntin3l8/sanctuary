@@ -344,6 +344,12 @@ function hudReader() {
       window.dispatchEvent(new CustomEvent('hud-focus-chat'));
     },
 
+    focusAskAiWithPassage(pid, passageText) {
+      this.docChatOpen = true;
+      const prompt = passageText ? `Regarding the passage: "${passageText}"\n\n` : '';
+      window.dispatchEvent(new CustomEvent('hud-prefill-chat', { detail: { prompt } }));
+    },
+
     showShortcuts() {
       if (Alpine.store('shortcuts')) Alpine.store('shortcuts').showHud = true;
     },

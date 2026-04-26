@@ -89,10 +89,17 @@
           {% endif %}
           <button type="button"
                   @click.stop="createPinAt && createPinAt('{{ p_id }}')"
-                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors"
+                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                   style="color: var(--color-outline);"
                   title="Pin this passage (n)">
             + pin
+          </button>
+          <button type="button"
+                  @click.stop="focusAskAiWithPassage && focusAskAiWithPassage('{{ p_id }}', '{{ p.text | truncate(200, true) | e }}')"
+                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  style="color: var(--color-primary);"
+                  title="Ask AI about this passage">
+            ask AI
           </button>
           {% endif %}
         </div>

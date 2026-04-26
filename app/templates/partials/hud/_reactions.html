@@ -33,4 +33,40 @@
     </button>
     {% endfor %}
   </div>
+  {% set noted_reactions = reactions | selectattr('notes') | list %}
+  {% if noted_reactions %}
+  <div class="mt-2 space-y-1">
+    {% for r in noted_reactions %}
+    <p class="text-[10px] italic" style="color:var(--color-on-surface-variant);">
+      <span class="font-bold not-italic">{{ r.reaction }}</span> — {{ r.notes }}
+    </p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <form class="mt-2 flex flex-col gap-1"
+        hx-post="/document/{{ doc.id }}/reaction"
+        hx-target="#hud-reaction-bar-{{ doc.id }}"
+        hx-swap="outerHTML"
+        x-data="{ noteOpen: false, noteText: '' }">
+    <button type="button" @click="noteOpen = !noteOpen"
+            class="self-start text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-outline/20 text-outline hover:bg-surface-container-high transition-colors">
+      + note
+    </button>
+    <div x-show="noteOpen" x-cloak class="flex flex-col gap-1">
+      <select name="reaction" required
+              class="text-[10px] rounded border border-outline-variant/30 bg-surface-container px-1.5 py-1"
+              style="color:var(--color-on-surface);">
+        {% for rval, emoji, label, _ in [('lies','🚩','Lies',''), ('true','✅','True',''), ('needs_proof','🔍','Proof',''), ('precedent','⚖️','Precedent','')] %}
+        <option value="{{ rval }}">{{ emoji }} {{ label }}</option>
+        {% endfor %}
+      </select>
+      <textarea name="notes" x-model="noteText" rows="2" placeholder="Add a note…"
+                class="text-[10px] rounded border border-outline-variant/30 bg-surface-container px-1.5 py-1 resize-none"
+                style="color:var(--color-on-surface);"></textarea>
+      <button type="submit" :disabled="!noteText.trim()"
+              class="self-start text-[9px] font-bold px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40">
+        save note
+      </button>
+    </div>
+  </form>
 </div>

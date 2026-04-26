@@ -142,6 +142,33 @@ def _build_notifications(db: Session) -> dict:
     }
 
 
+def format_due_relative(value) -> str:
+    """Return a compact due-date label that handles both future and past dates.
+
+    Future: 'today', 'in 3d', 'in 2w'
+    Past:   'overdue 2d', 'overdue 3w'
+    """
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    if value is None:
+        return "—"
+    d = value.date() if hasattr(value, "date") else value
+    today = _dt.now(tz=_UTC).date()
+    delta = (d - today).days
+    if delta == 0:
+        return "today"
+    if delta > 0:
+        if delta <= 14:
+            return f"in {delta}d"
+        return f"in {delta // 7}w"
+    # overdue
+    overdue = -delta
+    if overdue <= 14:
+        return f"overdue {overdue}d"
+    return f"overdue {overdue // 7}w"
+
+
 def format_relative_time(value: datetime) -> str:
     """Returns a compact human-readable relative timestamp."""
     if value is None:

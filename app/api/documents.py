@@ -572,6 +572,69 @@ async def delete_pin(pin_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
+@router.patch("/action-item/{item_id}/status")
+async def update_action_item_status(
+    request: Request,
+    item_id: int,
+    status: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Update an action item's status (open / done / dismissed)."""
+    from app.models.database import ActionItem
+    from app.models.enums import ActionItemStatus
+
+    item = db.get(ActionItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Action item not found")
+
+    try:
+        item.status = ActionItemStatus(status)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Unknown status: {status}"
+        ) from exc
+
+    db.commit()
+    return HTMLResponse(status_code=204, content="")
+
+
+@router.post("/document/{doc_id}/cost-from-delta")
+async def promote_cost_delta(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Promote doc.cost_delta into a LegalCost row and redirect to cost form."""
+    from app.models.database import LegalCost
+    from app.models.enums import CostCategory
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.cost_delta or not doc.case_id:
+        raise HTTPException(status_code=422, detail="No cost delta or case to promote")
+
+    cd = doc.cost_delta if isinstance(doc.cost_delta, dict) else {}
+    amount = float(cd.get("amount") or 0)
+    description = cd.get("description") or doc.title or "Cost from document"
+
+    cost = LegalCost(
+        case_id=doc.case_id,
+        category=CostCategory.SONSTIGES,
+        title=description,
+        amount_net=amount,
+        vat_rate=0.0,
+    )
+    db.add(cost)
+    db.commit()
+    db.refresh(cost)
+
+    return HTMLResponse(
+        '<span class="text-[10px] text-originator-own font-bold">✓ promoted</span>',
+        status_code=200,
+    )
+
+
 @router.get("/document/{doc_id}/original")
 async def document_original(
     doc_id: int,

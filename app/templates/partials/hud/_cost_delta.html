@@ -40,6 +40,16 @@
       {% if description %}
       <p class="text-[11px] text-on-surface-variant leading-relaxed mt-0.5">{{ description }}</p>
       {% endif %}
+      {% if doc.case_id %}
+      <div id="cost-promote-{{ doc.id }}" class="mt-2">
+        <button hx-post="/document/{{ doc.id }}/cost-from-delta"
+                hx-target="#cost-promote-{{ doc.id }}"
+                hx-swap="innerHTML"
+                class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-outline/30 text-outline hover:bg-surface-container-high transition-colors">
+          + promote to cost
+        </button>
+      </div>
+      {% endif %}
     </div>
   </div>
 

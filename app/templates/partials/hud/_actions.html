@@ -17,16 +17,40 @@
       'deadline':   'flag',
       'court_date': 'gavel',
     }.get(item.action_type.value if item.action_type else '', 'checklist') %}
-    <li class="flex items-start gap-2 text-[11px]">
+    {% set status_val = item.status.value if item.status else 'open' %}
+    {% set status_tone = {
+      'open':      'text-originator-opposing',
+      'done':      'text-originator-own',
+      'dismissed': 'text-outline',
+    }.get(status_val, 'text-outline') %}
+    <li class="flex items-start gap-2 text-[11px]" x-data="{ closed: false }">
       <span class="material-symbols-outlined text-[14px] mt-0.5 shrink-0"
             style="color:var(--color-originator-opposing);">{{ type_icon }}</span>
       <div class="flex-1 min-w-0">
         <p class="text-on-surface font-medium truncate">{{ item.title }}</p>
-        <p class="text-[9px] font-mono text-on-surface-variant">
-          {{ item.due_date.strftime('%d.%m.%Y') if item.due_date else '—' }}
-          · {{ item.action_type.value if item.action_type else '—' }}
-          · {{ item.status.value if item.status else '—' }}
-        </p>
+        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <span class="text-[9px] font-mono" style="color:var(--color-outline);">{{ item.due_date | format_due_relative if item.due_date else '—' }}</span>
+          <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-surface-container-high {{ status_tone }}">{{ status_val }}</span>
+        </div>
+        {% if status_val == 'open' %}
+        <div class="flex gap-1.5 mt-1" x-show="!closed">
+          <button hx-patch="/action-item/{{ item.id }}/status"
+                  hx-vals='{"status": "done"}'
+                  hx-swap="none"
+                  @htmx:after-request="closed = true"
+                  class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">
+            ✓ done
+          </button>
+          <button hx-patch="/action-item/{{ item.id }}/status"
+                  hx-vals='{"status": "dismissed"}'
+                  hx-swap="none"
+                  @htmx:after-request="closed = true"
+                  class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline/30 text-outline hover:bg-surface-container-high transition-colors">
+            dismiss
+          </button>
+        </div>
+        <span x-show="closed" class="text-[9px] text-originator-own font-bold mt-1 block">✓ updated</span>
+        {% endif %}
       </div>
     </li>
     {% endfor %}

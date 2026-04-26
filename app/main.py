@@ -25,7 +25,7 @@ from app.config import (
     templates,
 )
 from app.constants import REVIEW_FIELD_LABELS
-from app.helpers import format_eur, format_relative_time
+from app.helpers import format_due_relative, format_eur, format_relative_time
 from app.services.normalization import normalize_hm
 
 
@@ -191,6 +191,7 @@ templates.env.filters["hm"] = normalize_hm
 templates.env.filters["hash"] = _hash_id
 templates.env.globals["format_eur"] = format_eur
 templates.env.filters["format_relative_time"] = format_relative_time
+templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
 
 # Markdown renderer.
