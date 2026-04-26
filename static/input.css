@@ -89,6 +89,8 @@
   --color-surface-low: var(--color-surface-container-low);
   --color-surface-high: var(--color-surface-container-high);
   --color-surface-highest: var(--color-surface-container-highest);
+  --shadow-drawer: -8px 0 32px rgba(0,0,0,0.35);
+  --color-leader-line: rgb(245 158 11 / 0.4);
 }
 
 /* ── Dark Mode Overrides (applied when .dark is on <html>) ── */

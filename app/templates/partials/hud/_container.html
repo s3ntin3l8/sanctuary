@@ -18,7 +18,7 @@
 {% if context == 'overlay' %}
 <div class="fixed inset-y-0 z-50 flex flex-col slide-in-right"
      :class="(typeof chatOpen !== 'undefined' && (chatOpen || docChatOpen)) ? 'right-[400px]' : 'right-0'"
-     style="width:480px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:-8px 0 32px rgba(0,0,0,0.35); transition:right 0.2s ease-out;">
+     style="width:480px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:var(--shadow-drawer); transition:right 0.2s ease-out;">
 
   {# Header strip #}
   <div class="flex items-center gap-2 px-4 py-3 flex-shrink-0 border-b border-outline-variant/10">
@@ -129,6 +129,8 @@
 {% elif context == 'embedded' %}
 <div class="flex-1 flex overflow-hidden min-h-0" x-data="hudReader()" data-hud-root data-hud-context="embedded"
       data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
+      data-prev-doc-id="{{ prev_doc_id or '' }}" data-next-doc-id="{{ next_doc_id or '' }}"
+      data-parent-doc-id="{{ doc.parent_id or '' }}"
       data-first-child-doc-id="{{ first_child_id or '' }}"
       data-bundle-prev="{{ bundle_prev_id or '' }}"
       data-bundle-next="{{ bundle_next_id or '' }}">  {# Body column #}

@@ -264,7 +264,8 @@ function hudReader() {
         line.setAttribute('y1', y1);
         line.setAttribute('x2', x2);
         line.setAttribute('y2', y2);
-        line.setAttribute('stroke', 'rgb(245 158 11 / 0.4)');
+        const leaderColor = getComputedStyle(document.documentElement).getPropertyValue('--color-leader-line').trim() || 'rgb(245 158 11 / 0.4)';
+        line.setAttribute('stroke', leaderColor);
         line.setAttribute('stroke-width', '2');
         svg.appendChild(line);
       });

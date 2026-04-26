@@ -300,7 +300,12 @@ async def delete_document(
 
 
 @router.get("/document/{doc_id}")
-async def document_detail(request: Request, doc_id: int, db: Session = Depends(get_db)):
+async def document_detail(
+    request: Request,
+    doc_id: int,
+    context: str | None = None,
+    db: Session = Depends(get_db),
+):
     doc = (
         db.query(Document)
         .options(joinedload(Document.proceeding))
@@ -316,7 +321,8 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
         )
 
     if request.headers.get("hx-request"):
-        ctx = build_hud_context(db, doc, mode="read", context="embedded")
+        mode = "review" if context == "triage" else "read"
+        ctx = build_hud_context(db, doc, mode=mode, context="embedded")
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
     # Full-page navigations redirect to the canonical full-screen HUD URL.
@@ -325,13 +331,6 @@ async def document_detail(request: Request, doc_id: int, db: Session = Depends(g
     return RedirectResponse(
         url=f"/cases/{doc.case_id}/document/{doc.id}", status_code=302
     )
-
-
-# ---------------------------------------------------------------------------
-# HUD reaction — unified endpoint used by all three HUD contexts (overlay /
-# standalone / embedded). Triage's /triage/document/:id/reaction stays until
-# Stage B when the triage pane migrates to the new embedded HUD.
-# ---------------------------------------------------------------------------
 
 
 @router.post("/document/{doc_id}/reaction")
