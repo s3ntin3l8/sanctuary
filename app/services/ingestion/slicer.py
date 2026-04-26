@@ -32,6 +32,7 @@ _W_SALUTATION = float(os.getenv("SLICE_W_SALUTATION", "0.20"))
 _W_BLANK = float(os.getenv("SLICE_W_BLANK", "0.15"))
 _W_AZ_CHANGE = float(os.getenv("SLICE_W_AZ_CHANGE", "0.25"))
 _W_ENCLOSURE = float(os.getenv("SLICE_W_ENCLOSURE", "0.30"))
+_W_DATE_LINE = float(os.getenv("SLICE_W_DATE_LINE", "0.25"))
 
 _HEURISTIC_THRESHOLD = float(os.getenv("SLICE_HEURISTIC_THRESHOLD", "0.35"))
 
@@ -69,6 +70,13 @@ _RE_ENCLOSURE = re.compile(r"\b(?:Anlage|Annex|Anhang)\s*[A-Z0-9]*\b", re.IGNORE
 _RE_SALUTATION = re.compile(r"\b(?:Sehr geehrte|Dear|Hiermit|Betreff)\b", re.IGNORECASE)
 _RE_SIGNATURE = re.compile(
     r"\b(?:Mit freundlichen Grüßen|Hochachtungsvoll|Yours sincerely)\b", re.IGNORECASE
+)
+_RE_DATE_LINE = re.compile(
+    r"(?:(?:den |vom )?(\d{1,2}\.\d{1,2}\.\d{2,4})|"  # "den 15.04.2026" or "15.04.2026"
+    r"(?:Berlin|Hamburg|München|Frankfurt|Köln|Stuttgart|Düsseldorf)[\s,]*(?:den |vom )?(\d{1,2}\.\d{1,2}\.\d{2,4})|"  # City + date
+    r"(\d{1,2}\.\d{1,2}\.\d{4})"  # Standalone date
+    r")",
+    re.IGNORECASE,
 )
 
 
@@ -123,6 +131,22 @@ def _signal_enclosure_marker(curr_head: str) -> float:
     return 1.0 if _RE_ENCLOSURE.search(curr_head) else 0.0
 
 
+def _signal_date_line(prev_tail: str, curr_head: str) -> float:
+    """Check if date line changed between pages (indicates new document)."""
+    dates_prev = _RE_DATE_LINE.findall(prev_tail)
+    dates_curr = _RE_DATE_LINE.findall(curr_head)
+    if dates_prev and dates_curr:
+        prev_dates = {
+            d.group() if hasattr(d, "group") else str(d) for d in dates_prev if d
+        }
+        curr_dates = {
+            d.group() if hasattr(d, "group") else str(d) for d in dates_curr if d
+        }
+        if prev_dates and curr_dates and prev_dates != curr_dates:
+            return 1.0
+    return 0.0
+
+
 def _boundary_heuristic_score(
     prev_tail: str,
     curr_head: str,
@@ -162,6 +186,11 @@ def _boundary_heuristic_score(
     if s > 0:
         score += s * _W_ENCLOSURE
         signals.append("enclosure_marker")
+
+    s = _signal_date_line(prev_tail, curr_head)
+    if s > 0:
+        score += s * _W_DATE_LINE
+        signals.append("date_line_change")
 
     return score, signals
 
