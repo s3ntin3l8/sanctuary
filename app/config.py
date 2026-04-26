@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import create_engine, event, pool
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -65,7 +65,6 @@ if _is_sqlite:
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False},
-        poolclass=pool.StaticPool,
         pool_pre_ping=True,
     )
 else:
