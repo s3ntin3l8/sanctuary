@@ -124,6 +124,10 @@ def _get_converter():
     if _converter is None:
         with _converter_lock:
             if _converter is None:
+                import time
+
+                start = time.perf_counter()
+                logger.info("Initializing Docling DocumentConverter...")
                 try:
                     from docling.datamodel.base_models import InputFormat
                     from docling.datamodel.pipeline_options import (
@@ -152,6 +156,10 @@ def _get_converter():
                                 pipeline_options=pipeline_options
                             )
                         }
+                    )
+                    elapsed = time.perf_counter() - start
+                    logger.info(
+                        "Docling DocumentConverter initialized in %.2fs", elapsed
                     )
                 except Exception as e:
                     raise RuntimeError(

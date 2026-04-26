@@ -771,12 +771,18 @@ def _render_doc_targeted_oob(
     """Targeted OOB for a single doc confirm: updates just the card + bundle footer + badge.
 
     Avoids the full feed replacement that causes flicker, scroll reset, and Alpine state loss.
+    Returns a delete swap if the document is no longer in the triage bundles.
     """
 
     bundles = triage_service.get_triage_bundles()
     bundle = next(
         (b for b in bundles if any(d.id == doc.id for d in b.documents)), None
     )
+
+    # If the document is no longer in the triage bundles (moved to case & confirmed),
+    # return a delete swap to remove it from the UI.
+    if not bundle:
+        return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
 
     reactions_by_doc = {
         doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
@@ -798,9 +804,6 @@ def _render_doc_targeted_oob(
             "hx_swap_oob": True,
         }
     )
-
-    if not bundle:
-        return card_html
 
     # 2. Bundle footer (as_oob=True)
     footer_html = templates.get_template("partials/triage_bundle_footer.html").render(

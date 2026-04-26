@@ -32,22 +32,36 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _dispatch(task_name: str, doc_id: int) -> None:
-    """Fire a Celery task in a daemon thread, respecting task_always_eager.
+    """Fire a Celery task, respecting task_always_eager.
 
-    send_task() ignores task_always_eager and tries to use the broker.
-    Importing the module and calling apply_async() on the task object correctly
-    runs eagerly in dev mode and uses the broker in production.
+    In production, delay() is non-blocking and safe to call in the main thread.
+    In dev (task_always_eager=True), it runs synchronously; we wrap it in a
+    daemon thread to prevent blocking the request/response cycle.
     """
+    from app.tasks.celery_app import celery_app
 
     def _run():
         import importlib
 
-        module_path, func_name = task_name.rsplit(".", 1)
-        mod = importlib.import_module(module_path)
-        task = getattr(mod, func_name)
-        task.apply_async(args=[doc_id])
+        try:
+            module_path, func_name = task_name.rsplit(".", 1)
+            mod = importlib.import_module(module_path)
+            task = getattr(mod, func_name)
+            task.apply_async(args=[doc_id])
+            logger.info("Enqueued %s for doc #%d", task_name, doc_id)
+        except Exception as e:
+            logger.error(
+                "Failed to dispatch %s for doc #%d: %s",
+                task_name,
+                doc_id,
+                e,
+                exc_info=True,
+            )
 
-    threading.Thread(target=_run, daemon=True).start()
+    if celery_app.conf.task_always_eager:
+        threading.Thread(target=_run, daemon=True).start()
+    else:
+        _run()
 
 
 def _try_assign_case_from_subject(

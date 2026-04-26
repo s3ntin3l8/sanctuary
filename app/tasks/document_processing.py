@@ -22,6 +22,7 @@ def process_document_task(self, doc_id: int):
     """Process a document: Docling conversion, then trigger Phase 4 AI pipeline."""
     from app.services.pipeline_status import mark_completed, mark_failed, mark_started
 
+    logger.info("Doc #%d: processing task started", doc_id)
     db = get_db_session()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
