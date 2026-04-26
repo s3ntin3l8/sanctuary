@@ -42,7 +42,7 @@ Return ONLY valid JSON with these exact keys:
   start_offset and end_offset are zero-based character positions in the document text. If you cannot determine precise offsets, omit them (do not guess).
 - cost_delta: if the document introduces a specific financial amount, object with:
   {"amount": float_in_euros, "direction": "incoming|outgoing|ruling|none", "description": "what this amount is"}
-  direction: "incoming" = money we must pay, "outgoing" = money we are owed/claiming, "ruling" = court-determined amount, "none" = no direction
+  direction: "incoming" = money we are owed or have received (e.g. PKH, reimbursement), "outgoing" = money we must pay or have paid (e.g. court fees, lawyer invoice), "ruling" = court-determined amount, "none" = no direction
   Set to null if no specific financial amount is introduced.
 - management_summary: three-bullet executive summary:
   {"legal_significance": "1-2 sentences on legal meaning", "required_action": "what needs to be done and by when", "financial_impact": "direct financial implications or 'None'"}

@@ -35,41 +35,56 @@
   </div>
 
   {# ── Cost Table ── #}
-  <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
-    <div class="overflow-x-auto">
-      <table class="w-full text-left border-collapse">
-        <thead>
-          <tr class="border-b border-outline-variant/10 bg-surface-container-low/50">
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Description / Position</th>
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Streitwert</th>
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
-            <th class="px-4 py-3 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
-            <th class="px-4 py-3"></th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-outline-variant/5">
-          {% for cost in costs %}
-            {% include "partials/cost_row.html" %}
-          {% endfor %}
-        </tbody>
-        <tfoot>
-          <tr class="border-t border-outline-variant/20 bg-surface-container-low/30">
-            <td colspan="3" class="px-4 py-3 text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Subtotal</td>
-            <td class="px-4 py-3 text-right">
-              <p class="text-sm font-black font-mono text-on-surface">{{ format_eur(cost_summary.total_gross) }}</p>
-            </td>
-            <td class="px-4 py-3 text-right">
-              <p class="text-xs font-bold font-mono text-originator-own">{{ format_eur(cost_summary.total_paid) }}</p>
-            </td>
-            <td colspan="2" class="px-4 py-3 text-center">
-              <span class="text-[10px] text-on-surface-variant">Reimbursable: <span class="text-primary font-bold">{{ format_eur(cost_summary.total_reimbursable) }}</span></span>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+  <div class="space-y-6">
+    {% set costs_by_proc = costs|groupby('proceeding_id') %}
+    {% for group in costs_by_proc %}
+      {% set proc_id = group.grouper %}
+      {% set group_costs = group.list %}
+      {% set first_cost = group_costs[0] %}
+      {% set proc = first_cost.proceeding %}
+
+      <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
+        <div class="px-4 py-2 border-b border-outline-variant/10 bg-surface-container-low/30 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[16px] text-primary">account_balance</span>
+            <h3 class="text-[11px] font-bold text-on-surface uppercase tracking-wider">
+              {% if proc %}
+                {{ proc.court_name }} <span class="ml-1 text-on-surface-variant font-mono normal-case">{{ proc.az_court }}</span>
+              {% else %}
+                Case-level (no proceeding)
+              {% endif %}
+            </h3>
+          </div>
+          {% set group_gross = group_costs|sum(attribute='amount_gross') %}
+          {% set group_paid = group_costs|sum(attribute='amount_paid') %}
+          <div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider">
+            <span class="text-on-surface-variant">Subtotal: <span class="text-on-surface">{{ format_eur(group_gross) }}</span></span>
+            <span class="text-on-surface-variant">Paid: <span class="text-originator-own">{{ format_eur(group_paid) }}</span></span>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-outline-variant/10 bg-surface-container-low/10">
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Description / Position</th>
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Streitwert</th>
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
+                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
+                <th class="px-4 py-2 w-8"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-outline-variant/5">
+              {% for cost in group_costs %}
+                {% include "partials/cost_row.html" %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endfor %}
   </div>
 
   {# ── Statutory Basis Reference ── #}

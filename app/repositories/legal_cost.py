@@ -15,14 +15,14 @@ class LegalCostRepository(BaseRepository[LegalCost]):
     def __init__(self, db: Session):
         super().__init__(LegalCost, db)
 
-    def get_by_case(self, case_id: str) -> Sequence[LegalCost]:
-        """Get all costs for a case."""
-        return (
-            self.db.query(LegalCost)
-            .filter(LegalCost.case_id == case_id)
-            .order_by(LegalCost.issued_at.asc())
-            .all()
-        )
+    def get_by_case(
+        self, case_id: str, proceeding_id: int | None = None
+    ) -> Sequence[LegalCost]:
+        """Get all costs for a case, optionally filtered by proceeding."""
+        query = self.db.query(LegalCost).filter(LegalCost.case_id == case_id)
+        if proceeding_id:
+            query = query.filter(LegalCost.proceeding_id == proceeding_id)
+        return query.order_by(LegalCost.issued_at.asc()).all()
 
     def get_by_category(self, category: CostCategory) -> Sequence[LegalCost]:
         """Get costs by category."""
@@ -120,6 +120,7 @@ class LegalCostRepository(BaseRepository[LegalCost]):
         issued_at: datetime | None = None,
         due_at: datetime | None = None,
         source_document_id: int | None = None,
+        proceeding_id: int | None = None,
     ) -> LegalCost:
         """Create a new cost."""
         return self.create(
@@ -134,6 +135,7 @@ class LegalCostRepository(BaseRepository[LegalCost]):
             issued_at=issued_at,
             due_at=due_at,
             source_document_id=source_document_id,
+            proceeding_id=proceeding_id,
             ingest_date=datetime.now(),
         )
 

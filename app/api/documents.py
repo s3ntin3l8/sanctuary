@@ -615,18 +615,31 @@ async def promote_cost_delta(
 
     cd = doc.cost_delta if isinstance(doc.cost_delta, dict) else {}
     amount = float(cd.get("amount") or 0)
+    direction = cd.get("direction") or "none"
     description = cd.get("description") or doc.title or "Cost from document"
+
+    # Statutary defaults: lawyer (outgoing) has VAT, court (incoming/ruling) does not
+    vat_rate = 0.19 if direction == "outgoing" else 0.0
+    amount_gross = amount * (1 + vat_rate)
 
     cost = LegalCost(
         case_id=doc.case_id,
+        proceeding_id=doc.proceeding_id,
         category=CostCategory.SONSTIGES,
         title=description,
         amount_net=amount,
-        vat_rate=0.0,
+        vat_rate=vat_rate,
+        amount_gross=amount_gross,
+        source_document_id=doc.id,
+        issued_at=doc.issued_date or doc.ingest_date,
     )
     db.add(cost)
     db.commit()
     db.refresh(cost)
+
+    from app.services.case_service import recompute_total_cost_exposure
+
+    recompute_total_cost_exposure(doc.case_id, db)
 
     return HTMLResponse(
         '<span class="text-[10px] text-originator-own font-bold">✓ promoted</span>',

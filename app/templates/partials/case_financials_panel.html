@@ -1,23 +1,46 @@
 <div class="rounded-xl border border-surface-container-high bg-surface-container p-4 space-y-3">
-  <h3 class="text-sm font-semibold text-on-surface">Financials</h3>
+  <div class="flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-on-surface">Financials</h3>
+    <button @click="setView('fin')" class="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider">Breakdown &rarr;</button>
+  </div>
 
   <div class="text-2xl font-bold text-on-surface">
     {{ format_eur((total_cost_exposure or 0) / 100.0) }}
   </div>
-  <p class="text-xs text-on-surface-variant">Total cost exposure</p>
+  <p class="text-xs text-on-surface-variant flex items-center gap-1.5">
+    Signalled exposure
+    <span class="material-symbols-outlined text-[14px] cursor-help" title="Sum of financial amounts detected in documents. Factual ledger below.">info</span>
+  </p>
 
-  <div class="grid grid-cols-3 gap-2 pt-1">
+  <div class="grid grid-cols-3 gap-2 pt-1 border-b border-outline-variant/10 pb-3">
     <div class="text-center">
       <p class="text-sm font-medium text-on-surface">{{ format_eur(cost_summary.total_gross) }}</p>
-      <p class="text-xs text-on-surface-variant">Gross</p>
+      <p class="text-[10px] uppercase tracking-wider text-on-surface-variant font-bold">Booked</p>
     </div>
     <div class="text-center">
       <p class="text-sm font-medium text-error">{{ format_eur(cost_summary.total_outstanding) }}</p>
-      <p class="text-xs text-on-surface-variant">Open</p>
+      <p class="text-[10px] uppercase tracking-wider text-on-surface-variant font-bold">Open</p>
     </div>
     <div class="text-center">
       <p class="text-sm font-medium text-tertiary">{{ format_eur(cost_summary.total_reimbursable) }}</p>
-      <p class="text-xs text-on-surface-variant">Reimbursable</p>
+      <p class="text-[10px] uppercase tracking-wider text-on-surface-variant font-bold">§91 ZPO</p>
     </div>
   </div>
+
+  {% if financials.last_cost_delta_doc %}
+  {% set cd = financials.last_cost_delta_doc.cost_delta %}
+  <div class="pt-1">
+    <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Last Signal</p>
+    <button @click="openDoc({{ financials.last_cost_delta_doc.id }})"
+            class="w-full text-left p-2 rounded bg-surface-container-low hover:bg-surface-container-high transition-colors group">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[11px] font-bold {% if cd.direction == 'outgoing' %}text-error{% elif cd.direction == 'incoming' %}text-originator-own{% else %}text-on-surface{% endif %}">
+          {% if cd.direction == 'incoming' %}&plus;{% elif cd.direction == 'outgoing' %}&minus;{% endif %}{{ format_eur(cd.amount) }}
+        </span>
+        <span class="text-[9px] font-mono text-outline">{{ financials.last_cost_delta_doc.issued_date.strftime('%d.%m.%y') if financials.last_cost_delta_doc.issued_date else '' }}</span>
+      </div>
+      <div class="text-[11px] text-on-surface truncate group-hover:underline">{{ financials.last_cost_delta_doc.title }}</div>
+    </button>
+  </div>
+  {% endif %}
 </div>

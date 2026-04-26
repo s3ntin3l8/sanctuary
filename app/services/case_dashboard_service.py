@@ -141,8 +141,15 @@ class CaseDashboardService:
         dormancy_alert = _compute_dormancy_alert(case, self.db)
 
         # --- Financials (factual: total exposure in cents) --------------
+        last_cost_doc = (
+            self.db.query(Document)
+            .filter(Document.case_id == case_id, Document.cost_delta.isnot(None))
+            .order_by(Document.issued_date.desc().nullslast(), Document.id.desc())
+            .first()
+        )
         financials = {
             "total_cost_exposure": case.total_cost_exposure or 0,
+            "last_cost_delta_doc": last_cost_doc,
         }
 
         # --- Alpine bootstrap payload ----------------------------------

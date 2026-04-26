@@ -524,10 +524,14 @@ class LegalCost(Base):
     __table_args__ = (
         Index("ix_legal_costs_case_status", "case_id", "status"),
         Index("ix_legal_costs_status_due", "status", "due_at"),
+        Index("ix_legal_costs_case_proceeding", "case_id", "proceeding_id"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    proceeding_id = Column(
+        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+    )
 
     category = Column(SAEnum(CostCategory), nullable=False)
     status = Column(
@@ -565,6 +569,7 @@ class LegalCost(Base):
     ingest_date = Column(DateTime, default=datetime.now, nullable=False)
 
     case = relationship("Case")
+    proceeding = relationship("Proceeding")
     source_document = relationship("Document")
 
     @validates("case_id")
