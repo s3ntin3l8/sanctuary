@@ -25,6 +25,17 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def include_object(obj, name, type_, reflected, compare_to):
+    """Exclude document_vectors virtual tables and its shadow tables from autogenerate."""
+    if type_ == "table":
+        return not (name == "document_vectors" or name.startswith("document_vectors_"))
+    if type_ == "index":
+        return not (
+            name.startswith("sqlite_butoindex_") or name.startswith("document_vectors_")
+        )
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -43,6 +54,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -79,7 +91,10 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata, render_as_batch=True
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
