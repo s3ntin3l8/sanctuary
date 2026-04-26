@@ -377,7 +377,7 @@ Each of these was a top-level destination in an earlier sidebar. Each pulled the
 
 | Removed | Replaced by |
 |---|---|
-| Master Timeline (cross-case flat list) | Deleted. Timeline exists as a view mode inside each case dashboard. |
+| Master Timeline (cross-case flat list) | Deleted. Timeline exists as a view mode inside each case dashboard. See `docs/specs/09_timeline.md`. |
 | Legal Costs (cross-case cost browser) | Case dashboard's Financials view mode; global pending-costs widget on Home; ⌘K aggregates. |
 | Contacts (cross-case contact directory) | ⌘K search. A dedicated contacts page implies a file-manager mental model. |
 | Entities (cross-case entity browser) | ⌘K search, same reason. |
@@ -509,6 +509,8 @@ CONTESTED CLAIMS — ADV-024-A
 
 Each claim shows its current status (asserted/contested/refuted/established), the evidence chain, and the user's own reactions from triage. Strength of evidence is visible at a glance — not as a percentage but as the balance of supporting vs. contesting documents.
 
+**Full spec: `docs/specs/06_truth_map.md`**
+
 ### 6. Case Clock — temporal context
 
 Below the action items panel, a **Case Clock** section shows:
@@ -541,6 +543,8 @@ Framed always as ranges with rationale, never as point predictions.
 
 Every answer cites source documents. Conversation history persisted in `Conversation` / `ConversationMessage`. The AI draws on `Case.ai_brief`, user reactions, and semantic retrieval from document embeddings.
 
+**Full spec: `docs/specs/07_case_chat.md`**
+
 ### 8. Financial delta — per document and cumulative
 
 Every document that contains cost claims or rulings on costs surfaces a financial delta:
@@ -553,6 +557,8 @@ NEW  Beschluss Prozesskostenhilfe  Apr 02
 ```
 
 Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. No synthetic probability or prediction — just factual cost tracking.
+
+**Full spec: `docs/specs/08_financials.md`**
 
 ---
 

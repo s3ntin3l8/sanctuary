@@ -350,13 +350,13 @@ Top bar tabs switch the **main area** (graph) to alternate visualizations. Left 
 Swim-lane correspondence graph — described above.
 
 ### Truth Map (Phase 6)
-Claim-centric view. Main area shows contested factual/legal assertions grouped by status (asserted / contested / refuted / established). Each claim expands to show the evidence chain (documents supporting vs. contesting) and any user reactions from triage. See `docs/vision.md` §UI.5.
+Claim-centric view. Main area shows contested factual/legal assertions grouped by status (asserted / contested / refuted / established). Each claim expands to show the evidence chain (documents supporting vs. contesting) and any user reactions from triage. See `docs/specs/06_truth_map.md` for the full spec.
 
 ### Timeline (Phase 2+, always available)
-Flat chronological list of documents in the current proceeding — the fallback when the graph isn't yet populated (e.g., early cases with no relationships detected). Lightweight; uses existing document repository queries.
+Flat chronological list of documents in the current proceeding — the fallback when the graph isn't yet populated (e.g., early cases with no relationships detected). Lightweight; uses existing document repository queries. See `docs/specs/09_timeline.md` for the full spec.
 
 ### Financials (Phase 1, always available)
-Tabular breakdown from `LegalCost` rows: per-category totals, paid vs. outstanding, §91 ZPO reimbursable, cost delta by document. Extends the existing `/costs` page scoped to this case. Includes a per-proceeding split.
+Tabular breakdown from `LegalCost` rows: per-category totals, paid vs. outstanding, §91 ZPO reimbursable, cost delta by document. Extends the existing `/costs` page scoped to this case. Per-proceeding split tracked via `LegalCost.proceeding_id` (nullable FK — added in remediation; costs without a proceeding appear as "Case-level"). See `docs/specs/08_financials.md` for the full spec.
 
 ### Mode persistence
 
@@ -387,7 +387,7 @@ See `docs/triage.md` §2 for HUD structure.
 
 ## 11. Case AI Chat
 
-Floating button `[✦ Ask AI]` at bottom-right corner. Clicking opens a slide-in from the right (separate from the document HUD — they don't overlap; document HUD slightly narrower to make room if both open).
+Floating button `[✦ Ask AI]` at bottom-right corner. Clicking opens a slide-in from the right (separate from the document HUD — they don't overlap; document HUD slightly narrower to make room if both open). See `docs/specs/07_case_chat.md` for the full spec.
 
 ### Scope and context
 
@@ -503,7 +503,7 @@ Dashboard implementation spans Phase 5 (shell + brief + actions + financials) an
 | `app/templates/partials/dashboard/view_mode_tabs.html` | Graph/Truth Map/Timeline/Financials toggle |
 | `app/templates/partials/dashboard/correspondence_graph.html` | SVG renderer (Phase 8) |
 | `app/templates/partials/dashboard/truth_map.html` | Claims view (Phase 6) |
-| `app/templates/partials/dashboard/timeline_view.html` | Flat chronological fallback |
+| `app/templates/partials/case_timeline_panel.html` | Flat chronological fallback (already exists) |
 | `app/templates/partials/dashboard/ai_chat.html` | Case-scoped chat panel |
 | `static/js/dashboard.js` | Keyboard shortcuts, view-mode persistence, graph interactions |
 | `static/js/graph_renderer.js` | SVG graph interactions (zoom/pan/hover/click) |
