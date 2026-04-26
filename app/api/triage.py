@@ -10,9 +10,14 @@ from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
 from app.models.database import Case, Document, DocumentRelationship
-from app.models.enums import OriginatorType, UserReactionType
+from app.models.enums import (
+    IngestBatchSourceType,
+    IngestBatchStatus,
+    OriginatorType,
+    UserReactionType,
+)
 from app.services.hud_context import build_hud_context
-from app.services.triage_service import TriageService
+from app.services.triage_service import BundleView, TriageService
 
 router = APIRouter(tags=["pages"])
 
@@ -774,14 +779,51 @@ def _render_doc_targeted_oob(
     Returns a delete swap if the document is no longer in the triage bundles.
     """
 
-    bundles = triage_service.get_triage_bundles()
-    bundle = next(
-        (b for b in bundles if any(d.id == doc.id for d in b.documents)), None
-    )
+    # 1. Determine if the document should be in triage at all.
+    # Logic matches TriageService.get_triage_bundles() filter.
+    in_triage_via_case = doc.case_id == "_TRIAGE" or doc.needs_review
+    in_triage_via_batch = False
+    if doc.ingest_batch_id:
+        # A batch is in triage if its status is NOT completed or awaiting_slicing.
+        batch = doc.ingest_batch
+        if batch and batch.status not in (
+            IngestBatchStatus.COMPLETED,
+            IngestBatchStatus.AWAITING_SLICING,
+        ):
+            in_triage_via_batch = True
 
-    # If the document is no longer in the triage bundles (moved to case & confirmed),
-    # return a delete swap to remove it from the UI.
-    if not bundle:
+    if not in_triage_via_case and not in_triage_via_batch:
+        return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
+
+    # 2. Fetch or construct the BundleView for this document.
+    # Using specific fetch/construction instead of get_triage_bundles() prevents
+    # documents disappearing due to pagination limits.
+    bundle = None
+    if doc.ingest_batch_id:
+        bundle = triage_service.get_bundle_by_batch_id(doc.ingest_batch_id)
+        if bundle and not in_triage_via_batch:
+            # If the batch itself is COMPLETED, the bundle in the UI should only
+            # show documents that specifically need review (in_triage_via_case).
+            bundle.documents = [
+                d for d in bundle.documents if d.case_id == "_TRIAGE" or d.needs_review
+            ]
+            triage_service._enrich_bundle(bundle)
+    else:
+        # Synthetic bundle for loose (pre-IngestBatch) document
+        bundle = BundleView(
+            key=f"loose-{doc.id}",
+            batch_id=None,
+            source_type=IngestBatchSourceType.MANUAL,
+            subject=doc.title,
+            sender_email=None,
+            received_at=doc.ingest_date or datetime.now(),
+            confirmed_case_id=doc.case_id if doc.case_id != "_TRIAGE" else None,
+            proceeding=doc.proceeding,
+            documents=[doc],
+        )
+        triage_service._enrich_bundle(bundle)
+
+    if not bundle or not any(d.id == doc.id for d in bundle.documents):
         return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
 
     reactions_by_doc = {
