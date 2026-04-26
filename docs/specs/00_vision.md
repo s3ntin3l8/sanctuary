@@ -479,14 +479,14 @@ Hover highlights which prior documents this is responding to.
 
 ### 4. Document HUD — "Director's Cut" reading
 
-When a node is clicked, the document surfaces not as a raw PDF but as a **semantically highlighted view**:
+When a node is clicked, the document surfaces not as a raw PDF but as a **semantically highlighted view**. See [`docs/specs/04_document_hud.md`](04_document_hud.md) for the full spec; the key interaction model:
 
-- AI-identified key passages rendered in slate blue — the one sentence in a 50-page Schriftsatz that actually shifts something
-- Supporting context visible but visually dimmed
-- Claim annotations inline — "this sentence asserts Claim #12, currently contested"
-- User reaction and notes visible at top
-- Source citations for AI summary visible and clickable
-- `[ask about this document ✦]` always accessible
+- AI-identified key passages highlighted inline (sky-blue token) — the one sentence in a 50-page Schriftsatz that actually shifts something
+- Claim annotations inline — each key passage that grounds a claim carries an `⚖` chip; clicking it cross-references the Truth Map
+- Pinned margin notes anchored to the passage they annotate (left gutter, amber cards with SVG leader lines)
+- Right rail: AI summary, passages spine (scroll-spied), relationships, grounds, action items, cost delta, reaction bar
+- Reaction pip in the sticky top bar shows the user's strategic read at a glance; full reaction bar and `+ note` in the right rail
+- `[ask about this document ✦]` opens the AI chat drawer scoped to this document
 
 The goal: reading a document should feel like reading a Director's Cut — the AI has already marked the traps and the wins.
 
@@ -599,10 +599,10 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 - Claim status lifecycle (asserted → contested → refuted / established)
 
 ### Phase 7 — AI Chat | Status: Implemented ✅
-- Document chat: key passages + document content as context, Ollama streaming
+- Document chat: key passages + document content as context, Ollama streaming (SSE)
 - Case chat: `ai_brief` + user reactions + semantic retrieval from embeddings
 - Every answer cites source documents; conversation persisted
-- UI: sliding panel on document HUD and case dashboard
+- UI: sliding drawer on document HUD (see [`docs/specs/04_document_hud.md`](04_document_hud.md) §8h) and case dashboard
 
 ### Phase 8 — Correspondence graph | Status: Implemented ✅
 - Swim-lane SVG renderer (D3.js or custom SVG)
@@ -611,7 +611,7 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 - Court relay bundles collapsed; `attaches_as_proof` as citation badges on nodes
 - Reaction indicators on nodes (from `UserReaction`)
 - Significance filter toggle (critical / significant+ / all)
-- Click node → document HUD slide-in
+- Click node → document HUD slide-in (see [`docs/specs/04_document_hud.md`](04_document_hud.md))
 
 ---
 

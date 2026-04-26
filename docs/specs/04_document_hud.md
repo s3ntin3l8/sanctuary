@@ -1,6 +1,6 @@
 # Sanctuary — Document HUD
 
-Companion to `docs/vision.md` and `docs/dashboard.md`. Covers the single canonical document-reading surface: slide-in overlay on the dashboard, full-screen reader at a dedicated URL, and embedded review pane on the triage page. One template, three contexts, one data flow.
+Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashboard.md`](02_dashboard.md). Covers the single canonical document-reading surface: slide-in overlay on the dashboard, full-screen reader at a dedicated URL, and embedded review pane on the triage page. One template, three contexts, one data flow.
 
 ---
 
@@ -196,7 +196,7 @@ Width 480px, right-anchored, dims but does not hide the dashboard. No document b
 
 ## 5. Embedded layout (triage right pane)
 
-Same body + right-rail split as full-screen (§3), hosted inside the triage page's right pane instead of the full viewport. The triage page owns the left queue sidebar (see `docs/triage.md` §1).
+Same body + right-rail split as full-screen (§3), hosted inside the triage page's right pane instead of the full viewport. The triage page owns the left queue sidebar (see [`docs/specs/01_triage.md`](01_triage.md) §1).
 
 Three differences from full-screen `read` mode:
 
@@ -643,4 +643,4 @@ Automated coverage:
 
 ---
 
-*Related: [`docs/vision.md`](vision.md) — overall product vision and phase roadmap · [`docs/dashboard.md`](dashboard.md) — case dashboard HUD and graph spec · [`docs/triage.md`](triage.md) — triage inbox and bundle review flow*
+*Related: [`docs/specs/00_vision.md`](00_vision.md) — overall product vision and phase roadmap · [`docs/specs/02_dashboard.md`](02_dashboard.md) — case dashboard and graph spec · [`docs/specs/01_triage.md`](01_triage.md) — triage inbox and bundle review flow*
