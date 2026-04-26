@@ -601,11 +601,14 @@ async def update_action_item_status(
 async def promote_cost_delta(
     request: Request,
     doc_id: int,
+    category_override: str | None = Form(None),
+    vat_rate_override: float | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Promote doc.cost_delta into a LegalCost row and redirect to cost form."""
     from app.models.database import LegalCost
     from app.models.enums import CostCategory
+    from app.services.case_service import recompute_total_cost_exposure
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
@@ -619,13 +622,25 @@ async def promote_cost_delta(
     description = cd.get("description") or doc.title or "Cost from document"
 
     # Statutary defaults: lawyer (outgoing) has VAT, court (incoming/ruling) does not
-    vat_rate = 0.19 if direction == "outgoing" else 0.0
+    category = CostCategory.SONSTIGES
+    if category_override:
+        try:
+            category = CostCategory(category_override)
+        except ValueError:
+            pass
+
+    vat_rate = 0.0
+    if vat_rate_override is not None:
+        vat_rate = vat_rate_override
+    elif direction == "outgoing":
+        vat_rate = 0.19
+
     amount_gross = amount * (1 + vat_rate)
 
     cost = LegalCost(
         case_id=doc.case_id,
         proceeding_id=doc.proceeding_id,
-        category=CostCategory.SONSTIGES,
+        category=category,
         title=description,
         amount_net=amount,
         vat_rate=vat_rate,
@@ -636,8 +651,6 @@ async def promote_cost_delta(
     db.add(cost)
     db.commit()
     db.refresh(cost)
-
-    from app.services.case_service import recompute_total_cost_exposure
 
     recompute_total_cost_exposure(doc.case_id, db)
 

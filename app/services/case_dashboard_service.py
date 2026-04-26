@@ -137,7 +137,17 @@ class CaseDashboardService:
         # --- Strategic layer: truth map, cost summary, dormancy ---------
         claim_svc = ClaimService(self.db)
         truth_map = claim_svc.get_truth_map(case.id, "open")
-        cost_summary = build_cost_summary(data["costs"], CostStatus)
+
+        # Group costs by proceeding for the breakdown view
+        costs = data["costs"]
+        grouped_costs = {}
+        for c in costs:
+            pid = c.proceeding_id
+            if pid not in grouped_costs:
+                grouped_costs[pid] = []
+            grouped_costs[pid].append(c)
+
+        cost_summary = build_cost_summary(costs, CostStatus)
         dormancy_alert = _compute_dormancy_alert(case, self.db)
 
         # --- Financials (factual: total exposure in cents) --------------
@@ -150,6 +160,7 @@ class CaseDashboardService:
         financials = {
             "total_cost_exposure": case.total_cost_exposure or 0,
             "last_cost_delta_doc": last_cost_doc,
+            "grouped_costs": grouped_costs,
         }
 
         # --- Alpine bootstrap payload ----------------------------------

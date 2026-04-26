@@ -83,7 +83,7 @@
 | Gap | Spec | Status |
 |-----|------|--------|
 | Date line signal | §4.2 | ✅ IMPLEMENTED (April 2026) |
-| Multi-bundle | §13 | ❌ NOT IMPLEMENTED |
+| Multi-bundle | §13 | ✅ IMPLEMENTED (April 2026) |
 
 ---
 
