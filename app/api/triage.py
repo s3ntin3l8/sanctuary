@@ -695,7 +695,11 @@ async def bundle_pipeline_status(
     # loose and caused the bundle to be re-fetched during every inter-stage gap,
     # making docs flicker out of the queue mid-ingestion.
     if n_total > 0 and n_done == n_total:
-        response.headers["HX-Trigger"] = json.dumps({f"reload-bundle-{batch_id}": {}})
+        import time
+
+        response.headers["HX-Trigger"] = json.dumps(
+            {f"reload-bundle-{batch_id}": {"ts": time.time()}}
+        )
 
     return response
 
