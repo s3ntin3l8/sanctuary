@@ -4,6 +4,52 @@ Companion to `docs/vision.md` and `docs/dashboard.md`. Covers the single canonic
 
 ---
 
+## Implementation Status
+
+**Last Updated:** April 26, 2026
+**Status:** 🟢 IMPLEMENTED (v1 complete — all phases through Phase 8)
+
+### Feature Matrix
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| Three-context template (`_container.html`) | ✅ Implemented | `partials/hud/_container.html` |
+| Full-screen reader at `/cases/:id/document/:id` | ✅ Implemented | `pages/document.html`, `api/cases.py` |
+| Slide-in overlay (`context=overlay`) | ✅ Implemented | `_container.html` + case dashboard |
+| Embedded triage pane (`context=embedded mode=review`) | ✅ Implemented | `_container.html`; triage card click passes `?context=triage` → `mode=review` |
+| Sticky top bar with backdrop-blur | ✅ Implemented | `_top_bar.html`, `.hud-top-bar` in `input.css` |
+| `n/N` position counter (proceeding-scoped) | ✅ Implemented | `neighbor_doc_ids` returns 4-tuple; `_top_bar.html` renders `doc_position/proceeding_total` |
+| Reaction pip in top bar | ✅ Implemented | `_top_bar.html` reads `reactions[0]` |
+| `thread_open` amber glow | ✅ Implemented | `_top_bar.html` conditional `border-b-2 border-amber` |
+| Scroll-spy (`IntersectionObserver`) | ✅ Implemented | `hud.js:_initScrollSpy()` |
+| Key passage `<mark data-passage-id>` with click-to-focus | ✅ Implemented | `render_highlighted` in `app/main.py` |
+| URL fragment deep-link `#p=<passage_id>` | ✅ Implemented | `hud.js:_handleFragment()` + `focusPassage()` |
+| Left gutter + margin pin cards + leader lines (SVG) | ✅ Implemented | `_body.html`, `_pin_card.html`, `hud.js:_drawLeaders()` |
+| Pin collision resolution | ✅ Implemented | `hud.js:_positionPins()` pushes overlapping cards down |
+| Passages spine with `[+ pin]` + `[ask AI]` per row | ✅ Implemented | `_passages_spine.html`; `[ask AI]` prefills chat drawer |
+| Grounds: inline expand + confirm/refute buttons | ✅ Implemented | `_grounds.html`; POSTs to `claims.py` status endpoint |
+| Actions: rel-days + status chip + confirm/dismiss | ✅ Implemented | `_actions.html`; `PATCH /action-item/:id/status` |
+| Cost delta: `[promote to cost]` button | ✅ Implemented | `_cost_delta.html`; `POST /document/:id/cost-from-delta` |
+| Reaction bar with `+ note` textarea | ✅ Implemented | `_reactions.html`; notes rendered + form for new notes |
+| AI chat drawer (Phase 7) | ✅ Implemented | `_chat_drawer.html`, `api/chat.py`; passage-prefill via `hud-prefill-chat` event |
+| Keyboard shortcut set (`/ r 1-4 n o f ? ← →` etc.) | ✅ Implemented | `hud.js` keydown listener + `hudReader()` methods |
+| Unified reaction route | ✅ Implemented | `POST /document/:id/reaction` — all three contexts |
+| `DocumentPin` table + CRUD routes | ✅ Implemented | `repositories/document_pin.py`; `POST /document/:id/pin`, `PATCH/DELETE /pin/:id` |
+| Selection-aware `n` key (reads `window.getSelection()`) | ✅ Implemented | `hud.js:createPinAtActive()` |
+| Nav data-attrs on embedded branch | ✅ Implemented | `_container.html` embedded div carries `data-prev/next/parent-doc-id` |
+
+### Implementation Deviations
+
+| Feature | Spec | Code | Status |
+|---------|------|------|--------|
+| Pin/annotation routes | Nested `/document/:id/pin/:pin_id` | Flat `/pin/:pin_id` (globally unique PK) | ✅ Accepted — integration tests and spec §12b updated to reflect flat shape |
+| §8h Ask AI | Described as disabled stub in v1; drawer in Phase 7 | Fully implemented with streaming drawer | ✅ Promoted — Phase 7 shipped as part of v1 |
+| Passage `id` format | UUIDv4 suggested | `sha1(text|kind)[:12]` (stable, deterministic across renders) | ✅ Accepted — stability holds; passage IDs are consistent |
+| `ai_summary` in chat context | Spec: include in `context_builder.py` | Not currently passed to `context_builder` | ⚠ Minor gap — drawer functions without it; non-blocking for v1 |
+| Citation `#p=` fragments in chat answers | Spec: AI cites `[DOC:<id>#p=<pid>]` → deep-link scroll | Chat uses `[DOC:<id>]` only; citations link to document root | ⚠ Minor gap — non-blocking for v1 |
+
+---
+
 ## 1. The core shift
 
 **Today:** a document opens as a flat file preview. You skim paragraphs, hunt for the paragraph that matters, and the AI's work is buried next to the text.
@@ -524,19 +570,19 @@ Cheat-sheet modal reuses the `partials/home/shortcuts_modal.html` pattern; the H
 
 ## 15. Phase progression
 
-The HUD is built in stages; each adds capability without breaking earlier ones.
+**Status (April 2026): all phases complete.** The HUD was built in stages; each adds capability without breaking earlier ones.
 
-| Phase | What lights up |
-|---|---|
-| **Spec lands (now)** | `docs/document_hud.md` merged. Implementation begins. No runtime change. |
-| **Phase 2½** (UI consolidation; shipped) | `partials/hud/*` shipped. `/cases/:id/document/:id/hud` returns new container in `context=overlay`. `/cases/:id/document/:id` serves full-screen. Triage pane switches to `context=embedded mode=review` (no `?context=triage` param; `build_hud_context` adds triage keys when `cases` provided). Old partials deleted. `DocumentPin` margin annotations work. Scroll-spy works. All three contexts share one reaction path. Claim anchors render if `ClaimEvidence` rows match. Bundle `{`/`}` nav fixed. |
-| **Phase 4** (doc intelligence) | Key passages auto-populate with stable IDs; claim grounding fills Grounds section; cost_delta drives Cost Delta section; AI relationship suggestions fill review-mode confirm/reject. |
-| **Phase 5** (case AI brief) | Summary section gains proper refresh; Grounds gains claim-status transitions. |
-| **Phase 6** (Truth Map) | Grounds section `⚖ chip` → Truth Map deep link; claim evidence expansion fully live. |
-| **Phase 7** (chat) | Ask AI button activates. Drawer opens. Shift-click passage → "ask about this passage" pre-fill. Citations in AI answers link to `#p=<passage_id>` in the HUD. |
-| **Phase 8+** (graph polish) | HUD becomes reachable from every graph node; cross-proceeding navigation switches proceeding on return. |
+| Phase | Status | What lights up |
+|---|---|---|
+| **Spec lands** | ✅ Done | `docs/document_hud.md` merged. |
+| **Phase 2½** (UI consolidation) | ✅ Implemented | `partials/hud/*` shipped. `/cases/:id/document/:id/hud` returns new container in `context=overlay`. `/cases/:id/document/:id` serves full-screen. Triage pane uses `context=embedded mode=review` (card click passes `?context=triage`; route maps to `mode=review`). Old partials deleted. `DocumentPin` margin annotations, leader lines, collision resolution. Scroll-spy. Unified reaction path. Claim anchors. Bundle `{`/`}` nav. Keyboard shortcut set. Top bar with `n/N` counter, reaction pip, thread-open amber glow. |
+| **Phase 4** (doc intelligence) | ✅ Implemented | Key passages auto-populate with stable `sha1(text\|kind)[:12]` IDs. Grounds section filled from `Claim` rows. Cost Delta from `doc.cost_delta`. AI relationship suggestions with review-mode confirm/reject. |
+| **Phase 5** (case AI brief) | ✅ Implemented | Summary section with approve/reject; Grounds claim-status transitions. |
+| **Phase 6** (Truth Map) | ✅ Implemented | Grounds `⚖ chip` → Truth Map deep link. Inline expand + confirm/refute buttons within HUD grounds section. |
+| **Phase 7** (chat) | ✅ Implemented | Ask AI drawer active. Passage-prefill via `[ask AI]` spine button and `hud-prefill-chat` event. `+ note` on reactions. Actions confirm/dismiss. Cost delta `[promote to cost]`. |
+| **Phase 8+** (graph polish) | ✅ Implemented | HUD reachable from every graph node. Nav data-attrs on embedded branch enable `← → [` keys in triage pane. |
 
-Nothing in the spec requires Phase 4+ to be live — sections render empty states gracefully when the underlying data is absent.
+Sections render empty states gracefully when underlying data is absent.
 
 ---
 

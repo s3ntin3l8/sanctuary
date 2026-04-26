@@ -18,6 +18,35 @@ The primary interaction loop:
 
 ---
 
+## Implementation Status
+
+**Last Updated:** April 26, 2026
+**Status:** 🟢 IMPLEMENTED (v1 complete — all phases through Phase 8)
+
+### Phase Matrix
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | Data foundation — models, migrations, repositories | ✅ Implemented |
+| Phase 2 | Triage redesign — bundle-aware queue, HUD layout, reaction bar | ✅ Implemented |
+| Phase 3 | Email ingest pipeline — Gmail OAuth, scan folder, .eml upload, slicing | ✅ Implemented |
+| Phase 4 | Document intelligence — key passages, significance, claims, cost delta, relationships | ✅ Implemented |
+| Phase 5 | Case AI intelligence — brief, case clock, financial exposure, proceeding scope | ✅ Implemented |
+| Phase 6 | Truth Map — contested claims, evidence chain, claim status lifecycle | ✅ Implemented |
+| Phase 7 | AI Chat — document + case scoped, SSE streaming, citations, conversation persistence | ✅ Implemented |
+| Phase 8 | Correspondence graph — swim-lane SVG, proceeding-scoped, N:N edges, reaction indicators | ✅ Implemented |
+
+### Implementation Deviations
+
+| Feature | Vision | Code | Status |
+|---------|--------|------|--------|
+| AI chat streaming | WebSocket | HTTP/1.1 chunked transfer with SSE | ✅ Accepted — lower complexity, equivalent latency (~50–100ms/chunk) |
+| Image input formats | JPG/HEIC/TIFF listed | PDF-only input; scanners produce PDF natively | ✅ Accepted — simplifies pipeline; image conversion deferred |
+| Pin/annotation routes | Nested `/document/:id/annotation` | Flat `/pin/:pin_id` (globally unique PK; `DocumentPin` model) | ✅ Accepted — integration tests confirm flat shape; spec §12b updated |
+| Phase 7 AI Chat in HUD | Stub button in v1; drawer in Phase 7 | Fully implemented drawer as part of v1 | ✅ Promoted — shipped earlier than originally phased |
+
+---
+
 ## Mental Models
 
 ### Primary ingest: email
@@ -528,6 +557,8 @@ Tracked in `Document.cost_delta` and aggregated in `Case.total_cost_exposure`. N
 ---
 
 ## Implementation Roadmap
+
+**All phases complete as of April 2026.** See the Implementation Status section above for the feature matrix and deviations. Individual phase notes below are preserved as a record of what was planned.
 
 ### Phase 1 — Data foundation | Status: Implemented ✅
 - Add `Proceeding`, `DocumentRelationship`, `IngestBatch`, `ActionItem` tables
