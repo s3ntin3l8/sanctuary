@@ -163,7 +163,7 @@ class DocumentRepository(BaseRepository[Document]):
             originator_type=originator_type,
             sender=sender,
             file_path=file_path,
-            needs_review=case_id is None or case_id == "_TRIAGE",
+            needs_review=True,
             ingest_date=datetime.now(),
         )
 
