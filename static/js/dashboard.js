@@ -359,7 +359,16 @@ function registerCaseDashboard() {
         this.reviewOpen = false; this.procOpen = false;
         return;
       }
-      if (e.key === '/') { e.preventDefault(); this.chatOpen = true; this.docChatOpen = false; return; }
+      if (e.key === '/') {
+        e.preventDefault();
+        if (this.selectedDocId) {
+          this.docChatOpen = !this.docChatOpen;
+          if (this.docChatOpen) window.dispatchEvent(new CustomEvent('hud-focus-chat'));
+        } else {
+          this.chatOpen = !this.chatOpen;
+        }
+        return;
+      }
       if (e.key === 'g') this.setView('graph');
       if (e.key === 't') this.setView('truth');
       if (e.key === 'l') this.setView('timeline');

@@ -31,7 +31,7 @@ def test_neighbor_no_proceeding(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    prev_id, next_id = neighbor_doc_ids(db_session, doc)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, doc)
     assert prev_id is None
     assert next_id is None
 
@@ -42,7 +42,7 @@ def test_neighbor_single_doc(db_session, proceeding):
     db_session.add(doc)
     db_session.commit()
 
-    prev_id, next_id = neighbor_doc_ids(db_session, doc)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, doc)
     assert prev_id is None
     assert next_id is None
 
@@ -61,7 +61,7 @@ def test_neighbor_middle_doc(db_session, proceeding):
     db_session.add_all([d1, d2, d3])
     db_session.commit()
 
-    prev_id, next_id = neighbor_doc_ids(db_session, d2)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, d2)
     assert prev_id == d1.id
     assert next_id == d3.id
 
@@ -77,13 +77,41 @@ def test_neighbor_null_issued_date(db_session, proceeding):
     db_session.commit()
 
     # d_dated comes first; d_null sorts last (null → last)
-    prev_id, next_id = neighbor_doc_ids(db_session, d_null)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, d_null)
     assert prev_id == d_dated.id
     assert next_id is None
 
-    prev_id, next_id = neighbor_doc_ids(db_session, d_dated)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, d_dated)
     assert prev_id is None
     assert next_id == d_null.id
+
+
+@pytest.mark.unit
+def test_neighbor_returns_position_and_total(db_session, proceeding):
+    """neighbor_doc_ids must return 1-indexed position and total count."""
+    d1 = Document(
+        title="First", proceeding_id=proceeding.id, issued_date=datetime(2024, 1, 1)
+    )
+    d2 = Document(
+        title="Second", proceeding_id=proceeding.id, issued_date=datetime(2024, 2, 1)
+    )
+    d3 = Document(
+        title="Third", proceeding_id=proceeding.id, issued_date=datetime(2024, 3, 1)
+    )
+    db_session.add_all([d1, d2, d3])
+    db_session.commit()
+
+    _, _, pos, total = neighbor_doc_ids(db_session, d1)
+    assert pos == 1
+    assert total == 3
+
+    _, _, pos, total = neighbor_doc_ids(db_session, d2)
+    assert pos == 2
+    assert total == 3
+
+    _, _, pos, total = neighbor_doc_ids(db_session, d3)
+    assert pos == 3
+    assert total == 3
 
 
 @pytest.mark.unit
@@ -103,6 +131,6 @@ def test_neighbor_doc_id_mismatch_graceful(db_session, proceeding):
     ghost = Document(title="Ghost", proceeding_id=proceeding.id)
     ghost.id = 99999  # not in the DB
 
-    prev_id, next_id = neighbor_doc_ids(db_session, ghost)
+    prev_id, next_id, *_ = neighbor_doc_ids(db_session, ghost)
     assert prev_id is None
     assert next_id is None

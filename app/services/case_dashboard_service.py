@@ -296,10 +296,13 @@ def originator_color_for_doc(doc) -> str:
     return _lane_for(doc)
 
 
-def neighbor_doc_ids(db: Session, doc) -> tuple[int | None, int | None]:
-    """Return (prev_doc_id, next_doc_id) within the same proceeding."""
+def neighbor_doc_ids(db: Session, doc) -> tuple[int | None, int | None, int, int]:
+    """Return (prev_doc_id, next_doc_id, position, total) within the same proceeding.
+
+    position is 1-indexed; both position and total are 0 when there is no proceeding.
+    """
     if doc.proceeding_id is None:
-        return None, None
+        return None, None, 0, 0
     siblings = (
         db.query(Document.id)
         .filter(Document.proceeding_id == doc.proceeding_id)
@@ -313,10 +316,10 @@ def neighbor_doc_ids(db: Session, doc) -> tuple[int | None, int | None]:
     try:
         idx = ids.index(doc.id)
     except ValueError:
-        return None, None
+        return None, None, 0, 0
     prev_id = ids[idx - 1] if idx > 0 else None
     next_id = ids[idx + 1] if idx < len(ids) - 1 else None
-    return prev_id, next_id
+    return prev_id, next_id, idx + 1, len(ids)
 
 
 # Re-export so callers can reach these without extra imports

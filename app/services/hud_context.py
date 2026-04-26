@@ -163,7 +163,7 @@ def build_hud_context(
 
     summary_bullets = summary_bullets_from_ai_summary(doc.ai_summary)
     key_passages = key_passages_for_template(doc.key_passages)
-    prev_doc_id, next_doc_id = neighbor_doc_ids(db, doc)
+    prev_doc_id, next_doc_id, doc_position, proceeding_total = neighbor_doc_ids(db, doc)
     originator_color = originator_color_for_doc(doc)
     relationships_out, relationships_in = _build_relationships(db, doc)
     passage_claim_map = _build_passage_claim_map(db, doc, key_passages)
@@ -216,6 +216,8 @@ def build_hud_context(
         "relationships_in": relationships_in,
         "prev_doc_id": prev_doc_id,
         "next_doc_id": next_doc_id,
+        "doc_position": doc_position,
+        "proceeding_total": proceeding_total,
         "originator_color": originator_color,
         "passage_claim_map": passage_claim_map,
         "pins": pins,

@@ -63,6 +63,12 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'r') {
     e.preventDefault();
     reader.focusReactionBar();
+  } else if (['1', '2', '3', '4'].includes(e.key)) {
+    e.preventDefault();
+    reader.fireReaction(parseInt(e.key));
+  } else if (e.key === '/') {
+    e.preventDefault();
+    reader.focusAskAi();
   } else if (e.key === '?') {
     e.preventDefault();
     reader.showShortcuts();
@@ -201,12 +207,66 @@ function hudReader() {
       const article = this.$el.querySelector('article');
       if (!article) return;
       const articleRect = article.getBoundingClientRect();
+
+      // Compute initial tops anchored to each passage mark.
+      const cards = [];
       gutter.querySelectorAll('.hud-pin-card').forEach(card => {
         const pid = card.dataset.passageId;
         const mark = document.getElementById(`p-${pid}`);
         if (!mark) return;
         const markRect = mark.getBoundingClientRect();
-        card.style.top = (markRect.top - articleRect.top + article.scrollTop) + 'px';
+        const top = markRect.top - articleRect.top + article.scrollTop;
+        cards.push({ card, top });
+      });
+
+      // Sort by top, then push down any cards that would overlap the previous one.
+      cards.sort((a, b) => a.top - b.top);
+      for (let i = 1; i < cards.length; i++) {
+        const prev = cards[i - 1];
+        const minTop = prev.top + prev.card.offsetHeight + 8;
+        if (cards[i].top < minTop) cards[i].top = minTop;
+      }
+
+      cards.forEach(({ card, top }) => { card.style.top = top + 'px'; });
+
+      // Draw leader lines after positions are applied (getBoundingClientRect reads new layout).
+      this._drawLeaders();
+    },
+
+    _drawLeaders() {
+      const docId = this.$el.dataset.docId;
+      const svg = document.getElementById('hud-leader-lines-' + docId);
+      if (!svg) return;
+      svg.innerHTML = '';
+
+      const gutter = document.getElementById('hud-pin-gutter-' + docId);
+      if (!gutter) return;
+
+      const container = svg.parentElement;
+      if (!container) return;
+      const containerRect = container.getBoundingClientRect();
+
+      gutter.querySelectorAll('.hud-pin-card').forEach(card => {
+        const pid = card.dataset.passageId;
+        const mark = document.getElementById(`p-${pid}`);
+        if (!mark) return;
+
+        const cardRect = card.getBoundingClientRect();
+        const markRect = mark.getBoundingClientRect();
+
+        const x1 = cardRect.right - containerRect.left;
+        const y1 = cardRect.top + cardRect.height / 2 - containerRect.top;
+        const x2 = markRect.left - containerRect.left;
+        const y2 = markRect.top + markRect.height / 2 - containerRect.top;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', x1);
+        line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2);
+        line.setAttribute('y2', y2);
+        line.setAttribute('stroke', 'rgb(245 158 11 / 0.4)');
+        line.setAttribute('stroke-width', '2');
+        svg.appendChild(line);
       });
     },
 
@@ -229,7 +289,7 @@ function hudReader() {
         if (body) {
           gutter = document.createElement('div');
           gutter.id = gutterId;
-          gutter.className = 'absolute left-0 top-0 bottom-0 w-20 pointer-events-none';
+          gutter.className = 'absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none';
           gutter.setAttribute('aria-label', 'Margin pins');
           body.prepend(gutter);
         }
@@ -242,6 +302,17 @@ function hudReader() {
     },
 
     createPinAtActive() {
+      // Prefer a text selection inside a <mark data-passage-id> anchor.
+      const sel = window.getSelection();
+      if (sel && sel.anchorNode) {
+        const node = sel.anchorNode;
+        const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+        const mark = el && el.closest('[data-passage-id]');
+        if (mark && mark.dataset.passageId) {
+          this.createPinAt(mark.dataset.passageId);
+          return;
+        }
+      }
       if (this.activePassageId) this.createPinAt(this.activePassageId);
     },
 
@@ -254,6 +325,23 @@ function hudReader() {
         const firstBtn = bar.querySelector('button');
         if (firstBtn) firstBtn.focus();
       }
+    },
+
+    fireReaction(n) {
+      const reactionKeys = ['lies', 'true', 'needs_proof', 'precedent'];
+      const rval = reactionKeys[n - 1];
+      if (!rval) return;
+      const docId = this.$el.dataset.docId;
+      if (!docId) return;
+      const bar = document.getElementById(`hud-reaction-bar-${docId}`);
+      if (!bar) return;
+      const btn = bar.querySelector(`[data-reaction-key="${rval}"]`);
+      if (btn) btn.click();
+    },
+
+    focusAskAi() {
+      this.docChatOpen = true;
+      window.dispatchEvent(new CustomEvent('hud-focus-chat'));
     },
 
     showShortcuts() {
@@ -284,14 +372,12 @@ function hudReader() {
     navigatePrev() {
       const prevId = this.$el.dataset.prevDocId;
       const caseId = this.$el.dataset.caseId;
-      console.log('navigatePrev:', prevId, 'caseId:', caseId);
       if (prevId && caseId) window.location.href = `/cases/${caseId}/document/${prevId}`;
     },
 
     navigateNext() {
       const nextId = this.$el.dataset.nextDocId;
       const caseId = this.$el.dataset.caseId;
-      console.log('navigateNext:', nextId, 'caseId:', caseId);
       if (nextId && caseId) window.location.href = `/cases/${caseId}/document/${nextId}`;
     },
 

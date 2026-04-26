@@ -1,13 +1,16 @@
 {# Top bar — rendered only in standalone (full-screen) context.
-   Required: doc, case_id, prev_doc_id, next_doc_id, originator_color
+   Required: doc, case_id, prev_doc_id, next_doc_id, originator_color,
+             doc_position, proceeding_total, reactions
 #}
 {% from "components/significance_indicator.html" import significance_indicator %}
 {% from "partials/_pipeline_status.html" import pipeline_status_pill %}
 {% set ot = doc.originator_type.value if doc.originator_type else 'unknown' %}
 {% set ot_class = ot.replace('_', '-') %}
+{% set reaction_emojis = {'lies': '🚩', 'true': '✅', 'needs_proof': '🔍', 'precedent': '⚖️'} %}
+{% set active_reaction = reactions[0] if reactions else none %}
 
-<div class="flex-none border-b border-outline-variant/10 hud-top-bar"
-     style="background:var(--color-surface-container-low);">
+<div class="flex-none hud-top-bar {% if doc.thread_open %}border-b-2 border-amber{% else %}border-b border-outline-variant/10{% endif %}"
+     style="background:color-mix(in srgb, var(--color-surface-container-low) 85%, transparent);">
   <div class="flex items-center gap-3 px-5 py-2.5">
 
     {# Back / breadcrumb #}
@@ -51,13 +54,21 @@
         {% endif %}
         {% if doc.thread_open %}
         <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
-              style="background:var(--color-surface-container); color:var(--color-amber);">thread open</span>
+              style="background:color-mix(in srgb, var(--color-amber) 12%, transparent); color:var(--color-amber);">thread open</span>
         {% endif %}
         {{ pipeline_status_pill(doc) }}
       </div>
     </div>
 
-    {# Prev / Next navigation #}
+    {# Reaction indicator — first active reaction emoji #}
+    {% if active_reaction %}
+    {% set rval = active_reaction.reaction.value if active_reaction.reaction else active_reaction.reaction | string %}
+    <span class="text-base shrink-0" title="Your reaction: {{ rval.replace('_', ' ') }}">
+      {{ reaction_emojis.get(rval, '') }}
+    </span>
+    {% endif %}
+
+    {# n/N proceeding counter + prev/next navigation #}
     <div class="flex items-center gap-1 shrink-0">
       {% if prev_doc_id %}
       <a href="/cases/{{ doc.case_id }}/document/{{ prev_doc_id }}"
@@ -70,6 +81,9 @@
       <span class="p-1.5 opacity-30" style="color:var(--color-outline);">
         <span class="material-symbols-outlined text-base">arrow_back_ios</span>
       </span>
+      {% endif %}
+      {% if doc_position and proceeding_total %}
+      <span class="text-[9px] font-mono tabular-nums px-1" style="color:var(--color-outline);">{{ doc_position }}/{{ proceeding_total }}</span>
       {% endif %}
       {% if next_doc_id %}
       <a href="/cases/{{ doc.case_id }}/document/{{ next_doc_id }}"

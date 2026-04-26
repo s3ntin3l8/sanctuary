@@ -312,3 +312,11 @@
 .hud-mark-flash { animation: passageFocus 600ms ease-out both; }
 
 .hud-pin-card { transition: top .24s cubic-bezier(.2,.7,.2,1); }
+
+.hud-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
