@@ -11,23 +11,6 @@ from app.services.document_service import DocumentService
 router = APIRouter(tags=["pages"])
 
 
-@router.get("/contacts")
-async def contacts_page(request: Request, db: Session = Depends(get_db)):
-    doc_service = DocumentService(db)
-    data = doc_service.get_contacts_data()
-
-    return render_page(
-        request,
-        "pages/contacts.html",
-        db=db,
-        contacts=data["contacts"],
-        documents=data["documents"],
-        summary=data["summary"],
-        originator_colors=ORIGINATOR_COLORS,
-        originator_icons=ORIGINATOR_ICONS,
-    )
-
-
 @router.get("/contacts/{sender_name}")
 async def sender_detail(
     request: Request, sender_name: str, db: Session = Depends(get_db)

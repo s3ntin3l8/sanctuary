@@ -38,6 +38,14 @@ def test_costs_page():
 
 
 @pytest.mark.integration
-def test_contacts_page():
+def test_contacts_index_returns_404():
+    """Index page deleted per vision §UI:382; only detail /contacts/{name} exists."""
     response = client.get("/contacts")
-    assert response.status_code == 200
+    assert response.status_code == 404
+
+
+@pytest.mark.integration
+def test_entities_returns_404():
+    """Entities page deleted per vision §UI:383; ⌘K replaces it."""
+    response = client.get("/entities")
+    assert response.status_code == 404

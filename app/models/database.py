@@ -497,16 +497,6 @@ class UserSettings(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
-class SavedSearch(Base):
-    __tablename__ = "saved_searches"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(String, default="single_user", nullable=False)
-    name = Column(String, nullable=False)
-    filter_json = Column(JSON, nullable=False)
-    ingest_date = Column(DateTime, default=datetime.now)
-
-
 class LegalCost(Base):
     """
     A single cost position in the German legal cost system.

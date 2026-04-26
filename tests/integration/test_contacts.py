@@ -8,39 +8,23 @@ client = TestClient(app)
 
 
 @pytest.mark.integration
-def test_contacts_page_renders(db_session):
-    """Test contacts page renders without errors."""
-    response = client.get("/api/v1/contacts")
-    assert response.status_code == 200
+def test_contacts_index_deleted(db_session):
+    """Index page deleted per vision §UI:382; both paths should 404."""
+    assert client.get("/contacts").status_code == 404
+    assert client.get("/api/v1/contacts").status_code == 404
 
 
 @pytest.mark.integration
-def test_contacts_with_senders(db_session):
-    """Test contacts page shows senders."""
+def test_contacts_detail_still_works(db_session):
+    """Detail route /contacts/{sender_name} remains for command palette drill-in."""
     doc = Document(
-        title="Letter from Plaintiff",
+        title="Letter",
         sender="John Smith",
         case_id=None,
     )
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get("/api/v1/contacts")
+    response = client.get("/contacts/John%20Smith")
     assert response.status_code == 200
     assert "John Smith" in response.text
-
-
-@pytest.mark.integration
-def test_contacts_groups_by_sender(db_session):
-    """Test contacts groups documents by sender."""
-    for i in range(3):
-        doc = Document(
-            title=f"Doc {i} from same sender",
-            sender="Repeated Sender",
-            case_id=None,
-        )
-        db_session.add(doc)
-    db_session.commit()
-
-    response = client.get("/api/v1/contacts")
-    assert response.status_code == 200

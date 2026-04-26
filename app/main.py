@@ -366,7 +366,6 @@ from app.api import (
     contacts,
     costs_router,
     documents_router,
-    entities,
     home_router,
     ingestion_settings,
     search,
@@ -391,7 +390,6 @@ app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)
 app.include_router(contacts.router)
-app.include_router(entities.router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)

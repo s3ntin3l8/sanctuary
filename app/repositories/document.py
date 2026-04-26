@@ -60,24 +60,6 @@ class DocumentRepository(BaseRepository[Document]):
             self.db.query(Document).filter(Document.sender.ilike(pattern, escape="\\"))
         ).all()
 
-    def get_senders(self) -> list[str]:
-        """Get unique senders."""
-        return [
-            r[0]
-            for r in self.db.query(Document.sender)
-            .filter(Document.sender.isnot(None))
-            .distinct()
-            .all()
-        ]
-
-    def get_all_with_sender(self) -> Sequence[Document]:
-        """Get all documents with a sender."""
-        return self._with_content_deferred(
-            self.db.query(Document)
-            .filter(Document.sender.isnot(None))
-            .order_by(Document.ingest_date.desc())
-        ).all()
-
     def get_by_originator(self, originator: OriginatorType) -> Sequence[Document]:
         """Get documents by originator type."""
         return self._with_content_deferred(
