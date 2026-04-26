@@ -160,30 +160,27 @@ class TriageService:
 
     def get_triage_bundles(self, limit: int = 50, offset: int = 0) -> list[BundleView]:
         """All triage documents grouped into bundles."""
-        from sqlalchemy import or_
+        from sqlalchemy import and_, or_
+        from sqlalchemy.orm import contains_eager
 
         from app.models.database import IngestBatch, IngestBatchStatus
 
-        # Batch subquery: any batch that is NOT completed and NOT awaiting slicing is in triage.
-        # AWAITING_SLICING batches have no Documents yet and appear in the slicing queue instead.
-        unresolved_batches_subq = (
-            self.db.query(IngestBatch.id)
-            .filter(
-                IngestBatch.status != IngestBatchStatus.COMPLETED,
-                IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
-            )
-            .scalar_subquery()
-        )
-
         docs = (
             self.db.query(Document)
+            .outerjoin(IngestBatch, Document.ingest_batch_id == IngestBatch.id)
             .options(
-                joinedload(Document.ingest_batch).joinedload(IngestBatch.proceeding),
+                contains_eager(Document.ingest_batch).joinedload(
+                    IngestBatch.proceeding
+                ),
                 joinedload(Document.proceeding),
             )
             .filter(
                 or_(
-                    Document.ingest_batch_id.in_(unresolved_batches_subq),
+                    and_(
+                        IngestBatch.id.isnot(None),
+                        IngestBatch.status != IngestBatchStatus.COMPLETED,
+                        IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+                    ),
                     Document.case_id == "_TRIAGE",
                     Document.needs_review,
                 )
