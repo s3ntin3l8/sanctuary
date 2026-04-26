@@ -167,7 +167,6 @@
     {# Secondary Status Bar #}
     {% include "partials/triage_status_bar.html" %}
 
-    {% if bundles %}
     {# Two-Column Split: Feed (38%) + HUD (62%) #}
     <div class="flex-1 flex overflow-hidden bg-surface">
         {# Left: Bundle feed #}
@@ -187,26 +186,31 @@
                  hx-swap="innerHTML"
                  {% endif %}>
                 <div class="flex items-center justify-center flex-1">
-                    {% with
-                        icon='description',
-                        title='Loading First Document...',
-                        body='Fetching details from local AI instance.',
-                        icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
-                        icon_class='text-2xl text-outline'
-                    %}
-                        {% include "partials/empty_state.html" %}
-                    {% endwith %}
+                    {% if first_bundle_doc %}
+                        {% with
+                            icon='description',
+                            title='Loading First Document...',
+                            body='Fetching details from local AI instance.',
+                            icon_wrapper_class='w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center mb-3',
+                            icon_class='text-2xl text-outline'
+                        %}
+                            {% include "partials/empty_state.html" %}
+                        {% endwith %}
+                    {% else %}
+                        {% with
+                            icon='check_circle',
+                            title='Triage Queue Clear',
+                            body='All documents have been triaged.',
+                            icon_wrapper_class='w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center mb-3',
+                            icon_class='text-2xl text-primary'
+                        %}
+                            {% include "partials/empty_state.html" %}
+                        {% endwith %}
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
-
-    {% else %}
-    {% if slicing_queue %}
-    <div class="px-6 pt-4">{% include "partials/triage_slicing_queue.html" %}</div>
-    {% endif %}
-    {% include "partials/triage_feed.html" %}
-    {% endif %}
 </section>
 
 <script src="/static/js/hud.js"></script>
