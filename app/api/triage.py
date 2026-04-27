@@ -212,21 +212,19 @@ async def confirm(
     action=assign_case   → cascade case_id, batch stays in triage
     action=confirm_bundle → cascade case_id + mark batch COMPLETED
     """
-    from app.services.case_service import CaseService
+    from app.services.case_service import get_or_create_case_from_reference
 
-    case_service = CaseService(db)
-
-    # If user chose to create a new case
-    if new_case_id and new_case_title:
-        # Check if it already exists (might have been created by another doc's Phase 1)
-        existing = case_service.case_repo.get_by_id(new_case_id)
-        if existing:
-            case_id = existing.id
-        else:
-            new_case = case_service.create_case(
-                case_id=new_case_id, title=new_case_title
-            )
-            case_id = new_case.id
+    # If user chose to create a new case — use the full helper so a Proceeding is also created
+    if new_case_id:
+        batch_subj = new_case_title or None
+        new_case_obj, _, _ = get_or_create_case_from_reference(
+            db,
+            internal_id=new_case_id,
+            batch_subject=batch_subj,
+            is_draft=False,
+        )
+        db.flush()
+        case_id = new_case_obj.id
 
     if not case_id:
         raise HTTPException(status_code=422, detail="case_id is required")
@@ -604,7 +602,9 @@ async def triage_card_live(
         return HTMLResponse("", status_code=404)
 
     triage_service = TriageService(db)
-    return HTMLResponse(_render_doc_targeted_oob(request, doc, triage_service, db))
+    return HTMLResponse(
+        _render_doc_targeted_oob(request, doc, triage_service, db, allow_delete=False)
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -677,6 +677,12 @@ async def bundle_pipeline_status(
         + summary.get("skipped", 0)
     )
 
+    _TERMINAL = {"completed", "failed", "skipped"}
+    batch_analysis_terminal = bool(stages_per_doc) and all(
+        (d.get("batch_analysis", {}) or {}).get("status") in _TERMINAL
+        for d in stages_per_doc
+    )
+
     # Minimal stub — template only needs .pipeline_summary, .key, .batch_id
     bundle_stub = SimpleNamespace(
         batch_id=batch_id,
@@ -690,11 +696,27 @@ async def bundle_pipeline_status(
         {"bundle": bundle_stub},
     )
 
-    # Only trigger a full bundle reload once all stages have reached a terminal
-    # state (completed / failed / skipped). Firing on n_active == 0 was too
-    # loose and caused the bundle to be re-fetched during every inter-stage gap,
-    # making docs flicker out of the queue mid-ingestion.
-    if n_total > 0 and n_done == n_total:
+    # Bundle re-render fires on two distinct cues so parent/child relationships
+    # (set by BATCH_ANALYSIS) become visible without a manual refresh:
+    #   1. BATCH_ANALYSIS terminal across the batch — refresh once, latch via
+    #      IngestBatch.meta so subsequent polls don't refire while later stages
+    #      still run.
+    #   2. All stages terminal — final consolidation refresh.
+    fire_reload = n_total > 0 and n_done == n_total
+
+    if batch_analysis_terminal and not fire_reload:
+        from app.models.database import IngestBatch
+
+        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+        if batch is not None:
+            meta = dict(batch.meta or {})
+            if not meta.get("batch_analysis_reload_fired"):
+                meta["batch_analysis_reload_fired"] = True
+                batch.meta = meta
+                db.commit()
+                fire_reload = True
+
+    if fire_reload:
         import time
 
         response.headers["HX-Trigger"] = json.dumps(
@@ -775,12 +797,18 @@ def _render_triage_feed_oob(
 
 
 def _render_doc_targeted_oob(
-    request: Request, doc, triage_service: TriageService, db: Session
+    request: Request,
+    doc,
+    triage_service: TriageService,
+    db: Session,
+    allow_delete: bool = True,
 ) -> str:
     """Targeted OOB for a single doc confirm: updates just the card + bundle footer + badge.
 
     Avoids the full feed replacement that causes flicker, scroll reset, and Alpine state loss.
-    Returns a delete swap if the document is no longer in the triage bundles.
+    Returns a delete swap if the document is no longer in the triage bundles, unless
+    allow_delete=False (used by the passive 4 s polling probe so the queue stays visible
+    until the user explicitly acts or refreshes the page).
     """
 
     # 1. Determine if the document should be in triage at all.
@@ -796,7 +824,8 @@ def _render_doc_targeted_oob(
         ):
             in_triage_via_batch = True
 
-    if not in_triage_via_case and not in_triage_via_batch:
+    should_delete = not in_triage_via_case and not in_triage_via_batch
+    if should_delete and allow_delete:
         return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
 
     # 2. Fetch or construct the BundleView for this document.
@@ -805,9 +834,11 @@ def _render_doc_targeted_oob(
     bundle = None
     if doc.ingest_batch_id:
         bundle = triage_service.get_bundle_by_batch_id(doc.ingest_batch_id)
-        if bundle and not in_triage_via_batch:
+        if bundle and not in_triage_via_batch and allow_delete:
             # If the batch itself is COMPLETED, the bundle in the UI should only
             # show documents that specifically need review (in_triage_via_case).
+            # Skipped when allow_delete=False so the card stays rendered and the
+            # polling probe can disarm naturally once all pipeline stages are terminal.
             bundle.documents = [
                 d for d in bundle.documents if d.case_id == "_TRIAGE" or d.needs_review
             ]
@@ -828,6 +859,8 @@ def _render_doc_targeted_oob(
         triage_service._enrich_bundle(bundle)
 
     if not bundle or not any(d.id == doc.id for d in bundle.documents):
+        if not allow_delete:
+            return ""
         return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
 
     reactions_by_doc = {

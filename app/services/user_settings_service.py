@@ -62,21 +62,6 @@ def set_active_proceeding(case_id: str, proceeding_id: int, db) -> None:
     db.flush()
 
 
-def get_dashboard_view(db) -> str:
-    settings = db.query(UserSettings).first()
-    if not settings:
-        return "graph"
-    return settings.settings_json.get("dashboard_view", "graph")
-
-
-def set_dashboard_view(view: str, db) -> None:
-    settings = _get_or_create(db)
-    data = dict(settings.settings_json)
-    data["dashboard_view"] = view
-    settings.settings_json = data
-    db.flush()
-
-
 def get_last_home_visit(db) -> datetime | None:
     """Return the datetime the user last visited the home page."""
     settings = db.query(UserSettings).first()

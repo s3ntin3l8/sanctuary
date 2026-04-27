@@ -5,34 +5,56 @@
   <div class="flex items-start justify-between gap-3">
     <p class="text-sm font-medium text-on-surface leading-snug">{{ c.claim_text }}</p>
 
-    {# Interactive status chip — user owns ESTABLISHED and reopen-to-ASSERTED #}
+    {# Interactive status chip #}
     <div class="relative flex-shrink-0" x-data="{ open: false }">
       <button @click="open = !open" @click.outside="open = false"
               class="text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap
-                {% if c.status.value == 'contested' %}bg-error/20 text-error
+                {% if c.status.value == 'contested' %}bg-amber-500/20 text-amber-600 dark:text-amber-400
+                {% elif c.status.value == 'needs_proof' %}bg-amber-500/20 text-amber-600 dark:text-amber-400
                 {% elif c.status.value == 'asserted' %}bg-secondary/20 text-secondary
                 {% elif c.status.value == 'established' %}bg-originator-own/20 text-originator-own
                 {% else %}bg-surface-container-highest text-on-surface-variant{% endif %}">
-        {{ c.status.value | title }} ▾
+        {% if c.status.value == 'needs_proof' %}Needs Proof{% else %}{{ c.status.value | title }}{% endif %} ▾
       </button>
       <div x-show="open" x-cloak
-           class="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-outline-variant/50 bg-surface-container-high shadow-xl text-xs">
-        {% if c.status.value in ('asserted', 'contested') %}
+           class="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-outline-variant/50 bg-surface-container-high shadow-xl text-xs divide-y divide-outline-variant/20">
+        {% if c.status.value != 'established' %}
         <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
                 hx-vals='{"status": "established"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-lg">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-originator-own rounded-t-lg">
           ✓ Mark Established
         </button>
-        {% else %}
+        {% endif %}
+        {% if c.status.value != 'contested' %}
+        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+                hx-vals='{"status": "contested"}'
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-amber-600 dark:text-amber-400">
+          🚩 Mark Disputed
+        </button>
+        {% endif %}
+        {% if c.status.value != 'needs_proof' %}
+        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+                hx-vals='{"status": "needs_proof"}'
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-primary">
+          🔍 Needs Proof
+        </button>
+        {% endif %}
+        {% if c.status.value not in ('asserted', 'contested', 'needs_proof') %}
         <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
                 hx-vals='{"status": "asserted"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-lg">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-b-lg">
           ↺ Reopen as Asserted
         </button>
         {% endif %}

@@ -156,8 +156,11 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
             current_proc.court_name = data.get("court_name")
         if not current_proc.subject_matter and data.get("subject_matter"):
             current_proc.subject_matter = data.get("subject_matter")
-        # If it was AG but now we know more (and it's not a new instance)
-        if extracted_level and current_proc.court_level == ProceedingCourtLevel.AG:
+        # Upgrade placeholder levels (AG default or OTHER unknown) when we now know more
+        if extracted_level and current_proc.court_level in (
+            ProceedingCourtLevel.AG,
+            ProceedingCourtLevel.OTHER,
+        ):
             current_proc.court_level = extracted_level
 
     db.commit()

@@ -32,7 +32,7 @@
         Proceeding chip follows when known.
     #}
     <div class="flex items-center justify-between gap-3 px-1 text-[10px] font-medium text-on-surface-variant cursor-pointer select-none hover:text-on-surface transition-colors"
-         @click="toggleBundle('{{ bundle.key }}')"
+         @click="$store.triage.toggleBundle('{{ bundle.key }}')"
          title="Toggle bundle">
         <div class="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
             <span class="material-symbols-outlined text-sm text-on-surface-variant/70">{{ source_icon }}</span>
@@ -85,14 +85,14 @@
             </span>
         </div>
         <span class="w-5 h-5 flex items-center justify-center text-on-surface-variant/60 shrink-0">
-            <span class="material-symbols-outlined text-sm" x-text="isBundleExpanded('{{ bundle.key }}') ? 'expand_more' : 'chevron_right'"></span>
+            <span class="material-symbols-outlined text-sm" x-text="$store.triage.isBundleExpanded('{{ bundle.key }}') ? 'expand_more' : 'chevron_right'"></span>
         </span>
     </div>
 
     {# The bundle card #}
     <div id="triage-bundle-{{ bundle.key }}"
          class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden"
-         x-show="isBundleExpanded('{{ bundle.key }}')"
+         x-show="$store.triage.isBundleExpanded('{{ bundle.key }}')"
          x-transition:enter="transition duration-150"
          x-transition:enter-start="opacity-0 -translate-y-1"
          x-transition:enter-end="opacity-100">
@@ -126,7 +126,7 @@
                         {% set doc_type     = doc.originator_type.value if doc.originator_type else 'unknown' %}
                         {% set indent_class = 'pl-6' if depth == 1 else 'pl-12' if depth == 2 else 'pl-18' if depth > 2 else '' %}
                         <div id="triage-wrapper-{{ doc.id }}"
-                             x-show="(court && '{{ doc_type }}' === 'court') || (opposing && '{{ doc_type }}' === 'opposing') || (own && '{{ doc_type }}' === 'own') || (third_party && '{{ doc_type }}' === 'third_party') || (unknown && '{{ doc_type }}' === 'unknown')"
+                             x-show="($store.triage.filters.court && '{{ doc_type }}' === 'court') || ($store.triage.filters.opposing && '{{ doc_type }}' === 'opposing') || ($store.triage.filters.own && '{{ doc_type }}' === 'own') || ($store.triage.filters.third_party && '{{ doc_type }}' === 'third_party') || ($store.triage.filters.unknown && '{{ doc_type }}' === 'unknown')"
                              class="relative {{ indent_class }}">
                             {% if depth > 0 %}
                             <svg class="absolute top-0 w-4 h-full text-outline-variant/40"

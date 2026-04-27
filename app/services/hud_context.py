@@ -225,6 +225,7 @@ def build_hud_context(
         "first_child_id": first_child_id,
         "bundle_prev_id": bundle_prev_id,
         "bundle_next_id": bundle_next_id,
+        "OriginatorType": _OriginatorType,
     }
 
     if cases is not None:
@@ -234,7 +235,6 @@ def build_hud_context(
             if _case:
                 is_draft_case = _case.is_draft
         ctx["cases"] = cases
-        ctx["OriginatorType"] = _OriginatorType
         ctx["is_draft_case"] = is_draft_case
 
     return ctx

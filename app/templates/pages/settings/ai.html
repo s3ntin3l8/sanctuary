@@ -173,7 +173,8 @@
     <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-5">
         <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">User Context</p>
         <p class="text-xs text-on-surface-variant leading-relaxed">Prepended to every AI system prompt. Describe yourself, your role, and your case situation so the AI always has background context.</p>
-        <p class="text-[10px] text-on-surface-variant/50 italic">Example: "I am Björn Hansen, a party to a civil divorce proceeding at AG Nürnberg (Case ADV-024-A). My goals are to document all assets accurately and respond promptly to all court deadlines."</p>
+        <p class="text-[10px] text-on-surface-variant/50 italic">Example: "I am a party to a civil divorce proceeding at AG Musterstadt. My goals are to document all assets accurately and respond promptly to all court deadlines."</p>
+        <p class="text-[10px] text-on-surface-variant/50 italic">Settable as <code>AI_USER_CONTEXT</code> in <code>.env</code>; the UI value below overrides env when non-empty.</p>
 
         <form hx-post="/api/settings/ai/config"
               hx-target="#context-save-result"

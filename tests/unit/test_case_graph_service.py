@@ -30,7 +30,7 @@ from app.models.enums import (
 )
 from app.services.case_graph_service import (
     CaseGraphService,
-    _is_bundle_header,
+    _is_potential_bundle_header,
     _lane_for,
     passes_filter,
 )
@@ -187,24 +187,26 @@ class TestCaseGraphServiceSignificanceFilter:
 
 class TestCaseGraphServiceBundleDetection:
     @pytest.mark.unit
-    def test_bundle_header_detection(self):
+    def test_cover_letter_with_relay_is_header(self):
         doc = _mk_doc(court_relay=True, role=DocumentRole.COVER_LETTER)
-        assert _is_bundle_header(doc) is True
+        assert _is_potential_bundle_header(doc) is True
 
     @pytest.mark.unit
-    def test_non_relay_not_bundle(self):
+    def test_cover_letter_without_relay_is_still_header(self):
+        # COVER_LETTER role alone qualifies — relay flag is optional.
         doc = _mk_doc(court_relay=False, role=DocumentRole.COVER_LETTER)
-        assert _is_bundle_header(doc) is False
+        assert _is_potential_bundle_header(doc) is True
 
     @pytest.mark.unit
-    def test_relay_but_not_cover_letter_not_bundle(self):
+    def test_court_relay_without_cover_letter_is_header(self):
+        # court_relay alone qualifies — this covers the single-relay-doc shape.
         doc = _mk_doc(court_relay=True, role=DocumentRole.STANDALONE)
-        assert _is_bundle_header(doc) is False
+        assert _is_potential_bundle_header(doc) is True
 
     @pytest.mark.unit
     def test_standalone_not_bundle(self):
         doc = _mk_doc(court_relay=False, role=DocumentRole.STANDALONE)
-        assert _is_bundle_header(doc) is False
+        assert _is_potential_bundle_header(doc) is False
 
 
 # ===========================================================================

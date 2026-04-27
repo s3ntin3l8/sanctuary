@@ -27,12 +27,11 @@ from app.services.case_service import (  # noqa: F401 (re-exported for tests)
     _compute_dormancy_alert,
 )
 from app.services.hud_context import build_hud_context
+from app.services.ingestion.extractors import infer_court_level
 from app.services.user_settings_service import (
     get_active_proceeding,
-    get_dashboard_view,
     mark_viewed,
     set_active_proceeding,
-    set_dashboard_view,
 )
 
 router = APIRouter(prefix="/cases", tags=["pages"])
@@ -160,12 +159,8 @@ async def case_detail(
     else:
         active_proceeding_id = get_active_proceeding(case_id, db)
 
-    # --- Resolve active view (query param wins; persist when given) --------
-    if view is not None:
-        set_dashboard_view(view, db)
-        active_view = view
-    else:
-        active_view = get_dashboard_view(db)
+    # --- Resolve active view (query param wins; always defaults to graph) ---
+    active_view = view if view is not None else "graph"
 
     # --- Build the context -------------------------------------------------
     context = CaseDashboardService(db).build_context(
@@ -604,7 +599,7 @@ async def create_case(
     case_id: str = Form(...),
     title: str = Form(...),
     jurisdiction: Jurisdiction = Form(Jurisdiction.DE),
-    court_name: str = Form(...),
+    court_name: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Create a new case and its initial active proceeding."""
@@ -617,12 +612,11 @@ async def create_case(
     )
     db.add(new_case)
 
-    # 2. Create initial Proceeding
-    # We default to local court (Amtsgericht) for new intake cases
+    # 2. Create initial Proceeding — infer level from court name; fall back to OTHER
     new_proceeding = Proceeding(
         case_id=case_id,
         court_name=court_name,
-        court_level=ProceedingCourtLevel.AG,
+        court_level=infer_court_level(court_name) or ProceedingCourtLevel.OTHER,
         status=ProceedingStatus.ACTIVE,
     )
     db.add(new_proceeding)

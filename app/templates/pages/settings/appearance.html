@@ -42,20 +42,6 @@
             </div>
         </div>
 
-        <!-- Default dashboard view -->
-        <div class="space-y-3">
-            <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Default Dashboard View</label>
-            <select @change="fetch('/api/user-settings/dashboard-view', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({view: $event.target.value})})"
-                    class="bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                {% set current_view = settings.get('dashboard_view', 'graph') %}
-                <option value="graph" {% if current_view == 'graph' %}selected{% endif %}>Graph</option>
-                <option value="truth" {% if current_view == 'truth' %}selected{% endif %}>Truth Map</option>
-                <option value="timeline" {% if current_view == 'timeline' %}selected{% endif %}>Timeline</option>
-                <option value="fin" {% if current_view == 'fin' %}selected{% endif %}>Financials</option>
-            </select>
-            <p class="text-[10px] text-on-surface-variant/60 italic">The view opened by default when navigating to a case dashboard.</p>
-        </div>
-
         <!-- Dashboard cards -->
         {% set cards = settings.get('dashboard_cards', {'action_items': true, 'costs': true, 'documents': true}) %}
         <div class="space-y-3">

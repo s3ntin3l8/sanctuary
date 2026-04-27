@@ -149,11 +149,12 @@ class HomeService:
         )
         active_cases = active_cases_query.order_by(Case.ingest_date.desc()).all()
 
-        # Enrich active cases with some metadata for the card
         enriched_cases = [
             case_service.enrich_case_for_card(c, now, last_home_visit)
             for c in active_cases
         ]
+        draft_cases = [c for c in enriched_cases if c["is_draft"]]
+        confirmed_cases = [c for c in enriched_cases if not c["is_draft"]]
 
         return {
             "user_name": "Björn",  # Placeholder or fetch from settings
@@ -163,7 +164,8 @@ class HomeService:
             "triage_bundles": triage_batches,
             "delta_cases": delta_cases,
             "signals": signals,
-            "active_cases": enriched_cases,
+            "active_cases": confirmed_cases,
+            "draft_cases": draft_cases,
             "last_home_visit": last_home_visit,
             "caught_up": not (action_items or triage_batches or delta_cases or signals),
         }

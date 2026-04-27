@@ -15,7 +15,6 @@ from app.models.database import (
     Case,
     Document,
     Proceeding,
-    UserSettings,
 )
 from app.models.enums import (
     CaseStatus,
@@ -26,10 +25,7 @@ from app.models.enums import (
     ProceedingStatus,
     SignificanceTier,
 )
-from app.services.user_settings_service import (
-    get_active_proceeding,
-    get_dashboard_view,
-)
+from app.services.user_settings_service import get_active_proceeding
 
 client = TestClient(app)
 
@@ -209,31 +205,6 @@ class TestCaseDashboardGraph:
 
 
 class TestUserSettingsDashboard:
-    @pytest.mark.integration
-    def test_post_dashboard_view(self, db_session):
-        # Pre-seed an empty settings row so the service can update it.
-        db_session.add(UserSettings(user_id="single_user", settings_json={}))
-        db_session.commit()
-
-        response = client.post(
-            "/api/user-settings/dashboard-view", json={"view": "truth"}
-        )
-        assert response.status_code == 204
-
-        db_session.expire_all()
-        assert get_dashboard_view(db_session) == "truth"
-
-    @pytest.mark.integration
-    def test_post_dashboard_view_creates_settings_row_when_missing(self, db_session):
-        # No pre-seeded UserSettings row — the endpoint must create one.
-        response = client.post(
-            "/api/user-settings/dashboard-view", json={"view": "graph"}
-        )
-        assert response.status_code == 204
-
-        db_session.expire_all()
-        assert get_dashboard_view(db_session) == "graph"
-
     @pytest.mark.integration
     def test_post_active_proceeding(self, db_session, graph_case, graph_proceeding):
         db_session.commit()

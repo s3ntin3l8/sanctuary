@@ -282,6 +282,23 @@ def _apply_batch_results(
                 )
             )
 
+    # Single-relay fallback: when the AI didn't produce a bundle but exactly
+    # one doc in the batch is flagged as a court relay (set in Phase 1 from
+    # the letterhead), wire the unclaimed siblings as enclosures of that
+    # relay. This is the common "court letter + attachments" shape that
+    # doesn't read as a Begleitschreiben to the model.
+    if not claimed_ids:
+        relays = [d for d in docs if d.court_relay]
+        if len(relays) == 1 and len(docs) > 1:
+            relay = relays[0]
+            relay.role = DocumentRole.COVER_LETTER
+            for d in docs:
+                if d.id == relay.id or d.parent_id is not None:
+                    continue
+                d.role = DocumentRole.ENCLOSURE
+                d.parent_id = relay.id
+                claimed_ids.add(d.id)
+
     # Mark unclaimed docs as STANDALONE
     for d in docs:
         if (

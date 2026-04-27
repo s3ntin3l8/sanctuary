@@ -32,6 +32,8 @@
     'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
     'sender':     conf.get('sender')     or ('high' if doc.sender else 'low'),
     'issued_date': conf.get('issued_date') or ('high' if doc.issued_date else 'low'),
+    'significance_tier': 'high' if doc.significance_tier else 'low',
+    'document_type':     'high' if doc.document_type     else 'low',
 } %}
 {% set high_fields = [] %}
 {% for k, v in field_confs.items() %}{% if v == 'high' %}{% set _ = high_fields.append(k) %}{% endif %}{% endfor %}
@@ -39,7 +41,7 @@
 
 <div id="triage-metadata-form"
      class="bg-surface-container-high/50 p-4 border-b border-outline-variant/10"
-     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}', showAll: {{ 'true' if needs_attention == 5 else 'false' }} }">
+     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}', showAll: {{ 'true' if needs_attention == field_confs|length else 'false' }} }">
 
     {# Header row #}
     <div class="flex items-center justify-between mb-3">

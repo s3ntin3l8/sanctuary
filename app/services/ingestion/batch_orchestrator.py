@@ -206,6 +206,7 @@ def ingest_raw_email(
 
     docs_to_process = []
     has_attachments = bool(parsed["attachments"])
+    received_date = parsed.get("received_date")
 
     # Create a body document only when the email itself is the content (no attachments).
     # With attachments the body is a transport cover note; metadata lives on the batch.
@@ -215,7 +216,6 @@ def ingest_raw_email(
         with open(body_path, "w") as f:
             f.write(parsed["body"])
 
-        received_date = parsed.get("received_date")
         threading_meta = None
         if parsed.get("in_reply_to") or parsed.get("references"):
             threading_meta = {
@@ -280,7 +280,7 @@ def ingest_raw_email(
             proceeding_id=batch.proceeding_id,
             ingest_batch_id=batch.id,
             internal_id=extract_internal_id_from_subject(subject) or None,
-            received_date=datetime.now(UTC),
+            received_date=received_date or datetime.now(UTC),
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 

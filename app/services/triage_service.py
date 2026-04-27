@@ -41,6 +41,23 @@ _SIG_ORDER: dict = {
 }
 
 
+def _sanitize_case_title(
+    title: str | None, case_id: str, bundle_subject: str | None
+) -> str | None:
+    """Return a display-worthy case title, or None when the raw title is useless.
+
+    Discards titles that are identical to the case_id (AI echo-back) and
+    re-derives from the bundle subject via the existing helper, falling back to
+    None so the modal field is left blank for the user to fill in.
+    """
+    from app.services.case_service import _derive_case_title_from_subject
+
+    if title and title.strip() != case_id:
+        return title
+    derived = _derive_case_title_from_subject(bundle_subject, case_id)
+    return derived or None
+
+
 @dataclass
 class BundleView:
     """One row in the triage feed — either a real IngestBatch or a synthetic
@@ -74,7 +91,38 @@ class BundleView:
 
     @property
     def needs_review_count(self) -> int:
+        """Total docs flagged for review — kept for backwards compatibility.
+
+        Prefer the split counts (unresolved_review_count / to_confirm_count)
+        for new UI surfaces.
+        """
         return sum(1 for d in self.documents if d.needs_review)
+
+    @property
+    def unresolved_review_count(self) -> int:
+        """Docs with real review issues (low confidence, missing fields, etc.).
+
+        Excludes docs whose only outstanding reason is `pending_confirmation`
+        — those just need a human ratification click, not metadata fixes.
+        """
+        ignorable = {"pending_confirmation", "missing_parent"}
+        return sum(
+            1
+            for d in self.documents
+            if d.review_reasons and (set(d.review_reasons) - ignorable)
+        )
+
+    @property
+    def to_confirm_count(self) -> int:
+        """Docs whose only outstanding flag is `pending_confirmation`."""
+        ignorable = {"pending_confirmation", "missing_parent"}
+        return sum(
+            1
+            for d in self.documents
+            if d.review_reasons
+            and "pending_confirmation" in d.review_reasons
+            and not (set(d.review_reasons) - ignorable)
+        )
 
     @property
     def is_synthetic(self) -> bool:
@@ -294,7 +342,9 @@ class TriageService:
             )
             if _case:
                 bundle.suggested_case_exists = True
-                bundle.suggested_case_title = _case.title
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.suggested_case_id, bundle.subject
+                )
                 bundle.suggested_case_is_draft = bool(_case.is_draft)
 
         # When AI auto-created a draft case and cascaded it to the batch,
@@ -307,10 +357,19 @@ class TriageService:
             )
             if _case and _case.is_draft:
                 bundle.suggested_case_id = bundle.confirmed_case_id
-                bundle.suggested_case_title = _case.title
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.confirmed_case_id, bundle.subject
+                )
                 bundle.suggested_case_is_draft = True
                 bundle.suggested_case_exists = True
                 bundle.confirmed_case_id = None
+            elif _case and not _case.is_draft:
+                # Case is already ratified — flag as existing so the footer
+                # shows "Confirm case <ID>" rather than "Create case <ID>".
+                bundle.suggested_case_exists = True
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.confirmed_case_id, bundle.subject
+                )
 
     def get_slicing_queue(self) -> list:
         """Batches awaiting document slicing review."""

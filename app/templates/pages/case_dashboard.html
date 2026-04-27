@@ -22,7 +22,7 @@
 
 <section id="case-dashboard-main"
          class="flex-1 flex flex-col overflow-hidden"
-         x-data='caseDashboard({{ initial | tojson }})'
+         x-data="caseDashboard({{ initial | tojson | forceescape }})"
          @keydown.window="onKey($event)">
 
   {# ── Top bar (48px) ────────────────────────────────────────────── #}
@@ -30,6 +30,11 @@
 
   {# ── Secondary header (breadcrumbs + filter chips) ─────────────── #}
   {% include "partials/dashboard/secondary_header.html" %}
+
+  {# ── Draft confirmation banner — shown when case is AI-auto-created #}
+  {% if case.is_draft %}
+  {% include "partials/dashboard/_draft_banner.html" %}
+  {% endif %}
 
   {# ── Main body grid ────────────────────────────────────────────── #}
   <div class="flex-1 grid gap-0 overflow-hidden"

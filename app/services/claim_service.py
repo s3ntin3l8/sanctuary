@@ -15,12 +15,13 @@ from app.repositories.user_reaction import UserReactionRepository
 TruthMapFilter = Literal["open", "established", "refuted", "all"]
 
 _FILTER_STATUSES: dict[TruthMapFilter, list[ClaimStatus]] = {
-    "open": [ClaimStatus.CONTESTED, ClaimStatus.ASSERTED],
+    "open": [ClaimStatus.CONTESTED, ClaimStatus.ASSERTED, ClaimStatus.NEEDS_PROOF],
     "established": [ClaimStatus.ESTABLISHED],
     "refuted": [ClaimStatus.REFUTED],
     "all": [
         ClaimStatus.CONTESTED,
         ClaimStatus.ASSERTED,
+        ClaimStatus.NEEDS_PROOF,
         ClaimStatus.ESTABLISHED,
         ClaimStatus.REFUTED,
     ],
@@ -30,15 +31,33 @@ _FILTER_STATUSES: dict[TruthMapFilter, list[ClaimStatus]] = {
 _GROUP_ORDER = [
     ClaimStatus.CONTESTED,
     ClaimStatus.ASSERTED,
+    ClaimStatus.NEEDS_PROOF,
     ClaimStatus.ESTABLISHED,
     ClaimStatus.REFUTED,
 ]
 
 # Transitions the user is allowed to request
 _USER_ALLOWED: dict[ClaimStatus, set[ClaimStatus]] = {
-    ClaimStatus.ASSERTED: {ClaimStatus.ESTABLISHED},
-    ClaimStatus.CONTESTED: {ClaimStatus.ESTABLISHED},
-    ClaimStatus.ESTABLISHED: {ClaimStatus.ASSERTED},
+    ClaimStatus.ASSERTED: {
+        ClaimStatus.ESTABLISHED,
+        ClaimStatus.CONTESTED,
+        ClaimStatus.NEEDS_PROOF,
+    },
+    ClaimStatus.CONTESTED: {
+        ClaimStatus.ESTABLISHED,
+        ClaimStatus.ASSERTED,
+        ClaimStatus.NEEDS_PROOF,
+    },
+    ClaimStatus.NEEDS_PROOF: {
+        ClaimStatus.ESTABLISHED,
+        ClaimStatus.ASSERTED,
+        ClaimStatus.CONTESTED,
+    },
+    ClaimStatus.ESTABLISHED: {
+        ClaimStatus.ASSERTED,
+        ClaimStatus.CONTESTED,
+        ClaimStatus.NEEDS_PROOF,
+    },
     ClaimStatus.REFUTED: {ClaimStatus.ASSERTED},
 }
 
@@ -149,9 +168,9 @@ class ClaimService:
 
         allowed = _USER_ALLOWED.get(claim.status, set())
         if target not in allowed:
-            if target in (ClaimStatus.CONTESTED, ClaimStatus.REFUTED):
+            if target == ClaimStatus.REFUTED:
                 raise ValueError(
-                    f"AI-owned: status '{target}' can only be set by the AI pipeline"
+                    "AI-owned: status 'refuted' can only be set by the AI pipeline"
                 )
             raise ValueError(f"Cannot transition from '{claim.status}' to '{target}'")
 

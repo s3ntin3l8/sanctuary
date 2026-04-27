@@ -214,8 +214,8 @@ function registerAiChat() {
   }));
 }
 
-if (typeof Alpine !== 'undefined') {
-  document.addEventListener('alpine:init', () => registerAiChat());
+if (window.Alpine) {
+  registerAiChat();
 } else {
   document.addEventListener('alpine:init', () => registerAiChat());
 }

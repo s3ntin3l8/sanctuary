@@ -175,12 +175,15 @@ window.CaseGraphRenderer = CaseGraphRenderer;
 
 // ── Alpine Component ─────────────────────────────────────────────────────────
 
-function initCaseDashboard() {
-  if (!window.Alpine) {
-    document.addEventListener('alpine:init', () => registerCaseDashboard());
-  } else {
-    registerCaseDashboard();
-  }
+function registerCaseDashboardComponent() {
+  if (Alpine.data('caseDashboard')) return;
+  registerCaseDashboard();
+}
+
+if (window.Alpine) {
+  registerCaseDashboardComponent();
+} else {
+  document.addEventListener('alpine:init', () => registerCaseDashboardComponent());
 }
 
 function registerCaseDashboard() {
@@ -309,7 +312,6 @@ function registerCaseDashboard() {
 
     setView(v) {
       this.view = v;
-      this.persistView(v);
     },
 
     openDoc(id) {
@@ -403,14 +405,7 @@ function registerCaseDashboard() {
       }
     },
 
-    persistView(v) {
-      fetch('/api/user-settings/dashboard-view', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ view: v }),
-      });
-    },
   }));
 }
 
-initCaseDashboard();
+// initCaseDashboard called above via if(window.Alpine) check

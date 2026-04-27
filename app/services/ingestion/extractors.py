@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from app.models.enums import OriginatorType
+from app.models.enums import OriginatorType, ProceedingCourtLevel
 
 CASE_ID_PATTERNS = [
     re.compile(r"(?:\||^|\s+)(ADV-\d{3,4}-[A-Z]{1,3})\b", re.IGNORECASE),
@@ -252,6 +252,25 @@ _LETTERHEAD_RE = re.compile(
 )
 
 
+_COURT_LEVEL_PREFIXES = (
+    ("oberlandesgericht", ProceedingCourtLevel.OLG),
+    ("bundesgerichtshof", ProceedingCourtLevel.BGH),
+    ("landgericht", ProceedingCourtLevel.LG),
+    ("amtsgericht", ProceedingCourtLevel.AG),
+)
+
+
+def infer_court_level(court_name: str | None) -> ProceedingCourtLevel | None:
+    """Infer court level from a German court name string via prefix matching."""
+    if not court_name:
+        return None
+    name = court_name.strip().lower()
+    for prefix, level in _COURT_LEVEL_PREFIXES:
+        if name.startswith(prefix) or f" {prefix}" in name:
+            return level
+    return None
+
+
 def extract_sender(content: str) -> ExtractionResult:
     """Extract sender from email content or document letterhead."""
     value = None
@@ -320,13 +339,17 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
 
 
 def normalize_az_court(value: str | None) -> str | None:
-    """Collapse whitespace and uppercase letters in a court Aktenzeichen.
+    """Canonicalise a court Aktenzeichen for equality comparison.
 
-    "003 F 426/25" / "003F  426/25" / "003 f 426/25" → "003 F 426/25"
+    Strips parenthetical annotations, normalises whitespace around '/', then uppercases.
+    "26 UF 288/ 26 E (ELTERL. SORGE)" → "26 UF 288/26 E"
     """
     if not value:
         return None
-    return re.sub(r"\s+", " ", value.strip()).upper()
+    cleaned = re.sub(r"\s*\([^)]*\)\s*", "", value)
+    cleaned = re.sub(r"\s+", " ", cleaned.strip())
+    cleaned = re.sub(r"\s*/\s*", "/", cleaned)
+    return cleaned.upper() or None
 
 
 def extract_az_court_from_subject(subject: str) -> str | None:

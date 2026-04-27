@@ -55,6 +55,29 @@
                 {% endif %}
             {% endif %}
 
+            {# AI Draft Cases — pending user confirmation #}
+            {% if draft_cases %}
+            <div class="pt-4"
+                 @mouseenter="focusedPanel = 'drafts'; focusedIdx = -1"
+                 @mouseleave="focusedPanel = null; focusedIdx = -1">
+                <div class="flex items-baseline justify-between mb-3 px-1">
+                    <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-amber-600 dark:text-amber-400 flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">pending</span>
+                        Pending Confirmation <span class="text-[11px] font-normal normal-case tracking-normal text-on-surface-variant">· {{ draft_cases|length }}</span>
+                    </h2>
+                    <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+                        see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
+                    </a>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {% for case in draft_cases %}
+                        {% set loop_index0 = loop.index0 %}
+                        {% include "partials/home/case_card.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Active Cases Section -->
             <div class="pt-4"
                  @mouseenter="focusedPanel = 'cases'; focusedIdx = -1"

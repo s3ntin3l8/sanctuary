@@ -211,6 +211,7 @@ class ClaimType(enum.StrEnum):
 class ClaimStatus(enum.StrEnum):
     ASSERTED = "asserted"
     CONTESTED = "contested"
+    NEEDS_PROOF = "needs_proof"
     REFUTED = "refuted"
     ESTABLISHED = "established"
 

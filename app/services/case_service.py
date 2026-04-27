@@ -50,6 +50,7 @@ def get_or_create_case_from_reference(
     *,
     az_court: str | None = None,
     court_name: str | None = None,
+    court_level: ProceedingCourtLevel | None = None,
     batch_subject: str | None = None,
     is_draft: bool = False,
 ) -> tuple[Case, Proceeding | None, bool]:
@@ -58,7 +59,7 @@ def get_or_create_case_from_reference(
     Race-safe: SELECT first, then INSERT only when missing. Never overwrites
     an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
     """
-    from app.services.ingestion.extractors import normalize_az_court
+    from app.services.ingestion.extractors import infer_court_level, normalize_az_court
 
     az_court = normalize_az_court(az_court)
     existing = db.query(Case).filter(Case.id == internal_id).first()
@@ -108,12 +109,15 @@ def get_or_create_case_from_reference(
             return existing, matched_proc, False
         raise  # Should not happen if it was a UNIQUE constraint on ID
 
+    resolved_level = (
+        court_level or infer_court_level(court_name) or ProceedingCourtLevel.OTHER
+    )
     # Always ensure a default proceeding exists
     new_proc = Proceeding(
         case_id=internal_id,
         az_court=az_court,
         court_name=court_name or "General",
-        court_level=ProceedingCourtLevel.AG,
+        court_level=resolved_level,
         status=ProceedingStatus.ACTIVE,
     )
     db.add(new_proc)
@@ -285,6 +289,7 @@ class CaseService:
             "id": case.id,
             "title": case.title,
             "status": case.status,
+            "is_draft": case.is_draft,
             "status_line": case.ai_brief.get("status_line", "Active")
             if case.ai_brief
             else "Active",
@@ -321,8 +326,17 @@ class CaseService:
             self.enrich_case_for_card(c, now, last_home_visit) for c in all_cases
         ]
 
-        active_cases = [c for c in enriched_cases if c["status"] != CaseStatus.CLOSED]
-        closed_cases = [c for c in enriched_cases if c["status"] == CaseStatus.CLOSED]
+        draft_cases = [c for c in enriched_cases if c["is_draft"]]
+        active_cases = [
+            c
+            for c in enriched_cases
+            if not c["is_draft"] and c["status"] != CaseStatus.CLOSED
+        ]
+        closed_cases = [
+            c
+            for c in enriched_cases
+            if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
+        ]
 
         stats_by_status = self.case_repo.count_all_by_status()
 
@@ -333,6 +347,7 @@ class CaseService:
 
         return {
             "cases": enriched_cases,
+            "draft_cases": draft_cases,
             "active_cases": active_cases,
             "closed_cases": closed_cases,
             "stats_by_status": stats_by_status,
@@ -367,8 +382,17 @@ class CaseService:
             self.enrich_case_for_card(c, now, last_home_visit) for c in cases
         ]
 
-        active_cases = [c for c in enriched_cases if c["status"] != CaseStatus.CLOSED]
-        closed_cases = [c for c in enriched_cases if c["status"] == CaseStatus.CLOSED]
+        draft_cases = [c for c in enriched_cases if c["is_draft"]]
+        active_cases = [
+            c
+            for c in enriched_cases
+            if not c["is_draft"] and c["status"] != CaseStatus.CLOSED
+        ]
+        closed_cases = [
+            c
+            for c in enriched_cases
+            if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
+        ]
 
         stats_by_status = self.case_repo.count_all_by_status()
 
@@ -378,6 +402,7 @@ class CaseService:
 
         return {
             "cases": enriched_cases,
+            "draft_cases": draft_cases,
             "active_cases": active_cases,
             "closed_cases": closed_cases,
             "stats_by_status": stats_by_status,

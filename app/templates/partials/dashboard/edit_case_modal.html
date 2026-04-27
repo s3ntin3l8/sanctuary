@@ -18,8 +18,12 @@
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Case Status</label>
                                     <select name="status" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
-                                        <option value="active" {% if case.status == 'active' %}selected{% endif %}>Active</option>
-                                        <option value="closed" {% if case.status == 'closed' %}selected{% endif %}>Closed</option>
+                                        <option value="intake"     {% if case.status == 'intake' %}selected{% endif %}>Intake</option>
+                                        <option value="discovery"  {% if case.status == 'discovery' %}selected{% endif %}>Discovery</option>
+                                        <option value="pre_trial"  {% if case.status == 'pre_trial' %}selected{% endif %}>Pre-trial</option>
+                                        <option value="trial"      {% if case.status == 'trial' %}selected{% endif %}>Trial</option>
+                                        <option value="post_trial" {% if case.status == 'post_trial' %}selected{% endif %}>Post-trial</option>
+                                        <option value="closed"     {% if case.status == 'closed' %}selected{% endif %}>Closed</option>
                                     </select>
                                 </div>
                                 <div class="flex justify-end pt-2">
@@ -31,7 +35,7 @@
 
                             <!-- Proceeding Edit Form -->
                             {% if active_proceeding %}
-                            <form hx-patch="/api/proceedings/{{ active_proceeding.id }}" class="space-y-4">
+                            <form hx-patch="/api/v1/proceedings/{{ active_proceeding.id }}" class="space-y-4">
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Proceeding Court Name</label>
                                     <input type="text" name="court_name" value="{{ active_proceeding.court_name }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
@@ -39,10 +43,11 @@
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Court Level</label>
                                     <select name="court_level" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
-                                        <option value="AG" {% if active_proceeding.court_level == 'AG' %}selected{% endif %}>AG</option>
-                                        <option value="LG" {% if active_proceeding.court_level == 'LG' %}selected{% endif %}>LG</option>
-                                        <option value="OLG" {% if active_proceeding.court_level == 'OLG' %}selected{% endif %}>OLG</option>
-                                        <option value="BGH" {% if active_proceeding.court_level == 'BGH' %}selected{% endif %}>BGH</option>
+                                        <option value="ag"    {% if active_proceeding.court_level == 'ag' %}selected{% endif %}>AG (Amtsgericht)</option>
+                                        <option value="lg"    {% if active_proceeding.court_level == 'lg' %}selected{% endif %}>LG (Landgericht)</option>
+                                        <option value="olg"   {% if active_proceeding.court_level == 'olg' %}selected{% endif %}>OLG (Oberlandesgericht)</option>
+                                        <option value="bgh"   {% if active_proceeding.court_level == 'bgh' %}selected{% endif %}>BGH (Bundesgerichtshof)</option>
+                                        <option value="other" {% if active_proceeding.court_level == 'other' %}selected{% endif %}>Other / Unclassified</option>
                                     </select>
                                 </div>
                                 <div>

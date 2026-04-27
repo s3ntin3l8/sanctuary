@@ -114,6 +114,15 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logging.getLogger(__name__).info("Migrations complete, logging re-verified.")
 
+    # Reset any pipeline stages that were left in RUNNING state by a prior crash.
+    from app.dependencies import SessionLocal
+    from app.services.pipeline_status import recover_orphaned_running_stages
+
+    with SessionLocal() as recovery_db:
+        stats = recover_orphaned_running_stages(recovery_db)
+    if any(stats.values()):
+        logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
+
     yield
 
 

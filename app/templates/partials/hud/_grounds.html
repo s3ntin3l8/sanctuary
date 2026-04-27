@@ -14,10 +14,11 @@
   <ul class="space-y-2">
     {% for claim in grounds %}
     {% set status_color = {
-      'asserted':   'var(--color-primary)',
-      'contested':  'var(--color-amber)',
-      'refuted':    'var(--color-error)',
-      'established':'var(--color-originator-own)',
+      'asserted':    'var(--color-primary)',
+      'contested':   'var(--color-amber)',
+      'needs_proof': 'var(--color-amber)',
+      'refuted':     'var(--color-error)',
+      'established': 'var(--color-originator-own)',
     }.get(claim.status.value if claim.status else 'asserted', 'var(--color-on-surface-variant)') %}
     <li class="text-[11px] -mx-1 px-1 py-1 rounded-lg hover:bg-surface-container/50 transition-colors" x-data="{ done: false }">
       <div class="flex items-start gap-2 cursor-pointer"
@@ -39,23 +40,46 @@
           </div>
         </div>
       </div>
-      {% if doc.case_id and claim.status and claim.status.value not in ('established', 'refuted') %}
-      <div class="flex gap-1.5 mt-1 ml-6">
-        <button x-show="!done"
-                hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
-                hx-vals='{"status": "established"}'
-                hx-swap="none"
-                @htmx:after-request="done = true"
-                class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">
-          ✓ confirm
-        </button>
-        <span x-show="done" class="text-[9px] text-originator-own font-bold">✓ updated</span>
+      {% if doc.case_id and claim.status and claim.status.value not in ('refuted',) %}
+      <div class="flex gap-1 mt-1 ml-6" x-data="{ done: false, doneMsg: '' }">
+        <template x-if="!done">
+          <div class="flex gap-1">
+            {% if claim.status.value != 'established' %}
+            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                    hx-vals='{"status": "established"}'
+                    hx-swap="none"
+                    @htmx:after-request="done = true; doneMsg = '✓ confirmed'"
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors cursor-pointer">
+              ✓ True
+            </button>
+            {% endif %}
+            {% if claim.status.value != 'contested' %}
+            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                    hx-vals='{"status": "contested"}'
+                    hx-swap="none"
+                    @htmx:after-request="done = true; doneMsg = '🚩 disputed'"
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer">
+              🚩 Disputed
+            </button>
+            {% endif %}
+            {% if claim.status.value != 'needs_proof' %}
+            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                    hx-vals='{"status": "needs_proof"}'
+                    hx-swap="none"
+                    @htmx:after-request="done = true; doneMsg = '🔍 flagged'"
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer">
+              🔍 Needs Proof
+            </button>
+            {% endif %}
+          </div>
+        </template>
+        <span x-show="done" class="text-[9px] font-bold text-on-surface-variant" x-text="doneMsg"></span>
       </div>
       {% endif %}
     </li>
     {% endfor %}
   </ul>
-  {% if doc.case_id %}
+  {% if doc.case_id and not is_draft_case %}
   <a href="/cases/{{ doc.case_id }}?view=truth{% if grounds %}#claim-{{ grounds[0].id }}{% endif %}"
      @click="view = 'truth'; {% if grounds %}$nextTick(() => { document.getElementById('claim-card-{{ grounds[0].id }}')?.scrollIntoView({behavior:'smooth', block:'center'}) }){% endif %}"
      class="mt-3 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">

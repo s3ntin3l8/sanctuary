@@ -1,0 +1,28 @@
+{# Draft confirmation banner — rendered on the case dashboard/graph/overview when
+   the case is an AI-auto-created draft pending user confirmation.
+   Required context: case (Case ORM object).
+#}
+<div class="px-6 py-3 bg-amber-500/5 border-b border-amber-500/30 flex items-center justify-between gap-4 shrink-0">
+    <div class="min-w-0 flex items-center gap-3">
+        <span class="material-symbols-outlined text-base text-amber-600 dark:text-amber-400 shrink-0">pending</span>
+        <div>
+            <p class="text-[10px] font-bold text-amber-600 dark:text-amber-400">AI Draft: {{ case.id }}</p>
+            <p class="text-[9px] text-on-surface-variant">This case was auto-created by AI from incoming documents. Confirm to ratify it, or reject to return documents to triage.</p>
+        </div>
+    </div>
+    <div class="flex gap-2 shrink-0">
+        <button hx-post="/cases/{{ case.id }}/confirm-draft"
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/cases/{{ case.id }}'; }"
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer whitespace-nowrap">
+            Confirm Case
+        </button>
+        <button hx-post="/cases/{{ case.id }}/reject-draft"
+                hx-swap="none"
+                hx-confirm="Delete case {{ case.id }} and return all documents to triage?"
+                hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/triage'; }"
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 cursor-pointer whitespace-nowrap">
+            Reject
+        </button>
+    </div>
+</div>

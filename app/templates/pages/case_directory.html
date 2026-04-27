@@ -5,7 +5,7 @@
 
 {% block content %}
 {% set header_title = "Case Directory" %}
-{% set header_subtitle %}{{ active_cases|length + closed_cases|length }} Total Cases{% endset %}
+{% set header_subtitle %}{{ (draft_cases|default([])|length) + active_cases|length + closed_cases|length }} Total Cases{% endset %}
 {% set header_actions %}
 <button @click="window.dispatchEvent(new CustomEvent('open-create-case-modal'))"
         class="btn btn-primary flex items-center gap-2 text-xs">
@@ -35,10 +35,41 @@
             <span class="text-[10px] font-bold text-on-surface-variant">{{ closed_cases|length }}</span>
             <span class="text-[10px] text-on-surface-variant">Closed</span>
         </div>
+        {% if draft_cases|default([]) %}
+        <div class="h-3 w-px bg-outline-variant/40"></div>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">{{ draft_cases|length }}</span>
+            <span class="text-[10px] text-on-surface-variant">Drafts</span>
+        </div>
+        {% endif %}
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface pb-12">
         <div class="p-8 max-w-7xl mx-auto space-y-12">
+
+            {# ── AI Drafts — Pending Confirmation ── #}
+            {% if draft_cases|default([]) %}
+            <div class="space-y-4"
+                 @mouseenter="focusedPanel = 'drafts'; focusedIdx = -1"
+                 @mouseleave="focusedPanel = null; focusedIdx = -1">
+                <div class="flex items-center justify-between mb-3 px-1"
+                     @mouseenter.stop="focusedIdx = -1">
+                    <h3 class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">pending</span>
+                        AI Drafts — Pending Confirmation
+                        <span class="ml-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] px-1.5 py-0.5 rounded font-bold">{{ draft_cases|length }}</span>
+                    </h3>
+                </div>
+                <div class="flex flex-col gap-1">
+                    {% for case in draft_cases %}
+                        {% set loop_index0 = loop.index0 %}
+                        {% set panel_name = 'drafts' %}
+                        {% include "partials/home/case_card_compact.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
 
             {# ── Active Litigation & Advisory ── #}
             {% if active_cases %}
@@ -86,7 +117,7 @@
             </div>
             {% endif %}
 
-            {% if not active_cases and not closed_cases %}
+            {% if not draft_cases|default([]) and not active_cases and not closed_cases %}
             {% with
                 icon='folder_open',
                 title='No Cases Yet',

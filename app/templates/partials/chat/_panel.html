@@ -4,12 +4,7 @@
    scope_type ∈ 'case' | 'document'
    scope_id   = case.id (str) or doc.id (int as str)
 #}
-<div class="flex flex-col h-full" x-data="aiChat({
-       scopeType: '{{ scope_type }}',
-       scopeId:   '{{ scope_id }}',
-       suggestedPrompts: {{ (suggested_prompts | default([])) | tojson }},
-       extraParams: {{ (extra_params | default({})) | tojson }}
-     })"
+<div class="flex flex-col h-full" x-data='aiChat({ scopeType: "{{ scope_type }}", scopeId: "{{ scope_id }}", suggestedPrompts: {{ (suggested_prompts | default([])) | tojson | replace("'", "\\u0027") }}, extraParams: {{ (extra_params | default({})) | tojson | replace("'", "\\u0027") }} })'
      x-init="init()">
 
   {# Header #}

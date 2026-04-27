@@ -151,14 +151,14 @@ def test_embedded_context_with_cases_adds_triage_keys(db_session):
 
 @pytest.mark.unit
 def test_embedded_context_without_cases_no_triage_keys(db_session):
-    """Without cases, embedded context does not add triage-only keys."""
+    """Without cases, embedded context still injects OriginatorType but not the cases list."""
     doc = Document(title="Embedded No Cases", case_id=None)
     db_session.add(doc)
     db_session.commit()
 
     ctx = build_hud_context(db_session, doc, context="embedded")
     assert "cases" not in ctx
-    assert "OriginatorType" not in ctx
+    assert "OriginatorType" in ctx  # always injected now (Fix #2)
     assert "is_draft_case" not in ctx
 
 

@@ -11,6 +11,7 @@ from app.config import (
     AI_EMBED_MODEL,
     AI_PROVIDER,
     AI_SUMMARY_MODEL,
+    AI_USER_CONTEXT,
 )
 
 
@@ -33,7 +34,7 @@ def _env_defaults() -> dict:
         "summary_model": AI_SUMMARY_MODEL,
         "embed_model": AI_EMBED_MODEL,
         "embed_dim": AI_EMBED_DIM,
-        "user_context": "",
+        "user_context": AI_USER_CONTEXT,
     }
 
 
@@ -58,5 +59,5 @@ def get_effective_config(db=None) -> AIEffectiveConfig:
         summary_model=(stored.get("summary_model") or env["summary_model"]).strip(),
         embed_model=(stored.get("embed_model") or env["embed_model"]).strip(),
         embed_dim=int(stored.get("embed_dim") or env["embed_dim"]),
-        user_context=stored.get("user_context", ""),
+        user_context=(stored.get("user_context") or env["user_context"]),
     )

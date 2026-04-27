@@ -35,11 +35,12 @@
         {# Form — static hx-post avoids HTMX/Alpine `:hx-post` URL caching issues.
            Dynamic routing is handled server-side via hidden inputs. #}
         <form id="bundle-confirm-form"
-              x-data="{ isNewCase: false, showCasePicker: false }"
+              x-data="{ isNewCase: false, showCasePicker: false, showProceedingPicker: false }"
               x-init="$watch('bundleConfirm.open', value => {
                   if (value) {
                       isNewCase = !!bundleConfirm.is_new_case;
                       showCasePicker = false;
+                      showProceedingPicker = false;
                   }
               })"
               hx-post="/triage/confirm"
@@ -52,7 +53,7 @@
             <input type="hidden" name="doc_id"        :value="bundleConfirm.doc_id">
             <input type="hidden" name="is_synthetic"  :value="bundleConfirm.is_synthetic">
             <input type="hidden" name="action"        :value="bundleConfirm.action">
-            <input type="hidden" name="active_doc_id" :value="activeDoc">
+            <input type="hidden" name="active_doc_id" :value="$store.triage.activeDoc">
 
             <div>
                 <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">
@@ -60,38 +61,43 @@
                 </p>
             </div>
 
-            {# Confirm-existing mode: show matched case as a summary card #}
-            <div x-show="!isNewCase && !showCasePicker && bundleConfirm.suggested_case_id"
-                 class="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5">
-                <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                        <p class="text-xs font-bold text-on-surface font-mono" x-text="bundleConfirm.suggested_case_id"></p>
-                        <p class="text-[10px] text-on-surface-variant truncate" x-text="bundleConfirm.suggested_case_title || '—'"></p>
+            {# Confirm-existing mode: show matched case as a summary card.
+               x-if removes the element from DOM (vs x-show display:none) so the
+               hidden input doesn't serialize alongside new_case_id. #}
+            <template x-if="!isNewCase && !showCasePicker && bundleConfirm.suggested_case_id">
+                <div class="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-on-surface font-mono" x-text="bundleConfirm.suggested_case_id"></p>
+                            <p class="text-[10px] text-on-surface-variant truncate" x-text="bundleConfirm.suggested_case_title || '—'"></p>
+                        </div>
+                        <span class="material-symbols-outlined text-sm text-primary shrink-0">check_circle</span>
                     </div>
-                    <span class="material-symbols-outlined text-sm text-primary shrink-0">check_circle</span>
+                    <input type="hidden" name="case_id" :value="bundleConfirm.suggested_case_id">
+                    <button type="button" @click="showCasePicker = true"
+                            class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
+                        Select another case →
+                    </button>
                 </div>
-                <input type="hidden" name="case_id" :value="bundleConfirm.suggested_case_id">
-                <button type="button" @click="showCasePicker = true"
-                        class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
-                    Select another case →
-                </button>
-            </div>
+            </template>
 
-            {# Case picker — shown when user clicks "Select another case" from confirm mode, or when no suggestion #}
-            <div x-show="!isNewCase && (showCasePicker || !bundleConfirm.suggested_case_id)" class="space-y-2">
-                <div class="flex items-center justify-between">
-                    <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Case</label>
-                    <button type="button" @click="isNewCase = true; showCasePicker = false"
-                            class="text-[9px] font-bold text-primary hover:underline uppercase tracking-widest">+ Create new</button>
+            {# Case picker — shown when user clicks "Select another case" or when no suggestion #}
+            <template x-if="!isNewCase && (showCasePicker || !bundleConfirm.suggested_case_id)">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Case</label>
+                        <button type="button" @click="isNewCase = true; showCasePicker = false"
+                                class="text-[9px] font-bold text-primary hover:underline uppercase tracking-widest">+ Create new</button>
+                    </div>
+                    <select name="case_id" required x-model="bundleConfirm.suggested_case_id"
+                            class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
+                        <option value="">Select case…</option>
+                        {% for case in cases %}
+                        <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
+                        {% endfor %}
+                    </select>
                 </div>
-                <select name="case_id" :required="!isNewCase" x-model="bundleConfirm.suggested_case_id"
-                        class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
-                    <option value="">Select case…</option>
-                    {% for case in cases %}
-                    <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
-                    {% endfor %}
-                </select>
-            </div>
+            </template>
 
             {# Create-new mode: pre-filled from AI suggestion #}
             <div x-show="isNewCase" class="space-y-3 p-3 bg-surface-container/30 rounded-xl border border-outline-variant/10">
@@ -109,30 +115,53 @@
                 </div>
                 <div class="space-y-1">
                     <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case Title</label>
-                    <input type="text" name="new_case_title" :required="isNewCase"
+                    <input type="text" name="new_case_title"
                            :value="bundleConfirm.suggested_case_title"
                            placeholder="e.g. Miller ./. Miller (Divorce)..."
                            class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
                 </div>
             </div>
 
-            {# Proceeding (optional) — hidden when creating new case as it will get a default one #}
-            <div class="space-y-1.5" x-show="!isNewCase">
-                <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">
-                    Proceeding <span class="font-normal normal-case">(optional)</span>
-                </label>
-                <select name="proceeding_id"
-                        :disabled="!bundleConfirm.suggested_case_id || isNewCase"
-                        class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none disabled:opacity-40">
-                    <option value="">None</option>
-                    {% for p in (proceedings or []) %}
-                    <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
-                            x-show="!bundleConfirm.suggested_case_id || bundleConfirm.suggested_case_id === '{{ p.case_id }}'">
-                        {{ p.court_name }}{% if p.az_court %} — {{ p.az_court }}{% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
+            {# Proceeding — required for existing-case assignment so we never
+               drop a doc into a case without a proceeding. Hidden in new-case
+               mode because case creation auto-creates the canonical
+               proceeding from court letterhead. #}
+
+            {# Pre-selected proceeding card — mirrors the case summary card above #}
+            <template x-if="!isNewCase && !showProceedingPicker && bundleConfirm.suggested_proceeding_id">
+                <div class="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5">
+                    <div class="flex items-start justify-between gap-2">
+                        <p class="text-xs font-bold text-on-surface"
+                           x-text="bundleConfirm.suggested_proceeding_label || ('#' + bundleConfirm.suggested_proceeding_id)"></p>
+                        <span class="material-symbols-outlined text-sm text-primary shrink-0">check_circle</span>
+                    </div>
+                    <input type="hidden" name="proceeding_id" :value="bundleConfirm.suggested_proceeding_id">
+                    <button type="button" @click="showProceedingPicker = true"
+                            class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
+                        Change proceeding →
+                    </button>
+                </div>
+            </template>
+
+            {# Proceeding picker — shown when no suggestion or user clicks "Change proceeding" #}
+            <template x-if="!isNewCase && (showProceedingPicker || !bundleConfirm.suggested_proceeding_id)">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Proceeding</label>
+                    </div>
+                    <select name="proceeding_id"
+                            :required="!isNewCase"
+                            x-model="bundleConfirm.suggested_proceeding_id"
+                            class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
+                        {% for p in (proceedings or []) %}
+                        <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
+                                x-show="!bundleConfirm.suggested_case_id || bundleConfirm.suggested_case_id === '{{ p.case_id }}'">
+                            {{ p.court_name }}{% if p.az_court %} — {{ p.az_court }}{% endif %}{% if p.court_level %} · {{ p.court_level.value|upper }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </template>
 
             {# Actions #}
             <div class="flex items-center justify-end gap-3 pt-2 border-t border-outline-variant/10">

@@ -14,12 +14,12 @@
    fires the Alpine @click and the HTMX hx-get together. #}
 <div id="triage-card-{{ doc.id }}"
      data-triage-doc-id="{{ doc.id }}"
-     @click="activeDoc = '{{ doc.id }}'"
+     @click="$store.triage.activeDoc = '{{ doc.id }}'"
      hx-get="/document/{{ doc.id }}?context=triage"
      hx-target="#triage-doc-pane"
      hx-swap="innerHTML"
      class="bg-surface-container rounded-lg shadow-sm border border-l-4 overflow-hidden group cursor-pointer transition-all border-outline-variant/10 hover:bg-surface-container-low px-4 py-3"
-     :class="activeDoc === '{{ doc.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'hover:bg-surface-container-low'"
+     :class="$store.triage.activeDoc === '{{ doc.id }}' ? 'bg-primary-container/10 border-primary/50 ring-1 ring-primary/20' : 'hover:bg-surface-container-low'"
      style="border-left-color: {{ stripe_color }};"
      {% if hx_swap_oob is defined and hx_swap_oob %}hx-swap-oob="true"{% endif %}>
 

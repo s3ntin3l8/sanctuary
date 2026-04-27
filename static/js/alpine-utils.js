@@ -1,7 +1,9 @@
 // Common Alpine.js utilities
 // Include this in base.html to make utilities available globally
 
-document.addEventListener('alpine:init', () => {
+function registerGlobalAlpineData() {
+    if (Alpine.data('confirmDialog')) return;
+
     // Confirmation dialog
     Alpine.data('confirmDialog', () => ({
         show: false,
@@ -119,7 +121,13 @@ document.addEventListener('alpine:init', () => {
             return new Date(this.startDate) <= new Date(this.endDate);
         }
     }));
-});
+}
+
+if (window.Alpine) {
+    registerGlobalAlpineData();
+} else {
+    document.addEventListener('alpine:init', () => registerGlobalAlpineData());
+}
 
 // Re-initialize Alpine on OOB swaps to ensure directives like :class work on injected elements
 document.addEventListener('htmx:oobAfterSwap', (event) => {
@@ -128,9 +136,13 @@ document.addEventListener('htmx:oobAfterSwap', (event) => {
     }
 });
 
-document.addEventListener('alpine:init', () => {
+if (window.Alpine) {
     window.Alpine = Alpine;
-});
+} else {
+    document.addEventListener('alpine:init', () => {
+        window.Alpine = Alpine;
+    });
+}
 
 function slicingGrid(slicingData, batchId) {
     return {

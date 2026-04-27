@@ -162,14 +162,15 @@ def test_post_status_reopen_from_established(db_session, tm_case, tm_doc):
 
 
 @pytest.mark.integration
-def test_post_status_ai_owned_state_returns_422(db_session, tm_case, tm_claim_asserted):
+def test_post_status_contested_now_user_allowed(db_session, tm_case, tm_claim_asserted):
+    # 'contested' is now user-settable (Fix #9); asserted → contested is valid.
     db_session.commit()
 
     response = client.post(
         f"/cases/{tm_case.id}/claims/{tm_claim_asserted.id}/status",
         data={"status": "contested"},
     )
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 @pytest.mark.integration

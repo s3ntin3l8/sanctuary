@@ -279,6 +279,72 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
     return {"total": len(stages_per_doc), **counts}
 
 
+def recover_orphaned_running_stages(db: Session) -> dict:
+    """Reset any pipeline stages left in RUNNING state due to a prior crash.
+
+    Called once at app startup after migrations. Finds documents with
+    pipeline_state in (RUNNING, PARTIAL), resets every RUNNING stage (plus
+    its downstream dependents) back to PENDING, recomputes pipeline_state,
+    and unblocks affected IngestBatches.
+
+    Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
+    """
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchStatus
+
+    docs = (
+        db.query(Document)
+        .filter(Document.pipeline_state.in_(["running", "partial"]))
+        .all()
+    )
+
+    docs_reset = 0
+    stages_reset = 0
+    affected_batch_ids: set[int] = set()
+
+    for doc in docs:
+        stages: dict = doc.pipeline_stages or {}
+        stuck = [
+            key
+            for key, val in stages.items()
+            if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+        ]
+        if not stuck:
+            continue
+
+        for stage_key in stuck:
+            try:
+                stage_enum = PipelineStage(stage_key)
+            except ValueError:
+                continue
+            reset_stage(doc.id, stage_enum, db)
+            stages_reset += 1
+
+        db.refresh(doc)
+        doc.pipeline_state = compute_overall_state(doc.pipeline_stages or {})
+
+        docs_reset += 1
+        if doc.ingest_batch_id:
+            affected_batch_ids.add(doc.ingest_batch_id)
+
+    for batch_id in affected_batch_ids:
+        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+        if not batch:
+            continue
+        batch.analysis_queued_at = None
+        if batch.status == IngestBatchStatus.PROCESSING:
+            batch.status = IngestBatchStatus.PENDING
+
+    if docs_reset:
+        db.commit()
+
+    return {
+        "docs_reset": docs_reset,
+        "stages_reset": stages_reset,
+        "batches_reset": len(affected_batch_ids),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

@@ -155,10 +155,13 @@ def test_get_truth_map_all_returns_four_groups(db_session, cs_case, doc_a):
     svc = ClaimService(db_session)
     view = svc.get_truth_map(cs_case.id, "all")
 
-    assert len(view.groups) == 4
+    assert (
+        len(view.groups) == 5
+    )  # CONTESTED, ASSERTED, NEEDS_PROOF, ESTABLISHED, REFUTED
     group_statuses = [g.status for g in view.groups]
     assert ClaimStatus.CONTESTED in group_statuses
     assert ClaimStatus.ASSERTED in group_statuses
+    assert ClaimStatus.NEEDS_PROOF in group_statuses
     assert ClaimStatus.ESTABLISHED in group_statuses
     assert ClaimStatus.REFUTED in group_statuses
 
@@ -366,17 +369,18 @@ def test_reopen_asserted_from_refuted(db_session, cs_case, doc_a):
 
 
 @pytest.mark.unit
-def test_transition_contested_raises_value_error(db_session, cs_case, doc_a):
+def test_transition_contested_now_user_allowed(db_session, cs_case, doc_a):
+    # 'contested' is now user-settable (Fix #9); asserted → contested succeeds.
     from app.services.claim_service import ClaimService
 
     claim = _make_claim(
-        db_session, cs_case, doc_a, "AI-owned state", ClaimStatus.ASSERTED
+        db_session, cs_case, doc_a, "Disputed claim", ClaimStatus.ASSERTED
     )
     db_session.commit()
 
     svc = ClaimService(db_session)
-    with pytest.raises(ValueError, match="AI-owned"):
-        svc.transition_status(claim.id, ClaimStatus.CONTESTED)
+    updated = svc.transition_status(claim.id, ClaimStatus.CONTESTED)
+    assert updated.status == ClaimStatus.CONTESTED
 
 
 @pytest.mark.unit

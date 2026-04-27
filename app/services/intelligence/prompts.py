@@ -37,9 +37,9 @@ Return ONLY valid JSON with these exact keys:
   * informational: factual updates, acknowledgments, routine correspondence
   * administrative: pure relay letters, receipts, cover pages
 - document_type: one of "ruling", "motion", "statement", "annex", "relay", "correspondence", "report", "invoice", "other"
-- key_passages: list of up to 3 most important passages. For each passage, provide character offsets into the raw document text so the UI can highlight it exactly:
-  [{"text": "exact quote from document", "rationale": "why this matters legally", "start_offset": <integer>, "end_offset": <integer>}]
-  start_offset and end_offset are zero-based character positions in the document text. If you cannot determine precise offsets, omit them (do not guess).
+- key_passages: list of up to 3 most important passages. Each passage is a verbatim quote from the document — copy it exactly so the UI can locate and highlight it:
+  [{"text": "exact quote from document", "rationale": "why this matters legally"}]
+  Do NOT compute or include character offsets — the system locates passages by matching the text. Re-counting characters wastes thinking budget.
 - cost_delta: if the document introduces a specific financial amount, object with:
   {"amount": float_in_euros, "direction": "incoming|outgoing|ruling|none", "description": "what this amount is"}
   direction: "incoming" = money we are owed or have received (e.g. PKH, reimbursement), "outgoing" = money we must pay or have paid (e.g. court fees, lawyer invoice), "ruling" = court-determined amount, "none" = no direction

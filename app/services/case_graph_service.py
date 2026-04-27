@@ -118,9 +118,13 @@ def _lane_for(doc) -> str:
     return lane
 
 
-def _is_bundle_header(doc) -> bool:
-    """True if the document is a court-relay cover-letter bundle header."""
-    return bool(doc.court_relay) and doc.role == DocumentRole.COVER_LETTER
+def _is_potential_bundle_header(doc) -> bool:
+    """A relay doc that *could* head a bundle. Whether it actually renders as
+    a bundle depends on having at least one child (resolved later).
+    """
+    if doc.role == DocumentRole.COVER_LETTER:
+        return True
+    return bool(doc.court_relay)
 
 
 def passes_filter(doc, filter_mode: str) -> bool:
@@ -207,23 +211,45 @@ class CaseGraphService:
         )
 
         # ------------------------------------------------------------------
-        # Identify bundle headers and their children
+        # Identify bundle headers and their children.
+        # Children come from explicit parent_id wiring first; for batches with
+        # exactly one court-relay doc and unwired siblings (the common
+        # "court letter + attachments in one email" shape that the batch
+        # analyzer doesn't always wire), siblings are inferred as children.
         # ------------------------------------------------------------------
-        bundle_header_ids: set[int] = set()
-        # Map: bundle_header_id → list of child docs
+        candidate_header_ids: set[int] = {
+            doc.id for doc in all_docs if _is_potential_bundle_header(doc)
+        }
         bundle_children: dict[int, list] = {}
 
         for doc in all_docs:
-            if _is_bundle_header(doc):
-                bundle_header_ids.add(doc.id)
-                bundle_children.setdefault(doc.id, [])
-
-        # Collect children (docs whose parent_id points to a bundle header)
-        child_doc_ids: set[int] = set()
-        for doc in all_docs:
-            if doc.parent_id is not None and doc.parent_id in bundle_header_ids:
+            if doc.parent_id is not None and doc.parent_id in candidate_header_ids:
                 bundle_children.setdefault(doc.parent_id, []).append(doc)
-                child_doc_ids.add(doc.id)
+
+        # Inference fallback: a single court_relay doc in a batch claims its
+        # parentless siblings.
+        docs_by_batch: dict[int, list] = {}
+        for doc in all_docs:
+            if doc.ingest_batch_id is not None:
+                docs_by_batch.setdefault(doc.ingest_batch_id, []).append(doc)
+
+        for batch_docs in docs_by_batch.values():
+            relays = [d for d in batch_docs if d.court_relay]
+            if len(relays) != 1 or len(batch_docs) <= 1:
+                continue
+            relay = relays[0]
+            if relay.id in bundle_children:
+                continue  # Already wired explicitly
+            inferred = [
+                d for d in batch_docs if d.id != relay.id and d.parent_id is None
+            ]
+            if inferred:
+                bundle_children[relay.id] = inferred
+
+        bundle_header_ids: set[int] = set(bundle_children.keys())
+        child_doc_ids: set[int] = {
+            child.id for children in bundle_children.values() for child in children
+        }
 
         # ------------------------------------------------------------------
         # Apply significance filter; exclude bundle children (they live inside
@@ -304,7 +330,7 @@ class CaseGraphService:
                 if hasattr(doc, "thread_open")
                 else False,
                 "ghost": doc.issued_date is None,
-                "is_bundle": _is_bundle_header(doc),
+                "is_bundle": doc.id in bundle_header_ids,
                 "is_new_since_last_visit": doc.id in new_doc_ids,
                 "reaction": reaction_map.get(doc.id),
                 "court_relay": bool(doc.court_relay),
@@ -319,7 +345,6 @@ class CaseGraphService:
         # Bundle dicts (for each bundle header that is in the visible set)
         # ------------------------------------------------------------------
         bundles: list[dict] = []
-        court_lane_idx = _LANE_INDEX["court"]
 
         for node in nodes:
             if not node["is_bundle"]:
@@ -329,11 +354,12 @@ class CaseGraphService:
             doc_obj = next(d for d in all_docs if d.id == bundle_doc_id)
             children = bundle_children.get(bundle_doc_id, [])
 
+            bundle_lane_idx = _LANE_INDEX[_lane_for(doc_obj)]
             bundle = {
                 "id": bundle_doc_id,
                 "lane": _lane_for(doc_obj),
                 "row": node["row"],
-                "x": LEFT + court_lane_idx * LANE_W + (LANE_W - NODE_W) / 2 - 6,
+                "x": LEFT + bundle_lane_idx * LANE_W + (LANE_W - NODE_W) / 2 - 6,
                 "y": TOP + node["row"] * ROW_H - 6,
                 "header": "\u2691 COURT RELAY",
                 "footer": (

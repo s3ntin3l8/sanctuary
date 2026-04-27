@@ -5,9 +5,17 @@
 
 // ── HUD component registration (waits for Alpine) ─────────────────────────
 
-document.addEventListener('alpine:init', () => {
-  Alpine.store('shortcuts', { showHud: false });
-});
+function registerHudStore() {
+  if (!Alpine.store('shortcuts')) {
+    Alpine.store('shortcuts', { showHud: false });
+  }
+}
+
+if (window.Alpine) {
+  registerHudStore();
+} else {
+  document.addEventListener('alpine:init', () => registerHudStore());
+}
 
 // ── Direct keydown listener (runs immediately, checks for reader lazily) ─────────────────────────
 

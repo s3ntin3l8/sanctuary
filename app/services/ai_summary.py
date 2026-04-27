@@ -11,6 +11,7 @@ from app.services.ai_config import get_effective_config
 from app.services.ingestion.extractors import (
     extract_case_id,
     extract_internal_id,
+    infer_court_level,
     normalize_az_court,
 )
 from app.services.intelligence._ai_call import call_json_ai
@@ -64,6 +65,20 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     parsed_ot = parse_originator_type(summary_data.get("originator"))
     if parsed_ot is not None:
         doc.originator_type = parsed_ot
+
+    # Fix 1A: court relay detection — court letterhead sender + non-court originator means
+    # the court is merely forwarding a party submission.
+    from app.models.enums import OriginatorType as _OT
+
+    effective_sender = summary_data.get("sender") or doc.sender
+    effective_ot = doc.originator_type
+    if (
+        effective_sender
+        and infer_court_level(effective_sender) is not None
+        and effective_ot is not None
+        and effective_ot != _OT.COURT
+    ):
+        doc.court_relay = True
 
     if summary_data.get("issued_date"):
         raw_date = str(summary_data["issued_date"]).strip()
@@ -129,6 +144,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
     internal_id = normalize_case_id(summary_data.get("internal_id"))
     ai_case_title = summary_data.get("case_title")
+    # Discard case_title when it's just the internal_id echoed back (prompt drift)
+    if ai_case_title and internal_id and ai_case_title.strip() == internal_id:
+        ai_case_title = None
 
     # Persist the extracted reference so the triage form can display and edit it
     # independently of whether auto-triage resolves to an existing Case.
@@ -180,10 +198,18 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             # Use AI-extracted case title if available
             case_title = ai_case_title or batch_subject
 
+            # Derive court_name from Phase 1 sender when it looks like a court letterhead
+            court_name_for_proc = (
+                doc.sender
+                if (doc.sender and infer_court_level(doc.sender) is not None)
+                else None
+            )
+
             draft_case, draft_proc, created = get_or_create_case_from_reference(
                 db,
                 internal_id=internal_id,
                 az_court=az_court,
+                court_name=court_name_for_proc,
                 batch_subject=case_title,
                 is_draft=True,
             )

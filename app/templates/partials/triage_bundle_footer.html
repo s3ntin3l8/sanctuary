@@ -17,9 +17,28 @@
     {% set _case_id = bundle.confirmed_case_id or bundle.suggested_case_id or '' %}
     {% set _case_title = bundle.suggested_case_title or '' %}
     {% set _case_exists = bundle.suggested_case_exists %}
-    {% if bundle.needs_review_count > 0 or not bundle.confirmed_case_id %}
-    <span class="text-[9px] text-on-surface-variant">
-        {% if bundle.needs_review_count > 0 %}{{ bundle.needs_review_count }} doc{{ 's' if bundle.needs_review_count != 1 else '' }} still need{{ '' if bundle.needs_review_count != 1 else 's' }} metadata review{% else %}All metadata confirmed{% endif %}
+    {% set _proceeding_id = bundle.proceeding.id if bundle.proceeding else '' %}
+    {% set _proceeding_label = '' %}
+    {% if bundle.proceeding %}
+        {% set _proceeding_label = bundle.proceeding.court_name %}
+        {% if bundle.proceeding.az_court %}{% set _proceeding_label = _proceeding_label ~ ' — ' ~ bundle.proceeding.az_court %}{% endif %}
+        {% if bundle.proceeding.court_level %}{% set _proceeding_label = _proceeding_label ~ ' · ' ~ bundle.proceeding.court_level.value|upper %}{% endif %}
+    {% endif %}
+    {% if bundle.unresolved_review_count > 0 or not bundle.confirmed_case_id %}
+    <span class="text-[9px] text-on-surface-variant flex items-center gap-2">
+        {% if bundle.unresolved_review_count > 0 %}
+        <span class="text-warning font-bold">
+            {{ bundle.unresolved_review_count }} need{{ '' if bundle.unresolved_review_count != 1 else 's' }} review
+        </span>
+        {% endif %}
+        {% if bundle.to_confirm_count > 0 %}
+        <span>
+            {{ bundle.to_confirm_count }} to confirm
+        </span>
+        {% endif %}
+        {% if bundle.unresolved_review_count == 0 and bundle.to_confirm_count == 0 %}
+        All metadata confirmed
+        {% endif %}
     </span>
     {# Single context-aware button: label and modal mode depend on whether the system has a case suggestion #}
     {% if _case_id and _case_exists %}
@@ -32,8 +51,10 @@
             data-doc-count="{{ bundle.doc_count }}"
             data-case-id="{{ _case_id }}"
             data-case-title="{{ _case_title | e }}"
+            data-proceeding-id="{{ _proceeding_id }}"
+            data-proceeding-label="{{ _proceeding_label | e }}"
             data-action="assign_case"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, action:d.action, is_new_case:false}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_proceeding_id:d.proceedingId, suggested_proceeding_label:d.proceedingLabel, action:d.action, is_new_case:false}}))"
             class="btn btn-primary btn-xs">
         Confirm case {{ _case_id }} &rarr;
     </button>
@@ -47,8 +68,10 @@
             data-doc-count="{{ bundle.doc_count }}"
             data-case-id="{{ _case_id }}"
             data-case-title="{{ _case_title | e }}"
+            data-proceeding-id="{{ _proceeding_id }}"
+            data-proceeding-label="{{ _proceeding_label | e }}"
             data-action="assign_case"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, action:d.action, is_new_case:true}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_proceeding_id:d.proceedingId, suggested_proceeding_label:d.proceedingLabel, action:d.action, is_new_case:true}}))"
             class="btn btn-primary btn-xs">
         Create case {{ _case_id }} &rarr;
     </button>
@@ -62,8 +85,10 @@
             data-doc-count="{{ bundle.doc_count }}"
             data-case-id=""
             data-case-title=""
+            data-proceeding-id="{{ _proceeding_id }}"
+            data-proceeding-label="{{ _proceeding_label | e }}"
             data-action="assign_case"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', action:d.action, is_new_case:true}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_proceeding_id:d.proceedingId, suggested_proceeding_label:d.proceedingLabel, action:d.action, is_new_case:true}}))"
             class="text-[10px] font-bold text-primary hover:text-primary/80 px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary/60 transition-all cursor-pointer">
         Create case…
     </button>
@@ -80,8 +105,10 @@
             data-subject="{{ _subject | e }}"
             data-doc-count="{{ bundle.doc_count }}"
             data-case-id="{{ _case_id }}"
+            data-proceeding-id="{{ _proceeding_id }}"
+            data-proceeding-label="{{ _proceeding_label | e }}"
             data-action="confirm_bundle"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, action:d.action}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_proceeding_id:d.proceedingId, suggested_proceeding_label:d.proceedingLabel, action:d.action}}))"
             class="btn btn-primary btn-xs">
         Confirm bundle &rarr;
     </button>

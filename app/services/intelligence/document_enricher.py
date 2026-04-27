@@ -64,55 +64,77 @@ def _normalize_text(s: str) -> str:
     return _re.sub(r"\s+", " ", s).strip()
 
 
-def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
-    """Validate AI-supplied offsets; repair via text search if missing or wrong.
+def _norm_to_orig_offset(content: str, norm_idx: int) -> int:
+    """Map a position in the normalized projection of `content` back to its
+    offset in the original `content` string."""
+    import re as _re
 
-    Falls back to normalized (whitespace/quote-collapsed) search when exact
-    search finds no unique match.
+    norm_walked = 0
+    for m in _re.finditer(r"\S+|\s+", content):
+        token = _normalize_text(m.group())
+        if norm_walked + len(token) > norm_idx:
+            return m.start()
+        norm_walked += len(token) + 1  # +1 for collapsed space
+    return len(content)
+
+
+def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
+    """Locate the passage text inside ``doc.content`` and stamp offsets on it.
+
+    The AI no longer supplies offsets — passages are matched here:
+        1. exact substring (unique)
+        2. normalized substring (whitespace/curly-quote-collapsed, unique)
+        3. fuzzy windowed ratio (difflib.SequenceMatcher ≥ 0.85) for paraphrased
+           or punctuation-shifted quotes
+    Falls through to ``start_offset/end_offset = None`` when all three fail.
     """
     text = passage_dict.get("text", "")
-    start = passage_dict.get("start_offset")
-    end = passage_dict.get("end_offset")
     content = doc.content or ""
 
-    # Validate exact match at claimed position
-    if (
-        start is not None
-        and end is not None
-        and isinstance(start, int)
-        and isinstance(end, int)
-        and 0 <= start < end <= len(content)
-        and content[start:end] == text
-    ):
-        return passage_dict  # offsets are correct
-
-    # Repair pass 1: exact substring search for a unique occurrence
+    # Pass 1: exact substring search for a unique occurrence
     idx = content.find(text)
     if idx != -1 and content.find(text, idx + 1) == -1:
         passage_dict["start_offset"] = idx
         passage_dict["end_offset"] = idx + len(text)
         return passage_dict
 
-    # Repair pass 2: normalized search — strip/collapse whitespace and curly quotes
+    # Pass 2: normalized search — strip/collapse whitespace and curly quotes
     norm_text = _normalize_text(text)
     norm_content = _normalize_text(content)
     norm_idx = norm_content.find(norm_text)
     if norm_idx != -1 and norm_content.find(norm_text, norm_idx + 1) == -1:
-        # Map normalized index back to original content by character walk
-        orig_idx = 0
-        norm_walked = 0
-        import re as _re
-
-        for m in _re.finditer(r"\S+|\s+", content):
-            token = _normalize_text(m.group())
-            if norm_walked + len(token) > norm_idx:
-                orig_idx = m.start()
-                break
-            norm_walked += len(token) + 1  # +1 for collapsed space
+        orig_idx = _norm_to_orig_offset(content, norm_idx)
         passage_dict["start_offset"] = orig_idx
         passage_dict["end_offset"] = min(orig_idx + len(text), len(content))
         logger.debug(f"Doc {doc.id}: passage offset repaired via normalized search")
         return passage_dict
+
+    # Pass 3: fuzzy windowed ratio match for paraphrased quotes
+    import difflib as _difflib
+
+    target_len = len(norm_text)
+    if 20 <= target_len <= len(norm_content):
+        step = max(8, target_len // 4)
+        best_ratio = 0.0
+        best_pos = -1
+        for i in range(0, len(norm_content) - target_len + 1, step):
+            window = norm_content[i : i + target_len]
+            sm = _difflib.SequenceMatcher(None, norm_text, window)
+            if sm.real_quick_ratio() < 0.7 or sm.quick_ratio() < 0.75:
+                continue
+            ratio = sm.ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_pos = i
+        if best_ratio >= 0.85 and best_pos >= 0:
+            orig_idx = _norm_to_orig_offset(content, best_pos)
+            passage_dict["start_offset"] = orig_idx
+            passage_dict["end_offset"] = min(orig_idx + len(text), len(content))
+            logger.debug(
+                f"Doc {doc.id}: passage offset repaired via fuzzy match "
+                f"(ratio={best_ratio:.2f})"
+            )
+            return passage_dict
 
     passage_dict["start_offset"] = None
     passage_dict["end_offset"] = None

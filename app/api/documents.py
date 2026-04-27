@@ -271,7 +271,7 @@ async def delete_document(
             res_content = _render_triage_feed_oob(request, triage_service, db)
             # Clear the HUD pane too since nothing is left.
             res_content += (
-                '<div id="triage-doc-pane" hx-swap-oob="innerHTML">'
+                '<div id="triage-doc-pane" hx-swap-oob="true" class="h-full flex flex-col min-h-0">'
                 '<div class="flex items-center justify-center flex-1">'
                 '<div class="text-center p-8">'
                 '<span class="material-symbols-outlined text-4xl text-outline mb-3">check_circle</span>'
