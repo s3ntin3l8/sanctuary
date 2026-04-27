@@ -65,6 +65,30 @@ def _build_passage_claim_map(
     return passage_claim_map
 
 
+def _build_claim_excerpt_map(
+    db: Session, doc: Document, passage_claim_map: dict
+) -> dict[int, str]:
+    """Map claim_id → excerpt for claims NOT already anchored via a passage mark.
+
+    Used to give claims their own independent <mark> in the document body when
+    the claim evidence excerpt doesn't overlap with any key passage.
+    """
+    anchored_claim_ids = set(passage_claim_map.values())
+    evidence_rows = (
+        db.query(ClaimEvidence)
+        .filter(
+            ClaimEvidence.document_id == doc.id,
+            ClaimEvidence.excerpt.isnot(None),
+        )
+        .all()
+    )
+    result: dict[int, str] = {}
+    for ev in evidence_rows:
+        if ev.excerpt and ev.claim_id not in anchored_claim_ids:
+            result[ev.claim_id] = ev.excerpt.strip()
+    return result
+
+
 def _build_relationships(db: Session, doc: Document) -> tuple[list[dict], list[dict]]:
     """Return (rels_out, rels_in) as flat dicts for template use."""
     rels_out = (
@@ -167,6 +191,7 @@ def build_hud_context(
     originator_color = originator_color_for_doc(doc)
     relationships_out, relationships_in = _build_relationships(db, doc)
     passage_claim_map = _build_passage_claim_map(db, doc, key_passages)
+    claim_excerpt_map = _build_claim_excerpt_map(db, doc, passage_claim_map)
 
     pins = (
         db.query(DocumentPin)
@@ -220,6 +245,7 @@ def build_hud_context(
         "proceeding_total": proceeding_total,
         "originator_color": originator_color,
         "passage_claim_map": passage_claim_map,
+        "claim_excerpt_map": claim_excerpt_map,
         "pins": pins,
         "passage_pin_counts": passage_pin_counts,
         "first_child_id": first_child_id,

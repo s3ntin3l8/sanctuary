@@ -156,6 +156,9 @@
     --color-key-passage-bg: #e0f2fe;
     --color-key-passage-fg: #075985;
     --color-key-passage-ring: #7dd3fc;
+    --color-claim-bg: #fef3c7;
+    --color-claim-fg: #92400e;
+    --color-claim-ring: #fcd34d;
     --color-warning: #b45309;
     --color-warning-container: #fef3c7;
     --font-headline: "Manrope", sans-serif;
@@ -1390,9 +1393,6 @@
   .w-36 {
     width: calc(var(--spacing) * 36);
   }
-  .w-44 {
-    width: calc(var(--spacing) * 44);
-  }
   .w-48 {
     width: calc(var(--spacing) * 48);
   }
@@ -2292,6 +2292,9 @@
   }
   .border-white {
     border-color: var(--color-white);
+  }
+  .bg-\[color\:var\(--color-claim-bg\)\] {
+    background-color: var(--color-claim-bg);
   }
   .bg-\[color\:var\(--color-key-passage-bg\)\] {
     background-color: var(--color-key-passage-bg);
@@ -3323,6 +3326,9 @@
   .whitespace-pre-wrap {
     white-space: pre-wrap;
   }
+  .text-\[color\:var\(--color-claim-fg\)\] {
+    color: var(--color-claim-fg);
+  }
   .text-\[color\:var\(--color-key-passage-fg\)\] {
     color: var(--color-key-passage-fg);
   }
@@ -3821,6 +3827,9 @@
     @supports (color: color-mix(in lab, red, red)) {
       --tw-shadow-color: color-mix(in oklab, color-mix(in oklab, var(--color-primary) 20%, transparent) var(--tw-shadow-alpha), transparent);
     }
+  }
+  .ring-\[color\:var\(--color-claim-ring\)\] {
+    --tw-ring-color: var(--color-claim-ring);
   }
   .ring-\[color\:var\(--color-key-passage-ring\)\] {
     --tw-ring-color: var(--color-key-passage-ring);
@@ -4867,6 +4876,9 @@
     --color-key-passage-bg: rgb(2 132 199 / 0.20);
     --color-key-passage-fg: #bae6fd;
     --color-key-passage-ring: rgb(56 189 248 / 0.35);
+    --color-claim-bg: rgb(245 158 11 / 0.20);
+    --color-claim-fg: #fde68a;
+    --color-claim-ring: rgb(245 158 11 / 0.35);
     --color-warning: #fbbf24;
     --color-warning-container: rgb(251 191 36 / 0.15);
   }

@@ -3,23 +3,24 @@
    Required: doc, key_passages, passage_claim_map (optional)
 #}
 {% set pcm = passage_claim_map if passage_claim_map is defined else {} %}
+{% set cem = claim_excerpt_map if claim_excerpt_map is defined else {} %}
 <div class="relative">
-  {# Left gutter — margin pins anchored to passage marks by hud.js._positionPins() #}
+  {# Left gutter — margin pins anchored to passage marks by hud.js._positionPins().
+     Only rendered when pins exist; hud.js._ensureGutter() creates it on demand
+     for the first pin drop so no placeholder is needed. #}
   {% if context != 'overlay' and pins %}
   <div id="hud-pin-gutter-{{ doc.id }}" class="absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none" aria-label="Margin pins">
     {% for pin in pins %}
     {% include "partials/hud/_pin_card.html" %}
     {% endfor %}
   </div>
-  {% else %}
-  <div class="absolute left-0 top-0 bottom-0 w-20 xl:w-52" aria-hidden="true"></div>
   {% endif %}
 
   {# SVG overlay for leader lines drawn by hud.js._drawLeaders() #}
   <svg id="hud-leader-lines-{{ doc.id }}" class="absolute inset-0 pointer-events-none" aria-hidden="true"
        style="width:100%;height:100%;overflow:visible;"></svg>
 
-  <article class="prose prose-sm max-w-[78ch] ml-20 xl:ml-52 pl-4 pr-8 py-8
+  <article class="prose prose-sm max-w-[78ch] {{ 'ml-20 xl:ml-52' if pins else '' }} pl-4 pr-8 py-8
                   prose-headings:text-on-surface prose-headings:font-black
                   prose-p:text-on-surface-variant prose-p:leading-relaxed
                   prose-strong:text-on-surface prose-em:text-on-surface
@@ -30,7 +31,7 @@
                   prose-table:text-[11px] prose-th:text-on-surface prose-td:text-on-surface-variant prose-td:border-outline-variant/20
                   prose-li:text-on-surface-variant marker:text-outline">
     {% if doc.content %}
-      {{ doc.content | render_highlighted(key_passages, pcm) }}
+      {{ doc.content | render_highlighted(key_passages, pcm, cem) }}
     {% else %}
     <div class="flex items-center justify-center h-48 text-outline text-[11px] italic border border-dashed border-outline-variant/30 rounded">
       No content available — document still processing or extraction failed.

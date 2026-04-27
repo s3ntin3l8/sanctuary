@@ -178,7 +178,7 @@ function hudReader() {
 
     focusPassage(pid) {
       const mark = document.getElementById(`p-${pid}`);
-      if (!mark) return;
+      if (!mark || mark.classList.contains('passage-anchor-unmatched')) return;
       mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
       this._flashMark(pid);
       history.pushState(null, '', `#p=${pid}`);
@@ -187,13 +187,16 @@ function hudReader() {
     },
 
     focusClaim(cid) {
-      const anchor = document.getElementById(`claim-${cid}`);
-      if (!anchor) return;
-      // The mark element immediately follows the claim anchor span.
-      const mark = anchor.nextElementSibling;
-      const target = (mark && mark.tagName === 'MARK') ? mark : anchor;
+      const el = document.getElementById(`claim-${cid}`);
+      if (!el) return;
+      // el is either a <mark> (independent claim highlight) or a <span> anchor
+      // whose next sibling is the passage <mark>.
+      const mark = (el.tagName === 'MARK')
+        ? el
+        : (el.nextElementSibling?.tagName === 'MARK' ? el.nextElementSibling : null);
+      const target = mark || el;
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (mark && mark.tagName === 'MARK') {
+      if (mark) {
         mark.style.animation = 'none';
         mark.classList.add('hud-mark-flash');
         mark.addEventListener('animationend', () => mark.classList.remove('hud-mark-flash'), { once: true });
@@ -301,13 +304,42 @@ function hudReader() {
           gutter.className = 'absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none';
           gutter.setAttribute('aria-label', 'Margin pins');
           body.prepend(gutter);
+          // Article has no left margin when no pins existed; add it now.
+          const article = body.querySelector('article');
+          if (article) {
+            article.classList.add('ml-20', 'xl:ml-52');
+          }
         }
       }
       htmx.ajax('POST', `/document/${docId}/pin`, {
         target: '#' + gutterId,
         swap: 'beforeend',
         values: { passage_id: passageId },
-      }).then(() => this._positionPins());
+      }).then(() => {
+        this._positionPins();
+        this._incrementSpinePinCount(passageId);
+      });
+    },
+
+    _incrementSpinePinCount(passageId) {
+      const existing = this.$el.querySelector(`[data-spine-passage-ref="${passageId}"]`);
+      if (existing) {
+        const count = parseInt(existing.dataset.spinePinCount || '0') + 1;
+        existing.dataset.spinePinCount = count;
+        existing.title = `${count} pin(s)`;
+        existing.textContent = `📌 ${count}`;
+      } else {
+        const pinBtn = this.$el.querySelector(`[data-pin-button="${passageId}"]`);
+        if (pinBtn) {
+          const chip = document.createElement('span');
+          chip.className = 'text-[9px] font-bold text-amber';
+          chip.dataset.spinePinCount = '1';
+          chip.dataset.spinePassageRef = passageId;
+          chip.title = '1 pin(s)';
+          chip.textContent = '📌 1';
+          pinBtn.before(chip);
+        }
+      }
     },
 
     createPinAtActive() {

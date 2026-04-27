@@ -228,6 +228,7 @@ def render_highlighted(
     value: str | None,
     key_passages: list | None = None,
     passage_claim_ids: dict | None = None,
+    claim_excerpt_map: dict | None = None,
 ) -> Markup:
     """Render markdown then wrap key_passage text in semantic <mark> spans.
 
@@ -297,6 +298,31 @@ def render_highlighted(
                 + html
             )
         html = new_html
+
+    # Second pass — independent claim-excerpt highlights (amber) for claims
+    # that weren't anchored via the passage_claim_map.
+    if claim_excerpt_map:
+        for claim_id, excerpt in claim_excerpt_map.items():
+            if not excerpt:
+                continue
+            mark_open = (
+                f'<mark id="claim-{claim_id}" data-claim-id="{claim_id}" '
+                f'class="hud-mark hud-mark--claim '
+                f"bg-[color:var(--color-claim-bg)] text-[color:var(--color-claim-fg)] "
+                f'rounded px-0.5 ring-1 ring-[color:var(--color-claim-ring)]">'
+            )
+            mark_close = "</mark>"
+
+            def _replace_claim(m, mo=mark_open, mc=mark_close):
+                return mo + m.group(0) + mc
+
+            new_html = _re.sub(_re.escape(excerpt), _replace_claim, html, count=1)
+            if new_html == html:
+                new_html = (
+                    f'<a id="claim-{claim_id}" class="claim-anchor-unmatched" aria-hidden="true"></a>'
+                    + html
+                )
+            html = new_html
 
     return Markup(html)
 

@@ -8,8 +8,10 @@
 {# 1. AI Summary #}
 {% include "partials/hud/_summary.html" %}
 
-{# 2. Pipeline retry strip — always shown so retries work from both triage and doc detail #}
+{# 2. Pipeline retry strip — doc detail only; in triage the stepper per-stage icons are sufficient #}
+{% if mode != 'review' %}
 {% include "partials/hud/_review_actions.html" %}
+{% endif %}
 
 {# 3. Pipeline status #}
 {% include "partials/hud/_pipeline.html" %}

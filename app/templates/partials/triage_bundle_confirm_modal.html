@@ -131,8 +131,12 @@
             <template x-if="!isNewCase && !showProceedingPicker && bundleConfirm.suggested_proceeding_id">
                 <div class="p-3 bg-primary/5 border border-primary/20 rounded-xl space-y-1.5">
                     <div class="flex items-start justify-between gap-2">
-                        <p class="text-xs font-bold text-on-surface"
-                           x-text="bundleConfirm.suggested_proceeding_label || ('#' + bundleConfirm.suggested_proceeding_id)"></p>
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-on-surface font-mono"
+                               x-text="bundleConfirm.suggested_proceeding_az || ('#' + bundleConfirm.suggested_proceeding_id)"></p>
+                            <p class="text-[10px] text-on-surface-variant truncate"
+                               x-text="bundleConfirm.suggested_proceeding_subtitle || '—'"></p>
+                        </div>
                         <span class="material-symbols-outlined text-sm text-primary shrink-0">check_circle</span>
                     </div>
                     <input type="hidden" name="proceeding_id" :value="bundleConfirm.suggested_proceeding_id">

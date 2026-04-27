@@ -27,11 +27,11 @@
 {% set input_base  = 'w-full px-3 py-1.5 bg-surface rounded-lg border text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all' %}
 
 {% set field_confs = {
-    'title':      conf.get('title')      or ('high' if doc.title else 'low'),
+    'title':      conf.get('title')      or 'low',
     'case_id':    'high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low',
-    'originator': conf.get('originator') or ('high' if doc.originator_type else 'low'),
-    'sender':     conf.get('sender')     or ('high' if doc.sender else 'low'),
-    'issued_date': conf.get('issued_date') or ('high' if doc.issued_date else 'low'),
+    'originator': conf.get('originator') or 'low',
+    'sender':     conf.get('sender')     or 'low',
+    'issued_date': conf.get('issued_date') or 'low',
     'significance_tier': 'high' if doc.significance_tier else 'low',
     'document_type':     'high' if doc.document_type     else 'low',
 } %}
@@ -50,10 +50,10 @@
             Metadata
         </h4>
         <div class="flex items-center gap-2">
-            {% set _open_reasons = (doc.review_reasons or []) %}
-            {% if _open_reasons %}
+            {% set _needs_review_count = field_confs.values()|reject('equalto','high')|list|length %}
+            {% if _needs_review_count %}
             <span class="text-[8px] font-bold text-warning uppercase bg-warning-container/20 px-1.5 py-px rounded-full">
-                {{ _open_reasons|length }} issue{{ 's' if _open_reasons|length != 1 else '' }}
+                {{ _needs_review_count }} issue{{ 's' if _needs_review_count != 1 else '' }}
             </span>
             {% else %}
             <span class="text-[8px] font-bold text-originator-own uppercase bg-originator-own/10 px-1.5 py-px rounded-full flex items-center gap-0.5">
@@ -291,8 +291,9 @@
                        class="{{ input_base }} font-mono {{ low_border if (conf.get('internal_id') or 'low') == 'low' else med_border if (conf.get('internal_id') or 'low') == 'medium' else ok_border }}">
             </div>
 
-            {# Read-only: az_court, significance_tier, document_type — always visible #}
-            <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]">
+            {# Read-only: az_court, significance_tier, document_type — folded with pre-confirmed #}
+            <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]"
+                 x-show="showAll">
                 <div>
                     <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
                     <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>

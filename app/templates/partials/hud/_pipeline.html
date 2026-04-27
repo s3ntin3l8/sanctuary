@@ -7,7 +7,7 @@
 {% set _skipped_count = stages.values() | selectattr('status', 'equalto', 'skipped') | list | length %}
 {% set _all_terminal = stages | length > 0 and (_completed_count + _skipped_count) == stages | length %}
 
-<div x-data="{ open: {{ 'false' if _all_terminal else 'true' }} }"
+<div x-data="{ open: {{ 'true' if mode == 'review' else ('false' if _all_terminal else 'true') }} }"
      class="border-b border-outline-variant/10">
 
   {# Section header — always visible, click to toggle #}
