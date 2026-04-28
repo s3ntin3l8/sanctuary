@@ -106,6 +106,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         "originator",
         "az_court",
         "internal_id",
+        "title",
     }
     ai_conf = summary_data.get("confidence")
     if ai_conf and isinstance(ai_conf, dict):

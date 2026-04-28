@@ -316,12 +316,15 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     doc.received_date = datetime.now(UTC)
     if result_internal_id["value"] and not doc.internal_id:
         doc.internal_id = result_internal_id["value"]
-    doc.extraction_confidence = ExtractionConfidenceSchema(
-        sender=result_sender["confidence"],
-        issued_date=result_date["confidence"],
-        originator=result_originator["confidence"],
-        internal_id=result_internal_id["confidence"],
-    ).model_dump()
+    doc.extraction_confidence = {
+        **(doc.extraction_confidence or {}),
+        **ExtractionConfidenceSchema(
+            sender=result_sender["confidence"],
+            issued_date=result_date["confidence"],
+            originator=result_originator["confidence"],
+            internal_id=result_internal_id["confidence"],
+        ).model_dump(),
+    }
 
     reasons = compute_review_reasons(doc, confirmed=False)
     doc.review_reasons = reasons

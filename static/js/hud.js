@@ -118,11 +118,62 @@ function hudReader() {
       // Re-position pins when article resizes (e.g. window resize).
       this._observeArticleResize();
 
-      // Re-position after HTMX drops a new pin card into the gutter.
+      // Pin DELETE: capture the doomed pin's passage_id BEFORE the swap, so
+      // afterSwap can decrement the spine counter once the element is gone.
+      this.$el.addEventListener('htmx:beforeSwap', (e) => {
+        const cfg = e.detail && e.detail.requestConfig;
+        if (!cfg || cfg.verb !== 'delete') return;
+        if (!/\/pin\/\d+$/.test(cfg.path || '')) return;
+        const tgt = e.detail.target;
+        if (tgt && tgt.dataset && tgt.dataset.passageId) {
+          this._pendingDeletePassageId = tgt.dataset.passageId;
+        }
+      });
+
+      // After HTMX swaps a pin card into the gutter (create) or removes one
+      // (delete), update the affected UI: un-hide / re-hide the gutter,
+      // toggle the article's left margin, bump or drop the spine counter,
+      // and reposition every pin to clear of its passage mark.
       this.$el.addEventListener('htmx:afterSwap', (e) => {
         const gutterId = 'hud-pin-gutter-' + this.$el.dataset.docId;
-        if (e.target && e.target.id === gutterId) this._positionPins();
-        if (e.target && e.target.closest && e.target.closest('#' + gutterId)) this._positionPins();
+        const gutter = document.getElementById(gutterId);
+        if (!gutter) return;
+        const target = e.target;
+        const involvesGutter =
+          target && (target.id === gutterId
+                     || (target.closest && target.closest('#' + gutterId)));
+        if (!involvesGutter) return;
+
+        const cfg = e.detail && e.detail.requestConfig;
+        const path = (cfg && cfg.path) || '';
+        const isCreate = cfg && cfg.verb === 'post'
+          && /\/document\/\d+\/pin$/.test(path);
+        const isDelete = cfg && cfg.verb === 'delete'
+          && /\/pin\/\d+$/.test(path);
+
+        if (isCreate) {
+          if (gutter.classList.contains('hidden')) {
+            gutter.classList.remove('hidden');
+            const article = this.$el.querySelector('article');
+            if (article) article.classList.add('ml-20', 'xl:ml-52');
+          }
+          // beforeend swap → new pin card is the gutter's last child.
+          const newPin = gutter.lastElementChild;
+          const pid = newPin && newPin.dataset && newPin.dataset.passageId;
+          if (pid) this._incrementSpinePinCount(pid);
+        }
+        if (isDelete) {
+          const pid = this._pendingDeletePassageId;
+          this._pendingDeletePassageId = null;
+          if (pid) this._decrementSpinePinCount(pid);
+          // Last pin removed → hide the gutter and reclaim the article width.
+          if (gutter.children.length === 0) {
+            gutter.classList.add('hidden');
+            const article = this.$el.querySelector('article');
+            if (article) article.classList.remove('ml-20', 'xl:ml-52');
+          }
+        }
+        this._positionPins();
       });
     },
 
@@ -178,9 +229,14 @@ function hudReader() {
 
     focusPassage(pid) {
       const mark = document.getElementById(`p-${pid}`);
-      if (!mark || mark.classList.contains('passage-anchor-unmatched')) return;
-      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      this._flashMark(pid);
+      if (!mark) return;
+      const unmatched = mark.classList.contains('passage-anchor-unmatched');
+      // Unmatched anchors live at the top of the body; scroll to the article
+      // top so the click isn't a silent dead-end. Spine row already shows ⚠.
+      const target = unmatched ? (this.$el.querySelector('article') || mark) : mark;
+      target.scrollIntoView({ behavior: 'smooth', block: unmatched ? 'start' : 'center' });
+      if (!unmatched) this._flashMark(pid);
+      this._flashSpineRow(pid, unmatched);
       history.pushState(null, '', `#p=${pid}`);
       this.activePassageId = pid;
       this._syncSpine(pid);
@@ -189,18 +245,31 @@ function hudReader() {
     focusClaim(cid) {
       const el = document.getElementById(`claim-${cid}`);
       if (!el) return;
+      const unmatched = el.classList.contains('claim-anchor-unmatched');
       // el is either a <mark> (independent claim highlight) or a <span> anchor
       // whose next sibling is the passage <mark>.
       const mark = (el.tagName === 'MARK')
         ? el
         : (el.nextElementSibling?.tagName === 'MARK' ? el.nextElementSibling : null);
-      const target = mark || el;
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (mark) {
+      const target = (unmatched ? (this.$el.querySelector('article') || el)
+                                : (mark || el));
+      target.scrollIntoView({ behavior: 'smooth', block: unmatched ? 'start' : 'center' });
+      if (mark && !unmatched) {
         mark.style.animation = 'none';
         mark.classList.add('hud-mark-flash');
         mark.addEventListener('animationend', () => mark.classList.remove('hud-mark-flash'), { once: true });
       }
+    },
+
+    _flashSpineRow(pid, unmatched) {
+      const row = document.querySelector(`[data-spine-passage="${pid}"]`);
+      if (!row) return;
+      const cls = unmatched ? 'hud-spine-flash-warn' : 'hud-spine-flash';
+      row.classList.remove(cls);
+      // Force reflow so re-adding the class restarts the animation.
+      void row.offsetWidth;
+      row.classList.add(cls);
+      row.addEventListener('animationend', () => row.classList.remove(cls), { once: true });
     },
 
     _flashMark(pid) {
@@ -219,14 +288,20 @@ function hudReader() {
       if (!article) return;
       const articleRect = article.getBoundingClientRect();
 
-      // Compute initial tops anchored to each passage mark.
+      // Compute initial tops anchored to each passage mark. Pins anchored to
+      // an unmatched passage (zero-height anchor at top of body) are pinned
+      // to the top of the article and tagged so styling and the leader-line
+      // pass can flag them as approximate.
       const cards = [];
       gutter.querySelectorAll('.hud-pin-card').forEach(card => {
         const pid = card.dataset.passageId;
         const mark = document.getElementById(`p-${pid}`);
         if (!mark) return;
-        const markRect = mark.getBoundingClientRect();
-        const top = markRect.top - articleRect.top + article.scrollTop;
+        const unmatched = mark.classList.contains('passage-anchor-unmatched');
+        card.classList.toggle('hud-pin-card--unmatched', unmatched);
+        const top = unmatched
+          ? 0
+          : (mark.getBoundingClientRect().top - articleRect.top + article.scrollTop);
         cards.push({ card, top });
       });
 
@@ -261,6 +336,10 @@ function hudReader() {
         const pid = card.dataset.passageId;
         const mark = document.getElementById(`p-${pid}`);
         if (!mark) return;
+        // Don't draw a line to a hidden 0-height anchor at the top of the
+        // body — that's misleading. The pin card itself flags "unmatched"
+        // styling, the absent line tells the user this is approximate.
+        if (mark.classList.contains('passage-anchor-unmatched')) return;
 
         const cardRect = card.getBoundingClientRect();
         const markRect = mark.getBoundingClientRect();
@@ -291,33 +370,18 @@ function hudReader() {
     },
 
     createPinAt(passageId) {
+      // Used by the `n` keyboard shortcut. The spine button uses hx-post
+      // directly on the always-rendered gutter; the htmx:afterSwap listener
+      // un-hides the gutter, adds the article margin, and bumps the spine
+      // counter — same flow whether the swap originated from a click or here.
       if (!passageId) return;
       const docId = this.$el.dataset.docId;
       if (!docId) return;
       const gutterId = 'hud-pin-gutter-' + docId;
-      let gutter = document.getElementById(gutterId);
-      if (!gutter) {
-        const body = this.$el.querySelector('[class*="relative"]');
-        if (body) {
-          gutter = document.createElement('div');
-          gutter.id = gutterId;
-          gutter.className = 'absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none';
-          gutter.setAttribute('aria-label', 'Margin pins');
-          body.prepend(gutter);
-          // Article has no left margin when no pins existed; add it now.
-          const article = body.querySelector('article');
-          if (article) {
-            article.classList.add('ml-20', 'xl:ml-52');
-          }
-        }
-      }
       htmx.ajax('POST', `/document/${docId}/pin`, {
         target: '#' + gutterId,
         swap: 'beforeend',
         values: { passage_id: passageId },
-      }).then(() => {
-        this._positionPins();
-        this._incrementSpinePinCount(passageId);
       });
     },
 
@@ -339,6 +403,19 @@ function hudReader() {
           chip.textContent = '📌 1';
           pinBtn.before(chip);
         }
+      }
+    },
+
+    _decrementSpinePinCount(passageId) {
+      const chip = this.$el.querySelector(`[data-spine-passage-ref="${passageId}"]`);
+      if (!chip) return;
+      const count = parseInt(chip.dataset.spinePinCount || '0') - 1;
+      if (count <= 0) {
+        chip.remove();
+      } else {
+        chip.dataset.spinePinCount = count;
+        chip.title = `${count} pin(s)`;
+        chip.textContent = `📌 ${count}`;
       }
     },
 

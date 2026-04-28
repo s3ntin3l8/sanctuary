@@ -8,6 +8,7 @@
     Required context: bundle (BundleView).
     Optional: as_oob (bool) — adds hx-swap-oob="true" for targeted OOB replacement.
 #}
+{% from "partials/_conf_chip.html" import draft_pill %}
 <div id="triage-bundle-footer-{{ bundle.key }}"
      class="px-4 py-3 bg-surface-container-low/40 border-t border-outline-variant/10 flex items-center justify-between gap-3"
      {% if as_oob %}hx-swap-oob="true"{% endif %}
@@ -43,7 +44,9 @@
     </span>
     {# Single context-aware button: label and modal mode depend on whether the system has a case suggestion #}
     {% if _case_id and _case_exists %}
-    {# AI matched or created a (draft) case — offer to confirm it #}
+    {# AI matched or created a (draft) case — offer to ratify (draft) or confirm (real) #}
+    <span class="flex items-center gap-1.5">
+    {% if bundle.suggested_case_is_draft %}{{ draft_pill() }}{% endif %}
     <button type="button"
             data-batch-id="{{ bundle.batch_id }}"
             data-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
@@ -52,14 +55,16 @@
             data-doc-count="{{ bundle.doc_count }}"
             data-case-id="{{ _case_id }}"
             data-case-title="{{ _case_title | e }}"
+            data-case-is-draft="{{ 'true' if bundle.suggested_case_is_draft else 'false' }}"
             data-proceeding-id="{{ _proceeding_id }}"
             data-proceeding-az="{{ _proceeding_az | e }}"
             data-proceeding-subtitle="{{ _proceeding_subtitle | e }}"
             data-action="assign_case"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:d.action, is_new_case:false}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:d.caseIsDraft==='true', suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:d.action, is_new_case:false}}))"
             class="btn btn-primary btn-xs">
-        Confirm case {{ _case_id }} &rarr;
+        {% if bundle.suggested_case_is_draft %}Ratify{% else %}Confirm{% endif %} case {{ _case_id }} &rarr;
     </button>
+    </span>
     {% elif _case_id %}
     {# AI extracted an ID but no Case row exists yet — offer to create #}
     <button type="button"

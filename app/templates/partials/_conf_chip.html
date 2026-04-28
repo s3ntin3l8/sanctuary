@@ -1,0 +1,30 @@
+{# Reusable confidence + draft chips. Imported via:
+     {% from "partials/_conf_chip.html" import conf_chip, draft_pill %}
+
+   conf_chip(level): renders 'H' / 'M' / 'L' chip for level in
+   {high, medium, low}; nothing for any other value.
+
+   draft_pill(): an "AI DRAFT" pill — shown next to a case id when that case
+   has is_draft=True. Same density as conf_chip so they line up in card rows.
+#}
+
+{% macro conf_chip(level) %}
+    {% if level == 'high' %}
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-own/15 text-originator-own" title="High confidence — extracted cleanly">
+            <span class="w-1.5 h-1.5 rounded-full bg-originator-own flex-shrink-0"></span>H
+        </span>
+    {% elif level == 'medium' %}
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-amber-500/15 text-amber-500" title="Medium confidence — review recommended">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>M
+        </span>
+    {% elif level == 'low' %}
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-opposing/15 text-originator-opposing" title="Low confidence — please verify">
+            <span class="w-1.5 h-1.5 rounded-full bg-originator-opposing flex-shrink-0"></span>L
+        </span>
+    {% endif %}
+{% endmacro %}
+
+{% macro draft_pill() %}
+<span class="inline-flex items-center text-[7px] font-bold font-mono px-1 py-px rounded bg-amber-500/15 text-amber-500 uppercase tracking-wider"
+      title="AI-proposed case — not yet ratified">draft</span>
+{% endmacro %}

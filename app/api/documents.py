@@ -93,6 +93,44 @@ async def upload_document(
         )
         db.commit()
 
+    def _row_queued(filename: str, doc_id: int | None = None, sub: str = "") -> str:
+        # Each row carries a polling probe that swaps itself with the latest
+        # status from /upload/status/{doc_id} every 2 s while in-flight. The
+        # triage queue is the canonical "watch it run" view, but having live
+        # state in the modal closes the dead-zone before the user navigates.
+        probe = (
+            f' hx-get="/upload/status/{doc_id}" hx-trigger="every 2s"'
+            f' hx-swap="outerHTML"'
+            if doc_id
+            else ""
+        )
+        sub_html = (
+            f'<p class="text-[9px] text-on-surface-variant">{sub}</p>' if sub else ""
+        )
+        return (
+            f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-originator-own/5 border border-originator-own/15"{probe}>'
+            f'<span class="material-symbols-outlined text-[14px] text-originator-own animate-spin">progress_activity</span>'
+            f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface truncate" title="{filename}">{filename}</p>'
+            f'<p class="text-[10px] text-on-surface-variant">queued for processing</p>'
+            f"{sub_html}</div></div>"
+        )
+
+    def _row_dup(filename: str) -> str:
+        return (
+            f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-surface-container/40 border border-outline-variant/10">'
+            f'<span class="material-symbols-outlined text-[14px] text-on-surface-variant">history</span>'
+            f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface-variant truncate" title="{filename}">{filename}</p>'
+            f'<p class="text-[10px] text-on-surface-variant">already ingested</p></div></div>'
+        )
+
+    def _row_error(filename: str, msg: str) -> str:
+        return (
+            f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-error-container/15 border border-error/20">'
+            f'<span class="material-symbols-outlined text-[14px] text-error">error</span>'
+            f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface truncate" title="{filename}">{filename}</p>'
+            f'<p class="text-[10px] text-error truncate" title="{msg}">{msg}</p></div></div>'
+        )
+
     for file in files:
         if not file.filename:
             continue
@@ -109,21 +147,15 @@ async def upload_document(
                 )
                 if batch:
                     success_count += 1
-                    results.append(
-                        f'<div class="p-2 text-xs text-green-400">✓ {file.filename} — batch #{batch.id} queued</div>'
-                    )
+                    results.append(_row_queued(file.filename, sub=f"batch #{batch.id}"))
                 else:
-                    results.append(
-                        f'<div class="p-2 text-xs text-on-surface-variant">↩ {file.filename} already ingested</div>'
-                    )
+                    results.append(_row_dup(file.filename))
             except Exception as e:
                 error_count += 1
                 logger.error(
                     f"EML ingest failed for {file.filename}: {e}", exc_info=True
                 )
-                results.append(
-                    f'<div class="p-2 text-xs text-error">✗ {file.filename}: {e}</div>'
-                )
+                results.append(_row_error(file.filename, str(e)))
             continue
 
         try:
@@ -147,33 +179,38 @@ async def upload_document(
 
             threading.Thread(target=_dispatch, daemon=True).start()
 
-            results.append(
-                f'<div class="p-2 text-xs text-green-400">✓ {file.filename} queued for processing</div>'
-            )
+            results.append(_row_queued(file.filename, doc_id=_doc_id))
 
         except HTTPException as e:
             error_count += 1
-            results.append(
-                f'<div class="p-2 text-xs text-error">'
-                f"✗ {file.filename}: {e.detail}</div>"
-            )
+            results.append(_row_error(file.filename, str(e.detail)))
         except Exception as e:
             error_count += 1
             logger.error(f"Upload failed for file {file.filename}: {e}", exc_info=True)
-            results.append(
-                f'<div class="p-2 text-xs text-error">'
-                f"✗ {file.filename}: Upload failed: {e}</div>"
-            )
+            results.append(_row_error(file.filename, f"Upload failed: {e}"))
 
     if success_count == 0 and error_count > 0:
         return HTMLResponse(
-            f"<div class='space-y-1'>{''.join(results)}</div>",
+            f"<div class='space-y-1.5'>{''.join(results)}</div>",
             status_code=400,
         )
 
     if request.headers.get("hx-request"):
-        summary = f"<div class='p-2 text-xs font-bold text-on-surface'>{success_count} uploaded, {error_count} failed</div>"
-        return HTMLResponse(summary + "".join(results))
+        summary = (
+            f"<div class='flex items-center gap-2 text-xs mb-2'>"
+            f"<span class='font-black text-on-surface'>{success_count}</span> "
+            f"<span class='text-on-surface-variant'>uploaded</span>"
+            + (
+                f", <span class='font-black text-error'>{error_count}</span> "
+                f"<span class='text-on-surface-variant'>failed</span>"
+                if error_count
+                else ""
+            )
+            + "</div>"
+        )
+        return HTMLResponse(
+            summary + f"<div class='space-y-1.5'>{''.join(results)}</div>"
+        )
 
     return {
         "results": results,
@@ -205,6 +242,74 @@ async def bulk_delete_documents(request: Request, db: Session = Depends(get_db))
     return HTMLResponse(
         '<div hx-trigger="load" hx-get="/triage" hx-target="body"></div>',
         status_code=200,
+    )
+
+
+@router.get("/upload/status/{doc_id}")
+async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
+    """Self-replacing status row for the upload modal's per-file probe.
+
+    Polls every 2 s from the row in /upload's response. While the doc's
+    pipeline is in pending/running, returns the same in-flight row (with
+    current stage label). When the pipeline reaches a terminal state, returns
+    a final row that disarms the polling (no hx-* attributes).
+    """
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        # Row was deleted under us — return empty so the polling probe stops.
+        return HTMLResponse("")
+
+    state = doc.pipeline_state.value if doc.pipeline_state else "pending"
+    filename = doc.title or "(untitled)"
+
+    if state == "failed":
+        # Find the first failed stage for the error message.
+        failed_stage = ""
+        failed_error = ""
+        for stage_key, stage_rec in (doc.pipeline_stages or {}).items():
+            if isinstance(stage_rec, dict) and stage_rec.get("status") == "failed":
+                failed_stage = stage_key
+                failed_error = stage_rec.get("error") or ""
+                break
+        msg = (
+            f"{failed_stage.replace('_', ' ')} failed"
+            if failed_stage
+            else "pipeline failed"
+        )
+        if failed_error:
+            msg += f" — {failed_error[:80]}"
+        return HTMLResponse(
+            f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-error-container/15 border border-error/20">'
+            f'<span class="material-symbols-outlined text-[14px] text-error">error</span>'
+            f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface truncate" title="{filename}">{filename}</p>'
+            f'<p class="text-[10px] text-error truncate" title="{msg}">{msg}</p></div></div>'
+        )
+
+    if state == "completed":
+        return HTMLResponse(
+            f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-originator-own/10 border border-originator-own/30">'
+            f'<span class="material-symbols-outlined text-[14px] text-originator-own">check_circle</span>'
+            f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface truncate" title="{filename}">{filename}</p>'
+            f'<p class="text-[10px] text-originator-own">ready</p></div></div>'
+        )
+
+    # In-flight: surface the currently-running (or first pending) stage.
+    running_stage = ""
+    for stage_key, stage_rec in (doc.pipeline_stages or {}).items():
+        if isinstance(stage_rec, dict) and stage_rec.get("status") == "running":
+            running_stage = stage_key
+            break
+    label = (
+        f"{running_stage.replace('_', ' ')}…"
+        if running_stage
+        else "queued for processing"
+    )
+    return HTMLResponse(
+        f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-originator-own/5 border border-originator-own/15"'
+        f' hx-get="/upload/status/{doc_id}" hx-trigger="every 2s" hx-swap="outerHTML">'
+        f'<span class="material-symbols-outlined text-[14px] text-originator-own animate-spin">progress_activity</span>'
+        f'<div class="flex-1 min-w-0"><p class="text-xs font-bold text-on-surface truncate" title="{filename}">{filename}</p>'
+        f'<p class="text-[10px] text-on-surface-variant">{label}</p></div></div>'
     )
 
 
@@ -242,6 +347,13 @@ async def delete_document(
     doc_service = DocumentService(db)
     if not doc_service.delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # Deleting a doc may orphan its draft case (the last doc on the draft just
+    # left). Sweep here so the picker / status counts stay honest.
+    if context == "triage":
+        from app.services.triage_service import TriageService as _TS
+
+        _TS(db).cleanup_orphaned_drafts()
 
     if context == "triage" and bundle_key:
         import json
@@ -322,7 +434,20 @@ async def document_detail(
 
     if request.headers.get("hx-request"):
         mode = "review" if context == "triage" else "read"
-        ctx = build_hud_context(db, doc, mode=mode, context="embedded")
+        # Pass the case picker list whenever the metadata form is rendered
+        # (review mode) so the <select> has options. The in-context draft
+        # gets prepended by build_hud_context.
+        cases = None
+        if mode == "review":
+            from app.models.database import Case as _Case
+
+            cases = (
+                db.query(_Case)
+                .filter(_Case.id != "_TRIAGE", _Case.is_draft.is_(False))
+                .order_by(_Case.title.asc())
+                .all()
+            )
+        ctx = build_hud_context(db, doc, mode=mode, context="embedded", cases=cases)
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
     # Full-page navigations redirect to the canonical full-screen HUD URL.
@@ -492,6 +617,56 @@ async def retry_pipeline_stage(
         request,
         "partials/_pipeline_stepper.html",
         {"doc": doc},
+    )
+
+
+@router.post("/document/{doc_id}/pipeline/retry-all")
+async def retry_pipeline_all(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Reset every non-skipped stage to PENDING and re-dispatch from EXTRACT.
+
+    Returns the refreshed stepper. 409 if any stage is currently RUNNING — the
+    user has to wait for the in-flight task to finish before retrying.
+    """
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import reset_all_stages
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    stages = doc.pipeline_stages or {}
+    running = [
+        key
+        for key, val in stages.items()
+        if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+    ]
+    if running:
+        return templates.TemplateResponse(
+            request,
+            "partials/_pipeline_stepper.html",
+            {
+                "doc": doc,
+                "retry_error": (
+                    "Cannot retry — stage(s) still running: " + ", ".join(running)
+                ),
+            },
+            status_code=409,
+        )
+
+    reset_all_stages(doc_id, db)
+    db.refresh(doc)
+
+    # Kick off the pipeline from EXTRACT — process_document_task chains forward
+    # to METADATA → PROCEEDING_ANALYSIS → ENRICH → … and dispatches EMBEDDINGS
+    # in parallel, so a single dispatch covers every non-skipped stage.
+    _dispatch_retry_task(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT)
+
+    return templates.TemplateResponse(
+        request, "partials/_pipeline_stepper.html", {"doc": doc}
     )
 
 

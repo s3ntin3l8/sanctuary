@@ -79,8 +79,8 @@
           {% if p.rationale %}
           <span class="text-[9px]" style="color:var(--color-on-surface-variant);">{{ p.rationale | truncate(50, true) }}</span>
           {% endif %}
-          {% if not p.start_offset %}
-          <span class="text-[8px] font-mono" style="color:var(--color-outline);" title="Approximate scroll position — original text not matched in rendered output">⚠ approx</span>
+          {% if p.start_offset is none %}
+          <span class="text-[8px] font-mono" style="color:var(--color-outline);" title="Approximate scroll position — original text not matched in source markdown">⚠ approx</span>
           {% endif %}
           {% if context != 'overlay' %}
           {% set pin_count = passage_pin_counts.get(p_id, 0) if passage_pin_counts is defined else 0 %}
@@ -88,7 +88,11 @@
           <span class="text-[9px] font-bold text-amber" data-spine-pin-count="{{ pin_count }}" data-spine-passage-ref="{{ p_id }}" title="{{ pin_count }} pin(s)">📌 {{ pin_count }}</span>
           {% endif %}
           <button type="button"
-                  @click.stop="createPinAt && createPinAt('{{ p_id }}')"
+                  onclick="event.stopPropagation()"
+                  hx-post="/document/{{ doc.id }}/pin"
+                  hx-vals='{"passage_id": "{{ p_id }}"}'
+                  hx-target="#hud-pin-gutter-{{ doc.id }}"
+                  hx-swap="beforeend"
                   class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors"
                   style="color: var(--color-outline);"
                   data-pin-button="{{ p_id }}"

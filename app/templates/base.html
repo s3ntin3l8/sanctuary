@@ -431,8 +431,10 @@
                 window.showToast('Network error. Please check your connection.', 'error');
             });
 
-            // Global Toast helper
-            window.showToast = (message, type = 'info') => {
+            // Global Toast helper. Accepts an optional `action` of shape
+            // {href, label} which renders as a safe text-only link suffix —
+            // used by destination-feedback toasts that want a click-through.
+            window.showToast = (message, type = 'info', action = null) => {
                 const toast = document.createElement('div');
                 toast.className = `px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 animate-shell-fade-in pointer-events-auto bg-surface-container-high`;
 
@@ -443,10 +445,24 @@
                 if (type === 'error') { icon = 'error'; iconClass = 'text-error'; }
                 if (type === 'warning') { icon = 'warning'; iconClass = 'text-amber-500'; }
 
-                toast.innerHTML = `
-                    <span class="material-symbols-outlined ${iconClass} text-[20px]">${icon}</span>
-                    <p class="text-xs font-bold text-on-surface">${message}</p>
-                `;
+                const iconEl = document.createElement('span');
+                iconEl.className = `material-symbols-outlined ${iconClass} text-[20px]`;
+                iconEl.textContent = icon;
+
+                const textEl = document.createElement('p');
+                textEl.className = 'text-xs font-bold text-on-surface';
+                textEl.textContent = message;
+
+                toast.appendChild(iconEl);
+                toast.appendChild(textEl);
+
+                if (action && action.href && action.label) {
+                    const link = document.createElement('a');
+                    link.href = action.href;
+                    link.textContent = action.label;
+                    link.className = 'text-xs font-bold text-primary hover:underline ml-1';
+                    toast.appendChild(link);
+                }
 
                 toastHost.appendChild(toast);
                 setTimeout(() => {

@@ -5,6 +5,7 @@
 #}
 {% from "partials/_pipeline_status.html" import pipeline_status_icon %}
 {% from "components/significance_indicator.html" import significance_indicator %}
+{% from "partials/_conf_chip.html" import conf_chip %}
 {% set _real_reasons = (doc.review_reasons or []) | reject('equalto', 'missing_parent') | list %}
 {% set role_value = doc.role.value if doc.role else none %}
 {% set doc_type_value = doc.document_type.value if doc.document_type else none %}
@@ -61,7 +62,6 @@
                     <button hx-delete="/document/{{ doc.id }}?context=triage"
                             hx-target="#triage-wrapper-{{ doc.id }}"
                             hx-swap="delete"
-                            hx-on:htmx:after-settle="window.location.reload()"
                             class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
                             style="background:var(--color-error); color:var(--color-on-error);">
                         Delete
@@ -84,9 +84,10 @@
             {{ ot.replace('_', ' ') }}
         </span>
         {% if doc.court_relay %}
-        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant" title="Routed via court — true author: {{ doc.attributed_originator or 'unknown' }}">
+        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant"
+              title="Routed via court — true author: {{ doc.attributed_originator or 'unknown' }}">
             <span class="material-symbols-outlined text-[10px]">swap_horiz</span>
-            relay
+            {% if doc.attributed_originator %}via {{ doc.attributed_originator|truncate(24, true) }}{% else %}relay{% endif %}
         </span>
         {% endif %}
         {% if role_value == 'cover_letter' %}
@@ -109,6 +110,18 @@
             proof
         </span>
         {% endif %}
+        {# Worst extraction confidence, only when it's not "high" — silent
+           when AI was clean across the board, visible when something needs
+           a second look. Tooltip names the weakest fields. #}
+        {% set _conf_dict = doc.extraction_confidence or {} %}
+        {% set _has_low = _conf_dict.values()|select('equalto', 'low')|list|length > 0 %}
+        {% set _has_med = _conf_dict.values()|select('equalto', 'medium')|list|length > 0 %}
+        {% if _has_low or _has_med %}
+            {% set _level = 'low' if _has_low else 'medium' %}
+            {% set _weak_fields = [] %}
+            {% for k, v in _conf_dict.items() %}{% if v == _level %}{% set _ = _weak_fields.append(k) %}{% endif %}{% endfor %}
+            <span title="Low-confidence: {{ _weak_fields|join(', ') }}">{{ conf_chip(_level) }}</span>
+        {% endif %}
     </div>
 
     {# Row 3: Reactions · Sender/case #}
@@ -128,4 +141,56 @@
             {% if doc.sender %}{{ doc.sender }}{% else %}{{ doc.case_id or 'Unassigned' }}{% endif %}
         </p>
     </div>
+
+    {# Status strips — only one renders at a time. Failure is a hard signal
+       (red banner, retry button); in-flight is a soft hint (current stage,
+       small spinner) so the user doesn't mistake a still-processing card
+       for a finished one with bad metadata. #}
+    {% set _pstate = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+    {% if _pstate == 'failed' %}
+    {% set _failed_stage = '' %}
+    {% set _failed_error = '' %}
+    {% for _stage_key, _stage_rec in (doc.pipeline_stages or {}).items() %}
+        {% if _stage_rec.get('status') == 'failed' and not _failed_stage %}
+            {% set _failed_stage = _stage_key %}
+            {% set _failed_error = _stage_rec.get('error') or '' %}
+        {% endif %}
+    {% endfor %}
+    <div class="mt-2 flex items-start gap-2 px-2 py-1.5 rounded bg-error-container/15 border border-error/20" @click.stop>
+        <span class="material-symbols-outlined text-[14px] text-error shrink-0 mt-px">error</span>
+        <div class="flex-1 min-w-0">
+            <p class="text-[10px] font-bold text-error uppercase tracking-wider">
+                {{ _failed_stage|replace('_', ' ') if _failed_stage else 'pipeline' }} failed
+            </p>
+            {% if _failed_error %}
+            <p class="text-[9px] text-on-surface-variant truncate" title="{{ _failed_error }}">{{ _failed_error|truncate(80, true) }}</p>
+            {% endif %}
+        </div>
+        <button hx-post="/document/{{ doc.id }}/pipeline/retry-all"
+                hx-target="#pipeline-stepper-{{ doc.id }}"
+                hx-swap="outerHTML"
+                hx-disabled-elt="this"
+                class="shrink-0 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-error text-on-error hover:opacity-90 cursor-pointer
+                       [&.htmx-request>span]:animate-spin"
+                title="Re-run every stage from extract">
+            <span class="inline-flex items-center gap-1">
+                <span class="material-symbols-outlined text-[11px]">restart_alt</span>
+                Retry
+            </span>
+        </button>
+    </div>
+    {% elif _pstate in ('pending', 'running') %}
+    {% set _running_stage = '' %}
+    {% for _stage_key, _stage_rec in (doc.pipeline_stages or {}).items() %}
+        {% if _stage_rec.get('status') == 'running' and not _running_stage %}
+            {% set _running_stage = _stage_key %}
+        {% endif %}
+    {% endfor %}
+    <div class="mt-2 flex items-center gap-1.5 text-[9px] text-on-surface-variant/70 italic">
+        <span class="material-symbols-outlined text-[11px] animate-spin">progress_activity</span>
+        <span>
+            {% if _running_stage %}{{ _running_stage|replace('_', ' ')|capitalize }}…{% else %}Queued for processing…{% endif %}
+        </span>
+    </div>
+    {% endif %}
 </div>

@@ -96,3 +96,101 @@ def test_render_highlighted_multiple_passages():
     result = _rh("Text with first key phrase and second key phrase here.", passages)
     assert 'data-passage-id="pid000000001"' in result
     assert 'data-passage-id="pid000000002"' in result
+
+
+@pytest.mark.unit
+def test_render_highlighted_survives_smart_quotes():
+    """Markdown typographer rewrites "..." to curly quotes; the mark must
+    still wrap the original text. Pre-fix this failed because the regex ran
+    against rendered HTML where the quote chars had already been replaced."""
+    body = 'The court held: "the appeal is granted in full."'
+    passages = [
+        {
+            "text": '"the appeal is granted in full."',
+            "kind": "ruling",
+            "id": "smartq111111",
+        }
+    ]
+    result = _rh(body, passages)
+    assert 'data-passage-id="smartq111111"' in result
+    # Markdown escaped the inner quotes to &quot;, but the <mark> still wraps
+    # them — pre-fix the regex would have failed on the substituted chars.
+    assert "&quot;the appeal is granted in full.&quot;</mark>" in result
+    assert "passage-anchor-unmatched" not in result
+
+
+@pytest.mark.unit
+def test_render_highlighted_survives_inline_formatting():
+    """Bold/italic markdown inside a passage should not break the highlight.
+    Pre-fix the regex couldn't match across <strong>/<em> tags."""
+    body = "The court ruled that **the defendant** is liable."
+    passages = [
+        {
+            "text": "The court ruled that **the defendant** is liable.",
+            "kind": "ruling",
+            "id": "inlinefmt001",
+        }
+    ]
+    result = _rh(body, passages)
+    assert 'data-passage-id="inlinefmt001"' in result
+    assert "<strong>the defendant</strong>" in result
+    assert "passage-anchor-unmatched" not in result
+
+
+@pytest.mark.unit
+def test_render_highlighted_uses_offsets_when_present():
+    """When offsets are stamped, they're authoritative — even when the same
+    substring appears multiple times the offset selects the correct one."""
+    body = "Apple. Banana. Apple. Cherry."
+    passages = [
+        {
+            "text": "Apple",
+            "kind": "neutral",
+            "id": "applepidaaaa",
+            "start_offset": 14,  # the second "Apple"
+            "end_offset": 19,
+        }
+    ]
+    result = _rh(body, passages)
+    # First "Apple" stays unwrapped; second one gets the mark.
+    assert result.count("<mark") == 1
+    # The mark must come after "Banana." in the rendered output.
+    banana_idx = result.find("Banana")
+    mark_idx = result.find("<mark")
+    assert banana_idx < mark_idx
+
+
+@pytest.mark.unit
+def test_render_highlighted_claim_excerpt_via_live_offset():
+    """Claim excerpts (no stored offsets) are located at render time via the
+    same find_text_offsets cascade — not regex against rendered HTML."""
+    from app.main import render_highlighted
+
+    body = 'The defendant said: "we deny all charges."'
+    claim_map = {7: '"we deny all charges."'}
+    rendered = str(render_highlighted(body, None, None, claim_map))
+    assert 'id="claim-7"' in rendered
+    assert "claim-anchor-unmatched" not in rendered
+
+
+@pytest.mark.unit
+def test_render_highlighted_offsets_with_paragraph_break():
+    """Passage text that spans a paragraph break is anchored on the first line
+    (fully marked through to the </p> boundary). The id is present so spine
+    clicks resolve."""
+    body = "First line of the passage continues here.\n\nAnd this is the second line."
+    passages = [
+        {
+            "text": "First line of the passage continues here.\n\nAnd this is the second line.",
+            "kind": "neutral",
+            "id": "multipar0001",
+            "start_offset": 0,
+            "end_offset": len(body),
+        }
+    ]
+    result = _rh(body, passages)
+    assert 'id="p-multipar0001"' in result
+    assert "passage-anchor-unmatched" not in result
+    # Both paragraphs are present (paragraph wrapping survived).
+    assert "<p>" in result
+    assert result.count("<p>") >= 2

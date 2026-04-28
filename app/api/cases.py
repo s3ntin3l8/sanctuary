@@ -436,7 +436,15 @@ async def create_case_from_triage(
     ).encode("utf-8")
 
     response.headers["HX-Trigger"] = json.dumps(
-        {"triage:advance": {"next_doc_id": first_doc.id}}
+        {
+            "triage:advance": {"next_doc_id": first_doc.id},
+            "case:confirmed": {
+                "case_id": case.id,
+                "case_title": case.title,
+                "doc_count": len(reassigned_docs),
+                "action": "created",
+            },
+        }
     )
     return response
 
@@ -485,8 +493,17 @@ async def confirm_draft_case(
         + _render_triage_status_bar_oob(request, TriageService(db))
     ).encode("utf-8")
 
+    case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
     response.headers["HX-Trigger"] = json.dumps(
-        {"triage:advance": {"next_doc_id": first_doc.id}}
+        {
+            "triage:advance": {"next_doc_id": first_doc.id},
+            "case:confirmed": {
+                "case_id": case.id,
+                "case_title": case.title,
+                "doc_count": case_doc_count,
+                "action": "ratified",
+            },
+        }
     )
     return response
 
@@ -510,6 +527,8 @@ async def delete_case(
     is_rejection: bool = False,
 ):
     """Delete a case and revert all its documents and batches to _TRIAGE."""
+    import json
+
     from fastapi import HTTPException
 
     from app.models.database import ActionItem, Claim, Entity, IngestBatch, LegalCost
@@ -589,6 +608,9 @@ async def delete_case(
             _render_sidebar_badges_oob(db)
             + _render_triage_status_bar_oob(request, TriageService(db))
         ).encode("utf-8")
+        response.headers["HX-Trigger"] = json.dumps(
+            {"case:rejected": {"case_id": case_id, "doc_count": len(docs)}}
+        )
         return response
 
     return JSONResponse(content={"status": "success", "reverted_docs": len(docs)})

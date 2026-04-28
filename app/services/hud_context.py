@@ -256,11 +256,22 @@ def build_hud_context(
 
     if cases is not None:
         is_draft_case = False
+        current_case = None
         if doc.case_id and doc.case_id != "_TRIAGE":
-            _case = db.query(Case).filter(Case.id == doc.case_id).first()
-            if _case:
-                is_draft_case = _case.is_draft
+            current_case = db.query(Case).filter(Case.id == doc.case_id).first()
+            if current_case:
+                is_draft_case = current_case.is_draft
+
+        # The case picker is filtered to non-drafts elsewhere in the app — the
+        # one place a draft does need to appear is the form for the doc that
+        # already lives on it, otherwise the <select> renders no matching
+        # <option> and the user can't see or change the assignment. Build a
+        # per-doc copy so the shared `all_cases` list stays untouched.
+        if is_draft_case and current_case:
+            cases = [current_case, *cases]
+
         ctx["cases"] = cases
         ctx["is_draft_case"] = is_draft_case
+        ctx["current_case"] = current_case
 
     return ctx

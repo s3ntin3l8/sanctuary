@@ -232,6 +232,38 @@ def reset_stage(doc_id: int, stage: PipelineStage, db: Session) -> None:
     db.commit()
 
 
+def reset_all_stages(doc_id: int, db: Session) -> None:
+    """Reset every non-skipped stage to PENDING.
+
+    Used by the document HUD's "retry all" action. SKIPPED stages stay skipped
+    (e.g. BATCH_ANALYSIS on manually-uploaded docs); everything else is cleared
+    of error/timestamps so the pipeline can run again from EXTRACT.
+    """
+    row = db.execute(
+        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+        {"doc_id": doc_id},
+    ).fetchone()
+    if row is None:
+        return
+    stages: dict = json.loads(row[0]) if row[0] else {}
+    for stage_key, record in stages.items():
+        if record.get("status") == StageStatus.SKIPPED.value:
+            continue
+        try:
+            stage_enum = PipelineStage(stage_key)
+        except ValueError:
+            continue
+        _update_stage(
+            doc_id,
+            stage_enum,
+            db,
+            status=StageStatus.PENDING,
+            extra_sets={"started_at": None, "completed_at": None, "error": None},
+            commit=False,
+        )
+    db.commit()
+
+
 def compute_overall_state(stages: dict) -> PipelineState:
     """Derive overall PipelineState from per-stage dict."""
     if not stages:

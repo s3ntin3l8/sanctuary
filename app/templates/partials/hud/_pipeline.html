@@ -10,14 +10,33 @@
 <div x-data="{ open: {{ 'true' if mode == 'review' else ('false' if _all_terminal else 'true') }} }"
      class="border-b border-outline-variant/10">
 
-  {# Section header — always visible, click to toggle #}
-  <button @click="open = !open"
-          class="w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-surface-container-high/50 transition-colors">
-    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex-1">Pipeline</span>
-    {{ pipeline_status_pill(doc) }}
-    <span class="material-symbols-outlined text-sm text-on-surface-variant/50 shrink-0"
-          x-text="open ? 'expand_more' : 'chevron_right'"></span>
-  </button>
+  {# Section header — toggle on the left, retry-all on the right.
+     Two sibling buttons (not nested) so HTMX retry doesn't fight the toggle. #}
+  <div class="w-full flex items-center gap-2 px-5 py-3 hover:bg-surface-container-high/50 transition-colors">
+    <button @click="open = !open"
+            class="flex items-center gap-2 flex-1 text-left focus:outline-none">
+      <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex-1">Pipeline</span>
+      {{ pipeline_status_pill(doc) }}
+    </button>
+    <button class="shrink-0 p-1 rounded transition-colors
+                   text-on-surface-variant/50 hover:text-on-surface-variant hover:bg-surface-container-high
+                   [&.htmx-request]:text-tertiary [&.htmx-request]:bg-tertiary/10
+                   [&.htmx-request>span]:animate-spin"
+            title="Re-run every stage from extract"
+            aria-label="Retry all pipeline stages"
+            hx-post="/document/{{ doc.id }}/pipeline/retry-all"
+            hx-target="#pipeline-stepper-{{ doc.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      <span class="material-symbols-outlined text-[14px]">restart_alt</span>
+    </button>
+    <button @click="open = !open"
+            class="shrink-0 focus:outline-none"
+            aria-label="Toggle pipeline details">
+      <span class="material-symbols-outlined text-sm text-on-surface-variant/50"
+            x-text="open ? 'expand_more' : 'chevron_right'"></span>
+    </button>
+  </div>
 
   <div x-show="open" x-cloak class="px-4 pb-3">
     {% include "partials/_pipeline_stepper.html" %}

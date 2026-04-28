@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.database import (
@@ -495,6 +495,8 @@ class TriageService:
         internal_id: str | None = None,
         issued_date: datetime | None = None,
         received_date: datetime | None = None,
+        significance_tier=None,
+        document_type=None,
         finalize: bool = False,
     ) -> Document | None:
         """Apply metadata patch; optionally remove from triage."""
@@ -516,6 +518,10 @@ class TriageService:
             doc.issued_date = issued_date
         if received_date is not None:
             doc.received_date = received_date
+        if significance_tier is not None:
+            doc.significance_tier = significance_tier
+        if document_type is not None:
+            doc.document_type = document_type
 
         from app.services.ingestion.service import compute_review_reasons
 
@@ -527,6 +533,8 @@ class TriageService:
         doc.needs_review = bool(actionable)
 
         self.db.commit()
+        # Sweep drafts whose last doc just moved away.
+        self.cleanup_orphaned_drafts()
         self.db.refresh(doc)
         return doc
 
@@ -590,8 +598,39 @@ class TriageService:
             batch.status = IngestBatchStatus.COMPLETED
 
         self.db.commit()
+        # Sweep drafts whose last doc just moved away.
+        self.cleanup_orphaned_drafts()
         self.db.refresh(batch)
         return batch
+
+    def cleanup_orphaned_drafts(self) -> int:
+        """Delete draft Case rows whose last document has moved away.
+
+        Drafts are created at the METADATA pipeline stage when an AI-extracted
+        internal_id can't be matched to an existing case. If the user later
+        assigns the bundle elsewhere, the draft is left orphaned — invisible
+        in the picker (filtered) but still cluttering the data. Cascades
+        through to any proceedings the AI created alongside the draft.
+
+        Returns the number of drafts deleted. Caller is responsible for the
+        commit *after* their own changes — this method commits its own deletes.
+        """
+        from app.models.database import Case, Document
+
+        # SQL: find drafts with zero remaining documents.
+        orphaned = (
+            self.db.query(Case)
+            .outerjoin(Document, Document.case_id == Case.id)
+            .filter(Case.is_draft.is_(True))
+            .group_by(Case.id)
+            .having(func.count(Document.id) == 0)
+            .all()
+        )
+        for case in orphaned:
+            self.db.delete(case)
+        if orphaned:
+            self.db.commit()
+        return len(orphaned)
 
     def toggle_reaction(
         self,

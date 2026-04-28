@@ -121,9 +121,26 @@
          @triage:clear.document="
              if (window.showToast) window.showToast('Triage queue clear ✓', 'success');
          "
+         @case:confirmed.document="
+             const d = ($event.detail && ($event.detail[0] || $event.detail)) || {};
+             if (!window.showToast || !d.case_id) return;
+             const verb = d.action === 'created' ? 'Created' : d.action === 'ratified' ? 'Ratified' : 'Assigned to';
+             const docLabel = d.doc_count === 1 ? 'doc' : 'docs';
+             const docPart = d.doc_count ? ` (${d.doc_count} ${docLabel})` : '';
+             const title = d.case_title ? ` — ${d.case_title}` : '';
+             const message = `${verb} ${d.case_id}${title}${docPart}`;
+             window.showToast(message, 'success', { href: `/cases/${d.case_id}`, label: 'Open →' });
+         "
+         @case:rejected.document="
+             const d = ($event.detail && ($event.detail[0] || $event.detail)) || {};
+             if (!window.showToast || !d.case_id) return;
+             const docLabel = d.doc_count === 1 ? 'doc' : 'docs';
+             const docPart = d.doc_count ? ` (${d.doc_count} ${docLabel} back to triage)` : '';
+             window.showToast(`Discarded draft ${d.case_id}${docPart}`, 'warning');
+         "
          @triage:open-bundle-confirm.document="
              const d = $event.detail || {};
-             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', suggested_case_title: d.suggested_case_title || '', suggested_proceeding_id: d.suggested_proceeding_id ? String(d.suggested_proceeding_id) : '', suggested_proceeding_az: d.suggested_proceeding_az || '', suggested_proceeding_subtitle: d.suggested_proceeding_subtitle || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
+             bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', suggested_case_title: d.suggested_case_title || '', suggested_case_is_draft: !!d.suggested_case_is_draft, suggested_proceeding_id: d.suggested_proceeding_id ? String(d.suggested_proceeding_id) : '', suggested_proceeding_az: d.suggested_proceeding_az || '', suggested_proceeding_subtitle: d.suggested_proceeding_subtitle || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
          "
          @triage:bundle-confirmed.document="bundleConfirm.open = false"
          class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden">
@@ -198,7 +215,7 @@ function triagePage() {
 
     return {
         filterOpen: false,
-        bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', is_new_case: false, action: 'confirm_bundle' },
+        bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', is_new_case: false, action: 'confirm_bundle' },
         _visibleDocIds() {
             return Array.from(document.querySelectorAll('[data-triage-doc-id]'))
                 .filter(el => el.offsetParent !== null)

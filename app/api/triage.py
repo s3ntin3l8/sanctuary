@@ -56,6 +56,21 @@ async def triage_page(
 
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
+    drafts_pending = db.query(Case).filter(Case.is_draft.is_(True)).count()
+    first_draft_doc_id = None
+    if drafts_pending:
+        _row = (
+            db.query(Document.id)
+            .join(Case, Case.id == Document.case_id)
+            .filter(Case.is_draft.is_(True))
+            .order_by(Document.id.asc())
+            .first()
+        )
+        if _row:
+            first_draft_doc_id = _row[0]
+
+    failed_count, first_failed_doc_id = _failed_doc_summary(bundles)
+
     return render_page(
         request,
         "pages/triage.html",
@@ -66,6 +81,10 @@ async def triage_page(
         cases=all_cases,
         proceedings=proceedings,
         total_docs=total_docs,
+        drafts_pending=drafts_pending,
+        first_draft_doc_id=first_draft_doc_id,
+        failed_count=failed_count,
+        first_failed_doc_id=first_failed_doc_id,
         reactions_by_doc=reactions_by_doc,
         limit=limit,
         offset=offset,
@@ -92,9 +111,13 @@ async def confirm_document(
     internal_id: str | None = Form(None),
     received_date: str | None = Form(None),
     issued_date: str | None = Form(None),
+    significance_tier: str | None = Form(None),
+    document_type: str | None = Form(None),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
+    from app.models.enums import DocumentType, SignificanceTier
+
     resolved_case_id = case_id if case_id else None
 
     pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -107,6 +130,25 @@ async def confirm_document(
         except ValueError as exc:
             raise HTTPException(
                 status_code=422, detail=f"Unknown originator: {originator_type}"
+            ) from exc
+
+    parsed_significance = None
+    if significance_tier:
+        try:
+            parsed_significance = SignificanceTier(significance_tier)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown significance tier: {significance_tier}",
+            ) from exc
+
+    parsed_document_type = None
+    if document_type:
+        try:
+            parsed_document_type = DocumentType(document_type)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown document type: {document_type}"
             ) from exc
 
     parsed_issued_date = None
@@ -136,6 +178,8 @@ async def confirm_document(
         internal_id=internal_id if internal_id else None,
         issued_date=parsed_issued_date,
         received_date=parsed_received_date,
+        significance_tier=parsed_significance,
+        document_type=parsed_document_type,
         finalize=True,
     )
     if not doc:
@@ -171,13 +215,21 @@ async def confirm_document(
     # doc to advance to. Alpine listener picks this up from the HX-Trigger
     # header and shifts focus.
     if not doc.needs_review and doc.case_id and doc.case_id != "_TRIAGE":
+        trigger: dict = {}
         next_doc = triage_service.find_next_review_doc(doc.id)
         if next_doc:
-            response.headers["HX-Trigger"] = json.dumps(
-                {"triage:advance": {"next_doc_id": next_doc.id}}
-            )
+            trigger["triage:advance"] = {"next_doc_id": next_doc.id}
         else:
-            response.headers["HX-Trigger"] = json.dumps({"triage:clear": {}})
+            trigger["triage:clear"] = {}
+        # Surface destination so the page can show a toast linking to the case.
+        case_obj = db.query(Case).filter(Case.id == doc.case_id).first()
+        trigger["case:confirmed"] = {
+            "case_id": doc.case_id,
+            "case_title": case_obj.title if case_obj else "",
+            "doc_count": 1,
+            "action": "assigned",
+        }
+        response.headers["HX-Trigger"] = json.dumps(trigger)
 
     return response
 
@@ -336,6 +388,32 @@ async def confirm(
     oob_parts.append(_render_sidebar_badges_oob(db))
     oob_parts.append(_render_triage_status_bar_oob(request, triage_service))
 
+    # Surface destination so the page can show a clickable toast.
+    if case_id and case_id != "_TRIAGE":
+        case_obj = db.query(Case).filter(Case.id == case_id).first()
+        # Doc count is whatever just got cascaded — for synthetic single-doc
+        # bundles that's 1, otherwise count the docs now living on this case
+        # within the batch.
+        if is_synthetic == "true":
+            cascaded_count = 1
+        elif batch_id:
+            cascaded_count = (
+                db.query(Document)
+                .filter(
+                    Document.ingest_batch_id == int(batch_id),
+                    Document.case_id == case_id,
+                )
+                .count()
+            )
+        else:
+            cascaded_count = 0
+        trigger["case:confirmed"] = {
+            "case_id": case_id,
+            "case_title": case_obj.title if case_obj else "",
+            "doc_count": cascaded_count,
+            "action": "created" if new_case_id else "assigned",
+        }
+
     response = HTMLResponse(content="".join(oob_parts))
     response.headers["HX-Trigger"] = json.dumps(trigger)
     return response
@@ -418,13 +496,25 @@ async def confirm_bundle(
             if first_doc_id:
                 break
 
+    trigger: dict = {}
     if first_doc_id:
-        response.headers["HX-Trigger"] = json.dumps(
-            {"triage:advance": {"next_doc_id": first_doc_id}}
-        )
+        trigger["triage:advance"] = {"next_doc_id": first_doc_id}
     else:
-        response.headers["HX-Trigger"] = json.dumps({"triage:clear": {}})
+        trigger["triage:clear"] = {}
 
+    case_obj = db.query(Case).filter(Case.id == case_id).first()
+    cascaded_count = (
+        db.query(Document)
+        .filter(Document.ingest_batch_id == batch_id, Document.case_id == case_id)
+        .count()
+    )
+    trigger["case:confirmed"] = {
+        "case_id": case_id,
+        "case_title": case_obj.title if case_obj else "",
+        "doc_count": cascaded_count,
+        "action": "assigned",
+    }
+    response.headers["HX-Trigger"] = json.dumps(trigger)
     return response
 
 
@@ -993,11 +1083,53 @@ def _render_triage_status_bar_oob(
             else:
                 counts["unknown"] += 1
 
+    # Outstanding AI-draft cases — those still active become a hint at the
+    # top of the bar so they don't accumulate invisibly. Phantom drafts (no
+    # docs) are auto-cleaned by triage_service.cleanup_orphaned_drafts().
+    drafts_pending = (
+        triage_service.db.query(Case).filter(Case.is_draft.is_(True)).count()
+    )
+    # Pick a doc on a draft case so the chip can deep-link to a useful card.
+    first_draft_doc_id = None
+    if drafts_pending:
+        first_draft_doc = (
+            triage_service.db.query(Document.id)
+            .join(Case, Case.id == Document.case_id)
+            .filter(Case.is_draft.is_(True))
+            .order_by(Document.id.asc())
+            .first()
+        )
+        if first_draft_doc:
+            first_draft_doc_id = first_draft_doc[0]
+
+    failed_count, first_failed_doc_id = _failed_doc_summary(bundles)
+
     return templates.get_template("partials/triage_status_bar.html").render(
         {
             "request": request,
             "counts_by_type": counts,
             "total_docs": total_docs,
+            "drafts_pending": drafts_pending,
+            "first_draft_doc_id": first_draft_doc_id,
+            "failed_count": failed_count,
+            "first_failed_doc_id": first_failed_doc_id,
             "as_oob": True,
         }
     )
+
+
+def _failed_doc_summary(bundles) -> tuple[int, int | None]:
+    """Return (count, first_failed_doc_id) for docs with pipeline_state=failed
+    across the bundles list. Used by the status bar chip + the page-render
+    context so the same source-of-truth flows to both."""
+    from app.models.enums import PipelineState
+
+    failed_count = 0
+    first_failed_doc_id: int | None = None
+    for b in bundles:
+        for d in b.documents:
+            if d.pipeline_state == PipelineState.FAILED:
+                failed_count += 1
+                if first_failed_doc_id is None:
+                    first_failed_doc_id = d.id
+    return failed_count, first_failed_doc_id

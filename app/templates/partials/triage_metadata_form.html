@@ -4,21 +4,7 @@
 
     Required context: doc, cases, OriginatorType.
 #}
-{% macro conf_chip(level) %}
-    {% if level == 'high' %}
-        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-own/15 text-originator-own" title="High confidence — extracted cleanly">
-            <span class="w-1.5 h-1.5 rounded-full bg-originator-own flex-shrink-0"></span>H
-        </span>
-    {% elif level == 'medium' %}
-        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-amber-500/15 text-amber-500" title="Medium confidence — review recommended">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>M
-        </span>
-    {% elif level == 'low' %}
-        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-opposing/15 text-originator-opposing" title="Low confidence — please verify">
-            <span class="w-1.5 h-1.5 rounded-full bg-originator-opposing flex-shrink-0"></span>L
-        </span>
-    {% endif %}
-{% endmacro %}
+{% from "partials/_conf_chip.html" import conf_chip, draft_pill %}
 
 {% set conf = doc.extraction_confidence or {} %}
 {% set low_border  = 'border-originator-opposing/40 ring-1 ring-originator-opposing/10' %}
@@ -26,9 +12,16 @@
 {% set ok_border   = 'border-outline-variant/20' %}
 {% set input_base  = 'w-full px-3 py-1.5 bg-surface rounded-lg border text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all' %}
 
+{# Case confidence is three-way: a ratified (non-draft) case is high, a draft
+   case is "medium" so the field stays visible — drafts are AI guesses the
+   user must explicitly ratify or change. _TRIAGE / null falls through to low. #}
+{% set _case_obj = current_case if current_case is defined else none %}
+{% set _case_conf = 'high'   if (_case_obj and not _case_obj.is_draft and doc.case_id and doc.case_id != '_TRIAGE')
+                    else ('medium' if (_case_obj and _case_obj.is_draft)
+                    else 'low') %}
 {% set field_confs = {
     'title':      conf.get('title')      or 'low',
-    'case_id':    'high' if doc.case_id and doc.case_id != '_TRIAGE' else 'low',
+    'case_id':    _case_conf,
     'originator': conf.get('originator') or 'low',
     'sender':     conf.get('sender')     or 'low',
     'issued_date': conf.get('issued_date') or 'low',
@@ -108,46 +101,6 @@
                 <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
             </div>
         </dl>
-        {# Draft case banner: AI auto-created a case, pending user confirmation #}
-        {% if is_draft_case %}
-        <div class="mt-3 px-3 py-2 bg-amber-500/5 border border-amber-500/30 rounded-lg flex items-center justify-between gap-2">
-            <div class="min-w-0">
-                <p class="text-[9px] font-bold text-amber-600 dark:text-amber-400">AI Draft: {{ doc.case_id }}</p>
-                <p class="text-[8px] text-on-surface-variant">Case was auto-created by AI. Please confirm or reject.</p>
-            </div>
-            <div class="flex gap-1.5 shrink-0">
-                <button hx-post="/cases/{{ doc.case_id }}/confirm-draft"
-                        hx-target="#triage-doc-pane"
-                        hx-swap="innerHTML"
-                        class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer whitespace-nowrap">
-                    Confirm
-                </button>
-                <button hx-post="/cases/{{ doc.case_id }}/reject-draft"
-                        hx-target="#triage-doc-pane"
-                        hx-swap="innerHTML"
-                        hx-confirm="Delete case {{ doc.case_id }} and revert documents to triage?"
-                        class="text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 cursor-pointer whitespace-nowrap">
-                    Reject
-                </button>
-            </div>
-        </div>
-        {% endif %}
-        {# Manual create prompt when AI extracted a reference but no case matched #}
-        {% if doc.case_id == '_TRIAGE' and doc.internal_id %}
-        <div class="mt-3 px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg flex items-center justify-between gap-2">
-            <div class="min-w-0">
-                <p class="text-[9px] font-bold text-primary">No Case: {{ doc.internal_id }}</p>
-                <p class="text-[8px] text-on-surface-variant">Create case and assign all documents from this email.</p>
-            </div>
-            <button hx-post="/cases/create-from-triage"
-                    hx-vals='{"internal_id": "{{ doc.internal_id }}", "ingest_batch_id": "{{ doc.ingest_batch_id or '' }}"}'
-                    hx-target="#triage-doc-pane"
-                    hx-swap="innerHTML"
-                    class="shrink-0 text-[8px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer whitespace-nowrap">
-                Create →
-            </button>
-        </div>
-        {% endif %}
     </div>
 
     {# ── REVIEW STATE: edit form ── #}
@@ -229,7 +182,7 @@
                         class="{{ input_base }} {{ low_border if field_confs.case_id == 'low' else med_border if field_confs.case_id == 'medium' else ok_border }}">
                     <option value="" disabled {% if not doc.case_id or doc.case_id == '_TRIAGE' %}selected{% endif %}>Select case…</option>
                     {% for case in cases %}
-                    <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }})</option>
+                    <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }}){% if case.is_draft %} — AI DRAFT{% endif %}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -291,21 +244,46 @@
                        class="{{ input_base }} font-mono {{ low_border if (conf.get('internal_id') or 'low') == 'low' else med_border if (conf.get('internal_id') or 'low') == 'medium' else ok_border }}">
             </div>
 
-            {# Read-only: az_court, significance_tier, document_type — folded with pre-confirmed #}
-            <div class="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-outline-variant/10 text-[10px]"
+            {# Editable: significance_tier + document_type. AI-set but often
+               wrong; user must be able to correct without leaving review. #}
+            {% set _tier_value = doc.significance_tier.value if doc.significance_tier else '' %}
+            {% set _dtype_value = doc.document_type.value if doc.document_type else '' %}
+            <div class="space-y-1" x-show="showAll">
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Tier {{ conf_chip(field_confs.significance_tier) }}
+                </label>
+                <select name="significance_tier"
+                        class="{{ input_base }} {{ ok_border }}">
+                    <option value="" {% if not _tier_value %}selected{% endif %}>—</option>
+                    <option value="critical"       {% if _tier_value == 'critical' %}selected{% endif %}>Critical</option>
+                    <option value="significant"    {% if _tier_value == 'significant' %}selected{% endif %}>Significant</option>
+                    <option value="informational"  {% if _tier_value == 'informational' %}selected{% endif %}>Informational</option>
+                    <option value="administrative" {% if _tier_value == 'administrative' %}selected{% endif %}>Administrative</option>
+                </select>
+            </div>
+            <div class="space-y-1" x-show="showAll">
+                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
+                    Type {{ conf_chip(field_confs.document_type) }}
+                </label>
+                <select name="document_type"
+                        class="{{ input_base }} {{ ok_border }}">
+                    <option value="" {% if not _dtype_value %}selected{% endif %}>—</option>
+                    <option value="ruling"         {% if _dtype_value == 'ruling' %}selected{% endif %}>Ruling</option>
+                    <option value="motion"         {% if _dtype_value == 'motion' %}selected{% endif %}>Motion</option>
+                    <option value="statement"      {% if _dtype_value == 'statement' %}selected{% endif %}>Statement</option>
+                    <option value="annex"          {% if _dtype_value == 'annex' %}selected{% endif %}>Annex</option>
+                    <option value="relay"          {% if _dtype_value == 'relay' %}selected{% endif %}>Relay (cover letter)</option>
+                    <option value="correspondence" {% if _dtype_value == 'correspondence' %}selected{% endif %}>Correspondence</option>
+                    <option value="report"         {% if _dtype_value == 'report' %}selected{% endif %}>Report</option>
+                    <option value="invoice"        {% if _dtype_value == 'invoice' %}selected{% endif %}>Invoice</option>
+                    <option value="other"          {% if _dtype_value == 'other' %}selected{% endif %}>Other</option>
+                </select>
+            </div>
+            {# Read-only: az_court — folded with the rest, no edit path here #}
+            <div class="md:col-span-2 pt-2 border-t border-outline-variant/10 text-[10px]"
                  x-show="showAll">
-                <div>
-                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
-                    <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
-                    <dd class="text-on-surface-variant capitalize">{{ doc.significance_tier.value if doc.significance_tier else '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
-                    <dd class="text-on-surface-variant capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
-                </div>
+                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
+                <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
             </div>
 
             {# Footer — single primary action, no checkbox #}

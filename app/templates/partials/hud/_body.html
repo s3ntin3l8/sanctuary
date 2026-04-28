@@ -6,11 +6,13 @@
 {% set cem = claim_excerpt_map if claim_excerpt_map is defined else {} %}
 <div class="relative">
   {# Left gutter — margin pins anchored to passage marks by hud.js._positionPins().
-     Only rendered when pins exist; hud.js._ensureGutter() creates it on demand
-     for the first pin drop so no placeholder is needed. #}
-  {% if context != 'overlay' and pins %}
-  <div id="hud-pin-gutter-{{ doc.id }}" class="absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none" aria-label="Margin pins">
-    {% for pin in pins %}
+     Always rendered in non-overlay contexts so the spine pin button can
+     `hx-post` directly to it; hidden via class until the first pin drops in.
+     hud.js's htmx:afterSwap listener un-hides it and adds the article left
+     margin once the gutter has at least one child. #}
+  {% if context != 'overlay' %}
+  <div id="hud-pin-gutter-{{ doc.id }}" class="absolute left-0 top-0 bottom-0 w-20 xl:w-52 pointer-events-none{{ '' if pins else ' hidden' }}" aria-label="Margin pins">
+    {% for pin in pins or [] %}
     {% include "partials/hud/_pin_card.html" %}
     {% endfor %}
   </div>

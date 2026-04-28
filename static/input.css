@@ -319,7 +319,35 @@
 
 .hud-mark-flash { animation: passageFocus 600ms ease-out both; }
 
+@keyframes spineRowFlash {
+  0%   { background-color: var(--color-primary); color: var(--color-on-primary); }
+  100% { background-color: transparent; color: inherit; }
+}
+@keyframes spineRowFlashWarn {
+  0%   { background-color: var(--color-amber); color: var(--color-on-amber, #fff); }
+  100% { background-color: transparent; color: inherit; }
+}
+
+.hud-spine-flash      { animation: spineRowFlash      550ms ease-out both; }
+.hud-spine-flash-warn { animation: spineRowFlashWarn  900ms ease-out both; }
+
 .hud-pin-card { transition: top .24s cubic-bezier(.2,.7,.2,1); }
+
+.hud-pin-card--unmatched {
+  opacity: 0.65;
+  filter: saturate(0.7);
+}
+.hud-pin-card--unmatched::after {
+  content: "⚠ approx";
+  position: absolute;
+  top: -10px;
+  left: 0;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--color-amber);
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 .hud-top-bar {
   position: sticky;

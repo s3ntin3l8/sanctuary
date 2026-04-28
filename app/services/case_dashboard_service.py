@@ -309,6 +309,8 @@ def key_passages_for_template(key_passages) -> list[dict]:
                 "page": page,
                 "rationale": raw.get("rationale") or "",
                 "id": pid,
+                "start_offset": raw.get("start_offset"),
+                "end_offset": raw.get("end_offset"),
             }
         )
     return out

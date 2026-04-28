@@ -12,9 +12,9 @@
             hx-encoding="multipart/form-data"
             hx-target="#upload-result"
             hx-swap="innerHTML"
-            @submit="if(fileNames.length > 0) open = false"
-            hx-on::after-request="if(event.detail.successful) { const cid = this.querySelector('input[name=case_id]')?.value; setTimeout(() => { window.location.href = cid ? `/cases/${cid}` : '/triage'; }, 400); } else { window.dispatchEvent(new CustomEvent('open-upload-modal')); }"
-            class="p-6 space-y-4">
+            class="p-6 space-y-4"
+            x-data="{ submitted: false }"
+            @submit="submitted = true">
             {% if case_id %}
             <input type="hidden" name="case_id" value="{{ case_id }}">
             <div class="flex items-center gap-2 text-xs text-on-surface-variant">
@@ -24,6 +24,7 @@
             {% endif %}
 
             <div
+                x-show="!submitted"
                 class="relative border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer"
                 :class="dragOver ? 'border-primary bg-primary/5' : 'border-outline-variant/30 hover:border-primary/50'"
                 @dragover.prevent="dragOver = true"
@@ -61,12 +62,21 @@
             <div id="upload-result"></div>
 
             <div class="flex gap-3 pt-2">
-                <button type="submit" class="btn btn-primary flex items-center gap-2">
+                <button x-show="!submitted" type="submit" class="btn btn-primary flex items-center gap-2">
                     <span class="htmx-indicator animate-spin material-symbols-outlined text-sm" id="upload-spinner">progress_activity</span>
                     <span>Upload</span>
                 </button>
-                <button type="button" @click="open = false" class="btn btn-secondary">
+                <button x-show="!submitted" type="button" @click="open = false" class="btn btn-secondary">
                     Cancel
+                </button>
+                <a x-show="submitted" href="{{ '/cases/' ~ case_id if case_id else '/triage' }}"
+                   class="btn btn-primary flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">arrow_forward</span>
+                    <span>{% if case_id %}Open case{% else %}View in triage{% endif %}</span>
+                </a>
+                <button x-show="submitted" type="button" @click="open = false; submitted = false; fileNames = []; document.getElementById('upload-result').innerHTML = ''"
+                        class="btn btn-secondary">
+                    Close
                 </button>
             </div>
         </form>

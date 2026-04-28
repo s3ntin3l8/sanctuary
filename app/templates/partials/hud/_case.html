@@ -1,0 +1,173 @@
+{# Case section — first-class case decision in the HUD rail.
+   Three states based on doc.case_id and current_case.is_draft:
+     1. Existing real case — show id/title/doc count + Reroute action.
+     2. AI draft        — show id/title + Ratify, Reroute, Reject actions.
+     3. No case (_TRIAGE) — show internal_id (if any) + Create / Pick actions.
+
+   Required: doc, mode, current_case (Case | None — added by build_hud_context),
+             is_draft_case (bool). Shown only in review mode (triage HUD).
+#}
+{% if mode == 'review' %}
+{% from "partials/_conf_chip.html" import conf_chip, draft_pill %}
+{% set _conf = doc.extraction_confidence or {} %}
+{% set _internal_conf = _conf.get('internal_id') or 'low' %}
+{% set _has_real_case = current_case is defined and current_case and not current_case.is_draft %}
+{% set _has_draft_case = current_case is defined and current_case and current_case.is_draft %}
+{% set _no_case = (not doc.case_id) or doc.case_id == '_TRIAGE' %}
+
+{% set _doc_count = current_case.documents | length if current_case and current_case.documents else 0 %}
+
+{% set _subject = (doc.title or '') | e %}
+{% set _proceeding_id = doc.proceeding.id if doc.proceeding else '' %}
+{% set _proceeding_az = (doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '') | e %}
+{% set _proceeding_subtitle = '' %}
+{% if doc.proceeding %}
+  {% set _proc_sub = doc.proceeding.court_name %}
+  {% if doc.proceeding.court_level %}{% set _proc_sub = _proc_sub ~ ' · ' ~ doc.proceeding.court_level.value | upper %}{% endif %}
+  {% set _proceeding_subtitle = _proc_sub | e %}
+{% endif %}
+{% set _batch_id = doc.ingest_batch_id or '' %}
+{% set _is_synthetic = 'false' if doc.ingest_batch_id else 'true' %}
+
+<div class="px-5 py-4 border-b border-outline-variant/10
+            {% if _has_draft_case %}bg-amber-500/5{% elif _no_case %}bg-primary/5{% endif %}">
+  <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm
+                 {% if _has_draft_case %}text-amber-500{% elif _no_case %}text-primary{% else %}text-originator-own{% endif %}">folder_managed</span>
+    Case
+    {% if _has_real_case %}
+      <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-originator-own/15 text-originator-own">confirmed</span>
+    {% elif _has_draft_case %}
+      {{ draft_pill() }}
+    {% else %}
+      <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary">unassigned</span>
+    {% endif %}
+  </h4>
+
+  {# ── State 1: existing real case ───────────────────────────────────── #}
+  {% if _has_real_case %}
+  <div class="space-y-2">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <a href="/cases/{{ current_case.id }}"
+           class="text-xs font-bold text-on-surface font-mono hover:text-primary hover:underline">{{ current_case.id }}</a>
+        <p class="text-[11px] text-on-surface-variant truncate" title="{{ current_case.title }}">{{ current_case.title or '—' }}</p>
+        <p class="text-[9px] text-outline mt-0.5">{{ _doc_count }} doc{{ '' if _doc_count == 1 else 's' }} in case</p>
+      </div>
+      <span class="material-symbols-outlined text-base text-originator-own shrink-0">verified</span>
+    </div>
+    <button type="button"
+            data-batch-id="{{ _batch_id }}"
+            data-synthetic="{{ _is_synthetic }}"
+            data-doc-id="{{ doc.id }}"
+            data-subject="{{ _subject }}"
+            data-doc-count="1"
+            data-case-id="{{ current_case.id }}"
+            data-case-title="{{ current_case.title | e }}"
+            data-proceeding-id="{{ _proceeding_id }}"
+            data-proceeding-az="{{ _proceeding_az }}"
+            data-proceeding-subtitle="{{ _proceeding_subtitle }}"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+            class="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+      Reroute to a different case →
+    </button>
+  </div>
+  {% endif %}
+
+  {# ── State 2: AI draft ─────────────────────────────────────────────── #}
+  {% if _has_draft_case %}
+  <div class="space-y-2.5">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <p class="text-xs font-bold text-on-surface font-mono">{{ current_case.id }}</p>
+          {{ conf_chip(_internal_conf) }}
+        </div>
+        <p class="text-[11px] text-on-surface-variant truncate" title="{{ current_case.title }}">{{ current_case.title or '—' }}</p>
+        <p class="text-[9px] text-amber-600 dark:text-amber-400 mt-1 leading-snug">AI auto-created this case from the document. Ratify to keep, or reroute / reject.</p>
+      </div>
+      <span class="material-symbols-outlined text-base text-amber-500 shrink-0">edit_note</span>
+    </div>
+    <div class="flex items-center gap-1.5 flex-wrap">
+      <button hx-post="/cases/{{ current_case.id }}/confirm-draft"
+              hx-target="#triage-doc-pane"
+              hx-swap="innerHTML"
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer">
+        ✓ Ratify
+      </button>
+      <button type="button"
+              data-batch-id="{{ _batch_id }}"
+              data-synthetic="{{ _is_synthetic }}"
+              data-doc-id="{{ doc.id }}"
+              data-subject="{{ _subject }}"
+              data-doc-count="1"
+              data-proceeding-id="{{ _proceeding_id }}"
+              data-proceeding-az="{{ _proceeding_az }}"
+              data-proceeding-subtitle="{{ _proceeding_subtitle }}"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
+        Reroute
+      </button>
+      <button hx-post="/cases/{{ current_case.id }}/reject-draft"
+              hx-target="#triage-doc-pane"
+              hx-swap="innerHTML"
+              hx-confirm="Discard draft case {{ current_case.id }} and put its docs back into triage?"
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/10 cursor-pointer">
+        ✕ Reject
+      </button>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── State 3: no case yet ──────────────────────────────────────────── #}
+  {% if _no_case %}
+  <div class="space-y-2.5">
+    {% if doc.internal_id %}
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">AI extracted</span>
+          {{ conf_chip(_internal_conf) }}
+        </div>
+        <p class="text-xs font-bold text-on-surface font-mono mt-0.5">{{ doc.internal_id }}</p>
+        <p class="text-[9px] text-on-surface-variant mt-0.5 leading-snug">No matching case found. Create one or pick an existing case.</p>
+      </div>
+      <span class="material-symbols-outlined text-base text-primary shrink-0">create_new_folder</span>
+    </div>
+    {% else %}
+    <p class="text-[11px] italic text-on-surface-variant">AI did not extract a case reference. Pick a case manually.</p>
+    {% endif %}
+    <div class="flex items-center gap-1.5 flex-wrap">
+      <button type="button"
+              data-batch-id="{{ _batch_id }}"
+              data-synthetic="{{ _is_synthetic }}"
+              data-doc-id="{{ doc.id }}"
+              data-subject="{{ _subject }}"
+              data-doc-count="1"
+              data-case-id="{{ doc.internal_id or '' }}"
+              data-case-title="{{ doc.title | e }}"
+              data-proceeding-id="{{ _proceeding_id }}"
+              data-proceeding-az="{{ _proceeding_az }}"
+              data-proceeding-subtitle="{{ _proceeding_subtitle }}"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:true}}))"
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:opacity-90 cursor-pointer">
+        + Create case
+      </button>
+      <button type="button"
+              data-batch-id="{{ _batch_id }}"
+              data-synthetic="{{ _is_synthetic }}"
+              data-doc-id="{{ doc.id }}"
+              data-subject="{{ _subject }}"
+              data-doc-count="1"
+              data-proceeding-id="{{ _proceeding_id }}"
+              data-proceeding-az="{{ _proceeding_az }}"
+              data-proceeding-subtitle="{{ _proceeding_subtitle }}"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
+        Pick existing
+      </button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
