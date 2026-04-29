@@ -23,7 +23,7 @@ class CostSummary:
             if c.status not in (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
         )
         self.total_reimbursable = sum(
-            c.amount_gross - c.amount_reimbursed
+            (c.amount_gross or 0) - (c.amount_reimbursed or 0)
             for c in self.costs
             if c.is_reimbursable and c.status != CostStatus.ERSTATTET
         )

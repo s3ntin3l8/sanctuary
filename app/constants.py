@@ -1,4 +1,14 @@
 from app.models.database import CaseStatus, CostCategory, CostStatus, OriginatorType
+from app.models.enums import SignificanceTier
+
+# Lower index = higher significance. Used for picking the lead doc in a bundle
+# (triage_service + triage_view both rank by this order; keep as a single source).
+SIG_ORDER: dict[SignificanceTier, int] = {
+    SignificanceTier.CRITICAL: 0,
+    SignificanceTier.SIGNIFICANT: 1,
+    SignificanceTier.INFORMATIONAL: 2,
+    SignificanceTier.ADMINISTRATIVE: 3,
+}
 
 ORIGINATOR_COLORS = {
     OriginatorType.COURT: "#0369A1",

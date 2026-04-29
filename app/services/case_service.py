@@ -23,6 +23,26 @@ from app.repositories.legal_cost import LegalCostRepository
 
 logger = logging.getLogger(__name__)
 
+
+def seed_triage_case(db: Session) -> None:
+    """Idempotently seed the `_TRIAGE` singleton Case.
+
+    Many ingest paths set `case_id="_TRIAGE"` on Documents and IngestBatches.
+    With FK enforcement on, that row must exist before any such insert.
+    """
+    if db.query(Case).filter_by(id="_TRIAGE").first() is not None:
+        return
+    db.add(
+        Case(
+            id="_TRIAGE",
+            title="Triage Inbox",
+            status=CaseStatus.INTAKE,
+            jurisdiction=Jurisdiction.DE,
+        )
+    )
+    db.commit()
+
+
 DORMANCY_DAYS = 90
 
 
@@ -285,13 +305,26 @@ class CaseService:
             default=None,
         )
 
+        # Extract client and opposing names from the parties list
+        parties = case.parties or []
+        client_name = "Unknown"
+        opposing_name = "Unknown"
+
+        if isinstance(parties, list):
+            for p in parties:
+                role = p.get("role") or p.get("key")  # handle both schema versions
+                if role in ("own", "klaegerin"):
+                    client_name = p.get("name", "Unknown")
+                elif role in ("opposing", "beklagter"):
+                    opposing_name = p.get("name", "Unknown")
+
         return {
             "id": case.id,
             "title": case.title,
             "status": case.status,
             "is_draft": case.is_draft,
             "status_line": case.ai_brief.get("status_line", "Active")
-            if case.ai_brief
+            if case.ai_brief and isinstance(case.ai_brief, dict)
             else "Active",
             "next_action": next_action,
             "exposure_eur": case.total_cost_exposure / 100.0
@@ -302,6 +335,16 @@ class CaseService:
             "tier": "delta" if new_docs_count > 0 else "normal",
             "proceeding_name": proceeding_name,
             "max_significance": max_sig,
+            "client_name": client_name,
+            "opposing_party": opposing_name,
+            "is_dormant": days_since > 90,
+            "updated_at": last_doc.ingest_date if last_doc else case.ingest_date,
+            "active_proceeding": {
+                "title": active_proc.court_name,
+                "matter_type": active_proc.subject_matter or "",
+            }
+            if active_proc
+            else None,
         }
 
     def get_all_cases_directory(self) -> dict:
@@ -433,19 +476,82 @@ class CaseService:
         """Update case status."""
         return self.case_repo.update_status(case_id, status)
 
-    def delete_case(self, case_id: str) -> bool:
-        """Delete a case and all related data."""
+    def delete_and_revert(self, case_id: str) -> dict | None:
+        """Delete a case, revert its docs/batches to triage, cascade dependent rows.
+
+        Returns ``{"docs": [...], "doc_count": N}`` on success so the caller
+        can drive re-enrich + OOB rendering. Returns ``None`` when the case
+        does not exist (caller decides whether to 404).
+
+        Raises ``ValueError`` for the Triage singleton — it must never be
+        deleted (every triage doc references it).
+        """
+        from app.models.database import (
+            Claim,
+            Conversation,
+            Entity,
+            IngestBatch,
+            LegalCost,
+        )
+
         if case_id == "_TRIAGE":
-            return False
+            raise ValueError("Triage Inbox cannot be deleted")
 
-        self.doc_repo.update(case_id, case_id=None)
-        self.entity_repo.delete_by_case(case_id)
-        for cost in self.cost_repo.get_by_case(case_id):
-            self.cost_repo.delete(cost.id)
-        for item in self.action_repo.get_by_case(case_id):
-            self.action_repo.delete(item.id)
+        case = self.db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return None
 
-        return self.case_repo.delete(case_id)
+        # Snapshot affected docs + batches before mutating.
+        docs = self.db.query(Document).filter(Document.case_id == case_id).all()
+        batch_ids = {d.ingest_batch_id for d in docs if d.ingest_batch_id}
+
+        # Revert documents to the Triage Inbox so they re-enter review.
+        for doc in docs:
+            doc.case_id = "_TRIAGE"
+            doc.proceeding_id = None
+            doc.needs_review = True
+
+        # Revert any IngestBatches whose case_id pointed at this case.
+        for batch_id in batch_ids:
+            batch = (
+                self.db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            )
+            if batch and batch.case_id == case_id:
+                batch.case_id = None
+                batch.proceeding_id = None
+
+        # Hard delete dependent rows scoped to this case. ClaimEvidence is
+        # cascaded by the ORM relationship on Claim, so use ORM delete there.
+        self.db.query(Entity).filter(Entity.case_id == case_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(ActionItem).filter(ActionItem.case_id == case_id).delete(
+            synchronize_session=False
+        )
+        self.db.query(LegalCost).filter(LegalCost.case_id == case_id).delete(
+            synchronize_session=False
+        )
+        for claim in self.db.query(Claim).filter(Claim.case_id == case_id).all():
+            self.db.delete(claim)
+
+        # Conversations scope_id is a polymorphic string with no FK; clean up
+        # case-scoped chats explicitly so they aren't stranded after deletion.
+        # Document-scoped chats follow surviving documents back to triage.
+        self.db.query(Conversation).filter(
+            Conversation.scope_type == "case",
+            Conversation.scope_id == case_id,
+        ).delete(synchronize_session=False)
+
+        # Case → Proceedings cascade is wired via ORM relationship.
+        self.db.delete(case)
+        self.db.commit()
+
+        if docs:
+            from app.services.triage_service import _reset_and_reenrich
+
+            _reset_and_reenrich(self.db, docs)
+
+        return {"docs": docs, "doc_count": len(docs)}
 
     def get_dashboard_stats(self) -> dict:
         """Get statistics for dashboard."""

@@ -1,4 +1,4 @@
-<section class="rounded-lg p-5 bg-surface-container border border-outline-variant/30 shadow-sm transition-shadow duration-300"
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant shadow-sm transition-all duration-200"
          @mouseenter="focusedPanel = 'signals'; focusedIdx = -1"
          @mouseleave="focusedPanel = null; focusedIdx = -1"
          :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'signals' }">
@@ -35,7 +35,7 @@
             </div>
             <span class="flex items-center gap-1 text-[11px] px-3 py-1.5 rounded transition-colors ml-2
                         {% if signal.severity == 'warn' %}bg-primary text-on-primary group-hover:bg-primary/90
-                        {% else %}border border-outline-variant/30 text-primary group-hover:bg-surface-low{% endif %}">
+                        {% else %}border border-outline-variant text-primary hover:border-primary/40 group-hover:bg-surface-container-low{% endif %}">
                 {{ signal.action }} <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
             </span>
         </a>

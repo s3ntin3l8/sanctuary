@@ -1,4 +1,6 @@
 import os
+import sqlite3
+from datetime import date, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -9,6 +11,13 @@ load_dotenv(PROJECT_ROOT / ".env")
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+
+# Python 3.12 deprecated sqlite3's default datetime adapter/converter. Without
+# explicit registration, every DateTime column read or write raises a
+# DeprecationWarning. Register ISO-8601 adapters per the recommended recipe
+# in the sqlite3 docs — keeps SQLAlchemy's DateTime round-trip silent.
+sqlite3.register_adapter(datetime, lambda d: d.isoformat(sep=" "))
+sqlite3.register_adapter(date, lambda d: d.isoformat())
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -93,6 +102,7 @@ def load_sqlite_extensions(dbapi_conn, connection_record):
 
     if _is_sqlite:
         cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA cache_size=-64000")

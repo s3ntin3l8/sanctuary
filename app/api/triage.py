@@ -11,13 +11,19 @@ from app.dependencies import get_db, get_triage_service
 from app.helpers import render_page
 from app.models.database import Case, Document, DocumentRelationship
 from app.models.enums import (
-    IngestBatchSourceType,
-    IngestBatchStatus,
     OriginatorType,
     UserReactionType,
 )
+from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
-from app.services.triage_service import BundleView, TriageService
+from app.services.triage_service import TriageService
+from app.services.triage_view import (
+    failed_doc_summary,
+    render_bundle_group_oob,
+    render_row_targeted_oob,
+    render_sidebar_badges_oob,
+    render_triage_header_stats_oob,
+)
 
 router = APIRouter(tags=["pages"])
 
@@ -39,12 +45,7 @@ async def triage_page(
 
     bundles = triage_service.get_triage_bundles(limit=limit, offset=offset)
     slicing_queue = triage_service.get_slicing_queue()
-    all_cases = (
-        db.query(Case)
-        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-        .order_by(Case.title.asc())
-        .all()
-    )
+    all_cases = CaseRepository(db).list_for_picker()
     total_docs = sum(b.doc_count for b in bundles)
 
     reactions_by_doc = {}
@@ -69,7 +70,13 @@ async def triage_page(
         if _row:
             first_draft_doc_id = _row[0]
 
-    failed_count, first_failed_doc_id = _failed_doc_summary(bundles)
+    failed_count, first_failed_doc_id = failed_doc_summary(bundles)
+
+    from app.services.triage_view import stats_for_chips
+
+    header_stats = stats_for_chips(bundles)
+    sub_bundles_by_key = {b.key: b.sub_bundles for b in bundles}
+    mock_status_by_key = {b.key: b.mock_status for b in bundles}
 
     return render_page(
         request,
@@ -86,6 +93,9 @@ async def triage_page(
         failed_count=failed_count,
         first_failed_doc_id=first_failed_doc_id,
         reactions_by_doc=reactions_by_doc,
+        header_stats=header_stats,
+        sub_bundles_by_key=sub_bundles_by_key,
+        mock_status_by_key=mock_status_by_key,
         limit=limit,
         offset=offset,
         originator_colors=ORIGINATOR_COLORS,
@@ -195,19 +205,14 @@ async def confirm_document(
 
         _reset_and_reenrich(db, [doc])
 
-    cases = (
-        db.query(Case)
-        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-        .order_by(Case.title.asc())
-        .all()
-    )
+    cases = CaseRepository(db).list_for_picker()
     ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
-    response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+    response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
-    targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
+    targeted_oob = render_row_targeted_oob(request, doc, triage_service, db)
     # Global OOB: sidebar badges + status bar
-    global_oob = _render_sidebar_badges_oob(db)
-    global_oob += _render_triage_status_bar_oob(request, triage_service)
+    global_oob = render_sidebar_badges_oob(db)
+    global_oob += render_triage_header_stats_oob(request, triage_service)
 
     response.body += (targeted_oob + global_oob).encode("utf-8")
 
@@ -350,7 +355,7 @@ async def confirm(
         # Bundle still in triage — OOB-swap the whole bundle group (updates
         # case chip in header, all cards, footer, badge in one shot).
         oob_parts.append(
-            _render_bundle_group_oob(request, updated_bundle, triage_service)
+            render_bundle_group_oob(request, updated_bundle, triage_service)
         )
         # Advance to the first doc in the bundle. triage:advance calls card.click()
         # which sets activeDoc (ring) and fires hx-get to reload the HUD — that
@@ -368,7 +373,7 @@ async def confirm(
     else:
         # Bundle left triage (finalized or was last-item synthetic) → delete from DOM.
         oob_parts.append(
-            f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
+            f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
         )
         # Advance to first remaining unreviewed doc in other bundles.
         first_doc_id = None
@@ -385,8 +390,8 @@ async def confirm(
             trigger["triage:clear"] = {}
 
     # Global OOB: sidebar badges + status bar
-    oob_parts.append(_render_sidebar_badges_oob(db))
-    oob_parts.append(_render_triage_status_bar_oob(request, triage_service))
+    oob_parts.append(render_sidebar_badges_oob(db))
+    oob_parts.append(render_triage_header_stats_oob(request, triage_service))
 
     # Surface destination so the page can show a clickable toast.
     if case_id and case_id != "_TRIAGE":
@@ -420,105 +425,6 @@ async def confirm(
 
 
 # -----------------------------------------------------------------------------
-# Bundle confirm (cascade assign case)
-# -----------------------------------------------------------------------------
-
-
-@router.post("/triage/bundle/{batch_id}/confirm")
-async def confirm_bundle(
-    request: Request,
-    batch_id: int,
-    case_id: str = Form(...),
-    proceeding_id: str | None = Form(None),
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    from app.models.database import Proceeding
-
-    if not case_id:
-        raise HTTPException(status_code=422, detail="case_id is required")
-
-    parsed_proceeding_id = None
-    if proceeding_id:
-        try:
-            parsed_proceeding_id = int(proceeding_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Invalid proceeding_id: {proceeding_id}"
-            ) from exc
-
-    batch = triage_service.confirm_bundle(
-        batch_id, case_id=case_id, proceeding_id=parsed_proceeding_id, finalize=True
-    )
-    if not batch:
-        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
-
-    # Re-render the whole feed
-    bundles = triage_service.get_triage_bundles()
-    reactions_by_doc = {}
-    for bundle in bundles:
-        for doc in bundle.documents:
-            reactions_by_doc[doc.id] = {
-                r.reaction for r in triage_service.get_reactions(doc.id)
-            }  # set for card-level membership check only
-    all_cases = (
-        db.query(Case)
-        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-        .order_by(Case.title.asc())
-        .all()
-    )
-    proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
-
-    response = templates.TemplateResponse(
-        request,
-        "partials/triage_feed.html",
-        {
-            "bundles": bundles,
-            "all_cases": all_cases,
-            "cases": all_cases,
-            "proceedings": proceedings,
-            "reactions_by_doc": reactions_by_doc,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-        },
-    )
-
-    # Auto-advance to the first remaining unconfirmed doc
-    first_doc_id = None
-    if bundles:
-        for b in bundles:
-            for d in b.documents:
-                if d.needs_review or d.case_id == "_TRIAGE":
-                    first_doc_id = d.id
-                    break
-            if first_doc_id:
-                break
-
-    trigger: dict = {}
-    if first_doc_id:
-        trigger["triage:advance"] = {"next_doc_id": first_doc_id}
-    else:
-        trigger["triage:clear"] = {}
-
-    case_obj = db.query(Case).filter(Case.id == case_id).first()
-    cascaded_count = (
-        db.query(Document)
-        .filter(Document.ingest_batch_id == batch_id, Document.case_id == case_id)
-        .count()
-    )
-    trigger["case:confirmed"] = {
-        "case_id": case_id,
-        "case_title": case_obj.title if case_obj else "",
-        "doc_count": cascaded_count,
-        "action": "assigned",
-    }
-    response.headers["HX-Trigger"] = json.dumps(trigger)
-    return response
-
-
-# -----------------------------------------------------------------------------
 # Document actions (reingest, summarize, approve-summary)
 # -----------------------------------------------------------------------------
 
@@ -528,6 +434,7 @@ def reingest_document(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.services.ingestion.service import process_uploaded_document
 
@@ -543,7 +450,7 @@ def reingest_document(
         ) from exc
 
     # Re-render the HUD
-    return _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db, triage_service)
 
 
 @router.post("/document/{doc_id}/summarize")
@@ -551,6 +458,7 @@ async def summarize_document(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.services.ai_summary import _summarize_document_sync
     from app.tasks.enrich_document import enrich_document_task
@@ -569,7 +477,7 @@ async def summarize_document(
         db.commit()
 
     db.refresh(doc)
-    return _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db, triage_service)
 
 
 @router.post("/triage/document/{doc_id}/retry-ai")
@@ -577,6 +485,7 @@ async def retry_ai(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Re-enqueue enrichment for a document (forwards to per-stage retry)."""
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -591,7 +500,7 @@ async def retry_ai(
     process_document_task.delay(doc.id)
 
     db.refresh(doc)
-    return _render_document_hud(request, doc, db)
+    return _render_document_hud(request, doc, db, triage_service)
 
 
 # -----------------------------------------------------------------------------
@@ -599,19 +508,23 @@ async def retry_ai(
 # -----------------------------------------------------------------------------
 
 
-def _render_document_hud(request: Request, doc: Document, db: Session) -> HTMLResponse:
-    """Render the embedded HUD — reused by reingest/summarize/approve-summary/retry-ai."""
-    triage_service = TriageService(db)
-    cases = (
-        db.query(Case)
-        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-        .order_by(Case.title.asc())
-        .all()
-    )
+def _render_document_hud(
+    request: Request,
+    doc: Document,
+    db: Session,
+    triage_service: TriageService,
+) -> HTMLResponse:
+    """Render the triage doc HUD — reused by reingest/summarize/approve-summary/retry-ai.
+
+    `triage_service` is passed in (not constructed) so callers go through the
+    same `Depends(get_triage_service)` DI as their routes — keeps the service's
+    dependency lifetime under the framework's control.
+    """
+    cases = CaseRepository(db).list_for_picker()
     ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
-    response = templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+    response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
     # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
-    targeted_oob = _render_doc_targeted_oob(request, doc, triage_service, db)
+    targeted_oob = render_row_targeted_oob(request, doc, triage_service, db)
     response.body += targeted_oob.encode("utf-8")
     return response
 
@@ -676,7 +589,7 @@ async def reject_relationship(
 
 
 # -----------------------------------------------------------------------------
-# Card live-update endpoint (polled by self-disarming probe in triage_card.html)
+# Card live-update endpoint (polled by self-disarming probe in the bundle row)
 # -----------------------------------------------------------------------------
 
 
@@ -685,16 +598,98 @@ async def triage_card_live(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
 ):
-    """Return OOB card+footer+badge+case-chip for a single doc (polling refresh)."""
+    """Return OOB row swap for a single doc (polling refresh).
+
+    The row aggregates the doc's bundle; the new triage row template owns its own
+    polling probe scoped per bundle, but this endpoint is still used by direct
+    consumers (e.g., chunked retries that target a single doc).
+    """
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         return HTMLResponse("", status_code=404)
 
-    triage_service = TriageService(db)
     return HTMLResponse(
-        _render_doc_targeted_oob(request, doc, triage_service, db, allow_delete=False)
+        render_row_targeted_oob(request, doc, triage_service, db, allow_delete=False)
     )
+
+
+# -----------------------------------------------------------------------------
+# Triage-shaped per-doc HUD partial — the inline expand and drawer body fetch
+# this instead of /document/{id}?context=triage so the case-dashboard HUD stays
+# untouched while triage gets its own composition.
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/document/{doc_id}/title")
+async def update_doc_title(
+    doc_id: int,
+    title: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Inline title patch from the doc-HUD header.
+
+    Updates only `doc.title`. Does not finalize / clear `needs_review`. Empty /
+    whitespace-only `title` is a no-op (we keep the existing AI title rather
+    than wiping it). Returns 204 — caller uses `hx-swap="none"`.
+    """
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+    new_title = (title or "").strip()
+    if new_title:
+        doc.title = new_title
+        db.commit()
+    return HTMLResponse("", status_code=204)
+
+
+@router.get("/triage/doc/{doc_id}/hud")
+async def triage_doc_hud(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy.orm import joinedload as _joinedload
+
+    doc = (
+        db.query(Document)
+        .options(_joinedload(Document.proceeding))
+        .filter(Document.id == doc_id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    cases = CaseRepository(db).list_for_picker()
+    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
+    return templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
+
+
+@router.get("/triage/doc/{doc_id}/body")
+async def triage_doc_body(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return just the doc body (Docling markdown + highlighted passages).
+
+    Used by the triage drawer's middle column. Same context as /hud — the
+    body partial only reads doc + key_passages + passage_claim_map + pins.
+    """
+    from sqlalchemy.orm import joinedload as _joinedload
+
+    doc = (
+        db.query(Document)
+        .options(_joinedload(Document.proceeding))
+        .filter(Document.id == doc_id)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    ctx = build_hud_context(db, doc, mode="read", context="embedded")
+    return templates.TemplateResponse(request, "partials/hud/_body.html", ctx)
 
 
 # -----------------------------------------------------------------------------
@@ -717,12 +712,13 @@ async def get_bundle(
 
     return templates.TemplateResponse(
         request,
-        "partials/triage_bundle.html",
+        "partials/triage_row.html",
         {
             "bundle": bundle,
             "reactions_by_doc": reactions_by_doc,
             "originator_colors": ORIGINATOR_COLORS,
             "originator_icons": ORIGINATOR_ICONS,
+            "ORIGINATOR_COLORS": ORIGINATOR_COLORS,
             "OriginatorType": OriginatorType,
             "UserReactionType": UserReactionType,
         },
@@ -743,21 +739,15 @@ async def bundle_pipeline_status(
 
     Uses a focused single-table query — does not rebuild the full triage feed.
     """
-    import json
     from types import SimpleNamespace
 
-    from sqlalchemy import text
-
+    from app.repositories.document import DocumentRepository
     from app.services.pipeline_status import aggregate_pipeline_summary
 
-    rows = db.execute(
-        text("SELECT pipeline_stages FROM documents WHERE ingest_batch_id = :b"),
-        {"b": batch_id},
-    ).fetchall()
-    if not rows:
+    stages_per_doc = DocumentRepository(db).get_pipeline_stages_for_batch(batch_id)
+    if not stages_per_doc:
         return HTMLResponse("", status_code=404)
 
-    stages_per_doc = [json.loads(r[0] or "{}") for r in rows]
     summary = aggregate_pipeline_summary(stages_per_doc)
 
     n_total = summary.get("total", 0)
@@ -814,322 +804,3 @@ async def bundle_pipeline_status(
         )
 
     return response
-
-
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-
-
-def _render_bundle_group_oob(
-    request: Request, bundle, triage_service: TriageService
-) -> str:
-    """Render one bundle group as an OOB swap fragment.
-
-    Replaces the entire bundle group (header + cards + footer) in-place without
-    touching the rest of the feed — preserves scroll position and Alpine state.
-    """
-    reactions_by_doc = {
-        doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
-        for doc in bundle.documents
-    }
-    return templates.get_template("partials/triage_bundle.html").render(
-        {
-            "request": request,
-            "bundle": bundle,
-            "reactions_by_doc": reactions_by_doc,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-            "as_oob": True,
-        }
-    )
-
-
-def _render_triage_feed_oob(
-    request: Request, triage_service: TriageService, db: Session
-) -> str:
-    """Renders the full triage feed as an OOB swap (used by bundle confirms)."""
-    from app.models.database import Proceeding
-
-    bundles = triage_service.get_triage_bundles()
-    reactions_by_doc = {}
-    for bundle in bundles:
-        for doc in bundle.documents:
-            reactions_by_doc[doc.id] = {
-                r.reaction for r in triage_service.get_reactions(doc.id)
-            }
-    all_cases = (
-        db.query(Case)
-        .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-        .order_by(Case.title.asc())
-        .all()
-    )
-    proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
-
-    # Pass as_oob=True so the template adds hx-swap-oob="true" to the outer div,
-    # avoiding the nested duplicate-ID problem that breaks HTMX targeting.
-    return templates.get_template("partials/triage_feed.html").render(
-        {
-            "request": request,
-            "bundles": bundles,
-            "cases": all_cases,
-            "proceedings": proceedings,
-            "reactions_by_doc": reactions_by_doc,
-            "originator_colors": ORIGINATOR_COLORS,
-            "originator_icons": ORIGINATOR_ICONS,
-            "OriginatorType": OriginatorType,
-            "UserReactionType": UserReactionType,
-            "as_oob": True,
-        }
-    )
-
-
-def _render_doc_targeted_oob(
-    request: Request,
-    doc,
-    triage_service: TriageService,
-    db: Session,
-    allow_delete: bool = True,
-) -> str:
-    """Targeted OOB for a single doc confirm: updates just the card + bundle footer + badge.
-
-    Avoids the full feed replacement that causes flicker, scroll reset, and Alpine state loss.
-    Returns a delete swap if the document is no longer in the triage bundles, unless
-    allow_delete=False (used by the passive 4 s polling probe so the queue stays visible
-    until the user explicitly acts or refreshes the page).
-    """
-
-    # 1. Determine if the document should be in triage at all.
-    # Logic matches TriageService.get_triage_bundles() filter.
-    in_triage_via_case = doc.case_id == "_TRIAGE" or doc.needs_review
-    in_triage_via_batch = False
-    if doc.ingest_batch_id:
-        # A batch is in triage if its status is NOT completed or awaiting_slicing.
-        batch = doc.ingest_batch
-        if batch and batch.status not in (
-            IngestBatchStatus.COMPLETED,
-            IngestBatchStatus.AWAITING_SLICING,
-        ):
-            in_triage_via_batch = True
-
-    should_delete = not in_triage_via_case and not in_triage_via_batch
-    if should_delete and allow_delete:
-        return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
-
-    # 2. Fetch or construct the BundleView for this document.
-    # Using specific fetch/construction instead of get_triage_bundles() prevents
-    # documents disappearing due to pagination limits.
-    bundle = None
-    if doc.ingest_batch_id:
-        bundle = triage_service.get_bundle_by_batch_id(doc.ingest_batch_id)
-        if bundle and not in_triage_via_batch and allow_delete:
-            # If the batch itself is COMPLETED, the bundle in the UI should only
-            # show documents that specifically need review (in_triage_via_case).
-            # Skipped when allow_delete=False so the card stays rendered and the
-            # polling probe can disarm naturally once all pipeline stages are terminal.
-            bundle.documents = [
-                d for d in bundle.documents if d.case_id == "_TRIAGE" or d.needs_review
-            ]
-            triage_service._enrich_bundle(bundle)
-    else:
-        # Synthetic bundle for loose (pre-IngestBatch) document
-        bundle = BundleView(
-            key=f"loose-{doc.id}",
-            batch_id=None,
-            source_type=IngestBatchSourceType.MANUAL,
-            subject=doc.title,
-            sender_email=None,
-            received_at=doc.ingest_date or datetime.now(),
-            confirmed_case_id=doc.case_id if doc.case_id != "_TRIAGE" else None,
-            proceeding=doc.proceeding,
-            documents=[doc],
-        )
-        triage_service._enrich_bundle(bundle)
-
-    if not bundle or not any(d.id == doc.id for d in bundle.documents):
-        if not allow_delete:
-            return ""
-        return f'<div id="triage-card-{doc.id}" hx-swap-oob="delete"></div>'
-
-    reactions_by_doc = {
-        doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
-    }
-    stripe_color = ORIGINATOR_COLORS.get(doc.originator_type, "#64748b")
-    stripe_icon = ORIGINATOR_ICONS.get(doc.originator_type, "help_outline")
-
-    # 1. Updated card (hx_swap_oob=True adds hx-swap-oob="true" to the card div)
-    card_html = templates.get_template("partials/triage_card.html").render(
-        {
-            "request": request,
-            "doc": doc,
-            "stripe_color": stripe_color,
-            "stripe_icon": stripe_icon,
-            "bundle": bundle,
-            "reactions_by_doc": reactions_by_doc,
-            "UserReactionType": UserReactionType,
-            "OriginatorType": OriginatorType,
-            "hx_swap_oob": True,
-        }
-    )
-
-    # 2. Bundle footer (as_oob=True)
-    footer_html = templates.get_template("partials/triage_bundle_footer.html").render(
-        {
-            "request": request,
-            "bundle": bundle,
-            "as_oob": True,
-        }
-    )
-
-    # 3. Bundle badge (the ⚠ N indicator in the header row)
-    if bundle.needs_review_count > 0:
-        badge_inner = (
-            f'<span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase '
-            f'tracking-wider px-1.5 py-0.5 rounded-full bg-warning-container/20 text-warning">'
-            f"⚠ {bundle.needs_review_count}</span>"
-        )
-    else:
-        badge_inner = ""
-    badge_html = (
-        f'<span id="triage-bundle-badge-{bundle.key}" hx-swap-oob="true">'
-        f"{badge_inner}</span>"
-    )
-
-    # 4. Case chip in the bundle header (updates when a per-doc confirm sets case_id)
-    if bundle.confirmed_case_id:
-        chip_inner = (
-            f'<span class="inline-flex items-center gap-0.5 text-[9px] font-bold font-mono '
-            f"uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-primary/15 text-primary "
-            f'border border-primary/30" title="Case confirmed">'
-            f"{bundle.confirmed_case_id}</span>"
-        )
-    elif bundle.suggested_case_id:
-        chip_inner = (
-            f'<span class="inline-flex items-center gap-0.5 text-[9px] font-bold font-mono '
-            f"uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-secondary/10 text-secondary "
-            f'border border-secondary/20" title="AI-suggested case — not yet confirmed">'
-            f'{bundle.suggested_case_id}<span class="opacity-60">?</span></span>'
-        )
-    else:
-        chip_inner = (
-            '<span class="inline-flex items-center text-[9px] font-bold font-mono '
-            "uppercase tracking-wider px-1.5 py-0.5 rounded-full "
-            'bg-surface-container-highest text-outline border border-outline/20" '
-            'title="No case detected yet">?</span>'
-        )
-    chip_html = (
-        f'<span id="triage-bundle-case-chip-{bundle.key}" hx-swap-oob="true">'
-        f"{chip_inner}</span>"
-    )
-
-    return card_html + footer_html + badge_html + chip_html
-
-
-def _render_sidebar_badges_oob(db: Session) -> str:
-    """Render global sidebar badges (triage, notifications) as OOB swaps."""
-    from app.helpers import _build_notifications, build_sidebar_counts
-
-    counts = build_sidebar_counts(db)
-    notif_data = _build_notifications(db)
-    notif_count = notif_data["notification_count"]
-
-    # Triage Badge
-    triage_badge_inner = ""
-    if counts["triage_count"] > 0:
-        triage_badge_inner = (
-            f'<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">'
-            f"{counts['triage_count']}</span>"
-        )
-    triage_oob = f'<div id="sidebar-triage-badge-container" hx-swap-oob="true">{triage_badge_inner}</div>'
-
-    # Notifications Badge
-    notif_badge_inner = ""
-    if notif_count > 0:
-        notif_badge_inner = (
-            f'<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">'
-            f"{notif_count}</span>"
-        )
-    notif_oob = f'<div id="sidebar-notifications-badge-container" hx-swap-oob="true">{notif_badge_inner}</div>'
-
-    return triage_oob + notif_oob
-
-
-def _render_triage_status_bar_oob(
-    request: Request, triage_service: TriageService
-) -> str:
-    """Render the triage status bar (with counts) as an OOB swap."""
-    bundles = triage_service.get_triage_bundles()
-    total_docs = sum(len(b.documents) for b in bundles)
-    counts = {
-        "court": 0,
-        "opposing": 0,
-        "own": 0,
-        "third_party": 0,
-        "unknown": 0,
-        "bundles": len(bundles),
-    }
-    for b in bundles:
-        for doc in b.documents:
-            if doc.originator_type == OriginatorType.COURT:
-                counts["court"] += 1
-            elif doc.originator_type == OriginatorType.OPPOSING:
-                counts["opposing"] += 1
-            elif doc.originator_type == OriginatorType.OWN:
-                counts["own"] += 1
-            elif doc.originator_type == OriginatorType.THIRD_PARTY:
-                counts["third_party"] += 1
-            else:
-                counts["unknown"] += 1
-
-    # Outstanding AI-draft cases — those still active become a hint at the
-    # top of the bar so they don't accumulate invisibly. Phantom drafts (no
-    # docs) are auto-cleaned by triage_service.cleanup_orphaned_drafts().
-    drafts_pending = (
-        triage_service.db.query(Case).filter(Case.is_draft.is_(True)).count()
-    )
-    # Pick a doc on a draft case so the chip can deep-link to a useful card.
-    first_draft_doc_id = None
-    if drafts_pending:
-        first_draft_doc = (
-            triage_service.db.query(Document.id)
-            .join(Case, Case.id == Document.case_id)
-            .filter(Case.is_draft.is_(True))
-            .order_by(Document.id.asc())
-            .first()
-        )
-        if first_draft_doc:
-            first_draft_doc_id = first_draft_doc[0]
-
-    failed_count, first_failed_doc_id = _failed_doc_summary(bundles)
-
-    return templates.get_template("partials/triage_status_bar.html").render(
-        {
-            "request": request,
-            "counts_by_type": counts,
-            "total_docs": total_docs,
-            "drafts_pending": drafts_pending,
-            "first_draft_doc_id": first_draft_doc_id,
-            "failed_count": failed_count,
-            "first_failed_doc_id": first_failed_doc_id,
-            "as_oob": True,
-        }
-    )
-
-
-def _failed_doc_summary(bundles) -> tuple[int, int | None]:
-    """Return (count, first_failed_doc_id) for docs with pipeline_state=failed
-    across the bundles list. Used by the status bar chip + the page-render
-    context so the same source-of-truth flows to both."""
-    from app.models.enums import PipelineState
-
-    failed_count = 0
-    first_failed_doc_id: int | None = None
-    for b in bundles:
-        for d in b.documents:
-            if d.pipeline_state == PipelineState.FAILED:
-                failed_count += 1
-                if first_failed_doc_id is None:
-                    first_failed_doc_id = d.id
-    return failed_count, first_failed_doc_id

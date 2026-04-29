@@ -25,16 +25,8 @@ from app.services.ingestion.service import compute_review_reasons
 @pytest.mark.unit
 def test_compute_review_reasons_missing_parent_only_for_enclosure(db_session):
     """Cover letters (non-ENCLOSURE) should NOT get missing_parent reason."""
-    from app.models.database import Case
 
-    case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
-    db_session.add(case)
-    db_session.commit()
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
 
     cover = Document(
         title="Cover Letter",
@@ -60,16 +52,8 @@ def test_compute_review_reasons_missing_parent_only_for_enclosure(db_session):
 @pytest.mark.unit
 def test_compute_review_reasons_enclosure_without_parent_flagged(db_session):
     """ENCLOSURE docs without a parent_id should get missing_parent reason."""
-    from app.models.database import Case
 
-    case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
-    db_session.add(case)
-    db_session.commit()
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
 
     enclosure = Document(
         title="Annex A",
@@ -109,24 +93,29 @@ def test_compute_review_reasons_low_confidence(db_session):
 
 
 @pytest.mark.unit
-def test_compute_review_reasons_unresolved_relationship(db_session):
+def test_compute_review_reasons_unresolved_relationship(db_session, sample_case):
     """Unconfirmed AI relationships should trigger unresolved_relationship reason."""
     from app.models.database import Document, DocumentRelationship
     from app.models.enums import RelationshipConfidence
 
     doc = Document(
         title="Test",
-        case_id="ADV-123",
+        case_id=sample_case.id,
         originator_type=OriginatorType.OWN,
         sender="me@example.com",
         received_date=datetime.now(UTC),
     )
-    db_session.add(doc)
+    other = Document(
+        title="Target",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.OWN,
+    )
+    db_session.add_all([doc, other])
     db_session.flush()
 
     rel = DocumentRelationship(
         from_document_id=doc.id,
-        to_document_id=9999,
+        to_document_id=other.id,
         relationship_type=RelationshipType.REPLIES_TO,
         confidence=RelationshipConfidence.AI_DETECTED,
     )
@@ -201,12 +190,8 @@ def test_confirm_bundle_clears_doc_with_only_missing_case_id(db_session):
     """Doc whose only blocker was missing_case_id should leave triage after cascade."""
     from app.models.database import Case
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
         id="ADV-001-T",
         title="Target Case",
@@ -246,12 +231,8 @@ def test_confirm_bundle_keeps_doc_in_triage_when_sender_missing(db_session):
     """Doc missing sender should stay in triage even after case is assigned."""
     from app.models.database import Case
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
         id="ADV-002-T",
         title="Target Case",
@@ -291,12 +272,8 @@ def test_confirm_bundle_cascades_case_to_action_items(db_session):
     """ActionItems parked under _TRIAGE linked to bundle docs get their case_id updated."""
     from app.models.database import Case
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
         id="ADV-003-T",
         title="Target Case",
@@ -352,14 +329,8 @@ def test_bundle_view_proof_doc_ids_populated(db_session):
     """proof_doc_ids should contain the to_document_id of ATTACHES_AS_PROOF edges."""
     from app.models.database import Case
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
-    db_session.add(triage_case)
-    db_session.commit()
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
 
     batch, docs = _make_batch_with_docs(
         db_session,
@@ -411,12 +382,8 @@ def test_bundle_view_proceeding_populated(db_session):
     """bundle.proceeding should reflect the batch's linked Proceeding."""
     from app.models.database import Case, Proceeding
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
         id="ADV-PROC-T",
         title="Proceeding Test Case",
@@ -481,12 +448,8 @@ def test_confirm_document_clears_needs_review_when_all_fields_present(db_session
     """confirm_document with finalize=True should clear needs_review when all required fields are populated."""
     from app.models.database import Case
 
-    triage_case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
         id="ADV-FIN-T",
         title="Finalize Test Case",

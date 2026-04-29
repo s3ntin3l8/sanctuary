@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from app.api import api_router
@@ -103,6 +104,15 @@ async def lifespan(app: FastAPI):
     ):
         scan_dir.mkdir(parents=True, exist_ok=True)
 
+    # Skip every production-DB side effect under pytest. The conftest creates
+    # the test schema via Base.metadata.create_all on a separate engine, so
+    # running migrations / seeding / recovery against the hardcoded
+    # alembic.ini URL (sqlite:///data/sanctuary.db) would race with `make run`'s
+    # WAL locks and cause hangs or "readonly database" errors.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        yield
+        return
+
     # Run migrations so the schema exists even on a fresh/deleted DB.
     from alembic import command
     from alembic.config import Config as AlembicConfig
@@ -114,14 +124,39 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logging.getLogger(__name__).info("Migrations complete, logging re-verified.")
 
-    # Reset any pipeline stages that were left in RUNNING state by a prior crash.
+    # Seed singletons that production code paths depend on. Required for FK
+    # enforcement (PRAGMA foreign_keys=ON) — any ingest into the triage inbox
+    # references case_id="_TRIAGE" and would 500 without this row.
     from app.dependencies import SessionLocal
+    from app.services.case_service import seed_triage_case
+
+    with SessionLocal() as seed_db:
+        seed_triage_case(seed_db)
+
+    # Reset any pipeline stages that were left in RUNNING state by a prior crash.
     from app.services.pipeline_status import recover_orphaned_running_stages
 
     with SessionLocal() as recovery_db:
         stats = recover_orphaned_running_stages(recovery_db)
     if any(stats.values()):
         logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
+
+    # vec0 cannot be ALTERed: changing AI_EMBED_DIM without recreating the
+    # document_vectors table silently makes every embedding write fail the
+    # per-row dim guard. Surface that as an ERROR at boot so it's never silent.
+    from app.config import AI_EMBED_DIM
+    from app.services.embeddings import verify_vec0_dim
+
+    with SessionLocal() as vec_db:
+        ok, actual = verify_vec0_dim(vec_db, AI_EMBED_DIM)
+    if not ok:
+        logging.getLogger(__name__).error(
+            "AI_EMBED_DIM=%s but document_vectors schema declares dim=%s. "
+            "vec0 can't be ALTERed — drop and recreate the table via a migration "
+            "or revert AI_EMBED_DIM. All embedding writes will silently fail.",
+            AI_EMBED_DIM,
+            actual,
+        )
 
     yield
 
@@ -169,6 +204,7 @@ app.add_middleware(
 )
 
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 
 app.middleware("http")(add_request_id)
 

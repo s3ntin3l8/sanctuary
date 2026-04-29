@@ -68,16 +68,16 @@ def test_document_repository_get_by_case(sample_document):
 
 
 @pytest.mark.unit
-def test_document_repository_get_triage_documents(sample_triage_case):
+def test_document_repository_get_triage_documents(db_session):
     from app.models.database import Document
     from app.repositories.document import DocumentRepository
 
-    db = sample_triage_case._sa_instance_state.session
+    # `_TRIAGE` Case is pre-seeded by the conftest cleanup_per_test fixture.
     doc = Document(title="Triage Doc", case_id="_TRIAGE")
-    db.add(doc)
-    db.commit()
+    db_session.add(doc)
+    db_session.commit()
 
-    repo = DocumentRepository(db)
+    repo = DocumentRepository(db_session)
     results = repo.get_triage_documents()
     assert len(results) >= 1
 

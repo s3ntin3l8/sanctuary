@@ -4,59 +4,23 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Document
 from app.repositories.document import DocumentRepository
-from app.repositories.entity import EntityRepository
-from app.services.ingestion.extractors import extract_case_id
-from app.services.ingestion.service import extract_clean_title
 
 
 class DocumentService:
-    """Service layer for Document operations."""
+    """Service layer for Document operations.
+
+    Scope is intentionally narrow: the cascade-aware delete and the contact
+    page's by-sender lookup. Other CRUD goes through `DocumentRepository`
+    directly — wrapping it here adds no value.
+    """
 
     def __init__(self, db: Session):
         self.db = db
         self.doc_repo = DocumentRepository(db)
-        self.entity_repo = EntityRepository(db)
 
-    def get_document_with_context(self, doc_id: int) -> Document | None:
-        """Get document with extraction context."""
-        doc = self.doc_repo.get(doc_id)
-        if not doc:
-            return None
-        return doc
-
-    def get_triage_documents(self) -> Sequence[Document]:
-        """Get documents in triage queue."""
-        return self.doc_repo.get_triage_documents()
-
-    def get_pending_review_documents(self) -> Sequence[Document]:
-        """Get documents pending review."""
-        return self.doc_repo.get_pending_review()
-
-    def get_recent_documents(self, limit: int = 20) -> Sequence[Document]:
-        """Get recent documents."""
-        return self.doc_repo.get_recent(limit=limit)
-
-    def get_documents_by_case(self, case_id: str) -> Sequence[Document]:
-        """Get all documents for a case."""
-        return self.doc_repo.get_by_case(case_id)
-
-    def update_document_case(self, doc_id: int, case_id: str) -> Document | None:
-        """Move document to a different case."""
-        return self.doc_repo.update_case(doc_id, case_id)
-
-    def resolve_triage(self, doc_id: int, case_id: str) -> Document | None:
-        """Resolve triage document by assigning to a case."""
-        doc = self.doc_repo.get(doc_id)
-        if not doc:
-            return None
-
-        doc.case_id = case_id
-        doc.needs_review = False
-        doc.review_reasons = []
-
-        self.db.flush()
-        self.db.refresh(doc)
-        return doc
+    def get_documents_by_sender(self, sender: str) -> Sequence[Document]:
+        """Get documents from a specific sender."""
+        return self.doc_repo.get_by_sender(sender)
 
     def delete_document(self, doc_id: int) -> bool:
         """Delete document and all dependent rows from the database and filesystem."""
@@ -68,6 +32,7 @@ class DocumentService:
             ActionItem,
             Claim,
             ClaimEvidence,
+            Conversation,
             DocumentPin,
             DocumentRelationship,
             Entity,
@@ -103,6 +68,13 @@ class DocumentService:
             text("DELETE FROM document_vectors WHERE document_id = :id"),
             {"id": doc_id},
         )
+
+        # Conversation.scope_id is a polymorphic string with no FK; clean up
+        # any document-scoped chats so they aren't stranded.
+        self.db.query(Conversation).filter(
+            Conversation.scope_type == "document",
+            Conversation.scope_id == str(doc_id),
+        ).delete(synchronize_session=False)
 
         # Nullable FKs: null out rather than delete the parent record.
         self.db.query(ActionItem).filter(
@@ -157,27 +129,3 @@ class DocumentService:
             self.db.commit()
             return True
         return False
-
-    def get_documents_by_sender(self, sender: str) -> Sequence[Document]:
-        """Get documents from a specific sender."""
-        return self.doc_repo.get_by_sender(sender)
-
-    def search_documents(self, query: str) -> Sequence[Document]:
-        """Search documents by title or content."""
-        return self.doc_repo.search(query)
-
-    def extract_and_update_metadata(self, doc_id: int) -> Document | None:
-        """Re-extract metadata from document content."""
-        doc = self.doc_repo.get(doc_id)
-        if not doc or not doc.content:
-            return doc
-
-        case_result = extract_case_id(doc.title or "", doc.content)
-        if case_result.get("value"):
-            doc.case_id = case_result["value"]
-
-        doc.title = extract_clean_title(doc.title or "", doc.content)
-
-        self.db.flush()
-        self.db.refresh(doc)
-        return doc

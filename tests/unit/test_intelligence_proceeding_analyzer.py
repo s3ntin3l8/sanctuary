@@ -1,4 +1,3 @@
-import json
 from unittest.mock import patch
 
 import pytest
@@ -41,21 +40,18 @@ def doc_with_proceeding(db_session, sample_case, sample_proceeding):
 
 
 @pytest.mark.unit
-@patch("app.services.intelligence.proceeding_analyzer.call_llm")
+@patch("app.services.intelligence.proceeding_analyzer.call_json_ai")
 def test_autofill_empty_proceeding(
     mock_llm, db_session, doc_with_proceeding, sample_proceeding
 ):
-    # Mock LLM response
-    mock_llm.return_value = json.dumps(
-        {
-            "is_court_document": True,
-            "court_level": "AG",
-            "court_name": "Amtsgericht Hamburg",
-            "az_court": "003 F 426/25",
-            "subject_matter": "Custody",
-            "appeal_deadline_days": None,
-        }
-    )
+    mock_llm.return_value = {
+        "is_court_document": True,
+        "court_level": "AG",
+        "court_name": "Amtsgericht Hamburg",
+        "az_court": "003 F 426/25",
+        "subject_matter": "Custody",
+        "appeal_deadline_days": None,
+    }
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session
@@ -69,7 +65,7 @@ def test_autofill_empty_proceeding(
 
 
 @pytest.mark.unit
-@patch("app.services.intelligence.proceeding_analyzer.call_llm")
+@patch("app.services.intelligence.proceeding_analyzer.call_json_ai")
 def test_escalation_to_new_proceeding(
     mock_llm, db_session, doc_with_proceeding, sample_proceeding
 ):
@@ -78,17 +74,14 @@ def test_escalation_to_new_proceeding(
     sample_proceeding.az_court = "OLD-AZ"
     db_session.commit()
 
-    # Mock LLM response for OLG (escalation)
-    mock_llm.return_value = json.dumps(
-        {
-            "is_court_document": True,
-            "court_level": "OLG",
-            "court_name": "Hanseatisches Oberlandesgericht",
-            "az_court": "12 UF 123/25",
-            "subject_matter": "Appeal",
-            "appeal_deadline_days": 30,
-        }
-    )
+    mock_llm.return_value = {
+        "is_court_document": True,
+        "court_level": "OLG",
+        "court_name": "Hanseatisches Oberlandesgericht",
+        "az_court": "12 UF 123/25",
+        "subject_matter": "Appeal",
+        "appeal_deadline_days": 30,
+    }
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session
@@ -117,9 +110,9 @@ def test_escalation_to_new_proceeding(
 
 
 @pytest.mark.unit
-@patch("app.services.intelligence.proceeding_analyzer.call_llm")
+@patch("app.services.intelligence.proceeding_analyzer.call_json_ai")
 def test_not_a_court_document(mock_llm, db_session, doc_with_proceeding):
-    mock_llm.return_value = json.dumps({"is_court_document": False})
+    mock_llm.return_value = {"is_court_document": False}
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session

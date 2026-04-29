@@ -1,4 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
+
+
+def _utcnow():
+    return datetime.now(UTC)
+
 
 from sqlalchemy import (
     JSON,
@@ -11,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -61,7 +67,12 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
     content = Column(Text, nullable=True)
-    case_id = Column(String, nullable=True, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     file_path = Column(String, nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex digest
     originator_type = Column(
@@ -79,7 +90,7 @@ class Document(Base):
     issued_date = Column(
         DateTime, nullable=True, index=True
     )  # Date on the document itself (Datum:, Date: header, Bescheiddatum)
-    ingest_date = Column(DateTime, default=datetime.now)
+    ingest_date = Column(DateTime, default=_utcnow)
     needs_review = Column(Boolean, default=True, index=True)
     review_reasons = Column(
         JSON, default=list
@@ -116,6 +127,8 @@ class Document(Base):
 
     # Structural metadata (page counts, headings, chunking info)
     meta = Column(JSON, nullable=True)
+
+    page_count = Column(Integer, nullable=False, default=0)
 
     # Self-referential relationship for 'Russian Doll' nesting
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
@@ -172,7 +185,7 @@ class Case(Base):
     title = Column(String, nullable=False)
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
-    ingest_date = Column(DateTime, default=datetime.now)
+    ingest_date = Column(DateTime, default=_utcnow)
     closed_at = Column(DateTime, nullable=True)
     is_draft = Column(Boolean, default=False, nullable=False)
 
@@ -203,7 +216,12 @@ class Proceeding(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     court_name = Column(String, nullable=False)  # "Amtsgericht Hamburg"
     court_level = Column(SAEnum(ProceedingCourtLevel), nullable=False)
     subject_matter = Column(String, nullable=True)  # "§ 1671 BGB, custody"
@@ -213,7 +231,7 @@ class Proceeding(Base):
     )
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case", back_populates="proceedings")
     documents = relationship("Document", back_populates="proceeding")
@@ -234,12 +252,17 @@ class IngestBatch(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     source_type = Column(SAEnum(IngestBatchSourceType), nullable=False)
-    received_at = Column(DateTime, default=datetime.now, nullable=False)
+    received_at = Column(DateTime, default=_utcnow, nullable=False)
     sender_email = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     raw_source_path = Column(String, nullable=True)  # path to original .eml/scan
     message_id = Column(String, index=True, nullable=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=True, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     proceeding_id = Column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True
     )
@@ -248,7 +271,7 @@ class IngestBatch(Base):
         default=IngestBatchStatus.PENDING,
         nullable=False,
     )
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
     analysis_queued_at = Column(DateTime, nullable=True)
     source_hash = Column(String, index=True, nullable=True)
     meta = Column(JSON, nullable=True)
@@ -291,6 +314,12 @@ class DocumentRelationship(Base):
             "ix_document_relationships_type",
             "relationship_type",
         ),
+        UniqueConstraint(
+            "from_document_id",
+            "to_document_id",
+            "relationship_type",
+            name="uq_document_relationships_edge",
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -307,7 +336,7 @@ class DocumentRelationship(Base):
         nullable=False,
     )
     notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     from_document = relationship("Document", foreign_keys=[from_document_id])
     to_document = relationship("Document", foreign_keys=[to_document_id])
@@ -328,7 +357,12 @@ class ActionItem(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     proceeding_id = Column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True
     )
@@ -348,7 +382,7 @@ class ActionItem(Base):
         SAEnum(ActionItemStatus), default=ActionItemStatus.OPEN, nullable=False
     )
     location = Column(String, nullable=True)  # for court_date entries
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
@@ -370,7 +404,12 @@ class Claim(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     proceeding_id = Column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True
     )
@@ -381,9 +420,9 @@ class Claim(Base):
     claim_text = Column(Text, nullable=False)
     claim_type = Column(SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False)
     status = Column(SAEnum(ClaimStatus), default=ClaimStatus.ASSERTED, nullable=False)
-    first_made_at = Column(DateTime, default=datetime.now, nullable=False)
+    first_made_at = Column(DateTime, default=_utcnow, nullable=False)
     last_updated_at = Column(
-        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
     case = relationship("Case")
@@ -408,9 +447,17 @@ class ClaimEvidence(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    claim_id = Column(Integer, ForeignKey("claims.id"), nullable=False, index=True)
+    claim_id = Column(
+        Integer,
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     role = Column(SAEnum(ClaimEvidenceRole), nullable=False)
     excerpt = Column(Text, nullable=True)
@@ -419,7 +466,7 @@ class ClaimEvidence(Base):
         default=RelationshipConfidence.AI_DETECTED,
         nullable=False,
     )
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     claim = relationship("Claim", back_populates="evidence")
     document = relationship("Document", back_populates="claim_evidence")
@@ -445,7 +492,7 @@ class UserReaction(Base):
     user_id = Column(String, default="single_user", nullable=False)
     reaction = Column(SAEnum(UserReactionType), nullable=False)
     notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     document = relationship("Document", back_populates="reactions")
 
@@ -470,10 +517,8 @@ class DocumentPin(Base):
     passage_id = Column(String(12), nullable=False)
     note = Column(Text, nullable=True)
     user_id = Column(String, default="single_user", nullable=False)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
-    )
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
     document = relationship("Document", back_populates="pins")
 
@@ -494,7 +539,7 @@ class UserSettings(Base):
             },
         },
     )
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class LegalCost(Base):
@@ -518,7 +563,12 @@ class LegalCost(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     proceeding_id = Column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True
     )
@@ -556,7 +606,7 @@ class LegalCost(Base):
 
     source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
@@ -575,7 +625,7 @@ class Conversation(Base):
     scope_type = Column(String, nullable=False)  # "document" | "case"
     scope_id = Column(String, nullable=False)  # doc id (str) or case id (ADV-024-A)
     title = Column(String, nullable=True)
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     messages = relationship(
         "ConversationMessage",
@@ -604,7 +654,7 @@ class ConversationMessage(Base):
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     context_document_ids = Column(JSON, nullable=True)  # [doc_id, ...] cited
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")
 
@@ -621,7 +671,12 @@ class Entity(Base):
     __table_args__ = (Index("ix_entities_case_type", "case_id", "type"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     type = Column(SAEnum(EntityType), nullable=False, index=True)
     name = Column(String, nullable=False, index=True)
@@ -632,7 +687,7 @@ class Entity(Base):
     # Additional metadata (confidence, positions, extracted context)
     extra_data = Column(JSON, nullable=True)
 
-    ingest_date = Column(DateTime, default=datetime.now, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case")
     source_document = relationship("Document")

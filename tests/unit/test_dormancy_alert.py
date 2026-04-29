@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-from app.api.cases import DORMANCY_DAYS, _compute_dormancy_alert
 from app.models.enums import ProceedingStatus
+from app.services.case_service import DORMANCY_DAYS, _compute_dormancy_alert
 
 
 def make_proceeding(

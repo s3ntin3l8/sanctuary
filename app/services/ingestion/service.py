@@ -8,6 +8,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
+from app.core.validators import validate_case_id
 from app.models.database import (
     Document,
     OriginatorType,
@@ -190,16 +191,24 @@ def extract_cost_candidates(content: str) -> list[dict]:
     candidates = []
     text = content[:10000] if content else ""
 
-    # Pattern to match amounts like "1.234,56 EUR" or "500,00 €"
-    # Added allowance for table pipes | and extra whitespace around the amount
-    amount_pattern = r"(?:\||^|\s+)(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\s*(?:EUR|€|euros?)"
+    # Match German amounts in two layouts:
+    #   suffix: "1.234,56 EUR" / "500,00 €"  (lawyer invoices, modern court letters)
+    #   prefix: "EUR 583,40" / "€ 1.234,56"  (RVG/GKG cost decisions, traditional)
+    suffix_pattern = r"(?:\||^|\s+)(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)\s*(?:EUR|€|euros?)"
+    prefix_pattern = r"(?:EUR|€|euros?)\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)"
 
-    for match in re.finditer(amount_pattern, text, re.IGNORECASE):
-        amount_str = match.group(1).replace(".", "").replace(",", ".")
+    matches: list[tuple[int, int, str]] = []
+    for match in re.finditer(suffix_pattern, text, re.IGNORECASE):
+        matches.append((match.start(), match.end(), match.group(1)))
+    for match in re.finditer(prefix_pattern, text, re.IGNORECASE):
+        matches.append((match.start(), match.end(), match.group(1)))
+
+    for match_start, match_end, amount_raw in matches:
+        amount_str = amount_raw.replace(".", "").replace(",", ".")
         try:
             amount = float(amount_str)
             if 10 < amount < 1000000:
-                context = text[max(0, match.start() - 50) : match.end() + 50]
+                context = text[max(0, match_start - 50) : match_end + 50]
                 candidates.append(
                     {
                         "type": "amount",
@@ -313,7 +322,8 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
     doc.issued_date = result_date["value"]
-    doc.received_date = datetime.now(UTC)
+    if not doc.received_date:
+        doc.received_date = datetime.now(UTC)
     if result_internal_id["value"] and not doc.internal_id:
         doc.internal_id = result_internal_id["value"]
     doc.extraction_confidence = {
@@ -406,7 +416,23 @@ async def ingest_file(
             else None
         )
         preliminary_case_id = case_id if case_id else (extracted_case_id or "_TRIAGE")
+        if preliminary_case_id != "_TRIAGE":
+            validated = validate_case_id(preliminary_case_id)
+            if not validated:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid case_id '{preliminary_case_id}'.",
+                )
+            preliminary_case_id = validated
         case_dir = DATA_DIR / preliminary_case_id
+        if (
+            DATA_DIR.resolve() not in case_dir.resolve().parents
+            and case_dir.resolve() != DATA_DIR.resolve()
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="case_id resolves outside the data directory.",
+            )
         case_dir.mkdir(parents=True, exist_ok=True)
         file_path = str(case_dir / safe_filename)
 

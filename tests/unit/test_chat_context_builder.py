@@ -1,12 +1,18 @@
 from datetime import datetime
 
-from app.models.database import ActionItem, Claim, ClaimEvidence
+from app.models.database import ActionItem, Claim, ClaimEvidence, Document
 from app.models.enums import ActionItemStatus, ClaimEvidenceRole, ClaimStatus
 from app.services.chat.context_builder import build_case_chat_prompt
 
 
 def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_case):
-    # Setup: Create an ActionItem and a Claim
+    # Source document for the Claim's source_document_id FK.
+    source_doc = Document(
+        title="Source", content="x", case_id=sample_case.id, needs_review=False
+    )
+    db_session.add(source_doc)
+    db_session.commit()
+
     action = ActionItem(
         case_id=sample_case.id,
         title="Test Deadline",
@@ -18,7 +24,7 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         case_id=sample_case.id,
         claim_text="Contested fact",
         status=ClaimStatus.CONTESTED,
-        source_document_id=1,
+        source_document_id=source_doc.id,
         first_made_at=datetime.now(),
         last_updated_at=datetime.now(),
     )
@@ -28,7 +34,7 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
     # Also add evidence for the claim to verify counts
     evidence = ClaimEvidence(
         claim_id=claim.id,
-        document_id=1,
+        document_id=source_doc.id,
         role=ClaimEvidenceRole.SUPPORTS,
         ingest_date=datetime.now(),
     )

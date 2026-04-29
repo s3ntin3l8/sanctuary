@@ -73,8 +73,13 @@ class HomeService:
         )
 
         delta_cases = []
+        sig_values = {
+            SignificanceTier.CRITICAL: 4,
+            SignificanceTier.SIGNIFICANT: 3,
+            SignificanceTier.INFORMATIONAL: 2,
+            SignificanceTier.ADMINISTRATIVE: 1,
+        }
         if last_home_visit:
-            # Find cases with new docs since last visit
             cases_with_new_docs = (
                 self.db.query(Case)
                 .join(Document, Case.id == Document.case_id)
@@ -83,26 +88,44 @@ class HomeService:
                 .all()
             )
 
-            for case in cases_with_new_docs:
-                new_docs = (
+            # Single batched query for all new docs across all affected cases —
+            # avoids the N+1 that previously fired one query per case in the loop.
+            case_ids = [c.id for c in cases_with_new_docs]
+            new_docs_by_case: dict[str, list[Document]] = {cid: [] for cid in case_ids}
+            if case_ids:
+                rows = (
                     self.db.query(Document)
                     .filter(
-                        Document.case_id == case.id,
+                        Document.case_id.in_(case_ids),
                         Document.ingest_date > last_home_visit,
                     )
                     .order_by(Document.ingest_date.desc())
                     .all()
                 )
+                for d in rows:
+                    new_docs_by_case[d.case_id].append(d)
 
-                # Determine max significance tier among new documents
+            # Single batched query for new ActionItem counts per case.
+            from sqlalchemy import func as sa_func
+
+            action_counts: dict[str, int] = {cid: 0 for cid in case_ids}
+            if case_ids:
+                rows = (
+                    self.db.query(ActionItem.case_id, sa_func.count(ActionItem.id))
+                    .filter(
+                        ActionItem.case_id.in_(case_ids),
+                        ActionItem.ingest_date > last_home_visit,
+                    )
+                    .group_by(ActionItem.case_id)
+                    .all()
+                )
+                for case_id, n in rows:
+                    action_counts[case_id] = n
+
+            for case in cases_with_new_docs:
+                new_docs = new_docs_by_case.get(case.id, [])
+
                 max_sig = SignificanceTier.ADMINISTRATIVE
-                sig_values = {
-                    SignificanceTier.CRITICAL: 4,
-                    SignificanceTier.SIGNIFICANT: 3,
-                    SignificanceTier.INFORMATIONAL: 2,
-                    SignificanceTier.ADMINISTRATIVE: 1,
-                }
-
                 for d in new_docs:
                     if d.significance_tier and sig_values.get(
                         d.significance_tier, 0
@@ -118,12 +141,7 @@ class HomeService:
                         if max_sig
                         else "administrative",
                         "doc_titles": [d.title for d in new_docs[:3]],
-                        "new_actions": self.db.query(ActionItem)
-                        .filter(
-                            ActionItem.case_id == case.id,
-                            ActionItem.ingest_date > last_home_visit,
-                        )
-                        .count(),
+                        "new_actions": action_counts.get(case.id, 0),
                     }
                 )
 

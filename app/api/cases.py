@@ -19,13 +19,10 @@ from app.models.enums import (
     ProceedingCourtLevel,
     ProceedingStatus,
 )
+from app.repositories.case import CaseRepository
 from app.services.case_dashboard_service import CaseDashboardService
 from app.services.case_graph_service import CaseGraphService
-from app.services.case_service import (  # noqa: F401 (re-exported for tests)
-    DORMANCY_DAYS,
-    CaseService,
-    _compute_dormancy_alert,
-)
+from app.services.case_service import CaseService
 from app.services.hud_context import build_hud_context
 from app.services.ingestion.extractors import infer_court_level
 from app.services.user_settings_service import (
@@ -426,13 +423,16 @@ async def create_case_from_triage(
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
     from app.services.triage_service import TriageService
+    from app.services.triage_view import (
+        render_sidebar_badges_oob,
+        render_triage_header_stats_oob,
+    )
 
     triage_service = TriageService(db)
     response.body += (
-        _render_sidebar_badges_oob(db)
-        + _render_triage_status_bar_oob(request, triage_service)
+        render_sidebar_badges_oob(db)
+        + render_triage_header_stats_oob(request, triage_service)
     ).encode("utf-8")
 
     response.headers["HX-Trigger"] = json.dumps(
@@ -485,12 +485,15 @@ async def confirm_draft_case(
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    from app.api.triage import _render_sidebar_badges_oob, _render_triage_status_bar_oob
     from app.services.triage_service import TriageService
+    from app.services.triage_view import (
+        render_sidebar_badges_oob,
+        render_triage_header_stats_oob,
+    )
 
     response.body += (
-        _render_sidebar_badges_oob(db)
-        + _render_triage_status_bar_oob(request, TriageService(db))
+        render_sidebar_badges_oob(db)
+        + render_triage_header_stats_oob(request, TriageService(db))
     ).encode("utf-8")
 
     case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
@@ -508,6 +511,22 @@ async def confirm_draft_case(
     return response
 
 
+def _delete_case_via_service(case_id: str, db: Session) -> dict:
+    """Shared between DELETE /cases/:id and POST /cases/:id/reject-draft."""
+    from fastapi import HTTPException
+
+    if not db.query(Case).filter(Case.id == case_id).first():
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    try:
+        result = CaseService(db).delete_and_revert(case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if result is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return result
+
+
 @router.post("/{case_id}/reject-draft")
 async def reject_draft_case(
     request: Request,
@@ -515,105 +534,55 @@ async def reject_draft_case(
     db: Session = Depends(get_db),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
-    # We delegate to the full delete_case logic
-    return await delete_case(case_id, db, request=request, is_rejection=True)
-
-
-@router.delete("/{case_id}", response_model=None)
-async def delete_case(
-    case_id: str,
-    db: Session = Depends(get_db),
-    request: Request = None,
-    is_rejection: bool = False,
-):
-    """Delete a case and revert all its documents and batches to _TRIAGE."""
     import json
 
     from fastapi import HTTPException
 
-    from app.models.database import ActionItem, Claim, Entity, IngestBatch, LegalCost
-
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-
-    if is_rejection and not case.is_draft:
+    if not case.is_draft:
         raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
 
-    # Collect affected docs before deletion
-    docs = db.query(Document).filter(Document.case_id == case_id).all()
+    result = _delete_case_via_service(case_id, db)
+    docs = result["docs"]
 
-    # Revert docs and batches to _TRIAGE
-    batch_ids = {d.ingest_batch_id for d in docs if d.ingest_batch_id}
-    for doc in docs:
-        doc.case_id = "_TRIAGE"
-        doc.proceeding_id = None
-        doc.needs_review = True  # Ensure they reappear in triage
+    first_doc = docs[0] if docs else None
+    if not first_doc:
+        return HTMLResponse("", status_code=204)
 
-    for batch_id in batch_ids:
-        batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-        if batch and batch.case_id == case_id:
-            batch.case_id = None
-            batch.proceeding_id = None
-
-    # Explicit deletes (no cascade from Case to these tables today)
-    db.query(Entity).filter(Entity.case_id == case_id).delete(synchronize_session=False)
-    db.query(ActionItem).filter(ActionItem.case_id == case_id).delete(
-        synchronize_session=False
+    db.refresh(first_doc)
+    cases = CaseRepository(db).list_for_picker()
+    ctx = build_hud_context(
+        db, first_doc, mode="review", context="embedded", cases=cases
     )
-    db.query(LegalCost).filter(LegalCost.case_id == case_id).delete(
-        synchronize_session=False
+    from app.config import templates as _templates
+
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+
+    from app.services.triage_service import TriageService
+    from app.services.triage_view import (
+        render_sidebar_badges_oob,
+        render_triage_header_stats_oob,
     )
-    for claim in db.query(Claim).filter(Claim.case_id == case_id).all():
-        db.delete(claim)  # ORM delete so ClaimEvidence cascade fires
 
-    db.delete(case)  # cascades to Proceeding via relationship
-    db.commit()
+    response.body += (
+        render_sidebar_badges_oob(db)
+        + render_triage_header_stats_oob(request, TriageService(db))
+    ).encode("utf-8")
+    response.headers["HX-Trigger"] = json.dumps(
+        {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
+    )
+    return response
 
-    # Re-enrich reverted docs so pipeline stages reset cleanly
-    if docs:
-        from app.services.triage_service import _reset_and_reenrich
 
-        _reset_and_reenrich(db, docs)
-
-    if is_rejection and request:
-        # Render the first reverted doc in the triage HUD
-        first_doc = docs[0] if docs else None
-        if not first_doc:
-            return HTMLResponse("", status_code=204)
-
-        db.refresh(first_doc)
-        cases = (
-            db.query(Case)
-            .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
-            .order_by(Case.title.asc())
-            .all()
-        )
-        ctx = build_hud_context(
-            db, first_doc, mode="review", context="embedded", cases=cases
-        )
-        from app.config import templates as _templates
-
-        response = _templates.TemplateResponse(
-            request, "partials/hud/_container.html", ctx
-        )
-
-        from app.api.triage import (
-            _render_sidebar_badges_oob,
-            _render_triage_status_bar_oob,
-        )
-        from app.services.triage_service import TriageService
-
-        response.body += (
-            _render_sidebar_badges_oob(db)
-            + _render_triage_status_bar_oob(request, TriageService(db))
-        ).encode("utf-8")
-        response.headers["HX-Trigger"] = json.dumps(
-            {"case:rejected": {"case_id": case_id, "doc_count": len(docs)}}
-        )
-        return response
-
-    return JSONResponse(content={"status": "success", "reverted_docs": len(docs)})
+@router.delete("/{case_id}", response_model=None)
+async def delete_case(case_id: str, db: Session = Depends(get_db)):
+    """Delete a case and revert all its documents and batches to _TRIAGE."""
+    result = _delete_case_via_service(case_id, db)
+    return JSONResponse(
+        content={"status": "success", "reverted_docs": result["doc_count"]}
+    )
 
 
 @router.post("")

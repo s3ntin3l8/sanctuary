@@ -22,11 +22,11 @@
          x-transition:leave="transition ease-in duration-150"
          x-transition:leave-start="opacity-100 scale-100 translate-y-0"
          x-transition:leave-end="opacity-0 scale-95 translate-y-4"
-         class="relative bg-surface-low rounded-2xl border border-outline-variant/20 shadow-2xl w-full max-w-lg overflow-hidden"
+         class="relative bg-surface-lowest rounded-2xl border border-outline-variant shadow-2xl w-full max-w-lg overflow-hidden"
          @click.away="showCreateCase = false">
 
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10 bg-surface-container">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant bg-surface-container-low/50">
             <h3 class="text-sm font-black text-on-surface uppercase tracking-wider">Create New Case</h3>
             <button @click="showCreateCase = false" class="material-symbols-outlined text-on-surface-variant hover:text-error cursor-pointer text-sm">close</button>
         </div>
@@ -34,27 +34,27 @@
         <form action="/cases" method="POST" class="p-6 space-y-5">
             <!-- Case ID -->
             <div>
-                <label for="case_id" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Internal Case ID</label>
+                <label for="case_id" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Internal Case ID</label>
                 <input type="text" name="case_id" id="case_id" required
                        placeholder="e.g. ADV-2026-A"
-                       class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                       class="w-full mt-1.5 bg-surface-low border border-outline-variant rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all font-mono">
                 <p class="mt-1.5 text-[10px] text-on-surface-variant/60 italic">Unique lead identifier for files, URLs and AI recall.</p>
             </div>
 
             <!-- Title -->
             <div>
-                <label for="title" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Case Title</label>
+                <label for="title" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Case Title</label>
                 <input type="text" name="title" id="title" required
                        placeholder="e.g. Miller vs. City of Hamburg"
-                       class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                       class="w-full mt-1.5 bg-surface-low border border-outline-variant rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all">
             </div>
 
             <div class="grid grid-cols-2 gap-4">
                 <!-- Jurisdiction -->
                 <div>
-                    <label for="jurisdiction" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Jurisdiction</label>
+                    <label for="jurisdiction" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Jurisdiction</label>
                     <select name="jurisdiction" id="jurisdiction"
-                            class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all">
+                            class="w-full mt-1.5 bg-surface-low border border-outline-variant rounded-lg px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all appearance-none cursor-pointer">
                         <option value="de">Germany (DE)</option>
                         <option value="eu">European Union (EU)</option>
                         <option value="int">International (INT)</option>
@@ -63,16 +63,16 @@
 
                 <!-- Initial Court -->
                 <div>
-                    <label for="court_name" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Active Court</label>
+                    <label for="court_name" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Active Court</label>
                     <input type="text" name="court_name" id="court_name" required
                            placeholder="e.g. AG Hamburg"
-                           class="w-full mt-1.5 bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:ring-4 focus:ring-primary/5 focus:outline-none transition-all">
+                           class="w-full mt-1.5 bg-surface-low border border-outline-variant rounded-lg px-4 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none transition-all">
                 </div>
             </div>
 
             <div class="pt-4 flex gap-3">
                 <button type="submit" class="btn btn-primary flex-1 justify-center">
-                    <span class="material-symbols-outlined text-[18px]">add_circle</span>
+                    <span class="material-symbols-outlined text-[18px]">create_new_folder</span>
                     <span>Create Case</span>
                 </button>
                 <button type="button" @click="showCreateCase = false" class="btn btn-secondary">

@@ -208,3 +208,20 @@ class DocumentRepository(BaseRepository[Document]):
         )
 
         return docs, total
+
+    def get_pipeline_stages_for_batch(self, batch_id: int) -> list[dict]:
+        """Return parsed `pipeline_stages` JSON for every doc in the batch.
+
+        Used by the bundle pipeline-status polling endpoint. Only the JSON
+        column is selected (no need to hydrate full Document objects).
+        """
+        import json
+
+        rows = (
+            self.db.query(Document.pipeline_stages)
+            .filter(Document.ingest_batch_id == batch_id)
+            .all()
+        )
+        return [
+            (json.loads(r[0]) if isinstance(r[0], str) else (r[0] or {})) for r in rows
+        ]

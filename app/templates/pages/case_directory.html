@@ -1,144 +1,238 @@
 {% extends "base.html" %}
-{% from 'components/pagination.html' import pagination_simple %}
 
-{% block title %}Case Files | The Sanctuary{% endblock %}
+{% block title %}Case Directory | The Sanctuary{% endblock %}
 
 {% block content %}
-{% set header_title = "Case Directory" %}
-{% set header_subtitle %}{{ (draft_cases|default([])|length) + active_cases|length + closed_cases|length }} Total Cases{% endset %}
-{% set header_actions %}
-<button @click="window.dispatchEvent(new CustomEvent('open-create-case-modal'))"
-        class="btn btn-primary flex items-center gap-2 text-xs">
-    <span class="material-symbols-outlined text-sm">create_new_folder</span>
-    New Case
-</button>
-{% endset %}
-<section class="flex-1 border-r border-outline-variant/10 flex flex-col overflow-hidden"
-         x-data="{ focusedPanel: null, focusedIdx: -1 }">
-    {% include "partials/page_header.html" %}
+<section x-data="casesPage()"
+         class="flex-1 flex flex-col overflow-hidden bg-surface"
+         @keydown.window="
+             const mod = $event.metaKey || $event.ctrlKey;
+             if ($event.key === 'f' && mod) {
+                 $event.preventDefault();
+                 $refs.searchInput.focus();
+             }
+         ">
 
-    {# Secondary Status Bar #}
-    <div class="px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center gap-6">
-        <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sm text-primary">folder</span>
-            <span class="text-[10px] font-bold text-on-surface">{{ total }}</span>
-            <span class="text-[10px] text-on-surface-variant font-medium">Total Cases</span>
+    {# ── Redesigned Header (Matching CasesHeader mockup) ── #}
+    <div class="px-8 pt-6 pb-4 border-b border-outline-variant bg-surface-container-lowest/40">
+        <div class="flex items-baseline justify-between mb-3 gap-4">
+            <div class="min-w-0">
+                <div class="flex items-baseline gap-3 flex-wrap">
+                    <h1 class="font-headline text-[26px] font-semibold leading-tight text-on-surface tracking-tight">Cases</h1>
+                    <span class="text-[12px] text-on-surface-variant">
+                        <span class="font-mono" x-text="counts.all"></span> total · <span class="font-mono" x-text="counts.active"></span> active
+                    </span>
+                </div>
+                <div class="text-[12px] mt-1 text-on-surface-variant">
+                    Click a case to open its dashboard and correspondence graph.
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <div class="flex items-center gap-1.5 text-[12px] px-2.5 py-1.5 rounded border border-outline-variant bg-surface-container-lowest focus-within:border-primary/40 transition-colors">
+                    <span class="material-symbols-outlined text-[14px] text-on-surface-variant">search</span>
+                    <input x-ref="searchInput"
+                           x-model="search"
+                           placeholder="Filter..."
+                           class="bg-transparent outline-none text-on-surface w-[140px] text-[12px]" />
+                </div>
+                <button @click="window.dispatchEvent(new CustomEvent('open-create-case-modal'))"
+                        class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary bg-surface-container-lowest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                    <span class="material-symbols-outlined text-[14px]">add</span>
+                    New case
+                </button>
+            </div>
         </div>
-        <div class="h-3 w-px bg-outline-variant/40"></div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-primary"></span>
-            <span class="text-[10px] font-bold text-primary">{{ active_cases|length }}</span>
-            <span class="text-[10px] text-on-surface-variant">Active</span>
+
+        <div class="flex gap-1.5 flex-wrap">
+            <template x-for="chip in chips" :key="chip.k">
+                <button type="button"
+                        @click="filter = chip.k"
+                        :class="filter === chip.k
+                                ? 'bg-primary-container text-primary border-primary'
+                                : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant hover:border-primary/40'"
+                        class="text-[11px] px-2.5 py-1 rounded-full border flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                    <span x-text="chip.label"></span>
+                    <span class="font-mono opacity-70" x-text="chip.count"></span>
+                </button>
+            </template>
         </div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-outline"></span>
-            <span class="text-[10px] font-bold text-on-surface-variant">{{ closed_cases|length }}</span>
-            <span class="text-[10px] text-on-surface-variant">Closed</span>
-        </div>
-        {% if draft_cases|default([]) %}
-        <div class="h-3 w-px bg-outline-variant/40"></div>
-        <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-            <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">{{ draft_cases|length }}</span>
-            <span class="text-[10px] text-on-surface-variant">Drafts</span>
-        </div>
-        {% endif %}
     </div>
 
-    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface pb-12">
-        <div class="p-8 max-w-7xl mx-auto space-y-12">
+    {# ── Column Headers (Matching gridTemplateColumns) ── #}
+    <div class="grid items-center gap-4 px-8 py-2 text-[10.5px] uppercase tracking-widest font-headline font-semibold border-b border-outline-variant text-on-surface-variant bg-surface-low"
+         style="grid-template-columns: 14px 120px 2fr 1.3fr 1fr 110px 90px 70px 30px;">
+        <span></span>
+        <button @click="sort = 'id'" class="text-left focus-ring hover:text-on-surface">Case</button>
+        <span>Client / Opposing</span>
+        <span>Forum</span>
+        <button @click="sort = 'activity'" class="text-left focus-ring hover:text-on-surface">Status / Last act</button>
+        <span>Next deadline</span>
+        <button @click="sort = 'exposure'" class="text-right focus-ring hover:text-on-surface">Exposure</button>
+        <span class="text-right">Docs</span>
+        <span></span>
+    </div>
 
-            {# ── AI Drafts — Pending Confirmation ── #}
-            {% if draft_cases|default([]) %}
-            <div class="space-y-4"
-                 @mouseenter="focusedPanel = 'drafts'; focusedIdx = -1"
-                 @mouseleave="focusedPanel = null; focusedIdx = -1">
-                <div class="flex items-center justify-between mb-3 px-1"
-                     @mouseenter.stop="focusedIdx = -1">
-                    <h3 class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm">pending</span>
-                        AI Drafts — Pending Confirmation
-                        <span class="ml-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] px-1.5 py-0.5 rounded font-bold">{{ draft_cases|length }}</span>
-                    </h3>
-                </div>
-                <div class="flex flex-col gap-1">
-                    {% for case in draft_cases %}
-                        {% set loop_index0 = loop.index0 %}
-                        {% set panel_name = 'drafts' %}
-                        {% include "partials/home/case_card_compact.html" %}
-                    {% endfor %}
-                </div>
+    {# ── Main Scrollable List ── #}
+    <div class="flex-1 overflow-y-auto custom-scrollbar">
+        <template x-if="filteredCases.length === 0">
+            <div class="flex flex-col items-center justify-center py-24 text-center">
+                <div class="font-headline text-[16px] mb-1 text-on-surface">No cases match.</div>
+                <div class="text-[12px] text-on-surface-variant">Try adjusting your filter or search query.</div>
             </div>
-            {% endif %}
+        </template>
 
-            {# ── Active Litigation & Advisory ── #}
-            {% if active_cases %}
-            <div class="space-y-4"
-                 @mouseenter="focusedPanel = 'active'; focusedIdx = -1"
-                 @mouseleave="focusedPanel = null; focusedIdx = -1">
-                <div class="flex items-center justify-between mb-3 px-1"
-                     @mouseenter.stop="focusedIdx = -1">
-                    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm text-primary">folder_open</span>
-                        Active Litigation &amp; Advisory
-                        <span class="ml-1 bg-primary-container/20 text-on-primary-container text-[9px] px-1.5 py-0.5 rounded font-bold">{{ active_cases|length }}</span>
-                    </h3>
+        <template x-for="c in filteredCases" :key="c.id">
+            <a :href="'/cases/' + c.id"
+               class="grid items-center gap-4 px-8 py-3 row-hover cursor-pointer border-b border-outline-variant no-underline text-on-surface"
+               style="grid-template-columns: 14px 120px 2fr 1.3fr 1fr 110px 90px 70px 30px;">
+
+                {# Tier Dot #}
+                <span class="w-2 h-2 rounded-full flex-shrink-0"
+                      :class="c.dormant ? 'bg-outline-variant' : (c.urgency === 'critical' ? 'bg-critical' : (c.urgency === 'delta' ? 'bg-amber' : 'bg-originator-own'))"></span>
+
+                {# ID #}
+                <span class="font-mono text-[11.5px] text-on-surface-variant" x-text="c.id"></span>
+
+                {# Client / Opposing #}
+                <div class="min-w-0">
+                    <div class="text-[13px] font-medium truncate" x-text="c.title"></div>
+                    <div class="text-[11px] truncate text-on-surface-variant">
+                        <span x-text="c.client"></span> <span class="opacity-50">vs.</span> <span x-text="c.opposing"></span>
+                    </div>
                 </div>
-                <div class="flex flex-col gap-1">
-                    {% for case in active_cases %}
-                        {% set loop_index0 = loop.index0 %}
-                        {% set panel_name = 'active' %}
-                        {% include "partials/home/case_card_compact.html" %}
-                    {% endfor %}
+
+                {# Forum #}
+                <div class="min-w-0">
+                    <div class="text-[12px] truncate" x-text="c.proceeding_title || 'No proceeding'"></div>
+                    <div class="text-[11px] text-on-surface-variant truncate" x-text="c.matter_label"></div>
                 </div>
-            </div>
-            {% endif %}
 
-            {# ── Closed & Archived ── #}
-            {% if closed_cases %}
-            <div class="space-y-4 pt-4"
-                 @mouseenter="focusedPanel = 'closed'; focusedIdx = -1"
-                 @mouseleave="focusedPanel = null; focusedIdx = -1">
-                <div class="flex items-center justify-between mb-3 px-1"
-                     @mouseenter.stop="focusedIdx = -1">
-                    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm text-on-surface-variant">folder</span>
-                        Closed &amp; Archived
-                        <span class="ml-1 bg-surface-container-high text-on-surface-variant text-[9px] px-1.5 py-0.5 rounded font-bold">{{ closed_cases|length }}</span>
-                    </h3>
+                {# Status #}
+                <div class="min-w-0">
+                    <div class="text-[12px] truncate" x-text="c.status_label"></div>
+                    <div class="text-[11px] text-on-surface-variant" x-text="c.last_activity_label"></div>
                 </div>
-                <div class="flex flex-col gap-1">
-                    {% for case in closed_cases %}
-                        {% set loop_index0 = loop.index0 %}
-                        {% set panel_name = 'closed' %}
-                        {% include "partials/home/case_card_compact.html" %}
-                    {% endfor %}
+
+                {# Next Deadline #}
+                <div class="min-w-0">
+                    <template x-if="c.next_deadline">
+                        <div class="text-[11.5px] font-mono px-2 py-0.5 rounded inline-block border"
+                             :class="c.next_deadline_urgency === 'critical' ? 'bg-critical/10 text-critical border-critical' : 'bg-amber/10 text-amber border-amber'"
+                             x-text="c.next_deadline">
+                        </div>
+                    </template>
                 </div>
-            </div>
-            {% endif %}
 
-            {% if not draft_cases|default([]) and not active_cases and not closed_cases %}
-            {% with
-                icon='folder_open',
-                title='No Cases Yet',
-                body='Your case directory will populate here once case files are created or linked during ingestion.',
-                icon_wrapper_class='w-20 h-20 rounded-2xl bg-surface-container-high flex items-center justify-center mb-6',
-                icon_class='text-4xl text-outline'
-            %}
-                {% include "partials/empty_state.html" %}
-            {% endwith %}
-            {% endif %}
+                {# Exposure #}
+                <div class="text-right font-mono text-[12px]" x-text="c.exposure"></div>
 
-            {# ── Pagination ── #}
-            {% if total_pages > 1 %}
-            <div class="mt-8">
-                {{ pagination_simple(current_page, total_pages, '/cases', 'page') }}
-            </div>
-            {% endif %}
+                {# Docs #}
+                <div class="text-right flex items-center justify-end gap-1.5">
+                    <span class="text-[12px]" x-text="c.doc_count"></span>
+                    <template x-if="c.new_docs > 0">
+                        <span class="text-[10px] font-mono px-1 rounded bg-amber/20 text-amber border border-amber/30" x-text="'+' + c.new_docs"></span>
+                    </template>
+                </div>
 
-        </div>
+                {# Chevron #}
+                <div class="flex justify-end">
+                    <span class="material-symbols-outlined text-[14px] text-on-surface-variant">chevron_right</span>
+                </div>
+            </a>
+        </template>
+
+        {# Spacer #}
+        <div class="h-24"></div>
     </div>
 </section>
 
 {% include "partials/create_case_modal.html" %}
+
+<script>
+function casesPage() {
+    // Inject the raw cases data from the backend
+    const allCases = [
+        {% for c in all_cases %}
+        {
+            id: "{{ c.id }}",
+            title: "{{ c.title|escape }}",
+            client: "{{ c.client_name|escape }}",
+            opposing: "{{ c.opposing_party|escape }}",
+            status: "{{ c.status.value }}",
+            status_label: "{{ c.status_line|escape }}",
+            is_draft: {{ 'true' if c.is_draft else 'false' }},
+            dormant: {{ 'true' if c.is_dormant else 'false' }},
+            proceeding_title: "{{ c.active_proceeding.title|escape if c.active_proceeding else 'General' }}",
+            matter_label: "{{ c.active_proceeding.matter_type|escape if c.active_proceeding else '' }}",
+            last_activity_label: "{{ c.updated_at.strftime('%Y-%m-%d') if c.updated_at else 'Unknown' }}",
+            next_deadline: "{{ c.next_action.due_date.strftime('%b %d') if c.next_action else '' }}",
+            next_deadline_urgency: "{{ 'critical' if c.next_action and (c.next_action.due_date - now).days <= 7 else 'normal' }}",
+            exposure: "{{ '€{:,.2f}'.format(c.exposure_eur) if c.exposure_eur else '€0' }}",
+            doc_count: {{ doc_counts.get(c.id, 0) }},
+            new_docs: {{ c.new_docs or 0 }},
+            urgency: "{{ c.tier }}"
+        },
+        {% endfor %}
+    ];
+
+    return {
+        cases: allCases,
+        filter: 'active',
+        search: '',
+        sort: 'id',
+        chips: [
+            { k: 'active',     label: 'Active' },
+            { k: 'dormant',    label: 'Dormant' },
+            { k: 'settlement', label: 'Settlement' },
+            { k: 'closed',     label: 'Closed' },
+            { k: 'all',        label: 'All' },
+        ],
+
+        get counts() {
+            return {
+                all: this.cases.length,
+                active: this.cases.filter(c => c.status !== 'closed' && !c.dormant).length,
+                dormant: this.cases.filter(c => c.dormant).length,
+                settlement: this.cases.filter(c => c.status === 'settlement').length,
+                closed: this.cases.filter(c => c.status === 'closed').length
+            };
+        },
+
+        init() {
+            // Map the counts into chips
+            this.chips.forEach(chip => {
+                chip.count = this.counts[chip.k];
+            });
+        },
+
+        get filteredCases() {
+            let res = this.cases;
+
+            // Filter by chip
+            if (this.filter === 'active') res = res.filter(c => c.status !== 'closed' && !c.dormant);
+            else if (this.filter === 'dormant') res = res.filter(c => c.dormant);
+            else if (this.filter === 'settlement') res = res.filter(c => c.status === 'settlement');
+            else if (this.filter === 'closed') res = res.filter(c => c.status === 'closed');
+
+            // Search query
+            if (this.search) {
+                const q = this.search.toLowerCase();
+                res = res.filter(c =>
+                    c.id.toLowerCase().includes(q) ||
+                    c.title.toLowerCase().includes(q) ||
+                    c.client.toLowerCase().includes(q) ||
+                    c.opposing.toLowerCase().includes(q)
+                );
+            }
+
+            // Sort
+            if (this.sort === 'id') res.sort((a,b) => a.id.localeCompare(b.id));
+            else if (this.sort === 'activity') res.sort((a,b) => b.last_activity_label.localeCompare(a.last_activity_label));
+
+            return res;
+        }
+    };
+}
+</script>
 {% endblock %}

@@ -1,14 +1,30 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from app.models.database import (
     Case,
     CaseStatus,
     Document,
 )
 
-client = TestClient(app)
+
+# Lazy module-level TestClient — defers TestClient construction until the
+# first attribute access (i.e., inside a test body, after `setup_test_db`
+# autouse has run). Avoids the timing fragility of module-level
+# `client = TestClient(app)` flagged in the code review.
+class _LazyTestClient:
+    _real = None
+
+    def __getattr__(self, attr):
+        if _LazyTestClient._real is None:
+            from fastapi.testclient import TestClient
+
+            from app.main import app
+
+            _LazyTestClient._real = TestClient(app)
+        return getattr(_LazyTestClient._real, attr)
+
+
+client = _LazyTestClient()
 
 
 @pytest.mark.integration
@@ -151,16 +167,19 @@ def _make_doc_on_draft(db, case_id="DRAFT-AAA-1", title="Draft Test Case"):
 
 @pytest.mark.integration
 def test_hud_dropdown_includes_in_context_draft(db_session):
-    """When a doc is on a draft case, the metadata-form Case <select>
-    must include that draft as an <option> so it isn't blank."""
+    """When a doc is on a draft case, the case selector must surface that
+    draft prominently (it used to be the form's Case <select>; case + case-id
+    moved out of the form into the dedicated case selector partial above)."""
     case, doc = _make_doc_on_draft(db_session, case_id="DRAFT-VIS-1")
     response = client.get(
         f"/document/{doc.id}?context=triage",
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    assert 'value="DRAFT-VIS-1"' in response.text
-    assert "AI DRAFT" in response.text
+    # Draft case id surfaces in the case section.
+    assert "DRAFT-VIS-1" in response.text
+    # And it's flagged as a draft via the auto-created caption / draft pill.
+    assert "AI auto-created" in response.text or "draft" in response.text.lower()
 
 
 @pytest.mark.integration

@@ -1,300 +1,160 @@
-{# Confidence-aware metadata form — two states: review / confirmed.
-    State is initialised from the server (doc.needs_review); the [Edit] button
-    flips confirmed → review client-side without a round-trip.
+{# Confidence-aware metadata edit form. Form-only — the outer wrapper
+    (partials/triage/_metadata_review.html) owns the confirmed↔review toggle.
+    Visually mirrors the read-only review's row idiom: each field is a
+    label-value-confchip strip with an H/M/L colored left border. The form
+    inherits the wrapper's @container, so the same 1-col / 2-col responsive
+    breakpoint applies.
 
     Required context: doc, cases, OriginatorType.
 #}
 {% from "partials/_conf_chip.html" import conf_chip, draft_pill %}
 
 {% set conf = doc.extraction_confidence or {} %}
-{% set low_border  = 'border-originator-opposing/40 ring-1 ring-originator-opposing/10' %}
-{% set med_border  = 'border-amber-500/40' %}
-{% set ok_border   = 'border-outline-variant/20' %}
-{% set input_base  = 'w-full px-3 py-1.5 bg-surface rounded-lg border text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all' %}
-
-{# Case confidence is three-way: a ratified (non-draft) case is high, a draft
-   case is "medium" so the field stays visible — drafts are AI guesses the
-   user must explicitly ratify or change. _TRIAGE / null falls through to low. #}
-{% set _case_obj = current_case if current_case is defined else none %}
-{% set _case_conf = 'high'   if (_case_obj and not _case_obj.is_draft and doc.case_id and doc.case_id != '_TRIAGE')
-                    else ('medium' if (_case_obj and _case_obj.is_draft)
-                    else 'low') %}
+{# Title is editable in the active doc header above; case + case-id are owned
+   by the case selector. Form rows mirror the read-only review's body order. #}
 {% set field_confs = {
-    'title':      conf.get('title')      or 'low',
-    'case_id':    _case_conf,
     'originator': conf.get('originator') or 'low',
     'sender':     conf.get('sender')     or 'low',
     'issued_date': conf.get('issued_date') or 'low',
+    'received_date': 'high' if doc.received_date else 'low',
     'significance_tier': 'high' if doc.significance_tier else 'low',
     'document_type':     'high' if doc.document_type     else 'low',
+    'az_court': 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low',
 } %}
-{% set high_fields = [] %}
-{% for k, v in field_confs.items() %}{% if v == 'high' %}{% set _ = high_fields.append(k) %}{% endif %}{% endfor %}
-{% set needs_attention = field_confs|length - high_fields|length %}
+{% set _level_class = {
+    'high':   'border-l-originator-own',
+    'medium': 'border-l-warning',
+    'low':    'border-l-originator-opposing',
+} %}
 
-<div id="triage-metadata-form"
-     class="bg-surface-container-high/50 p-4 border-b border-outline-variant/10"
-     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}', showAll: {{ 'true' if needs_attention == field_confs|length else 'false' }} }">
+{# Compact field row — visually identical to the review's read-only rows.
+   Border-left color tracks H/M/L confidence; row gets a subtle highlight on
+   focus-within so the active field stands out. Native select arrows and date
+   pickers are kept (browser default chrome). #}
+{% macro field_row(label, level, span_full=false, needs_review=false, chip_only=false) %}
+    {# Row chrome IDENTICAL to the read-only review's row — same bg, padding,
+       border, label width — so toggling edit doesn't shift layout. The
+       editable affordance lives on the input itself (lighter inset box). #}
+    {% set cls = 'flex items-center gap-1.5 py-1 px-2 rounded bg-surface-low border-l-2 ' ~ _level_class.get(level, 'border-l-outline-variant') %}
+    {% if span_full %}{% set cls = '@[480px]:col-span-2 ' ~ cls %}{% endif %}
+    <div class="{{ cls }}"
+         {% if needs_review %}data-needs-review-row{% endif %}>
+        <label class="font-headline text-[8px] uppercase tracking-widest font-semibold text-on-surface-variant w-[64px] flex-shrink-0">
+            {{ label }}
+        </label>
+        {{ caller() }}
+        {{ conf_chip(level) }}
+    </div>
+{% endmacro %}
 
-    {# Header row #}
-    <div class="flex items-center justify-between mb-3">
-        <h4 class="text-[9px] font-black text-primary uppercase tracking-widest flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-xs">edit_note</span>
-            Metadata
-        </h4>
-        <div class="flex items-center gap-2">
-            {% set _needs_review_count = field_confs.values()|reject('equalto','high')|list|length %}
-            {% if _needs_review_count %}
-            <span class="text-[8px] font-bold text-warning uppercase bg-warning-container/20 px-1.5 py-px rounded-full">
-                {{ _needs_review_count }} issue{{ 's' if _needs_review_count != 1 else '' }}
+{# Inputs match the review's static-text cell exactly: same width, no extra
+   padding, same line-height, same font size. Editability is signalled by a
+   barely-there `bg-on-surface/[0.04]` tint (subtle in both modes) plus a
+   primary ring on focus. No padding ⇒ text starts flush with where the
+   review's static value starts. #}
+{% set _input_cls = 'flex-1 min-w-0 bg-on-surface/[0.04] rounded-sm text-[11px] text-on-surface outline-none placeholder:text-on-surface-variant/40 hover:bg-on-surface/[0.07] focus:bg-on-surface/[0.07] focus:ring-1 focus:ring-primary/40 transition-colors leading-tight' %}
+{% set _select_cls = 'flex-1 min-w-0 bg-on-surface/[0.04] rounded-sm text-[11px] text-on-surface outline-none cursor-pointer hover:bg-on-surface/[0.07] focus:bg-on-surface/[0.07] focus:ring-1 focus:ring-primary/40 transition-colors leading-tight' %}
+
+<div id="triage-metadata-form" class="space-y-2">
+
+    {% if doc.pipeline_state.value == 'failed' %}
+    <div class="p-2 bg-error/10 text-error rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 border border-error/20">
+        <span class="material-symbols-outlined text-[12px]">warning</span>
+        AI enrichment failed or is offline. Please fill in metadata manually.
+    </div>
+    {% endif %}
+
+    {% set rel_stage = (doc.pipeline_stages or {}).get('relationships', {}) %}
+    {% if rel_stage.get('reason') == 'no prior candidates in case' %}
+    <div class="p-2 bg-surface-container-high rounded text-[10px] text-on-surface-variant flex items-center gap-2 border border-outline-variant/10">
+        <span class="material-symbols-outlined text-[12px] text-outline">device_hub</span>
+        No prior critical/significant documents in this case yet — relationship extraction skipped.
+    </div>
+    {% endif %}
+
+    <form hx-post="/triage/document/{{ doc.id }}/confirm"
+          hx-target="closest .triage-hud-body"
+          hx-swap="innerHTML"
+          class="grid grid-cols-1 @[480px]:grid-cols-2 gap-1.5"
+          @keydown.tab="
+              const fields = Array.from($el.querySelectorAll('[data-needs-review]')).filter(f => f.offsetParent !== null);
+              if (fields.length === 0) return;
+              $event.preventDefault();
+              const idx = fields.indexOf(document.activeElement);
+              const next = $event.shiftKey ? (idx <= 0 ? fields.length - 1 : idx - 1) : (idx >= fields.length - 1 ? 0 : idx + 1);
+              fields[next].focus();
+          ">
+
+        {# ── Body (mirrors review's order: Originator, Sender, Issued, Received, Tier, Type) ── #}
+        {% call field_row('Originator', field_confs.originator, needs_review=field_confs.originator in ('low', 'medium')) %}
+            <select name="originator_type"
+                    {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
+                    class="{{ _select_cls }}">
+                {% for type in OriginatorType %}
+                <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>
+                {% endfor %}
+            </select>
+        {% endcall %}
+
+        {% call field_row('Sender', field_confs.sender, needs_review=field_confs.sender in ('low', 'medium')) %}
+            <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="Attorney Name"
+                   {% if field_confs.sender in ('low', 'medium') %}data-needs-review{% endif %}
+                   class="{{ _input_cls }}">
+        {% endcall %}
+
+        {% call field_row('Issued', field_confs.issued_date, needs_review=field_confs.issued_date in ('low', 'medium')) %}
+            <input type="date" name="issued_date" value="{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '' }}"
+                   {% if field_confs.issued_date in ('low', 'medium') %}data-needs-review{% endif %}
+                   class="{{ _input_cls }} font-mono">
+        {% endcall %}
+
+        {% call field_row('Received', field_confs.received_date) %}
+            <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
+                   class="{{ _input_cls }} font-mono">
+        {% endcall %}
+
+        {% set _tier_value = doc.significance_tier.value if doc.significance_tier else '' %}
+        {% call field_row('Tier', field_confs.significance_tier) %}
+            <select name="significance_tier" class="{{ _select_cls }}">
+                <option value="" {% if not _tier_value %}selected{% endif %}>—</option>
+                <option value="critical"       {% if _tier_value == 'critical' %}selected{% endif %}>Critical</option>
+                <option value="significant"    {% if _tier_value == 'significant' %}selected{% endif %}>Significant</option>
+                <option value="informational"  {% if _tier_value == 'informational' %}selected{% endif %}>Informational</option>
+                <option value="administrative" {% if _tier_value == 'administrative' %}selected{% endif %}>Administrative</option>
+            </select>
+        {% endcall %}
+
+        {% set _dtype_value = doc.document_type.value if doc.document_type else '' %}
+        {% call field_row('Type', field_confs.document_type) %}
+            <select name="document_type" class="{{ _select_cls }}">
+                <option value="" {% if not _dtype_value %}selected{% endif %}>—</option>
+                <option value="ruling"         {% if _dtype_value == 'ruling' %}selected{% endif %}>Ruling</option>
+                <option value="motion"         {% if _dtype_value == 'motion' %}selected{% endif %}>Motion</option>
+                <option value="statement"      {% if _dtype_value == 'statement' %}selected{% endif %}>Statement</option>
+                <option value="annex"          {% if _dtype_value == 'annex' %}selected{% endif %}>Annex</option>
+                <option value="relay"          {% if _dtype_value == 'relay' %}selected{% endif %}>Relay (cover)</option>
+                <option value="correspondence" {% if _dtype_value == 'correspondence' %}selected{% endif %}>Correspondence</option>
+                <option value="report"         {% if _dtype_value == 'report' %}selected{% endif %}>Report</option>
+                <option value="invoice"        {% if _dtype_value == 'invoice' %}selected{% endif %}>Invoice</option>
+                <option value="other"          {% if _dtype_value == 'other' %}selected{% endif %}>Other</option>
+            </select>
+        {% endcall %}
+
+        {# AZ — read-only display; mirrors review's last row exactly (single-col cell). #}
+        {% call field_row('AZ', field_confs.az_court) %}
+            <span class="flex-1 min-w-0 truncate text-[11px] font-mono text-on-surface" title="{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '' }}">
+                {{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}
             </span>
-            {% else %}
-            <span class="text-[8px] font-bold text-originator-own uppercase bg-originator-own/10 px-1.5 py-px rounded-full flex items-center gap-0.5">
-                <span class="material-symbols-outlined text-[9px]">check_circle</span>resolved
-            </span>
-            {% endif %}
-            {# Edit toggle (confirmed → review) #}
-            <button type="button" x-show="state === 'confirmed'" @click="state = 'review'; showAll = true"
-                    class="text-[8px] font-bold uppercase tracking-wider text-primary/70 hover:text-primary transition-colors cursor-pointer">
-                Edit
+        {% endcall %}
+
+        {# Submit — full-width footer #}
+        <div class="@[480px]:col-span-2 pt-2 flex justify-end">
+            <button type="submit"
+                    class="btn btn-primary btn-xs flex items-center gap-1.5">
+                <span data-loading-idle>Confirm &rarr;</span>
+                <span class="material-symbols-outlined text-xs htmx-indicator animate-spin" data-loading-active>progress_activity</span>
+                <span data-loading-active class="text-[10px]">Saving…</span>
             </button>
         </div>
-    </div>
-
-    {# ── CONFIRMED STATE: read-only summary ── #}
-    <div x-show="state === 'confirmed'" x-cloak>
-        <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-            <div class="col-span-2">
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Title</dt>
-                <dd class="text-on-surface font-medium truncate" title="{{ doc.title }}">{{ doc.title or '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case</dt>
-                <dd class="text-on-surface font-medium font-mono">{{ doc.case_id if doc.case_id and doc.case_id != '_TRIAGE' else '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">AZ</dt>
-                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case ID</dt>
-                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.internal_id or '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Originator</dt>
-                <dd class="text-on-surface font-medium capitalize">{{ doc.originator_type.value if doc.originator_type else '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Sender</dt>
-                <dd class="text-on-surface-variant font-medium truncate" title="{{ doc.sender or '' }}">{{ doc.sender or '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Issued</dt>
-                <dd class="text-on-surface-variant font-medium font-mono">{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Tier</dt>
-                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.significance_tier.value if doc.significance_tier else '—' }}</dd>
-            </div>
-            <div>
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Type</dt>
-                <dd class="text-on-surface-variant font-medium capitalize">{{ doc.document_type.value if doc.document_type else '—' }}</dd>
-            </div>
-        </dl>
-    </div>
-
-    {# ── REVIEW STATE: edit form ── #}
-    <div x-show="state === 'review'">
-
-        {% if doc.pipeline_state.value == 'failed' %}
-        <div class="mb-4 p-3 bg-error/10 text-error rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center gap-3 border border-error/20">
-            <span class="material-symbols-outlined text-sm">warning</span>
-            <span>AI enrichment failed or is offline. Please fill in metadata manually.</span>
-        </div>
-        {% endif %}
-
-        {% set rel_stage = (doc.pipeline_stages or {}).get('relationships', {}) %}
-        {% if rel_stage.get('reason') == 'no prior candidates in case' %}
-        <div class="mb-3 p-2.5 bg-surface-container-high rounded-lg text-[10px] text-on-surface-variant flex items-center gap-2 border border-outline-variant/10">
-            <span class="material-symbols-outlined text-sm text-outline">device_hub</span>
-            <span>No prior critical/significant documents in this case yet — relationship extraction skipped.</span>
-        </div>
-        {% endif %}
-
-        {# Pre-confirmed summary row #}
-        {% if high_fields %}
-        <div class="flex items-center justify-between gap-2 mb-3 px-2.5 py-1.5 bg-originator-own/5 border border-originator-own/20 rounded-lg"
-             x-show="!showAll">
-            <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                <span class="material-symbols-outlined text-xs text-originator-own shrink-0">check_circle</span>
-                <p class="text-[9px] text-on-surface-variant leading-relaxed truncate">
-                    <span class="font-bold text-originator-own">{{ high_fields|length }} pre-confirmed:</span>
-                    {% for f in high_fields %}
-                        <span class="font-medium">{{ f|replace('_', ' ') }}</span>{% if not loop.last %}, {% endif %}
-                    {% endfor %}
-                </p>
-            </div>
-            <button type="button" @click="showAll = true"
-                    class="shrink-0 text-[8px] font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer whitespace-nowrap">
-                Edit all &rarr;
-            </button>
-        </div>
-        {% endif %}
-
-        <form hx-post="/triage/document/{{ doc.id }}/confirm"
-              hx-target="#triage-doc-pane"
-              hx-swap="innerHTML"
-              class="grid grid-cols-1 md:grid-cols-2 gap-3"
-              @keydown.tab="
-                  const fields = Array.from($el.querySelectorAll('[data-needs-review]')).filter(f => f.offsetParent !== null);
-                  if (fields.length === 0) return;
-                  $event.preventDefault();
-                  const idx = fields.indexOf(document.activeElement);
-                  const next = $event.shiftKey ? (idx <= 0 ? fields.length - 1 : idx - 1) : (idx >= fields.length - 1 ? 0 : idx + 1);
-                  fields[next].focus();
-              ">
-
-            {# Title #}
-            <div class="md:col-span-2 space-y-1"
-                 {% if field_confs.title == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Title
-                </label>
-                <input type="text" name="title" value="{{ doc.title }}"
-                       class="{{ input_base }} {{ ok_border }}">
-            </div>
-
-            {# Case #}
-            <div class="space-y-1"
-                 {% if field_confs.case_id == 'high' %}x-show="showAll"{% endif %}>
-                <div class="flex items-center justify-between">
-                    <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                        Existing Case {{ conf_chip(field_confs.case_id) }}
-                    </label>
-                    <button type="button"
-                            @click="$dispatch('open-create-case-modal', { case_id: '{{ doc.internal_id or '' }}', title: '{{ doc.title or '' }}' })"
-                            class="text-[8px] font-bold text-primary hover:underline cursor-pointer">
-                        + New
-                    </button>
-                </div>
-                <select name="case_id" data-triage-case-select
-                        {% if field_confs.case_id in ('low', 'medium') %}data-needs-review{% endif %}
-                        class="{{ input_base }} {{ low_border if field_confs.case_id == 'low' else med_border if field_confs.case_id == 'medium' else ok_border }}">
-                    <option value="" disabled {% if not doc.case_id or doc.case_id == '_TRIAGE' %}selected{% endif %}>Select case…</option>
-                    {% for case in cases %}
-                    <option value="{{ case.id }}" {% if doc.case_id == case.id %}selected{% endif %}>{{ case.title }} ({{ case.id }}){% if case.is_draft %} — AI DRAFT{% endif %}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            {# Originator #}
-            <div class="space-y-1"
-                 {% if field_confs.originator == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Originator {{ conf_chip(field_confs.originator) }}
-                </label>
-                <select name="originator_type"
-                        {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
-                        class="{{ input_base }} {{ low_border if field_confs.originator == 'low' else med_border if field_confs.originator == 'medium' else ok_border }}">
-                    {% for type in OriginatorType %}
-                    <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            {# Sender #}
-            <div class="space-y-1"
-                 {% if field_confs.sender == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Sender {{ conf_chip(field_confs.sender) }}
-                </label>
-                <input type="text" name="sender" value="{{ doc.sender or '' }}" placeholder="e.g. Attorney Name"
-                       {% if field_confs.sender in ('low', 'medium') %}data-needs-review{% endif %}
-                       class="{{ input_base }} {{ low_border if field_confs.sender == 'low' else med_border if field_confs.sender == 'medium' else ok_border }}">
-            </div>
-
-            {# Issued Date #}
-            <div class="space-y-1"
-                 {% if field_confs.issued_date == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Issued {{ conf_chip(field_confs.issued_date) }}
-                </label>
-                <input type="date" name="issued_date" value="{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '' }}"
-                       {% if field_confs.issued_date in ('low', 'medium') %}data-needs-review{% endif %}
-                       class="{{ input_base }} {{ low_border if field_confs.issued_date == 'low' else med_border if field_confs.issued_date == 'medium' else ok_border }}">
-            </div>
-
-            {# Received Date (secondary, preselected) #}
-            <div class="space-y-1" x-show="showAll">
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Received
-                </label>
-                <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
-                       class="{{ input_base }} opacity-60">
-            </div>
-
-            {# Case ID — editable so user can set/correct the extracted reference #}
-            <div class="space-y-1"
-                 {% if (conf.get('internal_id') or 'low') == 'high' %}x-show="showAll"{% endif %}>
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Case ID {{ conf_chip(conf.get('internal_id', 'high' if doc.internal_id else 'low')) }}
-                </label>
-                <input type="text" name="internal_id" value="{{ doc.internal_id or '' }}" placeholder="e.g. 8124-25"
-                       {% if (conf.get('internal_id') or 'low') in ('low', 'medium') %}data-needs-review{% endif %}
-                       class="{{ input_base }} font-mono {{ low_border if (conf.get('internal_id') or 'low') == 'low' else med_border if (conf.get('internal_id') or 'low') == 'medium' else ok_border }}">
-            </div>
-
-            {# Editable: significance_tier + document_type. AI-set but often
-               wrong; user must be able to correct without leaving review. #}
-            {% set _tier_value = doc.significance_tier.value if doc.significance_tier else '' %}
-            {% set _dtype_value = doc.document_type.value if doc.document_type else '' %}
-            <div class="space-y-1" x-show="showAll">
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Tier {{ conf_chip(field_confs.significance_tier) }}
-                </label>
-                <select name="significance_tier"
-                        class="{{ input_base }} {{ ok_border }}">
-                    <option value="" {% if not _tier_value %}selected{% endif %}>—</option>
-                    <option value="critical"       {% if _tier_value == 'critical' %}selected{% endif %}>Critical</option>
-                    <option value="significant"    {% if _tier_value == 'significant' %}selected{% endif %}>Significant</option>
-                    <option value="informational"  {% if _tier_value == 'informational' %}selected{% endif %}>Informational</option>
-                    <option value="administrative" {% if _tier_value == 'administrative' %}selected{% endif %}>Administrative</option>
-                </select>
-            </div>
-            <div class="space-y-1" x-show="showAll">
-                <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest ml-0.5 flex items-center gap-1.5">
-                    Type {{ conf_chip(field_confs.document_type) }}
-                </label>
-                <select name="document_type"
-                        class="{{ input_base }} {{ ok_border }}">
-                    <option value="" {% if not _dtype_value %}selected{% endif %}>—</option>
-                    <option value="ruling"         {% if _dtype_value == 'ruling' %}selected{% endif %}>Ruling</option>
-                    <option value="motion"         {% if _dtype_value == 'motion' %}selected{% endif %}>Motion</option>
-                    <option value="statement"      {% if _dtype_value == 'statement' %}selected{% endif %}>Statement</option>
-                    <option value="annex"          {% if _dtype_value == 'annex' %}selected{% endif %}>Annex</option>
-                    <option value="relay"          {% if _dtype_value == 'relay' %}selected{% endif %}>Relay (cover letter)</option>
-                    <option value="correspondence" {% if _dtype_value == 'correspondence' %}selected{% endif %}>Correspondence</option>
-                    <option value="report"         {% if _dtype_value == 'report' %}selected{% endif %}>Report</option>
-                    <option value="invoice"        {% if _dtype_value == 'invoice' %}selected{% endif %}>Invoice</option>
-                    <option value="other"          {% if _dtype_value == 'other' %}selected{% endif %}>Other</option>
-                </select>
-            </div>
-            {# Read-only: az_court — folded with the rest, no edit path here #}
-            <div class="md:col-span-2 pt-2 border-t border-outline-variant/10 text-[10px]"
-                 x-show="showAll">
-                <dt class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1">AZ {{ conf_chip(conf.get('az_court', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low')) }}</dt>
-                <dd class="font-mono text-on-surface-variant">{{ doc.proceeding.az_court if doc.proceeding and doc.proceeding.az_court else '—' }}</dd>
-            </div>
-
-            {# Footer — single primary action, no checkbox #}
-            <div class="md:col-span-2 pt-3 flex justify-end border-t border-outline-variant/5 mt-1">
-                <button type="submit"
-                        class="btn btn-primary btn-xs flex items-center gap-1.5">
-                    <span data-loading-idle>Confirm &rarr;</span>
-                    <span class="material-symbols-outlined text-xs htmx-indicator animate-spin" data-loading-active>progress_activity</span>
-                    <span data-loading-active class="text-[10px]">Saving…</span>
-                </button>
-            </div>
-        </form>
-    </div>
+    </form>
 </div>

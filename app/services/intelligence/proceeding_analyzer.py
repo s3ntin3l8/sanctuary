@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime
 
@@ -6,46 +5,28 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
-from app.services.ai_provider import call_llm
+from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.prompts import PROCEEDING_ANALYZER_SYSTEM
 
 logger = logging.getLogger(__name__)
 
-PROCEEDING_PROMPT = """
-You are a German legal AI assistant. Analyze this document and extract proceeding details.
-Extract:
-1. "is_court_document": boolean
-2. "court_level": string (strictly one of: AG, LG, OLG, BGH) or null
-3. "court_name": string (e.g. "Amtsgericht Hamburg") or null
-4. "az_court": string (the court file number, e.g. "003 F 426/25") or null
-5. "subject_matter": string or null
-6. "appeal_deadline_days": integer (if this is a ruling with a formal deadline, extract the days, else null)
 
-Respond ONLY with a valid JSON object.
-
-Document Title: {title}
-Content:
-{content}
-"""
-
-
-def extract_proceeding_details(doc: Document, model: str) -> dict:
+def extract_proceeding_details(
+    doc: Document, model: str, db: Session | None = None
+) -> dict:
     content = doc.content or ""
-    prompt = PROCEEDING_PROMPT.format(title=doc.title, content=content[:8000])
+    user_prompt = f"Document Title: {doc.title}\nContent:\n{content[:8000]}"
     try:
-        response = call_llm(
-            prompt,
-            model=model,
-            temperature=0.0,
-            response_format={"type": "json_object"},
+        return call_json_ai(
+            system_prompt=PROCEEDING_ANALYZER_SYSTEM,
+            user_prompt=user_prompt,
+            options=STAGE_OPTIONS["proceeding"],
+            debug_label=f"doc_{doc.id}_proceeding",
+            model=model or None,
+            db=db,
+            ingest_batch_id=doc.ingest_batch_id,
         )
-        # Clean response in case there's markdown wrap
-        clean_response = response.strip()
-        if clean_response.startswith("```json"):
-            clean_response = clean_response[7:]
-        if clean_response.endswith("```"):
-            clean_response = clean_response[:-3]
-
-        return json.loads(clean_response)
     except Exception as e:
         logger.error(f"Failed to extract proceeding details for doc {doc.id}: {e}")
         return {}
@@ -65,7 +46,7 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
     if not current_proc:
         return "proceeding not found"
 
-    data = extract_proceeding_details(doc, model)
+    data = extract_proceeding_details(doc, model, db=db)
     if not data.get("is_court_document"):
         return "not a court document"
 

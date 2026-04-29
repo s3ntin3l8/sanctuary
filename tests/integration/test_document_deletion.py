@@ -27,7 +27,7 @@ def test_delete_document_triage_context_oob(app_client, db_session):
 
     assert response.status_code == 200
     # Should return an OOB swap for the bundle group because doc2 still exists
-    assert f'id="triage-bundle-group-batch-{batch_id}"' in response.text
+    assert f'id="triage-row-batch-{batch_id}"' in response.text
     assert 'hx-swap-oob="true"' in response.text
 
     # 3. Delete doc2 with context=triage
@@ -37,7 +37,7 @@ def test_delete_document_triage_context_oob(app_client, db_session):
     # Now it should show the "Queue Clear" state because it was the last doc in the last bundle
     assert 'id="triage-feed"' in response.text
     assert 'hx-swap-oob="true"' in response.text
-    assert "Triage Queue Is Clear" in response.text
+    assert "Inbox empty" in response.text
 
 
 @pytest.mark.integration
@@ -60,7 +60,7 @@ def test_delete_document_last_in_bundle_not_last_in_queue(app_client, db_session
 
     assert response.status_code == 200
     # Should return a "delete" OOB swap for the group because batch1 is now empty, but batch2 remains
-    assert f'id="triage-bundle-group-batch-{batch1_id}"' in response.text
+    assert f'id="triage-row-batch-{batch1_id}"' in response.text
     assert 'hx-swap-oob="delete"' in response.text
     # Should NOT return the full feed because batch2 still exists
-    assert "Triage Queue Is Clear" not in response.text
+    assert "Inbox empty" not in response.text

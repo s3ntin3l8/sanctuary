@@ -1,0 +1,143 @@
+{# Triage-shaped per-doc HUD body.
+
+   Composition (top → bottom) per scratch/Redesign/src/triage_hud.jsx::DocHudPanel
+   plus our additions (Pipeline, Case as separate sections):
+     1. Active doc header (origin dot + name + meta)
+     2. Pipeline status        (partials/hud/_pipeline.html)
+     3. Case suggestion        (partials/hud/_case.html)
+     4. Metadata review (2-col, partials/triage/_metadata_review.html)
+     5. AI Summary             (partials/hud/_summary.html)
+     6. Key passages           (partials/hud/_passages_spine.html)
+     7. Grid 1fr/1fr wrapping Relationships + Grounds + Actions + Cost Delta
+     8. React bar              (partials/hud/_reactions.html)
+
+   Required context: produced by app/services/hud_context.py::build_hud_context
+   with mode='review' and context='embedded'.
+#}
+{% set _origin_class = 'bg-originator-' ~ ('third_party' if (doc.originator_type and doc.originator_type.value == 'third_party') else (doc.originator_type.value if doc.originator_type else 'unknown')) %}
+
+<div data-hud-context="embedded" data-hud-mode="review"
+     class="bg-surface-container-lowest/60">
+
+    {# ── Active doc header ── #}
+    <div class="flex items-center gap-2.5 px-5 py-3 border-b border-outline-variant/20">
+        <span class="w-2 h-2 rounded-full flex-shrink-0 {{ _origin_class }}"></span>
+        {# x-data outer is single-quoted so the inner tojson `"..."` doesn't
+           collide with the attribute delimiter.
+           - currentTitle: the live string (bound to both the static span and
+             the input via x-text / x-model). Updated as the user types so
+             the static view shows the saved value without a page reload.
+           - titleOriginal: tracks the last server-confirmed value. Used to
+             restore on Esc or when the user blurs an empty input. #}
+        <div class="flex-1 min-w-0"
+             x-data='{
+                 "editingTitle": false,
+                 "currentTitle": {{ (doc.title or "") | tojson }},
+                 "titleOriginal": {{ (doc.title or "") | tojson }}
+             }'>
+            {# Title — static by default, pencil icon unlocks the input.
+               Saves on blur or Enter via a tiny patch endpoint. #}
+            <div x-show="!editingTitle" class="flex items-center gap-1 min-w-0 group">
+                <span class="text-[13px] font-semibold truncate text-on-surface"
+                      x-text="currentTitle || 'Untitled doc'"
+                      :title="currentTitle || 'Untitled doc'">
+                    {{ doc.title or 'Untitled doc' }}
+                </span>
+                <button type="button"
+                        @click="editingTitle = true; $nextTick(() => $refs.titleInput.focus())"
+                        class="flex-shrink-0 p-0.5 rounded text-on-surface-variant/60 hover:text-primary hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                        title="Edit title">
+                    <span class="material-symbols-outlined text-[12px]">edit</span>
+                </button>
+            </div>
+            <input x-show="editingTitle" x-cloak x-ref="titleInput"
+                   type="text"
+                   name="title"
+                   x-model="currentTitle"
+                   placeholder="Untitled doc"
+                   aria-label="Document title"
+                   hx-post="/triage/document/{{ doc.id }}/title"
+                   hx-trigger="change"
+                   hx-swap="none"
+                   @blur="
+                       if (!currentTitle.trim()) {
+                           currentTitle = titleOriginal;
+                       }
+                       editingTitle = false;
+                   "
+                   @keydown.enter.prevent="$el.blur()"
+                   @keydown.escape.prevent="currentTitle = titleOriginal; editingTitle = false"
+                   @htmx:after-request.camel="if ($event.detail.successful && currentTitle.trim()) titleOriginal = currentTitle"
+                   class="w-full text-[13px] font-semibold text-on-surface bg-surface-container-lowest outline-none rounded px-1 -mx-1 ring-1 ring-primary/40 focus:ring-primary truncate placeholder:text-on-surface-variant/50">
+            <div class="text-[10.5px] flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
+                {% if doc.originator_type %}
+                <span class="capitalize">{{ doc.originator_type.value | replace('_', ' ') }}</span>
+                <span>·</span>
+                {% endif %}
+                {% if doc.role %}
+                <span>{{ doc.role.value | replace('_', ' ') }}</span>
+                <span>·</span>
+                {% endif %}
+                {% if doc.document_type %}
+                <span>{{ doc.document_type.value }}</span>
+                <span>·</span>
+                {% endif %}
+                {% if doc.received_date %}
+                <span class="font-mono">{{ doc.received_date.strftime('%Y-%m-%d') }}</span>
+                {% elif doc.ingest_date %}
+                <span class="font-mono">{{ doc.ingest_date.strftime('%Y-%m-%d') }}</span>
+                {% endif %}
+                <span>·</span>
+                <span class="font-mono">{{ doc.page_count or 0 }} pp</span>
+            </div>
+        </div>
+        {# Open the slide-out drawer for this doc. Walks up to find the bundle
+           key from the row's data-bundle-key (set on the row container).
+           Hidden when already inside the drawer body. #}
+        <button type="button"
+                x-show="!$el.closest('[id^=triage-drawer-body-]')"
+                @click="
+                    const key = $el.closest('[data-bundle-key]')?.dataset?.bundleKey;
+                    if (key) $store.triage.openDrawer(key, '{{ doc.id }}');
+                "
+                class="flex-shrink-0 flex items-center gap-1 text-[10.5px] px-2 py-1 rounded text-primary border border-outline-variant/40 bg-surface-low hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+                title="Open document HUD (e)">
+            <span class="material-symbols-outlined text-[10px]">open_in_full</span>
+            HUD
+        </button>
+    </div>
+
+    {# 1. Pipeline status (existing partial) #}
+    {% include "partials/hud/_pipeline.html" %}
+
+    {# 2. Case suggestion (existing partial — only renders when mode=='review') #}
+    {% include "partials/hud/_case.html" %}
+
+    {# 3. Metadata review — new 2-column read-only with [Edit] toggle #}
+    {% include "partials/triage/_metadata_review.html" %}
+
+    {# 4. AI summary #}
+    {% include "partials/hud/_summary.html" %}
+
+    {# 5. Key passages #}
+    {% include "partials/hud/_passages_spine.html" %}
+
+    {# 6. 1fr/1fr grid for the four data sections #}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-outline-variant/20 border-b border-outline-variant/20">
+        <div class="bg-surface-container-lowest/60 min-w-0">
+            {% include "partials/hud/_relationships.html" %}
+        </div>
+        <div class="bg-surface-container-lowest/60 min-w-0">
+            {% include "partials/hud/_grounds.html" %}
+        </div>
+        <div class="bg-surface-container-lowest/60 min-w-0">
+            {% include "partials/hud/_actions.html" %}
+        </div>
+        <div class="bg-surface-container-lowest/60 min-w-0">
+            {% include "partials/hud/_cost_delta.html" %}
+        </div>
+    </div>
+
+    {# 7. Reactions #}
+    {% include "partials/hud/_reactions.html" %}
+</div>

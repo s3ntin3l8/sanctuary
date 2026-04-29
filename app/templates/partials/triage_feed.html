@@ -1,21 +1,19 @@
-{# The full triage feed — wrapped in #triage-feed for targeted swap.
+{# Triage feed — single-column list of bundle rows.
 
-    Required context: bundles, cases, reactions_by_doc, originator_colors, originator_icons
+   Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS
 #}
-<div id="triage-feed" class="p-6 space-y-4" {% if as_oob %}hx-swap-oob="true"{% endif %}>
+<div id="triage-feed" {% if as_oob %}hx-swap-oob="true"{% endif %}>
     {% if bundles %}
         {% for bundle in bundles %}
-            {% include "partials/triage_bundle.html" %}
+            {% include "partials/triage_row.html" %}
         {% endfor %}
     {% else %}
-        <div class="flex flex-col items-center justify-center py-16 text-center">
-            <div class="w-16 h-16 bg-primary-container/20 rounded-2xl flex items-center justify-center mb-5">
-                <span class="material-symbols-outlined text-primary text-3xl">check_circle</span>
+        <div class="flex flex-col items-center justify-center py-24 text-center">
+            <div class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-primary-container/30 text-primary">
+                <span class="material-symbols-outlined text-[22px]">check</span>
             </div>
-            <h3 class="text-sm font-black text-on-surface uppercase tracking-widest mb-1">Triage Queue Is Clear</h3>
-            <p class="text-xs text-on-surface-variant max-w-sm leading-relaxed">
-                All ingested documents have complete metadata. New documents flagged during ingestion will appear here as bundles.
-            </p>
+            <div class="font-headline text-[18px] font-semibold mb-1 text-on-surface">Inbox empty.</div>
+            <div class="text-[12.5px] text-on-surface-variant">Nothing to classify right now.</div>
         </div>
     {% endif %}
 </div>

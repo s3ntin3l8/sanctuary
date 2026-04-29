@@ -7,33 +7,35 @@
          x-data="homeDashboard()">
 
     <!-- Greeting Bar -->
-    <div class="flex items-baseline justify-between px-8 pt-8 pb-6 shrink-0">
-        <div>
-            <h1 class="font-headline text-[28px] font-semibold leading-tight text-on-surface">
-                {{ greeting }}, {{ user_name }}.
-            </h1>
-            <div class="text-[13px] mt-1 text-on-surface-variant">
-                {{ now.strftime('%A · %b %d, %Y') }}
+    <div class="px-8 pt-6 pb-4 border-b border-outline-variant bg-surface-container-lowest/40 shrink-0">
+        <div class="flex items-baseline justify-between mb-3 gap-4">
+            <div>
+                <h1 class="font-headline text-[28px] font-semibold leading-tight text-on-surface tracking-tight">
+                    {{ greeting }}, {{ user_name }}.
+                </h1>
+                <div class="text-[13px] mt-1 text-on-surface-variant">
+                    {{ now.strftime('%A · %b %d, %Y') }}
+                </div>
             </div>
-        </div>
-        <div class="flex items-center gap-3">
-            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-container hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
-                    onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))">
-                <span class="material-symbols-outlined text-[14px]">search</span>
-                <span>Search</span>
-                <span class="kbd ml-1"><span class="cmd-glyph">⌘</span>K</span>
-            </button>
-            <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant bg-surface-container hover:bg-surface-high hover:border-outline-variant transition-all duration-200"
-                    @click="showCreateCase = true">
-                <span class="material-symbols-outlined text-[14px]">add</span>
-                New case
-            </button>
+            <div class="flex items-center gap-2">
+                <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant text-on-surface-variant bg-surface-container-lowest hover:border-primary/40 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        onclick="window.dispatchEvent(new CustomEvent('open-command-palette'))">
+                    <span class="material-symbols-outlined text-[14px]">search</span>
+                    <span>Search</span>
+                    <span class="kbd ml-1"><span class="cmd-glyph">⌘</span>K</span>
+                </button>
+                <button class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant text-on-surface-variant bg-surface-container-lowest hover:border-primary/40 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        @click="showCreateCase = true">
+                    <span class="material-symbols-outlined text-[14px]">add</span>
+                    New case
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Main Scroll Area -->
     <div class="flex-1 overflow-y-auto custom-scrollbar">
-        <div class="max-w-[1180px] mx-auto px-8 pb-16 space-y-6">
+        <div class="max-w-[1180px] mx-auto px-8 py-8 pb-16 space-y-6">
 
             {% if caught_up %}
                 {% include "partials/home/caught_up.html" %}
@@ -61,10 +63,13 @@
                  @mouseenter="focusedPanel = 'drafts'; focusedIdx = -1"
                  @mouseleave="focusedPanel = null; focusedIdx = -1">
                 <div class="flex items-baseline justify-between mb-3 px-1">
-                    <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-amber-600 dark:text-amber-400 flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm">pending</span>
-                        Pending Confirmation <span class="text-[11px] font-normal normal-case tracking-normal text-on-surface-variant">· {{ draft_cases|length }}</span>
-                    </h2>
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm text-amber-600 dark:text-amber-400">pending</span>
+                        <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-amber-600 dark:text-amber-400">
+                            Pending Confirmation
+                        </h2>
+                        <span class="text-[11px] text-on-surface-variant">{{ draft_cases|length }}</span>
+                    </div>
                     <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
                         see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
                     </a>
@@ -84,9 +89,12 @@
                  @mouseleave="focusedPanel = null; focusedIdx = -1">
                 <div class="flex items-baseline justify-between mb-3 px-1"
                      @mouseenter.stop="focusedIdx = -1">
-                    <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
-                        Active Cases <span class="text-[11px] font-normal normal-case tracking-normal text-on-surface-variant">· {{ active_cases|length }}</span>
-                    </h2>
+                    <div class="flex items-center gap-2">
+                        <h2 class="font-headline text-[12px] font-semibold tracking-widest uppercase text-on-surface">
+                            Active Cases
+                        </h2>
+                        <span class="text-[11px] text-on-surface-variant">{{ active_cases|length }}</span>
+                    </div>
                     <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
                         see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
                     </a>
@@ -108,8 +116,8 @@
 
             <!-- Keyboard Hint -->
             <div class="flex items-center justify-center gap-2 pt-8 text-[11px] text-on-surface-variant">
-                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(1)">↓</span>
-                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(-1)">↑</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(1)">j</span>
+                <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="navigate(-1)">k</span>
                 <span>navigate</span>
                 <span>·</span>
                 <span class="kbd cursor-pointer hover:bg-surface-low transition-colors" @click="focusedPanel = 'today'; focusedIdx = 0; scrollToFocus()">t</span>

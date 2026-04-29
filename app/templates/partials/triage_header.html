@@ -1,0 +1,58 @@
+{# Triage page header — title row + sub-line + filter chips.
+
+   Required context:
+     header_stats        — dict produced by stats_for_chips()
+     drafts_pending      — int
+     first_draft_doc_id  — int | None
+     failed_count        — int
+     first_failed_doc_id — int | None
+#}
+<div class="px-8 pt-6 pb-4 border-b border-outline-variant bg-surface-container-lowest/40">
+    <div class="flex items-baseline justify-between mb-3 gap-4">
+        <div class="min-w-0">
+            <div class="flex items-baseline gap-3 flex-wrap">
+                <h1 class="font-headline text-[26px] font-semibold leading-tight text-on-surface tracking-tight">
+                    Triage
+                </h1>
+                <span class="text-[12px] text-on-surface-variant">
+                    <span class="font-mono">{{ header_stats.pending }}</span> pending{% if header_stats.completed_today %} · <span class="font-mono">{{ header_stats.completed_today }}</span> completed today{% endif %}
+                </span>
+            </div>
+            <div class="text-[12px] mt-1 text-on-surface-variant flex items-center gap-3 flex-wrap">
+                <span>Classify incoming documents. Confirm the suggested case, or route to a different one.</span>
+                {% if failed_count %}
+                <button type="button"
+                        @click="$store.triage.filter = 'stuck'; document.querySelector('[data-mock-status=stuck]')?.scrollIntoView({behavior:'smooth', block:'center'})"
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-error/10 hover:bg-error/15 text-error border border-error/30">
+                    <span class="material-symbols-outlined text-[12px]">error_outline</span>
+                    {{ failed_count }} failed
+                </button>
+                {% endif %}
+                {% if drafts_pending %}
+                <button type="button"
+                        @click="$store.triage.filter = 'needs_review'; document.querySelector('[data-mock-status=needs_review]')?.scrollIntoView({behavior:'smooth', block:'center'})"
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-warning/10 hover:bg-warning/15 text-warning border border-warning/30">
+                    <span class="material-symbols-outlined text-[12px]">edit_note</span>
+                    {{ drafts_pending }} draft{{ 's' if drafts_pending != 1 else '' }}
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button hx-get="/upload"
+                    hx-target="#upload-modal-root"
+                    hx-swap="innerHTML"
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary bg-surface-container-lowest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                <span class="material-symbols-outlined text-[14px]">upload</span>
+                Add document
+            </button>
+            <button type="button" disabled
+                    title="Re-sync — coming soon"
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant/30 text-on-surface-variant/60 bg-surface-container-lowest cursor-not-allowed">
+                <span class="material-symbols-outlined text-[14px]">refresh</span>
+                Re-sync
+            </button>
+        </div>
+    </div>
+    {% include "partials/triage_filter_chips.html" %}
+</div>

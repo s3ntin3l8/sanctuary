@@ -62,6 +62,13 @@ def test_engine():
         except Exception:
             pass
 
+        # Mirror production PRAGMA settings so cascade FK behaviour, etc. are
+        # actually enforced under tests. Without this, `Document.case_id`'s
+        # ondelete=SET NULL is advisory in tests and bugs slip through CI.
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
     sa_event.listen(engine, "connect", _load_extensions)
 
     with engine.connect() as conn:
@@ -82,10 +89,16 @@ def test_engine():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db(test_engine):
+    from app.services.case_service import seed_triage_case
+
     Base.metadata.create_all(bind=test_engine)
     TestingSessionLocal = sessionmaker(
         autocommit=False, autoflush=False, bind=test_engine
     )
+    # Seed `_TRIAGE` once at session start so the first test has it available.
+    # `cleanup_per_test` re-seeds after every wipe so subsequent tests do too.
+    with TestingSessionLocal() as seed_db:
+        seed_triage_case(seed_db)
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -98,10 +111,20 @@ def setup_test_db(test_engine):
         return TestingSessionLocal()
 
     app.dependency_overrides[get_db] = override_get_db
-    # We also need to patch get_db_session where it's used in background tasks
-    with patch(
-        "app.tasks.document_processing.get_db_session",
-        side_effect=override_get_db_session,
+    # We also need to patch get_db_session where it's used in background tasks.
+    # Also no-op `process_document_task.delay` at every import site: with
+    # CELERY_TASK_ALWAYS_EAGER=true (the project's `.env` default) every upload
+    # would otherwise fire a real httpx call to the configured AI provider
+    # (Ollama / LM Studio) and hang when the provider isn't reachable.
+    fake_delay = MagicMock()
+
+    with (
+        patch(
+            "app.tasks.document_processing.get_db_session",
+            side_effect=override_get_db_session,
+        ),
+        patch("app.tasks.document_processing.process_document_task.delay", fake_delay),
+        patch("app.api.documents.process_document_task.delay", fake_delay),
     ):
         yield
     app.dependency_overrides.clear()
@@ -110,12 +133,21 @@ def setup_test_db(test_engine):
 
 @pytest.fixture(autouse=True)
 def cleanup_per_test(db_session):
-    """Clean up data after each test."""
+    """Clean up data after each test, then re-seed the `_TRIAGE` singleton.
+
+    With FK enforcement on (PRAGMA foreign_keys=ON in test_engine), every
+    Document/IngestBatch row that uses `case_id="_TRIAGE"` requires a real
+    Case row. The wipe removes it; this re-seeds so the next test starts
+    in the same state production lifespan would.
+    """
+    from app.services.case_service import seed_triage_case
+
     yield
     db_session.rollback()
     for table in reversed(Base.metadata.sorted_tables):
         db_session.execute(table.delete())
     db_session.commit()
+    seed_triage_case(db_session)
 
 
 @pytest.fixture
@@ -152,14 +184,8 @@ def sample_case(db_session) -> Case:
 
 @pytest.fixture
 def sample_triage_case(db_session) -> Case:
-    case = Case(
-        id="_TRIAGE",
-        title="Triage Inbox",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-    )
-    db_session.add(case)
-    db_session.commit()
+    # `_TRIAGE` is pre-seeded by `cleanup_per_test`; return the existing row.
+    case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     db_session.refresh(case)
     return case
 

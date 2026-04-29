@@ -23,9 +23,11 @@
 {% include "partials/hud/_case.html" %}
 {% endif %}
 
-{# 4. Metadata form — review mode only (triage embedded context) #}
+{# 4. Metadata review (read-only summary + Edit toggle that flips to the form).
+   Review mode only — triage embedded context and case-dashboard confirm/reject
+   flows that still render _container.html with mode='review'. #}
 {% if mode == 'review' %}
-{% include "partials/triage_metadata_form.html" %}
+{% include "partials/triage/_metadata_review.html" %}
 {% endif %}
 
 {# 4. Passages (spine in standalone/embedded, cards in overlay) #}

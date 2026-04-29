@@ -45,4 +45,10 @@ STAGE_OPTIONS: dict[str, dict] = {
         "num_predict": 10000,
         "max_tokens": 10000,
     },
+    "proceeding": {
+        "num_ctx": 16384,
+        "temperature": 0.0,
+        "num_predict": 2000,
+        "max_tokens": 2000,
+    },
 }

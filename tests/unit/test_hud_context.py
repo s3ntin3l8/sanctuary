@@ -2,8 +2,16 @@
 
 import pytest
 
-from app.models.database import Case, CaseStatus, Document
+from app.models.database import Case, CaseStatus, Document, IngestBatch
+from app.models.enums import IngestBatchSourceType
 from app.services.hud_context import build_hud_context
+
+
+def _make_batch(db_session) -> int:
+    batch = IngestBatch(source_type=IngestBatchSourceType.MANUAL)
+    db_session.add(batch)
+    db_session.flush()
+    return batch.id
 
 
 @pytest.fixture
@@ -66,9 +74,10 @@ def test_bundle_nav_middle_doc(db_session):
     Regression for the bug where Document.id != doc.id was filtered before indexing,
     making doc.id never present in sibling_ids.
     """
+    batch_id = _make_batch(db_session)
     docs = []
     for i in range(3):
-        d = Document(title=f"Bundle Doc {i}", ingest_batch_id=42)
+        d = Document(title=f"Bundle Doc {i}", ingest_batch_id=batch_id)
         db_session.add(d)
         docs.append(d)
     db_session.commit()
@@ -83,9 +92,10 @@ def test_bundle_nav_middle_doc(db_session):
 
 @pytest.mark.unit
 def test_bundle_nav_first_doc(db_session):
+    batch_id = _make_batch(db_session)
     docs = []
     for i in range(3):
-        d = Document(title=f"Bundle First {i}", ingest_batch_id=55)
+        d = Document(title=f"Bundle First {i}", ingest_batch_id=batch_id)
         db_session.add(d)
         docs.append(d)
     db_session.commit()
@@ -97,9 +107,10 @@ def test_bundle_nav_first_doc(db_session):
 
 @pytest.mark.unit
 def test_bundle_nav_last_doc(db_session):
+    batch_id = _make_batch(db_session)
     docs = []
     for i in range(3):
-        d = Document(title=f"Bundle Last {i}", ingest_batch_id=66)
+        d = Document(title=f"Bundle Last {i}", ingest_batch_id=batch_id)
         db_session.add(d)
         docs.append(d)
     db_session.commit()
@@ -111,7 +122,8 @@ def test_bundle_nav_last_doc(db_session):
 
 @pytest.mark.unit
 def test_bundle_nav_single_doc(db_session):
-    doc = Document(title="Lone Bundle Doc", ingest_batch_id=77)
+    batch_id = _make_batch(db_session)
+    doc = Document(title="Lone Bundle Doc", ingest_batch_id=batch_id)
     db_session.add(doc)
     db_session.commit()
 

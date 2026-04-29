@@ -236,6 +236,7 @@ def ingest_raw_email(
             received_date=received_date,
             issued_date=received_date,
             meta={"threading": threading_meta} if threading_meta else None,
+            page_count=0,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
@@ -272,6 +273,13 @@ def ingest_raw_email(
         with open(att_path, "wb") as f:
             f.write(att["content"])
 
+        try:
+            pdf_doc = pdfium.PdfDocument(str(att_path))
+            att_page_count = len(pdf_doc)
+            pdf_doc.close()
+        except Exception:
+            att_page_count = 0
+
         doc = Document(
             title=att["filename"],
             file_path=str(att_path),
@@ -281,6 +289,7 @@ def ingest_raw_email(
             ingest_batch_id=batch.id,
             internal_id=extract_internal_id_from_subject(subject) or None,
             received_date=received_date or datetime.now(UTC),
+            page_count=att_page_count,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
@@ -350,6 +359,7 @@ def ingest_scanned_file(
             content_hash=content_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
+            page_count=page_count,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 

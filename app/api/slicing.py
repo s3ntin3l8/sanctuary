@@ -56,15 +56,30 @@ async def slicing_thumb(batch_id: int, page: int, db: Session = Depends(get_db))
     if page < 1 or page > page_count:
         raise HTTPException(status_code=400, detail=f"Page {page} out of range")
 
+    from app.config import DATA_DIR
+
+    data_root = DATA_DIR.resolve()
+
+    def _serve_if_under_data_dir(p: Path):
+        resolved = p.resolve()
+        if not str(resolved).startswith(str(data_root) + "/") and resolved != data_root:
+            return None
+        if not resolved.exists():
+            return None
+        return FileResponse(str(resolved), media_type="image/png")
+
     if batch.raw_source_path:
-        thumb_path = Path(batch.raw_source_path).parent / "thumbs" / f"page_{page}.png"
-        if thumb_path.exists():
-            return FileResponse(str(thumb_path), media_type="image/png")
+        candidate = Path(batch.raw_source_path).parent / "thumbs" / f"page_{page}.png"
+        served = _serve_if_under_data_dir(candidate)
+        if served is not None:
+            return served
 
     if pages and (page - 1) < len(pages):
         stored_path = pages[page - 1].get("thumbnail_path")
-        if stored_path and Path(stored_path).exists():
-            return FileResponse(stored_path, media_type="image/png")
+        if stored_path:
+            served = _serve_if_under_data_dir(Path(stored_path))
+            if served is not None:
+                return served
 
     raise HTTPException(status_code=404, detail=f"Thumbnail for page {page} not found")
 
@@ -130,6 +145,8 @@ async def slicing_confirm(
             slice_bytes = slice_filename.read_bytes()
             content_hash = hashlib.sha256(slice_bytes).hexdigest()
 
+            slice_page_count = end_page - start_page + 1
+
             doc = Document(
                 title=f"{pdf_path.stem} – Part {slice_idx + 1}",
                 file_path=str(slice_filename),
@@ -137,6 +154,7 @@ async def slicing_confirm(
                 case_id="_TRIAGE",
                 ingest_batch_id=batch.id,
                 meta={"slice_range": [start_page, end_page]},
+                page_count=slice_page_count,
             )
             from app.services.pipeline_status import initialize as _pipeline_init
 

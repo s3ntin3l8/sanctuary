@@ -13,6 +13,7 @@ from datetime import datetime
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.constants import SIG_ORDER as _SIG_ORDER  # noqa: E402
 from app.models.database import (
     Case,
     Document,
@@ -25,20 +26,12 @@ from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
     RelationshipType,
-    SignificanceTier,
     UserReactionType,
 )
 from app.repositories.action_item import ActionItemRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.repositories.user_reaction import UserReactionRepository
-
-_SIG_ORDER: dict = {
-    SignificanceTier.CRITICAL: 0,
-    SignificanceTier.SIGNIFICANT: 1,
-    SignificanceTier.INFORMATIONAL: 2,
-    SignificanceTier.ADMINISTRATIVE: 3,
-}
 
 
 def _sanitize_case_title(
@@ -90,13 +83,8 @@ class BundleView:
         return len(self.documents)
 
     @property
-    def needs_review_count(self) -> int:
-        """Total docs flagged for review — kept for backwards compatibility.
-
-        Prefer the split counts (unresolved_review_count / to_confirm_count)
-        for new UI surfaces.
-        """
-        return sum(1 for d in self.documents if d.needs_review)
+    def total_pages(self) -> int:
+        return sum(d.page_count or 0 for d in self.documents)
 
     @property
     def unresolved_review_count(self) -> int:
@@ -138,6 +126,31 @@ class BundleView:
             for d in self.documents
         )
         return {"total": len(self.documents), **counts}
+
+    @property
+    def mock_status(self) -> str:
+        """Filter-chip taxonomy for the redesigned triage page.
+
+        See `app.services.triage_view.mock_status` for precedence rules.
+        Cached lazily on first access.
+        """
+        if not hasattr(self, "_mock_status_cache"):
+            from app.services.triage_view import mock_status
+
+            self._mock_status_cache = mock_status(self)
+        return self._mock_status_cache
+
+    @property
+    def sub_bundles(self) -> list:
+        """Per parent-root subtree views for the inline expand + drawer spine.
+
+        See `app.services.triage_view.build_sub_bundles`. Cached lazily.
+        """
+        if not hasattr(self, "_sub_bundles_cache"):
+            from app.services.triage_view import build_sub_bundles
+
+            self._sub_bundles_cache = build_sub_bundles(self)
+        return self._sub_bundles_cache
 
     @property
     def parent_groups(self) -> list[list[tuple[int, Document]]]:
@@ -293,17 +306,17 @@ class TriageService:
         ordered = sorted(
             bundles.values(),
             key=lambda b: (
-                0 if b.needs_review_count > 0 else 1,
+                0 if (b.unresolved_review_count > 0 or b.to_confirm_count > 0) else 1,
                 -b.received_at.timestamp(),
             ),
         )
 
         for bundle in ordered:
-            self._enrich_bundle(bundle)
+            self.enrich_bundle(bundle)
 
         return ordered[offset : offset + limit]
 
-    def _enrich_bundle(self, bundle: BundleView) -> None:
+    def enrich_bundle(self, bundle: BundleView) -> None:
         """Sort documents and resolve action items, proof edges, and case metadata in-place."""
         from app.models.database import ActionItem
 
@@ -425,7 +438,7 @@ class TriageService:
             ):
                 bundle.suggested_case_id = doc.case_id
 
-        self._enrich_bundle(bundle)
+        self.enrich_bundle(bundle)
         return bundle
 
     def get_reactions(self, document_id: int) -> Sequence[UserReaction]:

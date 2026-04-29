@@ -61,6 +61,21 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
         confidence: RelationshipConfidence = RelationshipConfidence.AI_DETECTED,
         notes: str | None = None,
     ) -> DocumentRelationship:
+        """Idempotent: returns the existing edge if (from, to, type) already
+        exists, otherwise creates a new one. AI re-runs would otherwise
+        accumulate duplicate edges that the graph renders on top of each other.
+        """
+        existing = (
+            self.db.query(DocumentRelationship)
+            .filter(
+                DocumentRelationship.from_document_id == from_document_id,
+                DocumentRelationship.to_document_id == to_document_id,
+                DocumentRelationship.relationship_type == relationship_type,
+            )
+            .first()
+        )
+        if existing:
+            return existing
         return self.create(
             from_document_id=from_document_id,
             to_document_id=to_document_id,

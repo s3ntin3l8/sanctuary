@@ -1,0 +1,69 @@
+{# 2-column read-only metadata review for the triage doc HUD.
+   [Edit] flips state to render the existing triage_metadata_form.html.
+
+   Required: doc, cases, mode (must be 'review' for this to render the form).
+
+   Title and Case (+ internal_id / Case ID) intentionally omitted — title shows
+   in the active doc header above; case + internal_id show in the case selector
+   above. Avoids duplication and tightens vertical density.
+#}
+{% from "partials/_conf_chip.html" import conf_chip %}
+{% set _conf = doc.extraction_confidence or {} %}
+
+{% set _fields = [
+    ('Originator', (doc.originator_type.value | capitalize) if doc.originator_type else '—',        _conf.get('originator') or 'low'),
+    ('Sender',     doc.sender or '—',                                                               _conf.get('sender')     or 'low'),
+    ('Issued',     (doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '—'),              _conf.get('issued_date') or 'low'),
+    ('Received',   (doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—'),          'high' if doc.received_date else 'low'),
+    ('Tier',       (doc.significance_tier.value | capitalize) if doc.significance_tier else '—',    'high' if doc.significance_tier else 'low'),
+    ('Type',       (doc.document_type.value | capitalize) if doc.document_type else '—',            'high' if doc.document_type else 'low'),
+    ('AZ',         doc.proceeding.az_court if (doc.proceeding and doc.proceeding.az_court) else '—', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low'),
+] %}
+{% set _level_class = {
+    'high':   'border-l-originator-own',
+    'medium': 'border-l-warning',
+    'low':    'border-l-originator-opposing',
+} %}
+
+<div id="triage-metadata-{{ doc.id }}"
+     class="@container px-5 py-3 border-b border-outline-variant/20"
+     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}' }">
+
+    <div class="flex items-center justify-between mb-2">
+        <h4 class="font-headline text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[12px] text-primary">edit_note</span>
+            Metadata review
+        </h4>
+        <button type="button" x-show="state === 'confirmed'" @click="state = 'review'"
+                class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors">
+            Edit
+        </button>
+        <button type="button" x-show="state === 'review'" @click="state = 'confirmed'" x-cloak
+                class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:border-primary/40 transition-colors">
+            Cancel
+        </button>
+    </div>
+
+    {# ── CONFIRMED: read-only grid — 2 cols when the surrounding pane is
+       wide enough (inline expand on a wide viewport), 1 col when narrow
+       (drawer rail, narrow window). Container query reads the pane's
+       width, not the viewport's, so both contexts respond independently. ── #}
+    <div x-show="state === 'confirmed'" x-cloak class="grid grid-cols-1 @[480px]:grid-cols-2 gap-1.5">
+        {% for label, value, level in _fields %}
+        <div class="flex items-center gap-1.5 py-1 px-2 rounded bg-surface-low border-l-2 {{ _level_class.get(level, 'border-l-outline-variant') }}">
+            <div class="font-headline text-[8px] uppercase tracking-widest font-semibold text-on-surface-variant w-[64px] flex-shrink-0">
+                {{ label }}
+            </div>
+            <div class="flex-1 min-w-0 text-[11px] truncate {% if label in ('Issued', 'Received', 'AZ') %}font-mono{% endif %} text-on-surface" title="{{ value }}">
+                {{ value }}
+            </div>
+            {{ conf_chip(level) }}
+        </div>
+        {% endfor %}
+    </div>
+
+    {# ── REVIEW: existing form ── #}
+    <div x-show="state === 'review'">
+        {% include "partials/triage_metadata_form.html" %}
+    </div>
+</div>

@@ -35,8 +35,8 @@ def test_save_entities_valid(db_session, sample_document):
 @pytest.mark.unit
 def test_save_entities_dedup(db_session, sample_document):
     """Same case+type+name is not duplicated."""
-    sample_document.case_id = "TEST-002"
-    db_session.flush()
+    # `sample_document` is on `sample_case` (id="TEST-001"); use that for FK validity.
+    case_id = sample_document.case_id
 
     result = {
         "entities": [
@@ -47,16 +47,13 @@ def test_save_entities_dedup(db_session, sample_document):
     count2 = _save_entities(sample_document, result, db_session)  # second call
     assert count2 == 0
 
-    total = db_session.query(Entity).filter(Entity.case_id == "TEST-002").count()
+    total = db_session.query(Entity).filter(Entity.case_id == case_id).count()
     assert total == 1
 
 
 @pytest.mark.unit
 def test_save_entities_unknown_type_skipped(db_session, sample_document):
     """Entities with invalid type strings are silently skipped."""
-    sample_document.case_id = "TEST-003"
-    db_session.flush()
-
     result = {
         "entities": [
             {"type": "INVALID_TYPE", "name": "Something", "context_quote": ""},
@@ -70,9 +67,6 @@ def test_save_entities_unknown_type_skipped(db_session, sample_document):
 @pytest.mark.unit
 def test_save_entities_empty_name_skipped(db_session, sample_document):
     """Entities with empty names are silently skipped."""
-    sample_document.case_id = "TEST-004"
-    db_session.flush()
-
     result = {
         "entities": [
             {"type": "PERSON", "name": "", "context_quote": ""},
@@ -86,8 +80,5 @@ def test_save_entities_empty_name_skipped(db_session, sample_document):
 @pytest.mark.unit
 def test_save_entities_no_entities(db_session, sample_document):
     """Empty list returns 0."""
-    sample_document.case_id = "TEST-005"
-    db_session.flush()
-
     count = _save_entities(sample_document, {"entities": []}, db_session)
     assert count == 0

@@ -37,6 +37,20 @@ class CaseRepository(BaseRepository[Case]):
             query = query.filter(Case.is_draft.is_(False))
         return query.order_by(Case.title.asc()).all()
 
+    def list_for_picker(self) -> Sequence[Case]:
+        """Cases shown in the case-assignment picker (triage HUD, confirm modal).
+
+        Excludes the `_TRIAGE` singleton and AI-created drafts. Sorted by title
+        for stable rendering. Centralised here because the same query was open-
+        coded in 6+ routes.
+        """
+        return (
+            self.db.query(Case)
+            .filter(Case.id != "_TRIAGE", Case.is_draft.is_(False))
+            .order_by(Case.title.asc())
+            .all()
+        )
+
     def get_all_sorted_by_date(
         self, descending: bool = True, include_drafts: bool = False
     ) -> Sequence[Case]:

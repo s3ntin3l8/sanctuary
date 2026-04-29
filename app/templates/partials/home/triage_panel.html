@@ -1,4 +1,4 @@
-<section class="rounded-lg p-5 bg-surface-container border border-outline-variant/30 shadow-sm transition-shadow duration-300"
+<section class="rounded-lg p-5 bg-surface-lowest border border-outline-variant shadow-sm transition-all duration-200"
          @mouseenter="focusedPanel = 'triage'; focusedIdx = -1"
          @mouseleave="focusedPanel = null; focusedIdx = -1"
          :class="{ 'border-primary ring-4 ring-primary/5': focusedPanel === 'triage' }">
@@ -23,7 +23,7 @@
              @mouseenter="focusedPanel = 'triage'; focusedIdx = {{ loop.index0 }}"
              :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">
             <div class="w-12 flex justify-center shrink-0">
-                <span class="font-mono text-[10px] font-bold text-amber-600/80 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                <span class="font-mono text-[10px] font-bold text-amber-600/80 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                     {{ bundle.documents|length }} docs
                 </span>
             </div>
@@ -47,12 +47,12 @@
                     {% if confirmed_case_id %}
                     <span class="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-primary-container/20 text-primary border border-primary/20" title="User Confirmed">{{ confirmed_case_id }}</span>
                     {% elif suggested.case_id %}
-                    <span class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-outline-variant/30 bg-surface-container">
+                    <span class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-outline-variant bg-surface-lowest">
                         <span class="font-mono text-[11px] font-bold text-on-surface-variant">{{ suggested.case_id }}</span>
                         <span class="text-amber-500 text-[10px] font-bold" title="AI Suggested">?</span>
                     </span>
                     {% else %}
-                    <span class="text-amber-500 text-[11px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/30 bg-surface-container" title="No case match yet">?</span>
+                    <span class="text-amber-500 text-[11px] font-bold px-1.5 py-0.5 rounded border border-outline-variant bg-surface-lowest" title="No case match yet">?</span>
                     {% endif %}
                 </div>
                 <div class="text-[11px] truncate text-on-surface-variant">

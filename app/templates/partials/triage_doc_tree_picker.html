@@ -1,0 +1,66 @@
+{# Sub-bundle / doc tree picker. Used by both the inline expand and the
+   slide-out drawer's left spine.
+
+   Required context:
+     bundle      — BundleView (carries .sub_bundles)
+     active_doc_id — int | None (highlight)
+     compact     — bool (suppress the alt-case affordance + significance dots)
+#}
+<div class="space-y-2">
+    {% for sb in bundle.sub_bundles %}
+    <div>
+        <div class="flex items-center gap-1.5 mb-1 px-1">
+            <span class="material-symbols-outlined text-[10px] text-on-surface-variant">folder_open</span>
+            <div class="font-headline text-[9.5px] uppercase tracking-widest font-bold flex-1 truncate text-on-surface-variant"
+                 title="{{ sb.label }}">
+                {{ sb.label }}
+            </div>
+            {% if sb.suggested_case_id %}
+            <span class="font-mono text-[9.5px] text-primary">{{ sb.suggested_case_id }}</span>
+            {% endif %}
+        </div>
+        <div class="space-y-0.5">
+            {% for depth, d in sb.docs %}
+            {% set is_lead = (d.id == sb.lead_doc.id) %}
+            {% set is_active = (active_doc_id and d.id|string == active_doc_id|string) %}
+            <button type="button"
+                    data-doc-id="{{ d.id }}"
+                    @click.stop="
+                        if ($store.triage.drawerOpen && $store.triage.drawer.rowKey === '{{ bundle.key }}') {
+                            $store.triage.drawer = { ...$store.triage.drawer, docId: '{{ d.id }}' };
+                        } else {
+                            $store.triage.expandedActiveDocId = '{{ d.id }}';
+                            htmx.ajax('GET', '/triage/doc/{{ d.id }}/hud', {target: '#triage-row-expanded-body-{{ bundle.key }}', swap: 'innerHTML'});
+                        }"
+                    :class="(
+                        ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
+                        || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
+                    ) ? 'bg-primary-container/60 border-primary' : 'border-transparent hover:bg-surface-container-low/50'"
+                    class="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    style="padding-left: {{ 8 + depth * 12 }}px;">
+                <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-originator-{{ 'third_party' if (d.originator_type and d.originator_type.value == 'third_party') else (d.originator_type.value if d.originator_type else 'unknown') }}"></span>
+                {% if is_lead %}
+                <span class="material-symbols-outlined text-[9px] text-on-surface-variant" title="Lead document in this sub-bundle">push_pin</span>
+                {% endif %}
+                <span :class="(
+                        ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
+                        || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
+                      ) ? 'text-primary font-semibold' : 'text-on-surface'"
+                      class="flex-1 min-w-0 truncate text-[11.5px]">
+                    {{ d.title or 'Untitled doc' }}
+                </span>
+                <span class="font-mono text-[10px] text-on-surface-variant">{{ d.page_count or 0 }}pp</span>
+                {% if not compact and d.significance_tier %}
+                {% set sig_n = {'critical': 3, 'significant': 2, 'informational': 1, 'administrative': 0}.get(d.significance_tier.value, 0) %}
+                <span class="flex items-center gap-0.5 flex-shrink-0">
+                    {% for i in range(3) %}
+                    <span class="w-1 h-1 rounded-full {% if i < sig_n %}{% if sig_n >= 3 %}bg-error{% elif sig_n >= 2 %}bg-warning{% else %}bg-primary{% endif %}{% else %}bg-outline-variant/40{% endif %}"></span>
+                    {% endfor %}
+                </span>
+                {% endif %}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

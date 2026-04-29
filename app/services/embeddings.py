@@ -1,7 +1,6 @@
 import logging
 
 import httpx
-from fastapi import BackgroundTasks
 
 from app.config import SessionLocal
 from app.models.database import Document
@@ -77,6 +76,15 @@ async def generate_embedding(doc_id: int):
                     {"doc_id": doc_id, "embedding": blob},
                 )
                 db.commit()
+            elif embedding:
+                logger.warning(
+                    "Embedding dimension mismatch for doc %s: provider returned %d, "
+                    "config embed_dim=%d. Vector NOT stored — search will miss this doc. "
+                    "Check AI_EMBED_DIM matches the embedding model.",
+                    doc_id,
+                    len(embedding),
+                    cfg.embed_dim,
+                )
 
     except Exception as e:
         logger.warning(f"Failed to generate embedding for doc {doc_id}: {e}")
@@ -84,13 +92,14 @@ async def generate_embedding(doc_id: int):
         db.close()
 
 
-def trigger_embedding_background(doc_id: int, background_tasks: BackgroundTasks):
-    background_tasks.add_task(generate_embedding, doc_id)
-
-
 async def reindex_all_docs(db) -> dict:
     """Regenerate embeddings for all documents. Returns {total, reindexed, failed}."""
     from sqlalchemy import text
+
+    # The user typically triggers reindex right after changing the embedding
+    # model in settings — reload the provider config from DB so we use the
+    # new model, not whatever was bound at app boot.
+    ai_provider.reload_from_db(db)
 
     cfg = get_effective_config(db)
     docs = db.query(Document).filter(Document.content.isnot(None)).all()
@@ -142,3 +151,30 @@ async def reindex_all_docs(db) -> dict:
             failed += 1
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
+
+
+_VEC0_DIM_RE = __import__("re").compile(
+    r"embedding\s+float\s*\[\s*(\d+)\s*\]", __import__("re").IGNORECASE
+)
+
+
+def verify_vec0_dim(db, expected_dim: int) -> tuple[bool, int | None]:
+    """Read the document_vectors vec0 schema and compare its declared dimension.
+
+    Returns (matches, actual_dim). actual_dim is None if the schema can't be parsed.
+    Used by the lifespan startup hook to fail loudly if AI_EMBED_DIM was changed
+    without recreating the vec0 table — vec0 can't be ALTERed, so a mismatch
+    silently breaks every embedding write at the per-write dim guard.
+    """
+    from sqlalchemy import text
+
+    row = db.execute(
+        text("SELECT sql FROM sqlite_master WHERE name = 'document_vectors'")
+    ).fetchone()
+    if not row or not row[0]:
+        return False, None
+    match = _VEC0_DIM_RE.search(row[0])
+    if not match:
+        return False, None
+    actual = int(match.group(1))
+    return actual == expected_dim, actual

@@ -1,10 +1,10 @@
 import logging
 import os
-import threading
 from datetime import datetime
+from html import escape
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
@@ -71,7 +71,7 @@ async def upload_document(
                 '<div class="p-3 text-sm text-error">No files selected.</div>',
                 status_code=400,
             )
-        return {"error": "No files selected."}, 400
+        return JSONResponse({"error": "No files selected."}, status_code=400)
 
     results = []
     success_count = 0
@@ -94,6 +94,8 @@ async def upload_document(
         db.commit()
 
     def _row_queued(filename: str, doc_id: int | None = None, sub: str = "") -> str:
+        filename = escape(filename)
+        sub = escape(sub)
         # Each row carries a polling probe that swaps itself with the latest
         # status from /upload/status/{doc_id} every 2 s while in-flight. The
         # triage queue is the canonical "watch it run" view, but having live
@@ -116,6 +118,7 @@ async def upload_document(
         )
 
     def _row_dup(filename: str) -> str:
+        filename = escape(filename)
         return (
             f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-surface-container/40 border border-outline-variant/10">'
             f'<span class="material-symbols-outlined text-[14px] text-on-surface-variant">history</span>'
@@ -124,6 +127,8 @@ async def upload_document(
         )
 
     def _row_error(filename: str, msg: str) -> str:
+        filename = escape(filename)
+        msg = escape(msg)
         return (
             f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-error-container/15 border border-error/20">'
             f'<span class="material-symbols-outlined text-[14px] text-error">error</span>'
@@ -170,14 +175,10 @@ async def upload_document(
             success_count += 1
 
             _doc_id = doc.id
-
-            def _dispatch(doc_id: int = _doc_id):
-                try:
-                    process_document_task.delay(doc_id)
-                except Exception as e:
-                    logger.warning(f"Celery task dispatch failed for doc {doc_id}: {e}")
-
-            threading.Thread(target=_dispatch, daemon=True).start()
+            try:
+                process_document_task.delay(_doc_id)
+            except Exception as e:
+                logger.warning(f"Celery task dispatch failed for doc {_doc_id}: {e}")
 
             results.append(_row_queued(file.filename, doc_id=_doc_id))
 
@@ -260,7 +261,7 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
         return HTMLResponse("")
 
     state = doc.pipeline_state.value if doc.pipeline_state else "pending"
-    filename = doc.title or "(untitled)"
+    filename = escape(doc.title or "(untitled)")
 
     if state == "failed":
         # Find the first failed stage for the error message.
@@ -278,6 +279,7 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
         )
         if failed_error:
             msg += f" — {failed_error[:80]}"
+        msg = escape(msg)
         return HTMLResponse(
             f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-error-container/15 border border-error/20">'
             f'<span class="material-symbols-outlined text-[14px] text-error">error</span>'
@@ -358,11 +360,11 @@ async def delete_document(
     if context == "triage" and bundle_key:
         import json
 
-        from app.api.triage import (
-            _render_bundle_group_oob,
-            _render_sidebar_badges_oob,
-            _render_triage_feed_oob,
-            _render_triage_status_bar_oob,
+        from app.services.triage_view import (
+            render_bundle_group_oob,
+            render_sidebar_badges_oob,
+            render_triage_feed_oob,
+            render_triage_header_stats_oob,
         )
 
         triage_service = TriageService(db)
@@ -375,33 +377,26 @@ async def delete_document(
             trigger["triage:clear"] = {}
 
         # Global synchronization: Sidebar badges and Triage status bar
-        global_oob = _render_sidebar_badges_oob(db)
-        global_oob += _render_triage_status_bar_oob(request, triage_service)
+        global_oob = render_sidebar_badges_oob(db)
+        global_oob += render_triage_header_stats_oob(request, triage_service)
 
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
-            res_content = _render_triage_feed_oob(request, triage_service, db)
-            # Clear the HUD pane too since nothing is left.
-            res_content += (
-                '<div id="triage-doc-pane" hx-swap-oob="true" class="h-full flex flex-col min-h-0">'
-                '<div class="flex items-center justify-center flex-1">'
-                '<div class="text-center p-8">'
-                '<span class="material-symbols-outlined text-4xl text-outline mb-3">check_circle</span>'
-                '<h3 class="text-sm font-black text-on-surface uppercase tracking-widest">Queue Clear</h3>'
-                "</div></div></div>"
-            )
+            res_content = render_triage_feed_oob(request, triage_service, db)
             res_content += global_oob
             response = HTMLResponse(res_content)
         else:
             bundle = next((b for b in bundles if b.key == bundle_key), None)
             if bundle:
                 # Bundle still has documents — return the updated bundle group OOB.
-                res_content = _render_bundle_group_oob(request, bundle, triage_service)
+                res_content = render_bundle_group_oob(request, bundle, triage_service)
                 res_content += global_oob
                 response = HTMLResponse(res_content)
             else:
                 # This bundle is now empty, but others remain — delete the group from DOM.
-                res_content = f'<div id="triage-bundle-group-{bundle_key}" hx-swap-oob="delete"></div>'
+                res_content = (
+                    f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
+                )
                 res_content += global_oob
                 response = HTMLResponse(res_content)
 
@@ -493,12 +488,12 @@ async def hud_toggle_reaction(
         {"doc": doc, "reactions": reactions},
     )
 
-    # OOB feed-card refresh for triage (selector misses gracefully outside triage)
-    from app.api.triage import _render_doc_targeted_oob
+    # OOB row refresh for triage (selector misses gracefully outside triage)
     from app.services.triage_service import TriageService
+    from app.services.triage_view import render_row_targeted_oob
 
     triage_service = TriageService(db)
-    response.body += _render_doc_targeted_oob(request, doc, triage_service, db).encode()
+    response.body += render_row_targeted_oob(request, doc, triage_service, db).encode()
 
     if notes is not None and notes.strip():
         response.headers["HX-Trigger"] = _json.dumps(
@@ -856,11 +851,20 @@ async def document_original(
     file_path = pathlib.Path(doc.file_path)
     if not file_path.is_absolute():
         file_path = DATA_DIR / file_path
-    if not file_path.exists():
+
+    # Defense-in-depth: refuse to serve anything outside DATA_DIR even if the
+    # stored file_path were ever attacker-influenced (compromised task,
+    # malicious migration, future SQLi).
+    resolved = file_path.resolve()
+    data_root = DATA_DIR.resolve()
+    if not str(resolved).startswith(str(data_root) + "/") and resolved != data_root:
+        raise HTTPException(status_code=404, detail="Original file not found on disk")
+
+    if not resolved.exists():
         raise HTTPException(status_code=404, detail="Original file not found on disk")
 
     return FileResponse(
-        path=str(file_path),
-        filename=file_path.name,
+        path=str(resolved),
+        filename=resolved.name,
         media_type="application/octet-stream",
     )

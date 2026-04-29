@@ -19,6 +19,7 @@ from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
+from app.services.intelligence.reaction_context import format_reactions_for_document
 from app.services.text_offsets import find_text_offsets
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,13 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     if doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
         batch_context = f"\nBatch context: This document was enclosed in a cover letter. True originator: {doc.attributed_originator}"
 
-    prompt = f"Document title: {doc.title}{batch_context}\n\n{content_preview}"
+    reactions_block = ""
+    if db is not None:
+        formatted = format_reactions_for_document(db, doc.id)
+        if formatted:
+            reactions_block = f"\n\n{formatted}"
+
+    prompt = f"Document title: {doc.title}{batch_context}{reactions_block}\n\n{content_preview}"
 
     return call_json_ai(
         system_prompt=DOCUMENT_ENRICHER_SYSTEM,

@@ -47,10 +47,7 @@ def test_extract_claims_task_enqueues_brief_for_normal_case(db_session):
 @pytest.mark.integration
 def test_extract_claims_task_skips_brief_for_triage(db_session):
     """For _TRIAGE documents, generate_case_brief_task.delay is NOT called."""
-    # Ensure _TRIAGE case exists
-    triage_case = Case(id="_TRIAGE", title="Triage Inbox", status=CaseStatus.INTAKE)
-    db_session.add(triage_case)
-    db_session.commit()
+    # `_TRIAGE` is pre-seeded by the conftest cleanup_per_test fixture.
 
     doc = Document(
         title="Triage Doc",

@@ -1,0 +1,95 @@
+{# Inline expand body for one bundle row.
+   Left: doc tree picker. Right: HUD payload (HTMX-loaded for the active doc).
+
+   Required context: bundle (BundleView), active_doc_id (str | None)
+#}
+{% set lead_doc_id = bundle.sub_bundles[0].lead_doc.id if bundle.sub_bundles else (bundle.documents[0].id if bundle.documents else None) %}
+
+<div class="px-8 pb-4 pl-[68px]">
+    <div class="rounded-md grid bg-surface-container-lowest/60 border border-outline-variant/30 overflow-hidden"
+         style="grid-template-columns: minmax(220px, 0.85fr) minmax(0, 2fr);">
+
+        {# LEFT: bundle contents picker #}
+        <div class="p-4 border-r border-outline-variant/20">
+            <div class="flex items-baseline justify-between mb-2">
+                <div class="flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[12px] text-on-surface-variant">account_tree</span>
+                    <div class="font-headline text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">
+                        Bundle contents
+                    </div>
+                    <span class="text-[10px] font-mono text-on-surface-variant">· {{ bundle.doc_count }}</span>
+                </div>
+            </div>
+            {% with active_doc_id=lead_doc_id, compact=True %}
+                {% include "partials/triage_doc_tree_picker.html" %}
+            {% endwith %}
+            <div class="h-px my-3 bg-outline-variant/40"></div>
+            <div class="text-[10.5px] leading-relaxed text-on-surface-variant">
+                {% if bundle.sender_email %}
+                Source: <span class="font-mono">{{ bundle.sender_email }}</span><br/>
+                {% endif %}
+                Received: <span class="font-mono">{{ bundle.received_at.strftime('%-d %b %Y · %H:%M') if bundle.received_at }}</span>
+            </div>
+        </div>
+
+        {# RIGHT: active-doc HUD payload (HTMX-loaded) #}
+        <div id="triage-row-expanded-body-{{ bundle.key }}"
+             {% if lead_doc_id %}
+             hx-get="/triage/doc/{{ lead_doc_id }}/hud"
+             hx-trigger="intersect once"
+             hx-swap="innerHTML"
+             {% endif %}
+             class="triage-hud-body p-4 min-h-[200px]">
+            <div class="flex items-center justify-center h-full text-[12px] text-on-surface-variant gap-2">
+                <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                Loading document HUD…
+            </div>
+        </div>
+    </div>
+
+    {# Footer action row #}
+    <div class="flex items-center justify-between mt-3 gap-2">
+        <div class="flex items-center gap-2">
+            {% if lead_doc_id %}
+            <button type="button"
+                    @click.stop="$store.triage.openDrawer('{{ bundle.key }}', $store.triage.expandedActiveDocId || '{{ lead_doc_id }}')"
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-surface-container-high text-primary border border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                <span class="material-symbols-outlined text-[14px]">open_in_full</span>
+                Open full HUD
+                <span class="kbd ml-1">e</span>
+            </button>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-1.5">
+            <button type="button" disabled
+                    title="Dismiss — coming soon"
+                    class="text-[12px] px-3 py-1.5 rounded text-on-surface-variant/60 border border-outline-variant/30 cursor-not-allowed">
+                Dismiss
+            </button>
+            {% if bundle.sub_bundles and bundle.sub_bundles[0].suggested_case_id %}
+            {% set lead_sub = bundle.sub_bundles[0] %}
+            <button type="button"
+                    data-confirm-bundle-trigger
+                    @click.stop="$dispatch('triage:open-bundle-confirm', {
+                        batch_id: '{{ bundle.batch_id or '' }}',
+                        is_synthetic: {{ 'true' if bundle.is_synthetic else 'false' }},
+                        doc_id: '{{ bundle.documents[0].id if bundle.documents else '' }}',
+                        subject: {{ (bundle.subject or '') | tojson }},
+                        doc_count: {{ bundle.doc_count }},
+                        suggested_case_id: '{{ lead_sub.suggested_case_id }}',
+                        suggested_case_title: {{ (lead_sub.suggested_case_title or '') | tojson }},
+                        suggested_case_is_draft: {{ 'true' if bundle.suggested_case_is_draft else 'false' }},
+                        suggested_proceeding_id: '{{ bundle.proceeding.id if bundle.proceeding else '' }}',
+                        suggested_proceeding_az: {{ (bundle.proceeding.az_court if bundle.proceeding else '') | tojson }},
+                        suggested_proceeding_subtitle: {{ (bundle.proceeding.court_name if bundle.proceeding else '') | tojson }},
+                        action: 'confirm_bundle'
+                    })"
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                <span class="material-symbols-outlined text-[14px]">check</span>
+                Confirm bundle
+                <span class="kbd ml-1" style="background:rgba(255,255,255,0.18); color:inherit; border-color:rgba(255,255,255,0.3)">⌘↵</span>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>

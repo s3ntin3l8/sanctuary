@@ -1,0 +1,219 @@
+{# One bundle row in the redesigned triage feed.
+
+   Required context:
+     bundle             — BundleView (carries .mock_status, .sub_bundles, .documents)
+     reactions_by_doc   — dict[doc_id, set[UserReactionType]] (unused at row level — Phase 3)
+     hx_swap_oob        — optional bool
+     ORIGINATOR_COLORS  — dict
+#}
+{% from "partials/_conf_chip.html" import conf_chip %}
+
+{% set status = bundle.mock_status %}
+{% set status_color_class = {
+    'stuck':                'bg-error',
+    'processing':           'bg-outline-variant',
+    'needs_classification': 'bg-warning',
+    'needs_review':         'bg-primary',
+}.get(status, 'bg-outline-variant') %}
+
+{% set sub_bundles = bundle.sub_bundles %}
+{% set lead_sub = sub_bundles[0] if sub_bundles else None %}
+
+{# Pick the lead doc for the polling probe — first non-terminal doc, or any doc.
+   The probe disarms automatically once all stages are terminal. #}
+{% set polling_doc = bundle.documents[0] if bundle.documents else None %}
+{% set should_poll = bundle.documents and (status == 'processing' or status == 'stuck') %}
+
+<div id="triage-row-{{ bundle.key }}"
+     data-triage-row-id="{{ bundle.key }}"
+     data-bundle-key="{{ bundle.key }}"
+     data-mock-status="{{ status }}"
+     {% if h_swap_oob %}hx-swap-oob="true"{% endif %}
+     x-show="$store.triage.filter === 'all' || $store.triage.filter === '{{ status }}'"
+     class="border-b border-outline-variant transition-colors hover:bg-surface-container-low/50">
+
+    {# Row click target. Can't be a real <button> because it contains nested
+       action buttons (Confirm/Retry/Route below) — nested <button> is invalid
+       HTML. role="button" + tabindex + keyboard handler gets us focus + Enter/
+       Space activation. #}
+    <div class="flex items-start gap-4 px-8 py-3 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+         role="button"
+         tabindex="0"
+         aria-label="Toggle triage row {{ bundle.key }}"
+         @click="$store.triage.toggleRow('{{ bundle.key }}')"
+         @keydown.enter.prevent="$store.triage.toggleRow('{{ bundle.key }}')"
+         @keydown.space.prevent="$store.triage.toggleRow('{{ bundle.key }}')">
+
+        {# Status stripe #}
+        <div class="w-[3px] self-stretch rounded-sm flex-shrink-0 {{ status_color_class }}"></div>
+
+        {# ID column — bundle id, source kind, received #}
+        <div class="w-[120px] flex-shrink-0 pt-0.5">
+            <div class="font-mono text-[11px] text-on-surface-variant">
+                #{% if bundle.batch_id %}ib-{{ '%04d' % bundle.batch_id }}{% else %}loose-{{ bundle.documents[0].id if bundle.documents else '?' }}{% endif %}
+            </div>
+            <div class="font-headline text-[10px] mt-0.5 flex items-center gap-1 text-on-surface-variant uppercase tracking-widest">
+                <span class="material-symbols-outlined text-[11px]">
+                    {%- if bundle.source_type.value == 'email' -%}attach_email
+                    {%- elif bundle.source_type.value == 'scan' -%}scanner
+                    {%- else -%}upload_file
+                    {%- endif -%}
+                </span>
+                {{ bundle.source_type.value }}
+            </div>
+            <div class="text-[10.5px] mt-0.5 text-on-surface-variant/80 font-mono">
+                {{ bundle.received_at.strftime('%-d %b · %H:%M') if bundle.received_at }}
+            </div>
+        </div>
+
+        {# Docs column — count, sub-bundle pill, origin dots #}
+        <div class="w-[240px] flex-shrink-0 pt-0.5">
+            <div class="text-[12.5px] font-medium text-on-surface flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[13px] text-on-surface-variant">folder_open</span>
+                <span class="font-mono">{{ bundle.doc_count }}</span>
+                <span class="text-on-surface-variant">doc{{ 's' if bundle.doc_count != 1 else '' }}</span>
+                <span class="font-mono text-[10.5px] text-on-surface-variant">· {{ bundle.total_pages }} pp</span>
+                {% if sub_bundles|length > 1 %}
+                <span class="text-[10.5px] font-mono px-1 rounded bg-primary-container/60 text-primary border border-primary/40"
+                      title="{{ sub_bundles|length }} sub-bundles">
+                    {{ sub_bundles|length }}×
+                </span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-2 mt-1 text-[11px] text-on-surface-variant capitalize">
+                {% set seen_origins = [] %}
+                {% for doc in bundle.documents %}
+                    {% set origin = (doc.originator_type.value if doc.originator_type else 'unknown') %}
+                    {% if origin not in seen_origins %}
+                        {% set _ = seen_origins.append(origin) %}
+                        <span class="flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-originator-{{ 'third_party' if origin == 'third_party' else origin }}"></span>
+                            {{ origin.replace('_', ' ') }}
+                        </span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        {# Preview column — subject, extracted dates, error reason #}
+        <div class="flex-1 min-w-0 pt-0.5">
+            <div class="text-[12.5px] line-clamp-2 text-on-surface">
+                {{ bundle.subject or (bundle.documents[0].title if bundle.documents else '—') }}
+            </div>
+            {% if bundle.action_items %}
+            <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                {% for item in bundle.action_items[:3] %}
+                <span class="text-[10.5px] font-mono px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/40">
+                    {% if item.due_date %}{{ item.due_date.strftime('%d.%m.%Y') }}{% else %}{{ item.title|truncate(24) }}{% endif %}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% if status == 'stuck' %}
+            <div class="text-[11px] mt-1.5 flex items-center gap-1 text-error">
+                <span class="material-symbols-outlined text-[11px]">error_outline</span>
+                {% set failed_doc = bundle.documents | selectattr('pipeline_state.value', 'equalto', 'failed') | first %}
+                {% if failed_doc %}
+                    {% set stages = failed_doc.pipeline_stages or {} %}
+                    {% set failed_stage = (stages.items() | selectattr('1.status', 'equalto', 'failed') | list | first) %}
+                    {{ failed_stage[1].error if failed_stage and failed_stage[1].error else 'Pipeline stage failed' }}
+                {% else %}
+                    Pipeline stage failed
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+
+        {# Suggested-case column #}
+        <div class="w-[260px] flex-shrink-0 pt-0.5">
+            {% if lead_sub and lead_sub.suggested_case_id %}
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-[11px] text-primary">{{ lead_sub.suggested_case_id }}</span>
+                    {{ conf_chip(lead_sub.field_confidence_case) }}
+                </div>
+                {% if lead_sub.suggested_case_title %}
+                <div class="text-[11.5px] mt-0.5 truncate text-on-surface" title="{{ lead_sub.suggested_case_title }}">
+                    {{ lead_sub.suggested_case_title }}
+                </div>
+                {% endif %}
+                {% if sub_bundles|length > 1 %}
+                <div class="text-[10px] mt-0.5 text-on-surface-variant">
+                    + {{ sub_bundles|length - 1 }} more sub-bundle{{ 's' if sub_bundles|length > 2 else '' }}
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="flex items-center gap-2">
+                    <span class="text-[10.5px] font-mono px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant">?</span>
+                    <span class="text-[11.5px] text-on-surface-variant">no suggestion — route manually</span>
+                </div>
+            {% endif %}
+        </div>
+
+        {# Action buttons #}
+        <div class="flex items-center gap-1 pt-0.5 flex-shrink-0">
+            {% if status == 'stuck' %}
+                <button type="button"
+                        @click.stop="htmx.ajax('POST', '/triage/document/{{ polling_doc.id }}/retry-ai', {target:$el.closest('.triage-hud-body'), swap:'innerHTML'})"
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
+                    <span class="material-symbols-outlined text-[12px]">refresh</span>
+                    Retry
+                </button>
+            {% elif status != 'processing' and lead_sub and lead_sub.suggested_case_id %}
+                <button type="button"
+                        data-confirm-bundle-trigger
+                        @click.stop="$dispatch('triage:open-bundle-confirm', {
+                            batch_id: '{{ bundle.batch_id or '' }}',
+                            is_synthetic: {{ 'true' if bundle.is_synthetic else 'false' }},
+                            doc_id: '{{ bundle.documents[0].id if bundle.documents else '' }}',
+                            subject: {{ (bundle.subject or '') | tojson }},
+                            doc_count: {{ bundle.doc_count }},
+                            suggested_case_id: '{{ lead_sub.suggested_case_id }}',
+                            suggested_case_title: {{ (lead_sub.suggested_case_title or '') | tojson }},
+                            suggested_case_is_draft: {{ 'true' if bundle.suggested_case_is_draft else 'false' }},
+                            suggested_proceeding_id: '{{ bundle.proceeding.id if bundle.proceeding else '' }}',
+                            suggested_proceeding_az: {{ (bundle.proceeding.az_court if bundle.proceeding else '') | tojson }},
+                            suggested_proceeding_subtitle: {{ (bundle.proceeding.court_name if bundle.proceeding else '') | tojson }},
+                            action: 'confirm_bundle'
+                        })"
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        title="Confirm bundle (⌘↵)">
+                    <span class="material-symbols-outlined text-[12px]">check</span>
+                    Confirm
+                </button>
+            {% elif status != 'processing' %}
+                <button type="button"
+                        @click.stop="$dispatch('triage:open-bundle-confirm', {
+                            batch_id: '{{ bundle.batch_id or '' }}',
+                            is_synthetic: {{ 'true' if bundle.is_synthetic else 'false' }},
+                            doc_id: '{{ bundle.documents[0].id if bundle.documents else '' }}',
+                            subject: {{ (bundle.subject or '') | tojson }},
+                            doc_count: {{ bundle.doc_count }},
+                            action: 'assign_case'
+                        })"
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-surface-container-high text-on-surface border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                    Route
+                </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Bundle-level pipeline polling — disarms once all stages terminal. #}
+    {% if should_poll and polling_doc %}
+    <div id="triage-bundle-pipeline-{{ bundle.key }}"
+         hx-get="/triage/bundle/{{ bundle.batch_id }}/pipeline"
+         hx-trigger="every 4s"
+         hx-swap="innerHTML"
+         hx-include="closest [data-bundle-key]"
+         class="hidden"></div>
+    {% endif %}
+
+    {# Inline expand body. Lazy-loads the active doc's HUD via HTMX. #}
+    <div id="triage-row-expanded-{{ bundle.key }}"
+         x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
+         x-cloak>
+        {% include "partials/triage_row_expanded.html" %}
+    </div>
+
+    {# Slide-out drawer mount — hidden until the row's drawer is opened. #}
+    {% include "partials/triage_drawer.html" %}
+</div>

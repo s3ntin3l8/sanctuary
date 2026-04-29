@@ -1,5 +1,5 @@
-{# Pipeline stepper — per-stage timeline with retry buttons.
-   API response for GET /document/{id}/pipeline?view=stepper and POST .../retry
+{# Pipeline stepper — horizontal flow chart of stages with per-stage retry.
+   API response for GET /document/{id}/pipeline?view=stepper and POST .../retry.
    Required: doc (Document with pipeline_state + pipeline_stages)
    Optional: retry_error (str — inline error from a 409 retry rejection)
    Self-disarming: polling attrs vanish once terminal state is reached.
@@ -7,14 +7,49 @@
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 {% set stages_data = doc.pipeline_stages or {} %}
 {% set stage_defs = [
-  ('extract',        'file_upload',              'Extract'),
-  ('metadata',       'description',              'Metadata'),
-  ('batch_analysis', 'batch_predict',            'Batch Analysis'),
-  ('enrich',         'auto_fix_high',            'Enrich'),
-  ('relationships',  'account_tree',             'Relationships'),
-  ('claims',         'format_list_bulleted',     'Claims'),
-  ('embeddings',     'workspaces',               'Embeddings'),
+  ('extract',        'file_upload',          'Extract'),
+  ('metadata',       'description',          'Metadata'),
+  ('batch_analysis', 'batch_prediction',     'Batch Analysis'),
+  ('enrich',         'auto_fix_high',        'Enrich'),
+  ('relationships',  'account_tree',         'Relationships'),
+  ('claims',         'format_list_bulleted', 'Claims'),
+  ('embeddings',     'workspaces',           'Embeddings'),
 ] %}
+
+{# Resolve the detail line — first matching rule wins. #}
+{% set detail = namespace(kind='pending', stage=None, ts=None, error=None) %}
+{% for stage_key, _icon, stage_label in stage_defs %}
+  {% set s = stages_data.get(stage_key, {}) %}
+  {% if s.get('status') == 'failed' and detail.kind != 'failed' %}
+    {% set detail.kind = 'failed' %}
+    {% set detail.stage = stage_label %}
+    {% set detail.error = s.get('error') %}
+  {% endif %}
+{% endfor %}
+{% if detail.kind != 'failed' %}
+  {% for stage_key, _icon, stage_label in stage_defs %}
+    {% set s = stages_data.get(stage_key, {}) %}
+    {% if s.get('status') == 'running' and detail.kind != 'running' %}
+      {% set detail.kind = 'running' %}
+      {% set detail.stage = stage_label %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% if detail.kind == 'pending' %}
+  {% set last_completed = namespace(stage=None, ts=None) %}
+  {% for stage_key, _icon, stage_label in stage_defs %}
+    {% set s = stages_data.get(stage_key, {}) %}
+    {% if s.get('status') == 'completed' %}
+      {% set last_completed.stage = stage_label %}
+      {% set last_completed.ts = s.get('completed_at') %}
+    {% endif %}
+  {% endfor %}
+  {% if last_completed.stage %}
+    {% set detail.kind = 'completed' %}
+    {% set detail.stage = last_completed.stage %}
+    {% set detail.ts = last_completed.ts %}
+  {% endif %}
+{% endif %}
 
 <div id="pipeline-stepper-{{ doc.id }}"
      {% if state in ('pending', 'running') %}
@@ -22,7 +57,7 @@
      hx-trigger="every 4s"
      hx-swap="outerHTML"
      {% endif %}
-     class="space-y-0.5 py-1">
+     class="py-1">
 
   {% if retry_error is defined and retry_error %}
   <div class="flex items-center gap-1.5 px-3 py-1.5 rounded bg-error-container/20 text-error text-[10px] font-medium mb-2">
@@ -31,73 +66,109 @@
   </div>
   {% endif %}
 
-  {% for stage_key, stage_icon, stage_label in stage_defs %}
-  {% set s = stages_data.get(stage_key, {}) %}
-  {% set s_status = s.get('status', 'pending') %}
+  {# Horizontal flow #}
+  <div class="flex items-center gap-0 px-1 py-1">
+    {% for stage_key, stage_icon, stage_label in stage_defs %}
+    {% set s = stages_data.get(stage_key, {}) %}
+    {% set s_status = s.get('status', 'pending') %}
+    {% set retryable = s_status not in ('running', 'skipped') %}
 
-  {% if s_status == 'running' %}
-  {% set row_bg = 'bg-tertiary/8 rounded-md' %}
-  {% elif s_status == 'failed' %}
-  {% set row_bg = 'bg-error/8 rounded-md' %}
-  {% else %}
-  {% set row_bg = '' %}
-  {% endif %}
+    {# Tooltip text — combines label + status + timestamp/error + retry hint. #}
+    {% set tooltip_parts = [stage_label, s_status | capitalize] %}
+    {% if s_status == 'completed' and s.get('completed_at') %}
+      {% set _ = tooltip_parts.append(s['completed_at'][:16].replace('T', ' ')) %}
+    {% elif s_status == 'failed' and s.get('error') %}
+      {% set _ = tooltip_parts.append(s['error']) %}
+    {% elif s_status == 'skipped' and s.get('reason') %}
+      {% set _ = tooltip_parts.append(s['reason']) %}
+    {% endif %}
+    {% if retryable %}{% set _ = tooltip_parts.append('Click to retry') %}{% endif %}
+    {% set tooltip = tooltip_parts | join(' · ') %}
 
-  <div class="flex items-center gap-2 text-[10px] min-w-0 px-1 py-1 {{ row_bg }} transition-colors">
-
-    {# State icon #}
-    {% set s_title = s_status | capitalize %}
-    {% if s_status == 'failed' and s.get('error') %}{% set s_title = s_title + ': ' + s.get('error') %}
-    {% elif s_status == 'skipped' and s.get('reason') %}{% set s_title = s_title + ': ' + s.get('reason') %}{% endif %}
-
+    {# Dot color + icon by status. #}
     {% if s_status == 'completed' %}
-    <span class="material-symbols-outlined text-[13px] text-originator-own shrink-0" title="{{ s_title }}">check_circle</span>
+      {% set dot_class = 'bg-originator-own/15 border-originator-own text-originator-own' %}
     {% elif s_status == 'failed' %}
-    <span class="material-symbols-outlined text-[13px] text-error shrink-0" title="{{ s_title }}">error_outline</span>
+      {% set dot_class = 'bg-error/15 border-error text-error' %}
     {% elif s_status == 'running' %}
-    <span class="material-symbols-outlined text-[13px] text-tertiary shrink-0 animate-spin" style="animation-duration:1.4s" title="{{ s_title }}">autorenew</span>
+      {% set dot_class = 'bg-tertiary/15 border-tertiary text-tertiary' %}
     {% elif s_status == 'skipped' %}
-    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/30 shrink-0" title="{{ s_title }}">remove_circle</span>
+      {% set dot_class = 'bg-surface-container-high border-outline-variant/40 text-on-surface-variant/40' %}
     {% else %}
-    <span class="material-symbols-outlined text-[13px] text-on-surface-variant/20 shrink-0" title="{{ s_title }}">radio_button_unchecked</span>
+      {% set dot_class = 'bg-surface-container-lowest border-outline-variant/40 text-on-surface-variant/30' %}
     {% endif %}
 
-    {# Stage icon + label #}
-    <span class="material-symbols-outlined text-[11px] text-on-surface-variant/40 shrink-0">{{ stage_icon }}</span>
-    <span class="font-medium w-[88px] shrink-0
-                 {{ 'text-tertiary' if s_status == 'running' else 'text-error' if s_status == 'failed' else 'text-on-surface-variant/70' }}">
-      {{ stage_label }}
-    </span>
-
-    {# Detail text #}
-    <span class="flex-1 min-w-0 truncate">
-      {% if s_status == 'running' %}
-      <span class="text-tertiary/70 font-medium text-[9px] uppercase tracking-wider animate-pulse">processing</span>
-      {% elif s_status == 'completed' and s.get('completed_at') %}
-      <span class="text-on-surface-variant/40 font-mono">{{ s['completed_at'][:16].replace('T', ' ') }}</span>
-      {% elif s_status == 'failed' %}
-      <span class="text-error/80 font-medium" title="{{ s.get('error', '') }}">{{ (s.get('error', 'error'))[:36] }}</span>
-      {% elif s_status == 'skipped' %}
-      <span class="text-on-surface-variant/40 italic">{{ s.get('reason', 'skipped') }}</span>
-      {% endif %}
-    </span>
-
-    {# Retry button — hidden for running/skipped; spins its icon while the HTMX request is in-flight #}
-    {% if s_status not in ('running', 'skipped') %}
-    <button class="shrink-0 p-0.5 rounded transition-colors
-                   text-on-surface-variant/30 hover:text-on-surface-variant hover:bg-surface-container-high
-                   [&.htmx-request]:text-tertiary [&.htmx-request]:bg-tertiary/10
-                   [&.htmx-request>span]:animate-spin"
-            title="Retry {{ stage_label }}"
+    {# Dot — button when retryable, span otherwise. Two icons stacked via
+       absolute positioning + opacity so the .material-symbols-outlined
+       inline-flex !important lockdown in base.html doesn't fight the swap. #}
+    {% if retryable %}
+    <button type="button"
+            title="{{ tooltip }}"
+            aria-label="{{ tooltip }}"
             hx-post="/document/{{ doc.id }}/pipeline/{{ stage_key }}/retry"
             hx-target="#pipeline-stepper-{{ doc.id }}"
             hx-swap="outerHTML"
-            hx-disabled-elt="this">
-      <span class="material-symbols-outlined text-[12px]">refresh</span>
+            hx-disabled-elt="this"
+            class="group relative shrink-0 w-5 h-5 rounded-full border transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer {{ dot_class }}
+                   [&.htmx-request]:bg-tertiary/20 [&.htmx-request]:border-tertiary [&.htmx-request]:text-tertiary">
+      {# Stage icon — fades out on hover/focus/in-flight retry. #}
+      <span class="absolute inset-0 flex items-center justify-center transition-opacity duration-150
+                   group-hover:opacity-0 group-focus-visible:opacity-0
+                   group-[.htmx-request]:opacity-0">
+        <span class="material-symbols-outlined text-[11px]">{{ stage_icon }}</span>
+      </span>
+      {# Retry icon — fades in on hover/focus and spins. Spin keeps going
+         (just faster) while a retry request is in flight. #}
+      <span class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150
+                   group-hover:opacity-100 group-focus-visible:opacity-100
+                   group-[.htmx-request]:opacity-100">
+        <span class="material-symbols-outlined text-[11px]
+                     group-hover:animate-spin group-focus-visible:animate-spin
+                     group-[.htmx-request]:animate-spin"
+              style="animation-duration:1.4s">refresh</span>
+      </span>
     </button>
     {% else %}
-    <span class="shrink-0 w-[20px]"></span>
+    <span title="{{ tooltip }}"
+          aria-label="{{ tooltip }}"
+          class="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center {{ dot_class }}">
+      {% if s_status == 'running' %}
+      <span class="material-symbols-outlined text-[11px] animate-spin" style="animation-duration:1.4s">autorenew</span>
+      {% elif s_status == 'skipped' %}
+      <span class="material-symbols-outlined text-[11px]">remove</span>
+      {% else %}
+      <span class="material-symbols-outlined text-[11px]">{{ stage_icon }}</span>
+      {% endif %}
+    </span>
+    {% endif %}
+
+    {# Connector to next dot — color reflects "both adjacent stages completed". #}
+    {% if not loop.last %}
+    {% set next_key = stage_defs[loop.index][0] %}
+    {% set next_status = stages_data.get(next_key, {}).get('status', 'pending') %}
+    {% set both_done = s_status == 'completed' and next_status == 'completed' %}
+    <span class="shrink-0 h-px flex-1 min-w-[6px] {{ 'bg-originator-own/40' if both_done else 'bg-outline-variant/30' }}"></span>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {# Detail line — failed > running > last completed > pending. #}
+  <div class="px-1 mt-1.5 text-[10.5px] leading-snug">
+    {% if detail.kind == 'failed' %}
+    <span class="text-error font-medium" title="{{ detail.error or '' }}">
+      Failed at {{ detail.stage }}{% if detail.error %}: {{ detail.error[:80] }}{% if detail.error|length > 80 %}…{% endif %}{% endif %}
+    </span>
+    {% elif detail.kind == 'running' %}
+    <span class="text-tertiary font-medium animate-pulse">
+      Processing {{ detail.stage }}…
+    </span>
+    {% elif detail.kind == 'completed' %}
+    <span class="text-on-surface-variant">
+      Last completed <span class="text-on-surface">{{ detail.stage }}</span>
+      {% if detail.ts %}<span class="font-mono text-on-surface-variant/70">· {{ detail.ts[:16].replace('T', ' ') }}</span>{% endif %}
+    </span>
+    {% else %}
+    <span class="text-on-surface-variant/60 italic">Pipeline pending</span>
     {% endif %}
   </div>
-  {% endfor %}
 </div>

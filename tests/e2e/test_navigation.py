@@ -5,7 +5,7 @@ from playwright.sync_api import Page, expect
 @pytest.fixture
 def page(page: Page):
     """Navigate to app home on each test."""
-    page.goto("/api/v1/")
+    page.goto("/")
     return page
 
 
@@ -17,25 +17,25 @@ def test_dashboard_loads(page: Page):
 
 def test_navigation_to_cases(page: Page):
     """Test navigation to cases page."""
-    page.click('a[href="/api/v1/cases"]')
+    page.click('a[href="/cases"]')
     expect(page.locator("body")).to_be_visible()
 
 
 def test_navigation_to_triage(page: Page):
     """Test navigation to triage page."""
-    page.click('a[href="/api/v1/triage"]')
+    page.click('a[href="/triage"]')
     expect(page.locator("body")).to_be_visible()
 
 
 def test_navigation_to_costs(page: Page):
     """Test navigation to costs page."""
-    page.click('a[href="/api/v1/costs"]')
+    page.click('a[href="/costs"]')
     expect(page.locator("body")).to_be_visible()
 
 
 def test_navigation_to_contacts(page: Page):
     """Test navigation to contacts page."""
-    page.click('a[href="/api/v1/contacts"]')
+    page.click('a[href="/contacts"]')
     expect(page.locator("body")).to_be_visible()
 
 

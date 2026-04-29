@@ -1,0 +1,29 @@
+{# Triage status filter chips — mutually exclusive.
+
+   Required context:
+     header_stats — dict with keys: pending, completed_today,
+                    needs_classification, needs_review, stuck, processing
+     as_oob       — optional bool; emits hx-swap-oob when True
+#}
+<div id="triage-header-stats"
+     {% if as_oob %}hx-swap-oob="true"{% endif %}
+     class="flex gap-1.5 flex-wrap">
+    {% set chips = [
+        ('all',                   'All',                   header_stats.pending),
+        ('needs_classification',  'Needs classification',  header_stats.needs_classification),
+        ('needs_review',          'Needs review',          header_stats.needs_review),
+        ('stuck',                 'Stuck',                 header_stats.stuck),
+        ('processing',            'Processing',            header_stats.processing),
+    ] %}
+    {% for key, label, count in chips %}
+    <button type="button"
+            @click="$store.triage.filter = '{{ key }}'"
+            :class="$store.triage.filter === '{{ key }}'
+                ? 'bg-primary-container text-primary border-primary'
+                : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant hover:border-primary/40'"
+            class="text-[11px] px-2.5 py-1 rounded-full border flex items-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+        <span>{{ label }}</span>
+        <span class="font-mono opacity-70">{{ count }}</span>
+    </button>
+    {% endfor %}
+</div>

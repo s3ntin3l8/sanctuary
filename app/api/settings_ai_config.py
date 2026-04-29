@@ -1,6 +1,7 @@
 """AI configuration settings endpoints: config save, model discovery, index rebuild."""
 
 import logging
+from html import escape
 
 import httpx
 from fastapi import APIRouter, Depends, Form
@@ -92,7 +93,8 @@ async def list_models(db: Session = Depends(get_db)):
 
     def options(selected: str, tag_id: str) -> str:
         return "".join(
-            f'<option value="{m}" {"selected" if m == selected else ""}>{m}</option>'
+            f'<option value="{escape(m, quote=True)}" '
+            f"{'selected' if m == selected else ''}>{escape(m)}</option>"
             for m in models
         )
 
@@ -166,6 +168,13 @@ async def rebuild_index(
     embed_dim: int = Form(768),
     db: Session = Depends(get_db),
 ):
+    # vec0 dim is interpolated into raw DDL below — clamp before that point
+    # so a future code path can't ferry an attacker-controlled value into SQL.
+    if not (64 <= embed_dim <= 4096):
+        return HTMLResponse(
+            _toast(False, "embed_dim must be between 64 and 4096"), status_code=400
+        )
+
     from app.models.database import UserSettings
 
     settings = (

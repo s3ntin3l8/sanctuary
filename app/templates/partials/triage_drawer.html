@@ -1,0 +1,125 @@
+{# Slide-out drawer for one bundle row. Hidden until store.drawerOpen is true
+   AND store.drawer.rowKey matches this bundle.key.
+
+   Required context: bundle (BundleView)
+
+   Top bar shows BUNDLE-level info only (case · bundle id · subject · received).
+   The active doc's title / origin / date / significance are owned by the doc
+   HUD body's own active-doc header, which re-renders via HTMX whenever the
+   user switches docs in the spine. Duplicating that info in the top bar
+   would lock it to the bundle's first doc.
+#}
+{% set lead_doc_id = bundle.sub_bundles[0].lead_doc.id if bundle.sub_bundles else (bundle.documents[0].id if bundle.documents else None) %}
+{% set lead_sub = bundle.sub_bundles[0] if bundle.sub_bundles else None %}
+
+<template x-if="$store.triage.drawerOpen && $store.triage.drawer.rowKey === '{{ bundle.key }}'">
+    <div x-data="triageDrawer('{{ bundle.key }}')"
+         @keydown.window.escape="$store.triage.closeDrawer()"
+         @keydown.window.bracket-left.prevent="prevDoc()"
+         @keydown.window.bracket-right.prevent="nextDoc()">
+
+        {# Backdrop #}
+        <div @click="$store.triage.closeDrawer()"
+             class="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[80] fade-in"></div>
+
+        {# Drawer panel #}
+        <div class="fixed top-0 right-0 bottom-0 z-[90] flex flex-col bg-surface shadow-2xl drawer-slide-in"
+             style="width: min(1040px, 98vw); border-left: 1px solid var(--color-outline-variant);">
+
+            {# Top bar #}
+            <div class="px-6 py-3 flex items-center gap-3 bg-surface-container-lowest"
+                 style="border-bottom: 1px solid var(--color-outline-variant);">
+                <button type="button"
+                        @click="$store.triage.closeDrawer()"
+                        class="p-1.5 rounded text-on-surface-variant hover:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        title="Close (Esc)">
+                    <span class="material-symbols-outlined text-[14px]">close</span>
+                </button>
+
+                {# Bundle-level context strip only — doc title / origin / sig
+                   live in the doc HUD body's own active-doc header so they
+                   re-render with each doc switch. #}
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 text-[11px] text-on-surface-variant flex-wrap">
+                        {% if lead_sub and lead_sub.suggested_case_id %}
+                        <span class="font-mono">{{ lead_sub.suggested_case_id }}</span>
+                        <span>·</span>
+                        {% endif %}
+                        <span class="font-mono">#{% if bundle.batch_id %}ib-{{ '%04d' % bundle.batch_id }}{% else %}loose-{{ bundle.documents[0].id if bundle.documents else '?' }}{% endif %}</span>
+                        <span>·</span>
+                        <span class="font-mono">{{ bundle.received_at.strftime('%-d %b · %H:%M') if bundle.received_at }}</span>
+                    </div>
+                    {% if bundle.subject %}
+                    <div class="text-[14px] font-headline font-semibold truncate text-on-surface" title="{{ bundle.subject }}">
+                        {{ bundle.subject }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# Doc nav [ / ] #}
+                <div class="flex items-center gap-1 mr-2">
+                    <button type="button"
+                            @click="prevDoc()"
+                            :disabled="!hasPrev()"
+                            :class="hasPrev() ? 'text-on-surface-variant' : 'text-outline-variant cursor-not-allowed'"
+                            class="p-1.5 rounded border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            title="Prev doc ([)">
+                        <span class="material-symbols-outlined text-[13px]">chevron_left</span>
+                    </button>
+                    <span class="font-mono text-[10.5px] px-1 text-on-surface-variant"
+                          x-text="`doc ${idx() + 1}/${docs.length}`"></span>
+                    <button type="button"
+                            @click="nextDoc()"
+                            :disabled="!hasNext()"
+                            :class="hasNext() ? 'text-on-surface-variant' : 'text-outline-variant cursor-not-allowed'"
+                            class="p-1.5 rounded border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            title="Next doc (])">
+                        <span class="material-symbols-outlined text-[13px]">chevron_right</span>
+                    </button>
+                </div>
+            </div>
+
+            {# Body: spine | doc body (Docling markdown) | doc HUD rail #}
+            <div class="flex-1 min-h-0 grid overflow-hidden"
+                 style="grid-template-columns: 220px minmax(0, 1.2fr) minmax(340px, 0.9fr);">
+
+                {# LEFT spine #}
+                <div class="overflow-y-auto custom-scrollbar p-3 bg-surface-container-lowest"
+                     style="border-right: 1px solid var(--color-outline-variant);">
+                    {% with active_doc_id=lead_doc_id, compact=False %}
+                        {% include "partials/triage_doc_tree_picker.html" %}
+                    {% endwith %}
+                </div>
+
+                {# CENTER: doc body — HTMX-loaded by the drawer factory's init/watch #}
+                <div id="triage-drawer-doc-body-{{ bundle.key }}"
+                     class="overflow-y-auto custom-scrollbar"
+                     style="border-right: 1px solid var(--color-outline-variant);">
+                    <div class="flex items-center justify-center h-full text-[12px] text-on-surface-variant gap-2">
+                        <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                        Loading document body…
+                    </div>
+                </div>
+
+                {# RIGHT: HUD rail — HTMX-loaded by the drawer factory's init/watch #}
+                <div id="triage-drawer-body-{{ bundle.key }}"
+                     class="triage-hud-body overflow-y-auto custom-scrollbar bg-surface-container-lowest">
+                    <div class="flex items-center justify-center h-full text-[12px] text-on-surface-variant gap-2">
+                        <span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                        Loading HUD…
+                    </div>
+                </div>
+            </div>
+
+            {# Footer shortcut strip #}
+            <div class="flex items-center justify-between gap-2 px-6 py-2.5 bg-surface-container-lowest"
+                 style="border-top: 1px solid var(--color-outline-variant);">
+                <div class="flex items-center gap-3 text-[10.5px] text-on-surface-variant">
+                    <span><span class="kbd">[</span><span class="kbd">]</span> doc within bundle</span>
+                    <span><span class="kbd">1</span>–<span class="kbd">4</span> react</span>
+                    <span><span class="kbd">Esc</span> close</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
