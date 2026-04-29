@@ -34,6 +34,7 @@ from app.models.enums import (
     CostCategory,
     CostStatus,
     DocumentRole,
+    DocumentStatus,
     DocumentType,
     EntityType,
     IngestBatchSourceType,
@@ -92,6 +93,12 @@ class Document(Base):
     )  # Date on the document itself (Datum:, Date: header, Bescheiddatum)
     ingest_date = Column(DateTime, default=_utcnow)
     needs_review = Column(Boolean, default=True, index=True)
+    status = Column(
+        SAEnum(DocumentStatus),
+        default=DocumentStatus.ACTIVE,
+        nullable=False,
+        index=True,
+    )
     review_reasons = Column(
         JSON, default=list
     )  # e.g. ["missing_case_id", "missing_sender"]

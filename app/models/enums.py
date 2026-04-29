@@ -58,6 +58,7 @@ class StageStatus(enum.StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    DISMISSED = "dismissed"
     SKIPPED = "skipped"
 
 
@@ -66,6 +67,7 @@ class PipelineState(enum.StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    DISMISSED = "dismissed"
     PARTIAL = "partial"
 
 
@@ -166,6 +168,7 @@ class IngestBatchStatus(enum.StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    DISMISSED = "dismissed"
     AWAITING_SLICING = "awaiting_slicing"
 
 
@@ -230,3 +233,8 @@ class UserReactionType(enum.StrEnum):
     TRUE = "true"  # ✅
     NEEDS_PROOF = "needs_proof"  # 🔍
     PRECEDENT = "precedent"  # ⚖️
+
+
+class DocumentStatus(enum.StrEnum):
+    ACTIVE = "active"
+    DISMISSED = "dismissed"

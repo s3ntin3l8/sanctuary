@@ -22,7 +22,9 @@ from app.models.database import (
     UserReaction,
 )
 from app.models.enums import (
+    ActionItemStatus,
     DocumentRole,
+    DocumentStatus,
     IngestBatchSourceType,
     IngestBatchStatus,
     RelationshipType,
@@ -236,6 +238,7 @@ class TriageService:
                 joinedload(Document.proceeding),
             )
             .filter(
+                Document.status != DocumentStatus.DISMISSED,
                 or_(
                     and_(
                         IngestBatch.id.isnot(None),
@@ -244,7 +247,7 @@ class TriageService:
                     ),
                     Document.case_id == "_TRIAGE",
                     Document.needs_review,
-                )
+                ),
             )
             .order_by(Document.ingest_date.desc())
             .all()
@@ -669,3 +672,50 @@ class TriageService:
         if cleared:
             self.db.commit()
         return cleared
+
+    def dismiss_bundle(
+        self, batch_id: int | None = None, doc_id: int | None = None
+    ) -> bool:
+        """Mark a batch or loose document (and children) as DISMISSED."""
+        from app.models.database import ActionItem, Document, IngestBatch
+        from app.models.enums import DocumentStatus, IngestBatchStatus
+
+        if batch_id:
+            batch = self.db.get(IngestBatch, batch_id)
+            if batch:
+                batch.status = IngestBatchStatus.DISMISSED
+                # Dismiss associated docs
+                self.db.query(Document).filter(
+                    Document.ingest_batch_id == batch_id
+                ).update(
+                    {"status": DocumentStatus.DISMISSED}, synchronize_session=False
+                )
+                # Dismiss associated ActionItems
+                doc_ids = (
+                    self.db.query(Document.id)
+                    .filter(Document.ingest_batch_id == batch_id)
+                    .all()
+                )
+                doc_id_list = [d[0] for d in doc_ids]
+                if doc_id_list:
+                    self.db.query(ActionItem).filter(
+                        ActionItem.source_document_id.in_(doc_id_list)
+                    ).update(
+                        {"status": ActionItemStatus.DISMISSED},
+                        synchronize_session=False,
+                    )
+                self.db.commit()
+                return True
+        elif doc_id:
+            doc = self.db.get(Document, doc_id)
+            if doc:
+                doc.status = DocumentStatus.DISMISSED
+                # Dismiss associated ActionItems
+                self.db.query(ActionItem).filter(
+                    ActionItem.source_document_id == doc_id
+                ).update(
+                    {"status": ActionItemStatus.DISMISSED}, synchronize_session=False
+                )
+                self.db.commit()
+                return True
+        return False
