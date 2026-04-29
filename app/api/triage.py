@@ -106,6 +106,41 @@ async def triage_page(
 
 
 # -----------------------------------------------------------------------------
+# Dismiss bundle (POST)
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/dismiss")
+async def dismiss_bundle(
+    batch_id: int | None = None,
+    doc_id: int | None = None,
+    db: Session = Depends(get_db),
+    service: TriageService = Depends(get_triage_service),
+):
+    success = service.dismiss_bundle(batch_id=batch_id, doc_id=doc_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Bundle or document not found")
+
+    # Return OOB swap to delete the row
+    target_id = (
+        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-doc-{doc_id}"
+    )
+    html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
+
+    # Check if triage is now empty and return empty state if so
+    bundles = service.get_triage_bundles(limit=1)
+    if not bundles:
+        # Re-render the triage feed with empty state
+        return templates.TemplateResponse(
+            "partials/triage_feed.html",
+            {"request": {}, "bundles": [], "hx_swap_oob": "true"},
+            headers={"HX-Reswap": "innerHTML", "HX-Target": "#triage-feed"},
+        )
+
+    return HTMLResponse(content=html)
+
+
+# -----------------------------------------------------------------------------
 # Document confirm (metadata patch)
 # -----------------------------------------------------------------------------
 
