@@ -108,9 +108,10 @@ async def case_brief_refresh(
     case.ai_brief = {"status": "processing"}
     db.commit()
 
+    from app.tasks.dispatch import dispatch_task
     from app.tasks.generate_case_brief import refresh_case_brief_task
 
-    refresh_case_brief_task.delay(case_id)
+    dispatch_task(refresh_case_brief_task, case_id)
 
     return templates.TemplateResponse(
         request,

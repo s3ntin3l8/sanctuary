@@ -20,7 +20,11 @@ _TRANSIENT_AI_ERRORS = (
 @celery_app.task(bind=True, max_retries=3)
 def process_document_task(self, doc_id: int):
     """Process a document: Docling conversion, then trigger Phase 4 AI pipeline."""
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed_with_cascade,
+        mark_started,
+    )
 
     logger.info("Doc #%d: processing task started", doc_id)
     db = get_db_session()
@@ -52,12 +56,14 @@ def process_document_task(self, doc_id: int):
                 error_msg = f"Ingestion error: {e.message}"
                 if e.detail:
                     error_msg += f" ({e.detail})"
-                mark_failed(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
+                mark_failed_with_cascade(
+                    doc_id, PipelineStage.EXTRACT, db, error=error_msg
+                )
                 logger.warning(f"Document {doc_id} ingestion failed: {e}")
                 return {"status": "failed", "doc_id": doc_id, "error": str(e)}
             except Exception as e:
                 db.rollback()
-                mark_failed(
+                mark_failed_with_cascade(
                     doc_id, PipelineStage.EXTRACT, db, error=f"System error: {str(e)}"
                 )
                 logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)

@@ -27,6 +27,7 @@ def upgrade() -> None:
                 "status",
                 sa.Enum("ACTIVE", "DISMISSED", name="documentstatus"),
                 nullable=False,
+                server_default="active",
             )
         )
         batch_op.create_index(

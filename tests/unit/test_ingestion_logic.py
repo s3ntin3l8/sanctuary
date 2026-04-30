@@ -54,6 +54,21 @@ def test_extract_cost_candidates():
     assert isinstance(candidates, list)
 
 
+@pytest.mark.unit
+def test_cost_candidate_schema_roundtrips_both_shapes():
+    """CostCandidateSchema must accept both amount (float) and rvg_position (str) shapes."""
+    from app.models.schemas import CostCandidateSchema
+
+    amount = {"type": "amount", "value": 583.40, "context": "EUR 583,40"}
+    rvg = {"type": "rvg_position", "value": "§ 286 ZPO", "context": "Beweislast"}
+
+    dumped_amount = CostCandidateSchema(**amount).model_dump()
+    assert dumped_amount["value"] == 583.40
+
+    dumped_rvg = CostCandidateSchema(**rvg).model_dump()
+    assert dumped_rvg["value"] == "§ 286 ZPO"
+
+
 # --- 2a: letterhead sender tests ---
 
 

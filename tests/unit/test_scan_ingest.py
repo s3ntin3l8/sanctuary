@@ -37,8 +37,8 @@ def test_ingest_scanned_file_single_page_dispatches_process_task(db_session, tmp
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
         patch(
-            "app.services.ingestion.batch_orchestrator._dispatch",
-            side_effect=lambda name, doc_id: dispatched.append(name),
+            "app.services.ingestion.batch_orchestrator.dispatch_task",
+            side_effect=lambda task, *args, **kwargs: dispatched.append(task),
         ),
     ):
         mock_pdf_doc = MagicMock()
@@ -69,8 +69,8 @@ def test_ingest_scanned_file_multi_page_sets_awaiting_slicing(db_session, tmp_pa
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
         patch(
-            "app.services.ingestion.batch_orchestrator._dispatch",
-            side_effect=lambda name, doc_id: dispatched.append(name),
+            "app.services.ingestion.batch_orchestrator.dispatch_task",
+            side_effect=lambda task, *args, **kwargs: dispatched.append(task),
         ),
     ):
         mock_pdf_doc = MagicMock()
@@ -107,7 +107,7 @@ def test_ingest_scanned_file_dedup_returns_none(db_session, tmp_path):
 
     with (
         patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
-        patch("app.services.ingestion.batch_orchestrator._dispatch"),
+        patch("app.services.ingestion.batch_orchestrator.dispatch_task"),
     ):
         mock_pdf_doc = MagicMock()
         mock_pdf_doc.__len__ = MagicMock(return_value=1)

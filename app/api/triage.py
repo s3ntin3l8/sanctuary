@@ -465,26 +465,23 @@ async def confirm(
 
 
 @router.post("/document/{doc_id}/reingest")
-def reingest_document(
+async def reingest_document(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
-    from app.services.ingestion.service import process_uploaded_document
+    from app.services.pipeline_status import reset_all_stages
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.document_processing import process_document_task
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    try:
-        process_uploaded_document(doc, db)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Reingestion failed: {exc}"
-        ) from exc
-
-    # Re-render the HUD
+    reset_all_stages(doc.id, db)
+    dispatch_task(process_document_task, doc.id)
+    db.refresh(doc)
     return _render_document_hud(request, doc, db, triage_service)
 
 
@@ -506,7 +503,9 @@ async def summarize_document(
         # Phase 1: metadata extraction (sender, date, originator, internal_id)
         _summarize_document_sync(doc_id, db)
         # Phase 4: management summary bullets + key passages
-        enrich_document_task.delay(doc_id)
+        from app.tasks.dispatch import dispatch_task
+
+        dispatch_task(enrich_document_task, doc_id)
     except Exception as exc:
         doc.ai_summary = {"error": str(exc)}
         db.commit()
@@ -529,10 +528,11 @@ async def retry_ai(
 
     from app.models.enums import PipelineStage
     from app.services.pipeline_status import reset_stage
+    from app.tasks.dispatch import dispatch_task
     from app.tasks.document_processing import process_document_task
 
     reset_stage(doc.id, PipelineStage.EXTRACT, db)
-    process_document_task.delay(doc.id)
+    dispatch_task(process_document_task, doc.id)
 
     db.refresh(doc)
     return _render_document_hud(request, doc, db, triage_service)

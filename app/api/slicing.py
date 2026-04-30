@@ -180,10 +180,11 @@ async def slicing_confirm(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Slicing failed: {exc}") from exc
 
+    from app.tasks.dispatch import dispatch_task
     from app.tasks.document_processing import process_document_task
 
     for doc in docs_to_process:
-        process_document_task.delay(doc.id)
+        dispatch_task(process_document_task, doc.id)
 
     return RedirectResponse("/triage", status_code=303)
 
@@ -200,7 +201,8 @@ async def slicing_retry(batch_id: int, db: Session = Depends(get_db)):
     batch.meta = meta
     db.commit()
 
+    from app.tasks.dispatch import dispatch_task
     from app.tasks.prepare_slicing import prepare_slicing_task
 
-    prepare_slicing_task.delay(batch_id)
+    dispatch_task(prepare_slicing_task, batch_id)
     return RedirectResponse(f"/ingest/slice/{batch_id}", status_code=303)

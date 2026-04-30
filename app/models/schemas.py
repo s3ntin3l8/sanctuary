@@ -31,7 +31,7 @@ class CostCandidateSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     type: str
-    value: float
+    value: float | str
     raw_text: str | None = None
     context: str | None = None
 

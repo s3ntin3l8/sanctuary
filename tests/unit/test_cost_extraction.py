@@ -46,3 +46,12 @@ def test_both_prefix_and_suffix_in_same_doc():
     amounts = sorted({c["value"] for c in candidates if c["type"] == "amount"})
     assert 583.40 in amounts
     assert 1000.0 in amounts
+
+
+@pytest.mark.unit
+def test_extract_cost_candidates_rvg_position():
+    """rvg_position candidates have a string value (e.g. a statutory reference)."""
+    candidates = extract_cost_candidates("Beweislast nach § 286 ZPO …")
+    rvg = [c for c in candidates if c["type"] == "rvg_position"]
+    assert rvg, "Expected at least one rvg_position candidate"
+    assert isinstance(rvg[0]["value"], str)

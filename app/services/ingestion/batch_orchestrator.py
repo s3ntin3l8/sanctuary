@@ -1,6 +1,5 @@
 import hashlib
 import logging
-import threading
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +16,7 @@ from app.services.ingestion.extractors import (
     extract_az_court_from_subject,
     extract_internal_id_from_subject,
 )
+from app.tasks.dispatch import dispatch_task
 
 logger = logging.getLogger(__name__)
 
@@ -29,39 +29,6 @@ def _sanitize_filename(name: str) -> str:
     safe_chars = "-_.() "
     result = "".join(c if c.isalnum() or c in safe_chars else "_" for c in name)
     return result.strip() or "unnamed"
-
-
-def _dispatch(task_name: str, doc_id: int) -> None:
-    """Fire a Celery task, respecting task_always_eager.
-
-    In production, delay() is non-blocking and safe to call in the main thread.
-    In dev (task_always_eager=True), it runs synchronously; we wrap it in a
-    daemon thread to prevent blocking the request/response cycle.
-    """
-    from app.tasks.celery_app import celery_app
-
-    def _run():
-        import importlib
-
-        try:
-            module_path, func_name = task_name.rsplit(".", 1)
-            mod = importlib.import_module(module_path)
-            task = getattr(mod, func_name)
-            task.apply_async(args=[doc_id])
-            logger.info("Enqueued %s for doc #%d", task_name, doc_id)
-        except Exception as e:
-            logger.error(
-                "Failed to dispatch %s for doc #%d: %s",
-                task_name,
-                doc_id,
-                e,
-                exc_info=True,
-            )
-
-    if celery_app.conf.task_always_eager:
-        threading.Thread(target=_run, daemon=True).start()
-    else:
-        _run()
 
 
 def _try_assign_case_from_subject(
@@ -178,10 +145,13 @@ def ingest_raw_email(
         else:
             source_hash = fallback_hash if not msg_id else None
 
+    received_date = parsed.get("received_date")
+
     batch = batch_repo.create_batch(
         source_type=source_type,
         subject=subject[:255],
         sender_email=sender[:255] if sender != "unknown" else None,
+        received_at=received_date,
     )
     batch.message_id = msg_id
     if source_hash:
@@ -206,7 +176,6 @@ def ingest_raw_email(
 
     docs_to_process = []
     has_attachments = bool(parsed["attachments"])
-    received_date = parsed.get("received_date")
 
     # Create a body document only when the email itself is the content (no attachments).
     # With attachments the body is a transport cover note; metadata lives on the batch.
@@ -309,7 +278,7 @@ def ingest_raw_email(
         len(docs_to_process),
     )
     for doc in docs_to_process:
-        _dispatch("app.tasks.document_processing.process_document_task", doc.id)
+        dispatch_task("app.tasks.document_processing.process_document_task", doc.id)
 
     return batch
 
@@ -368,13 +337,13 @@ def ingest_scanned_file(
         batch.status = IngestBatchStatus.PROCESSING
         db.commit()
         logger.info("Scan batch #%d: single-page PDF, dispatching extraction", batch.id)
-        _dispatch("app.tasks.document_processing.process_document_task", doc.id)
+        dispatch_task("app.tasks.document_processing.process_document_task", doc.id)
     else:
         # Multi-page: queue slicing; no Documents yet
         batch.meta = {"slicing": {"status": "preparing", "page_count": page_count}}
         batch.status = IngestBatchStatus.AWAITING_SLICING
         db.commit()
         logger.info("Scan batch #%d: %d pages → queuing slicing", batch.id, page_count)
-        _dispatch("app.tasks.prepare_slicing.prepare_slicing_task", batch.id)
+        dispatch_task("app.tasks.prepare_slicing.prepare_slicing_task", batch.id)
 
     return batch

@@ -225,6 +225,64 @@ def test_sequential_stage_updates_both_survive(db_session):
 
 
 # ---------------------------------------------------------------------------
+# mark_failed_with_cascade
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_mark_failed_with_cascade_propagates(db_session):
+    """mark_failed_with_cascade(EXTRACT) must fail EXTRACT and all per-doc downstream
+    stages (METADATA, PROCEEDING_ANALYSIS, ENRICH, RELATIONSHIPS, CLAIMS, ENTITIES)
+    but leave BATCH_ANALYSIS (not in EXTRACT's downstream) as PENDING.
+    """
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import initialize, mark_failed_with_cascade
+
+    case = Case(
+        id="_T5", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="x",
+        content="x",
+        case_id="_T5",
+        originator_type=OriginatorType.COURT,
+    )
+    initialize(doc, batched=True)
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    mark_failed_with_cascade(doc.id, PipelineStage.EXTRACT, db_session, error="boom")
+
+    db_session.refresh(doc)
+    stages = doc.pipeline_stages
+
+    assert stages[PipelineStage.EXTRACT.value]["status"] == StageStatus.FAILED.value
+    assert stages[PipelineStage.METADATA.value]["status"] == StageStatus.FAILED.value
+    assert (
+        stages[PipelineStage.PROCEEDING_ANALYSIS.value]["status"]
+        == StageStatus.FAILED.value
+    )
+    assert stages[PipelineStage.ENRICH.value]["status"] == StageStatus.FAILED.value
+    assert (
+        stages[PipelineStage.RELATIONSHIPS.value]["status"] == StageStatus.FAILED.value
+    )
+    assert stages[PipelineStage.CLAIMS.value]["status"] == StageStatus.FAILED.value
+    assert stages[PipelineStage.ENTITIES.value]["status"] == StageStatus.FAILED.value
+    # BATCH_ANALYSIS is not in EXTRACT's downstream — must stay PENDING
+    assert (
+        stages[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.PENDING.value
+    )
+    # Downstream error messages reference the upstream stage
+    assert "extract" in stages[PipelineStage.METADATA.value]["error"]
+
+
+# ---------------------------------------------------------------------------
 # aggregate_pipeline_summary
 # ---------------------------------------------------------------------------
 

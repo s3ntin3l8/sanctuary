@@ -88,5 +88,7 @@ async def gmail_oauth_callback(
 
 @router.post("/gmail/backfill")
 async def gmail_backfill(days: int = Form(90)):
-    run_gmail_backfill.delay("single_user", days=days)
+    from app.tasks.dispatch import dispatch_task
+
+    dispatch_task(run_gmail_backfill, "single_user", days=days)
     return {"status": "Backfill task enqueued"}

@@ -175,10 +175,9 @@ async def upload_document(
             success_count += 1
 
             _doc_id = doc.id
-            try:
-                process_document_task.delay(_doc_id)
-            except Exception as e:
-                logger.warning(f"Celery task dispatch failed for doc {_doc_id}: {e}")
+            from app.tasks.dispatch import dispatch_task
+
+            dispatch_task(process_document_task, _doc_id)
 
             results.append(_row_queued(file.filename, doc_id=_doc_id))
 
@@ -667,7 +666,7 @@ async def retry_pipeline_all(
 
 def _dispatch_retry_task(doc_id: int, batch_id: int | None, stage) -> None:
     from app.services.pipeline_status import STAGE_REGISTRY
-    from app.tasks.celery_app import celery_app
+    from app.tasks.dispatch import dispatch_task
 
     spec = STAGE_REGISTRY[stage]
     arg = batch_id if spec.dispatch_arg == "batch_id" else doc_id
@@ -676,7 +675,7 @@ def _dispatch_retry_task(doc_id: int, batch_id: int | None, stage) -> None:
             "Cannot dispatch retry for %s — no %s available", stage, spec.dispatch_arg
         )
         return
-    celery_app.send_task(spec.retry_task, args=[arg])
+    dispatch_task(spec.retry_task, arg)
 
 
 # ---------------------------------------------------------------------------

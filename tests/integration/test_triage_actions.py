@@ -26,16 +26,15 @@ def test_retry_ai_action(app_client, db_session):
     db_session.commit()
     db_session.refresh(doc)
 
-    # 2. Mock process_document_task.delay
-    with patch(
-        "app.tasks.document_processing.process_document_task.delay"
-    ) as mock_delay:
+    # 2. Mock dispatch_task to capture what gets enqueued
+    with patch("app.tasks.dispatch.dispatch_task") as mock_dispatch:
         # 3. Call the retry-ai endpoint
         response = app_client.post(f"/triage/document/{doc.id}/retry-ai")
 
         assert response.status_code == 200
-        # Check if the task was queued
-        mock_delay.assert_called_once_with(doc.id)
+        # Check if the task was queued with the right doc id
+        mock_dispatch.assert_called_once()
+        assert mock_dispatch.call_args[0][1] == doc.id
 
 
 @pytest.mark.integration

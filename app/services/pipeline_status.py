@@ -204,6 +204,35 @@ def mark_failed(
     )
 
 
+def mark_failed_with_cascade(
+    doc_id: int,
+    stage: PipelineStage,
+    db: Session,
+    error: str = "",
+) -> None:
+    """Mark `stage` failed and propagate failure to its per-doc downstream stages.
+
+    Used when a stage's failure means downstream per-doc work cannot run
+    (e.g. EXTRACT fails → METADATA, ENRICH, … cannot proceed).
+    The cascade is not sticky — a successful retry naturally overwrites cascaded
+    failed states as each stage runs and calls mark_started/mark_completed.
+    """
+    mark_failed(doc_id, stage, db, error=error, commit=False)
+    for downstream in _DOWNSTREAM.get(stage, []):
+        _update_stage(
+            doc_id,
+            downstream,
+            db,
+            status=StageStatus.FAILED,
+            extra_sets={
+                "completed_at": _now_iso(),
+                "error": f"upstream {stage.value} failed",
+            },
+            commit=False,
+        )
+    db.commit()
+
+
 def mark_skipped(
     doc_id: int,
     stage: PipelineStage,
@@ -227,7 +256,17 @@ def reset_stage(doc_id: int, stage: PipelineStage, db: Session) -> None:
     stages_to_reset = [stage] + _DOWNSTREAM.get(stage, [])
     for s in stages_to_reset:
         _update_stage(
-            doc_id, s, db, status=StageStatus.PENDING, extra_sets={}, commit=False
+            doc_id,
+            s,
+            db,
+            status=StageStatus.PENDING,
+            extra_sets={
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "reason": None,
+            },
+            commit=False,
         )
     db.commit()
 
