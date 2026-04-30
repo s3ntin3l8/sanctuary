@@ -16,8 +16,10 @@
 #}
 {% set _origin_class = 'bg-originator-' ~ ('third_party' if (doc.originator_type and doc.originator_type.value == 'third_party') else (doc.originator_type.value if doc.originator_type else 'unknown')) %}
 
-<div data-hud-context="embedded" data-hud-mode="review"
-     class="bg-surface-container-lowest/60">
+<div x-data="hudReader()"
+     data-hud-root data-hud-context="embedded" data-hud-mode="review"
+     data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
+     class="bg-surface-container-lowest/60 relative">
 
     {# ── Active doc header ── #}
     <div class="flex items-center gap-2.5 px-5 py-3 border-b border-outline-variant/20">
@@ -123,7 +125,7 @@
     {% include "partials/hud/_passages_spine.html" %}
 
     {# 6. 1fr/1fr grid for the four data sections #}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-outline-variant/20 border-b border-outline-variant/20">
+    <div class="grid grid-cols-1 gap-px bg-outline-variant/20 border-b border-outline-variant/20">
         <div class="bg-surface-container-lowest/60 min-w-0">
             {% include "partials/hud/_relationships.html" %}
         </div>
@@ -140,4 +142,5 @@
 
     {# 7. Reactions #}
     {% include "partials/hud/_reactions.html" %}
+    {% include "partials/hud/_chat_drawer.html" %}
 </div>

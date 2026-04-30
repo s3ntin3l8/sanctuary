@@ -206,6 +206,14 @@
          hx-include="closest [data-bundle-key]"
          class="hidden"></div>
     {% endif %}
+    {# One-shot reload listener: fires when batch analysis completes and the
+       server emits HX-Trigger: reload-bundle-{batch_id}. #}
+    {% if polling_doc %}
+    <div hx-get="/triage/card/{{ polling_doc.id }}/live"
+         hx-trigger="reload-bundle-{{ bundle.batch_id }} from:body"
+         hx-swap="none"
+         class="hidden"></div>
+    {% endif %}
 
     {# Inline expand body. Lazy-loads the active doc's HUD via HTMX. #}
     <div id="triage-row-expanded-{{ bundle.key }}"

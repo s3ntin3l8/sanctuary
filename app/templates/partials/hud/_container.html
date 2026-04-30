@@ -103,6 +103,7 @@
 {# ── STANDALONE (full-screen reader) ─────────────────────────────────────── #}
 {% elif context == 'standalone' %}
 <div class="flex-1 flex flex-col overflow-hidden" x-data="hudReader()" data-hud-root data-hud-context="standalone"
+     :style="docChatOpen ? 'padding-right: 400px; transition: padding 0.2s ease-out;' : 'padding-right: 0; transition: padding 0.2s ease-out;'"
      data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
      data-prev-doc-id="{{ prev_doc_id or '' }}" data-next-doc-id="{{ next_doc_id or '' }}"
      data-parent-doc-id="{{ doc.parent_id or '' }}"

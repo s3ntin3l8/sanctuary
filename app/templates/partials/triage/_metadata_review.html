@@ -27,7 +27,7 @@
 
 <div id="triage-metadata-{{ doc.id }}"
      class="@container px-5 py-3 border-b border-outline-variant/20"
-     x-data="{ state: '{{ 'confirmed' if not doc.needs_review else 'review' }}' }">
+     x-data="{ state: 'confirmed' }">
 
     <div class="flex items-center justify-between mb-2">
         <h4 class="font-headline text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">

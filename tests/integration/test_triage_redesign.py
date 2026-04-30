@@ -263,7 +263,7 @@ def test_triage_doc_hud_includes_pipeline_and_case(db_session):
 
 @pytest.mark.integration
 def test_triage_doc_hud_grid_wraps_data_sections(db_session):
-    """Relationships / Grounds / Actions / Cost Delta render inside a grid-cols-2 parent."""
+    """Relationships / Grounds / Actions / Cost Delta render in a single-column grid."""
     doc = Document(
         title="Grid wrap test",
         case_id="_TRIAGE",
@@ -273,8 +273,9 @@ def test_triage_doc_hud_grid_wraps_data_sections(db_session):
     db_session.commit()
 
     text = client.get(f"/triage/doc/{doc.id}/hud").text
-    # The grid wrapper class for the four data sections.
-    assert "md:grid-cols-2" in text
+    # Grid wrapper is now single-column (no responsive 2-col breakpoint).
+    assert "grid-cols-1" in text
+    assert "md:grid-cols-2" not in text
 
 
 @pytest.mark.integration
