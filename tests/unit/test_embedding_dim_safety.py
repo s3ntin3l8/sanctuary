@@ -49,9 +49,9 @@ async def test_dim_mismatch_logs_warning(db_session, caplog):
     with (
         patch.object(emb_module, "SessionLocal", lambda: db_session),
         patch.object(
-            emb_module.ai_provider, "get_embedding_params", new_callable=AsyncMock
+            emb_module.embed_provider, "get_embedding_params", new_callable=AsyncMock
         ) as mock_params,
-        patch.object(emb_module.ai_provider, "get_type", new_callable=AsyncMock),
+        patch.object(emb_module.embed_provider, "get_type", new_callable=AsyncMock),
         patch("httpx.AsyncClient") as mock_client,
     ):
         mock_params.return_value = {"url": "x", "json": {}, "headers": {}}

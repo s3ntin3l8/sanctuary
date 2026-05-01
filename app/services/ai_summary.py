@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.ingestion.extractors import (
     extract_case_id,
     extract_internal_id,
@@ -153,6 +153,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     # independently of whether auto-triage resolves to an existing Case.
     if internal_id and not doc.internal_id:
         doc.internal_id = internal_id
+    if az_court and not doc.az_court:
+        doc.az_court = az_court
 
     if doc.case_id == "_TRIAGE":
         matching_case = None
@@ -273,19 +275,22 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
 
 def generate_summary_sync(doc: Document, db=None) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
-    cfg = get_effective_config(db)
+    cfg = get_chat_config(db)
     content_preview = get_content_preview(doc, 60000)
 
     # Heuristic hints for verification
     batch_subject = None
+    batch_sender_email = None
     if doc.ingest_batch_id and db is not None:
         from app.models.database import IngestBatch
 
-        batch_subject = (
-            db.query(IngestBatch.subject)
+        row = (
+            db.query(IngestBatch.subject, IngestBatch.sender_email)
             .filter(IngestBatch.id == doc.ingest_batch_id)
-            .scalar()
+            .first()
         )
+        if row:
+            batch_subject, batch_sender_email = row
     safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
     content_for_hints = doc.content or ""
 
@@ -312,7 +317,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN
             else None
         ),
-        "email_subject": batch_subject,
+        "email_subject": batch_subject if batch_sender_email else None,
     }
     hints = {k: v for k, v in hints.items() if v is not None}
 

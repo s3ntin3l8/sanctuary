@@ -197,6 +197,9 @@ class ActionItemType(enum.StrEnum):
     COURT_DATE = "court_date"  # Verhandlungstermin, Anhörung
     RESPONSE_REQUIRED = "response_required"  # Stellungnahme erwartet
     FILING_REQUIRED = "filing_required"  # Schriftsatz einzureichen
+    PAYMENT_DUE = (
+        "payment_due"  # Zahlungsfrist — Gerichtskostenrechnung, Landesjustizkasse
+    )
 
 
 class ActionItemStatus(enum.StrEnum):

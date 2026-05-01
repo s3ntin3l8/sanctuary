@@ -15,8 +15,8 @@ from app.config import SessionLocal
 from app.core.async_utils import run_async
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchStatus
-from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
+from app.services.ai_config import get_chat_config
+from app.services.ai_provider import chat_provider
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -200,7 +200,7 @@ def _boundary_heuristic_score(
 # ---------------------------------------------------------------------------
 
 
-async def _ai_cut_judgment(prev_tail: str, curr_head: str) -> dict:
+async def _ai_cut_judgment(prev_tail: str, curr_head: str, model: str) -> dict:
     # Does not use call_json_ai: this runs as async tasks via asyncio.gather for
     # parallel boundary detection, uses non-streaming with a tight 30s timeout,
     # and silently falls back to "no cut" on failure — different semantics from
@@ -210,14 +210,14 @@ async def _ai_cut_judgment(prev_tail: str, curr_head: str) -> dict:
         f"Current page first {_TEXT_HEAD_CHARS} chars:\n{curr_head}"
     )
     try:
-        params = await ai_provider.get_generate_params(
-            model=get_effective_config().summary_model,
+        params = await chat_provider.get_generate_params(
+            model=model,
             prompt=prompt,
             system_prompt=SLICING_CUT_SYSTEM,
             stream=False,
             options={"num_ctx": 2048, "temperature": 0.1},
         )
-        ptype = await ai_provider.get_type()
+        ptype = await chat_provider.get_type()
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
             resp = await client.post(
                 params["url"], json=params["json"], headers=params["headers"]
@@ -238,8 +238,10 @@ async def _ai_cut_judgment(prev_tail: str, curr_head: str) -> dict:
         return {"is_new_document": False, "confidence": "low", "notes": str(exc)}
 
 
-async def _ai_cut_judgments(candidates: list[tuple[int, str, str]]) -> dict[int, dict]:
-    tasks = [_ai_cut_judgment(pt, ch) for _, pt, ch in candidates]
+async def _ai_cut_judgments(
+    candidates: list[tuple[int, str, str]], model: str
+) -> dict[int, dict]:
+    tasks = [_ai_cut_judgment(pt, ch, model) for _, pt, ch in candidates]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     out = {}
     for (page_num, _, _), result in zip(candidates, results, strict=False):
@@ -329,10 +331,14 @@ def prepare(batch_id: int) -> None:
                 )
 
         # AI pass
+        chat_provider.reload_from_db(db)
+        summary_model = get_chat_config(db).summary_model
         ai_results: dict[int, dict] = {}
         if heuristic_candidates:
             try:
-                ai_results = run_async(_ai_cut_judgments(heuristic_candidates))
+                ai_results = run_async(
+                    _ai_cut_judgments(heuristic_candidates, summary_model)
+                )
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
 

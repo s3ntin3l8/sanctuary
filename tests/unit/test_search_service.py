@@ -89,7 +89,7 @@ def test_semantic_search_falls_back_silently_on_provider_error(seeded):
     """If the embedding provider raises, return [] (don't propagate)."""
     service = SearchService(seeded)
     with patch(
-        "app.services.ai_provider.ai_provider.get_embedding_params",
+        "app.services.ai_provider.embed_provider.get_embedding_params",
         side_effect=RuntimeError("provider down"),
     ):
         ids = service._semantic_document_ids("anything", k=5)

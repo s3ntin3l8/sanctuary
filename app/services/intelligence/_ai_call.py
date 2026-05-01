@@ -12,8 +12,8 @@ import httpx
 
 from app.config import DATA_DIR
 from app.core.async_utils import run_async
-from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
+from app.services.ai_config import get_chat_config
+from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -173,13 +173,13 @@ def call_json_ai(
         httpx.HTTPStatusError: On non-2xx HTTP responses.
     """
     if db is not None:
-        ai_provider.reload_from_db(db)
+        chat_provider.reload_from_db(db)
 
-    cfg = get_effective_config(db)
+    cfg = get_chat_config(db)
     resolved_model = model or cfg.summary_model
 
     params = run_async(
-        ai_provider.get_generate_params(
+        chat_provider.get_generate_params(
             model=resolved_model,
             prompt=user_prompt,
             system_prompt=system_prompt,
@@ -187,7 +187,7 @@ def call_json_ai(
             options=options,
         )
     )
-    ptype = run_async(ai_provider.get_type())
+    ptype = run_async(chat_provider.get_type())
 
     debug_dir = DATA_DIR / "ai_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -217,7 +217,7 @@ def call_json_ai(
                 for line in response.iter_lines():
                     if not line:
                         continue
-                    chunk = ai_provider.parse_stream_line(line, ptype)
+                    chunk = chat_provider.parse_stream_line(line, ptype)
                     if not chunk:
                         continue
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, defer
 from app.config import SessionLocal
 from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import RELATIONSHIP_DETECTOR_SYSTEM
@@ -115,7 +115,7 @@ def detect(doc_id: int) -> str | None:
     """
     db: Session = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        cfg = get_chat_config(db)
         doc = (
             db.query(Document)
             .options(defer(Document.content))

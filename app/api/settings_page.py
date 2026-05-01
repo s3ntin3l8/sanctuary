@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.helpers import render_page
-from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
+from app.services.ai_config import _ensure_migrated, _get_ai_section, get_embed_config
+from app.services.ai_provider import chat_provider, embed_provider
 from app.services.user_settings_service import _get_or_create
 
 logger = logging.getLogger(__name__)
@@ -51,16 +51,33 @@ async def settings_gmail(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/settings/ai", response_class=HTMLResponse)
 async def settings_ai(request: Request, db: Session = Depends(get_db)):
-    cfg = get_effective_config(db)
-    ai_health = await ai_provider.probe_health()
-    ai_type = await ai_provider.get_type()
+    from app.services.ai_config import list_instances
+
+    _ensure_migrated(db)
+    ai = _get_ai_section(db)
+    instances = list_instances(db)
+    active_chat_id = ai.get("active_chat_id", "")
+    active_embed_id = ai.get("active_embed_id", "")
+    user_context = ai.get("user_context", "")
+    embed_cfg = get_embed_config(db)
+
+    chat_provider.reload_from_db(db)
+    embed_provider.reload_from_db(db)
+
+    instance_health = {}
+    for inst in instances:
+        instance_health[inst["id"]] = await chat_provider.probe_health(config=inst)
+
     return render_page(
         request,
         "pages/settings/ai.html",
         db=db,
-        cfg=cfg,
-        ai_type=str(ai_type),
-        ai_health=ai_health,
+        instances=instances,
+        instance_health=instance_health,
+        active_chat_id=active_chat_id,
+        active_embed_id=active_embed_id,
+        user_context=user_context,
+        embed_cfg=embed_cfg,
     )
 
 

@@ -103,17 +103,18 @@ class SearchService:
         Falls back to an empty list if the embedding model is unavailable or the
         query embedding fails for any reason.
         """
-        from app.services.ai_config import get_effective_config
-        from app.services.ai_provider import ai_provider
+        from app.services.ai_config import get_embed_config
+        from app.services.ai_provider import embed_provider
         from app.services.embeddings import _serialize
 
-        cfg = get_effective_config(self.db)
+        embed_provider.reload_from_db(self.db)
+        cfg = get_embed_config(self.db)
 
         try:
             import httpx
 
             params = run_async(
-                ai_provider.get_embedding_params(cfg.embed_model, query_text)
+                embed_provider.get_embedding_params(cfg.embed_model, query_text)
             )
             with httpx.Client(timeout=10.0) as client:
                 resp = client.post(

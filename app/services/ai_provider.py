@@ -18,12 +18,10 @@ class ProviderType(StrEnum):
 async def detect_provider(base_url: str) -> ProviderType:
     """Detect the AI provider by probing endpoints and checking content."""
     async with httpx.AsyncClient(timeout=5.0) as client:
-        # 1. Check for OpenAI-compatible (LM Studio / vLLM / etc)
         try:
             resp = await client.get(f"{base_url}/v1/models")
             if resp.status_code == 200:
                 data = resp.json()
-                # Standard OpenAI format for model list
                 if isinstance(data, dict) and (
                     data.get("object") == "list" or "data" in data
                 ):
@@ -31,7 +29,6 @@ async def detect_provider(base_url: str) -> ProviderType:
         except Exception as e:
             logger.debug(f"OpenAI probe failed at {base_url}: {e}")
 
-        # 2. Check for Ollama
         try:
             resp = await client.get(f"{base_url}/api/tags")
             if resp.status_code == 200:
@@ -44,11 +41,12 @@ async def detect_provider(base_url: str) -> ProviderType:
     logger.warning(
         f"AI provider auto-detection failed for {base_url}, defaulting to ollama"
     )
-    return ProviderType.OLLAMA  # Default fallback
+    return ProviderType.OLLAMA
 
 
 class AIProvider:
-    def __init__(self):
+    def __init__(self, role: str = "chat"):
+        self._role = role
         self.base_url = AI_BASE_URL
         self.provider = AI_PROVIDER
         self.api_key = AI_API_KEY
@@ -56,30 +54,41 @@ class AIProvider:
         self._user_context: str = ""
 
     def reload_from_db(self, db) -> None:
-        """Refresh connection config and user context from UserSettings."""
-        from app.services.ai_config import get_effective_config
+        """Refresh connection config from the active instance for this role."""
+        if self._role == "chat":
+            from app.services.ai_config import get_chat_config
 
-        cfg = get_effective_config(db)
-        changed = (
-            cfg.base_url != self.base_url
-            or cfg.provider != self.provider
-            or cfg.api_key != self.api_key
-        )
-        self.base_url = cfg.base_url
-        self.provider = cfg.provider
-        self.api_key = cfg.api_key
-        self._user_context = cfg.user_context
+            cfg = get_chat_config(db)
+            changed = (
+                cfg.base_url != self.base_url
+                or cfg.provider != self.provider
+                or cfg.api_key != self.api_key
+            )
+            self.base_url = cfg.base_url
+            self.provider = cfg.provider
+            self.api_key = cfg.api_key
+            self._user_context = cfg.user_context
+        else:
+            from app.services.ai_config import get_embed_config
+
+            cfg = get_embed_config(db)
+            changed = (
+                cfg.base_url != self.base_url
+                or cfg.provider != self.provider
+                or cfg.api_key != self.api_key
+            )
+            self.base_url = cfg.base_url
+            self.provider = cfg.provider
+            self.api_key = cfg.api_key
         if changed:
             self._detected_type = None
 
     async def get_type(self) -> ProviderType:
         if self.provider != "auto":
             return ProviderType(self.provider)
-
         if not self._detected_type:
             self._detected_type = await detect_provider(self.base_url)
             logger.info(f"Auto-detected AI provider: {self._detected_type}")
-
         return self._detected_type
 
     async def get_generate_params(
@@ -110,7 +119,6 @@ class AIProvider:
                 "headers": {},
             }
         else:
-            # LM Studio / OpenAI compatible
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -149,13 +157,30 @@ class AIProvider:
                 else {},
             }
 
-    async def probe_health(self) -> dict:
-        """Check if the configured AI provider endpoint is reachable."""
-        ptype = await self.get_type()
+    async def probe_health(self, config: dict | None = None) -> dict:
+        """Check if an AI provider endpoint is reachable.
+
+        Pass config dict with base_url/provider/api_key to probe a specific instance
+        without mutating this provider's state.
+        """
+        if config:
+            base_url = config.get("base_url", self.base_url).strip().rstrip("/")
+            provider = config.get("provider", self.provider)
+            api_key = config.get("api_key", self.api_key)
+            ptype = (
+                ProviderType(provider)
+                if provider != "auto"
+                else await detect_provider(base_url)
+            )
+        else:
+            base_url = self.base_url
+            api_key = self.api_key
+            ptype = await self.get_type()
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 if ptype == ProviderType.OLLAMA:
-                    resp = await client.get(f"{self.base_url}/api/tags")
+                    resp = await client.get(f"{base_url}/api/tags")
                     if resp.status_code == 200:
                         count = len(resp.json().get("models", []))
                         return {
@@ -164,7 +189,12 @@ class AIProvider:
                             "detail": f"{count} models available",
                         }
                 else:
-                    resp = await client.get(f"{self.base_url}/v1/models")
+                    headers = (
+                        {"Authorization": f"Bearer {api_key}"}
+                        if api_key != "not-needed"
+                        else {}
+                    )
+                    resp = await client.get(f"{base_url}/v1/models", headers=headers)
                     if resp.status_code == 200:
                         count = len(resp.json().get("data", []))
                         return {
@@ -191,7 +221,6 @@ class AIProvider:
             except json.JSONDecodeError:
                 return None
         else:
-            # OpenAI format: "data: {...}"
             line = line.strip()
             if line.startswith("data:"):
                 data_str = line[len("data:") :].strip()
@@ -219,43 +248,6 @@ class AIProvider:
         return None
 
 
-# Global instance
-ai_provider = AIProvider()
-
-
-def call_llm(
-    prompt: str,
-    model: str,
-    system_prompt: str | None = None,
-    temperature: float = 0.0,
-    response_format: dict | None = None,
-) -> str:
-    """Synchronous non-streaming LLM call."""
-    from app.core.async_utils import run_async
-
-    options = {"temperature": temperature}
-    # Note: response_format is handled by provider-specific logic if supported
-
-    params = run_async(
-        ai_provider.get_generate_params(
-            model=model,
-            prompt=prompt,
-            system_prompt=system_prompt,
-            stream=False,
-            options=options,
-        )
-    )
-
-    with httpx.Client(timeout=httpx.Timeout(120.0)) as client:
-        resp = client.post(
-            params["url"], json=params["json"], headers=params["headers"]
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Handle Ollama vs OpenAI format
-        if "response" in data:  # Ollama
-            return data["response"]
-        elif "choices" in data:  # OpenAI
-            return data["choices"][0]["message"]["content"]
-        return ""
+# Role-specific singletons: chat_provider for generation, embed_provider for embeddings
+chat_provider = AIProvider(role="chat")
+embed_provider = AIProvider(role="embed")

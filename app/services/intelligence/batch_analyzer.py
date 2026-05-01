@@ -10,19 +10,16 @@ Legacy format (backward compat):
 
 import logging
 import re
-from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import ActionItem, Document, IngestBatch
+from app.models.database import Document, IngestBatch
 from app.models.enums import (
-    ActionItemStatus,
-    ActionItemType,
     DocumentRole,
     parse_originator_type,
 )
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -37,8 +34,6 @@ COVER_LETTER_KEYWORDS = {
     "deckblatt",
     "cover",
 }
-
-VALID_ACTION_TYPES = {e.value for e in ActionItemType}
 
 
 def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
@@ -253,34 +248,18 @@ def _apply_batch_results(
 
     case_id = batch.case_id if batch else None
 
-    # Create action items
-    if case_id:
-        for action in detected_actions:
-            raw_type = (action.get("action_type") or "deadline").lower()
-            if raw_type not in VALID_ACTION_TYPES:
-                raw_type = "deadline"
-            due_str = action.get("due_date")
-            try:
-                due_date = datetime.strptime(due_str, "%Y-%m-%d") if due_str else None
-            except ValueError:
-                due_date = None
-            if not due_date:
-                continue
+    # Create action items from batch-level cross-document analysis
+    if case_id and detected_actions:
+        from app.services.intelligence.action_items import create_from_payload
 
-            source_doc_id = first_cover.id if first_cover else None
-            db.add(
-                ActionItem(
-                    case_id=case_id,
-                    proceeding_id=batch.proceeding_id if batch else None,
-                    source_document_id=source_doc_id,
-                    title=action.get("title", "Extracted action item")[:255],
-                    description=action.get("description"),
-                    due_date=due_date,
-                    action_type=ActionItemType(raw_type),
-                    status=ActionItemStatus.OPEN,
-                    ingest_date=datetime.now(),
-                )
-            )
+        source_doc_id = first_cover.id if first_cover else None
+        create_from_payload(
+            case_id,
+            source_doc_id,
+            batch.proceeding_id if batch else None,
+            detected_actions,
+            db,
+        )
 
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
     # one doc in the batch is flagged as a court relay (set in Phase 1 from
@@ -324,7 +303,7 @@ def analyze(batch_id: int) -> bool:
     """
     db: Session = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        cfg = get_chat_config(db)
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             logger.warning(f"Batch {batch_id} not found for analysis")
@@ -354,7 +333,11 @@ def analyze(batch_id: int) -> bool:
 
         try:
             result = _call_batch_analyzer_sync(
-                candidate, sibling_titles, batch_id, model=cfg.summary_model, db=db
+                candidate,
+                sibling_titles,
+                batch_id,
+                model=cfg.summary_model,
+                db=db,
             )
             _apply_batch_results(batch_id, docs, result, db)
             logger.info(f"Batch {batch_id} analyzed successfully")

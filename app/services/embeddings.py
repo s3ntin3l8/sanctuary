@@ -4,14 +4,14 @@ import httpx
 
 from app.config import SessionLocal
 from app.models.database import Document
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_embed_config
 
 logger = logging.getLogger(__name__)
 
 # nomic-embed-text:v1.5 has an 8192-token context window; ~3 chars/token for German legal text
 _EMBED_MAX_CHARS = 22000
 
-from app.services.ai_provider import ai_provider
+from app.services.ai_provider import embed_provider
 
 
 def _serialize(vec: list[float]) -> bytes:
@@ -25,7 +25,8 @@ async def generate_embedding(doc_id: int):
     """Background task: generate embedding and store in document_vectors vec0 table."""
     db = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        embed_provider.reload_from_db(db)
+        cfg = get_embed_config(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
             return
@@ -43,10 +44,10 @@ async def generate_embedding(doc_id: int):
         if not content_snippet:
             content_snippet = doc.content[:_EMBED_MAX_CHARS]
 
-        params = await ai_provider.get_embedding_params(
+        params = await embed_provider.get_embedding_params(
             cfg.embed_model, content_snippet
         )
-        await ai_provider.get_type()
+        await embed_provider.get_type()
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
@@ -99,9 +100,9 @@ async def reindex_all_docs(db) -> dict:
     # The user typically triggers reindex right after changing the embedding
     # model in settings — reload the provider config from DB so we use the
     # new model, not whatever was bound at app boot.
-    ai_provider.reload_from_db(db)
+    embed_provider.reload_from_db(db)
 
-    cfg = get_effective_config(db)
+    cfg = get_embed_config(db)
     docs = db.query(Document).filter(Document.content.isnot(None)).all()
     total = len(docs)
     reindexed = 0
@@ -122,7 +123,7 @@ async def reindex_all_docs(db) -> dict:
                     current_len += len(chunk_text)
             if not content_snippet:
                 content_snippet = doc.content[:_EMBED_MAX_CHARS]
-            params = await ai_provider.get_embedding_params(
+            params = await embed_provider.get_embedding_params(
                 cfg.embed_model, content_snippet
             )
             async with httpx.AsyncClient(timeout=60.0) as client:

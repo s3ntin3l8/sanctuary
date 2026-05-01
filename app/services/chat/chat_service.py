@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Case, Conversation, Document
 from app.repositories.chat import ChatRepository
-from app.services.ai_config import get_effective_config
-from app.services.ai_provider import ai_provider
+from app.services.ai_config import get_chat_config
+from app.services.ai_provider import chat_provider
 from app.services.chat.context_builder import (
     build_case_chat_prompt,
     build_document_chat_prompt,
@@ -37,7 +37,8 @@ async def stream_answer(
     proceeding_id: int | None = None,
 ) -> AsyncIterator[str]:
     """Persist user message, stream the assistant reply, persist + emit citations."""
-    cfg = get_effective_config(db)
+    chat_provider.reload_from_db(db)
+    cfg = get_chat_config(db)
     repo = ChatRepository(db)
 
     repo.add_message(conversation.id, "user", user_message)
@@ -72,14 +73,14 @@ async def stream_answer(
         yield _sse({"type": "done"})
         return
 
-    params = await ai_provider.get_generate_params(
+    params = await chat_provider.get_generate_params(
         model=cfg.summary_model,
         prompt=prompt,
         system_prompt=system_prompt,
         stream=True,
         options={"num_ctx": 16384, "temperature": 0.2, "num_predict": 800},
     )
-    ptype = await ai_provider.get_type()
+    ptype = await chat_provider.get_type()
 
     full_response = ""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=90.0)) as client:
@@ -94,7 +95,7 @@ async def stream_answer(
                 async for line in response.aiter_lines():
                     if not line:
                         continue
-                    chunk = ai_provider.parse_stream_line(line, ptype)
+                    chunk = chat_provider.parse_stream_line(line, ptype)
                     if not chunk:
                         continue
                     token = chunk.get("response", "")

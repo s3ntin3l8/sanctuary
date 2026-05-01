@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, defer
 from app.config import SessionLocal
 from app.models.database import ActionItem, Case, Document
 from app.models.enums import ActionItemStatus
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
@@ -123,7 +123,7 @@ def generate(case_id: str) -> None:
 
     db: Session = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        cfg = get_chat_config(db)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             logger.warning(f"Case {case_id} not found for brief generation")

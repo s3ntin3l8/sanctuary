@@ -14,7 +14,7 @@ from app.models.schemas import (
     CostDeltaSchema,
     KeyPassageSchema,
 )
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -44,13 +44,19 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     if doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
         batch_context = f"\nBatch context: This document was enclosed in a cover letter. True originator: {doc.attributed_originator}"
 
+    dates_context = ""
+    if doc.received_date:
+        dates_context += f"\nReceived date: {doc.received_date.strftime('%Y-%m-%d')}"
+    if doc.issued_date:
+        dates_context += f"\nIssued date: {doc.issued_date.strftime('%Y-%m-%d')}"
+
     reactions_block = ""
     if db is not None:
         formatted = format_reactions_for_document(db, doc.id)
         if formatted:
             reactions_block = f"\n\n{formatted}"
 
-    prompt = f"Document title: {doc.title}{batch_context}{reactions_block}\n\n{content_preview}"
+    prompt = f"Document title: {doc.title}{batch_context}{dates_context}{reactions_block}\n\n{content_preview}"
 
     return call_json_ai(
         system_prompt=DOCUMENT_ENRICHER_SYSTEM,
@@ -182,7 +188,7 @@ def enrich(doc_id: int) -> None:
     """Run AI enrichment for a single document."""
     db: Session = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        cfg = get_chat_config(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for enrichment")
@@ -194,6 +200,17 @@ def enrich(doc_id: int) -> None:
 
         result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
         _apply_enrichment(doc, result)
+
+        from app.services.intelligence.action_items import create_from_payload
+
+        create_from_payload(
+            doc.case_id,
+            doc.id,
+            doc.proceeding_id,
+            result.get("action_items") or [],
+            db,
+        )
+
         db.commit()
         logger.info(f"Doc {doc_id} enriched successfully")
     finally:

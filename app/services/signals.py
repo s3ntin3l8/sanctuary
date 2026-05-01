@@ -46,9 +46,9 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
     # AI Provider Check — probe /v1/models which both Ollama and LM Studio handle
     import requests
 
-    from app.services.ai_config import get_effective_config
+    from app.services.ai_config import get_chat_config
 
-    base_url = get_effective_config(db).base_url
+    base_url = get_chat_config(db).base_url
     probe_url = f"{base_url}/v1/models"
     try:
         resp = requests.get(probe_url, timeout=1.5)

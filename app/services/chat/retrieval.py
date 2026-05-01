@@ -21,6 +21,9 @@ class RetrievalHit:
     title: str
     key_passages: list[dict] = field(default_factory=list)
     significance_tier: str | None = None
+    originator_type: str | None = None
+    attributed_originator: str | None = None
+    issued_date: str | None = None
 
 
 async def retrieve_top_docs(
@@ -30,17 +33,18 @@ async def retrieve_top_docs(
 
     Falls back to the most-recent documents when embeddings are unavailable.
     """
-    from app.services.ai_config import get_effective_config
-    from app.services.ai_provider import ai_provider
+    from app.services.ai_config import get_embed_config
+    from app.services.ai_provider import embed_provider
     from app.services.embeddings import _serialize
 
-    cfg = get_effective_config(db)
+    embed_provider.reload_from_db(db)
+    cfg = get_embed_config(db)
 
     try:
         import httpx
         from sqlalchemy import text
 
-        params = await ai_provider.get_embedding_params(cfg.embed_model, query)
+        params = await embed_provider.get_embedding_params(cfg.embed_model, query)
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 params["url"], json=params["json"], headers=params["headers"]
@@ -92,6 +96,9 @@ async def retrieve_top_docs(
             significance_tier=d.significance_tier.value
             if d.significance_tier
             else None,
+            originator_type=d.originator_type.value if d.originator_type else None,
+            attributed_originator=d.attributed_originator or d.sender,
+            issued_date=d.issued_date.strftime("%Y-%m-%d") if d.issued_date else None,
         )
         for d in docs
     ]

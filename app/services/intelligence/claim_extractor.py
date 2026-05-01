@@ -14,7 +14,7 @@ from app.models.enums import (
 )
 from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
-from app.services.ai_config import get_effective_config
+from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -140,7 +140,7 @@ def extract(doc_id: int) -> str | None:
     """
     db: Session = SessionLocal()
     try:
-        cfg = get_effective_config(db)
+        cfg = get_chat_config(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for claim extraction")

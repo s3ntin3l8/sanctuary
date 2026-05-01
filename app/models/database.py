@@ -82,6 +82,12 @@ class Document(Base):
     internal_id = Column(
         String, nullable=True, index=True
     )  # lawyer's file ref, e.g. "8124-25"
+    az_court = Column(
+        String, nullable=True, index=True
+    )  # AI-extracted court Aktenzeichen, e.g. "003 F 426/25" — kept on the
+    # doc as a fallback hint for the metadata review HUD when no Proceeding
+    # has been linked yet. The Proceeding row is the authoritative source
+    # once one exists.
     sender = Column(
         String, nullable=True, index=True
     )  # "Via: Email from [Sender] on [Date]"
