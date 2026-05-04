@@ -54,8 +54,8 @@ async def test_generate_embedding_success(db_session, sample_document):
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_generate_embedding_wrong_dim_skipped(db_session, sample_document):
-    """Embeddings with wrong dimension are silently skipped."""
+async def test_generate_embedding_wrong_dim_raises(db_session, sample_document):
+    """Embeddings with wrong dimension raise so the task can mark FAILED."""
     mock_embedding = [0.1] * 3  # wrong dim
     mock_response = MagicMock()
     mock_response.json.return_value = {"embedding": mock_embedding}
@@ -72,14 +72,16 @@ async def test_generate_embedding_wrong_dim_skipped(db_session, sample_document)
         )
         mock_session_local.return_value = mock_db
 
-        await generate_embedding(sample_document.id)
+        with pytest.raises(ValueError, match="dim mismatch"):
+            await generate_embedding(sample_document.id)
 
     mock_db.execute.assert_not_called()
 
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_generate_embedding_failure(db_session, sample_document):
+async def test_generate_embedding_failure_propagates(db_session, sample_document):
+    """Provider failures propagate so the task can mark FAILED and retry."""
     with (
         patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
         patch("app.services.embeddings.SessionLocal") as mock_session_local,
@@ -91,7 +93,8 @@ async def test_generate_embedding_failure(db_session, sample_document):
         )
         mock_session_local.return_value = mock_db
 
-        await generate_embedding(sample_document.id)
+        with pytest.raises(Exception, match="Ollama offline"):
+            await generate_embedding(sample_document.id)
 
     mock_db.execute.assert_not_called()
 

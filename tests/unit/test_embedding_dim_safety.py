@@ -1,9 +1,9 @@
 """Pin two safety nets around `AI_EMBED_DIM`:
 
 1. When a provider returns an embedding whose length doesn't match
-   `cfg.embed_dim`, `generate_embedding` must log a warning. Without a log,
-   the document is *silently* indexed without a vector — no user-visible signal
-   that vector search will miss it.
+   `cfg.embed_dim`, `generate_embedding` must raise. The Celery task wrapper
+   then marks EMBEDDINGS=FAILED — without that signal, the doc was previously
+   marked COMPLETED with no vector, so search silently missed it.
 
 2. `verify_vec0_dim()` reads the existing `document_vectors` schema, parses
    its declared dimension, and reports whether it matches `AI_EMBED_DIM`.
@@ -18,10 +18,8 @@ import pytest
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_dim_mismatch_logs_warning(db_session, caplog):
-    """Provider returns 100-dim vector but config expects 768 → log a warning."""
-    import logging
-
+async def test_dim_mismatch_raises(db_session):
+    """Provider returns 100-dim vector but config expects 768 → ValueError."""
     from app.models.database import Case, Document, IngestBatch
     from app.models.enums import IngestBatchSourceType
     from app.services import embeddings as emb_module
@@ -40,8 +38,6 @@ async def test_dim_mismatch_logs_warning(db_session, caplog):
     db_session.add(doc)
     db_session.commit()
 
-    # Patch the module-level SessionLocal embeddings uses internally so it
-    # reads the same in-memory test DB. ai_provider returns a wrong-length vector.
     fake_response = AsyncMock()
     fake_response.json = lambda: {"embedding": [0.1] * 100}  # wrong dim
     fake_response.raise_for_status = lambda: None
@@ -59,15 +55,8 @@ async def test_dim_mismatch_logs_warning(db_session, caplog):
             return_value=fake_response
         )
 
-        with caplog.at_level(logging.WARNING, logger="app.services.embeddings"):
+        with pytest.raises(ValueError, match="dim mismatch"):
             await emb_module.generate_embedding(doc.id)
-
-    assert any(
-        "dimension mismatch" in r.message.lower() or "embed_dim" in r.message.lower()
-        for r in caplog.records
-    ), (
-        f"Expected dimension-mismatch warning, got: {[r.message for r in caplog.records]}"
-    )
 
 
 @pytest.mark.unit

@@ -75,15 +75,13 @@ def enrich_document_task(self, doc_id: int):
             db.close()
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
-        from app.tasks.detect_relationships import detect_relationships_task
-        from app.tasks.extract_entities import extract_entities_task
 
         logger.info(
             "Doc #%d: enrich failed permanently — still dispatching relationships",
             doc_id,
         )
-        detect_relationships_task.delay(doc_id)
-        extract_entities_task.delay(doc_id)
+        _dispatch_safely(doc_id, PipelineStage.RELATIONSHIPS)
+        _dispatch_safely(doc_id, PipelineStage.ENTITIES)
         _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
@@ -94,19 +92,55 @@ def enrich_document_task(self, doc_id: int):
         db.close()
 
     logger.info("Doc #%d: enrich complete — dispatching relationships", doc_id)
-    from app.tasks.detect_relationships import detect_relationships_task
-    from app.tasks.extract_entities import extract_entities_task
 
-    _dispatch_if_pending(doc_id, "relationships", detect_relationships_task)
-    _dispatch_if_pending(doc_id, "entities", extract_entities_task)
+    _dispatch_if_pending(doc_id, PipelineStage.RELATIONSHIPS)
+    _dispatch_if_pending(doc_id, PipelineStage.ENTITIES)
 
     _trigger_cost_rollup(doc_id)
 
     return {"status": "success", "doc_id": doc_id}
 
 
-def _dispatch_if_pending(doc_id: int, stage_key: str, task) -> None:
-    """Fire task only when the stage is currently pending — prevents fan-out from concurrent enrich retries."""
+def _task_for_stage(stage: PipelineStage):
+    """Map a pipeline stage to the Celery task that runs it."""
+    if stage == PipelineStage.RELATIONSHIPS:
+        from app.tasks.detect_relationships import detect_relationships_task
+
+        return detect_relationships_task
+    if stage == PipelineStage.ENTITIES:
+        from app.tasks.extract_entities import extract_entities_task
+
+        return extract_entities_task
+    raise ValueError(f"No task mapping for stage {stage}")
+
+
+def _dispatch_safely(doc_id: int, stage: PipelineStage) -> None:
+    """Dispatch the task for `stage`; on broker failure mark the stage failed
+    instead of leaving it stuck in PENDING."""
+    from app.dependencies import get_db_session
+    from app.services.pipeline_status import mark_failed
+
+    task = _task_for_stage(stage)
+    try:
+        task.delay(doc_id)
+    except Exception as e:
+        logger.error(
+            "Doc #%d: dispatch of %s failed — marking stage failed: %s",
+            doc_id,
+            stage.value,
+            e,
+            exc_info=True,
+        )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, stage, db, error=f"dispatch failed: {e}")
+        finally:
+            db.close()
+
+
+def _dispatch_if_pending(doc_id: int, stage: PipelineStage) -> None:
+    """Fire task only when the stage is currently pending — prevents fan-out from
+    concurrent enrich retries. Dispatch failures mark the stage failed."""
     from app.dependencies import get_db_session
     from app.models.database import Document
 
@@ -115,10 +149,11 @@ def _dispatch_if_pending(doc_id: int, stage_key: str, task) -> None:
         stages = (
             db.query(Document.pipeline_stages).filter(Document.id == doc_id).scalar()
         ) or {}
-        if stages.get(stage_key, {}).get("status") == "pending":
-            task.delay(doc_id)
+        if stages.get(stage.value, {}).get("status") != "pending":
+            return
     finally:
         db.close()
+    _dispatch_safely(doc_id, stage)
 
 
 def _trigger_cost_rollup(doc_id: int) -> None:

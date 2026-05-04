@@ -6,6 +6,29 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
+def _dispatch_claims_safely(doc_id: int) -> None:
+    """Dispatch extract_claims_task; on broker failure mark CLAIMS failed instead
+    of leaving the stage stuck in PENDING."""
+    from app.dependencies import get_db_session
+    from app.services.pipeline_status import mark_failed
+    from app.tasks.extract_claims import extract_claims_task
+
+    try:
+        extract_claims_task.delay(doc_id)
+    except Exception as e:
+        logger.error(
+            "Doc #%d: extract_claims dispatch failed — marking CLAIMS failed: %s",
+            doc_id,
+            e,
+            exc_info=True,
+        )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.CLAIMS, db, error=f"dispatch failed: {e}")
+        finally:
+            db.close()
+
+
 @celery_app.task(name="app.tasks.detect_relationships.detect_relationships_task")
 def detect_relationships_task(doc_id: int):
     """Detect AI relationships from this doc to prior docs in the same proceeding."""
@@ -39,13 +62,11 @@ def detect_relationships_task(doc_id: int):
             mark_skipped(
                 doc_id, PipelineStage.RELATIONSHIPS, db, reason="enrich_not_completed"
             )
-            from app.tasks.extract_claims import extract_claims_task
-
             logger.info(
                 "Doc #%d: relationships skipped (enrich_not_completed) — still dispatching claims",
                 doc_id,
             )
-            extract_claims_task.delay(doc_id)
+            _dispatch_claims_safely(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -55,13 +76,11 @@ def detect_relationships_task(doc_id: int):
             mark_skipped(
                 doc_id, PipelineStage.RELATIONSHIPS, db, reason="missing_ai_summary"
             )
-            from app.tasks.extract_claims import extract_claims_task
-
             logger.info(
                 "Doc #%d: relationships skipped (missing_ai_summary) — still dispatching claims",
                 doc_id,
             )
-            extract_claims_task.delay(doc_id)
+            _dispatch_claims_safely(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -81,13 +100,11 @@ def detect_relationships_task(doc_id: int):
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
         finally:
             db.close()
-        from app.tasks.extract_claims import extract_claims_task
-
         logger.info(
             "Doc #%d: relationships failed — still dispatching claims",
             doc_id,
         )
-        extract_claims_task.delay(doc_id)
+        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()
@@ -110,7 +127,5 @@ def detect_relationships_task(doc_id: int):
         doc_id,
         "skipped" if skipped else "complete",
     )
-    from app.tasks.extract_claims import extract_claims_task
-
-    extract_claims_task.delay(doc_id)
+    _dispatch_claims_safely(doc_id)
     return {"status": "success", "doc_id": doc_id}

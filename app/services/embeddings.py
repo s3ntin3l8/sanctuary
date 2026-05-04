@@ -22,7 +22,13 @@ def _serialize(vec: list[float]) -> bytes:
 
 
 async def generate_embedding(doc_id: int):
-    """Background task: generate embedding and store in document_vectors vec0 table."""
+    """Generate and store the document embedding.
+
+    Raises on any failure (network error, JSON parse, dim mismatch, no vector) —
+    the caller (`generate_embedding_task`) catches and marks the stage failed.
+    Silent failure here was previously masking docs that never got an embedding
+    written but were still flagged COMPLETED, so search would miss them.
+    """
     db = SessionLocal()
     try:
         embed_provider.reload_from_db(db)
@@ -56,39 +62,33 @@ async def generate_embedding(doc_id: int):
             response.raise_for_status()
             data = response.json()
 
-            embedding = None
-            if "embedding" in data:
-                embedding = data["embedding"]
-            elif (
-                "data" in data
-                and isinstance(data["data"], list)
-                and len(data["data"]) > 0
-            ):
-                embedding = data["data"][0].get("embedding")
+        embedding = None
+        if "embedding" in data:
+            embedding = data["embedding"]
+        elif (
+            "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0
+        ):
+            embedding = data["data"][0].get("embedding")
 
-            if embedding and len(embedding) == cfg.embed_dim:
-                from sqlalchemy import text
+        if not embedding:
+            raise ValueError(f"Embedding provider returned no vector for doc {doc_id}")
+        if len(embedding) != cfg.embed_dim:
+            raise ValueError(
+                f"Embedding dim mismatch for doc {doc_id}: provider returned "
+                f"{len(embedding)}, config embed_dim={cfg.embed_dim}. "
+                "Check AI_EMBED_DIM matches the embedding model."
+            )
 
-                blob = _serialize(embedding)
-                db.execute(
-                    text(
-                        "INSERT OR REPLACE INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
-                    ),
-                    {"doc_id": doc_id, "embedding": blob},
-                )
-                db.commit()
-            elif embedding:
-                logger.warning(
-                    "Embedding dimension mismatch for doc %s: provider returned %d, "
-                    "config embed_dim=%d. Vector NOT stored — search will miss this doc. "
-                    "Check AI_EMBED_DIM matches the embedding model.",
-                    doc_id,
-                    len(embedding),
-                    cfg.embed_dim,
-                )
+        from sqlalchemy import text
 
-    except Exception as e:
-        logger.warning(f"Failed to generate embedding for doc {doc_id}: {e}")
+        blob = _serialize(embedding)
+        db.execute(
+            text(
+                "INSERT OR REPLACE INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
+            ),
+            {"doc_id": doc_id, "embedding": blob},
+        )
+        db.commit()
     finally:
         db.close()
 
