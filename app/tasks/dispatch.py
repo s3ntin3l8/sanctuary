@@ -64,30 +64,38 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
             mark_failed_with_cascade,
         )
 
-        candidate_stages = [
-            s.stage for s in STAGE_REGISTRY.values() if s.retry_task == label
+        # Only doc-keyed dispatches map cleanly to a doc's stage. Batch-keyed
+        # tasks (analyze_batch_task) take a batch_id that could collide with an
+        # unrelated doc_id — skip rather than corrupt that doc's state.
+        candidates = [
+            s
+            for s in STAGE_REGISTRY.values()
+            if s.retry_task == label and s.dispatch_arg != "batch_id"
         ]
-        if not candidate_stages or not args:
+        if not candidates or not args:
             return
         doc_id = args[0]
         if not isinstance(doc_id, int):
             return
 
+        candidate_stages = [s.stage for s in candidates]
+
         db = get_db_session()
         try:
-            # When retry_task is unambiguous, use it. Otherwise inspect doc state
-            # for the first non-terminal stage matching this retry_task.
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc is None:
+                return
+            stages = doc.pipeline_stages or {}
+            terminal = {
+                StageStatus.COMPLETED.value,
+                StageStatus.SKIPPED.value,
+            }
+
+            # Resolve the actual retried stage when retry_task is shared
+            # (process_document_task → EXTRACT or METADATA).
             if len(candidate_stages) == 1:
                 stage = candidate_stages[0]
             else:
-                doc = db.query(Document).filter(Document.id == doc_id).first()
-                if doc is None:
-                    return
-                stages = doc.pipeline_stages or {}
-                terminal = {
-                    StageStatus.COMPLETED.value,
-                    StageStatus.SKIPPED.value,
-                }
                 stage = next(
                     (
                         s.stage
@@ -97,6 +105,12 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
                     ),
                     candidate_stages[0],
                 )
+
+            # If the task's own error handler already marked this stage failed,
+            # leave its specific message alone — don't stomp it with a generic
+            # "dispatch error: ..." that erases the real cause.
+            if stages.get(stage.value, {}).get("status") == StageStatus.FAILED.value:
+                return
 
             mark_failed_with_cascade(doc_id, stage, db, error=f"dispatch error: {exc}")
         finally:

@@ -68,6 +68,10 @@ def test_dispatch_failure_marks_extract_stage_when_extract_pending():
 def test_dispatch_failure_marks_embeddings_stage_failed():
     """generate_embedding_task failures map to EMBEDDINGS."""
     fake_db = MagicMock()
+    fake_doc = MagicMock()
+    fake_doc.pipeline_stages = {"embeddings": {"status": "pending"}}
+    fake_db.query.return_value.filter.return_value.first.return_value = fake_doc
+
     with (
         patch("app.dependencies.get_db_session", return_value=fake_db),
         patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
@@ -80,6 +84,49 @@ def test_dispatch_failure_marks_embeddings_stage_failed():
 
     assert mock_mfc.called
     assert mock_mfc.call_args.args[1] == PipelineStage.EMBEDDINGS
+
+
+@pytest.mark.unit
+def test_dispatch_failure_skips_when_stage_already_failed():
+    """If the task's own handler already wrote a specific error, the recorder
+    must not stomp it with a generic 'dispatch error: ...'."""
+    fake_db = MagicMock()
+    fake_doc = MagicMock()
+    fake_doc.pipeline_stages = {
+        "embeddings": {"status": "failed", "error": "real specific cause"},
+    }
+    fake_db.query.return_value.filter.return_value.first.return_value = fake_doc
+
+    with (
+        patch("app.dependencies.get_db_session", return_value=fake_db),
+        patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+    ):
+        _record_dispatch_failure(
+            "app.tasks.generate_embedding.generate_embedding_task",
+            (99,),
+            ValueError("generic propagated"),
+        )
+
+    mock_mfc.assert_not_called()
+
+
+@pytest.mark.unit
+def test_dispatch_failure_skips_batch_keyed_tasks():
+    """analyze_batch_task takes a batch_id, not doc_id. The recorder must NOT
+    treat that integer as a doc_id (would corrupt unrelated docs that happen
+    to share the same primary key)."""
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+    ):
+        _record_dispatch_failure(
+            "app.tasks.analyze_batch.analyze_batch_task",
+            (3,),  # batch_id=3 — must NOT be treated as doc_id=3
+            RuntimeError("boom"),
+        )
+
+    mock_get_db.assert_not_called()
+    mock_mfc.assert_not_called()
 
 
 @pytest.mark.unit
