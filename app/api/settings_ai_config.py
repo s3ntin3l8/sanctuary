@@ -258,12 +258,13 @@ async def instance_models(
         return HTMLResponse("<option disabled>Instance not found</option>")
 
     models = await _fetch_models(inst)
+    safe_id = escape(instance_id, quote=True)
     if not models:
         return HTMLResponse(
             f"<script>"
             f"(function(){{"
-            f'var s=document.getElementById("summary_model_{instance_id}");'
-            f'var e=document.getElementById("embed_model_{instance_id}");'
+            f'var s=document.getElementById("summary_model_{safe_id}");'
+            f'var e=document.getElementById("embed_model_{safe_id}");'
             f"if(s){{s.innerHTML='<option disabled>No models found</option>';}} "
             f"if(e){{e.innerHTML='<option disabled>No models found</option>';}} "
             f"}})();"
@@ -276,8 +277,8 @@ async def instance_models(
     return HTMLResponse(
         f"<script>"
         f"(function(){{"
-        f'var s=document.getElementById("summary_model_{escape(instance_id, quote=True)}");'
-        f'var e=document.getElementById("embed_model_{escape(instance_id, quote=True)}");'
+        f'var s=document.getElementById("summary_model_{safe_id}");'
+        f'var e=document.getElementById("embed_model_{safe_id}");'
         f"if(s){{s.innerHTML={summary_opts!r};}} "
         f"if(e){{e.innerHTML={embed_opts!r};}} "
         f"}})();"

@@ -100,20 +100,17 @@ async def slicing_confirm(
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
         return RedirectResponse("/triage", status_code=303)
 
-    # Parse and validate cut positions
-    try:
-        raw_cuts = json.loads(cuts)
-        cut_positions = sorted({int(c) for c in raw_cuts if 1 <= int(c) < 10000})
-    except (json.JSONDecodeError, ValueError):
-        raise HTTPException(status_code=400, detail="Invalid cuts JSON") from None
-
     slicing_meta = (batch.meta or {}).get("slicing", {})
     page_count = slicing_meta.get("page_count", 0)
     if not page_count:
         raise HTTPException(status_code=400, detail="Batch slicing metadata missing")
 
-    # Validate all cuts are in-range
-    cut_positions = [c for c in cut_positions if 1 <= c < page_count]
+    # Parse and validate cut positions against the actual page_count
+    try:
+        raw_cuts = json.loads(cuts)
+        cut_positions = sorted({int(c) for c in raw_cuts if 1 <= int(c) < page_count})
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid cuts JSON") from None
 
     pdf_path = Path(batch.raw_source_path)
     if not pdf_path.exists():

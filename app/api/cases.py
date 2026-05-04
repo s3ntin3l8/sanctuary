@@ -40,7 +40,9 @@ FilterQuery = Annotated[str, Query(pattern=r"^(critical|significant\+|all)$")]
 
 @router.get("")
 async def case_directory(
-    request: Request, page: int = 1, db: Session = Depends(get_db)
+    request: Request,
+    page: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
 ):
     from datetime import datetime
 

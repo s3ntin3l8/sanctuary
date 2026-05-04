@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -16,6 +17,30 @@ from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService
 
 router = APIRouter(prefix="/costs", tags=["pages"])
+
+
+def _parse_positive_float(value: str, field_name: str) -> float:
+    """Parse a money amount; reject NaN, ±Inf, and non-positive values."""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail=f"Invalid {field_name}") from None
+    if not math.isfinite(amount) or amount <= 0:
+        raise HTTPException(
+            status_code=422, detail=f"{field_name} must be a positive finite number"
+        )
+    return amount
+
+
+def _parse_vat_rate(value: str) -> float:
+    """Parse a VAT rate (0.0–1.0); reject NaN, ±Inf, negatives, > 1.0."""
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Invalid vat_rate") from None
+    if not math.isfinite(rate) or rate < 0 or rate > 1:
+        raise HTTPException(status_code=422, detail="vat_rate must be between 0 and 1")
+    return rate
 
 
 @router.get("")
@@ -85,9 +110,9 @@ async def create_cost(
     case_id: str = Form(...),
     category: CostCategory = Form(...),
     title: str = Form(...),
-    amount_net: float = Form(...),
-    vat_rate: float = Form(0.0),
-    amount_gross: float | None = Form(None),
+    amount_net: float = Form(..., gt=0),
+    vat_rate: float = Form(0.0, ge=0, le=1),
+    amount_gross: float | None = Form(None, gt=0),
     status: CostStatus = Form(CostStatus.OFFEN),
     issued_at: str | None = Form(None),
     due_at: str | None = Form(None),
@@ -188,11 +213,13 @@ async def update_cost_field(
     elif field == "category":
         cost.category = CostCategory(value)
     elif field == "amount_net":
-        cost.amount_net = float(value)
-        cost.amount_gross = cost.amount_net * (1 + (cost.vat_rate or 0))
+        amount = _parse_positive_float(value, "amount_net")
+        cost.amount_net = amount
+        cost.amount_gross = amount * (1 + (cost.vat_rate or 0))
     elif field == "vat_rate":
-        cost.vat_rate = float(value)
-        cost.amount_gross = (cost.amount_net or 0) * (1 + cost.vat_rate)
+        rate = _parse_vat_rate(value)
+        cost.vat_rate = rate
+        cost.amount_gross = (cost.amount_net or 0) * (1 + rate)
 
     db.commit()
     db.refresh(cost)
