@@ -1,14 +1,14 @@
+import concurrent.futures
 import logging
+import multiprocessing
 import os
 import threading
-from collections.abc import Callable
 
 from app.config import INGEST_CONVERSION_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 CONVERSION_TIMEOUT = INGEST_CONVERSION_TIMEOUT  # seconds
-_conversion_lock = threading.Lock()
 
 
 class TimeoutError(Exception):
@@ -169,27 +169,16 @@ def _get_converter():
     return _converter
 
 
-def convert_file(file_path: str, timeout: int = None) -> dict:
-    """Convert file to markdown using Docling and extract structural metadata."""
-    if timeout is None:
-        timeout = CONVERSION_TIMEOUT
+def _convert_in_subprocess(file_path: str) -> dict:
+    """Run the full Docling conversion + chunking in a worker subprocess.
 
+    Each subprocess lazy-initializes its own DocumentConverter on first call
+    and reuses it for the rest of its lifetime. Defined at module scope so it
+    pickles cleanly into the worker.
+    """
     ext = os.path.splitext(file_path)[1].lower()
-
-    if ext == ".eml":
-        return {
-            "content": parse_eml_file(file_path),
-            "metadata": {"pages": 1},
-            "chunks": [],
-        }
-
     conv = _get_converter()
-
-    def do_convert():
-        return conv.convert(file_path)
-
-    with _conversion_lock:
-        result = _run_with_timeout(do_convert, timeout)
+    result = conv.convert(file_path)
 
     metadata = {
         "pages": len(result.document.pages) if hasattr(result.document, "pages") else 1,
@@ -222,8 +211,6 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         logger.warning(f"Chunking failed for {file_path}: {e}")
 
     markdown = result.document.export_to_markdown()
-
-    # Apply glyph fixes to both full content and chunks
     markdown = _apply_glyph_fixes(markdown)
     for chunk in chunks:
         chunk["text"] = _apply_glyph_fixes(chunk["text"])
@@ -231,32 +218,62 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
 
-def _run_with_timeout(func: Callable, timeout: int) -> any:
-    """Run a function with a timeout using threading (works in async workers)."""
-    return _run_with_timeout_thread(func, timeout)
+_conversion_pool: concurrent.futures.ProcessPoolExecutor | None = None
+_pool_lock = threading.Lock()
 
 
-def _run_with_timeout_thread(func: Callable, timeout: int) -> any:
-    """Run a function with threading-based timeout (cross-platform)."""
-    result = [None]
-    exception = [None]
+def _get_pool() -> concurrent.futures.ProcessPoolExecutor:
+    """Lazy-init the single-worker subprocess pool used for conversions.
 
-    def target():
-        try:
-            result[0] = func()
-        except Exception as e:
-            exception[0] = e
+    `max_workers=1` serializes conversions; `spawn` keeps the worker isolated
+    from parent imports (so SQLAlchemy / Celery state doesn't leak in)."""
+    global _conversion_pool
+    if _conversion_pool is None:
+        with _pool_lock:
+            if _conversion_pool is None:
+                ctx = multiprocessing.get_context("spawn")
+                _conversion_pool = concurrent.futures.ProcessPoolExecutor(
+                    max_workers=1, mp_context=ctx
+                )
+    return _conversion_pool
 
-    thread = threading.Thread(target=target)
-    thread.daemon = True
-    thread.start()
-    thread.join(timeout)
 
-    if thread.is_alive():
-        raise TimeoutError(f"Conversion timed out after {timeout} seconds")
-    if exception[0]:
-        raise exception[0]
-    return result[0]
+def _reset_pool() -> None:
+    """Tear down the worker pool — kills any runaway Docling subprocess from a
+    timeout so the next conversion starts fresh instead of inheriting the hang."""
+    global _conversion_pool
+    with _pool_lock:
+        if _conversion_pool is not None:
+            _conversion_pool.shutdown(wait=False, cancel_futures=True)
+            _conversion_pool = None
+
+
+def convert_file(file_path: str, timeout: int = None) -> dict:
+    """Convert file to markdown using Docling and extract structural metadata.
+
+    Conversion runs in a single-worker subprocess pool so that a hang inside
+    Docling/Tesseract OCR can be terminated by recycling the worker, instead
+    of leaking a zombie daemon thread that holds memory until the parent exits.
+    """
+    if timeout is None:
+        timeout = CONVERSION_TIMEOUT
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    if ext == ".eml":
+        return {
+            "content": parse_eml_file(file_path),
+            "metadata": {"pages": 1},
+            "chunks": [],
+        }
+
+    pool = _get_pool()
+    future = pool.submit(_convert_in_subprocess, file_path)
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        _reset_pool()
+        raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
 
 
 def is_valid_docling_output(content: str | None) -> bool:
