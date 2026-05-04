@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 _TRANSIENT_AI_ERRORS = (
     httpx.ReadTimeout,
-    httpx.ConnectTimeout,
     httpx.RemoteProtocolError,
 )
 
@@ -99,14 +98,42 @@ def process_document_task(self, doc_id: int):
         # Proceeding-ready gating: metadata is done, now check for proceeding changes.
         # This replaces the direct batch analyzer call — the proceeding analyzer
         # will trigger the batch analyzer once it finishes (or skips).
-        from app.tasks.analyze_proceeding import analyze_proceeding_task
+        try:
+            from app.tasks.analyze_proceeding import analyze_proceeding_task
 
-        analyze_proceeding_task.delay(doc_id)
+            analyze_proceeding_task.delay(doc_id)
+        except Exception as e:
+            logger.error(
+                "Doc #%d: analyze_proceeding dispatch raised — marking stage failed: %s",
+                doc_id,
+                e,
+                exc_info=True,
+            )
+            mark_failed_with_cascade(
+                doc_id,
+                PipelineStage.PROCEEDING_ANALYSIS,
+                db,
+                error=f"dispatch failed: {e}",
+            )
 
         # Embeddings — now a real Celery task for proper stage tracking
-        from app.tasks.generate_embedding import generate_embedding_task
+        try:
+            from app.tasks.generate_embedding import generate_embedding_task
 
-        generate_embedding_task.delay(doc_id)
+            generate_embedding_task.delay(doc_id)
+        except Exception as e:
+            logger.error(
+                "Doc #%d: generate_embedding dispatch raised — marking stage failed: %s",
+                doc_id,
+                e,
+                exc_info=True,
+            )
+            mark_failed_with_cascade(
+                doc_id,
+                PipelineStage.EMBEDDINGS,
+                db,
+                error=f"dispatch failed: {e}",
+            )
 
         return {"status": "success", "doc_id": doc_id}
     finally:

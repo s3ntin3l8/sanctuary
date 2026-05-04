@@ -48,16 +48,15 @@ async def test_detect_provider_ollama_format():
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_detect_provider_both_fail_defaults_to_ollama():
-    """Both probes fail → defaults to OLLAMA."""
+async def test_detect_provider_both_fail_raises():
+    """Both probes fail → RuntimeError (loud failure beats silent miscategorisation)."""
     with patch(
         "httpx.AsyncClient.get",
         new_callable=AsyncMock,
         side_effect=Exception("offline"),
     ):
-        result = await detect_provider("http://localhost:9999")
-
-    assert result == ProviderType.OLLAMA
+        with pytest.raises(RuntimeError, match="AI provider unreachable"):
+            await detect_provider("http://localhost:9999")
 
 
 # ---------------------------------------------------------------------------

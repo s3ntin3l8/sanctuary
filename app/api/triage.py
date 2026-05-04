@@ -514,28 +514,141 @@ async def summarize_document(
     return _render_document_hud(request, doc, db, triage_service)
 
 
-@router.post("/triage/document/{doc_id}/retry-ai")
-async def retry_ai(
+# -----------------------------------------------------------------------------
+# Bundle-level retry
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/bundle/retry")
+async def retry_bundle_pipeline(
     request: Request,
-    doc_id: int,
+    batch_id: int = Form(...),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
-    """Re-enqueue enrichment for a document (forwards to per-stage retry)."""
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+    """Re-run every AI stage for every doc in the bundle.
 
-    from app.models.enums import PipelineStage
-    from app.services.pipeline_status import reset_stage
-    from app.tasks.dispatch import dispatch_task
-    from app.tasks.document_processing import process_document_task
+    Skips EXTRACT (preserves manual case assignments) and leaves SKIPPED stages
+    alone. Clears analysis_queued_at so the analyze_proceeding→analyze_batch
+    cascade can re-fire. Returns 409 if any stage is actively running.
+    """
+    from app.api.documents import _dispatch_retry_task
+    from app.models.database import IngestBatch
+    from app.models.enums import (
+        IngestBatchStatus,
+        PipelineStage,
+        StageStatus,
+    )
+    from app.services.pipeline_status import compute_overall_state
 
-    reset_stage(doc.id, PipelineStage.EXTRACT, db)
-    dispatch_task(process_document_task, doc.id)
+    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
-    db.refresh(doc)
-    return _render_document_hud(request, doc, db, triage_service)
+    # 409 if any doc has a running stage
+    for doc in batch.documents:
+        stages = doc.pipeline_stages or {}
+        if any(
+            v.get("status") == StageStatus.RUNNING.value
+            for v in stages.values()
+            if isinstance(v, dict)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="A pipeline stage is actively running — retry not allowed",
+            )
+
+    # Clear the cascade gate so analyze_proceeding_task can re-claim
+    batch.analysis_queued_at = None
+    batch.status = IngestBatchStatus.PENDING
+    if batch.meta:
+        meta = dict(batch.meta)
+        meta.pop("reload_fired", None)
+        batch.meta = meta
+
+    for doc in batch.documents:
+        stages = doc.pipeline_stages or {}
+        # Reset non-EXTRACT, non-SKIPPED stages to PENDING
+        for stage in PipelineStage:
+            if stage == PipelineStage.EXTRACT:
+                continue
+            record = stages.get(stage.value, {})
+            if record.get("status") == StageStatus.SKIPPED.value:
+                continue
+            stages[stage.value] = {"status": StageStatus.PENDING.value}
+
+        new_state = compute_overall_state(stages)
+        doc.pipeline_stages = stages
+        doc.pipeline_state = new_state
+
+        from sqlalchemy import text as _text
+
+        db.execute(
+            _text(
+                "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state "
+                "WHERE id = :doc_id"
+            ),
+            {"stages": json.dumps(stages), "state": new_state.value, "doc_id": doc.id},
+        )
+
+    db.commit()
+
+    # Dispatch head-of-cascade only per doc, plus the parallel EMBEDDINGS branch.
+    # Firing every stage at once bypasses the cascade and overloads a local model.
+    from app.services.pipeline_status import _STAGE_ORDER
+
+    any_head_dispatched = False
+    for doc in batch.documents:
+        db.refresh(doc)
+        stages = doc.pipeline_stages or {}
+
+        head: PipelineStage | None = None
+        for spec in _STAGE_ORDER:
+            if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
+                continue
+            status = stages.get(spec.stage.value, {}).get("status")
+            if status not in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value):
+                head = spec.stage
+                break
+
+        if head is not None:
+            _dispatch_retry_task(doc.id, batch_id, head)
+            any_head_dispatched = True
+
+        emb_status = stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
+        if emb_status not in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value):
+            _dispatch_retry_task(doc.id, batch_id, PipelineStage.EMBEDDINGS)
+
+    # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
+    # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it
+    # naturally since no per-doc head task was dispatched.
+    if not any_head_dispatched:
+        from app.services.intelligence.orchestrator import claim_batch_for_analysis
+
+        if claim_batch_for_analysis(batch_id, db):
+            from app.tasks.analyze_batch import analyze_batch_task
+
+            analyze_batch_task.delay(batch_id)
+
+    # OOB row update + global badges
+    bundles = triage_service.get_triage_bundles()
+    bundle_key = f"batch-{batch_id}"
+    updated_bundle = next((b for b in bundles if b.key == bundle_key), None)
+
+    oob_parts: list[str] = []
+    if updated_bundle:
+        oob_parts.append(
+            render_bundle_group_oob(request, updated_bundle, triage_service)
+        )
+    oob_parts.append(render_sidebar_badges_oob(db))
+    oob_parts.append(render_triage_header_stats_oob(request, triage_service))
+
+    doc_count = len(batch.documents)
+    trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
+
+    response = HTMLResponse(content="".join(oob_parts))
+    response.headers["HX-Trigger"] = json.dumps(trigger)
+    return response
 
 
 # -----------------------------------------------------------------------------
@@ -549,7 +662,7 @@ def _render_document_hud(
     db: Session,
     triage_service: TriageService,
 ) -> HTMLResponse:
-    """Render the triage doc HUD — reused by reingest/summarize/approve-summary/retry-ai.
+    """Render the triage doc HUD — reused by reingest/summarize/approve-summary.
 
     `triage_service` is passed in (not constructed) so callers go through the
     same `Depends(get_triage_service)` DI as their routes — keeps the service's
@@ -792,12 +905,6 @@ async def bundle_pipeline_status(
         + summary.get("skipped", 0)
     )
 
-    _TERMINAL = {"completed", "failed", "skipped"}
-    batch_analysis_terminal = bool(stages_per_doc) and all(
-        (d.get("batch_analysis", {}) or {}).get("status") in _TERMINAL
-        for d in stages_per_doc
-    )
-
     # Minimal stub — template only needs .pipeline_summary, .key, .batch_id
     bundle_stub = SimpleNamespace(
         batch_id=batch_id,
@@ -811,25 +918,36 @@ async def bundle_pipeline_status(
         {"bundle": bundle_stub},
     )
 
-    # Bundle re-render fires on two distinct cues so parent/child relationships
-    # (set by BATCH_ANALYSIS) become visible without a manual refresh:
-    #   1. BATCH_ANALYSIS terminal across the batch — refresh once, latch via
-    #      IngestBatch.meta so subsequent polls don't refire while later stages
-    #      still run.
-    #   2. All stages terminal — final consolidation refresh.
+    # Bundle row re-renders on three cues so title, originator, and case
+    # assignment become visible incrementally without a manual page refresh:
+    #   metadata, batch_analysis, enrich each fire once when they first go
+    #   terminal across the batch (latched in IngestBatch.meta["reload_fired"]).
+    #   A final unconditional reload fires when every stage is terminal.
     fire_reload = n_total > 0 and n_done == n_total
 
-    if batch_analysis_terminal and not fire_reload:
+    if not fire_reload and bool(stages_per_doc):
+        _TERMINAL = {"completed", "failed", "skipped"}
         from app.models.database import IngestBatch
 
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if batch is not None:
             meta = dict(batch.meta or {})
-            if not meta.get("batch_analysis_reload_fired"):
-                meta["batch_analysis_reload_fired"] = True
+            fired = dict(meta.get("reload_fired") or {})
+
+            for stage_key in ("metadata", "batch_analysis", "enrich"):
+                if fired.get(stage_key):
+                    continue
+                if all(
+                    (d.get(stage_key) or {}).get("status") in _TERMINAL
+                    for d in stages_per_doc
+                ):
+                    fired[stage_key] = True
+                    fire_reload = True
+
+            if fire_reload:
+                meta["reload_fired"] = fired
                 batch.meta = meta
                 db.commit()
-                fire_reload = True
 
     if fire_reload:
         import time

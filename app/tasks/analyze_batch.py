@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.config import SessionLocal
 from app.models.database import Document
 from app.models.enums import PipelineStage
@@ -38,6 +40,26 @@ def analyze_batch_task(self, batch_id: int):
     logger.info("Batch #%d: batch_analysis started (%d docs)", batch_id, len(doc_ids))
     try:
         ran = analyze(batch_id)
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info(
+                "Batch #%d: batch_analysis timeout — retrying once in 90s", batch_id
+            )
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning(
+            "Batch #%d: batch_analysis timeout after retry (%s) — marking failed",
+            batch_id,
+            e,
+        )
+        db = SessionLocal()
+        try:
+            for doc_id in doc_ids:
+                mark_failed(
+                    doc_id, PipelineStage.BATCH_ANALYSIS, db, error=f"timeout: {e}"
+                )
+        finally:
+            db.close()
+        return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
         db = SessionLocal()
@@ -54,7 +76,7 @@ def analyze_batch_task(self, batch_id: int):
             len(doc_ids),
         )
         for doc_id in doc_ids:
-            enrich_document_task.delay(doc_id)
+            _enrich_if_pending(doc_id)
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
 
     db = SessionLocal()
@@ -79,9 +101,22 @@ def analyze_batch_task(self, batch_id: int):
         len(doc_ids),
     )
     for doc_id in doc_ids:
-        enrich_document_task.delay(doc_id)
+        _enrich_if_pending(doc_id)
 
     return {"status": "success", "batch_id": batch_id, "enqueued_docs": len(doc_ids)}
+
+
+def _enrich_if_pending(doc_id: int) -> None:
+    """Dispatch enrich only when the stage is currently pending — prevents fan-out."""
+    db = SessionLocal()
+    try:
+        stages = (
+            db.query(Document.pipeline_stages).filter(Document.id == doc_id).scalar()
+        ) or {}
+        if stages.get("enrich", {}).get("status") == "pending":
+            enrich_document_task.delay(doc_id)
+    finally:
+        db.close()
 
 
 from app.tasks.enrich_document import (

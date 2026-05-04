@@ -1,0 +1,16 @@
+{% macro status_pill(health) %}
+{% if health.ok %}
+  {% set _color = "var(--color-primary)" %}
+  {% set _icon = "check_circle" %}
+{% elif health.detail == "Not tested" %}
+  {% set _color = "var(--color-on-surface-variant)" %}
+  {% set _icon = "radio_button_unchecked" %}
+{% else %}
+  {% set _color = "var(--color-error)" %}
+  {% set _icon = "error" %}
+{% endif %}
+<span class="inline-flex items-center gap-1 text-[11px]" style="color:{{ _color }}">
+    <span class="material-symbols-outlined text-[13px]">{{ _icon }}</span>
+    <span>{{ health.detail }}</span>
+</span>
+{% endmacro %}

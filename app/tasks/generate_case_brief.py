@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -17,6 +19,14 @@ def generate_case_brief_task(self, case_id: str):
     try:
         generate(case_id)
         return {"status": "success", "case_id": case_id}
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info("Case %s brief timeout — retrying once in 90s", case_id)
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning(
+            "Case %s brief timeout after retry (%s) — marking failed", case_id, e
+        )
+        return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Case {case_id} brief generation failed: {e}")
         if self.request.retries < self.max_retries:
@@ -36,6 +46,12 @@ def refresh_case_brief_task(self, case_id: str):
     try:
         generate(case_id)
         return {"status": "success", "case_id": case_id}
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info("Case %s brief refresh timeout — retrying once in 90s", case_id)
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning("Case %s brief refresh timeout after retry (%s)", case_id, e)
+        return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Case {case_id} brief refresh failed: {e}")
         if self.request.retries < self.max_retries:

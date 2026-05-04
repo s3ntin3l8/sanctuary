@@ -59,4 +59,9 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_always_eager=os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true",
+    # Propagate exceptions from eagerly-executed tasks so cascade failures are
+    # visible in logs rather than silently captured in EagerResult. Has no effect
+    # when task_always_eager is False.
+    task_eager_propagates=os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower()
+    == "true",
 )

@@ -326,15 +326,34 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
     prompt += f"### Document Content Preview:\n{content_preview}"
 
-    result = call_json_ai(
-        system_prompt=PHASE1_METADATA_SYSTEM,
-        user_prompt=prompt,
-        options=STAGE_OPTIONS["metadata"],
-        debug_label=f"doc_{doc.id}_sync",
-        model=cfg.summary_model,
-        db=db,
-        ingest_batch_id=doc.ingest_batch_id,
-    )
+    try:
+        result = call_json_ai(
+            system_prompt=PHASE1_METADATA_SYSTEM,
+            user_prompt=prompt,
+            options=STAGE_OPTIONS["metadata"],
+            debug_label=f"doc_{doc.id}_sync",
+            model=cfg.summary_model,
+            db=db,
+            ingest_batch_id=doc.ingest_batch_id,
+        )
+    except ValueError as e:
+        if "empty response" in str(e):
+            logger.info(
+                "Doc %s metadata: empty AI response (thinking-only) — retrying without thinking",
+                doc.id,
+            )
+            result = call_json_ai(
+                system_prompt=PHASE1_METADATA_SYSTEM,
+                user_prompt=prompt,
+                options=STAGE_OPTIONS["metadata"],
+                debug_label=f"doc_{doc.id}_syncretry",
+                model=cfg.summary_model,
+                db=db,
+                ingest_batch_id=doc.ingest_batch_id,
+                suppress_thinking=True,
+            )
+        else:
+            raise
     logger.debug(f"AI response parsed for '{doc.title}'")
     return result
 

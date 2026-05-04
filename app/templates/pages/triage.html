@@ -94,9 +94,18 @@
              bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', suggested_case_title: d.suggested_case_title || '', suggested_case_is_draft: !!d.suggested_case_is_draft, suggested_proceeding_id: d.suggested_proceeding_id ? String(d.suggested_proceeding_id) : '', suggested_proceeding_az: d.suggested_proceeding_az || '', suggested_proceeding_subtitle: d.suggested_proceeding_subtitle || '', action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
          "
          @triage:bundle-confirmed.document="bundleConfirm.open = false"
+         @triage:open-retry-confirm.document="
+             const d = $event.detail || {};
+             retryConfirm = { open: true, submitting: false, batch_id: String(d.batch_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0 };
+         "
+         @triage:bundle-retried.document="retryConfirm.open = false; retryConfirm.submitting = false"
+         @htmx:response-error.document="retryConfirm.submitting = false"
+         @htmx:send-error.document="retryConfirm.submitting = false"
+         @htmx:timeout.document="retryConfirm.submitting = false"
          class="flex-1 flex flex-col overflow-hidden bg-surface">
 
     {% include "partials/triage_bundle_confirm_modal.html" %}
+    {% include "partials/triage_retry_confirm_modal.html" %}
     {% include "partials/create_case_modal.html" %}
     {% include "partials/triage_header.html" %}
 
@@ -145,6 +154,7 @@ function triagePage() {
 
     return {
         bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', is_new_case: false, action: 'confirm_bundle' },
+        retryConfirm: { open: false, submitting: false, batch_id: '', subject: '', doc_count: 0 },
         _visibleRowKeys() {
             return Array.from(document.querySelectorAll('[data-triage-row-id]'))
                 .filter(el => el.offsetParent !== null)
@@ -178,6 +188,7 @@ function triageDrawer(rowKey) {
     return {
         rowKey,
         docs: [],
+        hudChatOpen: false,
         init() {
             this.docs = Array.from(this.$root.querySelectorAll('button[data-doc-id]'))
                 .map(b => b.getAttribute('data-doc-id'));
@@ -191,9 +202,12 @@ function triageDrawer(rowKey) {
             // through the spine picker.
             this.$nextTick(() => this._loadDoc(this.$store.triage.drawer.docId));
             this.$watch('$store.triage.drawer.docId', (id) => this._loadDoc(id));
+            // Listen for chat open/close events from the embedded hudReader().
+            window.addEventListener('triage-chat-toggle', (e) => { this.hudChatOpen = !!e.detail?.open; });
         },
         _loadDoc(id) {
             if (!id) return;
+            this.hudChatOpen = false;
             const hud = this.$root.querySelector('#triage-drawer-body-' + this.rowKey);
             const body = this.$root.querySelector('#triage-drawer-doc-body-' + this.rowKey);
             if (hud) htmx.ajax('GET', '/triage/doc/' + id + '/hud', { target: hud, swap: 'innerHTML' });

@@ -430,32 +430,49 @@ def _update_stage(
     *,
     commit: bool = True,
 ) -> None:
-    """Update a single stage key inside pipeline_stages and recompute pipeline_state."""
+    """Update a single stage key inside pipeline_stages and recompute pipeline_state.
+
+    Uses json_set / json_remove so each UPDATE touches only the named keys,
+    never overwriting sibling stages written by concurrent threads (SQLite
+    serialises writes so the RHS json_set reads the last committed state).
+    """
+    sk = stage.value  # e.g. "enrich"
+
+    # Build json_set argument list: path, value, path, value, ...
+    set_pairs: list[str] = [f"'$.{sk}.status'", ":_status_val"]
+    params: dict = {"_status_val": status.value, "doc_id": doc_id}
+
+    remove_paths: list[str] = []
+    for key, val in extra_sets.items():
+        if val is None:
+            remove_paths.append(f"'$.{sk}.{key}'")
+        else:
+            pname = f"_extra_{key}"
+            set_pairs.extend([f"'$.{sk}.{key}'", f":{pname}"])
+            params[pname] = val
+
+    json_expr = f"json_set(COALESCE(pipeline_stages, '{{}}'), {', '.join(set_pairs)})"
+    if remove_paths:
+        json_expr = f"json_remove({json_expr}, {', '.join(remove_paths)})"
+
+    result = db.execute(
+        text(f"UPDATE documents SET pipeline_stages = {json_expr} WHERE id = :doc_id"),
+        params,
+    )
+    if result.rowcount == 0:
+        logger.warning("pipeline_status: doc %d not found", doc_id)
+        return
+
+    # Recompute pipeline_state from the freshly-written stages.
     row = db.execute(
         text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
         {"doc_id": doc_id},
     ).fetchone()
-
-    if row is None:
-        logger.warning(f"pipeline_status: doc {doc_id} not found")
-        return
-
-    stages: dict = json.loads(row[0]) if row[0] else {}
-    stage_entry = stages.setdefault(stage.value, {})
-    stage_entry["status"] = status.value
-    for key, val in extra_sets.items():
-        if val is None:
-            stage_entry.pop(key, None)
-        else:
-            stage_entry[key] = val
-
+    stages: dict = json.loads(row[0]) if (row and row[0]) else {}
     overall = compute_overall_state(stages)
     db.execute(
-        text(
-            "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state"
-            " WHERE id = :doc_id"
-        ),
-        {"stages": json.dumps(stages), "state": overall.value, "doc_id": doc_id},
+        text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
+        {"state": overall.value, "doc_id": doc_id},
     )
     if commit:
         db.commit()

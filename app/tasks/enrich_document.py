@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
@@ -51,6 +53,19 @@ def enrich_document_task(self, doc_id: int):
     logger.info("Doc #%d: enrich started", doc_id)
     try:
         enrich(doc_id)
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info("Doc #%d: enrich timeout — retrying once in 90s", doc_id)
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning(
+            "Doc #%d: enrich timeout after retry (%s) — marking failed", doc_id, e
+        )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.ENRICH, db, error=f"timeout: {e}")
+        finally:
+            db.close()
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
         db = get_db_session()
@@ -82,12 +97,28 @@ def enrich_document_task(self, doc_id: int):
     from app.tasks.detect_relationships import detect_relationships_task
     from app.tasks.extract_entities import extract_entities_task
 
-    detect_relationships_task.delay(doc_id)
-    extract_entities_task.delay(doc_id)
+    _dispatch_if_pending(doc_id, "relationships", detect_relationships_task)
+    _dispatch_if_pending(doc_id, "entities", extract_entities_task)
 
     _trigger_cost_rollup(doc_id)
 
     return {"status": "success", "doc_id": doc_id}
+
+
+def _dispatch_if_pending(doc_id: int, stage_key: str, task) -> None:
+    """Fire task only when the stage is currently pending — prevents fan-out from concurrent enrich retries."""
+    from app.dependencies import get_db_session
+    from app.models.database import Document
+
+    db = get_db_session()
+    try:
+        stages = (
+            db.query(Document.pipeline_stages).filter(Document.id == doc_id).scalar()
+        ) or {}
+        if stages.get(stage_key, {}).get("status") == "pending":
+            task.delay(doc_id)
+    finally:
+        db.close()
 
 
 def _trigger_cost_rollup(doc_id: int) -> None:

@@ -1,7 +1,6 @@
 """Integration tests for triage document actions."""
 
 from datetime import datetime
-from unittest.mock import patch
 
 import pytest
 
@@ -13,28 +12,6 @@ from app.models.enums import (
     RelationshipType,
     SignificanceTier,
 )
-
-
-@pytest.mark.integration
-def test_retry_ai_action(app_client, db_session):
-    # 1. Setup a doc in failed state
-    doc = Document(
-        title="Failed AI Doc",
-        ai_summary={"error": "Ollama offline"},
-    )
-    db_session.add(doc)
-    db_session.commit()
-    db_session.refresh(doc)
-
-    # 2. Mock dispatch_task to capture what gets enqueued
-    with patch("app.tasks.dispatch.dispatch_task") as mock_dispatch:
-        # 3. Call the retry-ai endpoint
-        response = app_client.post(f"/triage/document/{doc.id}/retry-ai")
-
-        assert response.status_code == 200
-        # Check if the task was queued with the right doc id
-        mock_dispatch.assert_called_once()
-        assert mock_dispatch.call_args[0][1] == doc.id
 
 
 @pytest.mark.integration

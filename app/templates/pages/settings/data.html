@@ -66,6 +66,35 @@
                 </div>
             </div>
             <div id="enrichment-result" class="px-4"></div>
+
+            <!-- Clear all data -->
+            <div class="flex items-center justify-between p-4 rounded-xl border border-outline-variant/20" x-data="{confirm: false}">
+                <div class="space-y-0.5">
+                    <p class="text-sm font-bold text-on-surface">Clear All Data</p>
+                    <p class="text-xs text-on-surface-variant">Delete every case, document, claim, cost, conversation, entity, and vector. Removes all uploaded files and scan artifacts on disk. Preserves your UI settings.</p>
+                </div>
+                <div class="flex items-center gap-2 ml-4 shrink-0">
+                    <button x-show="!confirm" @click="confirm = true"
+                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all"
+                            style="border-color:var(--color-error); color:var(--color-error);">
+                        Clear All
+                    </button>
+                    <div x-show="confirm" class="flex items-center gap-2">
+                        <span class="text-xs text-on-surface-variant">Sure?</span>
+                        <button hx-post="/api/settings/maintenance/clear-all-data"
+                                hx-target="#clear-all-result"
+                                hx-swap="innerHTML"
+                                @click="confirm = false"
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary"
+                                style="background:var(--color-error);">Yes</button>
+                        <button @click="confirm = false"
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="clear-all-result" class="px-4"></div>
         </div>
     </div>
 </section>

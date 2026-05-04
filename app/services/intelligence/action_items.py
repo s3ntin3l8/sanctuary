@@ -1,7 +1,7 @@
 """Shared helper for creating ActionItem rows from AI-extracted action payload."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -19,11 +19,18 @@ def create_from_payload(
     proceeding_id: int | None,
     actions: list[dict],
     db: Session,
+    *,
+    source_doc_date: datetime | None = None,
 ) -> int:
     """Parse an AI-extracted actions list and insert ActionItem rows.
 
     Deduplicates when source_doc_id is set: deletes existing ActionItems for
     that source doc before inserting, so re-running enrichment doesn't duplicate.
+
+    When source_doc_date is provided, drops actions whose due_date is more than
+    one day before source_doc_date — guards against the AI extracting past
+    hearing dates from Sitzungsprotokolle / Terminsprotokolle as if they were
+    upcoming deadlines.
 
     Returns the count of rows created.
     """
@@ -34,6 +41,15 @@ def create_from_payload(
         db.query(ActionItem).filter(
             ActionItem.source_document_id == source_doc_id
         ).delete(synchronize_session=False)
+
+    # Compare on `.date()` — `due_date` from strptime is naive, but
+    # `doc.issued_date` arrives as tz-aware UTC in production; mixing the two
+    # raises TypeError. We only have YYYY-MM-DD precision either way.
+    cutoff_date = (
+        (source_doc_date - timedelta(days=1)).date()
+        if source_doc_date is not None
+        else None
+    )
 
     count = 0
     for action in actions:
@@ -46,6 +62,9 @@ def create_from_payload(
         except ValueError:
             due_date = None
         if not due_date:
+            continue
+
+        if cutoff_date is not None and due_date.date() < cutoff_date:
             continue
 
         db.add(

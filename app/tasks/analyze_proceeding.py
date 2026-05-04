@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
@@ -15,13 +17,13 @@ def analyze_proceeding_task(self, doc_id: int):
     """Analyze document for proceeding changes (escalation, court details), then trigger batch analysis."""
     from app.dependencies import get_db_session
     from app.models.database import Document
-    from app.services.ai_config import get_effective_config
+    from app.services.ai_config import get_chat_config
     from app.services.intelligence.proceeding_analyzer import (
         analyze_and_update_proceeding,
     )
     from app.services.pipeline_status import (
         mark_completed,
-        mark_failed,
+        mark_failed_with_cascade,
         mark_skipped,
         mark_started,
     )
@@ -44,7 +46,7 @@ def analyze_proceeding_task(self, doc_id: int):
                 return {"status": "not_found", "doc_id": doc_id}
 
             batch_id = doc.ingest_batch_id
-            config = get_effective_config(db)
+            config = get_chat_config(db)
 
             skip_reason = analyze_and_update_proceeding(doc, config.summary_model, db)
 
@@ -61,11 +63,44 @@ def analyze_proceeding_task(self, doc_id: int):
         finally:
             db.close()
 
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info(
+                "Doc #%d: proceeding analysis timeout — retrying once in 90s", doc_id
+            )
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning(
+            "Doc #%d: proceeding analysis timeout after retry (%s) — marking failed",
+            doc_id,
+            e,
+        )
+        db = get_db_session()
+        try:
+            mark_failed_with_cascade(
+                doc_id, PipelineStage.PROCEEDING_ANALYSIS, db, error=f"timeout: {e}"
+            )
+        finally:
+            db.close()
+        # Still attempt to advance the batch so enrich isn't permanently blocked.
+        if batch_id:
+            from app.services.intelligence.orchestrator import claim_batch_for_analysis
+
+            db_claim = get_db_session()
+            try:
+                if claim_batch_for_analysis(batch_id, db_claim):
+                    from app.tasks.analyze_batch import analyze_batch_task
+
+                    analyze_batch_task.delay(batch_id)
+            finally:
+                db_claim.close()
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} proceeding analysis failed: {e}", exc_info=True)
         db = get_db_session()
         try:
-            mark_failed(doc_id, PipelineStage.PROCEEDING_ANALYSIS, db, error=str(e))
+            mark_failed_with_cascade(
+                doc_id, PipelineStage.PROCEEDING_ANALYSIS, db, error=str(e)
+            )
         finally:
             db.close()
 

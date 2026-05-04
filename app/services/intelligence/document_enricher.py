@@ -56,7 +56,11 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
         if formatted:
             reactions_block = f"\n\n{formatted}"
 
-    prompt = f"Document title: {doc.title}{batch_context}{dates_context}{reactions_block}\n\n{content_preview}"
+    prompt = (
+        f"{batch_context}{dates_context}{reactions_block}\n\n{content_preview}".lstrip(
+            "\n"
+        )
+    )
 
     return call_json_ai(
         system_prompt=DOCUMENT_ENRICHER_SYSTEM,
@@ -209,6 +213,7 @@ def enrich(doc_id: int) -> None:
             doc.proceeding_id,
             result.get("action_items") or [],
             db,
+            source_doc_date=doc.issued_date,
         )
 
         db.commit()

@@ -156,3 +156,76 @@ def test_action_items_created(db_session, sample_case, batch_with_two_docs):
     assert items[0].title == "File response"
     assert items[0].status == ActionItemStatus.OPEN
     assert items[0].source_document_id == cover.id
+
+
+@pytest.mark.unit
+def test_metadata_originator_not_overwritten_by_batch(db_session, sample_case):
+    """When metadata stage determined OWN originator, batch must not overwrite
+    it with 'court' — even if the batch AI guessed the doc is a court enclosure.
+
+    Reproduces the bug where doc 12 (lawyer's cover letter to client) was
+    reclassified as COURT+ENCLOSURE by the batch analyzer despite metadata
+    correctly identifying it as OWN.
+    """
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    # The court relay doc that the batch AI picks as cover-letter candidate.
+    court_relay = Document(
+        title="Schr. OLG München v. 14.04.26",
+        content="Im Auftrag des Gerichts...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        court_relay=True,
+    )
+    # The lawyer-to-client letter — metadata stage already set OWN.
+    lawyer_letter = Document(
+        title="Schr an Mdt",
+        content="Sehr geehrter Herr Hansen, anliegend übersende ich...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.OWN,
+        attributed_originator="Haidl Funk Rechtsanwälte",
+    )
+    db_session.add(court_relay)
+    db_session.add(lawyer_letter)
+    db_session.commit()
+    db_session.refresh(court_relay)
+    db_session.refresh(lawyer_letter)
+    db_session.refresh(batch)
+
+    # Batch AI guessed lawyer_letter is a court enclosure (wrong).
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": court_relay.id,
+                "enclosed": [
+                    {
+                        "originator_type": "court",
+                        "attributed_originator": "OLG München",
+                        "matched_filename": "Schr an Mdt",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [court_relay, lawyer_letter], result, db_session)
+
+    db_session.expire_all()
+    lawyer_letter = db_session.get(Document, lawyer_letter.id)
+
+    # Metadata-determined OWN must survive the batch pass.
+    assert lawyer_letter.originator_type == OriginatorType.OWN
+    assert lawyer_letter.attributed_originator == "Haidl Funk Rechtsanwälte"
+    assert lawyer_letter.role != DocumentRole.ENCLOSURE
+    assert lawyer_letter.parent_id is None

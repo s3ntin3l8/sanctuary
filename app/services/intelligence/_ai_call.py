@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 
-from app.config import DATA_DIR
+from app.config import AI_READ_TIMEOUT, DATA_DIR
 from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
@@ -153,6 +153,7 @@ def call_json_ai(
     model: str | None = None,
     db=None,
     ingest_batch_id: int | None = None,
+    suppress_thinking: bool = False,
 ) -> dict:
     """Synchronous streaming AI call that returns a parsed JSON dict.
 
@@ -177,6 +178,13 @@ def call_json_ai(
 
     cfg = get_chat_config(db)
     resolved_model = model or cfg.summary_model
+
+    if suppress_thinking:
+        system_prompt = (
+            system_prompt + "\n\nIMPORTANT: Respond with the final JSON only. "
+            "Do not include reasoning, explanation, or <think> blocks."
+        )
+        user_prompt = "/no_think\n" + user_prompt
 
     params = run_async(
         chat_provider.get_generate_params(
@@ -209,7 +217,11 @@ def call_json_ai(
     stream_error: str | None = None
 
     try:
-        with httpx.Client(timeout=httpx.Timeout(120.0, read=60.0)) as client:
+        with httpx.Client(
+            timeout=httpx.Timeout(
+                connect=5.0, read=AI_READ_TIMEOUT, write=30.0, pool=10.0
+            )
+        ) as client:
             with client.stream(
                 "POST", params["url"], json=params["json"], headers=params["headers"]
             ) as response:
@@ -231,8 +243,15 @@ def call_json_ai(
                             full_response += token
                     if chunk.get("done"):
                         break
-    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
-        # Compact one-liner for expected transient provider errors — no stack trace.
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        # Fast-fail: host is unreachable — log compactly and re-raise immediately.
+        duration_so_far = int((time.perf_counter() - start_perf) * 1000)
+        stream_error = (
+            f"connection failed after {duration_so_far}ms: {type(e).__name__}: {e}"
+        )
+        raise
+    except (httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
+        # Transient: server is up but slow — callers may retry.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)
         ttfb_so_far = (
             int((ttfb_perf - start_perf) * 1000) if ttfb_perf is not None else None

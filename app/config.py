@@ -38,6 +38,9 @@ AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5:9b")
 AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text:v1.5")
 AI_EMBED_DIM = int(os.getenv("AI_EMBED_DIM", "768"))  # nomic-embed-text default
 AI_USER_CONTEXT = os.getenv("AI_USER_CONTEXT", "")
+# Read timeout (seconds) for streaming AI calls. Local inference on long prompts
+# can easily exceed 60s; the default of 600s gives slow local models headroom.
+AI_READ_TIMEOUT = float(os.getenv("AI_READ_TIMEOUT", "600"))
 
 # AI Provider Configuration (ollama, lmstudio, openai, or auto)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()

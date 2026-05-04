@@ -17,6 +17,7 @@ from app.config import SessionLocal
 from app.models.database import Document, IngestBatch
 from app.models.enums import (
     DocumentRole,
+    OriginatorType,
     parse_originator_type,
 )
 from app.services.ai_config import get_chat_config
@@ -34,6 +35,23 @@ COVER_LETTER_KEYWORDS = {
     "deckblatt",
     "cover",
 }
+
+
+def _metadata_outranks_batch(child: Document, batch_originator: str | None) -> bool:
+    """True when the metadata stage determined a non-court sender and the batch
+    stage is trying to overwrite it with 'court'.
+
+    The metadata stage sees full text; the batch stage sees one cover-letter
+    candidate plus sibling titles only. OWN/OPPOSING/THIRD_PARTY from metadata
+    outranks a title-only 'court' guess from batch.
+    """
+    if not batch_originator or batch_originator.lower() != "court":
+        return False
+    return child.originator_type in (
+        OriginatorType.OWN,
+        OriginatorType.OPPOSING,
+        OriginatorType.THIRD_PARTY,
+    )
 
 
 def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
@@ -159,6 +177,15 @@ def _apply_batch_results(
                         if len(subs) == 1:
                             child = subs[0]
                 if child:
+                    if _metadata_outranks_batch(child, encl.get("originator_type")):
+                        logger.warning(
+                            "Batch #%d doc #%d: skipping enclosure assignment — metadata "
+                            "classified originator as %s but batch claims 'court'. Trusting metadata.",
+                            batch_id,
+                            child.id,
+                            child.originator_type,
+                        )
+                        continue
                     claimed_ids.add(child.id)
                     child.role = DocumentRole.ENCLOSURE
                     child.parent_id = cover_id
@@ -218,6 +245,15 @@ def _apply_batch_results(
                     if len(subs) == 1:
                         child = subs[0]
             if child:
+                if _metadata_outranks_batch(child, encl.get("originator_type")):
+                    logger.warning(
+                        "Batch #%d doc #%d: skipping enclosure assignment — metadata "
+                        "classified originator as %s but batch claims 'court'. Trusting metadata.",
+                        batch_id,
+                        child.id,
+                        child.originator_type,
+                    )
+                    continue
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
@@ -253,12 +289,14 @@ def _apply_batch_results(
         from app.services.intelligence.action_items import create_from_payload
 
         source_doc_id = first_cover.id if first_cover else None
+        source_doc_date = first_cover.issued_date if first_cover else None
         create_from_payload(
             case_id,
             source_doc_id,
             batch.proceeding_id if batch else None,
             detected_actions,
             db,
+            source_doc_date=source_doc_date,
         )
 
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
@@ -273,6 +311,15 @@ def _apply_batch_results(
             relay.role = DocumentRole.COVER_LETTER
             for d in docs:
                 if d.id == relay.id or d.parent_id is not None:
+                    continue
+                if _metadata_outranks_batch(d, "court"):
+                    logger.warning(
+                        "Batch #%d doc #%d: skipping single-relay fallback — metadata "
+                        "classified originator as %s. Trusting metadata.",
+                        batch_id,
+                        d.id,
+                        d.originator_type,
+                    )
                     continue
                 d.role = DocumentRole.ENCLOSURE
                 d.parent_id = relay.id

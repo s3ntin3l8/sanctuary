@@ -576,6 +576,10 @@ async def retry_pipeline_stage(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Unknown stage: {stage}") from exc
 
+    # Take SQLite writer lock on this row before reading stages so a concurrent
+    # worker can't mark_started between our guard check and reset_stage.
+    _lock_row_for_retry(doc_id, db)
+    db.refresh(doc)
     stages = doc.pipeline_stages or {}
 
     # Guard: reject if this stage itself is running
@@ -632,6 +636,10 @@ async def retry_pipeline_all(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
+    # Take SQLite writer lock on this row before reading stages so a concurrent
+    # worker can't mark_started between our guard check and reset_all_stages.
+    _lock_row_for_retry(doc_id, db)
+    db.refresh(doc)
     stages = doc.pipeline_stages or {}
     running = [
         key
@@ -652,6 +660,21 @@ async def retry_pipeline_all(
         )
 
     reset_all_stages(doc_id, db)
+
+    # Clear the per-stage reload latch on the parent batch so the triage row
+    # re-renders when each major stage finishes after this retry.
+    if doc.ingest_batch_id:
+        from app.models.database import IngestBatch
+
+        batch = (
+            db.query(IngestBatch).filter(IngestBatch.id == doc.ingest_batch_id).first()
+        )
+        if batch is not None and batch.meta:
+            meta = dict(batch.meta)
+            meta.pop("reload_fired", None)
+            batch.meta = meta
+            db.commit()
+
     db.refresh(doc)
 
     # Kick off the pipeline from EXTRACT — process_document_task chains forward
@@ -676,6 +699,23 @@ def _dispatch_retry_task(doc_id: int, batch_id: int | None, stage) -> None:
         )
         return
     dispatch_task(spec.retry_task, arg)
+
+
+def _lock_row_for_retry(doc_id: int, db: Session) -> None:
+    """Acquire SQLite's writer lock on a documents row via a no-op UPDATE.
+
+    SQLite serializes write transactions, so subsequent reads in the same
+    transaction see the latest committed state and no other writer can change
+    the row until we commit. Closes the read-check-write race in the retry
+    endpoints — without this, a Celery worker could mark_started on an upstream
+    stage between the guard check and reset_stage.
+    """
+    from sqlalchemy import text
+
+    db.execute(
+        text("UPDATE documents SET id = id WHERE id = :doc_id"),
+        {"doc_id": doc_id},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -38,10 +38,11 @@ async def detect_provider(base_url: str) -> ProviderType:
         except Exception as e:
             logger.debug(f"Ollama probe failed at {base_url}: {e}")
 
-    logger.warning(
-        f"AI provider auto-detection failed for {base_url}, defaulting to ollama"
+    raise RuntimeError(
+        f"AI provider unreachable: no endpoint responded at {base_url} "
+        "(tried /v1/models for LM Studio and /api/tags for Ollama — "
+        "check that your AI server is running)"
     )
-    return ProviderType.OLLAMA
 
 
 class AIProvider:
