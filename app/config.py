@@ -110,6 +110,10 @@ def load_sqlite_extensions(dbapi_conn, connection_record):
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA cache_size=-64000")
         cursor.execute("PRAGMA temp_store=MEMORY")
+        # Daemon-thread EAGER dispatch fans out 10+ concurrent writers on bundle
+        # retry. Default busy_timeout=0 fails the loser immediately with
+        # "database is locked" — silently, since dispatch_task swallows it.
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 

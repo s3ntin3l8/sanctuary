@@ -7,17 +7,18 @@ Analyze all documents in the batch. An email may contain multiple cover letters 
 Return ONLY valid JSON with these exact keys:
 - bundles: list of bundles found. Each bundle represents one cover letter and its enclosures. Structure:
   [{"cover_letter_doc_id": int or null, "enclosed": [
-    {"description": "brief description", "attributed_originator": "who really sent this", "originator_type": "court|opposing|own|third_party|unknown", "matched_filename": "filename or null"}
+    {"description": "brief description", "attributed_originator": "the document's actual author/sender", "originator_type": "court|opposing|own|third_party|unknown", "matched_filename": "filename or null"}
   ]}]
-- If a document is a standalone document (not a cover letter and no cover letter introduces it), include it in the next bundle with cover_letter_doc_id: null, or create a new singleton bundle.
-- Every document in this batch must appear exactly once in the bundles - either as a cover letter (cover_letter_doc_id matches) or in an enclosed list.
+- attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from your own lawyer, use the firm name (e.g. "Haidl Funk Rechtsanwälte"), not the client name. For a court letter, use the court name. For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
+- If a document is a standalone document (not a cover letter and no cover letter introduces it), use cover_letter_doc_id: null AND leave its enclosed list empty for that bundle, OR omit it from the bundles entirely. Do NOT list a standalone doc inside another bundle's enclosed list.
+- Every document in this batch must appear at most once: as a cover letter (cover_letter_doc_id) or as an enclosure under a non-null cover letter.
 - detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low"}
 
 Example response:
 {
   "bundles": [
-    {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "matched_filename": "klage.pdf", "attributed_originator": "Kläger", "originator_type": "opposing"}]},
+    {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
     {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
   ],
   "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high"}]

@@ -229,3 +229,127 @@ def test_metadata_originator_not_overwritten_by_batch(db_session, sample_case):
     assert lawyer_letter.attributed_originator == "Haidl Funk Rechtsanwälte"
     assert lawyer_letter.role != DocumentRole.ENCLOSURE
     assert lawyer_letter.parent_id is None
+
+
+@pytest.mark.unit
+def test_null_cover_letter_doc_id_leaves_doc_standalone(db_session, sample_case):
+    """When AI returns cover_letter_doc_id=null with enclosed entries, the doc
+    must NOT be wired as ENCLOSURE — it should fall through to STANDALONE.
+
+    Reproduces the doc-7 batch-3 bug: the AI signaled doc 7 as standalone
+    (cover_letter_doc_id=null) but _apply_batch_results wired it as ENCLOSURE
+    with parent_id=NULL anyway, poisoning the enricher's batch_context.
+    """
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    standalone = Document(
+        title="Schriftsatz Beschwerde",
+        content="Some content here that is long enough to be healthy.",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.OWN,
+        attributed_originator="Haidl Funk Rechtsanwälte",
+    )
+    db_session.add(standalone)
+    db_session.commit()
+    db_session.refresh(standalone)
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": None,
+                "enclosed": [
+                    {
+                        "description": "Schriftsatz Beschwerde",
+                        "attributed_originator": "Hansen",
+                        "originator_type": "own",
+                        "matched_filename": "Schriftsatz Beschwerde",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [standalone], result, db_session)
+
+    db_session.expire_all()
+    standalone = db_session.get(Document, standalone.id)
+
+    assert standalone.role == DocumentRole.STANDALONE
+    assert standalone.parent_id is None
+    # Metadata's attributed_originator must survive; batch's "Hansen" guess is wrong.
+    assert standalone.attributed_originator == "Haidl Funk Rechtsanwälte"
+
+
+@pytest.mark.unit
+def test_metadata_attributed_originator_preserved_for_non_court_enclosure(
+    db_session, sample_case
+):
+    """For OWN/OPPOSING enclosures, metadata's sender extraction wins over
+    batch's title-only guess. Court enclosures still let batch overwrite."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben",
+        content="Im Auftrag des Mandanten übersende ich anliegend...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.OWN,
+    )
+    enclosure = Document(
+        title="Klageerwiderung Liu",
+        content="Der Beklagte erwidert...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.OPPOSING,
+        attributed_originator="Kanzlei Müller & Partner",
+    )
+    db_session.add(cover)
+    db_session.add(enclosure)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(enclosure)
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "Klageerwiderung",
+                        "attributed_originator": "Liu",
+                        "originator_type": "opposing",
+                        "matched_filename": "Klageerwiderung Liu",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+
+    db_session.expire_all()
+    enclosure = db_session.get(Document, enclosure.id)
+
+    assert enclosure.role == DocumentRole.ENCLOSURE
+    assert enclosure.parent_id == cover.id
+    # Metadata's firm name survives — batch's party guess is rejected.
+    assert enclosure.attributed_originator == "Kanzlei Müller & Partner"

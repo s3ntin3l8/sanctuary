@@ -150,6 +150,12 @@ def _apply_batch_results(
                 if first_cover is None:
                     first_cover = cover_doc
 
+            # Without a cover letter the AI is signaling the doc is standalone,
+            # not enclosed under anything. Skip enclosure wiring and let the
+            # unclaimed-fallback at the end mark the doc STANDALONE.
+            if cover_id is None:
+                continue
+
             # Wire enclosures to this cover letter
             for encl in enclosed:
                 matched = encl.get("matched_filename")
@@ -193,7 +199,13 @@ def _apply_batch_results(
                         parse_originator_type(encl.get("originator_type"))
                         or child.originator_type
                     )
-                    child.attributed_originator = encl.get("attributed_originator")
+                    # For non-court enclosures, prefer metadata's sender extraction
+                    # (full text) over batch's title-only guess. Court relays are
+                    # the legitimate "batch knows better" case.
+                    batch_originator = encl.get("attributed_originator")
+                    is_court = encl.get("originator_type", "").lower() == "court"
+                    if is_court or not child.attributed_originator:
+                        child.attributed_originator = batch_originator
     else:
         # Legacy format: single cover letter
         cover_letter_doc_id = result.get("cover_letter_doc_id")
@@ -261,7 +273,10 @@ def _apply_batch_results(
                     parse_originator_type(encl.get("originator_type"))
                     or child.originator_type
                 )
-                child.attributed_originator = encl.get("attributed_originator")
+                batch_originator = encl.get("attributed_originator")
+                is_court = encl.get("originator_type", "").lower() == "court"
+                if is_court or not child.attributed_originator:
+                    child.attributed_originator = batch_originator
 
     # Cascade case/proceeding from any cover letter to all docs
     if first_cover and first_cover.case_id:
