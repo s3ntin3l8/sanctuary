@@ -341,12 +341,17 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
 def normalize_az_court(value: str | None) -> str | None:
     """Canonicalise a court Aktenzeichen for equality comparison.
 
-    Strips parenthetical annotations, normalises whitespace around '/', then uppercases.
+    Strips parenthetical annotations, converts dashes around digit/letter
+    boundaries to spaces (filenames often use '-' as separator), normalises
+    whitespace around '/', then uppercases.
     "26 UF 288/ 26 E (ELTERL. SORGE)" → "26 UF 288/26 E"
+    "22-T-342/26" → "22 T 342/26"
     """
     if not value:
         return None
     cleaned = re.sub(r"\s*\([^)]*\)\s*", "", value)
+    cleaned = re.sub(r"(\d)\s*-\s*([A-Za-z])", r"\1 \2", cleaned)
+    cleaned = re.sub(r"([A-Za-z])\s*-\s*(\d)", r"\1 \2", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned.strip())
     cleaned = re.sub(r"\s*/\s*", "/", cleaned)
     return cleaned.upper() or None

@@ -11,7 +11,10 @@ from app.models.enums import (
     OriginatorType,
     SignificanceTier,
 )
-from app.services.intelligence.document_enricher import _apply_enrichment
+from app.services.intelligence.document_enricher import (
+    _apply_enrichment,
+    _call_enricher_sync,
+)
 
 
 @pytest.fixture
@@ -150,6 +153,80 @@ def test_invalid_cost_delta_direction_normalized(doc_with_content):
 
     assert doc_with_content.cost_delta["direction"] == "none"
     assert doc_with_content.cost_delta["amount"] == 100.0
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_includes_cover_letter_context(db_session, doc_with_content):
+    """When doc.role=COVER_LETTER, the user prompt must carry the cover-letter
+    batch context line so the model titles + classifies it as a cover letter
+    rather than as the subject of its attachment.
+    """
+    doc_with_content.role = DocumentRole.COVER_LETTER
+    db_session.commit()
+    db_session.refresh(doc_with_content)
+
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return {}
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc_with_content)
+
+    assert "Batch context: This document is a cover letter" in captured["user_prompt"]
+    assert "document_type='relay'" in captured["user_prompt"]
+    assert "significance_tier='administrative'" in captured["user_prompt"]
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_includes_enclosure_context(db_session, doc_with_content):
+    """ENCLOSURE role + attributed_originator yields the existing enclosure context line."""
+    doc_with_content.role = DocumentRole.ENCLOSURE
+    doc_with_content.attributed_originator = "Kanzlei Müller & Partner"
+    db_session.commit()
+    db_session.refresh(doc_with_content)
+
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return {}
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc_with_content)
+
+    assert (
+        "Batch context: This document was enclosed in a cover letter"
+        in captured["user_prompt"]
+    )
+    assert "Kanzlei Müller & Partner" in captured["user_prompt"]
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_no_batch_context_for_standalone(
+    db_session, doc_with_content
+):
+    """STANDALONE docs get no batch context line."""
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return {}
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc_with_content)
+
+    assert "Batch context:" not in captured["user_prompt"]
 
 
 @pytest.mark.unit

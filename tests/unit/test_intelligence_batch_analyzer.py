@@ -77,7 +77,9 @@ def test_cover_letter_detected(db_session, batch_with_two_docs):
     enclosure = db_session.get(Document, enclosure.id)
 
     assert cover.role == DocumentRole.COVER_LETTER
-    assert cover.court_relay is True
+    # court_relay is owned by METADATA — batch analyzer must not overwrite it
+    # even when the AI response contains the legacy court_relay key.
+    assert cover.court_relay is False
     assert enclosure.role == DocumentRole.ENCLOSURE
     assert enclosure.parent_id == cover.id
     assert enclosure.attributed_originator == "Opposing counsel"
@@ -353,3 +355,139 @@ def test_metadata_attributed_originator_preserved_for_non_court_enclosure(
     assert enclosure.parent_id == cover.id
     # Metadata's firm name survives — batch's party guess is rejected.
     assert enclosure.attributed_originator == "Kanzlei Müller & Partner"
+
+
+@pytest.mark.unit
+def test_completion_sweep_claims_unbundled_proceeding_siblings(db_session, sample_case):
+    """When AI under-bundles, the post-bundle completion sweep must claim
+    unclaimed siblings sharing the cover letter's proceeding_id as enclosures.
+
+    Reproduces ib-0006 round-N behaviour: AI returned a bundle wiring only one
+    enclosure (the doc whose title literally matched 'Abschrift'), leaving two
+    other rulings from the same AG proceeding STANDALONE despite arriving in
+    the same email. The originator guard must keep an OWN letter out even
+    when its proceeding_id matches.
+    """
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+
+    proc = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Test",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="003 F 553/26",
+        status=ProceedingStatus.ACTIVE,
+        started_at=datetime.now(),
+    )
+    db_session.add(proc)
+    db_session.flush()
+
+    other_proc = Proceeding(
+        case_id=sample_case.id,
+        court_name="OLG München",
+        court_level=ProceedingCourtLevel.OLG,
+        az_court="26 WF 363/26 E",
+        status=ProceedingStatus.ACTIVE,
+        started_at=datetime.now(),
+    )
+    db_session.add(other_proc)
+    db_session.flush()
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        proceeding_id=proc.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    cover = Document(
+        title="Beschlussabschrift",
+        content="anbei erhalten Sie eine beglaubigte Abschrift des Beschlusses nebst Anlage.",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        proceeding_id=proc.id,
+        originator_type=OriginatorType.COURT,
+    )
+    enclosure_ai = Document(  # AI explicitly bundles this one
+        title="Abschrift Beschluss",
+        content="Beschlussabschrift content.",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        proceeding_id=proc.id,
+        originator_type=OriginatorType.COURT,
+    )
+    enclosure_swept = Document(  # AI doesn't bundle, sweep should claim
+        title="Beschluss einstweilige Anordnung",
+        content="Anordnung content.",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        proceeding_id=proc.id,
+        originator_type=OriginatorType.COURT,
+    )
+    own_letter = Document(  # OWN — must NOT be swept
+        title="Anwaltsbrief",
+        content="Sehr geehrter Herr Hansen, anbei...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        proceeding_id=proc.id,  # same proceeding, but originator guards it out
+        originator_type=OriginatorType.OWN,
+    )
+    different_proc_doc = Document(  # different proceeding — must NOT be swept
+        title="OLG Schreiben",
+        content="OLG content.",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        proceeding_id=other_proc.id,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add_all(
+        [cover, enclosure_ai, enclosure_swept, own_letter, different_proc_doc]
+    )
+    db_session.commit()
+    for d in (cover, enclosure_ai, enclosure_swept, own_letter, different_proc_doc):
+        db_session.refresh(d)
+
+    # AI returns a single bundle that explicitly wires only enclosure_ai.
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "Abschrift",
+                        "attributed_originator": "Amtsgericht Test",
+                        "originator_type": "court",
+                        "matched_filename": "Abschrift Beschluss",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    docs = [cover, enclosure_ai, enclosure_swept, own_letter, different_proc_doc]
+    _apply_batch_results(batch.id, docs, result, db_session)
+
+    db_session.expire_all()
+    cover = db_session.get(Document, cover.id)
+    enclosure_ai = db_session.get(Document, enclosure_ai.id)
+    enclosure_swept = db_session.get(Document, enclosure_swept.id)
+    own_letter = db_session.get(Document, own_letter.id)
+    different_proc_doc = db_session.get(Document, different_proc_doc.id)
+
+    assert cover.role == DocumentRole.COVER_LETTER
+    # AI-bundled enclosure stays wired.
+    assert enclosure_ai.role == DocumentRole.ENCLOSURE
+    assert enclosure_ai.parent_id == cover.id
+    # Sweep claims the unbundled court sibling sharing the proceeding.
+    assert enclosure_swept.role == DocumentRole.ENCLOSURE
+    assert enclosure_swept.parent_id == cover.id
+    # OWN letter and different-proceeding doc must remain unbundled.
+    assert own_letter.role == DocumentRole.STANDALONE
+    assert own_letter.parent_id is None
+    assert different_proc_doc.role == DocumentRole.STANDALONE
+    assert different_proc_doc.parent_id is None

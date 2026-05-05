@@ -82,9 +82,16 @@ async def generate_embedding(doc_id: int):
         from sqlalchemy import text
 
         blob = _serialize(embedding)
+        # vec0 virtual tables don't honor INSERT OR REPLACE on conflict, so
+        # retries hit a UNIQUE-on-primary-key error. Explicit DELETE + INSERT
+        # makes the write idempotent for re-ingestion / pipeline retries.
+        db.execute(
+            text("DELETE FROM document_vectors WHERE document_id = :doc_id"),
+            {"doc_id": doc_id},
+        )
         db.execute(
             text(
-                "INSERT OR REPLACE INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
+                "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
             ),
             {"doc_id": doc_id, "embedding": blob},
         )
@@ -137,9 +144,15 @@ async def reindex_all_docs(db) -> dict:
             )
             if embedding and len(embedding) == cfg.embed_dim:
                 blob = _serialize(embedding)
+                # See generate_embedding() above: vec0 doesn't honor INSERT OR
+                # REPLACE; DELETE + INSERT keeps reindex idempotent.
+                db.execute(
+                    text("DELETE FROM document_vectors WHERE document_id = :doc_id"),
+                    {"doc_id": doc.id},
+                )
                 db.execute(
                     text(
-                        "INSERT OR REPLACE INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
+                        "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
                     ),
                     {"doc_id": doc.id, "embedding": blob},
                 )

@@ -7,6 +7,7 @@ from app.services.ingestion import (
     extract_internal_id,
     extract_originator,
     extract_sender,
+    normalize_az_court,
 )
 
 
@@ -142,3 +143,19 @@ def test_extract_internal_id_none_when_absent():
     content = "Aktenzeichen: 26 UF 288/26 e\nDatum: 12.03.2025"
     result = extract_internal_id(content)
     assert result["value"] is None
+
+
+@pytest.mark.unit
+def test_normalize_az_court_canonicalizes_dashes_and_spaces():
+    # Filename-style dashes collapse to body-style spaces.
+    assert normalize_az_court("22-T-342/26") == "22 T 342/26"
+    assert normalize_az_court("003-F-426/25") == "003 F 426/25"
+    # Body-style input already canonical — idempotent.
+    assert normalize_az_court("22 T 342/26") == "22 T 342/26"
+    # Mixed: parenthetical annotations stripped, spacing around / fixed.
+    assert normalize_az_court("26 UF 288/ 26 E (ELTERL. SORGE)") == "26 UF 288/26 E"
+    # None / empty stays None.
+    assert normalize_az_court(None) is None
+    assert normalize_az_court("") is None
+    # Lowercase letters are uppercased.
+    assert normalize_az_court("26 uf 288/26 e") == "26 UF 288/26 E"

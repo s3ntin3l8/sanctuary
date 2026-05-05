@@ -163,7 +163,9 @@ def test_ingestion_cascade(db_session, email_batch):
     db_session.refresh(enclosure)
 
     assert cover.role == DocumentRole.COVER_LETTER
-    assert cover.court_relay is True
+    # court_relay is owned by METADATA — batch analyzer must not overwrite it
+    # (the AI's legacy court_relay key is intentionally ignored).
+    assert cover.court_relay is False
     assert cover.attributed_originator == "Amtsgericht Berlin"
     assert enclosure.role == DocumentRole.ENCLOSURE
     assert enclosure.attributed_originator == "Amtsgericht Berlin"

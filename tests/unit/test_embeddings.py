@@ -44,12 +44,16 @@ async def test_generate_embedding_success(db_session, sample_document):
 
         await generate_embedding(sample_document.id)
 
-    assert len(executed) == 1
-    sql, params = executed[0]
-    assert "document_vectors" in sql
-    assert params["doc_id"] == sample_document.id
-    assert isinstance(params["embedding"], bytes)
-    assert len(params["embedding"]) == 4 * AI_EMBED_DIM
+    # vec0 doesn't honor INSERT OR REPLACE, so the write is DELETE + INSERT.
+    assert len(executed) == 2
+    delete_sql, delete_params = executed[0]
+    insert_sql, insert_params = executed[1]
+    assert "DELETE FROM document_vectors" in delete_sql
+    assert delete_params["doc_id"] == sample_document.id
+    assert "INSERT INTO document_vectors" in insert_sql
+    assert insert_params["doc_id"] == sample_document.id
+    assert isinstance(insert_params["embedding"], bytes)
+    assert len(insert_params["embedding"]) == 4 * AI_EMBED_DIM
 
 
 @pytest.mark.asyncio
@@ -97,6 +101,41 @@ async def test_generate_embedding_failure_propagates(db_session, sample_document
             await generate_embedding(sample_document.id)
 
     mock_db.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_document):
+    """Re-running generate_embedding for a doc that already has a vector must not
+    raise UNIQUE on document_vectors — vec0 ignores INSERT OR REPLACE so the
+    code must DELETE before INSERT.
+    """
+    mock_embedding = [0.1] * AI_EMBED_DIM
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"embedding": mock_embedding}
+    mock_response.raise_for_status = MagicMock()
+
+    with (
+        patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post,
+        patch("app.services.embeddings.SessionLocal") as mock_session_local,
+    ):
+        mock_post.return_value = mock_response
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = (
+            sample_document
+        )
+        mock_session_local.return_value = mock_db
+
+        # Two calls back-to-back — second would raise UNIQUE if the code
+        # weren't doing DELETE-then-INSERT.
+        await generate_embedding(sample_document.id)
+        await generate_embedding(sample_document.id)
+
+    statements = [str(call.args[0]) for call in mock_db.execute.call_args_list]
+    delete_count = sum(1 for s in statements if "DELETE FROM document_vectors" in s)
+    insert_count = sum(1 for s in statements if "INSERT INTO document_vectors" in s)
+    assert delete_count == 2
+    assert insert_count == 2
 
 
 @pytest.mark.asyncio

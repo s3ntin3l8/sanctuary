@@ -41,7 +41,14 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     content_preview = get_content_preview(doc, 60000)
 
     batch_context = ""
-    if doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
+    if doc.role == DocumentRole.COVER_LETTER:
+        batch_context = (
+            "\nBatch context: This document is a cover letter (Begleitschreiben/"
+            "Schreiben) introducing other documents in this delivery. Title it "
+            "as a cover letter — NOT by the subject of the attachments. "
+            "Set document_type='relay' and significance_tier='administrative'."
+        )
+    elif doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
         batch_context = f"\nBatch context: This document was enclosed in a cover letter. True originator: {doc.attributed_originator}"
 
     dates_context = ""

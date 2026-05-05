@@ -24,8 +24,12 @@ STAGE_OPTIONS: dict[str, dict] = {
     "relationships": {
         "num_ctx": 32768,
         "temperature": 0.1,
-        "num_predict": 10000,
-        "max_tokens": 10000,
+        # 16000 (was 10000) — qwen-3.5-9b's thinking chain on multi-doc
+        # relationship reasoning hits 10000+ tokens on hard cases (~21% of
+        # historical runs returned empty at the 10000 cap). Same pattern as
+        # proceeding stage. See data/ai_debug/runs.jsonl thinking_len.
+        "num_predict": 16000,
+        "max_tokens": 16000,
     },
     "claims": {
         "num_ctx": 32768,
@@ -42,13 +46,20 @@ STAGE_OPTIONS: dict[str, dict] = {
     "case_brief": {
         "num_ctx": 32768,
         "temperature": 0.2,
-        "num_predict": 10000,
-        "max_tokens": 10000,
+        # 16000 (was 10000) — case-level synthesis thinking can exceed 9500
+        # tokens on cases with many docs, saturating the 10000 cap (~24% of
+        # historical brief runs returned empty). See runs.jsonl thinking_len.
+        "num_predict": 16000,
+        "max_tokens": 16000,
     },
     "proceeding": {
         "num_ctx": 16384,
         "temperature": 0.0,
-        "num_predict": 2000,
-        "max_tokens": 2000,
+        # 8000 (was 2000) — qwen-3.5-9b's thinking chain alone consumes ~1975
+        # tokens on this stage's prompt; the old 2000 cap left zero budget for
+        # the ~50-token JSON response and produced empty responses ~50% of the
+        # time. See data/ai_debug/runs.jsonl thinking_len pattern.
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
 }

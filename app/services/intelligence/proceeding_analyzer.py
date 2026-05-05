@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
-from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import PROCEEDING_ANALYZER_SYSTEM
@@ -37,20 +37,41 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
     if not doc.content or len(doc.content) < 50:
         return "content too short"
 
-    if not doc.proceeding_id:
-        return "no proceeding assigned"
-
-    current_proc = (
-        db.query(Proceeding).filter(Proceeding.id == doc.proceeding_id).first()
-    )
-    if not current_proc:
-        return "proceeding not found"
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        return "no case assigned"
 
     data = extract_proceeding_details(doc, model, db=db)
+
+    from app.services.ingestion.extractors import infer_court_level, normalize_az_court
+
+    # Fallback for AI failure (empty response, parse error, server timeout):
+    # if METADATA already extracted an AZ for a court letter, use that instead
+    # of skipping silently. Bounded by originator_type=COURT to avoid creating
+    # bogus proceedings from polluted az_court hints on lawyer/own letters.
+    if (
+        not doc.proceeding_id
+        and not data.get("is_court_document")
+        and doc.az_court
+        and doc.originator_type == OriginatorType.COURT
+    ):
+        inferred_level = infer_court_level(doc.sender)
+        data = {
+            "is_court_document": True,
+            "az_court": doc.az_court,
+            "court_name": data.get("court_name") or doc.sender,
+            "court_level": data.get("court_level")
+            or (inferred_level.value if inferred_level else None),
+            "subject_matter": data.get("subject_matter"),
+        }
+        logger.info(
+            "Doc %d: proceeding-analyzer AI empty/uncertain — falling back to "
+            "Document.az_court=%s from METADATA.",
+            doc.id,
+            doc.az_court,
+        )
+
     if not data.get("is_court_document"):
         return "not a court document"
-
-    from app.services.ingestion.extractors import normalize_az_court
 
     extracted_az = normalize_az_court(data.get("az_court"))
     extracted_level_str = data.get("court_level")
@@ -63,6 +84,51 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
         )
     except ValueError:
         extracted_level = None
+
+    # No proceeding linked yet: find-or-create one for (case_id, az_court).
+    if not doc.proceeding_id:
+        existing = None
+        if extracted_az:
+            existing = (
+                db.query(Proceeding)
+                .filter(
+                    Proceeding.case_id == doc.case_id,
+                    Proceeding.az_court == extracted_az,
+                )
+                .first()
+            )
+        if existing:
+            doc.proceeding_id = existing.id
+        elif extracted_az:
+            new_proc = Proceeding(
+                case_id=doc.case_id,
+                court_name=data.get("court_name") or "Unknown Court",
+                court_level=extracted_level or ProceedingCourtLevel.AG,
+                az_court=extracted_az,
+                subject_matter=data.get("subject_matter"),
+                status=ProceedingStatus.ACTIVE,
+                started_at=datetime.now(),
+            )
+            db.add(new_proc)
+            db.flush()
+            doc.proceeding_id = new_proc.id
+        else:
+            db.commit()
+            return "no az extracted"
+
+        # Cascade to batch only when batch has no proceeding yet — siblings
+        # with different AZs are handled by their own runs.
+        if doc.ingest_batch and not doc.ingest_batch.proceeding_id:
+            doc.ingest_batch.proceeding_id = doc.proceeding_id
+
+        db.commit()
+        return None
+
+    current_proc = (
+        db.query(Proceeding).filter(Proceeding.id == doc.proceeding_id).first()
+    )
+    if not current_proc:
+        return "proceeding not found"
 
     # Logic: Should we escalate/create a new proceeding?
     is_new_instance = False

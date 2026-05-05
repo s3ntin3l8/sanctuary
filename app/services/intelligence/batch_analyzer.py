@@ -73,14 +73,16 @@ def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
 
 def _call_batch_analyzer_sync(
     candidate: Document,
-    sibling_titles: list[str],
+    siblings: list[Document],
     batch_id: int,
     model: str = "",
     db=None,
+    suppress_thinking: bool = False,
+    debug_label: str | None = None,
 ) -> dict:
     """Synchronous AI call for batch analysis."""
     content_preview = get_content_preview(candidate, 60000)
-    sibling_list = "\n".join(f"- {t}" for t in sibling_titles)
+    sibling_list = "\n".join(f"- (doc_id={d.id}) {d.title}" for d in siblings)
     prompt = (
         f"Cover letter candidate (doc_id={candidate.id}):\n"
         f"Title: {candidate.title}\n\n"
@@ -92,10 +94,11 @@ def _call_batch_analyzer_sync(
         system_prompt=BATCH_ANALYZER_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["batch_analysis"],
-        debug_label=f"batch_{batch_id}_analyzer",
+        debug_label=debug_label or f"batch_{batch_id}_analyzer",
         model=model or None,
         db=db,
         ingest_batch_id=batch_id,
+        suppress_thinking=suppress_thinking,
     )
 
 
@@ -122,20 +125,40 @@ def _apply_batch_results(
 
     doc_map = {d.id: d for d in docs}
     claimed_ids: set[int] = set()
+    cover_ids: set[int] = set()
     first_cover: Document | None = None
 
     # Check if we have the new multi-bundle format
     if bundles and isinstance(bundles, list):
-        # Process each bundle
+        # First pass: declare cover letters so the enclosure pass below can
+        # block any attempt to wire a cover as the child of another bundle.
+        for bundle in bundles:
+            cover_id = bundle.get("cover_letter_doc_id")
+            if cover_id is None:
+                continue
+            if cover_id not in doc_map:
+                logger.warning(
+                    "Batch #%d: AI returned cover_letter_doc_id=%s not in batch — skipping bundle.",
+                    batch_id,
+                    cover_id,
+                )
+                continue
+            cover_ids.add(cover_id)
+
+        # Second pass: apply each bundle.
         for bundle in bundles:
             cover_id = bundle.get("cover_letter_doc_id")
             enclosed = bundle.get("enclosed") or []
 
-            cover_doc = doc_map.get(cover_id) if cover_id else None
+            cover_doc = doc_map.get(cover_id) if cover_id in cover_ids else None
             if cover_doc:
                 cover_doc.role = DocumentRole.COVER_LETTER
-                has_court = any(e.get("originator_type") == "court" for e in enclosed)
-                cover_doc.court_relay = has_court
+                # A cover letter cannot also be an enclosure — clear any stale
+                # parent_id from a prior run or earlier bundle.
+                cover_doc.parent_id = None
+                # court_relay is owned by METADATA (sender=court ∧ originator≠court).
+                # Don't overwrite from enclosure types — direct court rulings with
+                # court enclosures are not relays.
 
                 # Set attribution from first enclosure
                 first_enclosure = next(
@@ -153,7 +176,7 @@ def _apply_batch_results(
             # Without a cover letter the AI is signaling the doc is standalone,
             # not enclosed under anything. Skip enclosure wiring and let the
             # unclaimed-fallback at the end mark the doc STANDALONE.
-            if cover_id is None:
+            if cover_id is None or cover_doc is None:
                 continue
 
             # Wire enclosures to this cover letter
@@ -163,7 +186,11 @@ def _apply_batch_results(
                 if matched:
                     matched_norm = _norm_filename(matched)
                     candidates = [
-                        d for d in docs if d.id != cover_id and d.id not in claimed_ids
+                        d
+                        for d in docs
+                        if d.id != cover_id
+                        and d.id not in claimed_ids
+                        and d.id not in cover_ids
                     ]
                     child = next(
                         (
@@ -203,22 +230,30 @@ def _apply_batch_results(
                     # (full text) over batch's title-only guess. Court relays are
                     # the legitimate "batch knows better" case.
                     batch_originator = encl.get("attributed_originator")
-                    is_court = encl.get("originator_type", "").lower() == "court"
+                    is_court = (encl.get("originator_type") or "").lower() == "court"
                     if is_court or not child.attributed_originator:
                         child.attributed_originator = batch_originator
     else:
         # Legacy format: single cover letter
         cover_letter_doc_id = result.get("cover_letter_doc_id")
         is_cover_letter = result.get("is_cover_letter", False)
-        court_relay = result.get("court_relay", False)
         enclosed_descriptions = result.get("enclosed_descriptions") or []
+
+        if cover_letter_doc_id is not None and cover_letter_doc_id not in doc_map:
+            logger.warning(
+                "Batch #%d: AI returned cover_letter_doc_id=%s not in batch — skipping bundle.",
+                batch_id,
+                cover_letter_doc_id,
+            )
+            cover_letter_doc_id = None
 
         cover_letter_doc = (
             doc_map.get(cover_letter_doc_id) if cover_letter_doc_id else None
         )
         if cover_letter_doc and is_cover_letter:
             cover_letter_doc.role = DocumentRole.COVER_LETTER
-            cover_letter_doc.court_relay = bool(court_relay)
+            cover_letter_doc.parent_id = None
+            # court_relay is owned by METADATA — don't overwrite here.
             cover_letter_doc.attributed_originator = next(
                 (
                     d.get("attributed_originator")
@@ -227,6 +262,7 @@ def _apply_batch_results(
                 ),
                 None,
             )
+            cover_ids.add(cover_letter_doc.id)
             first_cover = cover_letter_doc
 
         for encl in enclosed_descriptions:
@@ -237,7 +273,9 @@ def _apply_batch_results(
                 candidates = [
                     d
                     for d in docs
-                    if d.id != cover_letter_doc_id and d.id not in claimed_ids
+                    if d.id != cover_letter_doc_id
+                    and d.id not in claimed_ids
+                    and d.id not in cover_ids
                 ]
                 child = next(
                     (
@@ -274,7 +312,7 @@ def _apply_batch_results(
                     or child.originator_type
                 )
                 batch_originator = encl.get("attributed_originator")
-                is_court = encl.get("originator_type", "").lower() == "court"
+                is_court = (encl.get("originator_type") or "").lower() == "court"
                 if is_court or not child.attributed_originator:
                     child.attributed_originator = batch_originator
 
@@ -340,6 +378,90 @@ def _apply_batch_results(
                 d.parent_id = relay.id
                 claimed_ids.add(d.id)
 
+    # Proceeding-grouping fallback: AI returned no bundles AND single-relay
+    # didn't apply. Pick the cover-letter candidate the same way analyze()
+    # does and wire siblings sharing its proceeding_id as enclosures. This is
+    # the common direct-court-letter-with-attachments shape (sender=court,
+    # originator=court — not a relay).
+    if not claimed_ids and len(docs) > 1:
+        candidate = _pick_cover_letter_candidate(docs)
+        if candidate is not None and candidate.proceeding_id:
+            siblings_in_proceeding = [
+                d
+                for d in docs
+                if d.id != candidate.id
+                and d.proceeding_id == candidate.proceeding_id
+                and d.parent_id is None
+            ]
+            if siblings_in_proceeding:
+                candidate.role = DocumentRole.COVER_LETTER
+                candidate.parent_id = None
+                if not candidate.attributed_originator and candidate.sender:
+                    candidate.attributed_originator = candidate.sender
+                for d in siblings_in_proceeding:
+                    if _metadata_outranks_batch(d, "court"):
+                        logger.warning(
+                            "Batch #%d doc #%d: skipping proceeding-grouping fallback — "
+                            "metadata classified originator as %s. Trusting metadata.",
+                            batch_id,
+                            d.id,
+                            d.originator_type,
+                        )
+                        continue
+                    d.role = DocumentRole.ENCLOSURE
+                    d.parent_id = candidate.id
+                    claimed_ids.add(d.id)
+                logger.info(
+                    "Batch #%d: AI bundles empty — applied proceeding-grouping "
+                    "fallback (cover=%d, %d enclosure(s) sharing proceeding_id=%s).",
+                    batch_id,
+                    candidate.id,
+                    len(claimed_ids),
+                    candidate.proceeding_id,
+                )
+
+    # Completion sweep: even when the AI (or an earlier fallback) produced
+    # bundles, it can under-claim — e.g. the cover letter says "nebst Anlage"
+    # singular but the same email contained additional rulings from the same
+    # proceeding. For every doc already promoted to COVER_LETTER, claim any
+    # unclaimed sibling that shares the cover's proceeding_id. Originator
+    # guard keeps own/opposing letters out.
+    covers = [d for d in docs if d.role == DocumentRole.COVER_LETTER]
+    for cover in covers:
+        if not cover.proceeding_id:
+            continue
+        swept = 0
+        for d in docs:
+            if (
+                d.id == cover.id
+                or d.id in claimed_ids
+                or d.parent_id is not None
+                or d.proceeding_id != cover.proceeding_id
+            ):
+                continue
+            if _metadata_outranks_batch(d, "court"):
+                logger.warning(
+                    "Batch #%d doc #%d: skipping proceeding-grouping completion "
+                    "sweep — metadata classified originator as %s. Trusting metadata.",
+                    batch_id,
+                    d.id,
+                    d.originator_type,
+                )
+                continue
+            d.role = DocumentRole.ENCLOSURE
+            d.parent_id = cover.id
+            claimed_ids.add(d.id)
+            swept += 1
+        if swept:
+            logger.info(
+                "Batch #%d cover doc=%d sweep: claimed %d additional sibling(s) "
+                "sharing proceeding_id=%s.",
+                batch_id,
+                cover.id,
+                swept,
+                cover.proceeding_id,
+            )
+
     # Mark unclaimed docs as STANDALONE
     for d in docs:
         if (
@@ -391,24 +513,54 @@ def analyze(batch_id: int) -> bool:
             db.commit()
             return False
 
-        sibling_titles = [d.title for d in healthy_docs if d.id != candidate.id]
+        siblings = [d for d in healthy_docs if d.id != candidate.id]
 
         try:
             result = _call_batch_analyzer_sync(
                 candidate,
-                sibling_titles,
+                siblings,
                 batch_id,
                 model=cfg.summary_model,
                 db=db,
             )
-            _apply_batch_results(batch_id, docs, result, db)
-            logger.info(f"Batch {batch_id} analyzed successfully")
+        except ValueError as first_err:
+            # AI returned empty/unparseable. Retry once with /no_think — same
+            # pattern as METADATA at ai_summary.py:336-356. If the retry also
+            # returns empty, fall through to heuristic fallback in
+            # _apply_batch_results.
+            logger.info(
+                "Batch %d analyzer: empty AI response (%s) — retrying with "
+                "thinking suppressed.",
+                batch_id,
+                first_err,
+            )
+            try:
+                result = _call_batch_analyzer_sync(
+                    candidate,
+                    siblings,
+                    batch_id,
+                    model=cfg.summary_model,
+                    db=db,
+                    suppress_thinking=True,
+                    debug_label=f"batch_{batch_id}_analyzerretry",
+                )
+            except ValueError as retry_err:
+                logger.warning(
+                    "Batch %d: analyzer empty after /no_think retry (%s) — "
+                    "applying heuristic fallback.",
+                    batch_id,
+                    retry_err,
+                )
+                result = {}
         except Exception as e:
             logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
             for d in docs:
                 d.role = DocumentRole.STANDALONE
             db.commit()
             raise
+
+        _apply_batch_results(batch_id, docs, result, db)
+        logger.info(f"Batch {batch_id} analyzed successfully")
 
         return True
     finally:
