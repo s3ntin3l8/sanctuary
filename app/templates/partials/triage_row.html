@@ -289,10 +289,12 @@
                         </button>
                         <button type="button"
                                 role="menuitem"
-                                disabled
-                                title="Coming soon"
-                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface-variant/50 text-left cursor-not-allowed">
-                            <span class="material-symbols-outlined text-[14px]">delete</span>
+                                hx-post="/triage/delete?batch_id={{ bundle.batch_id }}"
+                                hx-target="none"
+                                hx-confirm="Permanently delete this bundle? All {{ bundle.doc_count }} document(s), files, and embeddings will be removed. This cannot be undone."
+                                @click="open = false"
+                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-error hover:bg-error/10 text-left focus-visible:outline-none focus-visible:bg-error/10">
+                            <span class="material-symbols-outlined text-[14px]">delete_forever</span>
                             Delete
                         </button>
                     </div>

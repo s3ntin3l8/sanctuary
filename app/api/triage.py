@@ -141,6 +141,41 @@ async def dismiss_bundle(
 
 
 # -----------------------------------------------------------------------------
+# Delete bundle (POST) — hard-delete, complement to /triage/dismiss
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/delete")
+async def delete_bundle(
+    batch_id: int | None = None,
+    doc_id: int | None = None,
+    db: Session = Depends(get_db),
+    service: TriageService = Depends(get_triage_service),
+):
+    try:
+        success = service.delete_bundle(batch_id=batch_id, doc_id=doc_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not success:
+        raise HTTPException(status_code=404, detail="Bundle or document not found")
+
+    target_id = (
+        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-doc-{doc_id}"
+    )
+    html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
+
+    bundles = service.get_triage_bundles(limit=1)
+    if not bundles:
+        return templates.TemplateResponse(
+            "partials/triage_feed.html",
+            {"request": {}, "bundles": [], "hx_swap_oob": "true"},
+            headers={"HX-Reswap": "innerHTML", "HX-Target": "#triage-feed"},
+        )
+
+    return HTMLResponse(content=html)
+
+
+# -----------------------------------------------------------------------------
 # Document confirm (metadata patch)
 # -----------------------------------------------------------------------------
 
@@ -535,6 +570,7 @@ async def retry_bundle_pipeline(
     from app.api.documents import _dispatch_retry_task
     from app.models.database import IngestBatch
     from app.models.enums import (
+        DocumentRole,
         IngestBatchStatus,
         PipelineStage,
         StageStatus,
@@ -580,6 +616,15 @@ async def retry_bundle_pipeline(
         new_state = compute_overall_state(stages)
         doc.pipeline_stages = stages
         doc.pipeline_state = new_state
+
+        # Reset analyzer-owned fields so the re-run converges instead of
+        # layering on stale role/parent_id/originator data from the prior pass.
+        # Manual case assignments (case_id) are preserved; proceeding_id/az_court
+        # are owned by METADATA + PROCEEDING_ANALYSIS and self-heal on re-run.
+        doc.role = DocumentRole.STANDALONE
+        doc.parent_id = None
+        doc.court_relay = False
+        doc.attributed_originator = None
 
         from sqlalchemy import text as _text
 

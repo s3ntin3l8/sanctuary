@@ -719,3 +719,72 @@ class TriageService:
                 self.db.commit()
                 return True
         return False
+
+    def delete_bundle(
+        self, batch_id: int | None = None, doc_id: int | None = None
+    ) -> bool:
+        """Hard-delete a batch (and all children + files) or a loose document.
+
+        Raises ValueError when the batch is mid-flight (PROCESSING or
+        AWAITING_SLICING). Caller maps to HTTP 409.
+        """
+        import logging
+        import os
+
+        from app.models.database import ActionItem, IngestBatch
+        from app.services.document_service import DocumentService
+
+        logger = logging.getLogger(__name__)
+
+        if batch_id:
+            batch = self.db.get(IngestBatch, batch_id)
+            if not batch:
+                return False
+            if batch.status in (
+                IngestBatchStatus.PROCESSING,
+                IngestBatchStatus.AWAITING_SLICING,
+            ):
+                raise ValueError(
+                    f"Cannot delete batch {batch_id} in {batch.status.value} state. "
+                    "Wait for processing to finish, or retry the bundle first."
+                )
+
+            # Snapshot before per-doc loop: delete_document auto-removes the
+            # batch row when it deletes the last document, so batch.* lookups
+            # would fail on the final iteration.
+            raw_source_path = batch.raw_source_path
+            doc_id_list = [d.id for d in batch.documents]
+
+            # Hard-delete ActionItems sourced from this batch's docs while we
+            # can still find them — delete_document nulls source_document_id.
+            if doc_id_list:
+                self.db.query(ActionItem).filter(
+                    ActionItem.source_document_id.in_(doc_id_list)
+                ).delete(synchronize_session=False)
+                self.db.commit()
+
+            doc_service = DocumentService(self.db)
+            for did in doc_id_list:
+                doc_service.delete_document(did)
+
+            # Defensive: if the batch had zero docs, the per-doc loop never ran
+            # and the batch row is still present. Drop it explicitly.
+            if not doc_id_list:
+                self.db.query(IngestBatch).filter(IngestBatch.id == batch_id).delete(
+                    synchronize_session=False
+                )
+                self.db.commit()
+
+            if raw_source_path and os.path.exists(raw_source_path):
+                try:
+                    os.remove(raw_source_path)
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to delete batch raw source {raw_source_path}: {e}"
+                    )
+            return True
+
+        elif doc_id:
+            return DocumentService(self.db).delete_document(doc_id)
+
+        return False
