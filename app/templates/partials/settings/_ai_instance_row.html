@@ -12,7 +12,12 @@
 
         {# Status pill #}
         <div id="status-{{ iid }}" class="shrink-0 max-w-[14rem] truncate">
-            {% if health.ok %}
+            {% if health.ok is none %}
+            <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-on-surface-variant)">
+                <span class="material-symbols-outlined text-[13px]">check_circle</span>
+                <span>{{ health.detail }}</span>
+            </span>
+            {% elif health.ok %}
             <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
                 <span class="material-symbols-outlined text-[13px]">check_circle</span>
                 <span>{{ health.detail }}</span>
@@ -62,6 +67,7 @@
           hx-post="/api/settings/ai/instances/{{ iid }}"
           hx-target="#instance-{{ iid }}"
           hx-swap="outerHTML"
+          hx-disabled-elt="[type=submit]"
           class="space-y-3">
 
         {# Label + base URL #}
@@ -127,16 +133,6 @@
                     <option value="{{ inst.embed_model }}" selected>{{ inst.embed_model or 'Click Discover' }}</option>
                     {% endif %}
                 </select>
-            </div>
-        </div>
-
-        {# Embed dim #}
-        <div class="flex items-end gap-3">
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Embed Dim</label>
-                <input type="number" name="embed_dim" value="{{ inst.embed_dim or 768 }}"
-                       min="64" max="4096"
-                       class="bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono w-24 focus:outline-none focus:border-primary/50 transition-colors">
             </div>
         </div>
 

@@ -162,7 +162,6 @@ async def save_instance_route(
     api_key: str = Form(""),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
-    embed_dim: int = Form(768),
     db: Session = Depends(get_db),
 ):
     existing = get_instance(db, instance_id)
@@ -177,22 +176,19 @@ async def save_instance_route(
         "api_key": api_key.strip() or existing.get("api_key", "not-needed"),
         "summary_model": summary_model.strip() or existing.get("summary_model", ""),
         "embed_model": embed_model.strip() or existing.get("embed_model", ""),
-        "embed_dim": embed_dim,
+        "embed_dim": existing.get("embed_dim", 768),
     }
     save_instance(db, instance)
     chat_provider.reload_from_db(db)
     embed_provider.reload_from_db(db)
-
-    health = await _probe_instance(instance)
-    models = await _fetch_models(instance) if health["ok"] else []
 
     return templates.TemplateResponse(
         request,
         "partials/settings/_ai_instance_row.html",
         {
             "inst": instance,
-            "health": health,
-            "models": models,
+            "health": {"ok": None, "detail": "Saved"},
+            "models": [],
             "expanded": True,
         },
     )
