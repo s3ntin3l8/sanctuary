@@ -56,7 +56,6 @@ class CaseDashboardService:
         active_proceeding_id: int | None,
         active_view: str,
         significance_filter: str = "significant+",
-        explicit_view: bool = False,
     ) -> dict | None:
         """Return the full template context dict for the case dashboard.
 
@@ -166,12 +165,6 @@ class CaseDashboardService:
         }
 
         # --- Alpine bootstrap payload ----------------------------------
-        # Auto-switch to timeline only on first visit (no explicit view requested).
-        if active_view == "graph" and not explicit_view:
-            has_edges = bool(graph_dict and graph_dict.get("edge_count", 0) > 0)
-            if not has_edges and data["documents"]:
-                active_view = "timeline"
-
         initial = {
             "caseId": case.id,
             "view": active_view,

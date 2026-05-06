@@ -168,7 +168,6 @@ async def case_detail(
         active_proceeding_id=active_proceeding_id,
         active_view=active_view,
         significance_filter=filter,
-        explicit_view=view is not None,
     )
     if context is None:
         response = render_page(
