@@ -168,11 +168,14 @@ class AIProvider:
             base_url = config.get("base_url", self.base_url).strip().rstrip("/")
             provider = config.get("provider", self.provider)
             api_key = config.get("api_key", self.api_key)
-            ptype = (
-                ProviderType(provider)
-                if provider != "auto"
-                else await detect_provider(base_url)
-            )
+            try:
+                ptype = (
+                    ProviderType(provider)
+                    if provider != "auto"
+                    else await detect_provider(base_url)
+                )
+            except (RuntimeError, Exception) as e:
+                return {"ok": False, "provider": "unknown", "detail": str(e)}
         else:
             base_url = self.base_url
             api_key = self.api_key
