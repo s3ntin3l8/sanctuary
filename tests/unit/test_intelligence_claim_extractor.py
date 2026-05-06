@@ -58,12 +58,12 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
     ai_result = {
         "new_claims": [
             {
-                "claim_text": "Defendant was not present",
+                "claim_text": "The defendant was not present at the hearing on 15.03.2026",
                 "claim_type": "factual",
                 "excerpt": "She denies being there",
             },
             {
-                "claim_text": "Contract was validly executed",
+                "claim_text": "The contract was validly executed under § 433 BGB on 01.01.2024",
                 "claim_type": "legal",
                 "excerpt": "The contract was signed",
             },
@@ -89,8 +89,10 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
     claims = db_session.query(Claim).filter(Claim.case_id == sample_case.id).all()
     assert len(claims) == 2
     claim_texts = {c.claim_text for c in claims}
-    assert "Defendant was not present" in claim_texts
-    assert "Contract was validly executed" in claim_texts
+    assert "The defendant was not present at the hearing on 15.03.2026" in claim_texts
+    assert (
+        "The contract was validly executed under § 433 BGB on 01.01.2024" in claim_texts
+    )
 
     # Source doc should be linked as SUPPORTS on its own new claims
     evidence = db_session.query(ClaimEvidence).all()

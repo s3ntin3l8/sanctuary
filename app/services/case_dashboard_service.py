@@ -12,6 +12,7 @@ without breaking the live page in the meantime.
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -55,6 +56,7 @@ class CaseDashboardService:
         active_proceeding_id: int | None,
         active_view: str,
         significance_filter: str = "significant+",
+        explicit_view: bool = False,
     ) -> dict | None:
         """Return the full template context dict for the case dashboard.
 
@@ -164,9 +166,8 @@ class CaseDashboardService:
         }
 
         # --- Alpine bootstrap payload ----------------------------------
-        # Auto-switch to timeline if graph has zero edges (and no view is explicitly persisted)
-        # Note: active_view here is already resolved from UserSettings in the API layer.
-        if active_view == "graph":
+        # Auto-switch to timeline only on first visit (no explicit view requested).
+        if active_view == "graph" and not explicit_view:
             has_edges = bool(graph_dict and graph_dict.get("edge_count", 0) > 0)
             if not has_edges and data["documents"]:
                 active_view = "timeline"
@@ -182,7 +183,9 @@ class CaseDashboardService:
         # --- Legacy keys preserved so the existing template keeps rendering
         documents_sorted = sorted(
             data["documents"],
-            key=lambda d: d.issued_date or d.ingest_date,
+            key=lambda d: (d.issued_date or d.ingest_date or datetime.min).replace(
+                tzinfo=None
+            ),
             reverse=True,
         )
 

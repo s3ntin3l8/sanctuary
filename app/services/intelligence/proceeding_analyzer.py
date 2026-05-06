@@ -99,22 +99,45 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
             )
         if existing:
             doc.proceeding_id = existing.id
-        elif extracted_az:
-            new_proc = Proceeding(
-                case_id=doc.case_id,
-                court_name=data.get("court_name") or "Unknown Court",
-                court_level=extracted_level or ProceedingCourtLevel.AG,
-                az_court=extracted_az,
-                subject_matter=data.get("subject_matter"),
-                status=ProceedingStatus.ACTIVE,
-                started_at=datetime.now(UTC),
-            )
-            db.add(new_proc)
-            db.flush()
-            doc.proceeding_id = new_proc.id
         else:
-            db.commit()
-            return "no az extracted"
+            # Before creating a new proceeding, check for a placeholder created by
+            # METADATA when the court was not yet known (court_name="General", no AZ).
+            placeholder = None
+            if extracted_az:
+                placeholder = (
+                    db.query(Proceeding)
+                    .filter(
+                        Proceeding.case_id == doc.case_id,
+                        Proceeding.court_name.in_(["General", "Unknown Court"]),
+                        Proceeding.az_court.is_(None),
+                    )
+                    .first()
+                )
+            if placeholder:
+                placeholder.az_court = extracted_az
+                if extracted_level:
+                    placeholder.court_level = extracted_level
+                if data.get("court_name"):
+                    placeholder.court_name = data["court_name"]
+                if data.get("subject_matter") and not placeholder.subject_matter:
+                    placeholder.subject_matter = data["subject_matter"]
+                doc.proceeding_id = placeholder.id
+            elif extracted_az:
+                new_proc = Proceeding(
+                    case_id=doc.case_id,
+                    court_name=data.get("court_name") or "Unknown Court",
+                    court_level=extracted_level or ProceedingCourtLevel.AG,
+                    az_court=extracted_az,
+                    subject_matter=data.get("subject_matter"),
+                    status=ProceedingStatus.ACTIVE,
+                    started_at=datetime.now(UTC),
+                )
+                db.add(new_proc)
+                db.flush()
+                doc.proceeding_id = new_proc.id
+            else:
+                db.commit()
+                return "no az extracted"
 
         # Cascade to batch only when batch has no proceeding yet — siblings
         # with different AZs are handled by their own runs.
@@ -198,7 +221,8 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
         if not current_proc.az_court and extracted_az:
             current_proc.az_court = extracted_az
         if (
-            not current_proc.court_name or current_proc.court_name == "Unknown Court"
+            not current_proc.court_name
+            or current_proc.court_name in ("Unknown Court", "General")
         ) and data.get("court_name"):
             current_proc.court_name = data.get("court_name")
         if not current_proc.subject_matter and data.get("subject_matter"):

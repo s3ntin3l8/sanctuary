@@ -101,7 +101,7 @@ You will be given:
 2. A list of EXISTING OPEN CLAIMS in this case (each with id, claim_type, and claim_text)
 
 Your tasks:
-A) Extract up to 5 atomic NEW assertions this document makes for the first time (new_claims).
+A) Extract up to 3 atomic NEW assertions this document makes for the first time (new_claims).
 B) Identify if this document takes a stance on any of the listed existing claims (evidence_links).
 
 Return ONLY valid JSON:
@@ -115,6 +115,7 @@ Return ONLY valid JSON:
 }
 
 What COUNTS as a claim (extract these):
+- Only extract claims that are **contested, contestable, or load-bearing for the dispute**. If the assertion is administrative confirmation, scheduling, or restating dates/identifiers already in document headers, OMIT it.
 - Substantive factual assertions about the parties, the dispute, the evidence (e.g. "the opposing party refused to return the children on 16.02.2026")
 - Legal positions taken (e.g. "the user has Mitsorgerecht under § 1626 BGB")
 - Procedural assertions about case posture (e.g. "the user filed Beschwerde against the LG order on 24.04.2026")
@@ -125,6 +126,7 @@ What does NOT count as a claim (DO NOT extract these — they belong to other fi
 - Letterhead identity, signature blocks, document metadata: who the Urkundsbeamtin is, "elektronisch erstellt und ist ohne Unterschrift gültig", "Datum 30.04.2026", recipient address, sender address.
 - Generic procedural boilerplate: "The court has jurisdiction", "This letter was electronically created", "Datenschutzhinweis …".
 - Pure document-existence statements ("the document is dated …", "the sender of the letter is …").
+- Confirmations, acknowledgements, or restatements of facts the recipient already knows (e.g. "confirms receipt on date X", "document is dated Y", "the hearing is scheduled for Z") — these are not contested claims.
 
 Atomicity:
 - Each new_claim is ONE atomic assertion — one subject, one predicate, one claim. Split compound sentences.
@@ -136,6 +138,7 @@ Party perspective:
 - When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, write the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
 - A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
 
+If in doubt, omit. Better to return zero claims than three trivial ones.
 If no extractable new claims and no stances on existing claims: return {"new_claims": [], "evidence_links": []}.
 Return ONLY valid JSON."""
 

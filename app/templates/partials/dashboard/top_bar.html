@@ -53,7 +53,7 @@
       <div class="px-3 py-2 text-[10.5px] uppercase tracking-[0.12em]"
            style="color:var(--color-on-surface-variant);">Switch proceeding</div>
       {% for p in proceedings %}
-      <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}"
+      <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}&amp;view={{ active_view }}"
          hx-target="#case-dashboard-main"
          hx-swap="outerHTML"
          hx-select="#case-dashboard-main"

@@ -168,6 +168,7 @@ async def case_detail(
         active_proceeding_id=active_proceeding_id,
         active_view=active_view,
         significance_filter=filter,
+        explicit_view=view is not None,
     )
     if context is None:
         response = render_page(
@@ -204,7 +205,9 @@ async def update_case(
         raise HTTPException(status_code=404, detail="Case not found")
 
     if title is not None:
-        case.title = title
+        if not title.strip():
+            raise HTTPException(status_code=422, detail="Case title cannot be empty")
+        case.title = title.strip()
     if status is not None:
         case.status = status
         if status == CaseStatus.CLOSED:

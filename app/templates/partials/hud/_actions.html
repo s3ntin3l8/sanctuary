@@ -20,7 +20,7 @@
     {% set status_val = item.status.value if item.status else 'open' %}
     {% set status_tone = {
       'open':      'text-originator-opposing',
-      'done':      'text-originator-own',
+      'completed': 'text-originator-own',
       'dismissed': 'text-outline',
     }.get(status_val, 'text-outline') %}
     <li class="flex items-start gap-2 text-[11px]" x-data="{ closed: false }">
@@ -35,7 +35,7 @@
         {% if status_val == 'open' %}
         <div class="flex gap-1.5 mt-1" x-show="!closed">
           <button hx-patch="/action-item/{{ item.id }}/status"
-                  hx-vals='{"status": "done"}'
+                  hx-vals='{"status": "completed"}'
                   hx-swap="none"
                   @htmx:after-request="closed = true"
                   class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">

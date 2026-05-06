@@ -72,11 +72,26 @@ def _apply_claims(
     evidence_repo = ClaimEvidenceRepository(db)
     valid_claim_ids = {c.id for c in existing_claims}
 
+    # Build a set of normalized existing claim texts for dedupe
+    seen_texts: set[str] = {
+        " ".join(c.claim_text.lower().split())[:80] for c in existing_claims
+    }
+
     # Create new claims
     for item in result.get("new_claims") or []:
         claim_text = (item.get("claim_text") or "").strip()
         if not claim_text:
             continue
+        if len(claim_text) < 30:
+            logger.info(
+                f"Doc {doc.id}: claim too short ({len(claim_text)} chars), dropping"
+            )
+            continue
+        normalized = " ".join(claim_text.lower().split())[:80]
+        if normalized in seen_texts:
+            logger.info(f"Doc {doc.id}: duplicate claim text, dropping")
+            continue
+        seen_texts.add(normalized)
         claim_type_raw = (item.get("claim_type") or "").lower()
         if claim_type_raw not in VALID_CLAIM_TYPES:
             logger.info(
