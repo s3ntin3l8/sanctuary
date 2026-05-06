@@ -64,9 +64,14 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
     chat_provider.reload_from_db(db)
     embed_provider.reload_from_db(db)
 
-    instance_health = {}
-    for inst in instances:
-        instance_health[inst["id"]] = await chat_provider.probe_health(config=inst)
+    import asyncio
+
+    health_results = await asyncio.gather(
+        *[chat_provider.probe_health(config=inst) for inst in instances]
+    )
+    instance_health = {
+        inst["id"]: h for inst, h in zip(instances, health_results, strict=True)
+    }
 
     return render_page(
         request,
