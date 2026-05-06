@@ -65,10 +65,14 @@ async def _fetch_models(inst: dict) -> list[str]:
 
     from app.services.ai_provider import ProviderType, detect_provider
 
-    if provider == "auto":
-        ptype = await detect_provider(base_url)
-    else:
-        ptype = ProviderType(provider)
+    try:
+        ptype = (
+            await detect_provider(base_url)
+            if provider == "auto"
+            else ProviderType(provider)
+        )
+    except (RuntimeError, Exception):
+        return []
 
     models: list[str] = []
     try:
