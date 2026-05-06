@@ -107,16 +107,27 @@ class AIProvider:
 
         ptype = await self.get_type()
 
+        # Meta flag, set by call_json_ai(suppress_thinking=True). Translated
+        # below into provider-specific thinking-disable fields. Stripped before
+        # the dict is sent to the provider so it doesn't leak as an unknown key.
+        enable_thinking = options.get("_enable_thinking", True) if options else True
+
         if ptype == ProviderType.OLLAMA:
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+            ollama_options = {
+                k: v for k, v in (options or {}).items() if not k.startswith("_")
+            }
+            body: dict = {
+                "model": model,
+                "prompt": full_prompt,
+                "stream": stream,
+                "options": ollama_options,
+            }
+            if not enable_thinking:
+                body["think"] = False
             return {
                 "url": f"{self.base_url}/api/generate",
-                "json": {
-                    "model": model,
-                    "prompt": full_prompt,
-                    "stream": stream,
-                    "options": options or {},
-                },
+                "json": body,
                 "headers": {},
             }
         else:
@@ -125,15 +136,34 @@ class AIProvider:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            payload: dict = {
+                "model": model,
+                "messages": messages,
+                "stream": stream,
+                "temperature": options.get("temperature", 0.1) if options else 0.1,
+                "max_tokens": options.get("max_tokens", -1) if options else -1,
+            }
+            if options:
+                # Forward Qwen sampling params that LMStudio / OpenAI-compat accept.
+                for key in (
+                    "top_p",
+                    "top_k",
+                    "min_p",
+                    "presence_penalty",
+                    "frequency_penalty",
+                ):
+                    if key in options:
+                        payload[key] = options[key]
+                if options.get("stop"):
+                    payload["stop"] = options["stop"]
+            if not enable_thinking:
+                # Qwen3.5 vLLM convention — top-level chat_template_kwargs.
+                # Servers that don't support it ignore unknown fields.
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+
             return {
                 "url": f"{self.base_url}/v1/chat/completions",
-                "json": {
-                    "model": model,
-                    "messages": messages,
-                    "stream": stream,
-                    "temperature": options.get("temperature", 0.1) if options else 0.1,
-                    "max_tokens": options.get("max_tokens", -1) if options else -1,
-                },
+                "json": payload,
                 "headers": {"Authorization": f"Bearer {self.api_key}"}
                 if self.api_key != "not-needed"
                 else {},

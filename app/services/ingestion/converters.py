@@ -2,6 +2,7 @@ import concurrent.futures
 import logging
 import multiprocessing
 import os
+import re
 import threading
 
 from app.config import INGEST_CONVERSION_TIMEOUT
@@ -276,13 +277,19 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
 
 
+_PLACEHOLDER_RE = re.compile(r"<!--[^>]*-->")
+
+
 def is_valid_docling_output(content: str | None) -> bool:
-    """Check if Docling produced valid output."""
+    """Check if Docling produced usable text output (not just image placeholders)."""
     if not content:
         return False
     stripped = content.strip()
-    if not stripped:
+    if not stripped or len(stripped) < 5:
         return False
     if stripped.startswith("Conversion failed:"):
         return False
-    return not len(stripped) < 5
+    # Reject content that is mostly image/page-break placeholders with no real text
+    cleaned = _PLACEHOLDER_RE.sub("", stripped)
+    word_chars = len(re.sub(r"\s+", "", cleaned))
+    return word_chars >= 30

@@ -57,8 +57,25 @@ async def _probe_instance(inst: dict) -> dict:
     return await chat_provider.probe_health(config=inst)
 
 
-async def _fetch_models(inst: dict) -> list[str]:
-    """Fetch available models from a specific instance."""
+def _categorize_models(models: list[str]) -> dict[str, list[str]]:
+    """Categorize models into chat and embed based on heuristics."""
+    chat = []
+    embed = []
+
+    embed_keywords = ["embed", "similarity", "bert", "nomic", "minilm", "mxbai"]
+
+    for m in models:
+        name_lower = m.lower()
+        if any(kw in name_lower for kw in embed_keywords):
+            embed.append(m)
+        else:
+            chat.append(m)
+
+    return {"chat": chat, "embed": embed}
+
+
+async def _fetch_models(inst: dict) -> dict[str, list[str]]:
+    """Fetch and categorize available models from a specific instance."""
     base_url = inst.get("base_url", "").strip().rstrip("/")
     provider = inst.get("provider", "auto")
     api_key = inst.get("api_key", "not-needed")
@@ -72,15 +89,15 @@ async def _fetch_models(inst: dict) -> list[str]:
             else ProviderType(provider)
         )
     except (RuntimeError, Exception):
-        return []
+        return {"chat": [], "embed": []}
 
-    models: list[str] = []
+    all_models: list[str] = []
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             if ptype == ProviderType.OLLAMA:
                 resp = await client.get(f"{base_url}/api/tags")
                 if resp.status_code == 200:
-                    models = [m["name"] for m in resp.json().get("models", [])]
+                    all_models = [m["name"] for m in resp.json().get("models", [])]
             else:
                 headers = (
                     {"Authorization": f"Bearer {api_key}"}
@@ -89,10 +106,11 @@ async def _fetch_models(inst: dict) -> list[str]:
                 )
                 resp = await client.get(f"{base_url}/v1/models", headers=headers)
                 if resp.status_code == 200:
-                    models = [m["id"] for m in resp.json().get("data", [])]
+                    all_models = [m["id"] for m in resp.json().get("data", [])]
     except Exception as e:
         logger.warning(f"Model discovery failed for {base_url}: {e}")
-    return models
+
+    return _categorize_models(all_models)
 
 
 def _model_options(models: list[str], selected: str) -> str:
@@ -137,7 +155,9 @@ async def create_instance(
     }
     save_instance(db, instance)
     health = await _probe_instance(instance)
-    models = await _fetch_models(instance) if health["ok"] else []
+    models = (
+        await _fetch_models(instance) if health["ok"] else {"chat": [], "embed": []}
+    )
 
     return templates.TemplateResponse(
         request,
@@ -239,12 +259,23 @@ async def test_instance(
 
     provider = inst.get("provider", "auto")
     base_url = inst.get("base_url", "").strip().rstrip("/")
-    ptype = (
-        await detect_provider(base_url)
-        if provider == "auto"
-        else ProviderType(provider)
+    try:
+        ptype = (
+            await detect_provider(base_url)
+            if provider == "auto"
+            else ProviderType(provider)
+        )
+    except Exception:
+        ptype = ProviderType.OLLAMA  # fallback for label
+
+    headers = {}
+    if health["ok"]:
+        headers["HX-Trigger"] = f"refresh-models-{instance_id}"
+
+    return HTMLResponse(
+        _status_pill(health, str(ptype) if health["ok"] else None),
+        headers=headers,
     )
-    return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
 
 
 @router.get("/instances/{instance_id}/models", response_class=HTMLResponse)
@@ -252,38 +283,36 @@ async def instance_models(
     instance_id: str,
     db: Session = Depends(get_db),
 ):
-    """Return JS snippet that populates model <select> elements for a specific instance row."""
+    """Return HTMX Out-of-Band swaps that populate model <select> elements."""
     inst = get_instance(db, instance_id)
     if not inst:
         return HTMLResponse("<option disabled>Instance not found</option>")
 
-    models = await _fetch_models(inst)
+    categorized = await _fetch_models(inst)
     safe_id = escape(instance_id, quote=True)
-    if not models:
-        return HTMLResponse(
-            f"<script>"
-            f"(function(){{"
-            f'var s=document.getElementById("summary_model_{safe_id}");'
-            f'var e=document.getElementById("embed_model_{safe_id}");'
-            f"if(s){{s.innerHTML='<option disabled>No models found</option>';}} "
-            f"if(e){{e.innerHTML='<option disabled>No models found</option>';}} "
-            f"}})();"
-            f"</script>",
-        )
 
-    summary_opts = _model_options(models, inst.get("summary_model", ""))
-    embed_opts = _model_options(models, inst.get("embed_model", ""))
+    chat_models = categorized.get("chat", [])
+    embed_models = categorized.get("embed", [])
 
-    return HTMLResponse(
-        f"<script>"
-        f"(function(){{"
-        f'var s=document.getElementById("summary_model_{safe_id}");'
-        f'var e=document.getElementById("embed_model_{safe_id}");'
-        f"if(s){{s.innerHTML={summary_opts!r};}} "
-        f"if(e){{e.innerHTML={embed_opts!r};}} "
-        f"}})();"
-        f"</script>",
+    # If categorized lists are empty, provide fallback options
+    summary_opts = (
+        _model_options(chat_models, inst.get("summary_model", ""))
+        if chat_models
+        else f'<option value="{escape(inst.get("summary_model", ""), quote=True)}" selected>{escape(inst.get("summary_model", "") or "No chat models found")}</option>'
     )
+    embed_opts = (
+        _model_options(embed_models, inst.get("embed_model", ""))
+        if embed_models
+        else f'<option value="{escape(inst.get("embed_model", ""), quote=True)}" selected>{escape(inst.get("embed_model", "") or "No embedding models found")}</option>'
+    )
+
+    # Return both selects with OOB swap
+    res = [
+        f'<select id="summary_model_{safe_id}" name="summary_model" hx-swap-oob="innerHTML">{summary_opts}</select>',
+        f'<select id="embed_model_{safe_id}" name="embed_model" hx-swap-oob="innerHTML">{embed_opts}</select>',
+    ]
+
+    return HTMLResponse("".join(res))
 
 
 # ---------------------------------------------------------------------------

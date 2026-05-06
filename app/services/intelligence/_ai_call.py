@@ -18,6 +18,21 @@ from app.services.intelligence._json import parse_json_response
 
 logger = logging.getLogger(__name__)
 
+# Thinking-loop watchdog: pathological-case safety net only. The primary
+# anti-loop mechanism is the Qwen sampling config in ai_options.py
+# (presence_penalty=1.5). This watchdog catches cases that escape that —
+# it only triggers after ~4 minutes of pure thinking with zero response.
+_THINK_WATCHDOG_CHARS = 16000
+_THINK_WATCHDOG_SECS = 240.0
+
+# Stop sequences that match the literal self-correction phrases observed in loops.
+_LOOP_STOP_SEQS = [
+    "\nWait, actually",
+    "\nWait, one more",
+    "\n(Wait,",
+    "\n(Okay, ready)",
+]
+
 _SEPARATOR = "═" * 64
 _SECTION = "──"
 _LABEL_RE = re.compile(r"^(doc|batch|case)_(.+)_([^_]+)$")
@@ -179,12 +194,17 @@ def call_json_ai(
     cfg = get_chat_config(db)
     resolved_model = model or cfg.summary_model
 
+    effective_options: dict = {
+        **(options or {}),
+        "stop": _LOOP_STOP_SEQS,
+    }
     if suppress_thinking:
-        system_prompt = (
-            system_prompt + "\n\nIMPORTANT: Respond with the final JSON only. "
-            "Do not include reasoning, explanation, or <think> blocks."
-        )
-        user_prompt = "/no_think\n" + user_prompt
+        # Provider-level thinking control. Qwen3.5 honours
+        # chat_template_kwargs.enable_thinking=False on OpenAI-compat servers,
+        # and Ollama's native top-level "think": false. The legacy /no_think
+        # prefix was a Qwen3 trick — Qwen3.5 ignores it. ai_provider.py
+        # translates this meta-flag into the right per-provider field.
+        effective_options["_enable_thinking"] = False
 
     params = run_async(
         chat_provider.get_generate_params(
@@ -192,7 +212,7 @@ def call_json_ai(
             prompt=user_prompt,
             system_prompt=system_prompt,
             stream=True,
-            options=options,
+            options=effective_options,
         )
     )
     ptype = run_async(chat_provider.get_type())
@@ -242,6 +262,20 @@ def call_json_ai(
                                 ttfb_perf = time.perf_counter()
                             full_response += token
                     if chunk.get("done"):
+                        break
+                    # Abort when thinking consumes budget with zero response tokens
+                    if (
+                        not full_response
+                        and len(full_thinking) > _THINK_WATCHDOG_CHARS
+                        and (time.perf_counter() - start_perf) > _THINK_WATCHDOG_SECS
+                    ):
+                        logger.warning(
+                            "call %s: thinking-loop watchdog triggered "
+                            "(%d thinking chars, %.0fs elapsed) — aborting stream",
+                            debug_label,
+                            len(full_thinking),
+                            time.perf_counter() - start_perf,
+                        )
                         break
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
@@ -306,6 +340,21 @@ def call_json_ai(
         )
 
     if not full_response.strip():
+        if not suppress_thinking:
+            logger.info(
+                "call %s: empty response — retrying once with suppress_thinking",
+                debug_label,
+            )
+            return call_json_ai(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                options=options,
+                debug_label=debug_label,
+                model=model,
+                db=db,
+                ingest_batch_id=ingest_batch_id,
+                suppress_thinking=True,
+            )
         refusal_hint = ""
         if full_thinking:
             refusal_hint = f" (Thinking was present: {full_thinking[:100]}...)"

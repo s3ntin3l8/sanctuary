@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
@@ -62,13 +63,28 @@ def setup_logging():
     for h in root.handlers[:]:
         root.removeHandler(h)
 
-    handler = logging.StreamHandler()
     formatter = logging.Formatter(
         "%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s"
     )
-    handler.setFormatter(formatter)
-    handler.addFilter(RequestIDFilter())
-    root.addHandler(handler)
+
+    # Console Handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.addFilter(RequestIDFilter())
+    root.addHandler(console_handler)
+
+    # Rotating File Handler
+    log_dir = Path("scratch")
+    log_dir.mkdir(exist_ok=True)
+    file_handler = RotatingFileHandler(
+        log_dir / "sanctuary.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.addFilter(RequestIDFilter())
+    root.addHandler(file_handler)
+
     root.setLevel(level)
 
     # Hijack all existing loggers to propagate to root and use our format

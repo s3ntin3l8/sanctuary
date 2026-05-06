@@ -18,6 +18,7 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.content_gate import is_content_ai_ready
 from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_document
 from app.services.text_offsets import find_text_offsets
@@ -206,8 +207,8 @@ def enrich(doc_id: int) -> None:
             logger.warning(f"Doc {doc_id} not found for enrichment")
             return
 
-        if not doc.content or doc.content.startswith("Conversion failed:"):
-            logger.info(f"Doc {doc_id} has no usable content, skipping enrichment")
+        if not is_content_ai_ready(doc):
+            logger.info(f"Doc {doc_id} has no usable content for enrichment, skipping")
             return
 
         result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)

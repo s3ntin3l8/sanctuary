@@ -2,59 +2,69 @@
 
 _TAIL_CHARS = 2000  # chars to include from document tail in head+tail previews
 
+# Qwen3.5 official sampling parameters for thinking-mode reasoning models.
+# Hybrid of the "precise coding" profile (lower temperature for structured JSON)
+# with presence_penalty=1.5 from the "general tasks" profile — the latter is the
+# primary mechanism that prevents the literal "Wait, actually..." self-correction
+# loops observed in data/ai_debug/doc_22.log (50+ repetitions, 67k thinking
+# chars, 0 response chars). Setting temperature=0.0 with reasoning models is
+# documented to make these ruts worse, not better.
+# Source: https://huggingface.co/Qwen/Qwen3.5-9B
+_QWEN_SAMPLING = {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 1.5,
+}
+
+
 STAGE_OPTIONS: dict[str, dict] = {
     "metadata": {
         "num_ctx": 32768,
-        "temperature": 0.1,
-        "num_predict": 10000,
-        "max_tokens": 10000,
+        **_QWEN_SAMPLING,
+        "num_predict": 6000,
+        "max_tokens": 6000,
     },
     "batch_analysis": {
         "num_ctx": 32768,
-        "temperature": 0.1,
-        "num_predict": 20000,
-        "max_tokens": 20000,
+        **_QWEN_SAMPLING,
+        "num_predict": 10000,
+        "max_tokens": 10000,
     },
     "enrich": {
         "num_ctx": 32768,
-        "temperature": 0.2,
-        "num_predict": 20000,
-        "max_tokens": 20000,
+        **_QWEN_SAMPLING,
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
     "relationships": {
         "num_ctx": 32768,
-        "temperature": 0.1,
-        # 16000 (was 10000) — qwen-3.5-9b's thinking chain on multi-doc
-        # relationship reasoning hits 10000+ tokens on hard cases (~21% of
-        # historical runs returned empty at the 10000 cap). Same pattern as
-        # proceeding stage. See data/ai_debug/runs.jsonl thinking_len.
-        "num_predict": 16000,
-        "max_tokens": 16000,
+        **_QWEN_SAMPLING,
+        "num_predict": 6000,
+        "max_tokens": 6000,
     },
     "claims": {
         "num_ctx": 32768,
-        "temperature": 0.1,
-        "num_predict": 15000,
-        "max_tokens": 15000,
+        **_QWEN_SAMPLING,
+        "num_predict": 6000,
+        "max_tokens": 6000,
     },
     "entities": {
         "num_ctx": 32768,
-        "temperature": 0.1,
-        "num_predict": 15000,
-        "max_tokens": 15000,
+        **_QWEN_SAMPLING,
+        "num_predict": 6000,
+        "max_tokens": 6000,
     },
     "case_brief": {
         "num_ctx": 32768,
-        "temperature": 0.2,
-        # 16000 (was 10000) — case-level synthesis thinking can exceed 9500
-        # tokens on cases with many docs, saturating the 10000 cap (~24% of
-        # historical brief runs returned empty). See runs.jsonl thinking_len.
-        "num_predict": 16000,
-        "max_tokens": 16000,
+        **_QWEN_SAMPLING,
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
     "proceeding": {
         "num_ctx": 16384,
-        "temperature": 0.0,
+        **_QWEN_SAMPLING,
         # 8000 (was 2000) — qwen-3.5-9b's thinking chain alone consumes ~1975
         # tokens on this stage's prompt; the old 2000 cap left zero budget for
         # the ~50-token JSON response and produced empty responses ~50% of the

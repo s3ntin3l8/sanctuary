@@ -7,6 +7,7 @@ from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.content_gate import is_content_ai_ready
 from app.services.intelligence.prompts import PROCEEDING_ANALYZER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def extract_proceeding_details(
 
 def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str | None:
     """Analyze document, update proceeding, or create a new one. Returns skip reason or None."""
-    if not doc.content or len(doc.content) < 50:
+    if not is_content_ai_ready(doc):
         return "content too short"
 
     if not doc.case_id or doc.case_id == "_TRIAGE":

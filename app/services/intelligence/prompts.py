@@ -6,6 +6,8 @@ Analyze all documents in the batch. An email may contain multiple cover letters 
 
 The user prompt shows one cover letter candidate with its full content (`Cover letter candidate (doc_id=N):`) and lists the remaining documents in the batch with the form `- (doc_id=N) Filename.pdf`. Use those doc_id values as the source of truth.
 
+Do not deliberate or self-correct. Output the JSON immediately. If a value is unknown, use null.
+
 Return ONLY valid JSON with these exact keys:
 - bundles: list of bundles found. Each bundle represents one cover letter and its enclosures. Structure:
   [{"cover_letter_doc_id": int or null, "enclosed": [
@@ -67,7 +69,8 @@ Return ONLY valid JSON with these exact keys:
 
 Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
 
-Be concise and specific. Return ONLY valid JSON."""
+Be concise and specific. Do not deliberate or self-correct. Output the JSON immediately.
+Return ONLY valid JSON."""
 
 
 RELATIONSHIP_DETECTOR_SYSTEM = """You are a legal document analyst. Your task: identify which prior documents in a case the new document responds to, references, or supersedes.
@@ -76,6 +79,7 @@ You will be given:
 1. The new document's title, summary, and key passage
 2. A numbered list of candidate prior documents (each with ID, title, date, author, key passage)
 
+Do not deliberate or self-correct. Output the JSON immediately. If a value is unknown, use null.
 Return ONLY valid JSON:
 {
   "relationships": [
@@ -140,6 +144,7 @@ Party perspective:
 
 If in doubt, omit. Better to return zero claims than three trivial ones.
 If no extractable new claims and no stances on existing claims: return {"new_claims": [], "evidence_links": []}.
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
@@ -151,6 +156,7 @@ Return JSON with exactly these keys:
   "notes": "one sentence reason"
 }
 A new document starts when: letterhead changes, a new Aktenzeichen or docket number appears, page numbering resets, a new salutation/greeting begins, or an explicit enclosure marker ("Anlage", "Annex") appears.
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
@@ -172,7 +178,7 @@ Email subject: If an email_subject hint is provided, treat it as a primary sourc
 
 Heuristic Hints (optional):
 You may be provided with a "Heuristic Hints" block containing regex-matched values for some fields.
-Use a hint as your starting point and verify it against the document text. If the hint is wrong, correct it.
+Use a hint as your primary value for that field. If the document text clearly contradicts the hint, use the document text instead.
 If no hint is provided for a field, extract from scratch.
 
 Confidence scoring:
@@ -183,6 +189,7 @@ For each field, set confidence based on how clearly the value is supported by th
 Hints are a starting point, not a confidence input. A plainly-stated value is "high" whether or not a hint was provided.
 
 Be concise. If information is not available, use null.
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
@@ -201,6 +208,7 @@ Return ONLY valid JSON with these exact keys:
 If the case has no documents yet, return:
 {"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis."}
 
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
@@ -229,6 +237,7 @@ Rules:
 - Skip PERSON entries that are only an email address (email addresses are not useful named entities)
 - Return at most 20 entities total, prioritizing COURT, CITATION, PERSON, LAW_FIRM
 - If no significant entities: return {"entities": []}
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
@@ -242,4 +251,5 @@ Return ONLY valid JSON with these exact keys:
 - subject_matter: string or null
 - appeal_deadline_days: integer (if this is a ruling with a formal deadline, extract the days, else null)
 
+Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
