@@ -456,6 +456,7 @@ async def create_case_from_triage(
 async def confirm_draft_case(
     request: Request,
     case_id: str,
+    context: str = "embedded",
     db: Session = Depends(get_db),
 ):
     """Confirm an AI-created draft case (flip is_draft=False)."""
@@ -486,7 +487,12 @@ async def confirm_draft_case(
     )
     from app.config import templates as _templates
 
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+    template = (
+        "partials/triage/_doc_hud.html"
+        if context == "triage"
+        else "partials/hud/_container.html"
+    )
+    response = _templates.TemplateResponse(request, template, ctx)
 
     from app.services.triage_service import TriageService
     from app.services.triage_view import (
@@ -534,6 +540,7 @@ def _delete_case_via_service(case_id: str, db: Session) -> dict:
 async def reject_draft_case(
     request: Request,
     case_id: str,
+    context: str = "embedded",
     db: Session = Depends(get_db),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
@@ -561,7 +568,12 @@ async def reject_draft_case(
     )
     from app.config import templates as _templates
 
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
+    template = (
+        "partials/triage/_doc_hud.html"
+        if context == "triage"
+        else "partials/hud/_container.html"
+    )
+    response = _templates.TemplateResponse(request, template, ctx)
 
     from app.services.triage_service import TriageService
     from app.services.triage_view import (

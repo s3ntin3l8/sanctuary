@@ -192,8 +192,8 @@ def test_hud_case_section_renders_for_draft(db_session):
     )
     assert response.status_code == 200
     # Confirms-draft endpoint button must be present
-    assert "/cases/DRAFT-SEC-1/confirm-draft" in response.text
-    assert "/cases/DRAFT-SEC-1/reject-draft" in response.text
+    assert "/cases/DRAFT-SEC-1/confirm-draft?context=triage" in response.text
+    assert "/cases/DRAFT-SEC-1/reject-draft?context=triage" in response.text
 
 
 @pytest.mark.integration

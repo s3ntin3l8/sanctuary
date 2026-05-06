@@ -254,23 +254,30 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
         )
         .all()
     )
+    total_in_batch = (
+        db.query(Document)
+        .filter(Document.ingest_batch_id == doc.ingest_batch_id)
+        .count()
+    )
+
     # Only cascade to siblings when this is the only doc in the batch (BATCH_ANALYSIS is skipped)
-    for sib in siblings:
-        sib.case_id = case.id
-        if proceeding and not sib.proceeding_id:
-            sib.proceeding_id = proceeding.id
+    if total_in_batch == 1:
+        for sib in siblings:
+            sib.case_id = case.id
+            if proceeding and not sib.proceeding_id:
+                sib.proceeding_id = proceeding.id
+
+        if siblings:
+            logger.info(
+                f"AI Auto-Triage: cascaded case {case.id} to "
+                f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
+            )
 
     batch = db.query(IngestBatch).filter(IngestBatch.id == doc.ingest_batch_id).first()
     if batch and (not batch.case_id or batch.case_id == "_TRIAGE"):
         batch.case_id = case.id
         if proceeding and not batch.proceeding_id:
             batch.proceeding_id = proceeding.id
-
-    if siblings:
-        logger.info(
-            f"AI Auto-Triage: cascaded case {case.id} to "
-            f"{len(siblings)} sibling doc(s) in batch {doc.ingest_batch_id}"
-        )
 
 
 def generate_summary_sync(doc: Document, db=None) -> dict:
@@ -300,8 +307,8 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         else extract_case_id(safe_filename, content_for_hints)["value"]
     )
     internal_id_hint = (
-        doc.case_id
-        if doc.case_id and doc.case_id != "_TRIAGE"
+        doc.internal_id
+        if doc.internal_id
         else extract_internal_id(content_for_hints)["value"]
     )
 
