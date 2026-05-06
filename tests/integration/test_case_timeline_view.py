@@ -8,7 +8,7 @@ from app.services.case_dashboard_service import CaseDashboardService
 
 @pytest.mark.integration
 def test_timeline_fallback_logic(db_session, sample_case):
-    # Case with docs but 0 edges -> should fallback to timeline
+    # Graph is always the default view; no edge-count-based fallback.
     doc = Document(
         case_id=sample_case.id, title="Alone Doc", ingest_date=datetime.now()
     )
@@ -19,10 +19,10 @@ def test_timeline_fallback_logic(db_session, sample_case):
     context = service.build_context(
         case_id=sample_case.id,
         active_proceeding_id=None,
-        active_view="graph",  # user wants graph, but we have 0 edges
+        active_view="graph",
     )
 
-    assert context["initial"]["view"] == "timeline"
+    assert context["initial"]["view"] == "graph"
 
 
 @pytest.mark.integration

@@ -117,7 +117,7 @@ def _mock_claim_result(doc_id: int) -> dict:
     return {
         "new_claims": [
             {
-                "claim_text": "Klage abgewiesen",
+                "claim_text": "Das Gericht hat die Klage abgewiesen.",
                 "claim_type": "legal",
                 "status": "established",
                 "excerpt": "Das Gericht entscheidet: Klage abgewiesen.",
