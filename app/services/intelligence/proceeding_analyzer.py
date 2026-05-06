@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -107,7 +107,7 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 az_court=extracted_az,
                 subject_matter=data.get("subject_matter"),
                 status=ProceedingStatus.ACTIVE,
-                started_at=datetime.now(),
+                started_at=datetime.now(UTC),
             )
             db.add(new_proc)
             db.flush()
@@ -168,7 +168,7 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
             new_proc = existing_match
             if current_proc.az_court != extracted_az:
                 current_proc.status = ProceedingStatus.CLOSED
-                current_proc.ended_at = datetime.now()
+                current_proc.ended_at = datetime.now(UTC)
         else:
             new_proc = Proceeding(
                 case_id=current_proc.case_id,
@@ -177,13 +177,13 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 az_court=extracted_az,
                 subject_matter=data.get("subject_matter"),
                 status=ProceedingStatus.ACTIVE,
-                started_at=datetime.now(),
+                started_at=datetime.now(UTC),
             )
             db.add(new_proc)
 
             # Close old
             current_proc.status = ProceedingStatus.CLOSED
-            current_proc.ended_at = datetime.now()
+            current_proc.ended_at = datetime.now(UTC)
 
             db.flush()  # Get new_proc.id
 

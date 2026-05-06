@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 
 import httpx
@@ -42,14 +43,27 @@ _HEURISTIC_THRESHOLD = float(os.getenv("SLICE_HEURISTIC_THRESHOLD", "0.35"))
 # ---------------------------------------------------------------------------
 
 
+_ocr_instance = None
+_ocr_lock = threading.Lock()
+
+
+def _get_ocr():
+    global _ocr_instance
+    if _ocr_instance is None:
+        with _ocr_lock:
+            if _ocr_instance is None:
+                from rapidocr import RapidOCR
+
+                _ocr_instance = RapidOCR()
+    return _ocr_instance
+
+
 def _ocr_page_text(image: Image.Image) -> str:
     """Run lightweight OCR on a single page image; return raw text."""
     try:
-        from rapidocr import RapidOCR
-
-        ocr = RapidOCR()
         import numpy as np
 
+        ocr = _get_ocr()
         arr = np.array(image.convert("RGB"))
         result, _ = ocr(arr)
         if not result:
@@ -200,7 +214,9 @@ def _boundary_heuristic_score(
 # ---------------------------------------------------------------------------
 
 
-async def _ai_cut_judgment(prev_tail: str, curr_head: str, model: str) -> dict:
+async def _ai_cut_judgment(
+    prev_tail: str, curr_head: str, model: str, client: httpx.AsyncClient
+) -> dict:
     # Does not use call_json_ai: this runs as async tasks via asyncio.gather for
     # parallel boundary detection, uses non-streaming with a tight 30s timeout,
     # and silently falls back to "no cut" on failure — different semantics from
@@ -218,12 +234,11 @@ async def _ai_cut_judgment(prev_tail: str, curr_head: str, model: str) -> dict:
             options={"num_ctx": 2048, "temperature": 0.1},
         )
         ptype = await chat_provider.get_type()
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            resp = await client.post(
-                params["url"], json=params["json"], headers=params["headers"]
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await client.post(
+            params["url"], json=params["json"], headers=params["headers"]
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         if ptype == "ollama":
             raw = data.get("response", "")
@@ -241,8 +256,9 @@ async def _ai_cut_judgment(prev_tail: str, curr_head: str, model: str) -> dict:
 async def _ai_cut_judgments(
     candidates: list[tuple[int, str, str]], model: str
 ) -> dict[int, dict]:
-    tasks = [_ai_cut_judgment(pt, ch, model) for _, pt, ch in candidates]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        tasks = [_ai_cut_judgment(pt, ch, model, client) for _, pt, ch in candidates]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
     out = {}
     for (page_num, _, _), result in zip(candidates, results, strict=False):
         if isinstance(result, Exception):
@@ -288,32 +304,33 @@ def prepare(batch_id: int) -> None:
         page_data = []
         images: list[Image.Image] = []
 
-        for i in range(page_count):
-            page = pdf_doc[i]
-            bitmap = page.render(scale=_THUMBNAIL_DPI / 72.0)
-            img = bitmap.to_pil()
+        try:
+            for i in range(page_count):
+                page = pdf_doc[i]
+                bitmap = page.render(scale=_THUMBNAIL_DPI / 72.0)
+                img = bitmap.to_pil()
 
-            # Resize long edge to _THUMBNAIL_LONG_EDGE
-            w, h = img.size
-            long = max(w, h)
-            if long > _THUMBNAIL_LONG_EDGE:
-                scale = _THUMBNAIL_LONG_EDGE / long
-                img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+                # Resize long edge to _THUMBNAIL_LONG_EDGE
+                w, h = img.size
+                long = max(w, h)
+                if long > _THUMBNAIL_LONG_EDGE:
+                    scale = _THUMBNAIL_LONG_EDGE / long
+                    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-            thumb_path = thumbs_dir / f"page_{i + 1}.png"
-            img.save(str(thumb_path))
-            images.append(img)
+                thumb_path = thumbs_dir / f"page_{i + 1}.png"
+                img.save(str(thumb_path))
+                images.append(img)
 
-            text = _ocr_page_text(img)
-            page_data.append(
-                {
-                    "text_head": text[:_TEXT_HEAD_CHARS],
-                    "text_tail": text[-_TEXT_TAIL_CHARS:],
-                    "thumbnail_path": str(thumb_path),
-                }
-            )
-
-        pdf_doc.close()
+                text = _ocr_page_text(img)
+                page_data.append(
+                    {
+                        "text_head": text[:_TEXT_HEAD_CHARS],
+                        "text_tail": text[-_TEXT_TAIL_CHARS:],
+                        "thumbnail_path": str(thumb_path),
+                    }
+                )
+        finally:
+            pdf_doc.close()
 
         # Heuristic pass: find candidate cuts (between pages i and i+1; cut position = i+1)
         heuristic_candidates = []
@@ -349,7 +366,12 @@ def prepare(batch_id: int) -> None:
             if not (2 <= cut_page <= page_count):
                 continue
             ai = ai_results.get(cut_page, {})
-            ai_agrees = ai.get("is_new_document", True)
+            ai_raw = ai.get("is_new_document", True)
+            ai_agrees = (
+                ai_raw
+                if isinstance(ai_raw, bool)
+                else str(ai_raw).strip().lower() in ("true", "1", "yes")
+            )
             ai_confidence = ai.get("confidence", "medium")
             if ai_agrees:
                 proposed_cuts.append(

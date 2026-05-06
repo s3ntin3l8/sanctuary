@@ -1,7 +1,7 @@
 """4b — Per-document relationship detection against prior docs in the same proceeding."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, defer
 
@@ -184,7 +184,7 @@ def detect(doc_id: int) -> str | None:
                     relationship_type=rel_type_enum,
                     confidence=RelationshipConfidence.AI_DETECTED,
                     notes=notes[:500],
-                    ingest_date=datetime.now(),
+                    ingest_date=datetime.now(UTC),
                 )
             )
             new_count += 1

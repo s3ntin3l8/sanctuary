@@ -1,7 +1,7 @@
 """Shared helper for creating ActionItem rows from AI-extracted action payload."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -77,7 +77,7 @@ def create_from_payload(
                 due_date=due_date,
                 action_type=ActionItemType(raw_type),
                 status=ActionItemStatus.OPEN,
-                ingest_date=datetime.now(),
+                ingest_date=datetime.now(UTC),
             )
         )
         count += 1

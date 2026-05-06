@@ -173,6 +173,50 @@ def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
     )
 
 
+def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> bool:
+    """Atomically transition a stage from pending→running; return True if claimed.
+
+    Prevents fan-out when two concurrent callers both observe a stage as pending.
+    Only one caller wins the conditional UPDATE; the other sees rowcount=0 and
+    skips dispatch. The winning caller should then dispatch the Celery task.
+
+    The task itself calls mark_started() on entry, which stamps started_at and
+    re-commits. If the dispatch succeeds but the task is lost (worker crash),
+    recover_orphaned_running_stages() handles the stale running state.
+    """
+    sk = stage.value
+    result = db.execute(
+        text(
+            f"UPDATE documents "
+            f"SET pipeline_stages = json_set(COALESCE(pipeline_stages, '{{}}'), '$.{sk}.status', :running) "
+            f"WHERE id = :doc_id "
+            f"AND json_extract(COALESCE(pipeline_stages, '{{}}'), '$.{sk}.status') = :pending"
+        ),
+        {
+            "doc_id": doc_id,
+            "running": StageStatus.RUNNING.value,
+            "pending": StageStatus.PENDING.value,
+        },
+    )
+    if result.rowcount == 0:
+        db.commit()
+        return False
+
+    # Recompute pipeline_state so the UI transitions to RUNNING immediately.
+    row = db.execute(
+        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+        {"doc_id": doc_id},
+    ).fetchone()
+    stages: dict = json.loads(row[0]) if (row and row[0]) else {}
+    overall = compute_overall_state(stages)
+    db.execute(
+        text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
+        {"state": overall.value, "doc_id": doc_id},
+    )
+    db.commit()
+    return True
+
+
 def mark_completed(
     doc_id: int, stage: PipelineStage, db: Session, *, commit: bool = True
 ) -> None:
@@ -414,6 +458,103 @@ def recover_orphaned_running_stages(db: Session) -> dict:
         "stages_reset": stages_reset,
         "batches_reset": len(affected_batch_ids),
     }
+
+
+def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:
+    """Re-dispatch docs whose pipeline got stalled mid-cascade.
+
+    Sibling to recover_orphaned_running_stages. Catches the EAGER+uvicorn-reload
+    hazard: a stage's dispatch (or the chain of dispatches) got killed by
+    uvicorn --reload. The doc is left with pipeline_state in (PENDING, PARTIAL)
+    and one or more pending stages, but no stage is currently RUNNING (those
+    are handled by the running-state recovery first).
+
+    Resume strategy: find the first pending stage in cascade order (the head),
+    look up its retry_task in STAGE_REGISTRY, and dispatch it. The retry_task
+    is idempotent over already-completed upstream stages.
+
+    A doc qualifies when:
+      * pipeline_state in (PENDING, PARTIAL)
+      * ingest_date < now - max_age_seconds (skip just-uploaded docs that
+        haven't had a chance to run yet)
+      * No stage is currently RUNNING (running-state recovery owns those)
+      * There IS a pending head stage that can resume the cascade
+
+    Returns {"docs_redispatched": N, "doc_ids": [...]}.
+    """
+    import importlib
+    from datetime import timedelta
+
+    from app.models.database import Document
+
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=max_age_seconds)
+
+    candidates = (
+        db.query(Document)
+        .filter(
+            Document.pipeline_state.in_(
+                [PipelineState.PENDING.value, PipelineState.PARTIAL.value]
+            ),
+            Document.ingest_date < cutoff,
+        )
+        .all()
+    )
+
+    # BATCH_ANALYSIS is batch-level (dispatch_arg="batch_id") and re-driven by
+    # the bundle retry endpoint, not per-doc. Skip it here.
+    skip_stages = {PipelineStage.BATCH_ANALYSIS}
+
+    redispatched: list[int] = []
+    for doc in candidates:
+        stages: dict = doc.pipeline_stages or {}
+
+        # Skip if any stage is currently running — running-state recovery owns it.
+        if any(
+            isinstance(v, dict) and v.get("status") == StageStatus.RUNNING.value
+            for v in stages.values()
+        ):
+            continue
+
+        # Find the head pending stage in cascade order.
+        head_spec = None
+        for spec in _STAGE_ORDER:
+            if spec.stage in skip_stages:
+                continue
+            stage_record = stages.get(spec.stage.value, {})
+            if not isinstance(stage_record, dict):
+                continue
+            status = stage_record.get("status")
+            if status == StageStatus.PENDING.value:
+                head_spec = spec
+                break
+            if status not in (
+                StageStatus.COMPLETED.value,
+                StageStatus.SKIPPED.value,
+            ):
+                # Non-terminal upstream blocker (failed) — let it be.
+                break
+
+        if head_spec is None or head_spec.dispatch_arg != "doc_id":
+            continue
+
+        # Lazy imports — pipeline_status is also imported during task execution.
+        from app.tasks.dispatch import dispatch_task
+
+        module_path, name = head_spec.retry_task.rsplit(".", 1)
+        try:
+            task = getattr(importlib.import_module(module_path), name)
+        except (ImportError, AttributeError):
+            logger.exception(
+                "Stuck-pending recovery: cannot resolve retry_task %s for doc %d",
+                head_spec.retry_task,
+                doc.id,
+            )
+            continue
+
+        dispatch_task(task, doc.id)
+        redispatched.append(doc.id)
+
+    return {"docs_redispatched": len(redispatched), "doc_ids": redispatched}
 
 
 # ---------------------------------------------------------------------------

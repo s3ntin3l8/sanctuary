@@ -139,21 +139,18 @@ def _dispatch_safely(doc_id: int, stage: PipelineStage) -> None:
 
 
 def _dispatch_if_pending(doc_id: int, stage: PipelineStage) -> None:
-    """Fire task only when the stage is currently pending — prevents fan-out from
+    """Atomically claim a pending stage and fire its task — prevents fan-out from
     concurrent enrich retries. Dispatch failures mark the stage failed."""
     from app.dependencies import get_db_session
-    from app.models.database import Document
+    from app.services.pipeline_status import claim_stage_for_dispatch
 
     db = get_db_session()
     try:
-        stages = (
-            db.query(Document.pipeline_stages).filter(Document.id == doc_id).scalar()
-        ) or {}
-        if stages.get(stage.value, {}).get("status") != "pending":
-            return
+        claimed = claim_stage_for_dispatch(doc_id, stage, db)
     finally:
         db.close()
-    _dispatch_safely(doc_id, stage)
+    if claimed:
+        _dispatch_safely(doc_id, stage)
 
 
 def _trigger_cost_rollup(doc_id: int) -> None:

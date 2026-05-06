@@ -116,7 +116,9 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
         issued_date_str = (result.get("issued_date") or "").strip()
         if issued_date_str:
             try:
-                parsed = datetime.strptime(issued_date_str[:10], "%Y-%m-%d")
+                parsed = datetime.strptime(issued_date_str[:10], "%Y-%m-%d").replace(
+                    tzinfo=UTC
+                )
                 doc.issued_date = parsed
             except (ValueError, TypeError):
                 pass
@@ -188,7 +190,6 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
     content_len = len(doc.content or "")
     new_meta = dict(doc.meta or {})
     new_meta["ai_context_strategy"] = "windowed" if content_len > 60000 else "full"
-    # We re-fetch the preview length to be accurate
     new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
     doc.meta = new_meta
 

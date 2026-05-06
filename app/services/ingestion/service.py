@@ -151,7 +151,7 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
     if doc.meta and doc.meta.get("ai_contradiction"):
         reasons.append("contradiction_detected")
 
-    return list(set(reasons))  # Unique reasons
+    return list(dict.fromkeys(reasons))
 
 
 def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
@@ -547,8 +547,6 @@ async def ingest_file(
         return new_doc
 
     except HTTPException:
-        raise
-    except IngestionError:
         raise
     except Exception:
         if file_path and os.path.exists(file_path):

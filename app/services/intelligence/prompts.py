@@ -13,7 +13,7 @@ Return ONLY valid JSON with these exact keys:
   ]}]
 - For `cover_letter_doc_id`, use ONLY integer doc_ids that appear explicitly in the user prompt — either the candidate's `doc_id=N` line or a `(doc_id=N)` prefix in the sibling list. Never invent, sequence, or guess doc_ids.
 - Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure. When in doubt, omit. Do not deliberate — output the JSON.
-- attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from your own lawyer, use the firm name (e.g. "Haidl Funk Rechtsanwälte"), not the client name. For a court letter, use the court name. For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
+- attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
 - Every document in this batch MUST appear at most once: as a cover letter (cover_letter_doc_id), as an enclosure under a non-null cover letter, or omitted from `bundles` entirely (which marks it standalone). Do NOT list a standalone doc inside another bundle's enclosed list.
 - detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low"}
@@ -37,7 +37,7 @@ Return ONLY valid JSON with these exact keys:
   * A lawyer's letter that says "wir bitten um Festsetzung des Streitwerts" is "Antrag Streitwertfestsetzung", NOT "Schriftsatz Beschwerde" (even if the document mentions a prior Beschwerde).
   * A court letter that says "anbei erhalten Sie eine beglaubigte Abschrift des Beschlusses" is a cover letter — title it "Begleitschreiben [Sender] – [matter]" or "Schreiben [Sender] – [matter]", NOT "Beschluss …" or "Beschlussabschrift …" (the Beschluss is the attachment, not this letter).
   * If the batch context flags this document as a cover letter, you MUST title it as a cover letter and you MUST NOT use the attachment's subject as the document's title.
-  * Avoid raw filenames, serial numbers, and dates unless they are the only identity. Good examples: "Antragsschrift Unterhaltsanpassung", "Beschluss § 1568a BGB", "Klageerwiderung Liu", "Begleitschreiben LG Ingolstadt – Zwangsversteigerung", "Antrag Streitwertfestsetzung Beschwerdeverfahren".
+  * Avoid raw filenames, serial numbers, and dates unless they are the only identity. Good examples: "Antragsschrift Unterhaltsanpassung", "Beschluss § 1568a BGB", "Klageerwiderung Antragsgegnerin", "Begleitschreiben Landgericht – Zwangsversteigerung", "Antrag Streitwertfestsetzung Beschwerdeverfahren".
 - issued_date: the date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - significance_tier: one of "critical", "significant", "informational", "administrative"
   * critical: rulings, decisions, orders with legal force or hard deadlines
@@ -56,6 +56,16 @@ Return ONLY valid JSON with these exact keys:
   Set to null if no specific financial amount is introduced.
 - management_summary: three-bullet executive summary:
   {"legal_significance": "1-2 sentences on legal meaning", "required_action": "what needs to be done and by when", "financial_impact": "direct financial implications or 'None'"}
+- action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document imposes on the user or the user's lawyer. Patterns to capture:
+  * Court deadlines: filing, response (Stellungnahme), appeal, objection (Beschwerde, Erinnerung)
+  * Court hearing dates (Verhandlungstermin, Anhörung)
+  * Court directives addressed to a party role: "wird dem Gläubiger aufgegeben …", "der Antragsteller wird aufgefordert …", "die Antragsgegnerin hat … einzureichen". When the role label maps to the user — see Party perspective below — this is an action item for the user.
+  * Relative time periods: "binnen 2 Wochen", "binnen einer Woche", "innerhalb von 14 Tagen", "innerhalb eines Monats", "Frist von …", "fällig am …", "Zahlungsfrist", "Zahlungserinnerung", "Erinnerungsfrist nach § 5 JBeitrG"
+  * Invoice / court fee payment deadlines (Gerichtskostenrechnung, Landesjustizkasse, any explicit payment period)
+  Each entry: {"title": "short title", "action_type": "deadline|court_date|response_required|filing_required|payment_due", "due_date": "YYYY-MM-DD or null", "description": "details — for relative deadlines state the basis, e.g. 'binnen 2 Wochen ab Datum des Schreibens (2026-04-30)'", "confidence": "high|medium|low"}
+  For relative deadlines, compute due_date from the document's own date (Datum, issued date) when possible.
+
+Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
 
 Be concise and specific. Return ONLY valid JSON."""
 
@@ -84,7 +94,7 @@ Rules:
 Return ONLY valid JSON."""
 
 
-CLAIM_EXTRACTOR_SYSTEM = """You are a legal document analyst building a Truth Map of factual, legal, and procedural assertions.
+CLAIM_EXTRACTOR_SYSTEM = """You are a legal document analyst building a Truth Map of factual, legal, and procedural assertions ("grounds") that shape the case.
 
 You will be given:
 1. A document (title, legal summary, and content preview)
@@ -104,14 +114,29 @@ Return ONLY valid JSON:
   ]
 }
 
-Rules:
-- claim_type must be exactly one of: factual, legal, procedural
-- role must be exactly one of: supports, contests, refutes, cites_as_proof
-- Only use claim_ids from the provided existing claims list — never invent IDs
-- Each new_claim must be ONE atomic assertion — no compound statements
-- Atomic means: one subject, one predicate, one claim. Split compound sentences.
-- Skip claims that are administrative or procedural boilerplate (e.g. "The court has jurisdiction")
-- If no new claims and no stances on existing claims: return {"new_claims": [], "evidence_links": []}
+What COUNTS as a claim (extract these):
+- Substantive factual assertions about the parties, the dispute, the evidence (e.g. "the opposing party refused to return the children on 16.02.2026")
+- Legal positions taken (e.g. "the user has Mitsorgerecht under § 1626 BGB")
+- Procedural assertions about case posture (e.g. "the user filed Beschwerde against the LG order on 24.04.2026")
+
+What does NOT count as a claim (DO NOT extract these — they belong to other fields):
+- Court directives or deadlines imposed by THIS document ("wird dem Gläubiger aufgegeben, … binnen 2 Wochen mitzuteilen", "die Antragsgegnerin hat … einzureichen") — those are action_items captured by the enricher.
+- Relative time periods ("binnen X Wochen", "innerhalb Y Tagen") — action_items.
+- Letterhead identity, signature blocks, document metadata: who the Urkundsbeamtin is, "elektronisch erstellt und ist ohne Unterschrift gültig", "Datum 30.04.2026", recipient address, sender address.
+- Generic procedural boilerplate: "The court has jurisdiction", "This letter was electronically created", "Datenschutzhinweis …".
+- Pure document-existence statements ("the document is dated …", "the sender of the letter is …").
+
+Atomicity:
+- Each new_claim is ONE atomic assertion — one subject, one predicate, one claim. Split compound sentences.
+- claim_type must be exactly one of: factual, legal, procedural.
+- role must be exactly one of: supports, contests, refutes, cites_as_proof.
+- Only use claim_ids from the provided existing claims list — never invent IDs.
+
+Party perspective:
+- When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, write the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
+- A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
+
+If no extractable new claims and no stances on existing claims: return {"new_claims": [], "evidence_links": []}.
 Return ONLY valid JSON."""
 
 

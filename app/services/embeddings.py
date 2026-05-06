@@ -38,14 +38,17 @@ async def generate_embedding(doc_id: int):
             return
 
         content_snippet = ""
-        if doc.meta and "chunks" in doc.meta and doc.meta["chunks"]:
+        chunks = doc.meta.get("chunks", []) if doc.meta else []
+        if chunks:
             current_len = 0
-            for chunk in doc.meta["chunks"]:
+            for chunk in chunks:
                 text = chunk.get("text", "")
                 if current_len + len(text) > _EMBED_MAX_CHARS:
                     break
                 content_snippet += text + "\n\n"
                 current_len += len(text)
+            if not content_snippet:
+                content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
 
         if not content_snippet:
             content_snippet = doc.content[:_EMBED_MAX_CHARS]
@@ -120,14 +123,17 @@ async def reindex_all_docs(db) -> dict:
             if not doc.content or doc.content.startswith("Conversion failed:"):
                 continue
             content_snippet = ""
-            if doc.meta and "chunks" in doc.meta and doc.meta["chunks"]:
+            chunks = doc.meta.get("chunks", []) if doc.meta else []
+            if chunks:
                 current_len = 0
-                for chunk in doc.meta["chunks"]:
+                for chunk in chunks:
                     chunk_text = chunk.get("text", "")
                     if current_len + len(chunk_text) > _EMBED_MAX_CHARS:
                         break
                     content_snippet += chunk_text + "\n\n"
                     current_len += len(chunk_text)
+                if not content_snippet:
+                    content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
             if not content_snippet:
                 content_snippet = doc.content[:_EMBED_MAX_CHARS]
             params = await embed_provider.get_embedding_params(

@@ -134,12 +134,24 @@ async def lifespan(app: FastAPI):
         seed_triage_case(seed_db)
 
     # Reset any pipeline stages that were left in RUNNING state by a prior crash.
-    from app.services.pipeline_status import recover_orphaned_running_stages
+    from app.services.pipeline_status import (
+        recover_orphaned_running_stages,
+        recover_stuck_pending_dispatches,
+    )
 
     with SessionLocal() as recovery_db:
         stats = recover_orphaned_running_stages(recovery_db)
     if any(stats.values()):
         logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
+
+    # Re-dispatch docs whose process_document_task daemon thread was killed by
+    # uvicorn --reload before it could call mark_started (EAGER mode hazard).
+    with SessionLocal() as pending_db:
+        pending_stats = recover_stuck_pending_dispatches(pending_db)
+    if pending_stats.get("docs_redispatched"):
+        logging.getLogger(__name__).warning(
+            "Pipeline recovery on startup (stuck pending): %s", pending_stats
+        )
 
     # vec0 cannot be ALTERed: changing AI_EMBED_DIM without recreating the
     # document_vectors table silently makes every embedding write fail the

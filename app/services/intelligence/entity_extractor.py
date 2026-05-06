@@ -59,6 +59,13 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
     if not isinstance(entities_raw, list):
         return 0
 
+    existing_keys = {
+        (e.type, e.name)
+        for e in db.query(Entity.type, Entity.name)
+        .filter(Entity.case_id == doc.case_id)
+        .all()
+    }
+
     count = 0
     for item in entities_raw:
         if not isinstance(item, dict):
@@ -72,18 +79,9 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
 
         entity_type = EntityType[type_raw]  # Look up by NAME (uppercase)
 
-        # Dedup: skip if same case+type+name already exists
-        existing = (
-            db.query(Entity)
-            .filter(
-                Entity.case_id == doc.case_id,
-                Entity.type == entity_type,
-                Entity.name == name,
-            )
-            .first()
-        )
-        if existing:
+        if (entity_type, name) in existing_keys:
             continue
+        existing_keys.add((entity_type, name))
 
         context = (item.get("context_quote") or "")[:500]
 
