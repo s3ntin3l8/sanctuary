@@ -11,7 +11,7 @@
     <div class="flex items-center gap-2 min-w-0">
 
         {# Status pill #}
-        <div id="status-{{ iid }}" class="shrink-0">
+        <div id="status-{{ iid }}" class="shrink-0 max-w-[14rem] truncate">
             {% if health.ok %}
             <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
                 <span class="material-symbols-outlined text-[13px]">check_circle</span>

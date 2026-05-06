@@ -174,8 +174,8 @@ class AIProvider:
                     if provider != "auto"
                     else await detect_provider(base_url)
                 )
-            except (RuntimeError, Exception) as e:
-                return {"ok": False, "provider": "unknown", "detail": str(e)}
+            except (RuntimeError, Exception):
+                return {"ok": False, "provider": "unknown", "detail": "Unreachable"}
         else:
             base_url = self.base_url
             api_key = self.api_key
