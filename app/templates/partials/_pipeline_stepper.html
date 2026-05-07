@@ -6,14 +6,21 @@
 #}
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 {% set stages_data = doc.pipeline_stages or {} %}
+{# Stage order matches the dispatch order in app/tasks/:
+   metadata → proceeding_analysis → batch_analysis → enrich → (relationships, entities)
+   → claims → embeddings. Both proceeding_analysis and entities are tracked in
+   STAGE_REGISTRY (app/services/pipeline_status.py) but were previously omitted
+   from the stepper rendering. #}
 {% set stage_defs = [
-  ('extract',        'file_upload',          'Extract'),
-  ('metadata',       'description',          'Metadata'),
-  ('batch_analysis', 'batch_prediction',     'Batch Analysis'),
-  ('enrich',         'auto_fix_high',        'Enrich'),
-  ('relationships',  'account_tree',         'Relationships'),
-  ('claims',         'format_list_bulleted', 'Claims'),
-  ('embeddings',     'workspaces',           'Embeddings'),
+  ('extract',             'file_upload',          'Extract'),
+  ('metadata',            'description',          'Metadata'),
+  ('proceeding_analysis', 'gavel',                'Proceeding'),
+  ('batch_analysis',      'batch_prediction',     'Batch Analysis'),
+  ('enrich',              'auto_fix_high',        'Enrich'),
+  ('relationships',       'account_tree',         'Relationships'),
+  ('claims',              'format_list_bulleted', 'Claims'),
+  ('entities',            'workspaces_outline',   'Entities'),
+  ('embeddings',          'workspaces',           'Embeddings'),
 ] %}
 
 {# Resolve the detail line — precedence: failed > retrying > running > completed > pending. #}

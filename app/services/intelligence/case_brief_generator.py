@@ -114,6 +114,7 @@ Open action items:
         schema=CaseBrief,
         model=model or None,
         db=db,
+        case_id=case.id,
         two_pass=True,
     )
     return result.model_dump()

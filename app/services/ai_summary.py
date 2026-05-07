@@ -343,6 +343,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             model=cfg.summary_model,
             db=db,
             ingest_batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
             two_pass=True,
         )
     except ValueError as e:
@@ -360,6 +361,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
                 model=cfg.summary_model,
                 db=db,
                 ingest_batch_id=doc.ingest_batch_id,
+                case_id=doc.case_id,
                 suppress_thinking=True,
                 two_pass=True,
             )

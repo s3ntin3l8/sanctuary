@@ -70,7 +70,9 @@ def test_two_pass_makes_two_stream_calls_with_correct_schema_split(patched_provi
     """Pass 1 must omit the schema; pass 2 must include it."""
     calls: list[dict] = []
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         calls.append(
             {
                 "label": debug_label,
@@ -110,7 +112,9 @@ def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
     """Pass 2 user prompt must contain the original prompt + pass-1 analysis."""
     calls: list[dict] = []
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
             return ("DEEP_ANALYSIS_TOKEN", "")
@@ -141,7 +145,9 @@ def test_two_pass_promotes_pass1_thinking_when_response_empty(patched_provider):
     must be used as the analysis fed into pass 2."""
     calls: list[dict] = []
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
             return ("", "REASONING_FROM_THINKING_CHANNEL")
@@ -169,7 +175,9 @@ def test_two_pass_skips_analysis_block_when_pass1_truly_empty(patched_provider):
     the original prompt unaugmented (no `--- Your prior analysis ---` block)."""
     calls: list[dict] = []
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
             return ("", "")
@@ -199,7 +207,9 @@ def test_two_pass_pass2_empty_triggers_retry(patched_provider):
         '"az_court": null, "subject_matter": null, "appeal_deadline_days": null}'
     )
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         if debug_label.endswith("-p1"):
             call_count["p1"] += 1
             return ("Some analysis", "")
@@ -235,7 +245,9 @@ def test_single_pass_unchanged(patched_provider):
     """two_pass=False (default) must still produce exactly one stream call."""
     calls: list[str] = []
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         calls.append(debug_label)
         return ('{"is_court_document": true}', "")
 
@@ -265,7 +277,9 @@ def test_pass1_user_prompt_carries_no_json_directive(patched_provider):
     leaving pass 2 with truncated analysis context."""
     seen_prompts: dict[str, str] = {}
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         seen_prompts[debug_label] = params["json"]["prompt"]
         if debug_label.endswith("-p1"):
             return ("Analysis prose only.", "")
@@ -297,7 +311,9 @@ def test_pass1_inherits_caller_max_tokens_by_default(patched_provider):
     caller's options.max_tokens specifies — no surprise cap."""
     seen_max_tokens: dict[str, int | None] = {}
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):
             return ("Analysis", "")
@@ -326,7 +342,9 @@ def test_pass1_max_tokens_caps_max_tokens(patched_provider):
     what the caller put in options."""
     seen_max_tokens: dict[str, int | None] = {}
 
-    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+    def fake_stream(
+        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+    ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):
             return ("Analysis", "")
@@ -347,3 +365,117 @@ def test_pass1_max_tokens_caps_max_tokens(patched_provider):
     p2_max = seen_max_tokens["doc_7_proceeding-p2"]
     assert p1_max == 500, f"pass 1 should cap max_tokens to 500, got {p1_max}"
     assert p2_max == 9999, f"pass 2 should preserve caller's max_tokens, got {p2_max}"
+
+
+@pytest.mark.unit
+def test_runs_jsonl_entry_carries_doc_case_and_batch_for_doc_scoped_calls(
+    tmp_path, monkeypatch
+):
+    """A doc-scoped call must report the doc's case_id and ingest_batch_id in
+    the runs.jsonl entry. Previously batch_id and case_id were null on doc-
+    scoped entries, making it impossible to filter the index by case/batch
+    without joining against the documents table."""
+    import json
+
+    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
+    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
+
+    _ai_call._append_index(
+        runs_jsonl,
+        started_at="2026-05-07T20:00:00Z",
+        kind="doc",
+        scope_id="42",
+        stage="proceeding-p2",
+        ingest_batch_id=4,
+        doc_case_id="ADV-099-Z",
+        model="qwen/qwen3.5-9b",
+        provider="openai",
+        duration_ms=1234,
+        ttfb_ms=100,
+        response_len=200,
+        thinking_len=0,
+        status="ok",
+        error=None,
+    )
+
+    assert runs_jsonl.exists()
+    line = runs_jsonl.read_text().strip()
+    entry = json.loads(line)
+    assert entry["doc_id"] == 42
+    assert entry["batch_id"] == 4, (
+        "doc-scoped entry must surface the doc's batch (was null before)"
+    )
+    assert entry["case_id"] == "ADV-099-Z", (
+        "doc-scoped entry must surface the doc's case (was null before)"
+    )
+    # The legacy `ingest_batch_id` field is gone — `batch_id` is the single
+    # source of truth now.
+    assert "ingest_batch_id" not in entry
+
+
+@pytest.mark.unit
+def test_runs_jsonl_entry_carries_case_for_batch_scoped_calls(tmp_path, monkeypatch):
+    """A batch-scoped call (kind=batch) must report the batch's case_id when
+    it's known at call time."""
+    import json
+
+    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
+    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
+
+    _ai_call._append_index(
+        runs_jsonl,
+        started_at="2026-05-07T20:00:00Z",
+        kind="batch",
+        scope_id="4",
+        stage="analyzer-p2",
+        ingest_batch_id=4,
+        doc_case_id="ADV-100-Z",
+        model="qwen/qwen3.5-9b",
+        provider="openai",
+        duration_ms=2000,
+        ttfb_ms=200,
+        response_len=300,
+        thinking_len=0,
+        status="ok",
+        error=None,
+    )
+
+    entry = json.loads(runs_jsonl.read_text().strip())
+    assert entry["batch_id"] == 4
+    assert entry["doc_id"] is None
+    assert entry["case_id"] == "ADV-100-Z"
+
+
+@pytest.mark.unit
+def test_runs_jsonl_entry_for_case_scoped_calls(tmp_path, monkeypatch):
+    """A case-scoped call (kind=case) puts the case ID in case_id."""
+    import json
+
+    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
+    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
+
+    _ai_call._append_index(
+        runs_jsonl,
+        started_at="2026-05-07T20:00:00Z",
+        kind="case",
+        scope_id="ADV-101-Z",
+        stage="brief-p2",
+        ingest_batch_id=None,
+        doc_case_id=None,
+        model="qwen/qwen3.5-9b",
+        provider="openai",
+        duration_ms=3000,
+        ttfb_ms=300,
+        response_len=400,
+        thinking_len=0,
+        status="ok",
+        error=None,
+    )
+
+    entry = json.loads(runs_jsonl.read_text().strip())
+    assert entry["case_id"] == "ADV-101-Z"
+    assert entry["doc_id"] is None
+    assert entry["batch_id"] is None

@@ -129,6 +129,7 @@ def _append_index(
     scope_id: str,
     stage: str,
     ingest_batch_id,
+    doc_case_id: str | None,
     model: str,
     provider: str,
     duration_ms: int,
@@ -138,9 +139,28 @@ def _append_index(
     status: str,
     error: str | None,
 ) -> None:
+    # Each entry carries three IDs so jq filters / log greps work uniformly
+    # regardless of scope kind:
+    #   doc_id    = the document this call relates to (when applicable)
+    #   batch_id  = the ingest batch this call relates to (the call's primary
+    #               scope when kind=batch, OR the doc's ingest_batch_id when
+    #               kind=doc — same logical "batch this run belongs to")
+    #   case_id   = the case this call relates to (call's scope when kind=case,
+    #               OR the doc's case_id when kind=doc, when known)
+    # Previously only the call's primary scope was reported, so doc-scoped
+    # entries had batch_id=null + case_id=null even when the doc clearly
+    # belonged to a batch and a case.
     doc_id = int(scope_id) if kind == "doc" else None
-    batch_id = int(scope_id) if kind == "batch" else None
-    case_id = scope_id if kind == "case" else None
+    if kind == "batch":
+        batch_id: int | None = int(scope_id)
+    elif kind == "doc" and ingest_batch_id is not None:
+        batch_id = int(ingest_batch_id)
+    else:
+        batch_id = None
+    if kind == "case":
+        case_id: str | None = scope_id
+    else:
+        case_id = doc_case_id
 
     entry = {
         "ts": started_at,
@@ -150,7 +170,6 @@ def _append_index(
         "doc_id": doc_id,
         "batch_id": batch_id,
         "case_id": case_id,
-        "ingest_batch_id": ingest_batch_id,
         "model": model,
         "provider": provider,
         "duration_ms": duration_ms,
@@ -177,6 +196,7 @@ def _stream_response(
     debug_label: str,
     resolved_model: str,
     ingest_batch_id: int | None,
+    doc_case_id: str | None = None,
 ) -> tuple[str, str]:
     """Stream one AI request, write its debug-log block, return (response, thinking).
 
@@ -299,6 +319,7 @@ def _stream_response(
             scope_id=scope_id,
             stage=stage,
             ingest_batch_id=ingest_batch_id,
+            doc_case_id=doc_case_id,
             model=resolved_model,
             provider=ptype,
             duration_ms=duration_ms,
@@ -373,6 +394,7 @@ def call_json_ai(
     suppress_thinking: bool = ...,
     two_pass: bool = ...,
     pass1_max_tokens: int | None = ...,
+    case_id: str | None = ...,
 ) -> T: ...
 
 
@@ -390,6 +412,7 @@ def call_json_ai(
     suppress_thinking: bool = ...,
     two_pass: bool = ...,
     pass1_max_tokens: int | None = ...,
+    case_id: str | None = ...,
 ) -> dict: ...
 
 
@@ -406,6 +429,7 @@ def call_json_ai(
     suppress_thinking: bool = False,
     two_pass: bool = False,
     pass1_max_tokens: int | None = _DEFAULT_PASS1_MAX_TOKENS,
+    case_id: str | None = None,
 ) -> BaseModel | dict:
     """Synchronous streaming AI call returning a Pydantic model or parsed dict.
 
@@ -490,6 +514,7 @@ def call_json_ai(
                 debug_label=pass1_label,
                 resolved_model=resolved_model,
                 ingest_batch_id=ingest_batch_id,
+                doc_case_id=case_id,
             )
         except Exception as e:
             # Pass 1 errored — pass 2 can still run cold (with no analysis).
@@ -548,6 +573,7 @@ def call_json_ai(
         debug_label=pass2_label,
         resolved_model=resolved_model,
         ingest_batch_id=ingest_batch_id,
+        doc_case_id=case_id,
     )
 
     # Qwen3.5 + LMStudio + structured output: the schema-constrained JSON
@@ -594,6 +620,7 @@ def call_json_ai(
                 suppress_thinking=True,
                 two_pass=two_pass,
                 pass1_max_tokens=pass1_max_tokens,
+                case_id=case_id,
             )
         refusal_hint = ""
         if full_thinking:

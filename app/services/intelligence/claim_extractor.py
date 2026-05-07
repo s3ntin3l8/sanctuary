@@ -65,6 +65,7 @@ def _call_claim_extractor_sync(
         model=model or None,
         db=db,
         ingest_batch_id=doc.ingest_batch_id,
+        case_id=doc.case_id,
         two_pass=True,
     )
     return result.model_dump()

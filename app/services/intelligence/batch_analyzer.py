@@ -104,6 +104,7 @@ def _call_batch_analyzer_sync(
         model=model or None,
         db=db,
         ingest_batch_id=batch_id,
+        case_id=candidate.case_id,
         suppress_thinking=suppress_thinking,
         two_pass=True,
     )
