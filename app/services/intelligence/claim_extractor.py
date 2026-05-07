@@ -11,6 +11,7 @@ from app.models.enums import (
     ClaimStatus,
     ClaimType,
     DocumentType,
+    OriginatorType,
     SignificanceTier,
 )
 from app.repositories.claim import ClaimRepository
@@ -49,8 +50,10 @@ def _call_claim_extractor_sync(
     legal_sig = mgmt.get("legal_significance", "")
 
     existing_text = _format_existing_claims(existing_claims)
+    originator_value = doc.originator_type.value if doc.originator_type else "unknown"
     prompt = (
         f"DOCUMENT TITLE: {doc.title}\n"
+        f"DOCUMENT ORIGINATOR: {originator_value}\n"
         f"LEGAL SUMMARY: {legal_sig}\n\n"
         f"CONTENT:\n{content_preview}\n\n"
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
@@ -105,18 +108,31 @@ def _apply_claims(
             )
             continue
 
+        # Court-originated claims arrive ESTABLISHED — they are the
+        # procedural reality. The truth-status workflow (asserted → contested
+        # → established/refuted) only applies to opposing/own/third-party
+        # assertions. See Sharpen-Claims plan, Wave 1.
+        initial_status = (
+            ClaimStatus.ESTABLISHED
+            if doc.originator_type == OriginatorType.COURT
+            else ClaimStatus.ASSERTED
+        )
+
         claim = claim_repo.create_claim(
             case_id=doc.case_id,
             proceeding_id=doc.proceeding_id,
             source_document_id=doc.id,
             claim_text=claim_text,
             claim_type=ClaimType(claim_type_raw),
+            status=initial_status,
         )
-        # Source doc supports its own new claim
+        # The source document ASSERTS its own new claim — this is the
+        # canonical "originated by" evidence row. Other documents can later
+        # SUPPORT, CONTEST, or REFUTE.
         evidence_repo.link(
             claim_id=claim.id,
             document_id=doc.id,
-            role=ClaimEvidenceRole.SUPPORTS,
+            role=ClaimEvidenceRole.ASSERTS,
             excerpt=(item.get("excerpt") or "")[:500],
         )
 
@@ -145,10 +161,14 @@ def _apply_claims(
             excerpt=(item.get("excerpt") or "")[:500],
         )
 
-        # Status transitions
+        # Status transitions. ESTABLISHED claims (court findings) are not
+        # auto-flipped — the procedural reality holds until appellate review
+        # changes it, which the user records explicitly.
+        target = claim_repo.get(claim_id)
+        if target is None or target.status == ClaimStatus.ESTABLISHED:
+            continue
         if role == ClaimEvidenceRole.CONTESTS:
-            target = claim_repo.get(claim_id)
-            if target and target.status == ClaimStatus.ASSERTED:
+            if target.status == ClaimStatus.ASSERTED:
                 claim_repo.update_status(claim_id, ClaimStatus.CONTESTED)
         elif role == ClaimEvidenceRole.REFUTES:
             claim_repo.update_status(claim_id, ClaimStatus.REFUTED)

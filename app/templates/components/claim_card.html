@@ -3,12 +3,18 @@
      class="rounded-lg border border-surface-container-high bg-surface-container p-4 space-y-3">
 
   <div class="flex items-start justify-between gap-3">
-    <p class="text-sm font-medium text-on-surface leading-snug">{{ c.claim_text }}</p>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-medium text-on-surface leading-snug">{{ c.claim_text }}</p>
+      {% if c.is_precedent %}
+      <span class="inline-flex items-center gap-1 mt-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400"
+            title="Marked as precedent — useful for citation in other cases">⚖ Precedent</span>
+      {% endif %}
+    </div>
 
     {# Interactive status chip #}
     <div class="relative flex-shrink-0" x-data="{ open: false }">
       <button @click="open = !open" @click.outside="open = false"
-              class="text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap
+              class="text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap hover:opacity-80 transition-colors
                 {% if c.status.value == 'contested' %}bg-amber-500/20 text-amber-600 dark:text-amber-400
                 {% elif c.status.value == 'needs_proof' %}bg-amber-500/20 text-amber-600 dark:text-amber-400
                 {% elif c.status.value == 'asserted' %}bg-secondary/20 text-secondary
@@ -24,7 +30,7 @@
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-originator-own rounded-t-lg">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors text-originator-own rounded-t-lg">
           ✓ Mark Established
         </button>
         {% endif %}
@@ -34,7 +40,7 @@
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-amber-600 dark:text-amber-400">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors text-amber-600 dark:text-amber-400">
           🚩 Mark Disputed
         </button>
         {% endif %}
@@ -44,7 +50,7 @@
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-primary">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors text-primary">
           🔍 Needs Proof
         </button>
         {% endif %}
@@ -54,10 +60,17 @@
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest text-on-surface rounded-b-lg">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors text-on-surface">
           ↺ Reopen as Asserted
         </button>
         {% endif %}
+        <button hx-post="/claims/{{ c.id }}/precedent/toggle"
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors {% if c.is_precedent %}text-amber-600 dark:text-amber-400{% else %}text-on-surface{% endif %} rounded-b-lg">
+          ⚖ {% if c.is_precedent %}Unmark Precedent{% else %}Mark as Precedent{% endif %}
+        </button>
       </div>
     </div>
   </div>

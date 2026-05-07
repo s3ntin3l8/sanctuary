@@ -224,6 +224,7 @@ class ClaimStatus(enum.StrEnum):
 
 
 class ClaimEvidenceRole(enum.StrEnum):
+    ASSERTS = "asserts"  # the document that originally made the claim
     SUPPORTS = "supports"
     CONTESTS = "contests"
     REFUTES = "refutes"

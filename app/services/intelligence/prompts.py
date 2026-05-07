@@ -118,11 +118,15 @@ Return ONLY valid JSON."""
 CLAIM_EXTRACTOR_SYSTEM = """You are a legal document analyst building a Truth Map of factual, legal, and procedural assertions ("grounds") that shape the case.
 
 You will be given:
-1. A document (title, legal summary, and content preview)
+1. A document (title, originator, legal summary, and content preview)
 2. A list of EXISTING OPEN CLAIMS in this case (each with id, claim_type, and claim_text)
 
+The DOCUMENT ORIGINATOR tells you who authored this document:
+- `court` — extract substantive holdings (legal principles, factual determinations, procedural rulings) but NOT bookkeeping references to other documents in the chain.
+- `opposing` / `own` / `third_party` — extract substantive assertions made by the author.
+
 Your tasks:
-A) Extract up to 3 atomic NEW assertions this document makes for the first time (new_claims).
+A) Extract atomic NEW assertions this document makes for the first time (new_claims).
 B) Identify if this document takes a stance on any of the listed existing claims (evidence_links).
 
 Return ONLY valid JSON:
@@ -138,10 +142,18 @@ Return ONLY valid JSON:
 What COUNTS as a claim (extract these):
 - Only extract claims that are **contested, contestable, or load-bearing for the dispute**. If the assertion is administrative confirmation, scheduling, or restating dates/identifiers already in document headers, OMIT it.
 - Substantive factual assertions about the parties, the dispute, the evidence (e.g. "the opposing party refused to return the children on 16.02.2026")
-- Legal positions taken (e.g. "the user has Mitsorgerecht under § 1626 BGB")
-- Procedural assertions about case posture (e.g. "the user filed Beschwerde against the LG order on 24.04.2026")
+- Legal positions or doctrines invoked (e.g. "the user has Mitsorgerecht under § 1626 BGB", "objections to property status must be raised in civil proceedings, not enforcement")
+- Court findings and dispositions on matters in controversy (e.g. "the LG rejected the complaint because § 180 III ZVG requirements were not substantiated", "sole custody of the children belongs to the creditor")
 
 What does NOT count as a claim (DO NOT extract these — they belong to other fields):
+- **Document references** — statements that another document exists / was filed / was served / was issued. Examples to OMIT:
+  • "Yingying Liu filed an objection on 16.01.2026"
+  • "the lawyer responded to the request on 01.12.2025"
+  • "the lower court's decision was served on 17.01.2026"
+  • "the AG issued a decision on 12.11.2025 approving the auction order"
+  • "the debtor referenced a family law proceeding in a letter dated 23.01.2026"
+  These are pointers to OTHER documents in the chain. The cited document — when ingested — carries its own substantive claims. Extracting the reference itself just creates noise.
+  Distinguish: "the lower court rejected the request because § 180 III requirements were not met" IS a claim (substantive holding); "the lower court issued a decision on 15.01.2026" is NOT (just a pointer to that decision).
 - Court directives or deadlines imposed by THIS document ("wird dem Gläubiger aufgegeben, … binnen 2 Wochen mitzuteilen", "die Antragsgegnerin hat … einzureichen") — those are action_items captured by the enricher.
 - Relative time periods ("binnen X Wochen", "innerhalb Y Tagen") — action_items.
 - Letterhead identity, signature blocks, document metadata: who the Urkundsbeamtin is, "elektronisch erstellt und ist ohne Unterschrift gültig", "Datum 30.04.2026", recipient address, sender address.

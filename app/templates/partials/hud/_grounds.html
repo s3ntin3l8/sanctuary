@@ -34,43 +34,67 @@
           <div class="flex items-center gap-2 mt-0.5 flex-wrap">
             <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded"
                   style="background:var(--color-surface-container-high); color:{{ status_color }};">{{ claim.status.value if claim.status else '?' }}</span>
+            {% if doc.originator_type and doc.originator_type.value == 'court' %}
+            <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-originator-court/15 text-originator-court"
+                  title="Court findings are the procedural reality — not contestable propositions.">⚖ Court Finding</span>
+            {% endif %}
             <span class="text-[9px] font-mono" style="color:var(--color-outline);">
               #{{ claim.id }} · {{ claim.first_made_at.strftime('%d.%m.%y') if claim.first_made_at else '—' }}
             </span>
           </div>
         </div>
       </div>
-      {% if doc.case_id and claim.status and claim.status.value not in ('refuted',) %}
-      <div class="flex gap-1 mt-1 ml-6" x-data="{ done: false, doneMsg: '' }">
+      {% set is_court_doc = doc.originator_type and doc.originator_type.value == 'court' %}
+      {% if doc.case_id %}
+      <div class="flex gap-1 mt-1 ml-6 items-center flex-wrap" x-data="{ done: false, doneMsg: '' }">
         <template x-if="!done">
-          <div class="flex gap-1">
-            {% if claim.status.value != 'established' %}
-            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
-                    hx-vals='{"status": "established"}'
-                    hx-swap="none"
-                    @htmx:after-request="done = true; doneMsg = '✓ confirmed'"
-                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors cursor-pointer">
-              ✓ True
-            </button>
+          <div class="flex gap-1 items-center flex-wrap">
+            {# Truth-status buttons: only for non-court documents and non-refuted claims.
+               Court findings are authoritative — the user doesn't dispute them; they just exist. #}
+            {% if not is_court_doc and claim.status and claim.status.value != 'refuted' %}
+              {% if claim.status.value != 'established' %}
+              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                      hx-vals='{"status": "established"}'
+                      hx-swap="none"
+                      @htmx:after-request="done = true; doneMsg = '✓ confirmed'"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors cursor-pointer">
+                ✓ True
+              </button>
+              {% endif %}
+              {% if claim.status.value != 'contested' %}
+              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                      hx-vals='{"status": "contested"}'
+                      hx-swap="none"
+                      @htmx:after-request="done = true; doneMsg = '🚩 disputed'"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer">
+                🚩 Disputed
+              </button>
+              {% endif %}
+              {% if claim.status.value != 'needs_proof' %}
+              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+                      hx-vals='{"status": "needs_proof"}'
+                      hx-swap="none"
+                      @htmx:after-request="done = true; doneMsg = '🔍 flagged'"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer">
+                🔍 Needs Proof
+              </button>
+              {% endif %}
             {% endif %}
-            {% if claim.status.value != 'contested' %}
-            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
-                    hx-vals='{"status": "contested"}'
-                    hx-swap="none"
-                    @htmx:after-request="done = true; doneMsg = '🚩 disputed'"
-                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer">
-              🚩 Disputed
-            </button>
-            {% endif %}
-            {% if claim.status.value != 'needs_proof' %}
-            <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
-                    hx-vals='{"status": "needs_proof"}'
-                    hx-swap="none"
-                    @htmx:after-request="done = true; doneMsg = '🔍 flagged'"
-                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors cursor-pointer">
-              🔍 Needs Proof
-            </button>
-            {% endif %}
+            {# ⚖️ Precedent toggle: independent of status, available on all claims regardless of originator. #}
+            <span x-data="{ precedent: {{ 'true' if claim.is_precedent else 'false' }} }">
+              <button hx-post="/claims/{{ claim.id }}/precedent/toggle"
+                      hx-swap="none"
+                      @htmx:after-request="precedent = !precedent"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer"
+                      :class="precedent
+                              ? 'border-amber-500/50 text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                              : 'border-outline-variant/40 text-on-surface-variant hover:bg-amber-500/5'"
+                      :title="precedent
+                              ? 'Marked as precedent — useful for citation in other cases'
+                              : 'Mark as precedent — flag for citation in other cases'">
+                ⚖ <span x-text="precedent ? 'Precedent' : 'Mark Precedent'"></span>
+              </button>
+            </span>
           </div>
         </template>
         <span x-show="done" class="text-[9px] font-bold text-on-surface-variant" x-text="doneMsg"></span>

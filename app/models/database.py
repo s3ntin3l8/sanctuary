@@ -442,6 +442,7 @@ class Claim(Base):
     claim_text = Column(Text, nullable=False)
     claim_type = Column(SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False)
     status = Column(SAEnum(ClaimStatus), default=ClaimStatus.ASSERTED, nullable=False)
+    is_precedent = Column(Boolean, default=False, nullable=False)
     first_made_at = Column(DateTime, default=_utcnow, nullable=False)
     last_updated_at = Column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False

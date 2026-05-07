@@ -109,9 +109,10 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
         "The contract was validly executed under § 433 BGB on 01.01.2024" in claim_texts
     )
 
-    # Source doc should be linked as SUPPORTS on its own new claims
+    # Source doc ASSERTS its own new claims (the canonical "originated by"
+    # evidence row added in the Sharpen-Claims plan).
     evidence = db_session.query(ClaimEvidence).all()
-    assert all(e.role == ClaimEvidenceRole.SUPPORTS for e in evidence)
+    assert all(e.role == ClaimEvidenceRole.ASSERTS for e in evidence)
     assert all(e.document_id == significant_doc.id for e in evidence)
     assert all(e.confidence == RelationshipConfidence.AI_DETECTED for e in evidence)
 

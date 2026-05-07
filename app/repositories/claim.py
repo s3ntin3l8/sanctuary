@@ -30,6 +30,8 @@ class ClaimRepository(BaseRepository[Claim]):
         claim_text: str,
         claim_type: ClaimType,
         proceeding_id: int | None = None,
+        status: ClaimStatus = ClaimStatus.ASSERTED,
+        is_precedent: bool = False,
     ) -> Claim:
         return self.create(
             case_id=case_id,
@@ -37,7 +39,8 @@ class ClaimRepository(BaseRepository[Claim]):
             source_document_id=source_document_id,
             claim_text=claim_text,
             claim_type=claim_type,
-            status=ClaimStatus.ASSERTED,
+            status=status,
+            is_precedent=is_precedent,
             first_made_at=datetime.now(),
             last_updated_at=datetime.now(),
         )

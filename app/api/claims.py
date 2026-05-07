@@ -43,6 +43,51 @@ async def get_truthmap(
     )
 
 
+@router.post("/claims/{claim_id}/precedent/toggle")
+async def toggle_claim_precedent(
+    request: Request,
+    claim_id: int,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Toggle the ⚖️ Precedent flag on a claim. Independent of status."""
+    claim = db.get(Claim, claim_id)
+    if claim is None:
+        return HTMLResponse("<p>Claim not found</p>", status_code=404)
+
+    claim.is_precedent = not claim.is_precedent
+    db.commit()
+    db.refresh(claim)
+
+    case = db.query(Case).filter(Case.id == claim.case_id).first()
+    if case is None:
+        # Should not happen while case_id remains on Claim; defensive only.
+        return HTMLResponse("", status_code=204)
+
+    svc = ClaimService(db)
+    truth_map = svc.get_truth_map(case.id, "all")
+    updated_row: ClaimRow | None = None
+    for group in truth_map.groups:
+        for row in group.claims:
+            if row.claim.id == claim_id:
+                updated_row = row
+                break
+    if updated_row is None:
+        updated_row = ClaimRow(claim=claim)
+
+    return HTMLResponse(
+        templates.get_template("components/claim_card.html").render(
+            {
+                "row": updated_row,
+                "case": case,
+                "originator_colors": ORIGINATOR_COLORS,
+                "ClaimStatus": ClaimStatus,
+                "ClaimEvidenceRole": ClaimEvidenceRole,
+                "UserReactionType": UserReactionType,
+            }
+        )
+    )
+
+
 @router.post("/cases/{case_id}/claims/{claim_id}/status")
 async def update_claim_status(
     request: Request,
