@@ -37,10 +37,12 @@ _LOOP_STOP_SEQS = [
     "\n(Okay, ready)",
 ]
 
-# Default cap on pass-1 free-form analysis tokens. Pass 1 has no schema, so
-# nothing else stops a thinking model from running away. Keep this conservative
-# — the value is enough for ~2-3 paragraphs of analysis.
-_DEFAULT_PASS1_MAX_TOKENS = 1500
+# Pass-1 max-tokens override. None = use whatever the stage's options dict
+# already specified (typically 6000-10000 per ai_options.STAGE_OPTIONS). The
+# previous default of 1500 truncated every pass-1 mid-thought because
+# Qwen3.5's reasoning chain alone runs ~2000 tokens before it gets to the
+# answer. Callers who want a tighter cap can pass it explicitly.
+_DEFAULT_PASS1_MAX_TOKENS: int | None = None
 
 _SEPARATOR = "═" * 64
 _SECTION = "──"
@@ -370,7 +372,7 @@ def call_json_ai(
     ingest_batch_id: int | None = ...,
     suppress_thinking: bool = ...,
     two_pass: bool = ...,
-    pass1_max_tokens: int = ...,
+    pass1_max_tokens: int | None = ...,
 ) -> T: ...
 
 
@@ -387,7 +389,7 @@ def call_json_ai(
     ingest_batch_id: int | None = ...,
     suppress_thinking: bool = ...,
     two_pass: bool = ...,
-    pass1_max_tokens: int = ...,
+    pass1_max_tokens: int | None = ...,
 ) -> dict: ...
 
 
@@ -403,7 +405,7 @@ def call_json_ai(
     ingest_batch_id: int | None = None,
     suppress_thinking: bool = False,
     two_pass: bool = False,
-    pass1_max_tokens: int = _DEFAULT_PASS1_MAX_TOKENS,
+    pass1_max_tokens: int | None = _DEFAULT_PASS1_MAX_TOKENS,
 ) -> BaseModel | dict:
     """Synchronous streaming AI call returning a Pydantic model or parsed dict.
 
@@ -427,9 +429,12 @@ def call_json_ai(
             analysis. Recovers chain-of-thought visibility at the cost of
             ~5–10× per-stage latency. The schema grammar otherwise masks
             every non-JSON token from position zero, eliminating thinking.
-        pass1_max_tokens: Max tokens for the pass-1 analysis (default 1500).
-            Caps thinking runaway since pass 1 has no schema-grammar
-            terminator. Ignored when `two_pass=False`.
+        pass1_max_tokens: Optional override for pass-1 max-tokens.
+            None (default) = inherit the stage's `options.max_tokens`
+            (typically 6000-10000 per ai_options.STAGE_OPTIONS). Set to a
+            positive integer to cap pass-1 specifically — useful if a
+            stage's prompt provokes runaway thinking. Ignored when
+            `two_pass=False`.
 
     Returns:
         Pydantic model instance when `schema` is provided, else parsed dict.

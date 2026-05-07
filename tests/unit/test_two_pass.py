@@ -256,6 +256,35 @@ def test_single_pass_unchanged(patched_provider):
 
 
 @pytest.mark.unit
+def test_pass1_inherits_caller_max_tokens_by_default(patched_provider):
+    """Without an explicit `pass1_max_tokens=`, pass 1 must use whatever the
+    caller's options.max_tokens specifies — no surprise cap."""
+    seen_max_tokens: dict[str, int | None] = {}
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
+        if debug_label.endswith("-p1"):
+            return ("Analysis", "")
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={"max_tokens": 8000},
+            debug_label="doc_8_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+            # pass1_max_tokens omitted — should default to None
+        )
+
+    assert seen_max_tokens["doc_8_proceeding-p1"] == 8000, (
+        "default pass1_max_tokens=None must inherit caller's max_tokens, not cap"
+    )
+    assert seen_max_tokens["doc_8_proceeding-p2"] == 8000
+
+
+@pytest.mark.unit
 def test_pass1_max_tokens_caps_max_tokens(patched_provider):
     """Pass 1 max_tokens must be capped to pass1_max_tokens, regardless of
     what the caller put in options."""
