@@ -99,6 +99,11 @@
              retryConfirm = { open: true, submitting: false, batch_id: String(d.batch_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0 };
          "
          @triage:bundle-retried.document="retryConfirm.open = false; retryConfirm.submitting = false"
+         @triage:bundles-retried.document="
+             const d = ($event.detail && ($event.detail[0] || $event.detail)) || {};
+             const msg = d.message || ('Retried ' + (d.count || 0) + ' bundle(s)');
+             if (window.showToast) window.showToast(msg, 'info');
+         "
          @htmx:response-error.document="retryConfirm.submitting = false"
          @htmx:send-error.document="retryConfirm.submitting = false"
          @htmx:timeout.document="retryConfirm.submitting = false"

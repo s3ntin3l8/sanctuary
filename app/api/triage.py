@@ -564,34 +564,25 @@ async def summarize_document(
 # -----------------------------------------------------------------------------
 
 
-@router.post("/triage/bundle/retry")
-async def retry_bundle_pipeline(
-    request: Request,
-    batch_id: int = Form(...),
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    """Re-run every AI stage for every doc in the bundle.
+def _retry_batch(batch, db) -> int:
+    """Reset pipeline stages and dispatch tasks for one batch.
 
-    Skips EXTRACT (preserves manual case assignments) and leaves SKIPPED stages
-    alone. Clears analysis_queued_at so the analyze_proceeding→analyze_batch
-    cascade can re-fire. Returns 409 if any stage is actively running.
+    Returns the number of documents for which tasks were dispatched, or -1 if
+    any stage is actively running (caller should treat this as a skip/409).
+    Does NOT commit — the caller is responsible for committing after all batches.
     """
+    from sqlalchemy import text as _text
+
     from app.api.documents import _dispatch_retry_task
-    from app.models.database import IngestBatch
     from app.models.enums import (
         DocumentRole,
         IngestBatchStatus,
         PipelineStage,
         StageStatus,
     )
-    from app.services.pipeline_status import compute_overall_state
+    from app.services.pipeline_status import _STAGE_ORDER, compute_overall_state
 
-    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-    if not batch:
-        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
-
-    # 409 if any doc has a running stage
+    # Bail out if any doc has a running stage
     for doc in batch.documents:
         stages = doc.pipeline_stages or {}
         if any(
@@ -599,10 +590,7 @@ async def retry_bundle_pipeline(
             for v in stages.values()
             if isinstance(v, dict)
         ):
-            raise HTTPException(
-                status_code=409,
-                detail="A pipeline stage is actively running — retry not allowed",
-            )
+            return -1
 
     # Clear the cascade gate so analyze_proceeding_task can re-claim
     batch.analysis_queued_at = None
@@ -636,8 +624,6 @@ async def retry_bundle_pipeline(
         doc.court_relay = False
         doc.attributed_originator = None
 
-        from sqlalchemy import text as _text
-
         db.execute(
             _text(
                 "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state "
@@ -646,12 +632,8 @@ async def retry_bundle_pipeline(
             {"stages": json.dumps(stages), "state": new_state.value, "doc_id": doc.id},
         )
 
-    db.commit()
-
     # Dispatch head-of-cascade only per doc, plus the parallel EMBEDDINGS branch.
     # Firing every stage at once bypasses the cascade and overloads a local model.
-    from app.services.pipeline_status import _STAGE_ORDER
-
     any_head_dispatched = False
     for doc in batch.documents:
         db.refresh(doc)
@@ -667,12 +649,12 @@ async def retry_bundle_pipeline(
                 break
 
         if head is not None:
-            _dispatch_retry_task(doc.id, batch_id, head)
+            _dispatch_retry_task(doc.id, batch.id, head)
             any_head_dispatched = True
 
         emb_status = stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
         if emb_status not in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value):
-            _dispatch_retry_task(doc.id, batch_id, PipelineStage.EMBEDDINGS)
+            _dispatch_retry_task(doc.id, batch.id, PipelineStage.EMBEDDINGS)
 
     # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
     # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it
@@ -680,10 +662,41 @@ async def retry_bundle_pipeline(
     if not any_head_dispatched:
         from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
-        if claim_batch_for_analysis(batch_id, db):
+        if claim_batch_for_analysis(batch.id, db):
             from app.tasks.analyze_batch import analyze_batch_task
 
-            analyze_batch_task.delay(batch_id)
+            analyze_batch_task.delay(batch.id)
+
+    return len(batch.documents)
+
+
+@router.post("/triage/bundle/retry")
+async def retry_bundle_pipeline(
+    request: Request,
+    batch_id: int = Form(...),
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Re-run every AI stage for every doc in the bundle.
+
+    Skips EXTRACT (preserves manual case assignments) and leaves SKIPPED stages
+    alone. Clears analysis_queued_at so the analyze_proceeding→analyze_batch
+    cascade can re-fire. Returns 409 if any stage is actively running.
+    """
+    from app.models.database import IngestBatch
+
+    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
+
+    result = _retry_batch(batch, db)
+    if result == -1:
+        raise HTTPException(
+            status_code=409,
+            detail="A pipeline stage is actively running — retry not allowed",
+        )
+
+    db.commit()
 
     # OOB row update + global badges
     bundles = triage_service.get_triage_bundles()
@@ -700,6 +713,51 @@ async def retry_bundle_pipeline(
 
     doc_count = len(batch.documents)
     trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
+
+    response = HTMLResponse(content="".join(oob_parts))
+    response.headers["HX-Trigger"] = json.dumps(trigger)
+    return response
+
+
+@router.post("/triage/retry-all")
+async def retry_all_bundles(
+    request: Request,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Retry the AI pipeline for every bundle currently in triage.
+
+    Bundles with an actively running stage are skipped rather than rejected.
+    """
+    from app.models.database import IngestBatch
+    from app.services.triage_view import render_triage_feed_oob
+
+    bundles = triage_service.get_triage_bundles(limit=500)
+    batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}
+
+    batches = db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all()
+
+    retried = 0
+    for batch in batches:
+        result = _retry_batch(batch, db)
+        if result >= 0:
+            retried += 1
+
+    db.commit()
+
+    oob_parts = [
+        render_triage_feed_oob(request, triage_service, db),
+        render_sidebar_badges_oob(db),
+        render_triage_header_stats_oob(request, triage_service),
+    ]
+
+    bundle_word = "bundle" if retried == 1 else "bundles"
+    trigger = {
+        "triage:bundles-retried": {
+            "count": retried,
+            "message": f"Retried {retried} {bundle_word}",
+        }
+    }
 
     response = HTMLResponse(content="".join(oob_parts))
     response.headers["HX-Trigger"] = json.dumps(trigger)
