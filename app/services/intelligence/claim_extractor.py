@@ -10,6 +10,7 @@ from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
+    DocumentType,
     SignificanceTier,
 )
 from app.repositories.claim import ClaimRepository
@@ -170,6 +171,14 @@ def extract(doc_id: int) -> str | None:
             logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
             return reason
 
+        # Cover letters (Begleitschreiben) carry no substantive claims — only
+        # letterhead / case-number metadata. Skip even when batch analysis
+        # didn't downgrade their tier yet.
+        if doc.document_type == DocumentType.RELAY:
+            reason = "document_type:relay"
+            logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
+            return reason
+
         if not doc.content or doc.content.startswith("Conversion failed:"):
             reason = "no_content"
             logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
@@ -179,6 +188,30 @@ def extract(doc_id: int) -> str | None:
             reason = "triage_pending"
             logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
             return reason
+
+        # Clear stale auto-extracted claims from prior runs so retries don't
+        # accumulate. We only delete claims still in their default ASSERTED
+        # state — claims promoted to CONTESTED/REFUTED/ESTABLISHED via
+        # cross-doc evidence (or future user edits) carry signal we want to
+        # preserve. The ClaimEvidence rows owned by deleted claims cascade
+        # automatically (FK ondelete=CASCADE). Cross-doc evidence pointing at
+        # OTHER docs' claims is independent and untouched.
+        stale = (
+            db.query(Claim)
+            .filter(
+                Claim.source_document_id == doc.id,
+                Claim.status == ClaimStatus.ASSERTED,
+            )
+            .all()
+        )
+        if stale:
+            logger.info(
+                f"Doc {doc_id}: clearing {len(stale)} stale ASSERTED claim(s) "
+                f"before re-extraction"
+            )
+            for c in stale:
+                db.delete(c)
+            db.flush()
 
         claim_repo = ClaimRepository(db)
         existing_claims = list(
