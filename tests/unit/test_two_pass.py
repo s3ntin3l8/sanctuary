@@ -256,6 +256,42 @@ def test_single_pass_unchanged(patched_provider):
 
 
 @pytest.mark.unit
+def test_pass1_user_prompt_carries_no_json_directive(patched_provider):
+    """Pass 1 must augment the user prompt with a 'don't output JSON yet'
+    directive so the model spends its budget on reasoning instead of
+    re-emitting the structured output that pass 2 will produce under
+    grammar enforcement. Regression: without this, pass 1 routinely hit
+    the stage's max_tokens cap mid-JSON-emit on claims/entities/metadata,
+    leaving pass 2 with truncated analysis context."""
+    seen_prompts: dict[str, str] = {}
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        seen_prompts[debug_label] = params["json"]["prompt"]
+        if debug_label.endswith("-p1"):
+            return ("Analysis prose only.", "")
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="ORIGINAL_PROMPT",
+            options={},
+            debug_label="doc_9_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    p1_prompt = seen_prompts["doc_9_proceeding-p1"]
+    assert "ORIGINAL_PROMPT" in p1_prompt
+    assert "Analysis pass" in p1_prompt
+    assert "Do NOT output JSON" in p1_prompt
+    # Pass 2 should NOT carry the same directive (it needs JSON output)
+    p2_prompt = seen_prompts["doc_9_proceeding-p2"]
+    assert "Do NOT output JSON" not in p2_prompt
+    assert "Now output ONLY the JSON" in p2_prompt
+
+
+@pytest.mark.unit
 def test_pass1_inherits_caller_max_tokens_by_default(patched_provider):
     """Without an explicit `pass1_max_tokens=`, pass 1 must use whatever the
     caller's options.max_tokens specifies — no surprise cap."""

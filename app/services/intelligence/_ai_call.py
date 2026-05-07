@@ -459,10 +459,24 @@ def call_json_ai(
     # Pass 1: free-form analysis (only when two_pass=True).
     analysis = ""
     if two_pass:
+        # Stage system prompts say "Return ONLY valid JSON". In pass 1 we
+        # don't want JSON — we want the model to spend its budget on
+        # reasoning, not on emitting structure that pass 2 will produce
+        # under grammar enforcement. Override at the user-prompt level
+        # (most recent instruction wins). Without this override, pass 1
+        # routinely hits the stage's max_tokens cap mid-JSON-emit, leaving
+        # pass 2 with truncated analysis context — observed empirically
+        # (claims-p1 at 119-127% of cap, entities-p1 truncating mid-string).
+        pass1_user_prompt = (
+            f"{user_prompt}\n\n"
+            f"--- Analysis pass: think through this carefully in plain "
+            f"English. Do NOT output JSON yet — the structured JSON output "
+            f"is produced in a follow-up step. Just analyze. ---"
+        )
         pass1_label = f"{debug_label}-p1"
         pass1_params = _build_params(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt=pass1_user_prompt,
             options=options,
             schema=None,  # crucial: no grammar → thinking unblocked
             suppress_thinking=False,  # let the model think

@@ -24,8 +24,12 @@ STAGE_OPTIONS: dict[str, dict] = {
     "metadata": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 6000,
-        "max_tokens": 6000,
+        # Bumped 6000 → 8000: two-pass mode's pass-1 reasoning chain on this
+        # stage routinely landed at 105-109% of a 6000 budget. Headroom
+        # eliminates truncation even if the JSON-suppression directive is
+        # ever bypassed.
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
     "batch_analysis": {
         "num_ctx": 32768,
@@ -48,14 +52,20 @@ STAGE_OPTIONS: dict[str, dict] = {
     "claims": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 6000,
-        "max_tokens": 6000,
+        # Bumped 6000 → 8000: every two-pass claims-p1 in the 2026-05-07
+        # retry exceeded a 6000 budget (119-127%), truncating pass-1
+        # mid-emit and confusing pass 2.
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
     "entities": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 6000,
-        "max_tokens": 6000,
+        # Bumped 6000 → 8000: entities-p1 hit 86-111% of a 6000 budget.
+        # One run (doc_3) truncated mid-`"name": "H` and pass 2 emitted
+        # `{"entities": []}` instead of the ~20 entities pass 1 had identified.
+        "num_predict": 8000,
+        "max_tokens": 8000,
     },
     "case_brief": {
         "num_ctx": 32768,
