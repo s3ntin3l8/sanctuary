@@ -501,3 +501,163 @@ def test_confirm_document_clears_needs_review_when_all_fields_present(db_session
         or updated.review_reasons is None
         or len(updated.review_reasons) == 0
     )
+
+
+@pytest.mark.unit
+def test_confirm_bundle_removes_bundle_from_triage_feed_even_with_review_flags(
+    db_session,
+):
+    """After "Confirm bundle" (finalize=True), the bundle must drop out of
+    get_triage_bundles() even if individual docs still carry needs_review=True
+    (e.g. low_confidence on extracted metadata, unresolved_relationship). The
+    review flags remain on the doc for case-view UI; they no longer drag the
+    bundle back into the triage feed.
+
+    Regression: ib-0008 (1 doc with low_confidence) and ib-0009 (3 docs with
+    low_confidence + unresolved_relationship) reproduced the old behavior —
+    user clicked Confirm, batch.status went to COMPLETED, but the bundles
+    stayed visible in the triage UI.
+    """
+    from app.models.database import Case
+    from app.services.triage_service import TriageService
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    target_case = Case(
+        id="ADV-090-Z",
+        title="Target Case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    # Build a bundle whose docs will retain needs_review=True after confirm
+    # (low_confidence is non-clearable by confirm_bundle).
+    batch, docs = _make_batch_with_docs(
+        db_session,
+        triage_case,
+        target_case,
+        [
+            {
+                "title": "Cover",
+                "role": DocumentRole.COVER_LETTER,
+                "sender": "court@example.com",
+                "reasons": ["low_confidence"],
+            },
+            {
+                "title": "Enclosure",
+                "role": DocumentRole.ENCLOSURE,
+                "sender": "court@example.com",
+                "reasons": ["low_confidence"],
+            },
+        ],
+    )
+
+    # Manually pre-set extraction_confidence so compute_review_reasons keeps
+    # "low_confidence" after the cascade.
+    for d in docs:
+        d.extraction_confidence = {"sender": "low"}
+    db_session.commit()
+
+    svc = TriageService(db_session)
+
+    # Sanity: bundle is in the feed before confirm.
+    pre = svc.get_triage_bundles()
+    assert any(b.batch_id == batch.id for b in pre), (
+        "bundle must be visible in triage before confirm"
+    )
+
+    # Act: confirm the bundle with finalize=True.
+    svc.confirm_bundle(batch.id, target_case.id, finalize=True)
+
+    # Refresh and verify: docs still carry needs_review (low_confidence
+    # survives), but the bundle no longer appears in the triage feed.
+    for d in docs:
+        db_session.refresh(d)
+        assert d.needs_review is True, (
+            "low_confidence must keep needs_review=True for case-view consumers"
+        )
+
+    post = svc.get_triage_bundles()
+    assert not any(b.batch_id == batch.id for b in post), (
+        "confirmed bundle must NOT appear in triage feed even with needs_review docs"
+    )
+
+
+@pytest.mark.unit
+def test_open_batch_with_needs_review_still_appears_in_feed(db_session):
+    """The fix above must NOT regress the open-bundle case: a doc with
+    needs_review in a bundle whose batch is still PENDING must remain
+    visible in the triage feed."""
+    from app.models.database import Case
+    from app.services.triage_service import TriageService
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    target_case = Case(
+        id="ADV-091-Z",
+        title="Target",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    batch, docs = _make_batch_with_docs(
+        db_session,
+        triage_case,
+        target_case,
+        [
+            {
+                "title": "Cover",
+                "role": DocumentRole.COVER_LETTER,
+                "sender": "court@example.com",
+                "reasons": ["low_confidence"],
+            }
+        ],
+    )
+    # Batch is PENDING by default in the helper (no status overrides). Sanity:
+    from app.models.enums import IngestBatchStatus
+
+    assert batch.status == IngestBatchStatus.PENDING
+
+    svc = TriageService(db_session)
+    bundles = svc.get_triage_bundles()
+    assert any(b.batch_id == batch.id for b in bundles)
+
+
+@pytest.mark.unit
+def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
+    """Loose docs (no batch) with needs_review must still surface in triage —
+    they have no batch.status to gate on, so needs_review is the only signal."""
+    from app.models.database import Case, Document
+    from app.services.triage_service import TriageService
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    target_case = Case(
+        id="ADV-092-Z",
+        title="Target",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    loose = Document(
+        title="Loose doc",
+        content="content",
+        case_id=target_case.id,  # already has a real case
+        ingest_batch_id=None,  # no batch
+        needs_review=True,
+        review_reasons=["low_confidence"],
+        extraction_confidence={"sender": "low"},
+    )
+    db_session.add(loose)
+    db_session.commit()
+    db_session.refresh(loose)
+
+    svc = TriageService(db_session)
+    bundles = svc.get_triage_bundles()
+    assert any(
+        b.batch_id is None and any(d.id == loose.id for d in b.documents)
+        for b in bundles
+    ), "loose doc with needs_review must remain visible in triage"

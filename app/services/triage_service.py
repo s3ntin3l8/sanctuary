@@ -228,6 +228,16 @@ class TriageService:
 
         from app.models.database import IngestBatch, IngestBatchStatus
 
+        # A doc shows up in triage when at least one of these holds:
+        #   1. its batch is still open (not COMPLETED, not AWAITING_SLICING)
+        #   2. it's still parked under _TRIAGE
+        #   3. it has actionable review reasons AND its batch (if any) is still
+        #      open. The batch-status guard on (3) is the bug fix: previously
+        #      `needs_review` alone pulled docs back into the feed even after
+        #      the user clicked "Confirm bundle" (which set batch.status =
+        #      COMPLETED). The needs_review flag still earns its keep on
+        #      case-view UI; it just no longer overrides an explicit
+        #      bundle-confirm in the triage feed.
         docs = (
             self.db.query(Document)
             .outerjoin(IngestBatch, Document.ingest_batch_id == IngestBatch.id)
@@ -246,7 +256,13 @@ class TriageService:
                         IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
                     ),
                     Document.case_id == "_TRIAGE",
-                    Document.needs_review,
+                    and_(
+                        Document.needs_review,
+                        or_(
+                            IngestBatch.id.is_(None),
+                            IngestBatch.status != IngestBatchStatus.COMPLETED,
+                        ),
+                    ),
                 ),
             )
             .order_by(Document.ingest_date.desc())
