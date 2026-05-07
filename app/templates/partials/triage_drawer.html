@@ -31,7 +31,7 @@
                  style="border-bottom: 1px solid var(--color-outline-variant);">
                 <button type="button"
                         @click="$store.triage.closeDrawer()"
-                        class="p-1.5 rounded text-on-surface-variant hover:bg-surface-container focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        class="p-1.5 rounded text-on-surface-variant hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                         title="Close (Esc)">
                     <span class="material-symbols-outlined text-[14px]">close</span>
                 </button>
@@ -61,8 +61,8 @@
                     <button type="button"
                             @click="prevDoc()"
                             :disabled="!hasPrev()"
-                            :class="hasPrev() ? 'text-on-surface-variant' : 'text-outline-variant cursor-not-allowed'"
-                            class="p-1.5 rounded border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            :class="hasPrev() ? 'text-on-surface-variant hover:bg-surface-container' : 'text-outline-variant cursor-not-allowed'"
+                            class="p-1.5 rounded border border-outline-variant/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                             title="Prev doc ([)">
                         <span class="material-symbols-outlined text-[13px]">chevron_left</span>
                     </button>
@@ -71,8 +71,8 @@
                     <button type="button"
                             @click="nextDoc()"
                             :disabled="!hasNext()"
-                            :class="hasNext() ? 'text-on-surface-variant' : 'text-outline-variant cursor-not-allowed'"
-                            class="p-1.5 rounded border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            :class="hasNext() ? 'text-on-surface-variant hover:bg-surface-container' : 'text-outline-variant cursor-not-allowed'"
+                            class="p-1.5 rounded border border-outline-variant/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                             title="Next doc (])">
                         <span class="material-symbols-outlined text-[13px]">chevron_right</span>
                     </button>

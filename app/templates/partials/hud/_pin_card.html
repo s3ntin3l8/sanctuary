@@ -14,7 +14,7 @@
   {# Compact marker — narrow viewports only #}
   <button type="button"
           @click.stop="open = !open"
-          class="xl:hidden inline-flex items-center justify-center w-6 h-6 rounded bg-amber-50/80 dark:bg-amber-500/10 border-l-2 border-amber-500 pointer-events-auto"
+          class="xl:hidden inline-flex items-center justify-center w-6 h-6 rounded bg-amber-50/80 dark:bg-amber-500/10 border-l-2 border-amber-500 pointer-events-auto hover:bg-amber-100/80 dark:hover:bg-amber-500/20 transition-colors"
           :class="open ? 'ring-2 ring-amber-500' : ''"
           title="{{ pin.note | truncate(60, true) if pin.note else 'Pin' }}">
     <span class="material-symbols-outlined text-[14px] text-amber">push_pin</span>

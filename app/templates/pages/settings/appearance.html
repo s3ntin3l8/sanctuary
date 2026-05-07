@@ -28,13 +28,13 @@
             <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Theme</label>
             <div class="flex gap-2">
                 <button @click="saveTheme('dark')"
-                        :class="theme === 'dark' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20'"
+                        :class="theme === 'dark' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 hover:bg-primary/90' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20 hover:bg-surface-container-highest'"
                         class="px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
                     <span class="material-symbols-outlined text-[14px]">dark_mode</span>
                     Dark
                 </button>
                 <button @click="saveTheme('light')"
-                        :class="theme === 'light' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20'"
+                        :class="theme === 'light' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20 hover:bg-primary/90' : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/20 hover:bg-surface-container-highest'"
                         class="px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2">
                     <span class="material-symbols-outlined text-[14px]">light_mode</span>
                     Light

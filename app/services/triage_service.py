@@ -130,6 +130,37 @@ class BundleView:
         return {"total": len(self.documents), **counts}
 
     @property
+    def pipeline_active_label(self) -> str | None:
+        """Human label for current pipeline activity, or None if nothing in flight.
+
+        - 'Processing: <stage>' — any stage running or retrying anywhere in the
+          bundle (lowest-order stage wins so the label tracks "what's happening
+          right now" rather than what's furthest along).
+        - 'Queued' — no stage running but stages remain pending (between-stage
+          gap, or worker backlog).
+        - None — fully terminal; caller decides what to render.
+        """
+        from app.services.pipeline_status import STAGE_REGISTRY
+
+        order_map = {spec.stage.value: spec.order for spec in STAGE_REGISTRY.values()}
+        running: list[str] = []
+        pending: list[str] = []
+        for doc in self.documents:
+            for stage_name, info in (doc.pipeline_stages or {}).items():
+                status = (info or {}).get("status")
+                if status in {"running", "retrying"}:
+                    running.append(stage_name)
+                elif status == "pending":
+                    pending.append(stage_name)
+
+        if running:
+            first = sorted(running, key=lambda n: order_map.get(n, 999))[0]
+            return f"Processing: {first.replace('_', ' ')}"
+        if pending:
+            return "Queued"
+        return None
+
+    @property
     def mock_status(self) -> str:
         """Filter-chip taxonomy for the redesigned triage page.
 

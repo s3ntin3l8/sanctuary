@@ -123,14 +123,19 @@ def mock_status(bundle) -> str:  # bundle: BundleView
 
     First match wins:
       stuck:                any d.pipeline_state == FAILED
-      processing:           any d.pipeline_state in (PENDING, RUNNING)
+      processing:           any d.pipeline_state in (PENDING, RUNNING, PARTIAL)
       needs_classification: not confirmed and no suggested case
       needs_review:         otherwise
+
+    PARTIAL covers the between-stage gap: some stages have completed but later
+    stages are still pending (e.g. after batch_analysis sets suggested_case_id
+    while enrich/relationships/claims/entities/embeddings are queued). Without
+    PARTIAL the row would flip to needs_review and unlock Confirm mid-pipeline.
     """
     states = {d.pipeline_state for d in bundle.documents if d.pipeline_state}
     if PipelineState.FAILED in states:
         return STATUS_STUCK
-    if PipelineState.PENDING in states or PipelineState.RUNNING in states:
+    if states & {PipelineState.PENDING, PipelineState.RUNNING, PipelineState.PARTIAL}:
         return STATUS_PROCESSING
     if not bundle.confirmed_case_id and not bundle.suggested_case_id:
         return STATUS_NEEDS_CLASSIFICATION

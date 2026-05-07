@@ -14,7 +14,7 @@
      Two sibling buttons (not nested) so HTMX retry doesn't fight the toggle. #}
   <div class="w-full flex items-center gap-2 px-5 py-3 hover:bg-surface-container-high/50 transition-colors">
     <button @click="open = !open"
-            class="flex items-center gap-2 flex-1 text-left focus:outline-none">
+            class="flex items-center gap-2 flex-1 text-left focus:outline-none hover:opacity-80 transition-colors">
       <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex-1">Pipeline</span>
       {{ pipeline_status_pill(doc) }}
     </button>
@@ -31,7 +31,7 @@
       <span class="material-symbols-outlined text-[14px]">restart_alt</span>
     </button>
     <button @click="open = !open"
-            class="shrink-0 focus:outline-none"
+            class="shrink-0 focus:outline-none hover:bg-surface-container-high rounded p-0.5 transition-colors"
             aria-label="Toggle pipeline details">
       <span class="material-symbols-outlined text-sm text-on-surface-variant/50"
             x-text="open ? 'expand_more' : 'chevron_right'"></span>

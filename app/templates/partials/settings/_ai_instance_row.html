@@ -51,10 +51,10 @@
                     hx-delete="/api/settings/ai/instances/{{ iid }}"
                     hx-target="#instance-{{ iid }}"
                     hx-swap="outerHTML"
-                    class="px-2 py-0.5 text-xs font-bold rounded text-on-primary"
+                    class="px-2 py-0.5 text-xs font-bold rounded text-on-primary hover:opacity-85 transition-colors"
                     style="background:var(--color-error)">Yes</button>
             <button type="button" @click="confirmDelete = false"
-                    class="px-2 py-0.5 text-xs font-bold rounded border border-outline-variant/20 text-on-surface-variant">
+                    class="px-2 py-0.5 text-xs font-bold rounded border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container transition-colors">
                 No
             </button>
         </div>

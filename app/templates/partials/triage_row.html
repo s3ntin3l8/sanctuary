@@ -108,6 +108,12 @@
                 {% endfor %}
             </div>
             {% endif %}
+            {% if status == 'processing' and bundle.pipeline_active_label %}
+            <div class="text-[11px] mt-1.5 flex items-center gap-1 text-on-surface-variant">
+                <span class="material-symbols-outlined text-[11px] animate-pulse">settings</span>
+                {{ bundle.pipeline_active_label }}
+            </div>
+            {% endif %}
             {% if status == 'stuck' %}
             <div class="text-[11px] mt-1.5 flex items-center gap-1 text-error">
                 <span class="material-symbols-outlined text-[11px]">error_outline</span>
@@ -188,7 +194,7 @@
                             subject: $el.dataset.subject,
                             doc_count: parseInt($el.dataset.docCount, 10) || 0
                         })"
-                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error hover:bg-error/85 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
                     <span class="material-symbols-outlined text-[12px]">refresh</span>
                     Retry
                 </button>
@@ -222,7 +228,7 @@
                             suggested_proceeding_is_draft: $el.dataset.suggestedProceedingIsDraft === 'true',
                             action: 'confirm_bundle'
                         })"
-                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                         title="Confirm bundle (⌘↵)">
                     <span class="material-symbols-outlined text-[12px]">check</span>
                     Confirm
@@ -242,7 +248,7 @@
                             doc_count: parseInt($el.dataset.docCount, 10) || 0,
                             action: 'assign_case'
                         })"
-                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-surface-container-high text-on-surface border border-outline-variant/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                        class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-surface-container-high text-on-surface border border-outline-variant/30 hover:bg-surface-container-highest transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                     Route
                 </button>
             {% endif %}
@@ -253,7 +259,7 @@
                             :aria-expanded="open"
                             aria-haspopup="menu"
                             title="More actions"
-                            class="self-stretch h-full flex items-center px-2 rounded border border-outline-variant hover:bg-surface-container text-on-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                            class="self-stretch h-full flex items-center px-2 rounded border border-outline-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer text-on-surface-variant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                         <span class="material-symbols-outlined text-[14px] leading-normal">more_horiz</span>
                     </button>
                     <div x-show="open"
@@ -274,7 +280,7 @@
                                     subject: $el.dataset.subject,
                                     doc_count: parseInt($el.dataset.docCount, 10) || 0
                                 })"
-                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
+                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">restart_alt</span>
                             Retry
                         </button>
@@ -285,7 +291,7 @@
                                 hx-target="none"
                                 hx-confirm="Archive this bundle? It will be hidden from triage."
                                 @click="open = false"
-                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
+                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">archive</span>
                             Archive
                         </button>
@@ -295,7 +301,7 @@
                                 hx-target="none"
                                 hx-confirm="Permanently delete this bundle? All {{ bundle.doc_count }} document(s), files, and embeddings will be removed. This cannot be undone."
                                 @click="open = false"
-                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-error hover:bg-error/10 text-left focus-visible:outline-none focus-visible:bg-error/10">
+                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-error hover:bg-error/10 transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-error/10">
                             <span class="material-symbols-outlined text-[14px]">delete_forever</span>
                             Delete
                         </button>

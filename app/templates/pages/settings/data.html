@@ -46,7 +46,7 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <button x-show="!confirm" @click="confirm = true"
-                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all"
+                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all hover:bg-error/10"
                             style="border-color:var(--color-error); color:var(--color-error);">
                         Reset
                     </button>
@@ -56,10 +56,10 @@
                                 hx-target="#enrichment-result"
                                 hx-swap="innerHTML"
                                 @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary"
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary hover:opacity-85 transition-colors"
                                 style="background:var(--color-error);">Yes</button>
                         <button @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant">
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container transition-colors">
                             Cancel
                         </button>
                     </div>
@@ -75,7 +75,7 @@
                 </div>
                 <div class="flex items-center gap-2 ml-4 shrink-0">
                     <button x-show="!confirm" @click="confirm = true"
-                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all"
+                            class="px-4 py-2 text-xs font-bold rounded-xl border transition-all hover:bg-error/10"
                             style="border-color:var(--color-error); color:var(--color-error);">
                         Clear All
                     </button>
@@ -85,10 +85,10 @@
                                 hx-target="#clear-all-result"
                                 hx-swap="innerHTML"
                                 @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary"
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg text-on-primary hover:opacity-85 transition-colors"
                                 style="background:var(--color-error);">Yes</button>
                         <button @click="confirm = false"
-                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant">
+                                class="px-3 py-1.5 text-xs font-bold rounded-lg border border-outline-variant/20 text-on-surface-variant hover:bg-surface-container transition-colors">
                             Cancel
                         </button>
                     </div>

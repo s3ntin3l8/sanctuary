@@ -77,7 +77,7 @@
             data-proceeding-subtitle="{{ _proceeding_subtitle }}"
             data-proceeding-is-draft="{{ _proceeding_is_draft }}"
             onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
-            class="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+            class="text-[10px] font-bold text-primary hover:underline transition-colors cursor-pointer">
       Reroute to a different case →
     </button>
   </div>
@@ -105,7 +105,7 @@
       <button hx-post="/cases/{{ current_case.id }}/confirm-draft?context=triage"
               hx-target="closest .triage-hud-body"
               hx-swap="innerHTML"
-              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer">
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-originator-own text-white hover:opacity-90 transition-colors cursor-pointer">
         ✓ Ratify
       </button>
       <button type="button"
@@ -118,14 +118,14 @@
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
               onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
-              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer">
         Reroute
       </button>
       <button hx-post="/cases/{{ current_case.id }}/reject-draft?context=triage"
               hx-target="closest .triage-hud-body"
               hx-swap="innerHTML"
               hx-confirm="Discard draft case {{ current_case.id }} and put its docs back into triage?"
-              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/10 cursor-pointer">
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/10 transition-colors cursor-pointer">
         ✕ Reject
       </button>
     </div>
@@ -163,7 +163,7 @@
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
               onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:true}}))"
-              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:opacity-90 cursor-pointer">
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:opacity-90 transition-colors cursor-pointer">
         + Create case
       </button>
       <button type="button"
@@ -176,7 +176,7 @@
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
               onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
-              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
+              class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high transition-colors cursor-pointer">
         Pick existing
       </button>
     </div>

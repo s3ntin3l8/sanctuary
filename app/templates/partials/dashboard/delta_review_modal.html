@@ -12,7 +12,7 @@
       <span class="font-semibold text-[14px]" style="color:var(--color-on-surface);">
         What's new since last visit
       </span>
-      <button @click="reviewOpen = false" style="color:var(--color-on-surface-variant);">
+      <button @click="reviewOpen = false" class="p-1 rounded hover:bg-surface-container-high transition-colors" style="color:var(--color-on-surface-variant);">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M6 6l12 12M6 18L18 6"/>
         </svg>
@@ -29,7 +29,7 @@
                 style="background:var(--color-originator-{{ doc.originator_color }});"></span>
           <span class="text-[13px] flex-1" style="color:var(--color-on-surface);">{{ doc.title }}</span>
           <button @click="reviewOpen = false; openDoc({{ doc.id }})"
-                  class="text-[11px]" style="color:var(--color-primary);">view →</button>
+                  class="text-[11px] hover:underline transition-colors" style="color:var(--color-primary);">view →</button>
         </div>
         {% endfor %}
       {% else %}

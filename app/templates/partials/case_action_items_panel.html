@@ -59,7 +59,7 @@
       {% if item.source_document_id %}
       <button type="button"
               @click="window._dashOpenDoc({{ item.source_document_id }})"
-              class="shrink-0 text-[11px] text-primary hover:underline underline-offset-2"
+              class="shrink-0 text-[11px] text-primary hover:underline underline-offset-2 transition-colors"
               title="Open source document">source ↗</button>
       {% endif %}
     </li>

@@ -14,14 +14,14 @@
         <button hx-post="/cases/{{ case.id }}/confirm-draft"
                 hx-swap="none"
                 hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/cases/{{ case.id }}'; }"
-                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-own text-white hover:opacity-90 cursor-pointer whitespace-nowrap">
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-own text-white hover:opacity-90 transition-colors cursor-pointer whitespace-nowrap">
             Confirm Case
         </button>
         <button hx-post="/cases/{{ case.id }}/reject-draft"
                 hx-swap="none"
                 hx-confirm="Delete case {{ case.id }} and return all documents to triage?"
                 hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/triage'; }"
-                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 cursor-pointer whitespace-nowrap">
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-opposing/10 text-originator-opposing border border-originator-opposing/30 hover:bg-originator-opposing/20 transition-colors cursor-pointer whitespace-nowrap">
             Reject
         </button>
     </div>

@@ -47,7 +47,7 @@
                 </span>
                 <button type="button"
                         @click="editingTitle = true; $nextTick(() => $refs.titleInput.focus())"
-                        class="flex-shrink-0 p-0.5 rounded text-on-surface-variant/60 hover:text-primary hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                        class="flex-shrink-0 p-0.5 rounded text-on-surface-variant/60 hover:text-primary hover:bg-surface-container-high opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-colors"
                         title="Edit title">
                     <span class="material-symbols-outlined text-[12px]">edit</span>
                 </button>
@@ -102,7 +102,7 @@
                     const key = $el.closest('[data-bundle-key]')?.dataset?.bundleKey;
                     if (key) $store.triage.openDrawer(key, '{{ doc.id }}');
                 "
-                class="flex-shrink-0 flex items-center gap-1 text-[10.5px] px-2 py-1 rounded text-primary border border-outline-variant/40 bg-surface-low hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+                class="flex-shrink-0 flex items-center gap-1 text-[10.5px] px-2 py-1 rounded text-primary border border-outline-variant/40 bg-surface-low hover:bg-surface-container-high transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
                 title="Open document HUD (e)">
             <span class="material-symbols-outlined text-[10px]">open_in_full</span>
             HUD

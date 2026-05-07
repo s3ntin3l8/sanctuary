@@ -36,7 +36,7 @@
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
                 {% endif %}
-                class="text-left truncate block text-primary hover:underline cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
+                class="text-left truncate block text-primary hover:underline transition-colors cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
         <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
       </div>
       {% if is_ai and mode == 'review' and rel.rel_obj %}
@@ -72,7 +72,7 @@
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
                 {% endif %}
-                class="text-left truncate block text-primary hover:underline cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
+                class="text-left truncate block text-primary hover:underline transition-colors cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
         <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
       </div>
       {% if is_ai and mode == 'review' and rel.rel_obj %}

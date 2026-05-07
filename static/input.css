@@ -185,6 +185,19 @@
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   }
+
+  /* Buttons should signal interactivity. Browsers default <button> to the
+     arrow cursor; we want the hand on every enabled button so users get the
+     same affordance as on links. Disabled buttons keep their own override. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 @layer utilities {

@@ -24,13 +24,13 @@
     {# Tabs #}
     <div class="flex border-b border-outline-variant/10 bg-surface-container-low">
         <button @click="activeTab = 'all'"
-                :class="activeTab === 'all' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent'"
+                :class="activeTab === 'all' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:bg-surface-container-high'"
                 class="flex-1 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2 transition-colors">All</button>
         <button @click="activeTab = 'docs'"
-                :class="activeTab === 'docs' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent'"
+                :class="activeTab === 'docs' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:bg-surface-container-high'"
                 class="flex-1 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2 transition-colors">Docs</button>
         <button @click="activeTab = 'events'"
-                :class="activeTab === 'events' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent'"
+                :class="activeTab === 'events' ? 'text-primary border-primary' : 'text-on-surface-variant border-transparent hover:bg-surface-container-high'"
                 class="flex-1 py-2 text-[9px] font-bold uppercase tracking-wider border-b-2 transition-colors">Events</button>
     </div>
 

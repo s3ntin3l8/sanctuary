@@ -226,6 +226,38 @@ def test_mock_status_failed_dominates_no_case(db_session):
     assert mock_status(bundle) == STATUS_STUCK
 
 
+@pytest.mark.unit
+def test_mock_status_partial_doc_returns_processing(db_session):
+    """PARTIAL is the between-stage gap (some completed, others still pending) —
+    must keep the row in 'processing' so the Confirm gate holds mid-pipeline."""
+    db_session.add(Case(id="ADV-024-A", title="Test", status=CaseStatus.INTAKE))
+    db_session.commit()
+
+    partial = _make_doc(
+        db_session,
+        pipeline_state=PipelineState.PARTIAL,
+        case_id="ADV-024-A",
+    )
+    bundle = _bundle(
+        [partial],
+        suggested_case_id="ADV-024-A",
+        suggested_case_title="Musterklage",
+    )
+    # Without the PARTIAL guard this would fall through to needs_review and
+    # the Confirm button would render despite enrich/relationships/claims/
+    # entities/embeddings still being queued.
+    assert mock_status(bundle) == STATUS_PROCESSING
+
+
+@pytest.mark.unit
+def test_mock_status_failed_dominates_partial(db_session):
+    """FAILED still wins over PARTIAL — precedence preserved."""
+    partial = _make_doc(db_session, pipeline_state=PipelineState.PARTIAL)
+    failed = _make_doc(db_session, pipeline_state=PipelineState.FAILED)
+    bundle = _bundle([partial, failed])
+    assert mock_status(bundle) == STATUS_STUCK
+
+
 # ---------------------------------------------------------------------------
 # stats_for_chips
 # ---------------------------------------------------------------------------

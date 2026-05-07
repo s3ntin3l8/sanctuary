@@ -98,7 +98,7 @@
                     <input type="hidden" name="case_id" :value="bundleConfirm.suggested_case_id">
                     <button type="button" @click="showCasePicker = true"
                             x-show="!bothPreConfirmed"
-                            class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
+                            class="text-[9px] font-bold text-primary hover:underline transition-colors cursor-pointer">
                         Select another case →
                     </button>
                 </div>
@@ -110,7 +110,7 @@
                     <div class="flex items-center justify-between">
                         <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Case</label>
                         <button type="button" @click="isNewCase = true; showCasePicker = false"
-                                class="text-[9px] font-bold text-primary hover:underline uppercase tracking-widest">+ Create new</button>
+                                class="text-[9px] font-bold text-primary hover:underline transition-colors uppercase tracking-widest">+ Create new</button>
                     </div>
                     <select name="case_id" required x-model="bundleConfirm.suggested_case_id"
                             class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
@@ -127,7 +127,7 @@
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">New case</span>
                     <button type="button" @click="isNewCase = false; showCasePicker = false"
-                            class="text-[9px] font-bold text-primary hover:underline uppercase tracking-widest">Select existing</button>
+                            class="text-[9px] font-bold text-primary hover:underline transition-colors uppercase tracking-widest">Select existing</button>
                 </div>
                 <div class="space-y-1">
                     <label class="text-[8px] font-bold text-on-surface-variant uppercase tracking-widest">Case ID (e.g. ADV-025-A)</label>
@@ -165,7 +165,7 @@
                     <input type="hidden" name="proceeding_id" :value="bundleConfirm.suggested_proceeding_id">
                     <button type="button" @click="showProceedingPicker = true"
                             x-show="!bothPreConfirmed"
-                            class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
+                            class="text-[9px] font-bold text-primary hover:underline transition-colors cursor-pointer">
                         Change proceeding →
                     </button>
                 </div>

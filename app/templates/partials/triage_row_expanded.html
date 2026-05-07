@@ -53,7 +53,7 @@
             {% if lead_doc_id %}
             <button type="button"
                     @click.stop="$store.triage.openDrawer('{{ bundle.key }}', $store.triage.expandedActiveDocId || '{{ lead_doc_id }}')"
-                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-surface-container-high text-primary border border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-surface-container-high text-primary border border-primary/40 hover:bg-primary/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                 <span class="material-symbols-outlined text-[14px]">open_in_full</span>
                 Open full HUD
                 <span class="kbd ml-1">e</span>
@@ -66,7 +66,7 @@
                     hx-vals='{"batch_id": "{{ bundle.batch_id or "" }}", "doc_id": "{{ bundle.documents[0].id if bundle.documents else "" }}"}'
                     hx-confirm="Dismiss this bundle? It will be archived and hidden from triage."
                     hx-target="none"
-                    class="text-[12px] px-3 py-1.5 rounded text-on-surface-variant/60 border border-outline-variant/30 hover:bg-surface-container-high hover:text-error transition-colors">
+                    class="text-[12px] px-3 py-1.5 rounded text-on-surface-variant/60 border border-outline-variant/30 hover:bg-surface-container-high hover:text-error transition-colors cursor-pointer">
                 <span class="flex items-center gap-1.5">
                     <span class="material-symbols-outlined text-[14px]">archive</span>
                     Dismiss
@@ -74,24 +74,39 @@
             </button>
             {% if bundle.sub_bundles and bundle.sub_bundles[0].suggested_case_id %}
             {% set lead_sub = bundle.sub_bundles[0] %}
+            {# Values go through data-* (Jinja-escaped) instead of inlining tojson
+               into @click — embedded "double quotes" in subject/title would close
+               the @click attribute mid-expression and break the dispatch. #}
             <button type="button"
                     data-confirm-bundle-trigger
+                    data-batch-id="{{ bundle.batch_id or '' }}"
+                    data-is-synthetic="{{ 'true' if bundle.is_synthetic else 'false' }}"
+                    data-doc-id="{{ bundle.documents[0].id if bundle.documents else '' }}"
+                    data-subject="{{ bundle.subject or '' }}"
+                    data-doc-count="{{ bundle.doc_count }}"
+                    data-suggested-case-id="{{ lead_sub.suggested_case_id }}"
+                    data-suggested-case-title="{{ lead_sub.suggested_case_title or '' }}"
+                    data-suggested-case-is-draft="{{ 'true' if bundle.suggested_case_is_draft else 'false' }}"
+                    data-suggested-proceeding-id="{{ bundle.proceeding.id if bundle.proceeding else '' }}"
+                    data-suggested-proceeding-az="{{ bundle.proceeding.az_court if bundle.proceeding else '' }}"
+                    data-suggested-proceeding-subtitle="{{ bundle.proceeding.court_name if bundle.proceeding else '' }}"
+                    data-suggested-proceeding-is-draft="{{ 'true' if (bundle.proceeding and bundle.proceeding.is_draft) else 'false' }}"
                     @click.stop="$dispatch('triage:open-bundle-confirm', {
-                        batch_id: '{{ bundle.batch_id or '' }}',
-                        is_synthetic: {{ 'true' if bundle.is_synthetic else 'false' }},
-                        doc_id: '{{ bundle.documents[0].id if bundle.documents else '' }}',
-                        subject: {{ (bundle.subject or '') | tojson }},
-                        doc_count: {{ bundle.doc_count }},
-                        suggested_case_id: '{{ lead_sub.suggested_case_id }}',
-                        suggested_case_title: {{ (lead_sub.suggested_case_title or '') | tojson }},
-                        suggested_case_is_draft: {{ 'true' if bundle.suggested_case_is_draft else 'false' }},
-                        suggested_proceeding_id: '{{ bundle.proceeding.id if bundle.proceeding else '' }}',
-                        suggested_proceeding_az: {{ (bundle.proceeding.az_court if bundle.proceeding else '') | tojson }},
-                        suggested_proceeding_subtitle: {{ (bundle.proceeding.court_name if bundle.proceeding else '') | tojson }},
-                        suggested_proceeding_is_draft: {{ 'true' if (bundle.proceeding and bundle.proceeding.is_draft) else 'false' }},
+                        batch_id: $el.dataset.batchId,
+                        is_synthetic: $el.dataset.isSynthetic === 'true',
+                        doc_id: $el.dataset.docId,
+                        subject: $el.dataset.subject,
+                        doc_count: parseInt($el.dataset.docCount, 10) || 0,
+                        suggested_case_id: $el.dataset.suggestedCaseId,
+                        suggested_case_title: $el.dataset.suggestedCaseTitle,
+                        suggested_case_is_draft: $el.dataset.suggestedCaseIsDraft === 'true',
+                        suggested_proceeding_id: $el.dataset.suggestedProceedingId,
+                        suggested_proceeding_az: $el.dataset.suggestedProceedingAz,
+                        suggested_proceeding_subtitle: $el.dataset.suggestedProceedingSubtitle,
+                        suggested_proceeding_is_draft: $el.dataset.suggestedProceedingIsDraft === 'true',
                         action: 'confirm_bundle'
                     })"
-                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                    class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                 <span class="material-symbols-outlined text-[14px]">check</span>
                 Confirm bundle
                 <span class="kbd ml-1" style="background:rgba(255,255,255,0.18); color:inherit; border-color:rgba(255,255,255,0.3)">⌘↵</span>

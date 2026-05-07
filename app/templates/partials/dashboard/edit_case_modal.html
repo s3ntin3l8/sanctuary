@@ -45,7 +45,7 @@
                                     </div>
                                 </div>
                                 <div class="flex justify-end pt-2">
-                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium">Save Case</button>
+                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium hover:bg-primary/90 transition-colors">Save Case</button>
                                 </div>
                             </form>
 
@@ -73,8 +73,8 @@
                                     <input type="text" name="az_court" value="{{ active_proceeding.az_court or '' }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
                                 </div>
                                 <div class="flex justify-end pt-2 space-x-2">
-                                    <button type="button" @click="open = false" class="px-3 py-1.5 text-sm font-medium text-on-surface-variant">Cancel</button>
-                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium">Save Proceeding</button>
+                                    <button type="button" @click="open = false" class="px-3 py-1.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high rounded transition-colors">Cancel</button>
+                                    <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium hover:bg-primary/90 transition-colors">Save Proceeding</button>
                                 </div>
                             </form>
                             {% endif %}

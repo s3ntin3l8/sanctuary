@@ -36,7 +36,7 @@
   {% if active_proceeding %}
   <div class="relative flex-shrink-0" x-data="{ open: false }">
     <button @click="open = !open"
-            class="flex items-center gap-2 px-2.5 h-8 rounded-md text-[12px] flex-shrink-0"
+            class="flex items-center gap-2 px-2.5 h-8 rounded-md text-[12px] flex-shrink-0 hover:bg-surface-container-high transition-colors"
             style="background:var(--color-surface-container); border:1px solid var(--color-outline-variant); color:var(--color-on-surface);">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M14 3l7 7M11 6l7 7M9 8l-5 5 3 3 5-5M3 21h10"/>
@@ -83,7 +83,7 @@
     {% set tabs = [('graph','Graph'),('truth','Truth'),('timeline','Timeline'),('fin','€')] %}
     {% for v, label in tabs %}
     <button @click="setView('{{ v }}')"
-            :class="view === '{{ v }}' ? 'text-[var(--color-primary)]' : 'text-[var(--color-on-surface-variant)]'"
+            :class="view === '{{ v }}' ? 'text-[var(--color-primary)]' : 'text-[var(--color-on-surface-variant)] hover:bg-surface-container-high'"
             :style="view === '{{ v }}' ? 'background:var(--color-surface-highest)' : ''"
             class="px-3 py-1 rounded-md text-[12px] font-medium transition-colors relative">
       {{ label }}
@@ -104,7 +104,7 @@
     <button hx-get="/upload?case_id={{ case.id }}"
             hx-target="#upload-modal-root"
             hx-swap="innerHTML"
-            class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0"
+            class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0 hover:bg-surface-container-high transition-colors"
             style="background:var(--color-surface-container); border:1px solid var(--color-outline-variant); color:var(--color-on-surface-variant);">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 4v16m-8-8h16"/>
@@ -113,7 +113,7 @@
     </button>
 
     <button @click="chatOpen = true; docChatOpen = false"
-            class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0"
+            class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0 hover:opacity-90 transition-colors"
             style="background:var(--color-primary-container); color:var(--color-on-primary-container);">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z"/>
