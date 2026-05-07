@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -36,14 +36,33 @@ class CostCandidateSchema(BaseModel):
     context: str | None = None
 
 
+CostDeltaKind = Literal[
+    "streitwert",  # Verfahrenswert / Streitwert — feeds RVG/GKG calculator
+    "cost_ruling",  # Kostenentscheidung — who pays court + opposing counsel
+    "invoice_lawyer",  # Lawyer Kostennote (incl. 19% VAT)
+    "invoice_court",  # Court Gerichtskostenrechnung (no VAT)
+    "vorschuss_lawyer",  # Lawyer advance / Prozesskostenhilfe Vorschuss
+    "vorschuss_court",  # Court advance payment (Gerichtskostenvorschuss)
+    "pkh_grant",  # Prozesskostenhilfe granted
+    "pkh_denied",  # Prozesskostenhilfe denied
+]
+
+
 class CostDeltaSchema(BaseModel):
-    """Financial impact delta introduced by this document."""
+    """Typed cost signal extracted from a document by the AI enricher."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    amount: float
-    direction: str  # incoming, outgoing, ruling, none
+    kind: CostDeltaKind
+    amount: float | None = None  # EUR; null for cost_ruling / pkh_*
+    direction: str = "none"  # incoming | outgoing | ruling | none — UI tint
     description: str | None = ""
+    # cost_ruling: {"own": 0.5, "opposing": 0.5} | {"each_own": True} | {"loser": 1.0}
+    allocation: dict | None = None
+    # invoice_*: True if amount already includes VAT, False if net, None if unknown
+    vat_included: bool | None = None
+    # invoice points to a prior vorschuss doc.id when the AI detects the link
+    offsets_signal_id: int | None = None
 
 
 class KeyPassageSchema(BaseModel):

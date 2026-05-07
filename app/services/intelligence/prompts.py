@@ -52,10 +52,25 @@ Return ONLY valid JSON with these exact keys:
 - key_passages: list of up to 3 most important passages. Each passage is a verbatim quote from the document — copy it exactly so the UI can locate and highlight it:
   [{"text": "exact quote from document", "rationale": "why this matters legally"}]
   Do NOT compute or include character offsets — the system locates passages by matching the text. Re-counting characters wastes thinking budget.
-- cost_delta: if the document introduces a specific financial amount, object with:
-  {"amount": float_in_euros, "direction": "incoming|outgoing|ruling|none", "description": "what this amount is"}
-  direction: "incoming" = money we are owed or have received (e.g. PKH, reimbursement), "outgoing" = money we must pay or have paid (e.g. court fees, lawyer invoice), "ruling" = court-determined amount, "none" = no direction
-  Set to null if no specific financial amount is introduced.
+- cost_delta: if the document introduces a cost-relevant signal, object with:
+  {"kind": "...", "amount": float_or_null, "direction": "incoming|outgoing|ruling|none", "description": "..."}
+
+  kind must be exactly one of:
+  - "streitwert"       — document states or sets a Verfahrenswert / Streitwert (e.g. Streitwertbeschluss, Streitwertfestsetzung). amount = the EUR value.
+  - "cost_ruling"      — document contains a Kostenentscheidung (§91 ZPO / §81 FamFG). amount = null. Include: allocation = one of {"loser": 1.0} (loser pays all), {"each_own": true} (each party bears own costs), or {"own": 0.5, "opposing": 0.5} (split). direction = "ruling".
+  - "invoice_lawyer"   — lawyer Kostennote / RVG-Rechnung. amount = invoice total in EUR. direction = "outgoing". vat_included: true if amount is gross (incl. MwSt.), false if net.
+  - "invoice_court"    — court Gerichtskostenrechnung. amount = invoice total in EUR. direction = "outgoing". No VAT on court fees.
+  - "vorschuss_lawyer" — advance payment requested by lawyer. amount = EUR. direction = "outgoing".
+  - "vorschuss_court"  — Gerichtskostenvorschuss (court advance). amount = EUR. direction = "outgoing".
+  - "pkh_grant"        — Prozesskostenhilfe granted. amount = null (or monthly rate if stated). direction = "incoming".
+  - "pkh_denied"       — Prozesskostenhilfe denied. amount = null.
+
+  Rules:
+  - Set to null if no cost-relevant signal is present.
+  - Only one cost_delta per document. Pick the most important signal.
+  - Do NOT use "streitwert" for actual invoice amounts — a Streitwert drives fee calculations, it is not itself a payment.
+  - For invoice_lawyer, if you see a prior Vorschuss mentioned, set offsets_signal_id to the doc.id of that Vorschuss document if you know it; otherwise omit.
+  - direction: "incoming" = money owed to us / received, "outgoing" = money we must pay, "ruling" = allocation decision, "none" = no direction.
 - management_summary: three-bullet executive summary:
   {"legal_significance": "1-2 sentences on legal meaning", "required_action": "what needs to be done and by when", "financial_impact": "direct financial implications or 'None'"}
 - action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document imposes on the user or the user's lawyer. Patterns to capture:

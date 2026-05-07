@@ -158,18 +158,29 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
                     logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")
         doc.key_passages = validated or None
 
-    # cost_delta — validate direction
+    # cost_delta — validate and normalise the typed signal
     cost_delta = result.get("cost_delta")
-    if isinstance(cost_delta, dict) and cost_delta.get("amount") is not None:
+    if isinstance(cost_delta, dict):
         try:
             direction = (cost_delta.get("direction") or "none").lower()
             if direction not in VALID_COST_DIRECTIONS:
                 direction = "none"
-
+            # Infer kind from direction when the AI response pre-dates the kind field
+            kind = cost_delta.get("kind") or (
+                "invoice_court"
+                if direction in {"incoming", "outgoing"}
+                else "cost_ruling"
+            )
             validated_delta = CostDeltaSchema(
-                amount=float(cost_delta["amount"]),
+                kind=kind,
+                amount=float(cost_delta["amount"])
+                if cost_delta.get("amount") is not None
+                else None,
                 direction=direction,
-                description=str(cost_delta.get("description", "")),
+                description=str(cost_delta.get("description", "") or ""),
+                allocation=cost_delta.get("allocation"),
+                vat_included=cost_delta.get("vat_included"),
+                offsets_signal_id=cost_delta.get("offsets_signal_id"),
             )
             doc.cost_delta = validated_delta.model_dump()
         except Exception as e:

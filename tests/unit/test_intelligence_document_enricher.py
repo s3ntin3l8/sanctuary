@@ -41,6 +41,7 @@ def test_apply_enrichment_populates_fields(doc_with_content):
             {"text": "Das Gericht ordnet an", "rationale": "core ruling", "span": "p1"}
         ],
         "cost_delta": {
+            "kind": "invoice_court",
             "amount": 450.50,
             "direction": "incoming",
             "description": "Court fee",
@@ -138,6 +139,7 @@ def test_invalid_cost_delta_direction_normalized(doc_with_content):
         "document_type": "correspondence",
         "key_passages": [],
         "cost_delta": {
+            "kind": "invoice_court",
             "amount": 100.0,
             "direction": "payment_due",
             "description": "Fee",

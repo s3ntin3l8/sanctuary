@@ -56,6 +56,7 @@ class PipelineStage(enum.StrEnum):
 class StageStatus(enum.StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    RETRYING = "retrying"  # last attempt failed, next attempt scheduled (in-flight)
     COMPLETED = "completed"
     FAILED = "failed"
     DISMISSED = "dismissed"
@@ -241,3 +242,12 @@ class UserReactionType(enum.StrEnum):
 class DocumentStatus(enum.StrEnum):
     ACTIVE = "active"
     DISMISSED = "dismissed"
+
+
+class CaseType(enum.StrEnum):
+    """Legal domain of the case — drives cost-allocation defaults."""
+
+    CIVIL = "civil"
+    FAMILY = "family"
+    ADMINISTRATIVE = "administrative"
+    CRIMINAL = "criminal"

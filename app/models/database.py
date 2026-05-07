@@ -28,6 +28,7 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     CaseStatus,
+    CaseType,
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
@@ -202,6 +203,11 @@ class Case(Base):
     closed_at = Column(DateTime, nullable=True)
     is_draft = Column(Boolean, default=False, nullable=False)
 
+    case_type = Column(SAEnum(CaseType), default=CaseType.CIVIL, nullable=False)
+    # Pre-ruling: assume we lose and must pay opposing counsel (worst case).
+    # Family cases default to False (§81 FamFG Kostenteilung is the norm).
+    assume_worst_case = Column(Boolean, default=True, nullable=False)
+
     # Phase 1: cumulative AI intelligence + parties + exposure
     ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case
     ai_brief_updated_at = Column(DateTime, nullable=True)
@@ -245,6 +251,9 @@ class Proceeding(Base):
     started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    # AI-suggested proceedings start as drafts; flipped to False on user
+    # confirmation in /triage/confirm. Mirrors Case.is_draft.
+    is_draft = Column(Boolean, default=False, nullable=False)
 
     case = relationship("Case", back_populates="proceedings")
     documents = relationship("Document", back_populates="proceeding")
@@ -618,12 +627,24 @@ class LegalCost(Base):
     paid_at = Column(DateTime, nullable=True, index=True)  # Bezahlt am
 
     source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    # Vorschuss row points to the final-invoice row it offsets (null until reconciled)
+    offsets_cost_id = Column(
+        Integer, ForeignKey("legal_costs.id"), nullable=True, index=True
+    )
+    # True when this row was auto-materialized from a cost_delta signal
+    auto_created = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
     source_document = relationship("Document")
+    offsets_cost = relationship(
+        "LegalCost",
+        primaryjoin="LegalCost.offsets_cost_id == LegalCost.id",
+        foreign_keys="[LegalCost.offsets_cost_id]",
+        uselist=False,
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
