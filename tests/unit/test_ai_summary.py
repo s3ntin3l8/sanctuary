@@ -105,15 +105,18 @@ def test_generate_summary_sync_strips_null_hints(db_session):
     captured = {}
 
     def fake_call_json_ai(**kwargs):
+        from app.services.intelligence.schemas import Phase1Metadata
+
         captured["user_prompt"] = kwargs.get("user_prompt", "")
-        return {
-            "az_court": None,
-            "internal_id": None,
-            "sender": None,
-            "date": None,
-            "originator": None,
-            "confidence": {},
-        }
+        return Phase1Metadata.model_validate(
+            {
+                "az_court": None,
+                "internal_id": None,
+                "sender": None,
+                "originator": None,
+                "confidence": {},
+            }
+        )
 
     with patch("app.services.ai_summary.call_json_ai", side_effect=fake_call_json_ai):
         generate_summary_sync(doc, db=db_session)

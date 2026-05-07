@@ -9,6 +9,7 @@ from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.content_gate import is_content_ai_ready
 from app.services.intelligence.prompts import PROCEEDING_ANALYZER_SYSTEM
+from app.services.intelligence.schemas import ProceedingExtraction
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +20,18 @@ def extract_proceeding_details(
     content = doc.content or ""
     user_prompt = f"Document Title: {doc.title}\nContent:\n{content[:8000]}"
     try:
-        return call_json_ai(
+        result = call_json_ai(
             system_prompt=PROCEEDING_ANALYZER_SYSTEM,
             user_prompt=user_prompt,
             options=STAGE_OPTIONS["proceeding"],
             debug_label=f"doc_{doc.id}_proceeding",
+            schema=ProceedingExtraction,
             model=model or None,
             db=db,
             ingest_batch_id=doc.ingest_batch_id,
+            two_pass=True,
         )
+        return result.model_dump()
     except Exception as e:
         logger.error(f"Failed to extract proceeding details for doc {doc.id}: {e}")
         return {}

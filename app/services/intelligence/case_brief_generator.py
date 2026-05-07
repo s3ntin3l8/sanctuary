@@ -14,6 +14,7 @@ from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
+from app.services.intelligence.schemas import CaseBrief
 
 logger = logging.getLogger(__name__)
 
@@ -105,14 +106,17 @@ Open action items:
     }
 {("\n" + reactions_context) if reactions_context else ""}"""
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=CASE_BRIEF_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["case_brief"],
         debug_label=f"case_{case.id}_brief",
+        schema=CaseBrief,
         model=model or None,
         db=db,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def generate(case_id: str) -> None:

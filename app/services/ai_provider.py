@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from enum import StrEnum
@@ -9,23 +10,84 @@ from app.config import AI_API_KEY, AI_BASE_URL, AI_PROVIDER
 logger = logging.getLogger(__name__)
 
 
+def _make_openai_strict(schema: dict) -> dict:
+    """Rewrite a Pydantic-emitted JSON schema to satisfy OpenAI strict mode.
+
+    OpenAI structured-output strict mode requires:
+    - Every property of every object listed in `required`.
+    - `additionalProperties: false` on every object.
+
+    Pydantic v2 emits optional fields with `default` and an `anyOf [<type>, null]`
+    union — which already encodes nullability the way OpenAI wants — but leaves
+    them out of `required` and skips `additionalProperties`. We add both,
+    walking through `$defs` and nested `properties` as well. The `default` key
+    is dropped because OpenAI rejects it under strict mode.
+
+    LMStudio / vLLM / llama.cpp accept the rewrite too — it's a strict superset
+    of what they require. Caller passes the result to the OpenAI-compat branch
+    so all four backends get the same grammar-enforced shape.
+    """
+    rewritten = copy.deepcopy(schema)
+
+    def _walk(node: object) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object" and "properties" in node:
+                node["required"] = list(node["properties"].keys())
+                node["additionalProperties"] = False
+            node.pop("default", None)
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(rewritten)
+    return rewritten
+
+
 class ProviderType(StrEnum):
     OLLAMA = "ollama"
     LMSTUDIO = "lmstudio"
     OPENAI = "openai"
+    LLAMACPP = "llamacpp"
 
 
-async def detect_provider(base_url: str) -> ProviderType:
-    """Detect the AI provider by probing endpoints and checking content."""
+async def detect_provider(base_url: str, api_key: str | None = None) -> ProviderType:
+    """Detect the AI provider by probing endpoints and checking content.
+
+    LM Studio and llama.cpp's `llama-server` both expose `/v1/models` in the
+    OpenAI list shape; llama.cpp distinguishes itself with `owned_by="llamacpp"`
+    on each entry (server-models.cpp:1184). The split matters because
+    llama.cpp's `response_format` shape is sibling-`schema`, not nested.
+
+    `api_key` lets us probe auth-protected OpenAI-compatible servers (LiteLLM,
+    OpenAI, hosted gateways). When unset and we hit a 401 on `/v1/models`, we
+    still classify as LMSTUDIO — the server exists and speaks the OpenAI
+    surface; auth will be supplied at request time.
+    """
+    headers = (
+        {"Authorization": f"Bearer {api_key}"}
+        if api_key and api_key != "not-needed"
+        else {}
+    )
     async with httpx.AsyncClient(timeout=5.0) as client:
         try:
-            resp = await client.get(f"{base_url}/v1/models")
+            resp = await client.get(f"{base_url}/v1/models", headers=headers)
             if resp.status_code == 200:
                 data = resp.json()
                 if isinstance(data, dict) and (
                     data.get("object") == "list" or "data" in data
                 ):
+                    entries = data.get("data") or []
+                    if any(
+                        isinstance(e, dict) and e.get("owned_by") == "llamacpp"
+                        for e in entries
+                    ):
+                        return ProviderType.LLAMACPP
                     return ProviderType.LMSTUDIO
+            # 401/403: server exists, just needs auth — still OpenAI-compatible.
+            if resp.status_code in (401, 403):
+                return ProviderType.LMSTUDIO
         except Exception as e:
             logger.debug(f"OpenAI probe failed at {base_url}: {e}")
 
@@ -40,8 +102,8 @@ async def detect_provider(base_url: str) -> ProviderType:
 
     raise RuntimeError(
         f"AI provider unreachable: no endpoint responded at {base_url} "
-        "(tried /v1/models for LM Studio and /api/tags for Ollama — "
-        "check that your AI server is running)"
+        "(tried /v1/models for LM Studio / llama.cpp and /api/tags for Ollama "
+        "— check that your AI server is running)"
     )
 
 
@@ -88,7 +150,7 @@ class AIProvider:
         if self.provider != "auto":
             return ProviderType(self.provider)
         if not self._detected_type:
-            self._detected_type = await detect_provider(self.base_url)
+            self._detected_type = await detect_provider(self.base_url, self.api_key)
             logger.info(f"Auto-detected AI provider: {self._detected_type}")
         return self._detected_type
 
@@ -107,10 +169,15 @@ class AIProvider:
 
         ptype = await self.get_type()
 
-        # Meta flag, set by call_json_ai(suppress_thinking=True). Translated
-        # below into provider-specific thinking-disable fields. Stripped before
-        # the dict is sent to the provider so it doesn't leak as an unknown key.
+        # Meta flags set by call_json_ai. Both are translated below into
+        # provider-specific fields and stripped from forwarded options so they
+        # don't leak as unknown keys to the server.
+        #   _enable_thinking — Qwen thinking-disable
+        #   _response_schema — JSON schema for grammar-constrained output
+        #   _schema_name     — human-readable name for the OpenAI strict-mode envelope
         enable_thinking = options.get("_enable_thinking", True) if options else True
+        response_schema = options.get("_response_schema") if options else None
+        schema_name = options.get("_schema_name", "response") if options else "response"
 
         if ptype == ProviderType.OLLAMA:
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
@@ -125,6 +192,9 @@ class AIProvider:
             }
             if not enable_thinking:
                 body["think"] = False
+            if response_schema is not None:
+                # Ollama: schema dict goes directly into top-level `format`.
+                body["format"] = response_schema
             return {
                 "url": f"{self.base_url}/api/generate",
                 "json": body,
@@ -160,6 +230,31 @@ class AIProvider:
                 # Qwen3.5 vLLM convention — top-level chat_template_kwargs.
                 # Servers that don't support it ignore unknown fields.
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
+            if response_schema is not None:
+                if ptype == ProviderType.LLAMACPP:
+                    # llama.cpp: schema is a sibling of `type`, no `name`,
+                    # no `strict` (server-models.cpp + chat.cpp parsing).
+                    payload["response_format"] = {
+                        "type": "json_schema",
+                        "schema": response_schema,
+                    }
+                else:
+                    # OpenAI / LM Studio / vLLM: canonical nested envelope with
+                    # strict-mode-compatible rewrite. Pydantic v2's default
+                    # schema leaves optionals out of `required` and skips
+                    # `additionalProperties: false`, both of which OpenAI strict
+                    # mode requires; _make_openai_strict adds them recursively.
+                    # LM Studio / vLLM accept the rewrite too — it's a superset
+                    # of what they require — so all four OpenAI-compat backends
+                    # get the same grammar-enforced shape.
+                    payload["response_format"] = {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": schema_name,
+                            "schema": _make_openai_strict(response_schema),
+                            "strict": True,
+                        },
+                    }
 
             return {
                 "url": f"{self.base_url}/v1/chat/completions",
@@ -202,7 +297,7 @@ class AIProvider:
                 ptype = (
                     ProviderType(provider)
                     if provider != "auto"
-                    else await detect_provider(base_url)
+                    else await detect_provider(base_url, api_key)
                 )
             except (RuntimeError, Exception):
                 return {"ok": False, "provider": "unknown", "detail": "Unreachable"}
@@ -297,7 +392,7 @@ async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dic
     provider = config.get("provider", "auto")
 
     ptype = (
-        await detect_provider(base_url)
+        await detect_provider(base_url, api_key)
         if provider == "auto"
         else ProviderType(provider)
     )

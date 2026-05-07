@@ -21,6 +21,7 @@ from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.content_gate import is_content_ai_ready
 from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_document
+from app.services.intelligence.schemas import DocumentEnrichment
 from app.services.text_offsets import find_text_offsets
 
 logger = logging.getLogger(__name__)
@@ -70,15 +71,18 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
         )
     )
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=DOCUMENT_ENRICHER_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["enrich"],
         debug_label=f"doc_{doc.id}_enricher",
+        schema=DocumentEnrichment,
         model=model or None,
         db=db,
         ingest_batch_id=doc.ingest_batch_id,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:

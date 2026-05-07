@@ -12,6 +12,7 @@ from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import RELATIONSHIP_DETECTOR_SYSTEM
+from app.services.intelligence.schemas import RelationshipDetection
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +97,18 @@ def _call_relationship_detector_sync(
         f"CANDIDATE PRIOR DOCUMENTS (use only these IDs):\n{candidate_text}"
     )
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=RELATIONSHIP_DETECTOR_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["relationships"],
         debug_label=f"doc_{doc.id}_relationships",
+        schema=RelationshipDetection,
         model=model or None,
         db=db,
         ingest_batch_id=doc.ingest_batch_id,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def detect(doc_id: int) -> str | None:

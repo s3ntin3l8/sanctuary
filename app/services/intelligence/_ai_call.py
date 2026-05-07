@@ -7,8 +7,10 @@ import re
 import time
 import traceback
 from datetime import UTC, datetime
+from typing import TypeVar, overload
 
 import httpx
+from pydantic import BaseModel, ValidationError
 
 from app.config import AI_READ_TIMEOUT, DATA_DIR
 from app.core.async_utils import run_async
@@ -17,6 +19,8 @@ from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
 
 # Thinking-loop watchdog: pathological-case safety net only. The primary
 # anti-loop mechanism is the Qwen sampling config in ai_options.py
@@ -32,6 +36,11 @@ _LOOP_STOP_SEQS = [
     "\n(Wait,",
     "\n(Okay, ready)",
 ]
+
+# Default cap on pass-1 free-form analysis tokens. Pass 1 has no schema, so
+# nothing else stops a thinking model from running away. Keep this conservative
+# — the value is enough for ~2-3 paragraphs of analysis.
+_DEFAULT_PASS1_MAX_TOKENS = 1500
 
 _SEPARATOR = "═" * 64
 _SECTION = "──"
@@ -159,64 +168,23 @@ def _append_index(
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
-def call_json_ai(
+def _stream_response(
     *,
-    system_prompt: str,
-    user_prompt: str,
-    options: dict,
+    params: dict,
+    ptype,
     debug_label: str,
-    model: str | None = None,
-    db=None,
-    ingest_batch_id: int | None = None,
-    suppress_thinking: bool = False,
-) -> dict:
-    """Synchronous streaming AI call that returns a parsed JSON dict.
+    resolved_model: str,
+    ingest_batch_id: int | None,
+) -> tuple[str, str]:
+    """Stream one AI request, write its debug-log block, return (response, thinking).
 
-    Args:
-        system_prompt: The system prompt to send.
-        user_prompt: The user/document prompt to send.
-        options: Provider options (num_ctx, temperature, num_predict, max_tokens, …).
-        debug_label: Short label used in the debug log filename, e.g. "doc_42_entities".
-        model: Override the configured summary model. If None, uses cfg.summary_model.
-        db: SQLAlchemy session — if provided, reloads ai_provider config from DB first.
-        ingest_batch_id: IngestBatch.id for cross-stage traceability in the index.
+    Owns: HTTP streaming, the thinking-loop watchdog, exception classification,
+    debug-log write, runs.jsonl append. Does NOT parse JSON, validate schemas,
+    promote channels, or retry — those decisions belong to `call_json_ai`.
 
-    Returns:
-        Parsed dict from the AI JSON response.
-
-    Raises:
-        ValueError: If the AI returns an empty response, or if JSON parsing fails.
-        httpx.HTTPStatusError: On non-2xx HTTP responses.
+    Raises on connection / timeout / unexpected errors. Empty response is
+    returned, not raised — the caller decides whether empty is acceptable.
     """
-    if db is not None:
-        chat_provider.reload_from_db(db)
-
-    cfg = get_chat_config(db)
-    resolved_model = model or cfg.summary_model
-
-    effective_options: dict = {
-        **(options or {}),
-        "stop": _LOOP_STOP_SEQS,
-    }
-    if suppress_thinking:
-        # Provider-level thinking control. Qwen3.5 honours
-        # chat_template_kwargs.enable_thinking=False on OpenAI-compat servers,
-        # and Ollama's native top-level "think": false. The legacy /no_think
-        # prefix was a Qwen3 trick — Qwen3.5 ignores it. ai_provider.py
-        # translates this meta-flag into the right per-provider field.
-        effective_options["_enable_thinking"] = False
-
-    params = run_async(
-        chat_provider.get_generate_params(
-            model=resolved_model,
-            prompt=user_prompt,
-            system_prompt=system_prompt,
-            stream=True,
-            options=effective_options,
-        )
-    )
-    ptype = run_async(chat_provider.get_type())
-
     debug_dir = DATA_DIR / "ai_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     scope_file = _scope_file(debug_dir, debug_label)
@@ -339,28 +307,293 @@ def call_json_ai(
             error=stream_error[:200] if stream_error else None,
         )
 
+    return full_response, full_thinking
+
+
+def _build_params(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    options: dict,
+    schema: type[BaseModel] | None,
+    suppress_thinking: bool,
+    resolved_model: str,
+    pass1_max_tokens_override: int | None = None,
+) -> dict:
+    """Resolve provider-specific request params for one streaming call."""
+    effective_options: dict = {
+        **(options or {}),
+        "stop": _LOOP_STOP_SEQS,
+    }
+    if suppress_thinking:
+        # Provider-level thinking control. Qwen3.5 honours
+        # chat_template_kwargs.enable_thinking=False on OpenAI-compat servers,
+        # and Ollama's native top-level "think": false. The legacy /no_think
+        # prefix was a Qwen3 trick — Qwen3.5 ignores it. ai_provider.py
+        # translates this meta-flag into the right per-provider field.
+        effective_options["_enable_thinking"] = False
+    if schema is not None:
+        effective_options["_response_schema"] = schema.model_json_schema()
+        effective_options["_schema_name"] = schema.__name__
+    if pass1_max_tokens_override is not None:
+        # Pass 1 has no schema-grammar to terminate generation, so cap explicitly.
+        # Use the lower of the caller's max_tokens and the pass-1 cap.
+        existing = effective_options.get("max_tokens")
+        if (
+            not isinstance(existing, int)
+            or existing <= 0
+            or existing > pass1_max_tokens_override
+        ):
+            effective_options["max_tokens"] = pass1_max_tokens_override
+
+    return run_async(
+        chat_provider.get_generate_params(
+            model=resolved_model,
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            stream=True,
+            options=effective_options,
+        )
+    )
+
+
+@overload
+def call_json_ai(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    options: dict,
+    debug_label: str,
+    schema: type[T],
+    model: str | None = ...,
+    db=...,
+    ingest_batch_id: int | None = ...,
+    suppress_thinking: bool = ...,
+    two_pass: bool = ...,
+    pass1_max_tokens: int = ...,
+) -> T: ...
+
+
+@overload
+def call_json_ai(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    options: dict,
+    debug_label: str,
+    schema: None = None,
+    model: str | None = ...,
+    db=...,
+    ingest_batch_id: int | None = ...,
+    suppress_thinking: bool = ...,
+    two_pass: bool = ...,
+    pass1_max_tokens: int = ...,
+) -> dict: ...
+
+
+def call_json_ai(
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    options: dict,
+    debug_label: str,
+    schema: type[BaseModel] | None = None,
+    model: str | None = None,
+    db=None,
+    ingest_batch_id: int | None = None,
+    suppress_thinking: bool = False,
+    two_pass: bool = False,
+    pass1_max_tokens: int = _DEFAULT_PASS1_MAX_TOKENS,
+) -> BaseModel | dict:
+    """Synchronous streaming AI call returning a Pydantic model or parsed dict.
+
+    Args:
+        system_prompt: The system prompt to send.
+        user_prompt: The user/document prompt to send.
+        options: Provider options (num_ctx, temperature, num_predict, max_tokens, …).
+        debug_label: Short label used in the debug log filename, e.g. "doc_42_entities".
+        schema: Pydantic model class. When provided, the JSON schema is sent
+            server-side via `response_format` / `format` to constrain output,
+            and the parsed response is validated against the model. Returns
+            an instance of the model. When None, returns the raw parsed dict.
+        model: Override the configured summary model. If None, uses cfg.summary_model.
+        db: SQLAlchemy session — if provided, reloads ai_provider config from DB first.
+        ingest_batch_id: IngestBatch.id for cross-stage traceability in the index.
+        suppress_thinking: When True, request thinking-disabled generation.
+            Effective on Ollama (`think: false`); no-op on LMStudio + Qwen3.5
+            (the `chat_template_kwargs.enable_thinking` field is ignored).
+        two_pass: When True, run a free-form analysis pass first (no schema),
+            then a schema-constrained formatting pass that ingests the
+            analysis. Recovers chain-of-thought visibility at the cost of
+            ~5–10× per-stage latency. The schema grammar otherwise masks
+            every non-JSON token from position zero, eliminating thinking.
+        pass1_max_tokens: Max tokens for the pass-1 analysis (default 1500).
+            Caps thinking runaway since pass 1 has no schema-grammar
+            terminator. Ignored when `two_pass=False`.
+
+    Returns:
+        Pydantic model instance when `schema` is provided, else parsed dict.
+
+    Raises:
+        ValueError: If the (final) AI call returns an empty response or its
+            JSON fails to parse.
+        pydantic.ValidationError: If `schema` is provided and the response
+            doesn't match — caller may catch this and fall back.
+        httpx.HTTPStatusError: On non-2xx HTTP responses.
+    """
+    if db is not None:
+        chat_provider.reload_from_db(db)
+
+    cfg = get_chat_config(db)
+    resolved_model = model or cfg.summary_model
+    ptype = run_async(chat_provider.get_type())
+
+    debug_dir = DATA_DIR / "ai_debug"
+    scope_file = _scope_file(debug_dir, debug_label)
+
+    # Pass 1: free-form analysis (only when two_pass=True).
+    analysis = ""
+    if two_pass:
+        pass1_label = f"{debug_label}-p1"
+        pass1_params = _build_params(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            options=options,
+            schema=None,  # crucial: no grammar → thinking unblocked
+            suppress_thinking=False,  # let the model think
+            resolved_model=resolved_model,
+            pass1_max_tokens_override=pass1_max_tokens,
+        )
+        try:
+            p1_response, p1_thinking = _stream_response(
+                params=pass1_params,
+                ptype=ptype,
+                debug_label=pass1_label,
+                resolved_model=resolved_model,
+                ingest_batch_id=ingest_batch_id,
+            )
+        except Exception as e:
+            # Pass 1 errored — pass 2 can still run cold (with no analysis).
+            # Logging happened inside _stream_response.
+            logger.warning(
+                "call %s pass-1 failed (%s); proceeding to pass 2 with no "
+                "analysis context",
+                debug_label,
+                e,
+            )
+            p1_response, p1_thinking = "", ""
+
+        # Pass-1 promotion: capture reasoning even if it landed on the
+        # thinking channel (LMStudio reasoning toggle on, Ollama default).
+        # Unlike pass 2's schema-aware promotion, pass 1 takes any thinking
+        # content as the analysis since there's no JSON shape to validate.
+        if not p1_response.strip() and p1_thinking.strip():
+            logger.info(
+                "call %s pass-1: empty response — promoting thinking channel "
+                "to analysis (%d chars)",
+                debug_label,
+                len(p1_thinking),
+            )
+            analysis = p1_thinking
+        else:
+            analysis = p1_response
+
+    # Pass 2 (or single-pass): schema-constrained formatting.
+    pass2_user_prompt = (
+        (
+            f"{user_prompt}\n\n"
+            f"--- Your prior analysis ---\n{analysis.strip()}\n\n"
+            f"--- Now output ONLY the JSON matching the schema. No prose. ---"
+        )
+        if (two_pass and analysis.strip())
+        else user_prompt
+    )
+    # Pass 2 (or single-pass) suppress_thinking: in two-pass we already have
+    # the model's reasoning from pass 1, so suppress thinking for the format
+    # pass. In single-pass, honor the caller's flag.
+    pass2_suppress = True if two_pass else suppress_thinking
+    pass2_label = f"{debug_label}-p2" if two_pass else debug_label
+
+    pass2_params = _build_params(
+        system_prompt=system_prompt,
+        user_prompt=pass2_user_prompt,
+        options=options,
+        schema=schema,
+        suppress_thinking=pass2_suppress,
+        resolved_model=resolved_model,
+    )
+
+    full_response, full_thinking = _stream_response(
+        params=pass2_params,
+        ptype=ptype,
+        debug_label=pass2_label,
+        resolved_model=resolved_model,
+        ingest_batch_id=ingest_batch_id,
+    )
+
+    # Qwen3.5 + LMStudio + structured output: the schema-constrained JSON
+    # frequently arrives entirely through `reasoning_content` rather than
+    # `content`, even with `enable_thinking=False` set. The grammar still
+    # forced the right shape — only the channel is wrong. When we asked for
+    # a schema and the response channel is empty but the reasoning channel
+    # looks like the JSON answer, promote it.
+    if (
+        schema is not None
+        and not full_response.strip()
+        and full_thinking
+        and "{" in full_thinking
+        and "}" in full_thinking
+    ):
+        logger.info(
+            "call %s: empty content but reasoning_content holds the schema-"
+            "constrained answer — promoting reasoning to response",
+            pass2_label,
+        )
+        full_response = full_thinking
+        full_thinking = ""
+
     if not full_response.strip():
-        if not suppress_thinking:
+        # Single-pass: retry once with suppress_thinking=True if we haven't yet.
+        # Two-pass: pass 2 already runs with suppress_thinking, so the same
+        # escalation isn't available. Re-run the whole two-pass once for
+        # sampling-noise recovery (sometimes a redo just works).
+        should_retry = not suppress_thinking if two_pass else not pass2_suppress
+        if should_retry:
             logger.info(
                 "call %s: empty response — retrying once with suppress_thinking",
-                debug_label,
+                pass2_label,
             )
             return call_json_ai(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 options=options,
                 debug_label=debug_label,
+                schema=schema,
                 model=model,
                 db=db,
                 ingest_batch_id=ingest_batch_id,
                 suppress_thinking=True,
+                two_pass=two_pass,
+                pass1_max_tokens=pass1_max_tokens,
             )
         refusal_hint = ""
         if full_thinking:
             refusal_hint = f" (Thinking was present: {full_thinking[:100]}...)"
         raise ValueError(
-            f"AI returned an empty response for '{debug_label}'.{refusal_hint}"
+            f"AI returned an empty response for '{pass2_label}'.{refusal_hint}"
             f" See {scope_file} for details."
         )
 
-    return parse_json_response(full_response)
+    parsed = parse_json_response(full_response)
+    if schema is None:
+        return parsed
+    try:
+        return schema.model_validate(parsed)
+    except ValidationError as e:
+        # Server-enforced grammar should make this rare, but older Ollama
+        # builds and non-compliant local models can still drift. Surface the
+        # specific schema-violation cause so callers can catch and fall back.
+        raise ValueError(
+            f"AI response failed schema validation for '{pass2_label}' "
+            f"({schema.__name__}): {e}. See {scope_file} for the raw response."
+        ) from e

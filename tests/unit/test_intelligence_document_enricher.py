@@ -170,8 +170,10 @@ def test_call_enricher_sync_includes_cover_letter_context(db_session, doc_with_c
     captured = {}
 
     def fake_call_json_ai(*args, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
         captured["user_prompt"] = kwargs.get("user_prompt", "")
-        return {}
+        return DocumentEnrichment.model_validate({})
 
     with patch(
         "app.services.intelligence.document_enricher.call_json_ai",
@@ -195,8 +197,10 @@ def test_call_enricher_sync_includes_enclosure_context(db_session, doc_with_cont
     captured = {}
 
     def fake_call_json_ai(*args, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
         captured["user_prompt"] = kwargs.get("user_prompt", "")
-        return {}
+        return DocumentEnrichment.model_validate({})
 
     with patch(
         "app.services.intelligence.document_enricher.call_json_ai",
@@ -219,8 +223,10 @@ def test_call_enricher_sync_no_batch_context_for_standalone(
     captured = {}
 
     def fake_call_json_ai(*args, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
         captured["user_prompt"] = kwargs.get("user_prompt", "")
-        return {}
+        return DocumentEnrichment.model_validate({})
 
     with patch(
         "app.services.intelligence.document_enricher.call_json_ai",

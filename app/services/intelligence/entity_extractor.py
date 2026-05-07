@@ -12,6 +12,7 @@ from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
+from app.services.intelligence.schemas import EntityList
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +43,18 @@ def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict
         prompt += f"KEY PASSAGES:\n{key_passages_text}\n"
     prompt += f"\nCONTENT:\n{content_preview}"
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=ENTITY_EXTRACTOR_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["entities"],
         debug_label=f"doc_{doc.id}_entities",
+        schema=EntityList,
         model=model or None,
         db=db,
         ingest_batch_id=doc.ingest_batch_id,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def _save_entities(doc: Document, result: dict, db: Session) -> int:

@@ -46,7 +46,11 @@ def test_uses_call_json_ai_not_call_llm(db_session, proc_doc):
     doc, _proc = proc_doc
 
     with patch.object(proceeding_analyzer, "call_json_ai") as mock_call:
-        mock_call.return_value = {"is_court_document": False}
+        from app.services.intelligence.schemas import ProceedingExtraction
+
+        mock_call.return_value = ProceedingExtraction.model_validate(
+            {"is_court_document": False}
+        )
         proceeding_analyzer.analyze_and_update_proceeding(doc, "test-model", db_session)
 
         assert mock_call.called, (
@@ -56,6 +60,10 @@ def test_uses_call_json_ai_not_call_llm(db_session, proc_doc):
         assert "system_prompt" in kwargs
         assert "user_prompt" in kwargs
         assert kwargs.get("db") is db_session
+        # call_json_ai must be passed the schema so structured output kicks in
+        assert kwargs.get("schema") is ProceedingExtraction, (
+            "Expected schema=ProceedingExtraction for grammar-constrained output"
+        )
         # debug_label scoped to the doc so AI debug logs route correctly
         label = kwargs.get("debug_label", "")
         assert label.startswith("doc_") and str(doc.id) in label, (
@@ -65,20 +73,22 @@ def test_uses_call_json_ai_not_call_llm(db_session, proc_doc):
 
 @pytest.mark.unit
 def test_returns_dict_directly_no_manual_parsing(db_session, proc_doc):
-    """call_json_ai returns a parsed dict — no `json.loads` needed downstream."""
+    """call_json_ai returns a Pydantic model — caller materializes it via model_dump."""
     from app.services.intelligence import proceeding_analyzer
+    from app.services.intelligence.schemas import ProceedingExtraction
 
     doc, proc = proc_doc
 
     with patch.object(proceeding_analyzer, "call_json_ai") as mock_call:
-        # Note: a *dict* (not a JSON string), because call_json_ai parses it.
-        mock_call.return_value = {
-            "is_court_document": True,
-            "court_level": "AG",
-            "court_name": "Amtsgericht Hamburg",
-            "az_court": "003 F 426/25",
-            "subject_matter": "Custody",
-        }
+        mock_call.return_value = ProceedingExtraction.model_validate(
+            {
+                "is_court_document": True,
+                "court_level": "ag",
+                "court_name": "Amtsgericht Hamburg",
+                "az_court": "003 F 426/25",
+                "subject_matter": "Custody",
+            }
+        )
         result = proceeding_analyzer.analyze_and_update_proceeding(
             doc, "test-model", db_session
         )

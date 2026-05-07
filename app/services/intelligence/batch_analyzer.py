@@ -25,6 +25,7 @@ from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import BATCH_ANALYZER_SYSTEM
+from app.services.intelligence.schemas import BatchAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -82,24 +83,31 @@ def _call_batch_analyzer_sync(
 ) -> dict:
     """Synchronous AI call for batch analysis."""
     content_preview = get_content_preview(candidate, 60000)
-    sibling_list = "\n".join(f"- (doc_id={d.id}) {d.title}" for d in siblings)
+    sibling_sections = []
+    for d in siblings:
+        sibling_preview = get_content_preview(d, 3000)
+        sibling_sections.append(f"=== (doc_id={d.id}) {d.title} ===\n{sibling_preview}")
+    sibling_block = "\n\n".join(sibling_sections)
     prompt = (
         f"Cover letter candidate (doc_id={candidate.id}):\n"
         f"Title: {candidate.title}\n\n"
         f"{content_preview}\n\n"
-        f"Other documents in this batch:\n{sibling_list}"
+        f"Other documents in this batch:\n\n{sibling_block}"
     )
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=BATCH_ANALYZER_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["batch_analysis"],
         debug_label=debug_label or f"batch_{batch_id}_analyzer",
+        schema=BatchAnalysis,
         model=model or None,
         db=db,
         ingest_batch_id=batch_id,
         suppress_thinking=suppress_thinking,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def _norm_filename(s: str) -> str:

@@ -11,11 +11,12 @@ _TAIL_CHARS = 2000  # chars to include from document tail in head+tail previews
 # documented to make these ruts worse, not better.
 # Source: https://huggingface.co/Qwen/Qwen3.5-9B
 _QWEN_SAMPLING = {
-    "temperature": 0.6,
+    "temperature": 1.0,
     "top_p": 0.95,
     "top_k": 20,
     "min_p": 0.0,
     "presence_penalty": 1.5,
+    "repeat_penalty": 1.0,
 }
 
 

@@ -17,6 +17,7 @@ from app.services.ingestion.extractors import (
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
+from app.services.intelligence.schemas import Phase1Metadata
 
 logger = logging.getLogger(__name__)
 
@@ -339,9 +340,11 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             user_prompt=prompt,
             options=STAGE_OPTIONS["metadata"],
             debug_label=f"doc_{doc.id}_sync",
+            schema=Phase1Metadata,
             model=cfg.summary_model,
             db=db,
             ingest_batch_id=doc.ingest_batch_id,
+            two_pass=True,
         )
     except ValueError as e:
         if "empty response" in str(e):
@@ -354,15 +357,17 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
                 user_prompt=prompt,
                 options=STAGE_OPTIONS["metadata"],
                 debug_label=f"doc_{doc.id}_syncretry",
+                schema=Phase1Metadata,
                 model=cfg.summary_model,
                 db=db,
                 ingest_batch_id=doc.ingest_batch_id,
                 suppress_thinking=True,
+                two_pass=True,
             )
         else:
             raise
     logger.debug(f"AI response parsed for '{doc.title}'")
-    return result
+    return result.model_dump()
 
 
 def _summarize_document_sync(doc_id: int, db: Session) -> Document:

@@ -19,6 +19,7 @@ from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CLAIM_EXTRACTOR_SYSTEM
+from app.services.intelligence.schemas import ClaimExtraction
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +55,18 @@ def _call_claim_extractor_sync(
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
     )
 
-    return call_json_ai(
+    result = call_json_ai(
         system_prompt=CLAIM_EXTRACTOR_SYSTEM,
         user_prompt=prompt,
         options=STAGE_OPTIONS["claims"],
         debug_label=f"doc_{doc.id}_claims",
+        schema=ClaimExtraction,
         model=model or None,
         db=db,
         ingest_batch_id=doc.ingest_batch_id,
+        two_pass=True,
     )
+    return result.model_dump()
 
 
 def _apply_claims(

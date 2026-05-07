@@ -43,8 +43,10 @@ def test_enricher_prompt_includes_user_reactions(db_session):
     captured = {}
 
     def fake_call(system_prompt, user_prompt, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
         captured["user_prompt"] = user_prompt
-        return {}
+        return DocumentEnrichment.model_validate({})
 
     with patch.object(document_enricher, "call_json_ai", side_effect=fake_call):
         document_enricher._call_enricher_sync(doc, model="", db=db_session)
@@ -83,8 +85,10 @@ def test_enricher_prompt_skips_reactions_block_when_none(db_session):
     captured = {}
 
     def fake_call(system_prompt, user_prompt, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
         captured["user_prompt"] = user_prompt
-        return {}
+        return DocumentEnrichment.model_validate({})
 
     with patch.object(document_enricher, "call_json_ai", side_effect=fake_call):
         document_enricher._call_enricher_sync(doc, model="", db=db_session)

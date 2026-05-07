@@ -4,7 +4,9 @@ BATCH_ANALYZER_SYSTEM = """You are a legal document analyst processing a batch o
 
 Analyze all documents in the batch. An email may contain multiple cover letters (Begleitschreiben), each introducing different enclosures - this is common with court digests or forwarded collections.
 
-The user prompt shows one cover letter candidate with its full content (`Cover letter candidate (doc_id=N):`) and lists the remaining documents in the batch with the form `- (doc_id=N) Filename.pdf`. Use those doc_id values as the source of truth.
+The user prompt shows one cover letter candidate with its full content (`Cover letter candidate (doc_id=N):`) and then shows each remaining document in the batch as `=== (doc_id=N) Title ===` followed by its content. Use those doc_id values as the source of truth.
+
+For `matched_filename`, use the document's title exactly as shown in its `=== (doc_id=N) Title ===` header.
 
 Do not deliberate or self-correct. Output the JSON immediately. If a value is unknown, use null.
 
@@ -236,21 +238,21 @@ Extract all significant named entities and return ONLY valid JSON:
   ]
 }
 
-Entity types — use EXACTLY these values:
-- PERSON: named individuals (judges, lawyers, parties, witnesses, experts)
-- ORGANIZATION: government agencies, ministries, institutions (not courts or law firms)
-- COURT: courts at any level (Amtsgericht, Landgericht, OLG, BGH, etc.)
-- LAW_FIRM: law offices and legal practices (Rechtsanwaltskanzlei, etc.)
-- CITATION: statute references, case citations (§ 123 BGB, BGH NJW 2023 123, etc.)
-- FINANCIAL: specific monetary amounts with their purpose (€ 5.000,00 Gerichtskosten, etc.)
-- LEGAL_CATEGORY: named legal categories or claims (Unterhaltspflicht, Sorgerecht, etc.)
+Entity types — use EXACTLY these values (lowercase):
+- person: named individuals (judges, lawyers, parties, witnesses, experts)
+- organization: government agencies, ministries, institutions (not courts or law firms)
+- court: courts at any level (Amtsgericht, Landgericht, OLG, BGH, etc.)
+- law_firm: law offices and legal practices (Rechtsanwaltskanzlei, etc.)
+- citation: statute references, case citations (§ 123 BGB, BGH NJW 2023 123, etc.)
+- financial: specific monetary amounts with their purpose (€ 5.000,00 Gerichtskosten, etc.)
+- legal_category: named legal categories or claims (Unterhaltspflicht, Sorgerecht, etc.)
 
 Rules:
 - Extract only entities with proper names or specific identifiers — no generic terms
 - Canonical form: full official name, not abbreviations (except for established citations)
 - context_quote: 10–30 words of surrounding text from the document
-- Skip PERSON entries that are only an email address (email addresses are not useful named entities)
-- Return at most 20 entities total, prioritizing COURT, CITATION, PERSON, LAW_FIRM
+- Skip person entries that are only an email address (email addresses are not useful named entities)
+- Return at most 20 entities total, prioritizing court, citation, person, law_firm
 - If no significant entities: return {"entities": []}
 Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
@@ -260,7 +262,7 @@ PROCEEDING_ANALYZER_SYSTEM = """You are a German legal AI assistant. Analyze the
 
 Return ONLY valid JSON with these exact keys:
 - is_court_document: boolean
-- court_level: string (strictly one of: AG, LG, OLG, BGH) or null
+- court_level: string (strictly one of: ag, lg, olg, bgh) or null
 - court_name: string (e.g. "Amtsgericht Hamburg") or null
 - az_court: string (the court file number, e.g. "003 F 426/25") or null
 - subject_matter: string or null

@@ -1,0 +1,284 @@
+"""Tests for the two-pass dispatch path in call_json_ai.
+
+The single-pass path is exercised by other tests; here we focus on:
+- two_pass=True issues two _stream_response calls
+- pass 1 has no schema; pass 2 has schema
+- pass 2's user prompt embeds pass 1's output between the two `---` markers
+- pass 1 reasoning_content promotion: if pass-1 response is empty but
+  thinking has content, the thinking becomes the analysis fed to pass 2
+- empty pass 2 still triggers the auto-retry; empty pass 1 does NOT
+"""
+
+from unittest.mock import patch
+
+import pytest
+
+from app.services.intelligence import _ai_call
+from app.services.intelligence.schemas import ProceedingExtraction
+
+
+@pytest.fixture
+def patched_provider():
+    """Patch get_chat_config + chat_provider so call_json_ai runs without DB."""
+
+    class FakeCfg:
+        summary_model = "test-model"
+
+    def fake_get_chat_config(_db):
+        return FakeCfg()
+
+    async def fake_get_type():
+        return "lmstudio"
+
+    async def fake_get_generate_params(
+        *, model, prompt, system_prompt, stream, options
+    ):
+        # Echo enough to verify what the orchestrator built
+        return {
+            "url": "http://stub",
+            "json": {
+                "model": model,
+                "prompt": prompt,
+                "system": system_prompt,
+                "options": options,
+                "schema_in_options": "_response_schema" in (options or {}),
+            },
+            "headers": {},
+        }
+
+    with (
+        patch.object(_ai_call, "get_chat_config", fake_get_chat_config),
+        patch.object(_ai_call.chat_provider, "get_type", fake_get_type, create=True),
+        patch.object(
+            _ai_call.chat_provider,
+            "get_generate_params",
+            fake_get_generate_params,
+            create=True,
+        ),
+        patch.object(
+            _ai_call.chat_provider,
+            "reload_from_db",
+            lambda *_a, **_k: None,
+            create=True,
+        ),
+    ):
+        yield
+
+
+@pytest.mark.unit
+def test_two_pass_makes_two_stream_calls_with_correct_schema_split(patched_provider):
+    """Pass 1 must omit the schema; pass 2 must include it."""
+    calls: list[dict] = []
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        calls.append(
+            {
+                "label": debug_label,
+                "schema_in_options": params["json"]["schema_in_options"],
+                "user_prompt": params["json"]["prompt"],
+            }
+        )
+        if debug_label.endswith("-p1"):
+            return ("Analysis: this is a court letter from AG Hamburg.", "")
+        return (
+            '{"is_court_document": true, "court_level": "ag", "court_name": null, '
+            '"az_court": null, "subject_matter": null, "appeal_deadline_days": null}',
+            "",
+        )
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="USER_ORIGINAL",
+            options={},
+            debug_label="doc_1_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert len(calls) == 2, "two_pass must issue exactly two stream calls"
+    assert calls[0]["label"] == "doc_1_proceeding-p1"
+    assert calls[1]["label"] == "doc_1_proceeding-p2"
+    assert calls[0]["schema_in_options"] is False, "pass 1 must NOT carry the schema"
+    assert calls[1]["schema_in_options"] is True, "pass 2 MUST carry the schema"
+    assert isinstance(result, ProceedingExtraction)
+    assert result.is_court_document is True
+
+
+@pytest.mark.unit
+def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
+    """Pass 2 user prompt must contain the original prompt + pass-1 analysis."""
+    calls: list[dict] = []
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
+        if debug_label.endswith("-p1"):
+            return ("DEEP_ANALYSIS_TOKEN", "")
+        return ('{"is_court_document": false}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="ORIGINAL_PROMPT_TOKEN",
+            options={},
+            debug_label="doc_2_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    p1, p2 = calls
+    assert "ORIGINAL_PROMPT_TOKEN" in p1["user_prompt"]
+    assert "DEEP_ANALYSIS_TOKEN" not in p1["user_prompt"]  # not yet
+    assert "ORIGINAL_PROMPT_TOKEN" in p2["user_prompt"]
+    assert "DEEP_ANALYSIS_TOKEN" in p2["user_prompt"]
+    assert "Your prior analysis" in p2["user_prompt"]
+    assert "Now output ONLY the JSON matching the schema" in p2["user_prompt"]
+
+
+@pytest.mark.unit
+def test_two_pass_promotes_pass1_thinking_when_response_empty(patched_provider):
+    """If pass 1 returns empty content but populated thinking, the thinking
+    must be used as the analysis fed into pass 2."""
+    calls: list[dict] = []
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
+        if debug_label.endswith("-p1"):
+            return ("", "REASONING_FROM_THINKING_CHANNEL")
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_3_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    p2_prompt = calls[1]["user_prompt"]
+    assert "REASONING_FROM_THINKING_CHANNEL" in p2_prompt, (
+        "pass 1's thinking channel must be promoted into pass 2's analysis context"
+    )
+
+
+@pytest.mark.unit
+def test_two_pass_skips_analysis_block_when_pass1_truly_empty(patched_provider):
+    """When pass 1 returns nothing on either channel, pass 2 should run with
+    the original prompt unaugmented (no `--- Your prior analysis ---` block)."""
+    calls: list[dict] = []
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
+        if debug_label.endswith("-p1"):
+            return ("", "")
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="ORIGINAL_PROMPT",
+            options={},
+            debug_label="doc_4_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    p2_prompt = calls[1]["user_prompt"]
+    assert p2_prompt == "ORIGINAL_PROMPT"
+    assert "Your prior analysis" not in p2_prompt
+
+
+@pytest.mark.unit
+def test_two_pass_pass2_empty_triggers_retry(patched_provider):
+    """Empty pass 2 must trigger the suppress_thinking auto-retry, not bubble."""
+    call_count = {"p1": 0, "p2": 0}
+    second_p2_response = (
+        '{"is_court_document": true, "court_level": null, "court_name": null, '
+        '"az_court": null, "subject_matter": null, "appeal_deadline_days": null}'
+    )
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        if debug_label.endswith("-p1"):
+            call_count["p1"] += 1
+            return ("Some analysis", "")
+        # pass 2: first call returns empty; second (the retry) succeeds
+        call_count["p2"] += 1
+        if call_count["p2"] == 1:
+            return ("", "")
+        return (second_p2_response, "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_5_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert isinstance(result, ProceedingExtraction)
+    # The first call_json_ai invocation runs pass1+pass2; the recursive retry
+    # runs pass1+pass2 again (suppress_thinking=True). So we expect 2 of each.
+    assert call_count["p1"] == 2, (
+        f"expected 2 pass-1 calls (initial + retry), got {call_count['p1']}"
+    )
+    assert call_count["p2"] == 2, (
+        f"expected 2 pass-2 calls (initial empty + retry), got {call_count['p2']}"
+    )
+
+
+@pytest.mark.unit
+def test_single_pass_unchanged(patched_provider):
+    """two_pass=False (default) must still produce exactly one stream call."""
+    calls: list[str] = []
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        calls.append(debug_label)
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_6_proceeding",
+            schema=ProceedingExtraction,
+            # two_pass omitted — defaults to False
+        )
+
+    assert calls == ["doc_6_proceeding"], (
+        "single-pass must use the bare debug_label and issue one call"
+    )
+    assert isinstance(result, ProceedingExtraction)
+
+
+@pytest.mark.unit
+def test_pass1_max_tokens_caps_max_tokens(patched_provider):
+    """Pass 1 max_tokens must be capped to pass1_max_tokens, regardless of
+    what the caller put in options."""
+    seen_max_tokens: dict[str, int | None] = {}
+
+    def fake_stream(*, params, ptype, debug_label, resolved_model, ingest_batch_id):
+        seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
+        if debug_label.endswith("-p1"):
+            return ("Analysis", "")
+        return ('{"is_court_document": true}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={"max_tokens": 9999},  # caller wants huge cap
+            debug_label="doc_7_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+            pass1_max_tokens=500,
+        )
+
+    p1_max = seen_max_tokens["doc_7_proceeding-p1"]
+    p2_max = seen_max_tokens["doc_7_proceeding-p2"]
+    assert p1_max == 500, f"pass 1 should cap max_tokens to 500, got {p1_max}"
+    assert p2_max == 9999, f"pass 2 should preserve caller's max_tokens, got {p2_max}"

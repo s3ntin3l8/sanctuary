@@ -8,6 +8,7 @@ from app.models.enums import (
     ProceedingStatus,
 )
 from app.services.intelligence.proceeding_analyzer import analyze_and_update_proceeding
+from app.services.intelligence.schemas import ProceedingExtraction
 
 
 @pytest.fixture
@@ -44,14 +45,16 @@ def doc_with_proceeding(db_session, sample_case, sample_proceeding):
 def test_autofill_empty_proceeding(
     mock_llm, db_session, doc_with_proceeding, sample_proceeding
 ):
-    mock_llm.return_value = {
-        "is_court_document": True,
-        "court_level": "AG",
-        "court_name": "Amtsgericht Hamburg",
-        "az_court": "003 F 426/25",
-        "subject_matter": "Custody",
-        "appeal_deadline_days": None,
-    }
+    mock_llm.return_value = ProceedingExtraction.model_validate(
+        {
+            "is_court_document": True,
+            "court_level": "ag",
+            "court_name": "Amtsgericht Hamburg",
+            "az_court": "003 F 426/25",
+            "subject_matter": "Custody",
+            "appeal_deadline_days": None,
+        }
+    )
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session
@@ -74,14 +77,16 @@ def test_escalation_to_new_proceeding(
     sample_proceeding.az_court = "OLD-AZ"
     db_session.commit()
 
-    mock_llm.return_value = {
-        "is_court_document": True,
-        "court_level": "OLG",
-        "court_name": "Hanseatisches Oberlandesgericht",
-        "az_court": "12 UF 123/25",
-        "subject_matter": "Appeal",
-        "appeal_deadline_days": 30,
-    }
+    mock_llm.return_value = ProceedingExtraction.model_validate(
+        {
+            "is_court_document": True,
+            "court_level": "olg",
+            "court_name": "Hanseatisches Oberlandesgericht",
+            "az_court": "12 UF 123/25",
+            "subject_matter": "Appeal",
+            "appeal_deadline_days": 30,
+        }
+    )
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session
@@ -112,7 +117,9 @@ def test_escalation_to_new_proceeding(
 @pytest.mark.unit
 @patch("app.services.intelligence.proceeding_analyzer.call_json_ai")
 def test_not_a_court_document(mock_llm, db_session, doc_with_proceeding):
-    mock_llm.return_value = {"is_court_document": False}
+    mock_llm.return_value = ProceedingExtraction.model_validate(
+        {"is_court_document": False}
+    )
 
     result = analyze_and_update_proceeding(
         doc_with_proceeding, "test-model", db_session
