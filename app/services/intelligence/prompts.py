@@ -181,7 +181,36 @@ PHASE1_METADATA_SYSTEM = """You are a legal document analyst.
 Extract metadata from the document and return a JSON object with these keys:
 - az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
 - internal_id: The lawyer's internal reference number (e.g. 8124/25).
-- case_title: A short, descriptive title for the WHOLE legal case (not just this doc). e.g. "Schmidt ./. Schmidt (Sorgerecht)" or "Müller vs. Stadt Hamburg".
+- case_title: A short, descriptive title for the WHOLE legal case (not just this doc). Use the canonical format below.
+
+  CANONICAL FORMAT — pick the rule that fits and follow it exactly:
+    1. Two adversarial parties + matter known:
+       "Lastname1 ./. Lastname2 - Matter"
+       (regular hyphen surrounded by spaces between parties and matter)
+       Examples: "Hansen ./. Liu - Sorgerecht", "Müller ./. Stadt Hamburg - Baugenehmigung"
+    2. One party + matter known: "Matter - Lastname"
+       Example: "Kindesunterhalt - Hansen"
+    3. No parties identifiable + matter known: just the matter, no decoration
+       Examples: "Kindesunterhalt", "Zwangsversteigerung"
+    4. einstweilige Anordnung (eA) proceedings — append " (eA)" at the end:
+       Examples: "Hansen ./. Liu - Umgangsrecht (eA)", "Kindesunterhalt (eA)"
+       (eA proceedings share substantive matter with a parent main case but
+       are expedited; the suffix is the only way to distinguish them visually.)
+
+  Order parties as in the Rubrum: Antragsteller(in) / Kläger(in) FIRST,
+  then Antragsgegner(in) / Beklagte(r). Use surnames only (lastname),
+  not full names with first names.
+
+  NEVER include the internal_id in the title — that lives separately in
+  Case.id.
+  NEVER end the title with a hanging separator (" -", " :", " ,").
+  NEVER use parens around the matter (parens are reserved for "(eA)").
+
+  Counter-examples (do NOT produce these shapes):
+  - "Hansen ./. Liu (Sorgerecht)"   ← wrong, parens around matter
+  - "Hansen ./. Liu - Umgangsrecht, eA"   ← wrong, comma-eA suffix
+  - "Hansen ./. Liu -"   ← wrong, hanging dash
+  - "8372/25 - Hansen ./. Liu - Sorgerecht"   ← wrong, internal_id prefix
 - sender: The organization or person who authored/sent the document.
 - issued_date: The date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - originator: Categorize as "court", "opposing", "own", "third_party", or "unknown".

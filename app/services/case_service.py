@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
@@ -54,22 +55,116 @@ def seed_triage_case(db: Session) -> None:
 DORMANCY_DAYS = 90
 
 
+# Canonical title shapes:
+#   "Lastname1 ./. Lastname2 - Matter"          (two parties + matter)
+#   "Matter - Lastname"                         (one party + matter)
+#   "Matter"                                    (matter only)
+#   any of the above + " (eA)"                  (einstweilige Anordnung)
+#
+# The normalizer below converts common drift patterns INTO this canonical
+# form. Pre-existing titles produced under earlier rules (e.g. parens around
+# the matter, or comma-eA suffix) get rewritten on the next AI hit via the
+# draft-refresh path in get_or_create_case_from_reference.
+
+# Matches "X ./. Y (Matter)" where the parens contain the matter (not just
+# the eA marker). Captures: parties, matter.
+_PAREN_MATTER_RE = re.compile(r"^(.+?\s+\./\.\s+.+?)\s+\((?!eA\)$)([^()]+?)\)\s*$")
+# Matches a leading internal_id-like prefix the AI sometimes echoes, e.g.
+# "8372/25 - " or "8372-25: ". Both slash and dash digit-separators.
+_INTERNAL_ID_PREFIX_RE = re.compile(r"^\d{3,5}[/-]\d{2,4}\s*[-:/]\s*")
+# eA variants we normalize to the canonical " (eA)" suffix.
+_EA_TRAILING_COMMA_RE = re.compile(r"\s*,\s*eA\s*$", re.IGNORECASE)
+_EA_TRAILING_BARE_RE = re.compile(r"\s+eA\s*$", re.IGNORECASE)
+_EA_TRAILING_DASH_RE = re.compile(r"\s*[-–]\s*eA\s*$", re.IGNORECASE)
+_EA_FULL_NAME_RE = re.compile(
+    r"\s*[-–,(]?\s*einstweilige[r]?\s+Anordnung\s*\)?\s*$", re.IGNORECASE
+)
+_TRAILING_PUNCT_RE = re.compile(r"[\s\-–:/,;]+$")
+
+
+def _normalize_case_title(title: str | None) -> str | None:
+    """Coerce a raw AI / email-subject-derived title into canonical form.
+
+    Operates in this order:
+    1. extract any eA marker into a flag (so other rewrites don't disturb it),
+    2. strip a leading echoed internal_id like "8372/25 - ",
+    3. strip trailing punctuation artifacts ("-", ":", ",", " "),
+    4. convert "X ./. Y (Matter)" → "X ./. Y - Matter",
+    5. re-attach the eA marker as " (eA)" if present,
+    6. cap at 120 chars.
+
+    Idempotent: feeding the result back in returns the same string.
+    """
+    if title is None:
+        return None
+    s = title.strip()
+    if not s:
+        return None
+
+    # 1. Detect + strip any eA marker. A bare " (eA)" suffix is preserved
+    #    verbatim; other variants (", eA" / " - eA" / "einstweilige Anordnung")
+    #    are stripped here and re-appended in canonical form at the end.
+    has_ea = False
+    if s.endswith(" (eA)") or s.endswith("(eA)"):
+        has_ea = True
+        s = s[: -len("(eA)")].rstrip().rstrip("(").rstrip()
+    else:
+        for pat in (
+            _EA_FULL_NAME_RE,
+            _EA_TRAILING_DASH_RE,
+            _EA_TRAILING_COMMA_RE,
+            _EA_TRAILING_BARE_RE,
+        ):
+            new_s, n = pat.subn("", s)
+            if n:
+                has_ea = True
+                s = new_s
+                break
+
+    # 2. Strip leading internal_id echo.
+    s = _INTERNAL_ID_PREFIX_RE.sub("", s, count=1).lstrip()
+
+    # 3. Strip trailing punctuation/whitespace.
+    s = _TRAILING_PUNCT_RE.sub("", s)
+
+    # 4. Paren-style matter → dash-style. Only fires for "X ./. Y (Matter)";
+    #    matter-only titles like "Kindesunterhalt" are untouched.
+    m = _PAREN_MATTER_RE.match(s)
+    if m:
+        parties, matter = m.group(1).strip(), m.group(2).strip()
+        s = f"{parties} - {matter}"
+
+    # 5. Re-append eA in canonical form.
+    if has_ea:
+        s = f"{s} (eA)" if s else "(eA)"
+
+    # 6. Cap. Smart-truncate so we don't slice mid-"(eA)".
+    if len(s) > 120:
+        if has_ea and s.endswith(" (eA)"):
+            s = s[: 120 - len(" (eA)")].rstrip() + " (eA)"
+        else:
+            s = s[:120].rstrip()
+
+    return s or None
+
+
 def _is_better_title(new: str, current: str | None, internal_id: str) -> bool:
     """Decide whether to refresh a draft case's title from a fresh AI extract.
 
-    "Better" means:
-    - the current title is the bare fallback (`Neuer Fall <id>`) or empty;
-    - or the current title ends with a trailing separator artifact (e.g.
-      "Hansen ./. Liu -" leftover from `_derive_case_title_from_subject`);
-    - or the new title is meaningfully longer and richer (suggesting it
-      contains the matter "(Sorgerecht)", not just party names).
+    Both sides are normalized first so the comparison is style-invariant.
+    "Better" then means one of:
+    - current is the bare fallback `Neuer Fall <id>` or empty;
+    - current ends with a trailing separator artifact (rare after normalize,
+      but defensive);
+    - new carries an eA marker and current doesn't (or vice versa — eA is a
+      load-bearing distinction the user can't get from internal_id);
+    - new is meaningfully longer (50%+) AND adds a matter the current lacks.
 
-    Returns False when current is already a good user-edit-quality title
-    and the new one isn't a clear improvement — avoids title churn during
-    multi-doc ingestion.
+    Returns False when current is already a good title and the new one isn't
+    a clear improvement — avoids title churn during multi-doc ingestion.
     """
-    new = (new or "").strip()
-    current = (current or "").strip()
+    new = _normalize_case_title(new) or ""
+    current = _normalize_case_title(current) or ""
     if not new:
         return False
     if new == current:
@@ -78,12 +173,19 @@ def _is_better_title(new: str, current: str | None, internal_id: str) -> bool:
         return True
     if current == f"Neuer Fall {internal_id}":
         return True
-    # Trailing-dash / colon / slash artifacts from subject parsing
     if current.rstrip().endswith(("-", ":", "/", "–")):
         return True
-    # New title is at least 50% longer AND contains a matter qualifier the
-    # current one lacks (e.g., parenthesized "(Sorgerecht)").
-    return len(new) > len(current) * 1.5 and "(" in new and "(" not in current
+    new_has_ea = new.endswith(" (eA)")
+    cur_has_ea = current.endswith(" (eA)")
+    if new_has_ea != cur_has_ea:
+        # eA presence is a real semantic addition (or removal). Always pick
+        # the eA-aware title — even if same length, the marker is signal.
+        return new_has_ea
+    # New title is at least 50% longer AND adds a "matter" segment (anything
+    # after the " - " separator) that current lacks.
+    new_has_matter = " - " in new
+    cur_has_matter = " - " in current
+    return len(new) > len(current) * 1.5 and new_has_matter and not cur_has_matter
 
 
 def _derive_case_title_from_subject(
@@ -135,13 +237,26 @@ def get_or_create_case_from_reference(
     az_court = normalize_az_court(az_court)
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
-        if (
-            existing.is_draft
-            and ai_case_title
-            and _is_better_title(ai_case_title, existing.title, internal_id)
-        ):
-            existing.title = ai_case_title.strip()[:120]
-            db.flush()
+        if existing.is_draft:
+            # Two distinct refreshes for draft cases:
+            #   (a) if the AI provided a richer title, apply it (normalized);
+            #   (b) otherwise, if the current stored title is non-canonical
+            #       (legacy paren-matter, comma-eA, leading id-echo, etc.),
+            #       rewrite to canonical form. Style consistency is worth a
+            #       no-op-looking write because every other retry of any doc
+            #       in the case bundles will hit this path.
+            normalized_current = _normalize_case_title(existing.title)
+            new_candidate = (
+                _normalize_case_title(ai_case_title) if ai_case_title else None
+            )
+            if new_candidate and _is_better_title(
+                ai_case_title, existing.title, internal_id
+            ):
+                existing.title = new_candidate
+                db.flush()
+            elif normalized_current and normalized_current != existing.title:
+                existing.title = normalized_current
+                db.flush()
         matched_proc = None
         if az_court:
             matched_proc = (
@@ -154,8 +269,10 @@ def get_or_create_case_from_reference(
         return existing, matched_proc, False
 
     title = (
-        (ai_case_title.strip()[:120] if ai_case_title else None)
-        or _derive_case_title_from_subject(batch_subject, internal_id)
+        _normalize_case_title(ai_case_title)
+        or _normalize_case_title(
+            _derive_case_title_from_subject(batch_subject, internal_id)
+        )
         or f"Neuer Fall {internal_id}"
     )
     new_case = Case(
