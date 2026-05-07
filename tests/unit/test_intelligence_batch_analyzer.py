@@ -491,3 +491,114 @@ def test_completion_sweep_claims_unbundled_proceeding_siblings(db_session, sampl
     assert own_letter.parent_id is None
     assert different_proc_doc.role == DocumentRole.STANDALONE
     assert different_proc_doc.parent_id is None
+
+
+@pytest.mark.unit
+def test_two_cover_letters_dont_swallow_each_other(db_session, sample_case):
+    """Regression: when the AI returns multiple bundles (each with its own cover
+    letter), the completion sweep must NOT let one cover letter claim another
+    cover letter as its enclosure. Doing so would downgrade the second cover
+    and (because the loop continues) end up with mutual parent_id references
+    — observed in batch_1 retry on 2026-05-07 where doc_2 ended up as
+    enclosure of doc_5 and doc_5 as enclosure of doc_2.
+    """
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+
+    proc = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Test",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="003 F 553/26",
+        status=ProceedingStatus.ACTIVE,
+        started_at=datetime.now(),
+    )
+    db_session.add(proc)
+    db_session.flush()
+
+    docs = []
+    for title, originator in [
+        ("Begleitschreiben AG – Beschluss", OriginatorType.COURT),  # cover 1
+        ("Beschluss AG – einstweilige Anordnung", OriginatorType.COURT),  # encl 1
+        ("Begleitschreiben AG – Vermerk", OriginatorType.COURT),  # cover 2
+        ("Vermerk gerichtlicher Sitzung", OriginatorType.COURT),  # encl 2
+    ]:
+        d = Document(
+            title=title,
+            content="Long enough content. " * 5,
+            case_id=sample_case.id,
+            ingest_batch_id=batch.id,
+            originator_type=originator,
+            proceeding_id=proc.id,
+        )
+        db_session.add(d)
+        docs.append(d)
+    db_session.commit()
+    for d in docs:
+        db_session.refresh(d)
+
+    cover1, encl1, cover2, encl2 = docs
+
+    # AI returned two clean bundles, each cover letter with its own enclosure
+    # matched by exact filename.
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover1.id,
+                "enclosed": [
+                    {
+                        "description": "Beschluss",
+                        "attributed_originator": "AG Hamburg",
+                        "originator_type": "court",
+                        "matched_filename": encl1.title,
+                    }
+                ],
+            },
+            {
+                "cover_letter_doc_id": cover2.id,
+                "enclosed": [
+                    {
+                        "description": "Vermerk",
+                        "attributed_originator": "AG Hamburg",
+                        "originator_type": "court",
+                        "matched_filename": encl2.title,
+                    }
+                ],
+            },
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, docs, result, db_session)
+
+    db_session.expire_all()
+    cover1 = db_session.get(Document, cover1.id)
+    cover2 = db_session.get(Document, cover2.id)
+    encl1 = db_session.get(Document, encl1.id)
+    encl2 = db_session.get(Document, encl2.id)
+
+    # Both cover letters keep their role; neither becomes the other's enclosure.
+    assert cover1.role == DocumentRole.COVER_LETTER, (
+        f"cover1 was downgraded to {cover1.role}"
+    )
+    assert cover2.role == DocumentRole.COVER_LETTER, (
+        f"cover2 was downgraded to {cover2.role}"
+    )
+    assert cover1.parent_id is None
+    assert cover2.parent_id is None
+    # Each enclosure stays under its own cover.
+    assert encl1.parent_id == cover1.id
+    assert encl2.parent_id == cover2.id
+    # No cycles: cover1 not under cover2, cover2 not under cover1.
+    assert cover1.parent_id != cover2.id
+    assert cover2.parent_id != cover1.id

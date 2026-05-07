@@ -400,6 +400,8 @@ def _apply_batch_results(
                 if d.id != candidate.id
                 and d.proceeding_id == candidate.proceeding_id
                 and d.parent_id is None
+                # Don't claim other cover letters as enclosures (would create cycles).
+                and d.role != DocumentRole.COVER_LETTER
             ]
             if siblings_in_proceeding:
                 candidate.role = DocumentRole.COVER_LETTER
@@ -435,6 +437,10 @@ def _apply_batch_results(
     # unclaimed sibling that shares the cover's proceeding_id. Originator
     # guard keeps own/opposing letters out.
     covers = [d for d in docs if d.role == DocumentRole.COVER_LETTER]
+    # Snapshot the cover-letter set so an earlier cover's sweep can't claim a
+    # later cover as its enclosure (which would downgrade the second cover and
+    # create a cycle once the second cover's own sweep runs).
+    cover_letter_ids = {c.id for c in covers}
     for cover in covers:
         if not cover.proceeding_id:
             continue
@@ -442,6 +448,7 @@ def _apply_batch_results(
         for d in docs:
             if (
                 d.id == cover.id
+                or d.id in cover_letter_ids
                 or d.id in claimed_ids
                 or d.parent_id is not None
                 or d.proceeding_id != cover.proceeding_id
