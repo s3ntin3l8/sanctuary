@@ -117,6 +117,11 @@ async def create_cost(
     issued_at: str | None = Form(None),
     due_at: str | None = Form(None),
     proceeding_id: int | None = Form(None),
+    rvg_position: str | None = Form(None),
+    streitwert: float | None = Form(None),
+    gebuehren_faktor: float | None = Form(None),
+    notes: str | None = Form(None),
+    is_reimbursable: bool = Form(True),
     db: Session = Depends(get_db),
 ):
     if amount_gross is None:
@@ -136,6 +141,11 @@ async def create_cost(
         issued_at=issued_date,
         due_at=due_date,
         proceeding_id=proceeding_id,
+        rvg_position=rvg_position,
+        streitwert=streitwert,
+        gebuehren_faktor=gebuehren_faktor,
+        notes=notes,
+        is_reimbursable=is_reimbursable,
     )
 
     recompute_total_cost_exposure(case_id, db)
@@ -206,6 +216,8 @@ async def update_cost_field(
     if not cost:
         raise HTTPException(status_code=404, detail="Cost not found")
 
+    from app.services.cost_service import _derive_status
+
     if field == "title":
         cost.title = value
     elif field == "status":
@@ -220,6 +232,28 @@ async def update_cost_field(
         rate = _parse_vat_rate(value)
         cost.vat_rate = rate
         cost.amount_gross = (cost.amount_net or 0) * (1 + rate)
+    elif field == "amount_paid":
+        cost.amount_paid = _parse_positive_float(value, "amount_paid")
+        _derive_status(cost)
+    elif field == "amount_reimbursed":
+        cost.amount_reimbursed = _parse_positive_float(value, "amount_reimbursed")
+        _derive_status(cost)
+    elif field == "paid_at":
+        cost.paid_at = datetime.fromisoformat(value) if value else None
+    elif field == "due_at":
+        cost.due_at = datetime.fromisoformat(value) if value else None
+    elif field == "streitwert":
+        cost.streitwert = float(value) if value else None
+    elif field == "gebuehren_faktor":
+        cost.gebuehren_faktor = float(value) if value else None
+    elif field == "notes":
+        cost.notes = value or None
+    elif field == "is_reimbursable":
+        cost.is_reimbursable = value.lower() in {"true", "1", "yes"}
+    elif field == "offsets_cost_id":
+        cost.offsets_cost_id = int(value) if value else None
+    else:
+        raise HTTPException(status_code=422, detail=f"Unknown field: {field}")
 
     db.commit()
     db.refresh(cost)

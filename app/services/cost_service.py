@@ -3,9 +3,118 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.database import LegalCost
+from app.models.database import Document, LegalCost
 from app.models.enums import CostCategory, CostStatus
 from app.repositories.legal_cost import LegalCostRepository
+
+# Maps cost_delta kind to (CostCategory, vat_rate)
+_KIND_TO_CATEGORY: dict[str, tuple[CostCategory, float]] = {
+    "invoice_lawyer": (CostCategory.ANWALTSKOSTEN, 0.19),
+    "invoice_court": (CostCategory.GERICHTSKOSTEN, 0.0),
+    "vorschuss_lawyer": (CostCategory.VORSCHUSS, 0.19),
+    "vorschuss_court": (CostCategory.VORSCHUSS, 0.0),
+}
+
+
+def ensure_ledger_row_for_signal(
+    doc: Document, cost_delta: dict, db: Session
+) -> LegalCost | None:
+    """Idempotently materialise a LegalCost row from an invoice/vorschuss signal.
+
+    Keyed on source_document_id — re-enrichment updates the row in place rather
+    than creating a duplicate. Returns the created/updated row, or None for
+    signal kinds that should not be promoted (streitwert, cost_ruling, pkh_*).
+    """
+    kind = cost_delta.get("kind", "")
+    if kind not in _KIND_TO_CATEGORY:
+        return None
+
+    category, default_vat = _KIND_TO_CATEGORY[kind]
+    amount = cost_delta.get("amount")
+    if amount is None:
+        return None
+    amount = float(amount)
+
+    # Determine net/gross from vat_included flag
+    vat_included = cost_delta.get("vat_included")
+    if vat_included is True:
+        # AI says amount already includes VAT
+        amount_gross = amount
+        amount_net = round(amount / (1 + default_vat), 2) if default_vat > 0 else amount
+    elif vat_included is False:
+        # AI says amount is net
+        amount_net = amount
+        amount_gross = round(amount * (1 + default_vat), 2)
+    else:
+        # Unknown — treat as gross for court fees (no VAT), net for lawyer fees
+        if default_vat > 0:
+            amount_net = amount
+            amount_gross = round(amount * (1 + default_vat), 2)
+        else:
+            amount_net = amount
+            amount_gross = amount
+
+    # Check for existing row
+    existing = (
+        db.query(LegalCost).filter(LegalCost.source_document_id == doc.id).first()
+    )
+    if existing:
+        existing.amount_net = amount_net
+        existing.amount_gross = amount_gross
+        existing.vat_rate = default_vat
+        existing.category = category
+        _derive_status(existing)
+        db.flush()
+        return existing
+
+    row = LegalCost(
+        case_id=doc.case_id,
+        proceeding_id=doc.proceeding_id,
+        category=category,
+        title=cost_delta.get("description") or doc.title or f"{kind} (auto)",
+        rvg_position=None,
+        amount_net=amount_net,
+        vat_rate=default_vat,
+        amount_gross=amount_gross,
+        amount_paid=0.0,
+        amount_reimbursed=0.0,
+        status=CostStatus.OFFEN,
+        source_document_id=doc.id,
+        auto_created=True,
+    )
+    db.add(row)
+    db.flush()
+
+    # Link to a prior Vorschuss row if the AI identified one
+    offsets_signal_id = cost_delta.get("offsets_signal_id")
+    if offsets_signal_id and kind.startswith("invoice_"):
+        prior = (
+            db.query(LegalCost)
+            .filter(LegalCost.source_document_id == offsets_signal_id)
+            .first()
+        )
+        if prior:
+            prior.offsets_cost_id = row.id
+            db.flush()
+
+    return row
+
+
+def _derive_status(cost: LegalCost) -> None:
+    """Update cost.status based on paid/reimbursed amounts (in place, no flush)."""
+    gross = cost.amount_gross or 0.0
+    paid = cost.amount_paid or 0.0
+    reimbursed = cost.amount_reimbursed or 0.0
+    if gross <= 0:
+        return
+    if reimbursed >= gross:
+        cost.status = CostStatus.ERSTATTET
+    elif paid >= gross:
+        cost.status = CostStatus.BEZAHLT
+    elif paid > 0:
+        cost.status = CostStatus.TEILWEISE
+    else:
+        cost.status = CostStatus.OFFEN
 
 
 class CostSummary:
@@ -141,4 +250,23 @@ class CostService:
             cost.status = CostStatus.ERSTATTET
             self.db.flush()
             self.db.refresh(cost)
+        return cost
+
+    def update_amounts_and_derive_status(
+        self,
+        cost_id: int,
+        amount_paid: float | None = None,
+        amount_reimbursed: float | None = None,
+    ) -> LegalCost | None:
+        """Update paid/reimbursed amounts and auto-derive status."""
+        cost = self.cost_repo.get(cost_id)
+        if not cost:
+            return None
+        if amount_paid is not None:
+            cost.amount_paid = amount_paid
+        if amount_reimbursed is not None:
+            cost.amount_reimbursed = amount_reimbursed
+        _derive_status(cost)
+        self.db.flush()
+        self.db.refresh(cost)
         return cost

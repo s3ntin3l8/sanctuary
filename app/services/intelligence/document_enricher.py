@@ -99,7 +99,7 @@ def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
     return passage_dict
 
 
-def _apply_enrichment(doc: Document, result: dict) -> None:
+def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     """Write AI enrichment results to the document (caller commits)."""
 
     # title — only overwrite when AI returns a clean, non-empty title
@@ -183,6 +183,21 @@ def _apply_enrichment(doc: Document, result: dict) -> None:
                 offsets_signal_id=cost_delta.get("offsets_signal_id"),
             )
             doc.cost_delta = validated_delta.model_dump()
+            # Auto-materialise invoice/vorschuss signals into the ledger
+            if db is not None and kind in {
+                "invoice_lawyer",
+                "invoice_court",
+                "vorschuss_lawyer",
+                "vorschuss_court",
+            }:
+                try:
+                    from app.services.cost_service import ensure_ledger_row_for_signal
+
+                    ensure_ledger_row_for_signal(doc, doc.cost_delta, db)
+                except Exception as mat_err:
+                    logger.warning(
+                        f"Doc {doc.id}: ledger materialisation failed: {mat_err}"
+                    )
         except Exception as e:
             logger.warning(f"Doc {doc.id}: invalid cost_delta skipped: {e}")
 
@@ -223,7 +238,7 @@ def enrich(doc_id: int) -> None:
             return
 
         result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
-        _apply_enrichment(doc, result)
+        _apply_enrichment(doc, result, db=db)
 
         from app.services.intelligence.action_items import create_from_payload
 

@@ -5,11 +5,13 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.database import ActionItem, Case, Document, Proceeding
+from app.models.database import ActionItem, Case, Document, LegalCost, Proceeding
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     CaseStatus,
+    CaseType,
+    CostStatus,
     Jurisdiction,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -20,6 +22,12 @@ from app.repositories.case import CaseRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.entity import EntityRepository
 from app.repositories.legal_cost import LegalCostRepository
+from app.services.fees.calculator import (
+    allocation_from_ruling,
+    court_fees,
+    default_allocation,
+    lawyer_fees,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +140,15 @@ def get_or_create_case_from_reference(
     resolved_level = (
         court_level or infer_court_level(court_name) or ProceedingCourtLevel.OTHER
     )
-    # Always ensure a default proceeding exists
+    # Always ensure a default proceeding exists. Inherit draft state from the
+    # case so an AI auto-created proceeding is also marked draft until ratified.
     new_proc = Proceeding(
         case_id=internal_id,
         az_court=az_court,
         court_name=court_name or "General",
         court_level=resolved_level,
         status=ProceedingStatus.ACTIVE,
+        is_draft=is_draft,
     )
     db.add(new_proc)
     db.flush()
@@ -146,47 +156,145 @@ def get_or_create_case_from_reference(
     return new_case, new_proc, True
 
 
-def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
-    """Recompute and persist Case.total_cost_exposure from doc.cost_delta values.
+def _safe_dt(doc: Document) -> datetime:
+    """Return a tz-naive datetime for sorting documents chronologically."""
+    dt = doc.issued_date or doc.ingest_date or datetime.min
+    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
 
-    Sums |cost_delta.amount| (in euros) across all non-TRIAGE documents for the
-    case, stores as integer cents in Case.total_cost_exposure. Returns the new
-    value in cents.
+
+def _latest_streitwert(docs: list[Document]) -> float | None:
+    """Return the EUR amount from the most recent streitwert signal, or None."""
+    candidates = [
+        d
+        for d in docs
+        if isinstance(d.cost_delta, dict) and d.cost_delta.get("kind") == "streitwert"
+    ]
+    if not candidates:
+        return None
+    doc = max(candidates, key=_safe_dt)
+    amount = doc.cost_delta.get("amount")
+    return float(amount) if amount is not None else None
+
+
+def _latest_ruling_allocation(docs: list[Document]) -> dict | None:
+    """Return the resolved allocation from the most recent cost_ruling signal, or None."""
+    candidates = [
+        d
+        for d in docs
+        if isinstance(d.cost_delta, dict) and d.cost_delta.get("kind") == "cost_ruling"
+    ]
+    if not candidates:
+        return None
+    doc = max(candidates, key=_safe_dt)
+    return allocation_from_ruling(doc.cost_delta.get("allocation") or {})
+
+
+def _ledger_net_exposure(case_id: str, db: Session) -> float:
+    """Net open financial exposure from LegalCost ledger rows in EUR.
+
+    - ERSTATTET rows contribute 0 (fully reimbursed).
+    - BEZAHLT rows reduce exposure by any overpayment (expected refund).
+    - All other rows contribute (amount_gross - amount_paid - amount_reimbursed).
+    """
+    costs = db.query(LegalCost).filter(LegalCost.case_id == case_id).all()
+    total = 0.0
+    for c in costs:
+        gross = c.amount_gross or 0.0
+        paid = c.amount_paid or 0.0
+        reimbursed = c.amount_reimbursed or 0.0
+        if c.status == CostStatus.ERSTATTET:
+            continue
+        if c.status == CostStatus.BEZAHLT:
+            total -= max(0.0, paid - gross)  # overpayment → expected refund
+        else:
+            total += max(0.0, gross - paid - reimbursed)
+    return total
+
+
+def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
+    """Recompute and persist Case.total_cost_exposure using the RVG/GKG calculator.
+
+    Algorithm per proceeding:
+      1. Find the latest streitwert signal — skip if none (no projection basis).
+      2. Resolve allocation: own ruling > propagated ruling > family default >
+         assume_worst_case toggle > civil placeholder.
+      3. Add: own lawyer gross + court × own_court_share + opposing × own_opposing_share.
+
+    Also adds open LegalCost ledger rows (invoices, vorschüsse, manual entries)
+    and subtracts expected refunds from overpaid rows.
+
+    Returns the new total in cents and persists it on Case.total_cost_exposure.
     """
     if not case_id or case_id == "_TRIAGE":
         return 0
 
-    docs = (
-        db.query(Document)
-        .filter(
-            Document.case_id == case_id,
-            Document.cost_delta.isnot(None),
-        )
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return 0
+
+    is_family = (
+        hasattr(case, "case_type")
+        and case.case_type is not None
+        and case.case_type == CaseType.FAMILY
+    )
+    case_type = CaseType.FAMILY if is_family else CaseType.CIVIL
+
+    proceedings = (
+        db.query(Proceeding)
+        .filter(Proceeding.case_id == case_id)
+        .order_by(Proceeding.started_at.asc().nullslast(), Proceeding.id.asc())
         .all()
     )
 
-    total_euros = 0.0
-    for doc in docs:
-        try:
-            amount = (
-                doc.cost_delta.get("amount")
-                if isinstance(doc.cost_delta, dict)
-                else None
+    total_eur = 0.0
+    propagated_allocation: dict | None = None
+
+    for proc in proceedings:
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.proceeding_id == proc.id,
+                Document.cost_delta.isnot(None),
             )
-            if amount is not None:
-                total_euros += abs(float(amount))
-        except Exception:
-            pass
-
-    total_cents = int(round(total_euros * 100))
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if case:
-        case.total_cost_exposure = total_cents
-        db.commit()
-        logger.info(
-            f"Case {case_id}: total_cost_exposure updated to {total_cents} cents"
+            .all()
         )
+
+        streitwert = _latest_streitwert(docs)
+        if not streitwert or streitwert <= 0:
+            continue  # no basis for fee projection; skip this proceeding
+
+        ruling_alloc = _latest_ruling_allocation(docs)
+        if ruling_alloc:
+            alloc = ruling_alloc
+            propagated_allocation = ruling_alloc
+        elif propagated_allocation:
+            alloc = {**propagated_allocation, "source": "propagated"}
+        elif is_family:
+            alloc = default_allocation(CaseType.FAMILY, proc.court_level)
+        elif getattr(case, "assume_worst_case", True):
+            alloc = {
+                "own_court_share": 1.0,
+                "own_opposing_share": 1.0,
+                "source": "worst_case",
+            }
+        else:
+            alloc = default_allocation(case_type, proc.court_level)
+
+        own = lawyer_fees(streitwert, proc.court_level, is_family)
+        c_fee = court_fees(streitwert, proc.court_level, is_family)
+
+        total_eur += own["gross"]
+        total_eur += c_fee * alloc["own_court_share"]
+        if alloc["own_opposing_share"] > 0:
+            opp = lawyer_fees(streitwert, proc.court_level, is_family)
+            total_eur += opp["gross"] * alloc["own_opposing_share"]
+
+    total_eur += _ledger_net_exposure(case_id, db)
+
+    total_cents = int(round(total_eur * 100))
+    case.total_cost_exposure = total_cents
+    db.commit()
+    logger.info(f"Case {case_id}: total_cost_exposure updated to {total_cents} cents")
 
     return total_cents
 
