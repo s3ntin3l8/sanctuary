@@ -16,8 +16,8 @@
   ('embeddings',     'workspaces',           'Embeddings'),
 ] %}
 
-{# Resolve the detail line — first matching rule wins. #}
-{% set detail = namespace(kind='pending', stage=None, ts=None, error=None) %}
+{# Resolve the detail line — precedence: failed > retrying > running > completed > pending. #}
+{% set detail = namespace(kind='pending', stage=None, ts=None, error=None, attempt=None, max_attempts=None, next_at=None) %}
 {% for stage_key, _icon, stage_label in stage_defs %}
   {% set s = stages_data.get(stage_key, {}) %}
   {% if s.get('status') == 'failed' and detail.kind != 'failed' %}
@@ -27,6 +27,19 @@
   {% endif %}
 {% endfor %}
 {% if detail.kind != 'failed' %}
+  {% for stage_key, _icon, stage_label in stage_defs %}
+    {% set s = stages_data.get(stage_key, {}) %}
+    {% if s.get('status') == 'retrying' and detail.kind != 'retrying' %}
+      {% set detail.kind = 'retrying' %}
+      {% set detail.stage = stage_label %}
+      {% set detail.error = s.get('error') %}
+      {% set detail.attempt = s.get('attempt') %}
+      {% set detail.max_attempts = s.get('max_attempts') %}
+      {% set detail.next_at = s.get('next_at') %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% if detail.kind not in ('failed', 'retrying') %}
   {% for stage_key, _icon, stage_label in stage_defs %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% if s.get('status') == 'running' and detail.kind != 'running' %}
@@ -71,7 +84,7 @@
     {% for stage_key, stage_icon, stage_label in stage_defs %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% set s_status = s.get('status', 'pending') %}
-    {% set retryable = s_status not in ('running', 'skipped') %}
+    {% set retryable = s_status not in ('running', 'retrying', 'skipped') %}
 
     {# Tooltip text — combines label + status + timestamp/error + retry hint. #}
     {% set tooltip_parts = [stage_label, s_status | capitalize] %}
@@ -79,6 +92,16 @@
       {% set _ = tooltip_parts.append(s['completed_at'][:16].replace('T', ' ')) %}
     {% elif s_status == 'failed' and s.get('error') %}
       {% set _ = tooltip_parts.append(s['error']) %}
+    {% elif s_status == 'retrying' %}
+      {% if s.get('attempt') and s.get('max_attempts') %}
+        {% set _ = tooltip_parts.append('attempt ' ~ s['attempt'] ~ '/' ~ s['max_attempts']) %}
+      {% endif %}
+      {% if s.get('next_at') %}
+        {% set _ = tooltip_parts.append('next ' ~ s['next_at'][11:19]) %}
+      {% endif %}
+      {% if s.get('error') %}
+        {% set _ = tooltip_parts.append('last error: ' ~ s['error']) %}
+      {% endif %}
     {% elif s_status == 'skipped' and s.get('reason') %}
       {% set _ = tooltip_parts.append(s['reason']) %}
     {% endif %}
@@ -92,6 +115,8 @@
       {% set dot_class = 'bg-error/15 border-error text-error' %}
     {% elif s_status == 'running' %}
       {% set dot_class = 'bg-tertiary/15 border-tertiary text-tertiary' %}
+    {% elif s_status == 'retrying' %}
+      {% set dot_class = 'bg-amber-500/15 border-amber-500 text-amber-500' %}
     {% elif s_status == 'skipped' %}
       {% set dot_class = 'bg-surface-container-high border-outline-variant/40 text-on-surface-variant/40' %}
     {% else %}
@@ -134,6 +159,8 @@
           class="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center {{ dot_class }}">
       {% if s_status == 'running' %}
       <span class="material-symbols-outlined text-[11px] animate-spin" style="animation-duration:1.4s">autorenew</span>
+      {% elif s_status == 'retrying' %}
+      <span class="material-symbols-outlined text-[11px] animate-spin" style="animation-duration:2.4s">refresh</span>
       {% elif s_status == 'skipped' %}
       <span class="material-symbols-outlined text-[11px]">remove</span>
       {% else %}
@@ -152,11 +179,15 @@
     {% endfor %}
   </div>
 
-  {# Detail line — failed > running > last completed > pending. #}
+  {# Detail line — failed > retrying > running > last completed > pending. #}
   <div class="px-1 mt-1.5 text-[10.5px] leading-snug">
     {% if detail.kind == 'failed' %}
     <span class="text-error font-medium" title="{{ detail.error or '' }}">
       Failed at {{ detail.stage }}{% if detail.error %}: {{ detail.error[:80] }}{% if detail.error|length > 80 %}…{% endif %}{% endif %}
+    </span>
+    {% elif detail.kind == 'retrying' %}
+    <span class="text-amber-500 font-medium" title="{{ detail.error or '' }}">
+      Retrying {{ detail.stage }}{% if detail.attempt and detail.max_attempts %} ({{ detail.attempt }}/{{ detail.max_attempts }}){% endif %}{% if detail.next_at %} <span class="font-mono text-amber-500/70">· next {{ detail.next_at[11:19] }}</span>{% endif %}
     </span>
     {% elif detail.kind == 'running' %}
     <span class="text-tertiary font-medium animate-pulse">

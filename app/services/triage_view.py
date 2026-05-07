@@ -92,6 +92,17 @@ def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
             if suggested_case == bundle.suggested_case_id
             else None
         )
+        # When the case has already been ratified, `bundle.suggested_case_id`
+        # is intentionally left None (suppresses the "Confirm case" footer),
+        # but `bundle.suggested_case_title` still carries the real title.
+        # Without this fallback the modal would render an empty `—` for
+        # already-confirmed cases.
+        if (
+            not suggested_title
+            and suggested_case
+            and suggested_case == bundle.confirmed_case_id
+        ):
+            suggested_title = bundle.suggested_case_title
         confidence = (lead.extraction_confidence or {}).get("case_id")
         sub_bundles.append(
             SubBundleView(

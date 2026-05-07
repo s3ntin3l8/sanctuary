@@ -21,6 +21,7 @@ def analyze_batch_task(self, batch_id: int):
         mark_failed,
         mark_skipped,
         mark_started,
+        schedule_retry,
     )
 
     # Fetch doc IDs for stage tracking
@@ -45,6 +46,20 @@ def analyze_batch_task(self, batch_id: int):
             logger.info(
                 "Batch #%d: batch_analysis timeout — retrying once in 90s", batch_id
             )
+            db = SessionLocal()
+            try:
+                for doc_id in doc_ids:
+                    schedule_retry(
+                        doc_id,
+                        PipelineStage.BATCH_ANALYSIS,
+                        db,
+                        error=f"timeout: {e}",
+                        attempt=self.request.retries + 1,
+                        max_attempts=1,
+                        countdown=90,
+                    )
+            finally:
+                db.close()
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning(
             "Batch #%d: batch_analysis timeout after retry (%s) — marking failed",
@@ -62,14 +77,31 @@ def analyze_batch_task(self, batch_id: int):
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            db = SessionLocal()
+            try:
+                for doc_id in doc_ids:
+                    schedule_retry(
+                        doc_id,
+                        PipelineStage.BATCH_ANALYSIS,
+                        db,
+                        error=str(e),
+                        attempt=self.request.retries + 1,
+                        max_attempts=self.max_retries,
+                        countdown=countdown,
+                    )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+
+        # All retries exhausted — terminal failure.
         db = SessionLocal()
         try:
             for doc_id in doc_ids:
                 mark_failed(doc_id, PipelineStage.BATCH_ANALYSIS, db, error=str(e))
         finally:
             db.close()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
         logger.info(
             "Batch #%d: batch_analysis failed — still enqueueing enrich for %d doc(s)",
             batch_id,

@@ -26,6 +26,7 @@
   {% if doc.proceeding.court_level %}{% set _proc_sub = _proc_sub ~ ' · ' ~ doc.proceeding.court_level.value | upper %}{% endif %}
   {% set _proceeding_subtitle = _proc_sub | e %}
 {% endif %}
+{% set _proceeding_is_draft = 'true' if (doc.proceeding and doc.proceeding.is_draft) else 'false' %}
 {% set _batch_id = doc.ingest_batch_id or '' %}
 {% set _is_synthetic = 'false' if doc.ingest_batch_id else 'true' %}
 
@@ -74,7 +75,8 @@
             data-proceeding-id="{{ _proceeding_id }}"
             data-proceeding-az="{{ _proceeding_az }}"
             data-proceeding-subtitle="{{ _proceeding_subtitle }}"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+            data-proceeding-is-draft="{{ _proceeding_is_draft }}"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
             class="text-[10px] font-bold text-primary hover:underline cursor-pointer">
       Reroute to a different case →
     </button>
@@ -115,7 +117,7 @@
               data-proceeding-id="{{ _proceeding_id }}"
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
-              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
               class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
         Reroute
       </button>
@@ -160,7 +162,7 @@
               data-proceeding-id="{{ _proceeding_id }}"
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
-              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:true}}))"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:true}}))"
               class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-primary text-on-primary hover:opacity-90 cursor-pointer">
         + Create case
       </button>
@@ -173,7 +175,7 @@
               data-proceeding-id="{{ _proceeding_id }}"
               data-proceeding-az="{{ _proceeding_az }}"
               data-proceeding-subtitle="{{ _proceeding_subtitle }}"
-              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, action:'assign_case', is_new_case:false}}))"
+              onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:'', suggested_case_title:'', suggested_case_is_draft:false, suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
               class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-high cursor-pointer">
         Pick existing
       </button>

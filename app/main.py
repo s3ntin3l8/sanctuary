@@ -169,22 +169,47 @@ async def lifespan(app: FastAPI):
             "Pipeline recovery on startup (stuck pending): %s", pending_stats
         )
 
-    # vec0 cannot be ALTERed: changing AI_EMBED_DIM without recreating the
-    # document_vectors table silently makes every embedding write fail the
-    # per-row dim guard. Surface that as an ERROR at boot so it's never silent.
-    from app.config import AI_EMBED_DIM
+    # vec0 cannot be ALTERed: if the active embed instance's dim diverges from the
+    # document_vectors schema, every embedding write fails the per-row dim guard.
+    # Two cases:
+    #   (a) stored dim is missing/unset (legacy, pre-auto-detect) → schema is the ground
+    #       truth; sync it into the instance so the UI and per-write guard agree.
+    #   (b) stored dim was explicitly set but differs from schema → user changed embed
+    #       model without rebuilding; log a warning so they know to rebuild.
+    from app.services.ai_config import (
+        _ensure_migrated,
+        _get_ai_section,
+        get_instance,
+        save_instance,
+    )
     from app.services.embeddings import verify_vec0_dim
 
     with SessionLocal() as vec_db:
-        ok, actual = verify_vec0_dim(vec_db, AI_EMBED_DIM)
-    if not ok:
-        logging.getLogger(__name__).error(
-            "AI_EMBED_DIM=%s but document_vectors schema declares dim=%s. "
-            "vec0 can't be ALTERed — drop and recreate the table via a migration "
-            "or revert AI_EMBED_DIM. All embedding writes will silently fail.",
-            AI_EMBED_DIM,
-            actual,
-        )
+        _ensure_migrated(vec_db)
+        ai = _get_ai_section(vec_db)
+        active_id = ai.get("active_embed_id")
+        inst = get_instance(vec_db, active_id) if active_id else None
+        stored_dim = inst.get("embed_dim") if inst else None  # None = never probed
+        ok, actual = verify_vec0_dim(vec_db, stored_dim or 0)
+        if actual is not None and stored_dim != actual:
+            if not stored_dim and inst is not None:
+                # Case (a): dim was never stored — sync from schema silently.
+                updated = dict(inst)
+                updated["embed_dim"] = actual
+                save_instance(vec_db, updated)
+                logging.getLogger(__name__).info(
+                    "Startup: set active embed instance dim to %s from document_vectors schema.",
+                    actual,
+                )
+            elif stored_dim:
+                # Case (b): explicit dim mismatch — user needs to rebuild.
+                logging.getLogger(__name__).error(
+                    "embed_dim=%s (active embed instance) but document_vectors schema "
+                    "declares dim=%s. vec0 can't be ALTERed — use Settings → AI → "
+                    "Rebuild Index to recreate it.",
+                    stored_dim,
+                    actual,
+                )
 
     yield
 

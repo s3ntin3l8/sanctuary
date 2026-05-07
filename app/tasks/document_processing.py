@@ -23,6 +23,7 @@ def process_document_task(self, doc_id: int):
         mark_completed,
         mark_failed_with_cascade,
         mark_started,
+        schedule_retry,
     )
 
     logger.info("Doc #%d: processing task started", doc_id)
@@ -62,15 +63,28 @@ def process_document_task(self, doc_id: int):
                 return {"status": "failed", "doc_id": doc_id, "error": str(e)}
             except Exception as e:
                 db.rollback()
-                mark_failed_with_cascade(
-                    doc_id, PipelineStage.EXTRACT, db, error=f"System error: {str(e)}"
-                )
                 logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)
 
                 if self.request.retries < self.max_retries:
-                    raise self.retry(
-                        exc=e, countdown=60 * (self.request.retries + 1)
-                    ) from e
+                    countdown = 60 * (self.request.retries + 1)
+                    # Mark RETRYING (not FAILED) so the polling templates keep
+                    # refreshing through the countdown — the next attempt runs
+                    # invisibly otherwise.
+                    schedule_retry(
+                        doc_id,
+                        PipelineStage.EXTRACT,
+                        db,
+                        error=f"System error: {e}",
+                        attempt=self.request.retries + 1,
+                        max_attempts=self.max_retries,
+                        countdown=countdown,
+                    )
+                    raise self.retry(exc=e, countdown=countdown) from e
+
+                # All retries exhausted — terminal failure cascades downstream.
+                mark_failed_with_cascade(
+                    doc_id, PipelineStage.EXTRACT, db, error=f"System error: {e}"
+                )
                 from celery.exceptions import MaxRetriesExceededError
 
                 raise MaxRetriesExceededError(
@@ -149,10 +163,18 @@ def _run_phase1_summary(doc_id: int) -> None:
 
     Retries up to _METADATA_MAX_RETRIES times on network/timeout errors.
     Non-transient exceptions mark the stage failed immediately (no retry).
+
+    Status transitions on transient errors:
+        running → retrying (during sleep) → running (next attempt) → … → completed | failed
     """
     from app.models.enums import PipelineStage
     from app.services.ai_summary import _summarize_document_sync
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed,
+        mark_started,
+        schedule_retry,
+    )
 
     db2 = get_db_session()
     try:
@@ -176,7 +198,29 @@ def _run_phase1_summary(doc_id: int) -> None:
                     f"Doc {doc_id}: METADATA transient error (attempt {attempt + 1}/{_METADATA_MAX_RETRIES}), "
                     f"retrying in {wait}s: {e}"
                 )
+                # Flip to RETRYING so the UI shows "Retrying METADATA (N/M) in Ws"
+                # instead of a silent spin.
+                db_retry = get_db_session()
+                try:
+                    schedule_retry(
+                        doc_id,
+                        PipelineStage.METADATA,
+                        db_retry,
+                        error=str(e),
+                        attempt=attempt + 1,
+                        max_attempts=_METADATA_MAX_RETRIES,
+                        countdown=wait,
+                    )
+                finally:
+                    db_retry.close()
                 time.sleep(wait)
+                # Flip back to RUNNING for the next attempt — keeps the
+                # Celery and in-process retry semantics consistent.
+                db_start = get_db_session()
+                try:
+                    mark_started(doc_id, PipelineStage.METADATA, db_start)
+                finally:
+                    db_start.close()
         except Exception as e:
             db2.rollback()
             mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))

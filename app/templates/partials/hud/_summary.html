@@ -38,7 +38,7 @@
     <span class="ml-auto text-[9px] font-bold text-originator-own flex items-center gap-0.5">
       <span class="material-symbols-outlined text-[10px]">check_circle</span>approved
     </span>
-    {% elif enrich_status == 'running' %}
+    {% elif enrich_status in ('running', 'retrying') %}
     <span class="ml-auto text-[9px] font-medium text-outline animate-pulse">generating…</span>
     {% elif enrich_status == 'failed' %}
     <span class="ml-auto text-[9px] font-bold text-error">failed</span>
@@ -64,7 +64,7 @@
   <p class="text-[11px] italic" style="color:var(--color-outline);">
     {% if enrich_status == 'failed' %}
       Summary generation failed. Retry via the pipeline stepper.
-    {% elif enrich_status in ('pending', 'running') %}
+    {% elif enrich_status in ('pending', 'running', 'retrying') %}
       Summary pending — AI enrichment in progress.
     {% else %}
       No summary available.

@@ -309,6 +309,238 @@ def test_aggregate_pipeline_summary_empty():
 
 
 # ---------------------------------------------------------------------------
+# RETRYING stage status — keeps polling alive across Celery retries
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_compute_overall_state_treats_retrying_as_running():
+    """A retrying stage must roll up to PipelineState.RUNNING so polling
+    templates (gated on pending|running) keep refreshing through the
+    retry countdown."""
+    from app.services.pipeline_status import compute_overall_state
+
+    stages = {
+        "extract": {"status": StageStatus.RETRYING.value},
+        "metadata": {"status": StageStatus.PENDING.value},
+    }
+    assert compute_overall_state(stages) == PipelineState.RUNNING
+
+    # Retrying mixed with running still rolls up to running.
+    stages = {
+        "extract": {"status": StageStatus.RUNNING.value},
+        "metadata": {"status": StageStatus.RETRYING.value},
+    }
+    assert compute_overall_state(stages) == PipelineState.RUNNING
+
+
+@pytest.mark.unit
+def test_mark_retrying_writes_record_shape(db_session):
+    """mark_retrying writes status=retrying plus error, attempt, max_attempts, next_at."""
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        mark_retrying,
+        mark_started,
+    )
+
+    case = Case(
+        id="_TR_R1", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="x",
+        content="x",
+        case_id="_TR_R1",
+        originator_type=OriginatorType.COURT,
+    )
+    initialize(doc, batched=False)
+    db_session.add(doc)
+    db_session.commit()
+
+    mark_started(doc.id, PipelineStage.EXTRACT, db_session)
+    mark_retrying(
+        doc.id,
+        PipelineStage.EXTRACT,
+        db_session,
+        error="boom",
+        attempt=2,
+        max_attempts=3,
+        next_at="2026-05-06T18:32:11+00:00",
+    )
+
+    db_session.refresh(doc)
+    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.RETRYING.value
+    assert rec["error"] == "boom"
+    assert rec["attempt"] == 2
+    assert rec["max_attempts"] == 3
+    assert rec["next_at"] == "2026-05-06T18:32:11+00:00"
+    # Aggregate state is RUNNING — polling must keep firing.
+    assert doc.pipeline_state.value == PipelineState.RUNNING.value
+
+
+@pytest.mark.unit
+def test_mark_started_clears_retry_bookkeeping(db_session):
+    """When the next attempt actually runs, mark_started must wipe
+    attempt/max_attempts/next_at left over from a prior RETRYING record so
+    the UI doesn't show stale countdown info next to a clean RUNNING dot."""
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        mark_retrying,
+        mark_started,
+    )
+
+    case = Case(
+        id="_TR_R2", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="x",
+        content="x",
+        case_id="_TR_R2",
+        originator_type=OriginatorType.COURT,
+    )
+    initialize(doc, batched=False)
+    db_session.add(doc)
+    db_session.commit()
+
+    mark_started(doc.id, PipelineStage.EXTRACT, db_session)
+    mark_retrying(
+        doc.id,
+        PipelineStage.EXTRACT,
+        db_session,
+        error="boom",
+        attempt=1,
+        max_attempts=3,
+        next_at="2026-05-06T18:32:11+00:00",
+    )
+    # Next attempt actually starts.
+    mark_started(doc.id, PipelineStage.EXTRACT, db_session)
+
+    db_session.refresh(doc)
+    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.RUNNING.value
+    assert "attempt" not in rec
+    assert "max_attempts" not in rec
+    assert "next_at" not in rec
+
+
+@pytest.mark.unit
+def test_schedule_retry_computes_next_at_from_countdown(db_session):
+    """schedule_retry is the canonical helper used at every Celery `self.retry`
+    site — it computes next_at = now + countdown and forwards to mark_retrying."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        mark_started,
+        schedule_retry,
+    )
+
+    case = Case(
+        id="_TR_R3", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="x",
+        content="x",
+        case_id="_TR_R3",
+        originator_type=OriginatorType.COURT,
+    )
+    initialize(doc, batched=False)
+    db_session.add(doc)
+    db_session.commit()
+
+    mark_started(doc.id, PipelineStage.EXTRACT, db_session)
+    before = datetime.now(UTC)
+    schedule_retry(
+        doc.id,
+        PipelineStage.EXTRACT,
+        db_session,
+        error="timeout",
+        attempt=1,
+        max_attempts=3,
+        countdown=60,
+    )
+    after = datetime.now(UTC)
+
+    db_session.refresh(doc)
+    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.RETRYING.value
+    next_at = datetime.fromisoformat(rec["next_at"])
+    # next_at should be ~60s from now, between before+60 and after+60
+    assert (
+        before + timedelta(seconds=60)
+        <= next_at
+        <= after + timedelta(seconds=60, microseconds=1)
+    )
+
+
+@pytest.mark.unit
+def test_recover_orphaned_running_stages_resets_retrying(db_session):
+    """A worker that died between mark_retrying and the next Celery attempt
+    leaves the stage stuck in RETRYING forever. App-startup recovery must
+    treat RETRYING the same as RUNNING — reset to PENDING and re-dispatch."""
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R4", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="stuck-retrying.pdf",
+        content="x",
+        case_id="_TR_R4",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    initialize(doc, batched=False)
+    stages = dict(doc.pipeline_stages)
+    stages[PipelineStage.EXTRACT.value] = {
+        "status": StageStatus.RETRYING.value,
+        "error": "boom",
+        "attempt": 2,
+        "max_attempts": 3,
+        "next_at": "2026-05-06T18:32:11+00:00",
+    }
+    doc.pipeline_stages = stages
+    doc.pipeline_state = "running"  # retrying rolls up to running
+    db_session.add(doc)
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert result["docs_reset"] == 1
+    assert result["stages_reset"] == 1
+
+    db_session.refresh(doc)
+    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.PENDING.value
+    # Retry bookkeeping should be wiped on reset.
+    assert "attempt" not in rec
+    assert "max_attempts" not in rec
+    assert "next_at" not in rec
+
+
+# ---------------------------------------------------------------------------
 # recover_stuck_pending_dispatches — EAGER+reload hazard recovery
 # ---------------------------------------------------------------------------
 

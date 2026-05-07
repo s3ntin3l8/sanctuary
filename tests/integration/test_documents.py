@@ -95,6 +95,44 @@ def test_upload_status_terminal_drops_polling(db_session):
 
 
 @pytest.mark.integration
+def test_upload_status_retrying_keeps_polling_and_shows_attempt(db_session):
+    """A doc with a RETRYING stage must keep polling and show the retry context.
+
+    Regression: before the RETRYING stage status existed, a stage hit `mark_failed`
+    before `self.retry()`, which flipped pipeline_state to FAILED and disarmed
+    the polling — the next attempt then ran invisibly until the user refreshed.
+    """
+    from app.models.enums import PipelineState, StageStatus
+
+    doc = Document(
+        title="Retrying",
+        pipeline_state=PipelineState.RUNNING,
+        pipeline_stages={
+            "extract": {
+                "status": StageStatus.RETRYING.value,
+                "error": "boom",
+                "attempt": 2,
+                "max_attempts": 3,
+                "next_at": "2026-05-06T18:32:11+00:00",
+            },
+            "metadata": {"status": StageStatus.PENDING.value},
+        },
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    response = client.get(f"/upload/status/{doc.id}")
+    assert response.status_code == 200
+    body = response.text
+    # Polling must stay armed during retry — this is the whole point.
+    assert f"/upload/status/{doc.id}" in body
+    assert 'hx-trigger="every 2s"' in body
+    # Surface the retry context (stage + attempt counter).
+    assert "retrying" in body.lower()
+    assert "2/3" in body
+
+
+@pytest.mark.integration
 def test_upload_status_failed_shows_error(db_session):
     from app.models.enums import PipelineState, StageStatus
 

@@ -285,3 +285,34 @@ class AIProvider:
 # Role-specific singletons: chat_provider for generation, embed_provider for embeddings
 chat_provider = AIProvider(role="chat")
 embed_provider = AIProvider(role="embed")
+
+
+async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dict:
+    """Build embedding request params from a config dict without touching singletons.
+
+    Raises RuntimeError if the provider endpoint is unreachable.
+    """
+    base_url = config.get("base_url", "").strip().rstrip("/")
+    api_key = config.get("api_key", "not-needed")
+    provider = config.get("provider", "auto")
+
+    ptype = (
+        await detect_provider(base_url)
+        if provider == "auto"
+        else ProviderType(provider)
+    )
+
+    if ptype == ProviderType.OLLAMA:
+        return {
+            "url": f"{base_url}/api/embeddings",
+            "json": {"model": model, "prompt": prompt},
+            "headers": {},
+        }
+    else:
+        return {
+            "url": f"{base_url}/v1/embeddings",
+            "json": {"model": model, "input": prompt},
+            "headers": {"Authorization": f"Bearer {api_key}"}
+            if api_key != "not-needed"
+            else {},
+        }

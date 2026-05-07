@@ -88,6 +88,7 @@
                         suggested_proceeding_id: '{{ bundle.proceeding.id if bundle.proceeding else '' }}',
                         suggested_proceeding_az: {{ (bundle.proceeding.az_court if bundle.proceeding else '') | tojson }},
                         suggested_proceeding_subtitle: {{ (bundle.proceeding.court_name if bundle.proceeding else '') | tojson }},
+                        suggested_proceeding_is_draft: {{ 'true' if (bundle.proceeding and bundle.proceeding.is_draft) else 'false' }},
                         action: 'confirm_bundle'
                     })"
                     class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">

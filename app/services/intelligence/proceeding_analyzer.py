@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.database import Document, Proceeding
+from app.models.database import Case, Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -124,6 +124,8 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                     placeholder.subject_matter = data["subject_matter"]
                 doc.proceeding_id = placeholder.id
             elif extracted_az:
+                # AI-detected proceeding — inherit draft state from parent case.
+                parent_case = db.query(Case).filter(Case.id == doc.case_id).first()
                 new_proc = Proceeding(
                     case_id=doc.case_id,
                     court_name=data.get("court_name") or "Unknown Court",
@@ -132,6 +134,7 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                     subject_matter=data.get("subject_matter"),
                     status=ProceedingStatus.ACTIVE,
                     started_at=datetime.now(UTC),
+                    is_draft=bool(parent_case and parent_case.is_draft),
                 )
                 db.add(new_proc)
                 db.flush()
@@ -194,6 +197,8 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 current_proc.status = ProceedingStatus.CLOSED
                 current_proc.ended_at = datetime.now(UTC)
         else:
+            # AI-detected escalation — inherit draft state from parent case.
+            parent_case = db.query(Case).filter(Case.id == current_proc.case_id).first()
             new_proc = Proceeding(
                 case_id=current_proc.case_id,
                 court_name=data.get("court_name") or "Unknown Court",
@@ -202,6 +207,7 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 subject_matter=data.get("subject_matter"),
                 status=ProceedingStatus.ACTIVE,
                 started_at=datetime.now(UTC),
+                is_draft=bool(parent_case and parent_case.is_draft),
             )
             db.add(new_proc)
 

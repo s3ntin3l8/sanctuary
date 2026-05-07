@@ -21,6 +21,7 @@ def enrich_document_task(self, doc_id: int):
         mark_failed,
         mark_skipped,
         mark_started,
+        schedule_retry,
     )
 
     # Secondary gate: skip enrichment when METADATA failed.
@@ -56,6 +57,19 @@ def enrich_document_task(self, doc_id: int):
     except httpx.ReadTimeout as e:
         if self.request.retries < 1:
             logger.info("Doc #%d: enrich timeout — retrying once in 90s", doc_id)
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.ENRICH,
+                    db,
+                    error=f"timeout: {e}",
+                    attempt=self.request.retries + 1,
+                    max_attempts=1,
+                    countdown=90,
+                )
+            finally:
+                db.close()
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning(
             "Doc #%d: enrich timeout after retry (%s) — marking failed", doc_id, e
@@ -68,14 +82,29 @@ def enrich_document_task(self, doc_id: int):
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.ENRICH,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+
+        # All retries exhausted — terminal failure.
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.ENRICH, db, error=str(e))
         finally:
             db.close()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
-
         logger.info(
             "Doc #%d: enrich failed permanently — still dispatching relationships",
             doc_id,

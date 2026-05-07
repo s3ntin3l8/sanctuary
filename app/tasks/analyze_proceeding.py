@@ -26,6 +26,7 @@ def analyze_proceeding_task(self, doc_id: int):
         mark_failed_with_cascade,
         mark_skipped,
         mark_started,
+        schedule_retry,
     )
 
     db = get_db_session()
@@ -68,6 +69,19 @@ def analyze_proceeding_task(self, doc_id: int):
             logger.info(
                 "Doc #%d: proceeding analysis timeout — retrying once in 90s", doc_id
             )
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.PROCEEDING_ANALYSIS,
+                    db,
+                    error=f"timeout: {e}",
+                    attempt=self.request.retries + 1,
+                    max_attempts=1,
+                    countdown=90,
+                )
+            finally:
+                db.close()
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning(
             "Doc #%d: proceeding analysis timeout after retry (%s) — marking failed",
@@ -96,6 +110,25 @@ def analyze_proceeding_task(self, doc_id: int):
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} proceeding analysis failed: {e}", exc_info=True)
+
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.PROCEEDING_ANALYSIS,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+
+        # All retries exhausted — terminal failure cascades downstream.
         db = get_db_session()
         try:
             mark_failed_with_cascade(
@@ -103,9 +136,6 @@ def analyze_proceeding_task(self, doc_id: int):
             )
         finally:
             db.close()
-
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
 
         # Continue to batch analysis even if failed, if we have a batch_id and all siblings are done
         if batch_id:

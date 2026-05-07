@@ -575,13 +575,22 @@ class TriageService:
         docs = (
             self.db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
         )
-        from app.models.database import ActionItem, Case
+        from app.models.database import ActionItem, Case, Proceeding
         from app.services.ingestion.service import compute_review_reasons
 
         # If assigning to an AI-suggested draft case, promote it to a real case.
         case = self.db.query(Case).filter(Case.id == case_id).first()
         if case and case.is_draft:
             case.is_draft = False
+
+        # Same for the chosen proceeding — once the user confirms it, it's no
+        # longer a draft.
+        if proceeding_id is not None:
+            proc = (
+                self.db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
+            )
+            if proc and proc.is_draft:
+                proc.is_draft = False
 
         doc_ids = [doc.id for doc in docs]
         for doc in docs:

@@ -35,7 +35,17 @@
         {# Form — static hx-post avoids HTMX/Alpine `:hx-post` URL caching issues.
            Dynamic routing is handled server-side via hidden inputs. #}
         <form id="bundle-confirm-form"
-              x-data="{ isNewCase: false, showCasePicker: false, showProceedingPicker: false }"
+              x-data="{
+                  isNewCase: false,
+                  showCasePicker: false,
+                  showProceedingPicker: false,
+                  get bothPreConfirmed() {
+                      return !!this.bundleConfirm.suggested_case_id
+                          && !this.bundleConfirm.suggested_case_is_draft
+                          && !!this.bundleConfirm.suggested_proceeding_id
+                          && !this.bundleConfirm.suggested_proceeding_is_draft;
+                  }
+              }"
               x-init="$watch('bundleConfirm.open', value => {
                   if (value) {
                       isNewCase = !!bundleConfirm.is_new_case;
@@ -87,6 +97,7 @@
                     </div>
                     <input type="hidden" name="case_id" :value="bundleConfirm.suggested_case_id">
                     <button type="button" @click="showCasePicker = true"
+                            x-show="!bothPreConfirmed"
                             class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
                         Select another case →
                     </button>
@@ -153,6 +164,7 @@
                     </div>
                     <input type="hidden" name="proceeding_id" :value="bundleConfirm.suggested_proceeding_id">
                     <button type="button" @click="showProceedingPicker = true"
+                            x-show="!bothPreConfirmed"
                             class="text-[9px] font-bold text-primary hover:underline cursor-pointer">
                         Change proceeding →
                     </button>
@@ -188,7 +200,11 @@
                 <button type="submit"
                         :disabled="!isNewCase && !bundleConfirm.suggested_case_id"
                         class="btn btn-primary btn-xs"
-                        x-text="bundleConfirm.action === 'assign_case' ? (isNewCase ? 'Create & assign →' : 'Confirm →') : 'Confirm & complete →'">
+                        x-text="bothPreConfirmed
+                                ? 'Complete →'
+                                : (bundleConfirm.action === 'assign_case'
+                                    ? (isNewCase ? 'Create & assign →' : 'Confirm →')
+                                    : 'Confirm & complete →')">
                 </button>
             </div>
         </form>

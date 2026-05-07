@@ -163,12 +163,19 @@ def initialize(doc, batched: bool) -> None:
 
 
 def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
+    # Clear any retry bookkeeping from a prior RETRYING record so the next
+    # attempt presents as a clean RUNNING state.
     _update_stage(
         doc_id,
         stage,
         db,
         status=StageStatus.RUNNING,
-        extra_sets={"started_at": _now_iso()},
+        extra_sets={
+            "started_at": _now_iso(),
+            "attempt": None,
+            "max_attempts": None,
+            "next_at": None,
+        },
         commit=True,  # early commit so the UI flips to RUNNING immediately
     )
 
@@ -243,8 +250,75 @@ def mark_failed(
         stage,
         db,
         status=StageStatus.FAILED,
-        extra_sets={"completed_at": _now_iso(), "error": error},
+        extra_sets={
+            "completed_at": _now_iso(),
+            "error": error,
+            "attempt": None,
+            "max_attempts": None,
+            "next_at": None,
+        },
         commit=commit,
+    )
+
+
+def mark_retrying(
+    doc_id: int,
+    stage: PipelineStage,
+    db: Session,
+    *,
+    error: str,
+    attempt: int,
+    max_attempts: int,
+    next_at: str,
+    commit: bool = True,
+) -> None:
+    """Mark a stage as awaiting retry — its last attempt failed and another is scheduled.
+
+    Treated as in-flight by `compute_overall_state` (rolls up to PipelineState.RUNNING)
+    so polling templates keep refreshing. `next_at` is an ISO timestamp the UI can
+    render as a countdown; `attempt`/`max_attempts` provide "2/3" context.
+    """
+    _update_stage(
+        doc_id,
+        stage,
+        db,
+        status=StageStatus.RETRYING,
+        extra_sets={
+            "error": error,
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+            "next_at": next_at,
+        },
+        commit=commit,
+    )
+
+
+def schedule_retry(
+    doc_id: int,
+    stage: PipelineStage,
+    db: Session,
+    *,
+    error: str,
+    attempt: int,
+    max_attempts: int,
+    countdown: int,
+) -> None:
+    """Convenience wrapper: compute next_at from a countdown and call mark_retrying.
+
+    Used at every Celery `self.retry(...)` site — keeps the call shape uniform
+    so the UI sees a consistent "Retrying STAGE (attempt/max) in Ns" record.
+    """
+    from datetime import timedelta
+
+    next_at = (datetime.now(UTC) + timedelta(seconds=countdown)).isoformat()
+    mark_retrying(
+        doc_id,
+        stage,
+        db,
+        error=error,
+        attempt=attempt,
+        max_attempts=max_attempts,
+        next_at=next_at,
     )
 
 
@@ -309,6 +383,9 @@ def reset_stage(doc_id: int, stage: PipelineStage, db: Session) -> None:
                 "completed_at": None,
                 "error": None,
                 "reason": None,
+                "attempt": None,
+                "max_attempts": None,
+                "next_at": None,
             },
             commit=False,
         )
@@ -341,18 +418,29 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
             stage_enum,
             db,
             status=StageStatus.PENDING,
-            extra_sets={"started_at": None, "completed_at": None, "error": None},
+            extra_sets={
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "attempt": None,
+                "max_attempts": None,
+                "next_at": None,
+            },
             commit=False,
         )
     db.commit()
 
 
 def compute_overall_state(stages: dict) -> PipelineState:
-    """Derive overall PipelineState from per-stage dict."""
+    """Derive overall PipelineState from per-stage dict.
+
+    RETRYING is in-flight (last attempt failed, next is queued) — rolls up to
+    RUNNING so polling templates keep refreshing through the retry window.
+    """
     if not stages:
         return PipelineState.PENDING
     statuses = {v.get("status") for v in stages.values()}
-    if StageStatus.RUNNING.value in statuses:
+    if StageStatus.RUNNING.value in statuses or StageStatus.RETRYING.value in statuses:
         return PipelineState.RUNNING
     if StageStatus.FAILED.value in statuses:
         return PipelineState.FAILED
@@ -395,12 +483,14 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
 
 
 def recover_orphaned_running_stages(db: Session) -> dict:
-    """Reset any pipeline stages left in RUNNING state due to a prior crash.
+    """Reset any pipeline stages left in RUNNING/RETRYING state due to a prior crash.
 
     Called once at app startup after migrations. Finds documents with
-    pipeline_state in (RUNNING, PARTIAL), resets every RUNNING stage (plus
-    its downstream dependents) back to PENDING, recomputes pipeline_state,
-    and unblocks affected IngestBatches.
+    pipeline_state in (RUNNING, PARTIAL), resets every RUNNING or RETRYING stage
+    (plus its downstream dependents) back to PENDING, recomputes pipeline_state,
+    and unblocks affected IngestBatches. RETRYING stages are stuck the same way
+    as RUNNING ones — a worker that died between `mark_retrying` and the next
+    Celery attempt leaves them in flight forever.
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
@@ -417,12 +507,13 @@ def recover_orphaned_running_stages(db: Session) -> dict:
     stages_reset = 0
     affected_batch_ids: set[int] = set()
 
+    _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
         stages: dict = doc.pipeline_stages or {}
         stuck = [
             key
             for key, val in stages.items()
-            if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+            if isinstance(val, dict) and val.get("status") in _IN_FLIGHT
         ]
         if not stuck:
             continue

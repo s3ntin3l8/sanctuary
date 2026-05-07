@@ -206,6 +206,7 @@
                         data-suggested-proceeding-id="{{ bundle.proceeding.id if bundle.proceeding else '' }}"
                         data-suggested-proceeding-az="{{ bundle.proceeding.az_court if bundle.proceeding else '' }}"
                         data-suggested-proceeding-subtitle="{{ bundle.proceeding.court_name if bundle.proceeding else '' }}"
+                        data-suggested-proceeding-is-draft="{{ 'true' if (bundle.proceeding and bundle.proceeding.is_draft) else 'false' }}"
                         @click.stop="$dispatch('triage:open-bundle-confirm', {
                             batch_id: $el.dataset.batchId,
                             is_synthetic: $el.dataset.isSynthetic === 'true',
@@ -218,6 +219,7 @@
                             suggested_proceeding_id: $el.dataset.suggestedProceedingId,
                             suggested_proceeding_az: $el.dataset.suggestedProceedingAz,
                             suggested_proceeding_subtitle: $el.dataset.suggestedProceedingSubtitle,
+                            suggested_proceeding_is_draft: $el.dataset.suggestedProceedingIsDraft === 'true',
                             action: 'confirm_bundle'
                         })"
                         class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-primary text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"

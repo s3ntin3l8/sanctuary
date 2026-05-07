@@ -381,6 +381,16 @@ async def confirm(
             raise HTTPException(status_code=404, detail=f"Document {_doc_id} not found")
         if parsed_proceeding_id is not None:
             updated_doc.proceeding_id = parsed_proceeding_id
+            # Promote draft proceeding once the user has ratified it.
+            from app.models.database import Proceeding
+
+            proc = (
+                db.query(Proceeding)
+                .filter(Proceeding.id == parsed_proceeding_id)
+                .first()
+            )
+            if proc and proc.is_draft:
+                proc.is_draft = False
             db.commit()
             db.refresh(updated_doc)
         if (not pre_case or pre_case == "_TRIAGE") and case_id and case_id != "_TRIAGE":

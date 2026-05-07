@@ -112,8 +112,20 @@
     {# 1. Pipeline status (existing partial) #}
     {% include "partials/hud/_pipeline.html" %}
 
-    {# 2. Case suggestion (existing partial — only renders when mode=='review') #}
+    {# 2. Case + Proceeding — side-by-side in wide containers (triage row),
+         stacked in narrow containers (full-width HUD drawer). The @container
+         on the wrapper lets the grid respond to the pane's width, not the
+         viewport's — same pattern as _metadata_review.html. #}
+    {% if mode == 'review' %}
+    <div class="@container">
+      <div class="grid grid-cols-1 @[480px]:grid-cols-2">
+        {% include "partials/hud/_case.html" %}
+        {% include "partials/hud/_proceeding.html" %}
+      </div>
+    </div>
+    {% else %}
     {% include "partials/hud/_case.html" %}
+    {% endif %}
 
     {# 3. Metadata review — new 2-column read-only with [Edit] toggle #}
     {% include "partials/triage/_metadata_review.html" %}

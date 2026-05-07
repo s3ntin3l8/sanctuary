@@ -57,6 +57,40 @@ async def _probe_instance(inst: dict) -> dict:
     return await chat_provider.probe_health(config=inst)
 
 
+async def _probe_embed_dim(inst: dict) -> tuple[int | None, str | None]:
+    """Probe the embedding endpoint with a tiny input and return (dim, error_msg)."""
+    from app.services.ai_provider import get_embedding_params_for
+
+    model = inst.get("embed_model", "").strip()
+    if not model:
+        return None, "no embed_model set"
+
+    try:
+        params = await get_embedding_params_for(inst, model, "probe")
+    except (RuntimeError, Exception) as e:
+        return None, str(e)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                params["url"], json=params["json"], headers=params["headers"]
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        return None, f"embed probe failed: {e}"
+
+    vec = data.get("embedding") or (
+        data.get("data", [{}])[0].get("embedding")
+        if isinstance(data.get("data"), list) and data["data"]
+        else None
+    )
+    if not vec:
+        return None, "unexpected response shape from embed endpoint"
+
+    return len(vec), None
+
+
 def _categorize_models(models: list[str]) -> dict[str, list[str]]:
     """Categorize models into chat and embed based on heuristics."""
     chat = []
@@ -137,7 +171,6 @@ async def create_instance(
     api_key: str = Form("not-needed"),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
-    embed_dim: int = Form(768),
     db: Session = Depends(get_db),
 ):
     from app.services.ai_config import _make_id
@@ -151,8 +184,15 @@ async def create_instance(
         "api_key": api_key.strip() or "not-needed",
         "summary_model": summary_model.strip(),
         "embed_model": embed_model.strip(),
-        "embed_dim": embed_dim,
+        "embed_dim": None,
     }
+
+    if embed_model.strip():
+        dim, err = await _probe_embed_dim(instance)
+        if err:
+            return HTMLResponse(_toast(False, f"Could not detect embed dim: {err}"))
+        instance["embed_dim"] = dim
+
     save_instance(db, instance)
     health = await _probe_instance(instance)
     models = (
@@ -188,6 +228,7 @@ async def save_instance_route(
     if not existing:
         return HTMLResponse(_toast(False, "Instance not found"), status_code=404)
 
+    new_embed_model = embed_model.strip() or existing.get("embed_model", "")
     instance = {
         "id": instance_id,
         "label": label.strip() or existing.get("label", "Instance"),
@@ -195,12 +236,40 @@ async def save_instance_route(
         "provider": provider.strip() or existing.get("provider", "auto"),
         "api_key": api_key.strip() or existing.get("api_key", "not-needed"),
         "summary_model": summary_model.strip() or existing.get("summary_model", ""),
-        "embed_model": embed_model.strip() or existing.get("embed_model", ""),
-        "embed_dim": existing.get("embed_dim", 768),
+        "embed_model": new_embed_model,
+        "embed_dim": existing.get("embed_dim"),
     }
+
+    # Always probe when embed_model is set — catches stale dims from before auto-detect.
+    # On failure: hard-fail only if we have no stored dim at all; otherwise keep existing.
+    if new_embed_model:
+        dim, err = await _probe_embed_dim(instance)
+        if dim:
+            instance["embed_dim"] = dim
+        elif not existing.get("embed_dim"):
+            return HTMLResponse(_toast(False, f"Could not detect embed dim: {err}"))
+
     save_instance(db, instance)
     chat_provider.reload_from_db(db)
     embed_provider.reload_from_db(db)
+
+    # Warn if this is the active embed instance and dim no longer matches vec0
+    from app.services.ai_config import _ensure_migrated, _get_ai_section
+    from app.services.embeddings import verify_vec0_dim
+
+    _ensure_migrated(db)
+    ai = _get_ai_section(db)
+    dim_warning = ""
+    if ai.get("active_embed_id") == instance_id and instance.get("embed_dim"):
+        dim_ok, actual_dim = verify_vec0_dim(db, instance["embed_dim"])
+        if not dim_ok and actual_dim is not None:
+            dim_warning = (
+                f"Vector index dim mismatch: index={actual_dim}, "
+                f"config={instance['embed_dim']}. "
+                f"<button type='button' hx-post='/api/settings/ai/rebuild-index' "
+                f"hx-target='#rebuild-result' hx-swap='innerHTML' "
+                f"class='underline font-bold ml-1'>Rebuild index</button>"
+            )
 
     return templates.TemplateResponse(
         request,
@@ -210,6 +279,7 @@ async def save_instance_route(
             "health": {"ok": None, "detail": "Saved"},
             "models": [],
             "expanded": True,
+            "dim_warning": dim_warning,
         },
     )
 
@@ -359,7 +429,6 @@ async def set_active_instance(
             f"Vector index dim mismatch: index={actual}, new config={cfg.embed_dim}. "
             f'<button type="button" '
             f'hx-post="/api/settings/ai/rebuild-index" '
-            f'hx-include="[name=embed_dim],[name=embed_model]" '
             f'hx-target="#rebuild-result" hx-swap="innerHTML" '
             f'class="underline font-bold ml-1">Rebuild index</button>'
             f"</div>"
@@ -405,30 +474,16 @@ async def reindex_documents(db: Session = Depends(get_db)):
 
 @router.post("/rebuild-index", response_class=HTMLResponse)
 async def rebuild_index(
-    embed_model: str = Form(""),
-    embed_dim: int = Form(768),
     db: Session = Depends(get_db),
 ):
+    cfg = get_embed_config(db)
+    embed_dim = cfg.embed_dim
+
     if not (64 <= embed_dim <= 4096):
         return HTMLResponse(
-            _toast(False, "embed_dim must be between 64 and 4096"),
+            _toast(False, f"embed_dim={embed_dim} out of range 64–4096"),
             status_code=400,
         )
-
-    # Persist embed_dim and embed_model to the active embed instance
-    from app.services.ai_config import _ensure_migrated, _get_ai_section, get_instance
-
-    _ensure_migrated(db)
-    ai = _get_ai_section(db)
-    active_embed_id = ai.get("active_embed_id")
-    if active_embed_id:
-        inst = get_instance(db, active_embed_id)
-        if inst:
-            updated = dict(inst)
-            if embed_model:
-                updated["embed_model"] = embed_model
-            updated["embed_dim"] = embed_dim
-            save_instance(db, updated)
 
     embed_provider.reload_from_db(db)
 
@@ -451,7 +506,7 @@ async def rebuild_index(
         return HTMLResponse(
             _toast(
                 True,
-                f"Rebuilt: {result['reindexed']}/{result['total']} documents indexed{fail_note}",
+                f"Rebuilt at dim={embed_dim}: {result['reindexed']}/{result['total']} documents indexed{fail_note}",
             ),
         )
     except Exception as e:

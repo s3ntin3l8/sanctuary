@@ -16,7 +16,12 @@ def generate_embedding_task(self, doc_id: int):
     """Generate and store vector embedding for a document."""
     from app.dependencies import get_db_session
     from app.services.embeddings import generate_embedding
-    from app.services.pipeline_status import mark_completed, mark_failed, mark_started
+    from app.services.pipeline_status import (
+        mark_completed,
+        mark_failed,
+        mark_started,
+        schedule_retry,
+    )
 
     db = get_db_session()
     try:
@@ -29,13 +34,29 @@ def generate_embedding_task(self, doc_id: int):
         run_async(generate_embedding(doc_id))
     except Exception as e:
         logger.error(f"Embedding failed for doc {doc_id}: {e}", exc_info=True)
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            db2 = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.EMBEDDINGS,
+                    db2,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db2.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+
+        # All retries exhausted — terminal failure.
         db2 = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.EMBEDDINGS, db2, error=str(e))
         finally:
             db2.close()
-        if self.request.retries < self.max_retries:
-            raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db3 = get_db_session()

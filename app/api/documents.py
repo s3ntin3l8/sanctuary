@@ -294,17 +294,36 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
             f'<p class="text-[10px] text-originator-own">ready</p></div></div>'
         )
 
-    # In-flight: surface the currently-running (or first pending) stage.
+    # In-flight: prefer a retrying stage over a running one — when an attempt
+    # just failed and the next is queued, that's the signal the user wants.
+    retrying_stage = ""
+    retrying_attempt = None
+    retrying_max = None
+    retrying_next_at = ""
     running_stage = ""
     for stage_key, stage_rec in (doc.pipeline_stages or {}).items():
-        if isinstance(stage_rec, dict) and stage_rec.get("status") == "running":
+        if not isinstance(stage_rec, dict):
+            continue
+        st = stage_rec.get("status")
+        if st == "retrying" and not retrying_stage:
+            retrying_stage = stage_key
+            retrying_attempt = stage_rec.get("attempt")
+            retrying_max = stage_rec.get("max_attempts")
+            retrying_next_at = stage_rec.get("next_at") or ""
+        elif st == "running" and not running_stage:
             running_stage = stage_key
-            break
-    label = (
-        f"{running_stage.replace('_', ' ')}…"
-        if running_stage
-        else "queued for processing"
-    )
+
+    if retrying_stage:
+        parts = [f"retrying {retrying_stage.replace('_', ' ')}"]
+        if retrying_attempt and retrying_max:
+            parts.append(f"({retrying_attempt}/{retrying_max})")
+        if retrying_next_at:
+            parts.append(f"· next {escape(retrying_next_at[11:19])}")
+        label = " ".join(parts)
+    elif running_stage:
+        label = f"{running_stage.replace('_', ' ')}…"
+    else:
+        label = "queued for processing"
     return HTMLResponse(
         f'<div class="flex items-start gap-2 px-2 py-1.5 rounded bg-originator-own/5 border border-originator-own/15"'
         f' hx-get="/upload/status/{doc_id}" hx-trigger="every 2s" hx-swap="outerHTML">'
