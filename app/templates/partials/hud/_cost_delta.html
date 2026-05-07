@@ -1,57 +1,127 @@
-{# Cost delta — fixed direction vocabulary (enricher writes incoming|outgoing|ruling|none).
+{# Cost delta — kind-aware display (enricher writes typed signals).
    Required: doc
 #}
 <div class="px-5 py-4 border-b border-outline-variant/10">
   <h4 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-2.5 flex items-center gap-2">
     <span class="material-symbols-outlined text-sm">euro</span>
-    Cost Delta
+    Cost Signal
   </h4>
   {% if not doc.cost_delta and not doc.cost_candidates %}
-  <p class="text-[11px] italic text-outline">No cost data extracted.</p>
+  <p class="text-[11px] italic text-outline">No cost signal extracted.</p>
   {% else %}
 
   {% if doc.cost_delta %}
-  {% set amount = doc.cost_delta.amount if doc.cost_delta is not mapping else doc.cost_delta.get('amount', 0) %}
-  {% set direction = (doc.cost_delta.direction if doc.cost_delta is not mapping else doc.cost_delta.get('direction', 'none')) or 'none' %}
-  {% set description = (doc.cost_delta.description if doc.cost_delta is not mapping else doc.cost_delta.get('description', '')) or '' %}
-  {# Map enricher vocab: incoming=money received(green), outgoing=money owed(red), ruling=amber, none=hidden #}
-  {% set is_incoming = direction == 'incoming' %}
+  {% set cd = doc.cost_delta if doc.cost_delta is mapping else {} %}
+  {% set kind = cd.get('kind', '') %}
+  {% set amount = cd.get('amount') %}
+  {% set direction = cd.get('direction', 'none') or 'none' %}
+  {% set description = cd.get('description', '') or '' %}
+  {% set allocation = cd.get('allocation') %}
+
+  {# Kind chip #}
+  {% set kind_label = {
+    'streitwert': 'Streitwert',
+    'cost_ruling': 'Kostenentscheidung',
+    'invoice_lawyer': 'Kostenrechnung Anwalt',
+    'invoice_court': 'Gerichtskostenrechnung',
+    'vorschuss_lawyer': 'Vorschuss Anwalt',
+    'vorschuss_court': 'Vorschuss Gericht',
+    'pkh_grant': 'PKH bewilligt',
+    'pkh_denied': 'PKH abgelehnt',
+  }.get(kind, kind) %}
+  {% set kind_color = {
+    'streitwert': 'bg-primary/10 text-primary',
+    'cost_ruling': 'bg-amber-500/10 text-amber-500',
+    'invoice_lawyer': 'bg-red-500/15 text-red-400',
+    'invoice_court': 'bg-red-500/15 text-red-400',
+    'vorschuss_lawyer': 'bg-orange-500/15 text-orange-400',
+    'vorschuss_court': 'bg-orange-500/15 text-orange-400',
+    'pkh_grant': 'bg-green-500/15 text-green-400',
+    'pkh_denied': 'bg-surface-container text-on-surface-variant',
+  }.get(kind, 'bg-surface-container text-on-surface-variant') %}
+
+  <div class="mb-2.5">
+    <span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider {{ kind_color }}">{{ kind_label }}</span>
+  </div>
+
+  {# Streitwert: show value, fee computation placeholder #}
+  {% if kind == 'streitwert' %}
+  <div class="space-y-1">
+    <p class="text-sm font-bold font-mono text-primary">{{ format_eur(amount) if amount else '—' }}</p>
+    <p class="text-[10px] text-on-surface-variant">Verfahrenswert · treibt RVG/GKG-Berechnung</p>
+    {% if description %}<p class="text-[11px] text-on-surface-variant mt-1">{{ description }}</p>{% endif %}
+  </div>
+
+  {# Kostenentscheidung: show allocation, no amount #}
+  {% elif kind == 'cost_ruling' %}
+  <div class="space-y-1">
+    {% if allocation %}
+      {% if allocation.get('each_own') %}
+      <p class="text-sm font-bold text-amber-500">Jeder trägt seine Kosten</p>
+      <p class="text-[10px] text-on-surface-variant">§ 92 ZPO / § 81 FamFG</p>
+      {% elif allocation.get('loser') %}
+      {% set pct = (allocation.loser * 100)|round|int %}
+      <p class="text-sm font-bold text-originator-opposing">Verlierer trägt Kosten ({{ pct }}%)</p>
+      <p class="text-[10px] text-on-surface-variant">§ 91 ZPO</p>
+      {% else %}
+      <p class="text-sm font-bold text-amber-500">{{ allocation }}</p>
+      {% endif %}
+    {% else %}
+    <p class="text-sm text-on-surface-variant italic">Kostenverteilung nicht spezifiziert</p>
+    {% endif %}
+    {% if description %}<p class="text-[11px] text-on-surface-variant mt-1">{{ description }}</p>{% endif %}
+  </div>
+
+  {# Invoices and Vorschüsse: show amount directly #}
+  {% elif kind in ('invoice_lawyer', 'invoice_court', 'vorschuss_lawyer', 'vorschuss_court') %}
   {% set is_outgoing = direction == 'outgoing' %}
-  {% set is_ruling   = direction == 'ruling' %}
   <div class="flex items-start gap-3">
     <span class="material-symbols-outlined text-lg mt-0.5
-                 {% if is_incoming %}text-originator-own
-                 {% elif is_outgoing %}text-originator-opposing
-                 {% elif is_ruling %}text-amber-500
-                 {% else %}text-outline{% endif %}">
-      {% if is_incoming %}trending_up
-      {% elif is_outgoing %}trending_down
-      {% elif is_ruling %}gavel
-      {% else %}euro{% endif %}
+                 {% if is_outgoing %}text-originator-opposing{% else %}text-on-surface{% endif %}">
+      {% if is_outgoing %}trending_down{% else %}receipt{% endif %}
+    </span>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-black font-mono {% if is_outgoing %}text-originator-opposing{% else %}text-on-surface{% endif %}">
+        {% if is_outgoing %}&minus;{% endif %}{{ format_eur(amount) if amount else '—' }}
+        {% if cd.get('vat_included') == true %}<span class="text-[9px] font-normal text-on-surface-variant ml-1">inkl. MwSt.</span>{% endif %}
+        {% if cd.get('vat_included') == false %}<span class="text-[9px] font-normal text-on-surface-variant ml-1">zzgl. MwSt.</span>{% endif %}
+      </p>
+      {% if description %}<p class="text-[11px] text-on-surface-variant mt-0.5 leading-relaxed">{{ description }}</p>{% endif %}
+    </div>
+  </div>
+
+  {# PKH: grant/denial state #}
+  {% elif kind in ('pkh_grant', 'pkh_denied') %}
+  <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-lg {% if kind == 'pkh_grant' %}text-originator-own{% else %}text-outline{% endif %}">
+      {% if kind == 'pkh_grant' %}check_circle{% else %}cancel{% endif %}
+    </span>
+    <div>
+      <p class="text-sm font-bold {% if kind == 'pkh_grant' %}text-originator-own{% else %}text-on-surface-variant{% endif %}">
+        PKH {{ 'bewilligt' if kind == 'pkh_grant' else 'abgelehnt' }}
+      </p>
+      {% if description %}<p class="text-[11px] text-on-surface-variant mt-0.5">{{ description }}</p>{% endif %}
+    </div>
+  </div>
+
+  {# Fallback for unknown kinds #}
+  {% else %}
+  {% set is_incoming = direction == 'incoming' %}
+  {% set is_outgoing = direction == 'outgoing' %}
+  <div class="flex items-start gap-3">
+    <span class="material-symbols-outlined text-lg mt-0.5
+                 {% if is_incoming %}text-originator-own{% elif is_outgoing %}text-originator-opposing{% elif direction == 'ruling' %}text-amber-500{% else %}text-outline{% endif %}">
+      {% if is_incoming %}trending_up{% elif is_outgoing %}trending_down{% elif direction == 'ruling' %}gavel{% else %}euro{% endif %}
     </span>
     <div class="flex-1 min-w-0">
       <p class="text-sm font-black font-mono
-                {% if is_incoming %}text-originator-own
-                {% elif is_outgoing %}text-originator-opposing
-                {% elif is_ruling %}text-amber-500
-                {% else %}text-on-surface{% endif %}">
-        {% if is_incoming %}&plus;{% elif is_outgoing %}&minus;{% endif %}{{ format_eur(amount) }}
+                {% if is_incoming %}text-originator-own{% elif is_outgoing %}text-originator-opposing{% elif direction == 'ruling' %}text-amber-500{% else %}text-on-surface{% endif %}">
+        {% if is_incoming %}&plus;{% elif is_outgoing %}&minus;{% endif %}{{ format_eur(amount) if amount else '—' }}
       </p>
-      {% if description %}
-      <p class="text-[11px] text-on-surface-variant leading-relaxed mt-0.5">{{ description }}</p>
-      {% endif %}
-      {% if doc.case_id %}
-      <div id="cost-promote-{{ doc.id }}" class="mt-2">
-        <button hx-post="/document/{{ doc.id }}/cost-from-delta"
-                hx-target="#cost-promote-{{ doc.id }}"
-                hx-swap="innerHTML"
-                class="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded border border-outline/30 text-outline hover:bg-surface-container-high transition-colors">
-          + promote to cost
-        </button>
-      </div>
-      {% endif %}
+      {% if description %}<p class="text-[11px] text-on-surface-variant mt-0.5">{{ description }}</p>{% endif %}
     </div>
   </div>
+  {% endif %}
 
   {% elif doc.cost_candidates %}
   {% set amount_rows = [] %}
@@ -61,16 +131,14 @@
     {% endif %}
   {% endfor %}
   {% if amount_rows %}
-  <p class="text-[9px] italic text-outline mb-2">Regex-detected at ingest · AI delta pending Phase 4</p>
+  <p class="text-[9px] italic text-outline mb-2">Regex-detected at ingest · AI signal pending</p>
   <ul class="space-y-1">
     {% for c in amount_rows[:5] %}
     {% set val = c.value if c is not mapping else c.get('value', 0) %}
     {% set ctx = c.context if c is not mapping else c.get('context', '') %}
     <li class="flex items-start gap-2 text-[11px]">
       <span class="font-mono font-bold text-on-surface shrink-0">{{ format_eur(val) }}</span>
-      {% if ctx %}
-      <span class="text-on-surface-variant line-clamp-1 italic">&hellip;{{ ctx }}&hellip;</span>
-      {% endif %}
+      {% if ctx %}<span class="text-on-surface-variant line-clamp-1 italic">&hellip;{{ ctx }}&hellip;</span>{% endif %}
     </li>
     {% endfor %}
     {% if amount_rows|length > 5 %}

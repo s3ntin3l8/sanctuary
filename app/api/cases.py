@@ -15,6 +15,7 @@ from app.models.database import (
 )
 from app.models.enums import (
     CaseStatus,
+    CaseType,
     Jurisdiction,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -196,6 +197,8 @@ async def update_case(
     case_id: str,
     title: str = Form(None),
     status: CaseStatus = Form(None),
+    case_type: CaseType = Form(None),
+    assume_worst_case: bool = Form(None),
     db: Session = Depends(get_db),
 ):
     """Update a case and return HX-Refresh header."""
@@ -210,10 +213,13 @@ async def update_case(
     if status is not None:
         case.status = status
         if status == CaseStatus.CLOSED:
-            # Close all proceedings of this case
             db.query(Proceeding).filter(Proceeding.case_id == case_id).update(
                 {"status": ProceedingStatus.CLOSED}
             )
+    if case_type is not None:
+        case.case_type = case_type
+    if assume_worst_case is not None:
+        case.assume_worst_case = assume_worst_case
 
     db.commit()
     return Response(headers={"HX-Refresh": "true"})

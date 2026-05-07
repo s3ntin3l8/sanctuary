@@ -26,6 +26,24 @@
                                         <option value="closed"     {% if case.status == 'closed' %}selected{% endif %}>Closed</option>
                                     </select>
                                 </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-on-surface-variant">Case Type</label>
+                                    <select name="case_type" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
+                                        <option value="civil"          {% if case.case_type == 'civil' %}selected{% endif %}>Zivilsache (Civil)</option>
+                                        <option value="family"         {% if case.case_type == 'family' %}selected{% endif %}>Familiensache (Family)</option>
+                                        <option value="administrative" {% if case.case_type == 'administrative' %}selected{% endif %}>Verwaltungssache (Administrative)</option>
+                                        <option value="criminal"       {% if case.case_type == 'criminal' %}selected{% endif %}>Strafsache (Criminal)</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <input type="checkbox" id="assume-worst-case-{{ case.id }}" name="assume_worst_case" value="true"
+                                           {% if case.assume_worst_case %}checked{% endif %}
+                                           class="rounded border-outline-variant">
+                                    <div>
+                                        <label for="assume-worst-case-{{ case.id }}" class="text-xs font-medium text-on-surface cursor-pointer">Worst-Case-Prognose</label>
+                                        <p class="text-[10px] text-on-surface-variant">Gegnerische Anwaltskosten in Risikoberechnung einbeziehen. Bei Familiensachen standardmäßig deaktiviert (§81 FamFG).</p>
+                                    </div>
+                                </div>
                                 <div class="flex justify-end pt-2">
                                     <button type="submit" class="bg-primary text-on-primary px-3 py-1.5 rounded text-sm font-medium">Save Case</button>
                                 </div>

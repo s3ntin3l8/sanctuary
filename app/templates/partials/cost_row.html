@@ -63,6 +63,15 @@
         {% if cost.notes %}
         <p class="text-[10px] text-on-surface-variant italic mt-1 max-w-xs">{{ cost.notes }}</p>
         {% endif %}
+        {% if cost.offsets_cost_id %}
+        <p class="text-[9px] text-primary mt-1 flex items-center gap-1">
+          <span class="material-symbols-outlined text-[11px]">link</span>
+          offsets #{{ cost.offsets_cost_id }}
+        </p>
+        {% endif %}
+        {% if cost.auto_created %}
+        <p class="text-[9px] text-on-surface-variant/60 mt-0.5">auto</p>
+        {% endif %}
     </td>
 
     {# Value in Dispute + Factor #}
@@ -88,15 +97,22 @@
     </td>
 
     {# Paid / Reimbursed #}
+    {% set paid = cost.amount_paid or 0 %}
+    {% set gross = cost.amount_gross or 0 %}
+    {% set reimbursed = cost.amount_reimbursed or 0 %}
+    {% set overpayment = [paid - gross, 0]|max %}
     <td class="px-4 py-3 align-top text-right whitespace-nowrap">
-        {% if cost.amount_paid > 0 %}
-        {{ inline_edit("amount_paid", cost.amount_paid, format_eur) }}
+        {% if paid > 0 %}
+        {{ inline_edit("amount_paid", paid, format_eur) }}
         <p class="text-[10px] text-on-surface-variant">paid</p>
-        {% elif cost.amount_reimbursed > 0 %}
-        {{ inline_edit("amount_reimbursed", cost.amount_reimbursed, format_eur) }}
+        {% elif reimbursed > 0 %}
+        {{ inline_edit("amount_reimbursed", reimbursed, format_eur) }}
         <p class="text-[10px] text-on-surface-variant">reimbursed</p>
         {% else %}
         <span class="text-[10px] text-on-surface-variant">—</span>
+        {% endif %}
+        {% if overpayment > 0 %}
+        <p class="text-[9px] font-bold text-originator-own mt-1">&#8617; {{ format_eur(overpayment) }} erwartet</p>
         {% endif %}
     </td>
 

@@ -299,6 +299,95 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
     return total_cents
 
 
+def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
+    """Return a per-proceeding fee breakdown for the financials UI.
+
+    Each entry contains proceeding object, streitwert, allocation source label,
+    and computed fee components (own lawyer, court share, opposing share, subtotal).
+    Proceedings with no streitwert signal are omitted.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return []
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return []
+
+    is_family = (
+        hasattr(case, "case_type")
+        and case.case_type is not None
+        and case.case_type == CaseType.FAMILY
+    )
+
+    proceedings = (
+        db.query(Proceeding)
+        .filter(Proceeding.case_id == case_id)
+        .order_by(Proceeding.started_at.asc().nullslast(), Proceeding.id.asc())
+        .all()
+    )
+
+    result = []
+    propagated_allocation: dict | None = None
+
+    for proc in proceedings:
+        docs = (
+            db.query(Document)
+            .filter(
+                Document.proceeding_id == proc.id,
+                Document.cost_delta.isnot(None),
+            )
+            .all()
+        )
+
+        streitwert = _latest_streitwert(docs)
+        if not streitwert or streitwert <= 0:
+            continue
+
+        ruling_alloc = _latest_ruling_allocation(docs)
+        if ruling_alloc:
+            alloc = ruling_alloc
+            propagated_allocation = ruling_alloc
+        elif propagated_allocation:
+            alloc = {**propagated_allocation, "source": "propagated"}
+        elif is_family:
+            alloc = default_allocation(CaseType.FAMILY, proc.court_level)
+        elif getattr(case, "assume_worst_case", True):
+            alloc = {
+                "own_court_share": 1.0,
+                "own_opposing_share": 1.0,
+                "source": "worst_case",
+            }
+        else:
+            alloc = default_allocation(CaseType.CIVIL, proc.court_level)
+
+        own = lawyer_fees(streitwert, proc.court_level, is_family)
+        c_fee = court_fees(streitwert, proc.court_level, is_family)
+        opp_gross = (
+            lawyer_fees(streitwert, proc.court_level, is_family)["gross"]
+            if alloc["own_opposing_share"] > 0
+            else 0.0
+        )
+
+        result.append(
+            {
+                "proceeding": proc,
+                "streitwert": streitwert,
+                "allocation_source": alloc.get("source", ""),
+                "own_lawyer_gross": own["gross"],
+                "own_lawyer_breakdown": own.get("breakdown", {}),
+                "court_fee": c_fee,
+                "court_fee_share": alloc["own_court_share"],
+                "court_fee_charged": c_fee * alloc["own_court_share"],
+                "opposing_gross": opp_gross * alloc["own_opposing_share"],
+                "subtotal": own["gross"]
+                + c_fee * alloc["own_court_share"]
+                + opp_gross * alloc["own_opposing_share"],
+            }
+        )
+
+    return result
+
+
 class CaseService:
     """Service layer for Case operations."""
 

@@ -37,7 +37,11 @@ from app.models.enums import (
     UserReactionType,
 )
 from app.services.case_graph_service import CaseGraphService
-from app.services.case_service import CaseService, _compute_dormancy_alert
+from app.services.case_service import (
+    CaseService,
+    _compute_dormancy_alert,
+    build_proceeding_exposure,
+)
 from app.services.claim_service import ClaimService
 
 
@@ -152,16 +156,17 @@ class CaseDashboardService:
         dormancy_alert = _compute_dormancy_alert(case, self.db)
 
         # --- Financials (factual: total exposure in cents) --------------
-        last_cost_doc = (
+        cost_delta_docs = (
             self.db.query(Document)
             .filter(Document.case_id == case_id, Document.cost_delta.isnot(None))
             .order_by(Document.issued_date.desc().nullslast(), Document.id.desc())
-            .first()
+            .all()
         )
         financials = {
             "total_cost_exposure": case.total_cost_exposure or 0,
-            "last_cost_delta_doc": last_cost_doc,
+            "cost_delta_docs": cost_delta_docs,
             "grouped_costs": grouped_costs,
+            "proceeding_exposure": build_proceeding_exposure(case_id, self.db),
         }
 
         # --- Alpine bootstrap payload ----------------------------------
