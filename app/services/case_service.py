@@ -54,6 +54,38 @@ def seed_triage_case(db: Session) -> None:
 DORMANCY_DAYS = 90
 
 
+def _is_better_title(new: str, current: str | None, internal_id: str) -> bool:
+    """Decide whether to refresh a draft case's title from a fresh AI extract.
+
+    "Better" means:
+    - the current title is the bare fallback (`Neuer Fall <id>`) or empty;
+    - or the current title ends with a trailing separator artifact (e.g.
+      "Hansen ./. Liu -" leftover from `_derive_case_title_from_subject`);
+    - or the new title is meaningfully longer and richer (suggesting it
+      contains the matter "(Sorgerecht)", not just party names).
+
+    Returns False when current is already a good user-edit-quality title
+    and the new one isn't a clear improvement — avoids title churn during
+    multi-doc ingestion.
+    """
+    new = (new or "").strip()
+    current = (current or "").strip()
+    if not new:
+        return False
+    if new == current:
+        return False
+    if not current:
+        return True
+    if current == f"Neuer Fall {internal_id}":
+        return True
+    # Trailing-dash / colon / slash artifacts from subject parsing
+    if current.rstrip().endswith(("-", ":", "/", "–")):
+        return True
+    # New title is at least 50% longer AND contains a matter qualifier the
+    # current one lacks (e.g., parenthesized "(Sorgerecht)").
+    return len(new) > len(current) * 1.5 and "(" in new and "(" not in current
+
+
 def _derive_case_title_from_subject(
     subject: str | None, internal_id: str
 ) -> str | None:
@@ -80,18 +112,36 @@ def get_or_create_case_from_reference(
     court_name: str | None = None,
     court_level: ProceedingCourtLevel | None = None,
     batch_subject: str | None = None,
+    ai_case_title: str | None = None,
     is_draft: bool = False,
 ) -> tuple[Case, Proceeding | None, bool]:
     """Return (case, proceeding, created).
 
     Race-safe: SELECT first, then INSERT only when missing. Never overwrites
     an existing case's is_draft flag. Caller is responsible for db.flush()/commit().
+
+    Title logic:
+    - On creation: prefer the AI-extracted `ai_case_title` (already a clean
+      "Schmidt ./. Schmidt (Sorgerecht)"-style title from the metadata stage)
+      over `_derive_case_title_from_subject(batch_subject, …)`, which often
+      leaves trailing-dash artifacts after stripping " wg. " etc.
+    - On retry while case is still a draft: refresh the existing title from
+      `ai_case_title` if the new title looks more useful. Once the user
+      ratifies the case (is_draft=False), the title is locked — manual edits
+      survive.
     """
     from app.services.ingestion.extractors import infer_court_level, normalize_az_court
 
     az_court = normalize_az_court(az_court)
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
+        if (
+            existing.is_draft
+            and ai_case_title
+            and _is_better_title(ai_case_title, existing.title, internal_id)
+        ):
+            existing.title = ai_case_title.strip()[:120]
+            db.flush()
         matched_proc = None
         if az_court:
             matched_proc = (
@@ -104,7 +154,8 @@ def get_or_create_case_from_reference(
         return existing, matched_proc, False
 
     title = (
-        _derive_case_title_from_subject(batch_subject, internal_id)
+        (ai_case_title.strip()[:120] if ai_case_title else None)
+        or _derive_case_title_from_subject(batch_subject, internal_id)
         or f"Neuer Fall {internal_id}"
     )
     new_case = Case(

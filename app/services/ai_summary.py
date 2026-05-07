@@ -199,8 +199,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             from app.services.case_service import get_or_create_case_from_reference
 
             batch_subject = doc.ingest_batch.subject if doc.ingest_batch else None
-            # Use AI-extracted case title if available
-            case_title = ai_case_title or batch_subject
 
             # Derive court_name from Phase 1 sender when it looks like a court letterhead
             court_name_for_proc = (
@@ -214,7 +212,8 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 internal_id=internal_id,
                 az_court=az_court,
                 court_name=court_name_for_proc,
-                batch_subject=case_title,
+                batch_subject=batch_subject,
+                ai_case_title=ai_case_title,
                 is_draft=True,
             )
             db.flush()
