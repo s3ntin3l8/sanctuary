@@ -1,0 +1,24 @@
+{# Triage column headers with sort links. Required context: sort (str) #}
+<div class="flex items-center gap-4 px-8 py-2 text-[10.5px] uppercase tracking-widest font-headline font-semibold border-b border-outline-variant text-on-surface-variant bg-surface-low flex-shrink-0">
+    {# stripe placeholder — matches triage row w-[3px] stripe #}
+    <div class="w-[3px] flex-shrink-0"></div>
+
+    <a href="?sort=received"
+       class="w-[120px] flex-shrink-0 text-left transition-colors focus-ring {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
+        Received
+    </a>
+
+    <a href="?sort=docs"
+       class="w-[240px] flex-shrink-0 text-left transition-colors focus-ring {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
+        Docs
+    </a>
+
+    <span class="flex-1 min-w-0">Preview</span>
+
+    <a href="?sort=status"
+       class="w-[260px] flex-shrink-0 text-left transition-colors focus-ring {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
+        Status / Case
+    </a>
+
+    <span class="flex-shrink-0 min-w-[110px] text-right">Actions</span>
+</div>

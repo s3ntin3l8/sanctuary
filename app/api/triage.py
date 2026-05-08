@@ -38,12 +38,13 @@ async def triage_page(
     request: Request,
     limit: int = 50,
     offset: int = 0,
+    sort: str = "received",
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.models.database import Proceeding
 
-    bundles = triage_service.get_triage_bundles(limit=limit, offset=offset)
+    bundles = triage_service.get_triage_bundles(limit=limit, offset=offset, sort=sort)
     slicing_queue = triage_service.get_slicing_queue()
     all_cases = CaseRepository(db).list_for_picker()
     total_docs = sum(b.doc_count for b in bundles)
@@ -98,6 +99,7 @@ async def triage_page(
         mock_status_by_key=mock_status_by_key,
         limit=limit,
         offset=offset,
+        sort=sort,
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
         OriginatorType=OriginatorType,

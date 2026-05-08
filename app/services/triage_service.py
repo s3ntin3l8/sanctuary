@@ -252,7 +252,9 @@ class TriageService:
 
     # --- reads ----------------------------------------------------------------
 
-    def get_triage_bundles(self, limit: int = 50, offset: int = 0) -> list[BundleView]:
+    def get_triage_bundles(
+        self, limit: int = 50, offset: int = 0, sort: str = "received"
+    ) -> list[BundleView]:
         """All triage documents grouped into bundles."""
         from sqlalchemy import and_, or_
         from sqlalchemy.orm import contains_eager
@@ -350,16 +352,31 @@ class TriageService:
                     documents=[doc],
                 )
 
-        # Urgency-first: bundles with more review flags float to the top.
-        # Triage is a strategy session — surface what needs attention before
-        # what's just recent. Ties broken by recency.
-        ordered = sorted(
-            bundles.values(),
-            key=lambda b: (
-                0 if (b.unresolved_review_count > 0 or b.to_confirm_count > 0) else 1,
-                -b.received_at.timestamp(),
-            ),
-        )
+        _STATUS_ORDER = {
+            "stuck": 0,
+            "needs_classification": 1,
+            "needs_review": 2,
+            "processing": 3,
+        }
+
+        if sort == "docs":
+            ordered = sorted(bundles.values(), key=lambda b: b.doc_count, reverse=True)
+        elif sort == "status":
+            ordered = sorted(
+                bundles.values(),
+                key=lambda b: _STATUS_ORDER.get(b.mock_status, 99),
+            )
+        else:
+            # "received" (default) — urgency-first, recency as tiebreaker.
+            ordered = sorted(
+                bundles.values(),
+                key=lambda b: (
+                    0
+                    if (b.unresolved_review_count > 0 or b.to_confirm_count > 0)
+                    else 1,
+                    -(b.received_at.timestamp() if b.received_at else 0),
+                ),
+            )
 
         for bundle in ordered:
             self.enrich_bundle(bundle)
