@@ -118,6 +118,184 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
 
 
 @pytest.mark.unit
+def test_court_doc_claims_arrive_established(db_session, sample_case):
+    """Wave 1 invariant: claims from COURT-originator documents arrive with
+    status=ESTABLISHED (procedural reality), not the default ASSERTED."""
+    court_doc = Document(
+        title="Beschluss LG Ingolstadt",
+        content="Die Beschwerde wird zurückgewiesen.",
+        case_id=sample_case.id,
+        significance_tier=SignificanceTier.CRITICAL,
+        originator_type=OriginatorType.COURT,
+        ai_summary={
+            "legal_significance": "Court ruling",
+            "required_action": "none",
+            "financial_impact": "none",
+        },
+    )
+    db_session.add(court_doc)
+    db_session.commit()
+    db_session.refresh(court_doc)
+
+    ai_result = {
+        "new_claims": [
+            {
+                "claim_text": "The court rejected the complaint against the order",
+                "claim_type": "procedural",
+                "excerpt": "Die Beschwerde wird zurückgewiesen",
+            }
+        ],
+        "evidence_links": [],
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(court_doc.id)
+
+    claims = (
+        db_session.query(Claim).filter(Claim.source_document_id == court_doc.id).all()
+    )
+    assert len(claims) == 1
+    assert claims[0].status == ClaimStatus.ESTABLISHED, (
+        "court-originated claim must arrive ESTABLISHED, not ASSERTED"
+    )
+
+
+@pytest.mark.unit
+def test_non_court_doc_claims_arrive_asserted(db_session, significant_doc):
+    """Mirror invariant: non-COURT documents (significant_doc fixture is OWN)
+    keep the default ASSERTED status — only court findings short-circuit the
+    truth-status workflow."""
+    ai_result = {
+        "new_claims": [
+            {
+                "claim_text": "The contract was signed under § 433 BGB on 01.01.2024",
+                "claim_type": "legal",
+                "excerpt": "Vertrag",
+            }
+        ],
+        "evidence_links": [],
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(significant_doc.id)
+
+    claims = (
+        db_session.query(Claim)
+        .filter(Claim.source_document_id == significant_doc.id)
+        .all()
+    )
+    assert len(claims) == 1
+    assert claims[0].status == ClaimStatus.ASSERTED
+
+
+@pytest.mark.unit
+def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_case):
+    """Wave 1 invariant: an ESTABLISHED claim (typically a court finding) is
+    not auto-flipped to REFUTED when a later document takes a refutes stance.
+    The procedural reality holds until appellate review changes it explicitly.
+
+    Note: ESTABLISHED claims are not normally in `get_open_in_case`'s candidate
+    set (which filters to ASSERTED+CONTESTED), so the in-extractor guard is
+    defensive layering. We simulate the candidate list directly to exercise it.
+    """
+    other_doc = Document(
+        title="Earlier court ruling",
+        content="Established by the court.",
+        case_id=sample_case.id,
+        significance_tier=SignificanceTier.CRITICAL,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add(other_doc)
+    db_session.flush()
+
+    established_claim = Claim(
+        case_id=sample_case.id,
+        source_document_id=other_doc.id,
+        claim_text="The court found that suspension under § 180 III ZVG is not warranted",
+        claim_type=ClaimType.LEGAL,
+        status=ClaimStatus.ESTABLISHED,
+        first_made_at=datetime.now(),
+        last_updated_at=datetime.now(),
+    )
+    db_session.add(established_claim)
+    db_session.commit()
+    db_session.refresh(established_claim)
+
+    ai_result = {
+        "new_claims": [],
+        "evidence_links": [
+            {
+                "claim_id": established_claim.id,
+                "role": "refutes",
+                "excerpt": "We dispute this finding",
+            }
+        ],
+    }
+
+    # Force the candidate list to include the ESTABLISHED claim so the
+    # in-extractor guard is the thing being tested.
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+        patch(
+            "app.repositories.claim.ClaimRepository.get_open_in_case",
+            return_value=[established_claim],
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(significant_doc.id)
+
+    db_session.expire_all()
+    survivor = db_session.get(Claim, established_claim.id)
+    assert survivor.status == ClaimStatus.ESTABLISHED, (
+        "ESTABLISHED claim must hold against an opposing-party REFUTES; only "
+        "user/appellate action should flip it"
+    )
+    # The evidence row IS still recorded — we're just not auto-flipping status.
+    refutes_evidence = (
+        db_session.query(ClaimEvidence)
+        .filter(
+            ClaimEvidence.claim_id == established_claim.id,
+            ClaimEvidence.role == ClaimEvidenceRole.REFUTES,
+        )
+        .all()
+    )
+    assert len(refutes_evidence) == 1, "REFUTES evidence still recorded for the audit"
+
+
+@pytest.mark.unit
 def test_evidence_link_contests_sets_status(
     db_session, significant_doc, existing_claim
 ):
