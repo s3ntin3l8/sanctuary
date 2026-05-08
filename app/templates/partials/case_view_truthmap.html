@@ -1,7 +1,7 @@
 <div id="truthmap-panel" class="space-y-4">
 
-  {# Filter chips #}
-  <div class="flex gap-2 flex-wrap">
+  {# Filter chips + Wave 2C find-duplicates trigger #}
+  <div class="flex gap-2 flex-wrap items-center">
     {% for f, label in [('open','Open'),('established','Established'),('refuted','Refuted'),('all','All')] %}
     <button hx-get="/cases/{{ case.id }}/truthmap?filter={{ f }}"
             hx-target="#truthmap-panel"
@@ -15,7 +15,65 @@
       {% endif %}
     </button>
     {% endfor %}
+    <span class="ml-auto" id="find-duplicates-slot">
+      <button hx-post="/cases/{{ case.id }}/claims/find-duplicates"
+              hx-target="#find-duplicates-slot"
+              hx-swap="innerHTML"
+              hx-disabled-elt="this"
+              class="text-xs px-2.5 py-1 rounded-full border border-outline-variant/60 text-on-surface-variant hover:border-primary/50 hover:text-primary transition-colors inline-flex items-center gap-1.5"
+              title="Run the dedup judge over all claims in this case to surface historical duplicates as merge proposals">
+        <span class="material-symbols-outlined text-sm">spellcheck</span>
+        Find Duplicates
+        <span class="htmx-indicator inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+      </button>
+    </span>
   </div>
+
+  {# Wave 2C: pending merge proposals scoped to this case. #}
+  {% if truth_map.pending_merges %}
+  <div class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+    <h4 class="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-sm">merge</span>
+      Pending Merges ({{ truth_map.pending_merges | length }})
+    </h4>
+    {% for m in truth_map.pending_merges %}
+    <div class="text-xs px-2 py-1.5 rounded border border-amber-500/20 bg-surface-container/40"
+         x-data="{ resolved: false }" x-show="!resolved">
+      <div class="text-on-surface-variant">
+        <span class="font-mono">#{{ m.new_claim_id }}</span>
+        <span class="text-outline">≈</span>
+        <span class="font-mono">#{{ m.existing_claim_id }}</span>
+        <span class="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded ml-1
+                     {% if m.confidence == 'high' %}bg-amber-500/20 text-amber-700 dark:text-amber-300
+                     {% else %}bg-surface-container-highest text-on-surface-variant{% endif %}">
+          {{ m.confidence }}
+        </span>
+      </div>
+      <div class="mt-1 grid grid-cols-1 md:grid-cols-2 gap-2 text-on-surface/80">
+        <div class="line-clamp-2"><span class="text-outline">new:</span> {{ m.new_claim_text }}</div>
+        <div class="line-clamp-2"><span class="text-outline">existing:</span> {{ m.existing_claim_text }}</div>
+      </div>
+      {% if m.rationale %}
+      <div class="mt-1 text-[10px] italic text-on-surface-variant/70 line-clamp-2">{{ m.rationale }}</div>
+      {% endif %}
+      <div class="flex gap-1 mt-1.5">
+        <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/confirm"
+                hx-swap="none"
+                @htmx:after-request="resolved = true"
+                class="text-[10px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
+          ✓ Merge
+        </button>
+        <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/dismiss"
+                hx-swap="none"
+                @htmx:after-request="resolved = true"
+                class="text-[10px] font-bold px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
+          ✕ Dismiss
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {# Claim groups #}
   {% if truth_map.groups %}

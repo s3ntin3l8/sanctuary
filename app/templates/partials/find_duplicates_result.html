@@ -1,0 +1,13 @@
+{# Wave 2C: HTMX response for POST /cases/{id}/claims/find-duplicates.
+   Replaces the find-duplicates button with a status line + a refresh
+   trigger that reloads the Truth Map so the new merge proposals show. #}
+<div id="find-duplicates-result" class="text-xs px-2.5 py-1 rounded-full inline-flex items-center gap-2 border border-primary/30 bg-primary/5 text-primary"
+     hx-get="/cases/{{ case.id }}/truthmap?filter=all"
+     hx-trigger="load delay:200ms"
+     hx-target="#truthmap-panel"
+     hx-swap="outerHTML">
+  <span class="material-symbols-outlined text-sm">spellcheck</span>
+  Scanned {{ stats.scanned }} claims · {{ stats.judge_calls }} judge calls ·
+  <span class="font-semibold">{{ stats.proposals_created }} new</span>
+  {% if pending_count %}({{ pending_count }} pending total){% endif %}
+</div>

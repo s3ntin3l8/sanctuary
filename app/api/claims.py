@@ -9,6 +9,7 @@ from app.models.database import (
     Case,
     Claim,
     ClaimEvidence,
+    ClaimMergeProposal,
     Document,
 )
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, UserReactionType
@@ -151,6 +152,46 @@ async def toggle_claim_precedent(
                 "UserReactionType": UserReactionType,
             }
         )
+    )
+
+
+@router.post("/cases/{case_id}/claims/find-duplicates")
+async def find_duplicates_in_case(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Wave 2C: run the dedup judge over every claim in this case to
+    surface historical duplicates. Returns an HTML status fragment for
+    the Truth Map view to swap in."""
+    if db.query(Case).filter(Case.id == case_id).first() is None:
+        return HTMLResponse("<p>Case not found</p>", status_code=404)
+
+    from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
+
+    stats = find_duplicates_for_case(case_id, db)
+    db.commit()
+
+    pending_count = (
+        db.query(ClaimMergeProposal)
+        .join(ClaimEvidence, ClaimEvidence.claim_id == ClaimMergeProposal.new_claim_id)
+        .join(Document, Document.id == ClaimEvidence.document_id)
+        .filter(
+            Document.case_id == case_id,
+            ClaimMergeProposal.status == "PENDING",
+        )
+        .distinct()
+        .count()
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "partials/find_duplicates_result.html",
+        {
+            "case": db.query(Case).filter(Case.id == case_id).first(),
+            "stats": stats,
+            "pending_count": pending_count,
+        },
     )
 
 
