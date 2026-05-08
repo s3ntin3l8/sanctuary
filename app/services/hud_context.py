@@ -170,6 +170,35 @@ def build_hud_context(
         reverse=True,
     )
 
+    # Wave 2B: AI-proposed merges (this doc's new claim ≈ existing claim)
+    # and evidence-links (this doc takes a stance on a prior claim) await
+    # user confirmation. Surface them grouped by claim (merges) and as a
+    # standalone block (evidence proposals targeting OTHER docs' claims).
+    from app.services.claim_proposal_service import (
+        pending_evidence_proposals_for_document,
+        pending_merge_proposals_for_claim,
+    )
+
+    merge_proposals_by_claim_id: dict[int, list] = {}
+    for c in grounds:
+        ps = pending_merge_proposals_for_claim(c.id, db)
+        if ps:
+            merge_proposals_by_claim_id[c.id] = ps
+    evidence_proposals_for_doc = pending_evidence_proposals_for_document(doc.id, db)
+    # Hydrate target_claim relationship eagerly so the template can show
+    # "refutes claim #42 — '<claim text>'".
+    proposal_target_claim_ids = {p.target_claim_id for p in evidence_proposals_for_doc}
+    proposal_targets = {}
+    if proposal_target_claim_ids:
+        from app.models.database import Claim as _Claim
+
+        proposal_targets = {
+            c.id: c
+            for c in db.query(_Claim)
+            .filter(_Claim.id.in_(proposal_target_claim_ids))
+            .all()
+        }
+
     _claims_stage = (doc.pipeline_stages or {}).get("claims", {})
     _claims_stage_status = _claims_stage.get("status", "pending")
     if _claims_stage_status == "skipped":
@@ -239,6 +268,9 @@ def build_hud_context(
         "reactions": reactions,
         "grounds": grounds,
         "claims_status": claims_status,
+        "merge_proposals_by_claim_id": merge_proposals_by_claim_id,
+        "evidence_proposals_for_doc": evidence_proposals_for_doc,
+        "proposal_targets": proposal_targets,
         "actions": actions,
         "relationships_out": relationships_out,
         "relationships_in": relationships_in,

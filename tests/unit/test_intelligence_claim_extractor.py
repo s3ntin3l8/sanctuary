@@ -304,10 +304,27 @@ def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_
     db_session.expire_all()
     survivor = db_session.get(Claim, established_claim.id)
     assert survivor.status == ClaimStatus.ESTABLISHED, (
-        "ESTABLISHED claim must hold against an opposing-party REFUTES; only "
-        "user/appellate action should flip it"
+        "ESTABLISHED claim must hold against a REFUTES proposal; the user-"
+        "confirmation gate (Wave 2B) is the only path to a status change."
     )
-    # The evidence row IS still recorded — we're just not auto-flipping status.
+    # Wave 2B: evidence_links produce ClaimEvidenceProposal rows, not direct
+    # ClaimEvidence rows. The proposal records the REFUTES intent for audit;
+    # status only changes when the user confirms (and the confirm path
+    # respects the ESTABLISHED guard).
+    from app.models.database import ClaimEvidenceProposal
+    from app.models.enums import ProposalStatus
+
+    refutes_proposals = (
+        db_session.query(ClaimEvidenceProposal)
+        .filter(
+            ClaimEvidenceProposal.target_claim_id == established_claim.id,
+            ClaimEvidenceProposal.proposed_role == ClaimEvidenceRole.REFUTES,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+        .all()
+    )
+    assert len(refutes_proposals) == 1
+    # No ClaimEvidence row was written — that's the whole point.
     refutes_evidence = (
         db_session.query(ClaimEvidence)
         .filter(
@@ -316,13 +333,20 @@ def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_
         )
         .all()
     )
-    assert len(refutes_evidence) == 1, "REFUTES evidence still recorded for the audit"
+    assert len(refutes_evidence) == 0
 
 
 @pytest.mark.unit
-def test_evidence_link_contests_sets_status(
+def test_evidence_link_contests_creates_proposal_and_confirm_flips_status(
     db_session, significant_doc, existing_claim
 ):
+    """Wave 2B: evidence_links from the extractor become pending
+    ClaimEvidenceProposal rows; the user's confirm action is what writes
+    the ClaimEvidence row and (where applicable) flips claim status."""
+    from app.models.database import ClaimEvidenceProposal
+    from app.models.enums import ProposalStatus
+    from app.services.claim_proposal_service import confirm_evidence
+
     ai_result = {
         "new_claims": [],
         "evidence_links": [
@@ -350,25 +374,53 @@ def test_evidence_link_contests_sets_status(
         extract(significant_doc.id)
 
     db_session.expire_all()
-    updated = db_session.get(Claim, existing_claim.id)
-    assert updated.status == ClaimStatus.CONTESTED
 
-    # significant_doc's CONTESTS row sits alongside existing_claim's ASSERTS
-    # row (the original assertion from the fixture's other_doc).
+    # 1) Status hasn't changed yet — proposal is pending.
+    pre_confirm = db_session.get(Claim, existing_claim.id)
+    assert pre_confirm.status == ClaimStatus.ASSERTED
+
+    # 2) A pending proposal exists.
+    proposal = (
+        db_session.query(ClaimEvidenceProposal)
+        .filter(
+            ClaimEvidenceProposal.target_claim_id == existing_claim.id,
+            ClaimEvidenceProposal.source_document_id == significant_doc.id,
+            ClaimEvidenceProposal.proposed_role == ClaimEvidenceRole.CONTESTS,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+        .first()
+    )
+    assert proposal is not None
+
+    # 3) User confirms — evidence row written, status flipped.
+    confirm_evidence(proposal.id, db_session)
+    db_session.commit()
+    db_session.expire_all()
+
+    post = db_session.get(Claim, existing_claim.id)
+    assert post.status == ClaimStatus.CONTESTED
+
     evidence_from_significant = (
         db_session.query(ClaimEvidence)
         .filter(
             ClaimEvidence.claim_id == existing_claim.id,
             ClaimEvidence.document_id == significant_doc.id,
+            ClaimEvidence.role == ClaimEvidenceRole.CONTESTS,
         )
         .all()
     )
     assert len(evidence_from_significant) == 1
-    assert evidence_from_significant[0].role == ClaimEvidenceRole.CONTESTS
 
 
 @pytest.mark.unit
-def test_evidence_link_refutes_sets_status(db_session, significant_doc, existing_claim):
+def test_evidence_link_refutes_creates_proposal_and_confirm_flips_status(
+    db_session, significant_doc, existing_claim
+):
+    """Wave 2B: same proposal-then-confirm flow for the refutes role."""
+    from app.models.database import ClaimEvidenceProposal
+    from app.models.enums import ProposalStatus
+    from app.services.claim_proposal_service import confirm_evidence
+
     ai_result = {
         "new_claims": [],
         "evidence_links": [
@@ -396,6 +448,24 @@ def test_evidence_link_refutes_sets_status(db_session, significant_doc, existing
         extract(significant_doc.id)
 
     db_session.expire_all()
+    pre_confirm = db_session.get(Claim, existing_claim.id)
+    assert pre_confirm.status == ClaimStatus.ASSERTED  # not flipped yet
+
+    proposal = (
+        db_session.query(ClaimEvidenceProposal)
+        .filter(
+            ClaimEvidenceProposal.target_claim_id == existing_claim.id,
+            ClaimEvidenceProposal.proposed_role == ClaimEvidenceRole.REFUTES,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+        .first()
+    )
+    assert proposal is not None
+
+    confirm_evidence(proposal.id, db_session)
+    db_session.commit()
+    db_session.expire_all()
+
     updated = db_session.get(Claim, existing_claim.id)
     assert updated.status == ClaimStatus.REFUTED
 
@@ -427,9 +497,25 @@ def test_hallucination_guard_drops_invalid_claim_id(
 
         extract(significant_doc.id)
 
-    # Cross-doc evidence rows added by significant_doc on existing_claim.
-    # The pre-existing ASSERTS row from existing_claim's source doc is
-    # excluded by the document filter.
+    # Wave 2B: only the valid evidence_link becomes a pending proposal.
+    # The hallucinated claim_id=99999 is rejected at the candidates filter
+    # before any proposal is written.
+    from app.models.database import ClaimEvidenceProposal
+    from app.models.enums import ProposalStatus
+
+    proposals = (
+        db_session.query(ClaimEvidenceProposal)
+        .filter(
+            ClaimEvidenceProposal.source_document_id == significant_doc.id,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        )
+        .all()
+    )
+    assert len(proposals) == 1
+    assert proposals[0].target_claim_id == existing_claim.id
+
+    # No raw ClaimEvidence rows on the significant_doc side — proposals
+    # don't write evidence directly.
     evidence = (
         db_session.query(ClaimEvidence)
         .filter(
@@ -438,8 +524,7 @@ def test_hallucination_guard_drops_invalid_claim_id(
         )
         .all()
     )
-    # Only the valid link persisted
-    assert len(evidence) == 1
+    assert len(evidence) == 0
 
 
 @pytest.mark.unit

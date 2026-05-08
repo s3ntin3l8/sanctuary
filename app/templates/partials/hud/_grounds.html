@@ -44,6 +44,39 @@
           </div>
         </div>
       </div>
+      {# Wave 2B: AI-proposed merges for THIS claim — "looks like an existing claim, merge?" #}
+      {% set merges = (merge_proposals_by_claim_id or {}).get(claim.id, []) %}
+      {% if merges %}
+      <div class="mt-1 ml-6 space-y-1">
+        {% for prop in merges %}
+        <div class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-amber-500/30 bg-amber-500/5"
+             x-data="{ resolved: false, resolvedMsg: '' }"
+             x-show="!resolved">
+          <span class="material-symbols-outlined text-sm text-amber-600 dark:text-amber-400 flex-shrink-0">merge</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-amber-700 dark:text-amber-300">
+              AI: looks like claim <span class="font-mono">#{{ prop.existing_claim_id }}</span> ({{ prop.confidence.value }} confidence).
+            </div>
+            {% if prop.rationale %}<div class="text-on-surface-variant/70 italic line-clamp-2">{{ prop.rationale }}</div>{% endif %}
+            <div class="flex gap-1 mt-1">
+              <button hx-post="/claims/proposals/merge/{{ prop.id }}/confirm"
+                      hx-swap="none"
+                      @htmx:after-request="resolved = true"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
+                ✓ Merge
+              </button>
+              <button hx-post="/claims/proposals/merge/{{ prop.id }}/dismiss"
+                      hx-swap="none"
+                      @htmx:after-request="resolved = true"
+                      class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
+                ✕ Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% set is_court_doc = doc.originator_type and doc.originator_type.value == 'court' %}
       {% if doc.case_id %}
       <div class="flex gap-1 mt-1 ml-6 items-center flex-wrap" x-data="{ done: false, doneMsg: '' }">
@@ -103,6 +136,60 @@
     </li>
     {% endfor %}
   </ul>
+
+  {# Wave 2B: AI-proposed evidence-links from THIS document onto OTHER docs'
+     claims in the case. The user confirms before any ClaimEvidence row or
+     status change lands. #}
+  {% set evidence_proposals = evidence_proposals_for_doc or [] %}
+  {% if evidence_proposals %}
+  <div class="mt-3 pt-3 border-t border-outline-variant/10">
+    <h5 class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-2">
+      Proposed cross-doc stances ({{ evidence_proposals|length }})
+    </h5>
+    <ul class="space-y-1">
+      {% for prop in evidence_proposals %}
+      {% set target = (proposal_targets or {}).get(prop.target_claim_id) %}
+      {% set role_color = {
+        'supports': 'var(--color-originator-own)',
+        'contests': 'var(--color-amber-500)',
+        'refutes': 'var(--color-error)',
+        'cites_as_proof': 'var(--color-on-surface-variant)',
+      }.get(prop.proposed_role.value, 'var(--color-on-surface-variant)') %}
+      <li class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-outline-variant/30 bg-surface-container/40"
+          x-data="{ resolved: false }" x-show="!resolved">
+        <span class="text-base leading-none flex-shrink-0" style="color:{{ role_color }};">
+          {% if prop.proposed_role.value == 'supports' %}✓
+          {% elif prop.proposed_role.value == 'contests' %}⚠
+          {% elif prop.proposed_role.value == 'refutes' %}✕
+          {% else %}📎{% endif %}
+        </span>
+        <div class="flex-1 min-w-0">
+          <div>
+            AI: this document <span class="font-bold" style="color:{{ role_color }};">{{ prop.proposed_role.value }}</span>
+            claim <span class="font-mono">#{{ prop.target_claim_id }}</span>
+          </div>
+          {% if target %}<div class="text-on-surface-variant/80 line-clamp-2">"{{ target.claim_text }}"</div>{% endif %}
+          {% if prop.excerpt %}<div class="text-on-surface-variant/60 italic line-clamp-2">excerpt: {{ prop.excerpt }}</div>{% endif %}
+          <div class="flex gap-1 mt-1">
+            <button hx-post="/claims/proposals/evidence/{{ prop.id }}/confirm"
+                    hx-swap="none"
+                    @htmx:after-request="resolved = true"
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
+              ✓ Confirm
+            </button>
+            <button hx-post="/claims/proposals/evidence/{{ prop.id }}/dismiss"
+                    hx-swap="none"
+                    @htmx:after-request="resolved = true"
+                    class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
+              ✕ Dismiss
+            </button>
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   {% if doc.case_id and mode != 'review' and not is_draft_case %}
   <a href="/cases/{{ doc.case_id }}?view=truth{% if grounds %}#claim-{{ grounds[0].id }}{% endif %}"
      @click="view = 'truth'; {% if grounds %}$nextTick(() => { document.getElementById('claim-card-{{ grounds[0].id }}')?.scrollIntoView({behavior:'smooth', block:'center'}) }){% endif %}"

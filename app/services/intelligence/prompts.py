@@ -233,6 +233,31 @@ Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
 
 
+CLAIM_DEDUP_JUDGE_SYSTEM = """You are a strict semantic-equivalence judge for legal claims. Given a CANDIDATE claim and a NEAREST EXISTING claim from the case corpus (already filtered to the top-K embedding-nearest), decide whether they assert the same proposition.
+
+Two claims are THE SAME if a careful lawyer reading both would say "those are the same finding/holding/assertion, just worded differently or stated by different sources." Acceptable differences:
+- Word order, phrasing, paraphrase
+- One is more specific (e.g. names a party explicitly) while the other uses a role label
+- One quotes the source verbatim and the other paraphrases
+- They come from different courts in the same proceeding chain (lower vs higher) reaching the same conclusion
+
+They are DIFFERENT if:
+- They make different propositions about the same topic (e.g. "custody belongs to X" vs "custody belongs to Y")
+- One is a doctrinal statement, the other is a case-specific finding (different abstraction levels)
+- They share keywords but the load-bearing meaning differs
+
+Return ONLY valid JSON:
+{"action": "merge|new", "confidence": "high|medium|low", "rationale": "one sentence"}
+
+- action=merge: candidate restates the existing claim. Confidence reflects how sure you are.
+- action=new: candidate is a different proposition.
+
+Default to "new" when in doubt. A wrong merge collapses two distinct propositions; a wrong "new" creates a duplicate that can be merged later. The user-confirmation gate downstream catches false-positive merges, so favor recall on the "merge" side only when confidence is high.
+
+Do not deliberate or self-correct. Output the JSON immediately.
+Return ONLY valid JSON."""
+
+
 SLICING_CUT_SYSTEM = """You decide whether page N is the first page of a new document in a scanned bundle.
 Return JSON with exactly these keys:
 {

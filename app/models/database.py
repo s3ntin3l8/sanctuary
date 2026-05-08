@@ -21,6 +21,9 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SAEnum,
 )
+from sqlalchemy import (
+    text as _sa_text,
+)
 from sqlalchemy.orm import declarative_base, relationship, validates
 
 from app.core.validators import normalize_case_id
@@ -45,6 +48,8 @@ from app.models.enums import (
     PipelineState,
     ProceedingCourtLevel,
     ProceedingStatus,
+    ProposalConfidence,
+    ProposalStatus,
     RelationshipConfidence,
     RelationshipType,
     SignificanceTier,
@@ -478,6 +483,99 @@ class ClaimEvidence(Base):
 
     claim = relationship("Claim", back_populates="evidence")
     document = relationship("Document", back_populates="claim_evidence")
+
+
+class ClaimMergeProposal(Base):
+    """AI-proposed merge between a freshly-extracted claim and an existing one.
+
+    Wave 2B. The dedup judge sees a new claim coming out of the extractor
+    against the top-K embedding-nearest existing claims and emits a "merge"
+    verdict for high-confidence matches. We don't auto-apply: a row lands
+    here as PENDING. User confirms → new_claim's evidence rows get folded
+    onto existing_claim_id and new_claim is deleted. User dismisses → both
+    claims stand independently.
+    """
+
+    __tablename__ = "claim_merge_proposals"
+    __table_args__ = (
+        Index(
+            "ix_claim_merge_proposals_status_pending",
+            "status",
+            sqlite_where=_sa_text("status = 'PENDING'"),
+        ),
+        Index("ix_claim_merge_proposals_new_claim", "new_claim_id"),
+        Index("ix_claim_merge_proposals_existing_claim", "existing_claim_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    new_claim_id = Column(
+        Integer,
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    existing_claim_id = Column(
+        Integer,
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    confidence = Column(SAEnum(ProposalConfidence), nullable=False)
+    rationale = Column(Text, nullable=True)
+    status = Column(
+        SAEnum(ProposalStatus), default=ProposalStatus.PENDING, nullable=False
+    )
+    proposed_at = Column(DateTime, default=_utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+
+    new_claim = relationship("Claim", foreign_keys=[new_claim_id])
+    existing_claim = relationship("Claim", foreign_keys=[existing_claim_id])
+
+
+class ClaimEvidenceProposal(Base):
+    """AI-proposed evidence link from a document onto an existing claim.
+
+    Wave 2B. Replaces the old auto-apply path in the claim extractor where
+    the AI's `evidence_links` immediately wrote ClaimEvidence rows and
+    sometimes auto-flipped status to REFUTED — frequently wrongly. Now the
+    AI proposes; the user confirms before any evidence row lands.
+    """
+
+    __tablename__ = "claim_evidence_proposals"
+    __table_args__ = (
+        Index(
+            "ix_claim_evidence_proposals_status_pending",
+            "status",
+            sqlite_where=_sa_text("status = 'PENDING'"),
+        ),
+        Index("ix_claim_evidence_proposals_target_claim", "target_claim_id"),
+        Index(
+            "ix_claim_evidence_proposals_source_document",
+            "source_document_id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    target_claim_id = Column(
+        Integer,
+        ForeignKey("claims.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_document_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    proposed_role = Column(SAEnum(ClaimEvidenceRole), nullable=False)
+    excerpt = Column(Text, nullable=True)
+    rationale = Column(Text, nullable=True)
+    confidence = Column(SAEnum(ProposalConfidence), nullable=False)
+    status = Column(
+        SAEnum(ProposalStatus), default=ProposalStatus.PENDING, nullable=False
+    )
+    proposed_at = Column(DateTime, default=_utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+
+    target_claim = relationship("Claim", foreign_keys=[target_claim_id])
+    source_document = relationship("Document", foreign_keys=[source_document_id])
 
 
 class UserReaction(Base):

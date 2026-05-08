@@ -231,6 +231,22 @@ class ClaimEvidenceRole(enum.StrEnum):
     CITES_AS_PROOF = "cites_as_proof"
 
 
+class ProposalStatus(enum.StrEnum):
+    """Lifecycle of an AI-generated proposal awaiting user review."""
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    DISMISSED = "dismissed"
+
+
+class ProposalConfidence(enum.StrEnum):
+    """How sure the AI is. Drives auto-vs-pending behavior in some flows."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class UserReactionType(enum.StrEnum):
     """Strategic reaction captured at triage time — recalled later by AI."""
 

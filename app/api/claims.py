@@ -5,8 +5,14 @@ from sqlalchemy.orm import Session
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS
 from app.dependencies import get_db
-from app.models.database import Case, Claim, ClaimEvidence, Document
+from app.models.database import (
+    Case,
+    Claim,
+    ClaimEvidence,
+    Document,
+)
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, UserReactionType
+from app.services import claim_proposal_service as proposal_svc
 from app.services.claim_service import ClaimRow, ClaimService
 
 
@@ -146,6 +152,54 @@ async def toggle_claim_precedent(
             }
         )
     )
+
+
+@router.post("/claims/proposals/merge/{proposal_id}/confirm")
+async def confirm_merge_proposal(
+    proposal_id: int, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Apply a pending ClaimMergeProposal: collapse new claim into existing."""
+    prop = proposal_svc.confirm_merge(proposal_id, db)
+    if prop is None:
+        return HTMLResponse("<p>Proposal not found</p>", status_code=404)
+    db.commit()
+    return HTMLResponse("", status_code=200)
+
+
+@router.post("/claims/proposals/merge/{proposal_id}/dismiss")
+async def dismiss_merge_proposal(
+    proposal_id: int, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Dismiss a pending ClaimMergeProposal without applying it."""
+    prop = proposal_svc.dismiss_merge(proposal_id, db)
+    if prop is None:
+        return HTMLResponse("<p>Proposal not found</p>", status_code=404)
+    db.commit()
+    return HTMLResponse("", status_code=200)
+
+
+@router.post("/claims/proposals/evidence/{proposal_id}/confirm")
+async def confirm_evidence_proposal(
+    proposal_id: int, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Apply a pending ClaimEvidenceProposal: write evidence row + transition status."""
+    prop = proposal_svc.confirm_evidence(proposal_id, db)
+    if prop is None:
+        return HTMLResponse("<p>Proposal not found</p>", status_code=404)
+    db.commit()
+    return HTMLResponse("", status_code=200)
+
+
+@router.post("/claims/proposals/evidence/{proposal_id}/dismiss")
+async def dismiss_evidence_proposal(
+    proposal_id: int, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Dismiss a pending ClaimEvidenceProposal."""
+    prop = proposal_svc.dismiss_evidence(proposal_id, db)
+    if prop is None:
+        return HTMLResponse("<p>Proposal not found</p>", status_code=404)
+    db.commit()
+    return HTMLResponse("", status_code=200)
 
 
 @router.post("/cases/{case_id}/claims/{claim_id}/status")

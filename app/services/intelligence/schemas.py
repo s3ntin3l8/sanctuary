@@ -108,6 +108,16 @@ class ClaimExtraction(BaseModel):
     evidence_links: list[_EvidenceLink] = Field(default_factory=list)
 
 
+class ClaimDedupJudgement(BaseModel):
+    """CLAIM_DEDUP_JUDGE_SYSTEM output."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    action: Literal["merge", "new"]
+    confidence: _ConfidenceLevel
+    rationale: str = ""
+
+
 class _KeyPassage(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

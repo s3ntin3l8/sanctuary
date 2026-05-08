@@ -26,12 +26,22 @@ target_metadata = Base.metadata
 
 
 def include_object(obj, name, type_, reflected, compare_to):
-    """Exclude document_vectors virtual tables and its shadow tables from autogenerate."""
+    """Exclude vec0 virtual tables and their shadow tables from autogenerate.
+
+    Both document_vectors and claim_vectors are vec0 virtual tables; vec0
+    creates several `*_chunks`, `*_info`, `*_rowids`, `*_vector_chunks*`
+    shadow tables alongside the parent table. None of them belong in
+    autogenerate output.
+    """
+    vec_prefixes = ("document_vectors", "claim_vectors")
     if type_ == "table":
-        return not (name == "document_vectors" or name.startswith("document_vectors_"))
+        return not any(
+            name == prefix or name.startswith(prefix + "_") for prefix in vec_prefixes
+        )
     if type_ == "index":
         return not (
-            name.startswith("sqlite_butoindex_") or name.startswith("document_vectors_")
+            name.startswith("sqlite_butoindex_")
+            or any(name.startswith(prefix + "_") for prefix in vec_prefixes)
         )
     return True
 

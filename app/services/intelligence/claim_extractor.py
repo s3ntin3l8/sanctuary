@@ -1,25 +1,48 @@
-"""4c — Per-document claim extraction: new Claim rows + ClaimEvidence stances on existing claims."""
+"""4c — Per-document claim extraction.
 
+Wave 2B pipeline:
+1. Pull top-K embedding-nearest existing claims for the case as candidate
+   context for `evidence_links`.
+2. Run the extractor LLM → returns `new_claims` + `evidence_links`.
+3. For each new_claim: create the global Claim row, write its ASSERTS
+   evidence row, embed it, then ask the dedup judge to compare against
+   the global top-K nearest. High-confidence matches → ClaimMergeProposal.
+4. For each evidence_link: write a ClaimEvidenceProposal (no auto-apply
+   of ClaimEvidence rows or status changes — Wave 1's wrong-REFUTES
+   problem was a direct consequence of auto-applying these). Confirmed
+   proposals from the UI become ClaimEvidence rows downstream.
+"""
+
+import asyncio
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import Claim, Document
+from app.models.database import (
+    Claim,
+    ClaimEvidenceProposal,
+    Document,
+)
 from app.models.enums import (
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
     DocumentType,
     OriginatorType,
+    ProposalConfidence,
+    ProposalStatus,
     SignificanceTier,
 )
 from app.repositories.claim import ClaimRepository
 from app.repositories.claim_evidence import ClaimEvidenceRepository
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
+from app.services.claim_embedding import upsert_claim_embedding
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.claim_dedup_judge import propose_merges_for_new_claim
 from app.services.intelligence.prompts import CLAIM_EXTRACTOR_SYSTEM
 from app.services.intelligence.schemas import ClaimExtraction
 
@@ -125,7 +148,7 @@ def _apply_claims(
         )
         # The source document ASSERTS its own new claim — this is the
         # canonical "originated by" evidence row. Other documents can later
-        # SUPPORT, CONTEST, or REFUTE.
+        # SUPPORT, CONTEST, or REFUTE (via evidence proposals).
         evidence_repo.link(
             claim_id=claim.id,
             document_id=doc.id,
@@ -133,7 +156,28 @@ def _apply_claims(
             excerpt=(item.get("excerpt") or "")[:500],
         )
 
-    # Link evidence to existing claims
+        # Wave 2B: embed the claim so future dedup-judge lookups can find
+        # it as a neighbor, then run the judge against the global top-K
+        # to surface possible merges into existing claims.
+        try:
+            asyncio.run(upsert_claim_embedding(claim.id, db))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Doc %s: failed to embed new claim %s: %s", doc.id, claim.id, exc
+            )
+
+        try:
+            propose_merges_for_new_claim(claim, db)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Doc %s: dedup judge failed for claim %s: %s", doc.id, claim.id, exc
+            )
+
+    # Wave 2B: evidence_links no longer auto-apply. Each one becomes a
+    # ClaimEvidenceProposal awaiting user confirmation. The user-confirmation
+    # gate prevents the wrong-REFUTES bug that emerged when the AI
+    # mis-interpreted what "the document" referred to in cross-doc evidence.
+    confidence_default = ProposalConfidence.MEDIUM
     for item in result.get("evidence_links") or []:
         claim_id = item.get("claim_id")
         if claim_id not in valid_claim_ids:
@@ -148,27 +192,38 @@ def _apply_claims(
             continue
 
         role = ClaimEvidenceRole(role_raw)
+
+        # Skip duplicates: don't re-propose if the same role already lands
+        # on this (claim, doc) pair, either as confirmed evidence or as a
+        # pending proposal.
         if evidence_repo.evidence_exists(claim_id, doc.id, role):
             continue
-
-        evidence_repo.link(
-            claim_id=claim_id,
-            document_id=doc.id,
-            role=role,
-            excerpt=(item.get("excerpt") or "")[:500],
+        existing_proposal = (
+            db.query(ClaimEvidenceProposal)
+            .filter(
+                ClaimEvidenceProposal.target_claim_id == claim_id,
+                ClaimEvidenceProposal.source_document_id == doc.id,
+                ClaimEvidenceProposal.proposed_role == role,
+                ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+            )
+            .first()
         )
-
-        # Status transitions. ESTABLISHED claims (court findings) are not
-        # auto-flipped — the procedural reality holds until appellate review
-        # changes it, which the user records explicitly.
-        target = claim_repo.get(claim_id)
-        if target is None or target.status == ClaimStatus.ESTABLISHED:
+        if existing_proposal:
             continue
-        if role == ClaimEvidenceRole.CONTESTS:
-            if target.status == ClaimStatus.ASSERTED:
-                claim_repo.update_status(claim_id, ClaimStatus.CONTESTED)
-        elif role == ClaimEvidenceRole.REFUTES:
-            claim_repo.update_status(claim_id, ClaimStatus.REFUTED)
+
+        db.add(
+            ClaimEvidenceProposal(
+                target_claim_id=claim_id,
+                source_document_id=doc.id,
+                proposed_role=role,
+                excerpt=(item.get("excerpt") or "")[:500],
+                rationale=None,
+                confidence=confidence_default,
+                status=ProposalStatus.PENDING,
+                proposed_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+    db.flush()
 
 
 def extract(doc_id: int) -> str | None:
