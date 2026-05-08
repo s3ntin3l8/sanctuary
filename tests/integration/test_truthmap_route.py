@@ -6,9 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Case, Claim, Document
+from app.models.database import Case, Claim, ClaimEvidence, Document
 from app.models.enums import (
     CaseStatus,
+    ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
     Jurisdiction,
@@ -47,38 +48,52 @@ def tm_doc(db_session, tm_case):
     return doc
 
 
-@pytest.fixture
-def tm_claim_asserted(db_session, tm_case, tm_doc):
+def _make_claim_with_asserts(
+    db_session,
+    asserting_doc,
+    text: str,
+    claim_type: ClaimType = ClaimType.FACTUAL,
+    status: ClaimStatus = ClaimStatus.ASSERTED,
+):
+    """Wave 2A helper: claim row + canonical ASSERTS evidence anchoring it
+    to the document (and thus to the case via the document's case_id)."""
     claim = Claim(
-        case_id=tm_case.id,
-        source_document_id=tm_doc.id,
-        claim_text="Defendant was present at location",
-        claim_type=ClaimType.FACTUAL,
-        status=ClaimStatus.ASSERTED,
+        claim_text=text,
+        claim_type=claim_type,
+        status=status,
         first_made_at=datetime.now(),
         last_updated_at=datetime.now(),
     )
     db_session.add(claim)
     db_session.flush()
+    db_session.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=asserting_doc.id,
+            role=ClaimEvidenceRole.ASSERTS,
+        )
+    )
+    db_session.flush()
     db_session.refresh(claim)
     return claim
+
+
+@pytest.fixture
+def tm_claim_asserted(db_session, tm_case, tm_doc):
+    return _make_claim_with_asserts(
+        db_session, tm_doc, "Defendant was present at location"
+    )
 
 
 @pytest.fixture
 def tm_claim_contested(db_session, tm_case, tm_doc):
-    claim = Claim(
-        case_id=tm_case.id,
-        source_document_id=tm_doc.id,
-        claim_text="Contract was validly executed",
+    return _make_claim_with_asserts(
+        db_session,
+        tm_doc,
+        "Contract was validly executed",
         claim_type=ClaimType.LEGAL,
         status=ClaimStatus.CONTESTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(claim)
-    db_session.flush()
-    db_session.refresh(claim)
-    return claim
 
 
 # ---------------------------------------------------------------------------
@@ -140,18 +155,13 @@ def test_post_status_mark_established(db_session, tm_case, tm_claim_asserted):
 
 @pytest.mark.integration
 def test_post_status_reopen_from_established(db_session, tm_case, tm_doc):
-    established_claim = Claim(
-        case_id=tm_case.id,
-        source_document_id=tm_doc.id,
-        claim_text="Established claim to reopen",
-        claim_type=ClaimType.FACTUAL,
+    established_claim = _make_claim_with_asserts(
+        db_session,
+        tm_doc,
+        "Established claim to reopen",
         status=ClaimStatus.ESTABLISHED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(established_claim)
     db_session.commit()
-    db_session.refresh(established_claim)
 
     response = client.post(
         f"/cases/{tm_case.id}/claims/{established_claim.id}/status",
@@ -203,18 +213,10 @@ def test_post_status_claim_not_in_case_returns_404(db_session, tm_case, tm_doc):
     db_session.flush()
     db_session.add(other_doc)
     db_session.flush()
-    other_claim = Claim(
-        case_id="TM-OTHER-001",
-        source_document_id=other_doc.id,
-        claim_text="Belongs to another case",
-        claim_type=ClaimType.FACTUAL,
-        status=ClaimStatus.ASSERTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
+    other_claim = _make_claim_with_asserts(
+        db_session, other_doc, "Belongs to another case"
     )
-    db_session.add(other_claim)
     db_session.commit()
-    db_session.refresh(other_claim)
 
     # Try to update other_claim via tm_case's URL — should 404
     response = client.post(

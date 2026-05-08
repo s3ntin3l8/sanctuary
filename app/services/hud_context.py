@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from app.models.database import (
     ActionItem,
     Case,
-    Claim,
     ClaimEvidence,
     Document,
     DocumentPin,
@@ -160,11 +159,15 @@ def build_hud_context(
         .all()
     )
 
-    grounds = (
-        db.query(Claim)
-        .filter(Claim.source_document_id == doc.id)
-        .order_by(Claim.first_made_at.desc())
-        .all()
+    # Wave 2A: claims are global. The doc HUD shows claims this document
+    # ASSERTED (originated by) — i.e. the canonical "made here" set, joined
+    # through ClaimEvidence.
+    from app.repositories.claim import ClaimRepository
+
+    grounds = sorted(
+        ClaimRepository(db).claims_asserted_by_document(doc.id),
+        key=lambda c: c.first_made_at,
+        reverse=True,
     )
 
     _claims_stage = (doc.pipeline_stages or {}).get("claims", {})

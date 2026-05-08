@@ -119,9 +119,6 @@ def _apply_claims(
         )
 
         claim = claim_repo.create_claim(
-            case_id=doc.case_id,
-            proceeding_id=doc.proceeding_id,
-            source_document_id=doc.id,
             claim_text=claim_text,
             claim_type=ClaimType(claim_type_raw),
             status=initial_status,
@@ -211,20 +208,19 @@ def extract(doc_id: int) -> str | None:
             return reason
 
         # Clear stale auto-extracted claims from prior runs so retries don't
-        # accumulate. We only delete claims still in their default ASSERTED
-        # state — claims promoted to CONTESTED/REFUTED/ESTABLISHED via
-        # cross-doc evidence (or future user edits) carry signal we want to
-        # preserve. The ClaimEvidence rows owned by deleted claims cascade
-        # automatically (FK ondelete=CASCADE). Cross-doc evidence pointing at
-        # OTHER docs' claims is independent and untouched.
-        stale = (
-            db.query(Claim)
-            .filter(
-                Claim.source_document_id == doc.id,
-                Claim.status == ClaimStatus.ASSERTED,
-            )
-            .all()
-        )
+        # accumulate. Delete only claims this document originally ASSERTED
+        # (canonical "originated by" evidence row) and that are still in
+        # their default ASSERTED state. Claims promoted to
+        # CONTESTED/REFUTED/ESTABLISHED via cross-doc evidence (or user edits)
+        # carry signal we want to preserve. ClaimEvidence rows for the
+        # deleted claims cascade via FK ondelete=CASCADE. Cross-doc evidence
+        # pointing at OTHER docs' claims is independent and untouched.
+        stale_repo = ClaimRepository(db)
+        stale = [
+            c
+            for c in stale_repo.claims_asserted_by_document(doc.id)
+            if c.status == ClaimStatus.ASSERTED
+        ]
         if stale:
             logger.info(
                 f"Doc {doc_id}: clearing {len(stale)} stale ASSERTED claim(s) "

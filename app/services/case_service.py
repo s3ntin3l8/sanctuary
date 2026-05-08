@@ -852,7 +852,6 @@ class CaseService:
         deleted (every triage doc references it).
         """
         from app.models.database import (
-            Claim,
             Conversation,
             Entity,
             IngestBatch,
@@ -885,8 +884,7 @@ class CaseService:
                 batch.case_id = None
                 batch.proceeding_id = None
 
-        # Hard delete dependent rows scoped to this case. ClaimEvidence is
-        # cascaded by the ORM relationship on Claim, so use ORM delete there.
+        # Hard delete dependent rows scoped to this case.
         self.db.query(Entity).filter(Entity.case_id == case_id).delete(
             synchronize_session=False
         )
@@ -896,8 +894,10 @@ class CaseService:
         self.db.query(LegalCost).filter(LegalCost.case_id == case_id).delete(
             synchronize_session=False
         )
-        for claim in self.db.query(Claim).filter(Claim.case_id == case_id).all():
-            self.db.delete(claim)
+        # Wave 2A: claims are global; their case scope follows their evidence
+        # documents. Since docs revert to _TRIAGE rather than being deleted,
+        # claims simply re-scope to _TRIAGE alongside their evidence anchors.
+        # No explicit claim deletion needed here.
 
         # Conversations scope_id is a polymorphic string with no FK; clean up
         # case-scoped chats explicitly so they aren't stranded after deletion.

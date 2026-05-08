@@ -7,7 +7,6 @@ import pytest
 
 from app.models.database import (
     ActionItem,
-    Claim,
     ClaimEvidence,
     Document,
     IngestBatch,
@@ -222,7 +221,9 @@ def test_ingestion_cascade(db_session, email_batch):
     ):
         extract(enclosure_id)
 
-    claims = db_session.query(Claim).filter(Claim.case_id == enclosure.case_id).all()
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(ClaimRepository(db_session).claims_for_case(enclosure.case_id))
     assert len(claims) >= 1
 
     evidence = (

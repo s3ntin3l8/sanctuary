@@ -16,6 +16,36 @@ from app.models.enums import (
 )
 
 
+def _make_claim(
+    db_session,
+    *,
+    asserting_doc,
+    claim_text: str,
+    claim_type: ClaimType = ClaimType.FACTUAL,
+    status: ClaimStatus = ClaimStatus.ASSERTED,
+) -> Claim:
+    """Wave 2A test helper: create a global Claim plus its canonical ASSERTS
+    evidence row. Replaces the old `Claim(case_id=…, source_document_id=…)`
+    pattern that's invalid after the column-drop migration."""
+    claim = Claim(
+        claim_text=claim_text,
+        claim_type=claim_type,
+        status=status,
+        first_made_at=datetime.now(),
+        last_updated_at=datetime.now(),
+    )
+    db_session.add(claim)
+    db_session.flush()
+    db_session.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=asserting_doc.id,
+            role=ClaimEvidenceRole.ASSERTS,
+        )
+    )
+    return claim
+
+
 @pytest.fixture
 def significant_doc(db_session, sample_case):
     doc = Document(
@@ -53,16 +83,11 @@ def existing_claim(db_session, sample_case, significant_doc):
     )
     db_session.add(other_doc)
     db_session.flush()
-    claim = Claim(
-        case_id=sample_case.id,
-        source_document_id=other_doc.id,
+    claim = _make_claim(
+        db_session,
+        asserting_doc=other_doc,
         claim_text="Defendant was present at location on 2024-01-10",
-        claim_type=ClaimType.FACTUAL,
-        status=ClaimStatus.ASSERTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(claim)
     db_session.commit()
     db_session.refresh(claim)
     return claim
@@ -101,7 +126,9 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
 
         extract(significant_doc.id)
 
-    claims = db_session.query(Claim).filter(Claim.case_id == sample_case.id).all()
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(ClaimRepository(db_session).claims_for_case(sample_case.id))
     assert len(claims) == 2
     claim_texts = {c.claim_text for c in claims}
     assert "The defendant was not present at the hearing on 15.03.2026" in claim_texts
@@ -163,9 +190,9 @@ def test_court_doc_claims_arrive_established(db_session, sample_case):
 
         extract(court_doc.id)
 
-    claims = (
-        db_session.query(Claim).filter(Claim.source_document_id == court_doc.id).all()
-    )
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(ClaimRepository(db_session).claims_asserted_by_document(court_doc.id))
     assert len(claims) == 1
     assert claims[0].status == ClaimStatus.ESTABLISHED, (
         "court-originated claim must arrive ESTABLISHED, not ASSERTED"
@@ -203,10 +230,10 @@ def test_non_court_doc_claims_arrive_asserted(db_session, significant_doc):
 
         extract(significant_doc.id)
 
-    claims = (
-        db_session.query(Claim)
-        .filter(Claim.source_document_id == significant_doc.id)
-        .all()
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(
+        ClaimRepository(db_session).claims_asserted_by_document(significant_doc.id)
     )
     assert len(claims) == 1
     assert claims[0].status == ClaimStatus.ASSERTED
@@ -232,16 +259,13 @@ def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_
     db_session.add(other_doc)
     db_session.flush()
 
-    established_claim = Claim(
-        case_id=sample_case.id,
-        source_document_id=other_doc.id,
+    established_claim = _make_claim(
+        db_session,
+        asserting_doc=other_doc,
         claim_text="The court found that suspension under § 180 III ZVG is not warranted",
         claim_type=ClaimType.LEGAL,
         status=ClaimStatus.ESTABLISHED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(established_claim)
     db_session.commit()
     db_session.refresh(established_claim)
 
@@ -329,13 +353,18 @@ def test_evidence_link_contests_sets_status(
     updated = db_session.get(Claim, existing_claim.id)
     assert updated.status == ClaimStatus.CONTESTED
 
-    evidence = (
+    # significant_doc's CONTESTS row sits alongside existing_claim's ASSERTS
+    # row (the original assertion from the fixture's other_doc).
+    evidence_from_significant = (
         db_session.query(ClaimEvidence)
-        .filter(ClaimEvidence.claim_id == existing_claim.id)
+        .filter(
+            ClaimEvidence.claim_id == existing_claim.id,
+            ClaimEvidence.document_id == significant_doc.id,
+        )
         .all()
     )
-    assert len(evidence) == 1
-    assert evidence[0].role == ClaimEvidenceRole.CONTESTS
+    assert len(evidence_from_significant) == 1
+    assert evidence_from_significant[0].role == ClaimEvidenceRole.CONTESTS
 
 
 @pytest.mark.unit
@@ -398,9 +427,15 @@ def test_hallucination_guard_drops_invalid_claim_id(
 
         extract(significant_doc.id)
 
+    # Cross-doc evidence rows added by significant_doc on existing_claim.
+    # The pre-existing ASSERTS row from existing_claim's source doc is
+    # excluded by the document filter.
     evidence = (
         db_session.query(ClaimEvidence)
-        .filter(ClaimEvidence.claim_id == existing_claim.id)
+        .filter(
+            ClaimEvidence.claim_id == existing_claim.id,
+            ClaimEvidence.document_id == significant_doc.id,
+        )
         .all()
     )
     # Only the valid link persisted
@@ -433,7 +468,13 @@ def test_hallucination_guard_drops_invalid_role(
 
         extract(significant_doc.id)
 
-    evidence = db_session.query(ClaimEvidence).all()
+    # No evidence on the significant_doc side (the invalid role got dropped).
+    # The pre-existing ASSERTS row on existing_claim is unrelated.
+    evidence = (
+        db_session.query(ClaimEvidence)
+        .filter(ClaimEvidence.document_id == significant_doc.id)
+        .all()
+    )
     assert len(evidence) == 0
 
 
@@ -465,9 +506,9 @@ def test_hallucination_guard_drops_invalid_claim_type(db_session, significant_do
 
         extract(significant_doc.id)
 
-    claims = (
-        db_session.query(Claim).filter(Claim.case_id == significant_doc.case_id).all()
-    )
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(ClaimRepository(db_session).claims_for_case(significant_doc.case_id))
     assert len(claims) == 0
 
 
@@ -539,23 +580,18 @@ def test_relay_doc_skipped(db_session, sample_case):
 def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_case):
     """A repeat extraction on the same doc must not accumulate claims —
     delete prior auto-extracted ASSERTED claims before re-running."""
+    from app.repositories.claim import ClaimRepository
+
     # Seed three claims from a prior run, all in default ASSERTED state.
     for i in range(3):
-        c = Claim(
-            case_id=sample_case.id,
-            source_document_id=significant_doc.id,
+        _make_claim(
+            db_session,
+            asserting_doc=significant_doc,
             claim_text=f"Stale claim from prior run number {i} that is long enough",
-            claim_type=ClaimType.FACTUAL,
-            status=ClaimStatus.ASSERTED,
-            first_made_at=datetime.now(),
-            last_updated_at=datetime.now(),
         )
-        db_session.add(c)
     db_session.commit()
     assert (
-        db_session.query(Claim)
-        .filter(Claim.source_document_id == significant_doc.id)
-        .count()
+        len(ClaimRepository(db_session).claims_asserted_by_document(significant_doc.id))
         == 3
     )
 
@@ -585,11 +621,11 @@ def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_
 
         extract(significant_doc.id)
 
+    from app.repositories.claim import ClaimRepository
+
     db_session.expire_all()
-    remaining = (
-        db_session.query(Claim)
-        .filter(Claim.source_document_id == significant_doc.id)
-        .all()
+    remaining = list(
+        ClaimRepository(db_session).claims_asserted_by_document(significant_doc.id)
     )
     # Only the fresh claim from the latest run survives.
     assert len(remaining) == 1
@@ -602,35 +638,27 @@ def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_
 def test_retry_preserves_user_modified_claims(db_session, significant_doc, sample_case):
     """Claims with non-default status (CONTESTED/REFUTED/ESTABLISHED) carry
     cross-doc evidence signal or user edits and must survive a re-extraction."""
-    # Three prior claims: one ASSERTED (stale), one CONTESTED (signal), one REFUTED.
-    stale = Claim(
-        case_id=sample_case.id,
-        source_document_id=significant_doc.id,
+    _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
         claim_text="Stale ASSERTED claim that should be deleted on retry",
         claim_type=ClaimType.FACTUAL,
         status=ClaimStatus.ASSERTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    contested = Claim(
-        case_id=sample_case.id,
-        source_document_id=significant_doc.id,
+    _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
         claim_text="A contested claim that another doc challenges and must persist",
         claim_type=ClaimType.LEGAL,
         status=ClaimStatus.CONTESTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    refuted = Claim(
-        case_id=sample_case.id,
-        source_document_id=significant_doc.id,
+    _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
         claim_text="A refuted claim that has independent signal and must persist",
         claim_type=ClaimType.PROCEDURAL,
         status=ClaimStatus.REFUTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add_all([stale, contested, refuted])
     db_session.commit()
 
     ai_result = {"new_claims": [], "evidence_links": []}
@@ -650,12 +678,14 @@ def test_retry_preserves_user_modified_claims(db_session, significant_doc, sampl
 
         extract(significant_doc.id)
 
+    from app.repositories.claim import ClaimRepository
+
     db_session.expire_all()
     remaining = {
         c.status: c.claim_text
-        for c in db_session.query(Claim)
-        .filter(Claim.source_document_id == significant_doc.id)
-        .all()
+        for c in ClaimRepository(db_session).claims_asserted_by_document(
+            significant_doc.id
+        )
     }
     assert ClaimStatus.ASSERTED not in remaining, "stale ASSERTED claim must be deleted"
     assert ClaimStatus.CONTESTED in remaining, "CONTESTED claim must survive"
@@ -679,29 +709,19 @@ def test_retry_preserves_evidence_pointing_at_other_docs_claims(
     db_session.add(other_doc)
     db_session.flush()
 
-    other_claim = Claim(
-        case_id=sample_case.id,
-        source_document_id=other_doc.id,
+    other_claim = _make_claim(
+        db_session,
+        asserting_doc=other_doc,
         claim_text="Claim owned by another document",
-        claim_type=ClaimType.FACTUAL,
-        status=ClaimStatus.ASSERTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(other_claim)
     db_session.flush()
 
     # significant_doc has its own ASSERTED claim (will be deleted on retry)
-    own_claim = Claim(
-        case_id=sample_case.id,
-        source_document_id=significant_doc.id,
+    own_claim = _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
         claim_text="Own claim from prior extraction that will be cleared on retry",
-        claim_type=ClaimType.FACTUAL,
-        status=ClaimStatus.ASSERTED,
-        first_made_at=datetime.now(),
-        last_updated_at=datetime.now(),
     )
-    db_session.add(own_claim)
     db_session.flush()
 
     # significant_doc CONTESTS other_claim — this evidence must survive.
@@ -733,15 +753,17 @@ def test_retry_preserves_evidence_pointing_at_other_docs_claims(
         extract(significant_doc.id)
 
     db_session.expire_all()
-    # other_claim must still exist (it was owned by other_doc, not cleared).
+    # other_claim must still exist (it was originated by other_doc, not cleared).
     assert db_session.get(Claim, other_claim.id) is not None
-    # The cross-doc evidence pointing at other_claim must still exist.
+    # The cross-doc CONTESTS evidence pointing at other_claim must still
+    # exist alongside the original ASSERTS row from other_doc.
     surviving = (
         db_session.query(ClaimEvidence)
         .filter(ClaimEvidence.claim_id == other_claim.id)
         .all()
     )
-    assert len(surviving) == 1
-    assert surviving[0].role == ClaimEvidenceRole.CONTESTS
+    surviving_roles = {ev.role for ev in surviving}
+    assert ClaimEvidenceRole.CONTESTS in surviving_roles
+    assert ClaimEvidenceRole.ASSERTS in surviving_roles
     # significant_doc's own ASSERTED claim was cleared.
     assert db_session.get(Claim, own_claim.id) is None

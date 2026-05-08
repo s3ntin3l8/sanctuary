@@ -111,18 +111,19 @@ def build_case_chat_prompt(
             )
         actions_block = "Open Action Items / Deadlines:\n" + "\n".join(lines)
 
-    # Fetch open Claims
-    claims = (
-        db.query(Claim)
-        .options(joinedload(Claim.evidence))
-        .filter(
-            Claim.case_id == case.id,
-            Claim.status.in_([ClaimStatus.ASSERTED, ClaimStatus.CONTESTED]),
+    # Fetch open Claims (Wave 2A: scope via ClaimEvidence → Document join).
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(
+        ClaimRepository(db).claims_for_case(
+            case.id, statuses=[ClaimStatus.ASSERTED, ClaimStatus.CONTESTED]
         )
-        .order_by(Claim.last_updated_at.desc())
-        .limit(15)
-        .all()
-    )
+    )[:15]
+    if claims:
+        # Eager-load evidence for the support/contest counts below.
+        db.query(Claim).options(joinedload(Claim.evidence)).filter(
+            Claim.id.in_([c.id for c in claims])
+        ).all()
     claims_block = ""
     if claims:
         lines = []

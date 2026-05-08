@@ -5,9 +5,56 @@ from sqlalchemy.orm import Session
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS
 from app.dependencies import get_db
-from app.models.database import Case, Claim
+from app.models.database import Case, Claim, ClaimEvidence, Document
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, UserReactionType
 from app.services.claim_service import ClaimRow, ClaimService
+
+
+def _claim_belongs_to_case(db: Session, claim: Claim, case_id: str) -> bool:
+    """A claim belongs to a case iff it has at least one ClaimEvidence row
+    whose document is in that case. Replaces the old `claim.case_id == X`
+    check after Wave 2A made claims global."""
+    return (
+        db.query(ClaimEvidence)
+        .join(Document, Document.id == ClaimEvidence.document_id)
+        .filter(
+            ClaimEvidence.claim_id == claim.id,
+            Document.case_id == case_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _primary_case_for_claim(db: Session, claim: Claim) -> str | None:
+    """Pick a case to render this claim in. Prefer the ASSERTS evidence row's
+    document case (the canonical "originated by" anchor); fall back to any
+    evidence row with a case."""
+    asserts = (
+        db.query(Document.case_id)
+        .join(ClaimEvidence, ClaimEvidence.document_id == Document.id)
+        .filter(
+            ClaimEvidence.claim_id == claim.id,
+            ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+            Document.case_id.isnot(None),
+        )
+        .first()
+    )
+    if asserts and asserts[0] and asserts[0] != "_TRIAGE":
+        return asserts[0]
+    any_evidence = (
+        db.query(Document.case_id)
+        .join(ClaimEvidence, ClaimEvidence.document_id == Document.id)
+        .filter(
+            ClaimEvidence.claim_id == claim.id,
+            Document.case_id.isnot(None),
+        )
+        .first()
+    )
+    if any_evidence and any_evidence[0]:
+        return any_evidence[0]
+    return None
+
 
 router = APIRouter(tags=["claims"])
 
@@ -58,10 +105,23 @@ async def toggle_claim_precedent(
     db.commit()
     db.refresh(claim)
 
-    case = db.query(Case).filter(Case.id == claim.case_id).first()
+    case_id = _primary_case_for_claim(db, claim)
+    case = db.query(Case).filter(Case.id == case_id).first() if case_id else None
     if case is None:
-        # Should not happen while case_id remains on Claim; defensive only.
-        return HTMLResponse("", status_code=204)
+        # Claim has no evidence in any real case (only in _TRIAGE or none at
+        # all). Render a degraded card via fallback ClaimRow rather than 500.
+        return HTMLResponse(
+            templates.get_template("components/claim_card.html").render(
+                {
+                    "row": ClaimRow(claim=claim),
+                    "case": None,
+                    "originator_colors": ORIGINATOR_COLORS,
+                    "ClaimStatus": ClaimStatus,
+                    "ClaimEvidenceRole": ClaimEvidenceRole,
+                    "UserReactionType": UserReactionType,
+                }
+            )
+        )
 
     svc = ClaimService(db)
     truth_map = svc.get_truth_map(case.id, "all")
@@ -100,7 +160,7 @@ async def update_claim_status(
         return HTMLResponse("<p>Case not found</p>", status_code=404)
 
     claim = db.get(Claim, claim_id)
-    if claim is None or claim.case_id != case_id:
+    if claim is None or not _claim_belongs_to_case(db, claim, case_id):
         return HTMLResponse("<p>Claim not found</p>", status_code=404)
 
     try:

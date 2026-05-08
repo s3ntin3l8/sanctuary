@@ -74,14 +74,20 @@ now = datetime.now(UTC).replace(second=0, microsecond=0)
 SEED_CASE_IDS = ["_TRIAGE", "ADV-024-A", "ADV-031-B", "ADV-100-X"]
 
 # FK-safe deletion order: children before parents.
+# Wave 2A: claims are global. Find seed-case claims via the join through
+# their evidence documents, then delete the evidence first, then the claims.
 _seed_doc_ids = db.query(Document.id).filter(Document.case_id.in_(SEED_CASE_IDS))
-_seed_claim_ids = db.query(Claim.id).filter(Claim.case_id.in_(SEED_CASE_IDS))
+_seed_claim_ids = (
+    db.query(Claim.id)
+    .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
+    .join(Document, Document.id == ClaimEvidence.document_id)
+    .filter(Document.case_id.in_(SEED_CASE_IDS))
+    .distinct()
+)
 db.query(ClaimEvidence).filter(ClaimEvidence.claim_id.in_(_seed_claim_ids)).delete(
     synchronize_session=False
 )
-db.query(Claim).filter(Claim.case_id.in_(SEED_CASE_IDS)).delete(
-    synchronize_session=False
-)
+db.query(Claim).filter(Claim.id.in_(_seed_claim_ids)).delete(synchronize_session=False)
 db.query(DocumentRelationship).filter(
     DocumentRelationship.from_document_id.in_(_seed_doc_ids)
 ).delete(synchronize_session=False)
@@ -2415,109 +2421,113 @@ db.commit()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CLAIMS — Truth Map for ADV-024-A (both proceedings)
+# Wave 2A: claims are global. Each seed claim gets an ASSERTS evidence row
+# pointing at the document that originated it; that's how it scopes to the
+# case (via the document's case_id).
 # ═══════════════════════════════════════════════════════════════════════════
 
-cl1 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_klageerwiderung.id,
-    claim_text="Der Beklagte war in dem Zeitraum Januar bis Oktober 2025 nicht leistungsfähig.",
-    claim_type=ClaimType.FACTUAL,
-    status=ClaimStatus.CONTESTED,
-    first_made_at=datetime(2026, 1, 20),
-    last_updated_at=datetime(2026, 4, 5),
+
+def _seed_claim(asserting_doc, claim_text, claim_type, status, first_made, updated):
+    claim = Claim(
+        claim_text=claim_text,
+        claim_type=claim_type,
+        status=status,
+        first_made_at=first_made,
+        last_updated_at=updated,
+    )
+    db.add(claim)
+    db.flush()
+    db.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=asserting_doc.id,
+            role=ClaimEvidenceRole.ASSERTS,
+            ingest_date=first_made,
+        )
+    )
+    return claim
+
+
+cl1 = _seed_claim(
+    p8_klageerwiderung,
+    "Der Beklagte war in dem Zeitraum Januar bis Oktober 2025 nicht leistungsfähig.",
+    ClaimType.FACTUAL,
+    ClaimStatus.CONTESTED,
+    datetime(2026, 1, 20),
+    datetime(2026, 4, 5),
 )
-cl2 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_klage.id,
-    claim_text="Die Klägerin hat Anspruch auf rückständigen Kindesunterhalt i.H.v. 24.000 €.",
-    claim_type=ClaimType.LEGAL,
-    status=ClaimStatus.CONTESTED,
-    first_made_at=datetime(2025, 11, 15),
-    last_updated_at=datetime(2026, 4, 15),
+cl2 = _seed_claim(
+    p8_klage,
+    "Die Klägerin hat Anspruch auf rückständigen Kindesunterhalt i.H.v. 24.000 €.",
+    ClaimType.LEGAL,
+    ClaimStatus.CONTESTED,
+    datetime(2025, 11, 15),
+    datetime(2026, 4, 15),
 )
-cl3 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_klage.id,
-    claim_text="Lukas Vane lebt seit der Trennung im Januar 2025 im Haushalt der Mutter.",
-    claim_type=ClaimType.FACTUAL,
-    status=ClaimStatus.ESTABLISHED,
-    first_made_at=datetime(2025, 11, 15),
-    last_updated_at=datetime(2026, 4, 8),
+cl3 = _seed_claim(
+    p8_klage,
+    "Lukas Vane lebt seit der Trennung im Januar 2025 im Haushalt der Mutter.",
+    ClaimType.FACTUAL,
+    ClaimStatus.ESTABLISHED,
+    datetime(2025, 11, 15),
+    datetime(2026, 4, 8),
 )
-cl4 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_jugendamt.id,
-    claim_text="Die Kommunikation der Eltern ist so schwerwiegend gestört, dass gemeinsame Sorge nicht funktioniert.",
-    claim_type=ClaimType.FACTUAL,
-    status=ClaimStatus.CONTESTED,
-    first_made_at=datetime(2026, 1, 20),
-    last_updated_at=datetime(2026, 4, 8),
+cl4 = _seed_claim(
+    p8_jugendamt,
+    "Die Kommunikation der Eltern ist so schwerwiegend gestört, dass gemeinsame Sorge nicht funktioniert.",
+    ClaimType.FACTUAL,
+    ClaimStatus.CONTESTED,
+    datetime(2026, 1, 20),
+    datetime(2026, 4, 8),
 )
-cl5 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_klage.id,
-    claim_text="Das Alleinsorgerecht der Mutter entspricht dem Kindeswohl des Lukas Vane.",
-    claim_type=ClaimType.LEGAL,
-    status=ClaimStatus.CONTESTED,
-    first_made_at=datetime(2025, 11, 15),
-    last_updated_at=datetime(2026, 4, 8),
+cl5 = _seed_claim(
+    p8_klage,
+    "Das Alleinsorgerecht der Mutter entspricht dem Kindeswohl des Lukas Vane.",
+    ClaimType.LEGAL,
+    ClaimStatus.CONTESTED,
+    datetime(2025, 11, 15),
+    datetime(2026, 4, 8),
 )
-cl6 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_sv_gutachten.id,
-    claim_text="Das bereinigte Nettoeinkommen des Beklagten beträgt durchschnittlich 3.120 €/Monat.",
-    claim_type=ClaimType.FACTUAL,
-    status=ClaimStatus.ASSERTED,
-    first_made_at=datetime(2026, 4, 5),
-    last_updated_at=datetime(2026, 4, 5),
+cl6 = _seed_claim(
+    p8_sv_gutachten,
+    "Das bereinigte Nettoeinkommen des Beklagten beträgt durchschnittlich 3.120 €/Monat.",
+    ClaimType.FACTUAL,
+    ClaimStatus.ASSERTED,
+    datetime(2026, 4, 5),
+    datetime(2026, 4, 5),
 )
-cl7 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_pkh.id,
-    claim_text="Die Voraussetzungen für Prozesskostenhilfe lagen bei Antragstellung vor.",
-    claim_type=ClaimType.PROCEDURAL,
-    status=ClaimStatus.ESTABLISHED,
-    first_made_at=datetime(2026, 2, 4),
-    last_updated_at=datetime(2026, 2, 4),
+cl7 = _seed_claim(
+    p8_pkh,
+    "Die Voraussetzungen für Prozesskostenhilfe lagen bei Antragstellung vor.",
+    ClaimType.PROCEDURAL,
+    ClaimStatus.ESTABLISHED,
+    datetime(2026, 2, 4),
+    datetime(2026, 2, 4),
 )
-cl8 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a.id,
-    source_document_id=p8_klageerwiderung.id,
-    claim_text="Die Anlage B3 (Gehaltsabrechnung) weist die tatsächliche Einkommenssituation des Beklagten korrekt aus.",
-    claim_type=ClaimType.FACTUAL,
-    status=ClaimStatus.REFUTED,
-    first_made_at=datetime(2026, 1, 20),
-    last_updated_at=datetime(2026, 4, 15),
+cl8 = _seed_claim(
+    p8_klageerwiderung,
+    "Die Anlage B3 (Gehaltsabrechnung) weist die tatsächliche Einkommenssituation des Beklagten korrekt aus.",
+    ClaimType.FACTUAL,
+    ClaimStatus.REFUTED,
+    datetime(2026, 1, 20),
+    datetime(2026, 4, 15),
 )
-cl9 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a2.id,
-    source_document_id=p8_olg_beschwerde.id,
-    claim_text="Die Beschwerde gegen den AG-Beschluss ist fristgerecht und zulässig erhoben worden.",
-    claim_type=ClaimType.PROCEDURAL,
-    status=ClaimStatus.ESTABLISHED,
-    first_made_at=datetime(2026, 5, 10),
-    last_updated_at=datetime(2026, 5, 15),
+cl9 = _seed_claim(
+    p8_olg_beschwerde,
+    "Die Beschwerde gegen den AG-Beschluss ist fristgerecht und zulässig erhoben worden.",
+    ClaimType.PROCEDURAL,
+    ClaimStatus.ESTABLISHED,
+    datetime(2026, 5, 10),
+    datetime(2026, 5, 15),
 )
-cl10 = Claim(
-    case_id="ADV-024-A",
-    proceeding_id=proc_a2.id,
-    source_document_id=p8_olg_begruendung.id,
-    claim_text="Das Amtsgericht hat den geäußerten Kindeswillen und den Verfahrensbeistandsbericht unzureichend gewürdigt.",
-    claim_type=ClaimType.LEGAL,
-    status=ClaimStatus.ASSERTED,
-    first_made_at=datetime(2026, 6, 15),
-    last_updated_at=datetime(2026, 6, 15),
+cl10 = _seed_claim(
+    p8_olg_begruendung,
+    "Das Amtsgericht hat den geäußerten Kindeswillen und den Verfahrensbeistandsbericht unzureichend gewürdigt.",
+    ClaimType.LEGAL,
+    ClaimStatus.ASSERTED,
+    datetime(2026, 6, 15),
+    datetime(2026, 6, 15),
 )
-db.add_all([cl1, cl2, cl3, cl4, cl5, cl6, cl7, cl8, cl9, cl10])
 db.flush()
 
 db.add_all(

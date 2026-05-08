@@ -39,16 +39,19 @@ def claim_with_evidence(db_session):
     db_session.commit()
 
     claim = Claim(
-        case_id=case.id,
-        source_document_id=doc.id,
         claim_text="X claims Y",
         claim_type=ClaimType.FACTUAL,
     )
     db_session.add(claim)
-    db_session.commit()
+    db_session.flush()
 
     db_session.add_all(
         [
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=doc.id,
+                role=ClaimEvidenceRole.ASSERTS,
+            ),
             ClaimEvidence(
                 claim_id=claim.id,
                 document_id=doc.id,
@@ -73,7 +76,7 @@ def test_delete_claim_cascades_to_evidence(db_session, claim_with_evidence):
         .filter(ClaimEvidence.claim_id == claim.id)
         .count()
     )
-    assert evidence_count_before == 2
+    assert evidence_count_before == 3
 
     db_session.delete(claim)
     db_session.commit()

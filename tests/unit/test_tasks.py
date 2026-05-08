@@ -243,27 +243,33 @@ def test_extract_claims_refreshes_review_reasons_on_success(
     sample_document.needs_review = False
     db_session.commit()
 
-    # A pre-existing claim in the case that this doc contests
+    # A pre-existing claim in the case (Wave 2A: claim is global, scope
+    # comes from its evidence-document's case).
     claim = Claim(
-        case_id=sample_document.case_id,
-        source_document_id=sample_document.id,
         claim_text="Opposing party claim",
         claim_type=ClaimType.FACTUAL,
         status=ClaimStatus.ASSERTED,
     )
     db_session.add(claim)
+    db_session.flush()
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=sample_document.id,
+                role=ClaimEvidenceRole.ASSERTS,
+                confidence=RelationshipConfidence.AI_DETECTED,
+            ),
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=sample_document.id,
+                role=ClaimEvidenceRole.CONTESTS,
+                confidence=RelationshipConfidence.AI_DETECTED,
+            ),
+        ]
+    )
     db_session.commit()
     db_session.refresh(claim)
-
-    # Simulate what extract() produces: adversarial evidence from this doc
-    evidence = ClaimEvidence(
-        claim_id=claim.id,
-        document_id=sample_document.id,
-        role=ClaimEvidenceRole.CONTESTS,
-        confidence=RelationshipConfidence.AI_DETECTED,
-    )
-    db_session.add(evidence)
-    db_session.commit()
 
     with (
         patch("app.dependencies.get_db_session") as mock_get_db,

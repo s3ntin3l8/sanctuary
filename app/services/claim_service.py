@@ -100,16 +100,17 @@ class ClaimService:
     ) -> TruthMapView:
         target_statuses = _FILTER_STATUSES[filter_]
 
-        claims = (
-            self._db.query(Claim)
-            .options(joinedload(Claim.evidence).joinedload(ClaimEvidence.document))
-            .filter(
-                Claim.case_id == case_id,
-                Claim.status.in_(target_statuses),
-            )
-            .order_by(Claim.last_updated_at.desc())
-            .all()
+        # Wave 2A: claims are global. Scope to a case via the
+        # ClaimEvidence → Document → Document.case_id join.
+        claims = list(
+            self._claim_repo.claims_for_case(case_id, statuses=target_statuses)
         )
+
+        # Eager-load evidence + documents for the rendering loop below.
+        if claims:
+            self._db.query(Claim).options(
+                joinedload(Claim.evidence).joinedload(ClaimEvidence.document)
+            ).filter(Claim.id.in_([c.id for c in claims])).all()
 
         # Batch-load reactions for all evidence documents
         doc_ids = list({ev.document_id for claim in claims for ev in claim.evidence})
@@ -144,13 +145,10 @@ class ClaimService:
             if s in groups_by_status and groups_by_status[s]
         ]
 
-        open_count = (
-            self._db.query(Claim)
-            .filter(
-                Claim.case_id == case_id,
-                Claim.status.in_([ClaimStatus.CONTESTED, ClaimStatus.ASSERTED]),
+        open_count = len(
+            self._claim_repo.claims_for_case(
+                case_id, statuses=[ClaimStatus.CONTESTED, ClaimStatus.ASSERTED]
             )
-            .count()
         )
 
         return TruthMapView(

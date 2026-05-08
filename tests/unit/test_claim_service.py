@@ -67,9 +67,11 @@ def doc_b(db_session, cs_case):
 
 
 def _make_claim(db_session, case, doc, text, status=ClaimStatus.ASSERTED):
+    """Wave 2A: claim is global; case scope comes from its ASSERTS evidence
+    row's document. The `case` argument is kept in the signature for call-site
+    readability (existing tests assume it documents the intent) but not used
+    structurally — the doc's case_id is what binds the claim to a case."""
     claim = Claim(
-        case_id=case.id,
-        source_document_id=doc.id,
         claim_text=text,
         claim_type=ClaimType.FACTUAL,
         status=status,
@@ -77,6 +79,15 @@ def _make_claim(db_session, case, doc, text, status=ClaimStatus.ASSERTED):
         last_updated_at=datetime.now(),
     )
     db_session.add(claim)
+    db_session.flush()
+    db_session.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=doc.id,
+            role=ClaimEvidenceRole.ASSERTS,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
     db_session.flush()
     db_session.refresh(claim)
     return claim
@@ -238,7 +249,8 @@ def test_evidence_rows_attached_to_claim(db_session, cs_case, doc_a, doc_b):
 
     claim_rows = [row for group in view.groups for row in group.claims]
     assert len(claim_rows) == 1
-    assert len(claim_rows[0].evidence) == 2
+    # 3 rows: ASSERTS from _make_claim + the two explicitly-added rows.
+    assert len(claim_rows[0].evidence) == 3
 
 
 @pytest.mark.unit
@@ -257,8 +269,10 @@ def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b
     view = svc.get_truth_map(cs_case.id, "open")
 
     evidence_rows = view.groups[0].claims[0].evidence
-    assert evidence_rows[0].document.id == doc_a.id
-    assert evidence_rows[1].document.id == doc_b.id
+    # 3 rows total (ASSERTS from _make_claim + 2 explicit). doc_a-rooted
+    # evidence sorts before doc_b-rooted by received_date.
+    doc_ids_in_order = [r.document.id for r in evidence_rows]
+    assert doc_ids_in_order.index(doc_a.id) < doc_ids_in_order.index(doc_b.id)
 
 
 @pytest.mark.unit

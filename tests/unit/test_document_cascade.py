@@ -67,18 +67,14 @@ def test_delete_document_removes_reactions(db_session, case_and_doc):
 @pytest.mark.unit
 def test_delete_document_removes_claim_evidence(db_session, case_and_doc):
     """Deleting a document removes ClaimEvidence rows linked to it."""
-    case, doc = case_and_doc
-    claim = Claim(
-        case_id=case.id,
-        source_document_id=doc.id,
-        claim_text="Test claim",
-    )
+    _case, doc = case_and_doc
+    claim = Claim(claim_text="Test claim")
     db_session.add(claim)
     db_session.flush()
     evidence = ClaimEvidence(
         claim_id=claim.id,
         document_id=doc.id,
-        role=ClaimEvidenceRole.SUPPORTS,
+        role=ClaimEvidenceRole.ASSERTS,
     )
     db_session.add(evidence)
     db_session.commit()
@@ -96,7 +92,7 @@ def test_delete_document_removes_claim_evidence(db_session, case_and_doc):
 @pytest.mark.unit
 def test_delete_document_removes_all_children(db_session, case_and_doc):
     """Deleting a document removes pins, reactions, and claim evidence together."""
-    case, doc = case_and_doc
+    _case, doc = case_and_doc
 
     pin = DocumentPin(
         document_id=doc.id, passage_id="pid111111111", user_id="single_user"
@@ -105,13 +101,11 @@ def test_delete_document_removes_all_children(db_session, case_and_doc):
     db_session.add_all([pin, reaction])
     db_session.flush()
 
-    claim = Claim(
-        case_id=case.id, source_document_id=doc.id, claim_text="Multi child claim"
-    )
+    claim = Claim(claim_text="Multi child claim")
     db_session.add(claim)
     db_session.flush()
     evidence = ClaimEvidence(
-        claim_id=claim.id, document_id=doc.id, role=ClaimEvidenceRole.CONTESTS
+        claim_id=claim.id, document_id=doc.id, role=ClaimEvidenceRole.ASSERTS
     )
     db_session.add(evidence)
     db_session.commit()

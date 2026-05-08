@@ -21,24 +21,32 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         status=ActionItemStatus.OPEN,
     )
     claim = Claim(
-        case_id=sample_case.id,
         claim_text="Contested fact",
         status=ClaimStatus.CONTESTED,
-        source_document_id=source_doc.id,
         first_made_at=datetime.now(),
         last_updated_at=datetime.now(),
     )
     db_session.add_all([action, claim])
-    db_session.commit()
+    db_session.flush()
 
-    # Also add evidence for the claim to verify counts
-    evidence = ClaimEvidence(
-        claim_id=claim.id,
-        document_id=source_doc.id,
-        role=ClaimEvidenceRole.SUPPORTS,
-        ingest_date=datetime.now(),
+    # ASSERTS row scopes the claim to source_doc's case; SUPPORTS row gives
+    # the evidence-count verification something to count.
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=source_doc.id,
+                role=ClaimEvidenceRole.ASSERTS,
+                ingest_date=datetime.now(),
+            ),
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=source_doc.id,
+                role=ClaimEvidenceRole.SUPPORTS,
+                ingest_date=datetime.now(),
+            ),
+        ]
     )
-    db_session.add(evidence)
     db_session.commit()
 
     prompt = build_case_chat_prompt(

@@ -12,7 +12,7 @@ import sys
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import Claim, ClaimEvidence, Document
+from app.models.database import ClaimEvidence, Document
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, OriginatorType
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -26,11 +26,11 @@ def snapshot_doc_state(db: Session, doc_id: int) -> dict:
     if not doc:
         return {"doc_id": doc_id, "missing": True}
 
-    claims = (
-        db.query(Claim)
-        .filter(Claim.source_document_id == doc_id)
-        .order_by(Claim.id)
-        .all()
+    from app.repositories.claim import ClaimRepository
+
+    claims = sorted(
+        ClaimRepository(db).claims_asserted_by_document(doc_id),
+        key=lambda c: c.id,
     )
     by_status: dict[ClaimStatus, int] = {}
     for c in claims:

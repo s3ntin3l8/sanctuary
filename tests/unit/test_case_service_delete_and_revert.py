@@ -82,16 +82,14 @@ def case_with_full_dependencies(db_session):
         )
     )
     claim = Claim(
-        case_id=case.id,
-        source_document_id=doc.id,
         claim_text="X claims Y",
         claim_type=ClaimType.FACTUAL,
     )
     db_session.add(claim)
-    db_session.commit()
+    db_session.flush()
     db_session.add(
         ClaimEvidence(
-            claim_id=claim.id, document_id=doc.id, role=ClaimEvidenceRole.SUPPORTS
+            claim_id=claim.id, document_id=doc.id, role=ClaimEvidenceRole.ASSERTS
         )
     )
     db_session.commit()
@@ -125,14 +123,17 @@ def test_delete_and_revert_full_cascade(
         db_session.query(ActionItem).filter(ActionItem.case_id == case.id).count() == 0
     )
     assert db_session.query(LegalCost).filter(LegalCost.case_id == case.id).count() == 0
-    assert db_session.query(Claim).filter(Claim.case_id == case.id).count() == 0
-    # ClaimEvidence chained via Claim ORM cascade
-    assert (
-        db_session.query(ClaimEvidence)
-        .filter(ClaimEvidence.claim_id == claim.id)
-        .count()
-        == 0
+    # Wave 2A: claims are global. delete_and_revert preserves claims (and
+    # their ClaimEvidence rows) because the documents are reverted to
+    # _TRIAGE, not deleted. The claim's case scope follows the document
+    # back to _TRIAGE alongside it.
+    surviving_claim = db_session.get(Claim, claim.id)
+    assert surviving_claim is not None
+    surviving_evidence = (
+        db_session.query(ClaimEvidence).filter(ClaimEvidence.claim_id == claim.id).all()
     )
+    assert len(surviving_evidence) >= 1
+    assert all(ev.document_id == doc.id for ev in surviving_evidence)
 
     # Document reverted to triage with needs_review=True
     refreshed = db_session.get(Document, doc.id)

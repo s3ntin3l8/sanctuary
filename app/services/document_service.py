@@ -26,7 +26,7 @@ class DocumentService:
         """Delete document and all dependent rows from the database and filesystem."""
         import os
 
-        from sqlalchemy import or_, text
+        from sqlalchemy import func, or_, text
 
         from app.models.database import (
             ActionItem,
@@ -81,18 +81,27 @@ class DocumentService:
             ActionItem.source_document_id == doc_id
         ).update({"source_document_id": None}, synchronize_session=False)
 
-        # Remove Claims that originated from this document (and their evidence)
-        # We must delete because source_document_id is NOT NULL on Claims.
-        claims_to_delete = (
-            self.db.query(Claim.id).filter(Claim.source_document_id == doc_id).all()
+        # Wave 2A: claims are global; case context comes from ClaimEvidence.
+        # Deleting a document cascades to remove its ClaimEvidence rows
+        # (FK ondelete=CASCADE). After that, any claim that's left with zero
+        # evidence rows is rootless — no document anchors it to any case —
+        # and should be deleted. Claims that still have evidence from OTHER
+        # documents (e.g. a CONTESTS row from a later filing) stay; their
+        # case scope comes from those remaining evidence anchors.
+        self.db.query(ClaimEvidence).filter(ClaimEvidence.document_id == doc_id).delete(
+            synchronize_session=False
         )
-        claim_ids = [c[0] for c in claims_to_delete]
 
-        if claim_ids:
-            self.db.query(ClaimEvidence).filter(
-                ClaimEvidence.claim_id.in_(claim_ids)
-            ).delete(synchronize_session=False)
-            self.db.query(Claim).filter(Claim.id.in_(claim_ids)).delete(
+        rootless = (
+            self.db.query(Claim.id)
+            .outerjoin(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
+            .group_by(Claim.id)
+            .having(func.count(ClaimEvidence.id) == 0)
+            .all()
+        )
+        rootless_ids = [c[0] for c in rootless]
+        if rootless_ids:
+            self.db.query(Claim).filter(Claim.id.in_(rootless_ids)).delete(
                 synchronize_session=False
             )
 

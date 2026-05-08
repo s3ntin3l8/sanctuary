@@ -416,28 +416,20 @@ class ActionItem(Base):
 
 
 class Claim(Base):
-    """An atomic factual or legal assertion made in a document (the Truth Map)."""
+    """An atomic factual, legal, or procedural proposition (the Truth Map node).
+
+    Wave 2A: claims are global. Case context lives entirely on `ClaimEvidence`
+    — every claim has at least one `ClaimEvidence(role=ASSERTS)` row whose
+    document carries the case_id, and queries that need case scope join
+    through ClaimEvidence → Document → Document.case_id. A finding established
+    in case A's documents can be evidence-linked from case B's documents
+    without duplicating the claim record.
+    """
 
     __tablename__ = "claims"
-    __table_args__ = (
-        Index("ix_claims_case", "case_id"),
-        Index("ix_claims_case_status", "case_id", "status"),
-        Index("ix_claims_proceeding", "proceeding_id"),
-    )
+    __table_args__ = (Index("ix_claims_status", "status"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
-        String,
-        ForeignKey("cases.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    proceeding_id = Column(
-        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
-    )
-    source_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=False, index=True
-    )
 
     claim_text = Column(Text, nullable=False)
     claim_type = Column(SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False)
@@ -448,16 +440,9 @@ class Claim(Base):
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
-    case = relationship("Case")
-    proceeding = relationship("Proceeding")
-    source_document = relationship("Document")
     evidence = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
     )
-
-    @validates("case_id")
-    def validate_case_id(self, key, case_id):
-        return normalize_case_id(case_id)
 
 
 class ClaimEvidence(Base):

@@ -1,14 +1,20 @@
 import pytest
 
-from app.models.database import Case, Claim, Document, IngestBatch
-from app.models.enums import ClaimStatus, ClaimType, IngestBatchSourceType
+from app.models.database import Case, Claim, ClaimEvidence, Document, IngestBatch
+from app.models.enums import (
+    ClaimEvidenceRole,
+    ClaimStatus,
+    ClaimType,
+    IngestBatchSourceType,
+)
 from app.services.document_service import DocumentService
 
 
 @pytest.mark.integration
 def test_delete_document_with_claims(db_session):
-    """Verify that deleting a document with associated claims works and doesn't trigger IntegrityError."""
-    # 1. Setup
+    """Wave 2A: deleting a document deletes claims that become rootless
+    (no remaining evidence anywhere) and preserves claims that still have
+    evidence on other documents."""
     case = Case(id="TEST-001", title="Test Case")
     db_session.add(case)
     db_session.commit()
@@ -26,30 +32,85 @@ def test_delete_document_with_claims(db_session):
     db_session.refresh(doc)
 
     claim = Claim(
-        case_id=case.id,
-        source_document_id=doc.id,
         claim_text="This is a test claim",
         claim_type=ClaimType.FACTUAL,
         status=ClaimStatus.ASSERTED,
     )
     db_session.add(claim)
+    db_session.flush()
+    db_session.add(
+        ClaimEvidence(
+            claim_id=claim.id,
+            document_id=doc.id,
+            role=ClaimEvidenceRole.ASSERTS,
+        )
+    )
     db_session.commit()
     db_session.refresh(claim)
 
     claim_id = claim.id
     doc_id = doc.id
 
-    # 2. Act
     doc_service = DocumentService(db_session)
     success = doc_service.delete_document(doc_id)
 
-    # 3. Assert
     assert success is True
 
-    # Verify document is gone
     deleted_doc = db_session.query(Document).filter(Document.id == doc_id).first()
     assert deleted_doc is None
 
-    # Verify claim is also gone (as per our fix)
+    # Claim was rootless after the delete (only evidence was on the deleted
+    # doc), so it gets cleaned up as part of the cascade.
     deleted_claim = db_session.query(Claim).filter(Claim.id == claim_id).first()
     assert deleted_claim is None
+
+
+@pytest.mark.integration
+def test_delete_document_preserves_cross_doc_claim(db_session):
+    """A claim with evidence on multiple documents survives deletion of one
+    of those documents — its remaining evidence keeps it scoped to a case."""
+    case = Case(id="TEST-002", title="Case 2")
+    db_session.add(case)
+    db_session.flush()
+    batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="b")
+    db_session.add(batch)
+    db_session.flush()
+    doc_a = Document(title="A", ingest_batch_id=batch.id, case_id=case.id)
+    doc_b = Document(title="B", ingest_batch_id=batch.id, case_id=case.id)
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+
+    claim = Claim(
+        claim_text="Cross-doc claim",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+    )
+    db_session.add(claim)
+    db_session.flush()
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=doc_a.id,
+                role=ClaimEvidenceRole.ASSERTS,
+            ),
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=doc_b.id,
+                role=ClaimEvidenceRole.SUPPORTS,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    DocumentService(db_session).delete_document(doc_a.id)
+
+    survived = db_session.query(Claim).filter(Claim.id == claim.id).first()
+    assert survived is not None, (
+        "claim still has evidence on doc_b; it must not be deleted"
+    )
+    remaining = (
+        db_session.query(ClaimEvidence).filter(ClaimEvidence.claim_id == claim.id).all()
+    )
+    assert len(remaining) == 1
+    assert remaining[0].document_id == doc_b.id
