@@ -123,7 +123,7 @@ You will be given:
 
 The DOCUMENT ORIGINATOR tells you who authored this document:
 - `court` — extract substantive holdings (legal principles, factual determinations, procedural rulings) but NOT bookkeeping references to other documents in the chain.
-- `opposing` / `own` / `third_party` — extract substantive assertions made by the author.
+- `opposing` / `own` / `third_party` — extract substantive assertions made by the author about the world or the case.
 
 Your tasks:
 A) Extract atomic NEW assertions this document makes for the first time (new_claims).
@@ -139,39 +139,95 @@ Return ONLY valid JSON:
   ]
 }
 
-What COUNTS as a claim (extract these):
-- Only extract claims that are **contested, contestable, or load-bearing for the dispute**. If the assertion is administrative confirmation, scheduling, or restating dates/identifiers already in document headers, OMIT it.
-- Substantive factual assertions about the parties, the dispute, the evidence (e.g. "the opposing party refused to return the children on 16.02.2026")
-- Legal positions or doctrines invoked (e.g. "the user has Mitsorgerecht under § 1626 BGB", "objections to property status must be raised in civil proceedings, not enforcement")
-- Court findings and dispositions on matters in controversy (e.g. "the LG rejected the complaint because § 180 III ZVG requirements were not substantiated", "sole custody of the children belongs to the creditor")
+# THE CONTESTABILITY TEST
 
-What does NOT count as a claim (DO NOT extract these — they belong to other fields):
-- **Document references** — statements that another document exists / was filed / was served / was issued. Examples to OMIT:
-  • "Yingying Liu filed an objection on 16.01.2026"
-  • "the lawyer responded to the request on 01.12.2025"
-  • "the lower court's decision was served on 17.01.2026"
-  • "the AG issued a decision on 12.11.2025 approving the auction order"
-  • "the debtor referenced a family law proceeding in a letter dated 23.01.2026"
-  These are pointers to OTHER documents in the chain. The cited document — when ingested — carries its own substantive claims. Extracting the reference itself just creates noise.
-  Distinguish: "the lower court rejected the request because § 180 III requirements were not met" IS a claim (substantive holding); "the lower court issued a decision on 15.01.2026" is NOT (just a pointer to that decision).
-- Court directives or deadlines imposed by THIS document ("wird dem Gläubiger aufgegeben, … binnen 2 Wochen mitzuteilen", "die Antragsgegnerin hat … einzureichen") — those are action_items captured by the enricher.
-- Relative time periods ("binnen X Wochen", "innerhalb Y Tagen") — action_items.
-- Letterhead identity, signature blocks, document metadata: who the Urkundsbeamtin is, "elektronisch erstellt und ist ohne Unterschrift gültig", "Datum 30.04.2026", recipient address, sender address.
-- Generic procedural boilerplate: "The court has jurisdiction", "This letter was electronically created", "Datenschutzhinweis …".
-- Pure document-existence statements ("the document is dated …", "the sender of the letter is …").
-- Confirmations, acknowledgements, or restatements of facts the recipient already knows (e.g. "confirms receipt on date X", "document is dated Y", "the hearing is scheduled for Z") — these are not contested claims.
+A claim is something a reasonable opponent COULD dispute. Before extracting any candidate, ask:
+  "If this is wrong, what changes about the case?"
+If the answer is "nothing" — DO NOT extract it.
 
-Atomicity:
-- Each new_claim is ONE atomic assertion — one subject, one predicate, one claim. Split compound sentences.
-- claim_type must be exactly one of: factual, legal, procedural.
-- role must be exactly one of: supports, contests, refutes, cites_as_proof.
-- Only use claim_ids from the provided existing claims list — never invent IDs.
+# WHAT IS A CLAIM (the only things to extract)
 
-Party perspective:
-- When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, write the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
-- A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
+- **Substantive factual assertions about the world** — what happened, who did what, when, where. NOT what document recorded it.
+- **Legal positions or doctrines invoked** — propositions of law, statute readings, case-law references.
+- **Court findings and dispositions on matters in controversy** — holdings on the merits, not mere procedural acts.
 
-If in doubt, omit. Better to return zero claims than three trivial ones.
+# WHAT IS NOT A CLAIM (DO NOT EXTRACT)
+
+## NEVER extract self-referential claims about THIS document
+The document you are analyzing is the SOURCE of claims, not their SUBJECT. Never claim:
+- "This document is dated X" / "the issue date is X" / "the document is dated X"
+- "This document is addressed to X" / "the recipient is X" / "the addressee is X"
+- "The sender of this document is X" / "this document was sent by X"
+- "The internal reference number of this document is X" / "the AZ is X"
+- "This document is filed by X" / "we filed this motion" / "this is a complaint"
+- "The author of this document is X" / "this document was written by X"
+
+If the assertion is about the very document being analyzed, IT IS NOT A CLAIM. It is metadata. OMIT IT.
+
+## NEVER extract pure document references
+Statements that ANOTHER document exists / was filed / was served / was issued. The other document, when ingested, carries its own claims. Examples to OMIT:
+- "Yingying Liu filed an objection on 16.01.2026" → reference, not a claim
+- "The lawyer responded on 01.12.2025" → reference, not a claim
+- "The lower court's decision was served on 17.01.2026" → reference
+- "The AG issued a decision on 12.11.2025" → reference
+
+DISTINGUISHING TEST: if the sentence's load-bearing meaning is **the existence/timing of a document or filing**, it's a reference. If the load-bearing meaning is **a substantive fact about the world or the dispute**, it might be a claim.
+- "The lower court rejected the request because § 180 III requirements were not substantiated" → SUBSTANTIVE HOLDING (claim, type=procedural or legal)
+- "The lower court issued a decision on 15.01.2026" → REFERENCE (omit)
+
+## NEVER extract directives, deadlines, action items
+- "wird dem Gläubiger aufgegeben, … binnen 2 Wochen mitzuteilen" → action_item
+- "Der Antragsgegnerin wird … gesetzt" → action_item
+- Any "by date X, do Y" → action_item, not a claim
+
+## NEVER extract boilerplate or letterhead
+- Letterhead identity (who the Urkundsbeamtin is, court address)
+- Signature blocks
+- "Datenschutzhinweis…", "elektronisch erstellt und ist ohne Unterschrift gültig"
+- "The court has jurisdiction" (boilerplate, not contested in this matter)
+
+## NEVER extract acknowledgements/restatements of known facts
+- "confirms receipt on date X" — bookkeeping
+- "the hearing is scheduled for Y" — calendar entry
+- Restatement of identifiers, dates, parties, addresses
+
+# ATOMICITY
+
+Each new_claim is ONE atomic assertion — one subject, one predicate, one claim. Split compound sentences.
+claim_type must be exactly one of: factual, legal, procedural.
+role must be exactly one of: supports, contests, refutes, cites_as_proof.
+Only use claim_ids from the provided existing claims list — never invent IDs.
+
+# PARTY PERSPECTIVE
+
+When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, write the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
+
+# WORKED EXAMPLES
+
+These are based on real extraction failures. Internalize the pattern.
+
+Document: "We, on behalf of Hansen Björn, file this complaint against the LG decision of 24.04.2026 regarding the forced sale order."
+- BAD: "Hansen Björn filed a complaint against the LG decision of 24.04.2026" → REJECTED (this IS the document; it's self-referential metadata)
+- BAD: "The LG issued a decision on 24.04.2026 regarding the forced sale order" → REJECTED (document reference)
+- GOOD: (none) → this content is purely about the document's own filing; no extractable claim.
+
+Document: "The LG ruled that suspension of the partition auction is permissible only for up to six months. The requirements for temporary suspension under § 180 III ZVG were not substantiated."
+- GOOD: "Suspension of the partition auction is permissible only for up to six months" → legal doctrine/holding
+- GOOD: "The § 180 III ZVG requirements for temporary suspension were not substantiated in this proceeding" → procedural finding
+- BAD: "The LG ruled on the case" → too generic, no substantive content
+
+Document letterhead: "Landgericht Ingolstadt, Auf der Schanz 37, 85049 Ingolstadt, AZ 15 T 158/26"
+- BAD (all of these): "The court is at Auf der Schanz 37", "The case number is 15 T 158/26", "The document is from LG Ingolstadt" → letterhead metadata, not claims.
+
+Document content: "We dispute that the auction was properly ordered because the children's welfare was not considered."
+- GOOD: "The auction was not properly ordered" → contestable factual/procedural assertion (originator-side claim)
+- GOOD: "Children's welfare was not adequately considered in the auction order" → contestable factual claim
+- BAD: "We dispute the auction" → too generic, no specific proposition
+
+# CALIBRATION
+
+If in doubt, OMIT. A document with zero claims is BETTER than a document with three trivial ones.
+Do not pad. Do not extract content just because the document mentions it.
 If no extractable new claims and no stances on existing claims: return {"new_claims": [], "evidence_links": []}.
 Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""
