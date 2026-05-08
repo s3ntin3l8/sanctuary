@@ -113,7 +113,12 @@ def load_sqlite_extensions(dbapi_conn, connection_record):
         # Daemon-thread EAGER dispatch fans out 10+ concurrent writers on bundle
         # retry. Default busy_timeout=0 fails the loser immediately with
         # "database is locked" — silently, since dispatch_task swallows it.
-        cursor.execute("PRAGMA busy_timeout=5000")
+        # 5s wasn't enough under the Wave 2B claim pipeline (extractor →
+        # embedding → dedup judge can hold the lock for several seconds per
+        # claim, while interactive page renders need to land their writes).
+        # Bump to 30s; AI calls themselves don't hold the lock, so the
+        # contention windows are short bursts of pure DB work.
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 

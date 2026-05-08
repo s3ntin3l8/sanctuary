@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import OperationalError
+
 from app.models.database import UserSettings
+
+logger = logging.getLogger(__name__)
 
 
 def get_last_viewed(case_id: str, db) -> datetime | None:
@@ -18,21 +23,36 @@ def get_last_viewed(case_id: str, db) -> datetime | None:
 
 
 def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
-    """Record that the user just viewed this case."""
+    """Record that the user just viewed this case.
+
+    Best-effort: this is a UX nicety (last-viewed tracking). If a Celery
+    writer (claim extraction, dedup judge) is holding the SQLite write
+    lock past busy_timeout, swallow `database is locked` rather than 500
+    the case-page render. The user can always view the case again.
+    """
     if now is None:
         now = datetime.now(UTC).replace(
             tzinfo=None
         )  # naive UTC, consistent with Document.ingest_date
-    settings = db.query(UserSettings).first()
-    if not settings:
-        return
-    # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
-    current = dict(settings.settings_json or {})
-    last_viewed = dict(current.get("last_viewed_cases", {}))
-    last_viewed[case_id] = now.isoformat()
-    current["last_viewed_cases"] = last_viewed
-    settings.settings_json = current
-    db.flush()
+    try:
+        settings = db.query(UserSettings).first()
+        if not settings:
+            return
+        # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
+        current = dict(settings.settings_json or {})
+        last_viewed = dict(current.get("last_viewed_cases", {}))
+        last_viewed[case_id] = now.isoformat()
+        current["last_viewed_cases"] = last_viewed
+        settings.settings_json = current
+        db.flush()
+    except OperationalError as exc:
+        if "database is locked" in str(exc).lower():
+            logger.warning(
+                "mark_viewed(%s): db locked, skipping last-viewed update", case_id
+            )
+            db.rollback()
+            return
+        raise
 
 
 def _get_or_create(db) -> UserSettings:
@@ -74,15 +94,23 @@ def get_last_home_visit(db) -> datetime | None:
 
 
 def mark_home_visit(db, *, now: datetime | None = None) -> None:
-    """Record that the user just visited the home page."""
+    """Record that the user just visited the home page. Best-effort —
+    swallows SQLite write-lock contention rather than 500 the home page."""
     if now is None:
         now = datetime.now()
-    settings = _get_or_create(db)
-    # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
-    current = dict(settings.settings_json or {})
-    current["last_home_visit"] = now.isoformat()
-    settings.settings_json = current
-    db.flush()
+    try:
+        settings = _get_or_create(db)
+        # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
+        current = dict(settings.settings_json or {})
+        current["last_home_visit"] = now.isoformat()
+        settings.settings_json = current
+        db.flush()
+    except OperationalError as exc:
+        if "database is locked" in str(exc).lower():
+            logger.warning("mark_home_visit: db locked, skipping update")
+            db.rollback()
+            return
+        raise
 
 
 def get_theme(db) -> str:

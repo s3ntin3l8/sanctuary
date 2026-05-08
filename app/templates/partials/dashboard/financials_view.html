@@ -95,10 +95,16 @@
 
   {# ── Cost Table ── #}
   <div class="space-y-6">
-    {% set costs_by_proc = costs|groupby('proceeding_id') %}
-    {% for group in costs_by_proc %}
-      {% set proc_id = group.grouper %}
-      {% set group_costs = group.list %}
+    {# financials.grouped_costs is pre-built in Python (dict keyed by
+       proceeding_id, which can be None for case-level costs). Avoid the
+       Jinja `groupby` filter — it sorts the keys, which fails with
+       `'<' not supported between instances of 'int' and 'NoneType'` when
+       case-level costs coexist with proceeding-scoped ones. #}
+    {% set costs_by_proc = financials.grouped_costs %}
+    {% set proc_keys_int = costs_by_proc.keys()|reject('none')|list|sort %}
+    {% set proc_keys_none = costs_by_proc.keys()|select('none')|list %}
+    {% for proc_id in (proc_keys_int + proc_keys_none) %}
+      {% set group_costs = costs_by_proc[proc_id] %}
       {% set first_cost = group_costs[0] %}
       {% set proc = first_cost.proceeding %}
 

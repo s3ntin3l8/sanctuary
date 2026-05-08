@@ -37,8 +37,8 @@
       Pending Merges ({{ truth_map.pending_merges | length }})
     </h4>
     {% for m in truth_map.pending_merges %}
-    <div class="text-xs px-2 py-1.5 rounded border border-amber-500/20 bg-surface-container/40"
-         x-data="{ resolved: false }" x-show="!resolved">
+    <div id="merge-pill-{{ m.proposal_id }}"
+         class="text-xs px-2 py-1.5 rounded border border-amber-500/20 bg-surface-container/40">
       <div class="text-on-surface-variant">
         <span class="font-mono">#{{ m.new_claim_id }}</span>
         <span class="text-outline">≈</span>
@@ -58,14 +58,14 @@
       {% endif %}
       <div class="flex gap-1 mt-1.5">
         <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/confirm"
-                hx-swap="none"
-                @htmx:after-request="resolved = true"
+                hx-target="#merge-pill-{{ m.proposal_id }}"
+                hx-swap="outerHTML"
                 class="text-[10px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
           ✓ Merge
         </button>
         <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/dismiss"
-                hx-swap="none"
-                @htmx:after-request="resolved = true"
+                hx-target="#merge-pill-{{ m.proposal_id }}"
+                hx-swap="outerHTML"
                 class="text-[10px] font-bold px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
           ✕ Dismiss
         </button>

@@ -44,14 +44,16 @@
           </div>
         </div>
       </div>
-      {# Wave 2B: AI-proposed merges for THIS claim — "looks like an existing claim, merge?" #}
+      {# Wave 2B: AI-proposed merges for THIS claim — "looks like an existing claim, merge?"
+         Use server-driven swap (outerHTML over the pill) for visual feedback. The
+         confirm/dismiss endpoints return an empty body so the pill is removed by
+         HTMX directly — no Alpine event-listener dependency. #}
       {% set merges = (merge_proposals_by_claim_id or {}).get(claim.id, []) %}
       {% if merges %}
       <div class="mt-1 ml-6 space-y-1">
         {% for prop in merges %}
-        <div class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-amber-500/30 bg-amber-500/5"
-             x-data="{ resolved: false, resolvedMsg: '' }"
-             x-show="!resolved">
+        <div id="merge-pill-{{ prop.id }}"
+             class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-amber-500/30 bg-amber-500/5">
           <span class="material-symbols-outlined text-sm text-amber-600 dark:text-amber-400 flex-shrink-0">merge</span>
           <div class="flex-1 min-w-0">
             <div class="text-amber-700 dark:text-amber-300">
@@ -60,14 +62,14 @@
             {% if prop.rationale %}<div class="text-on-surface-variant/70 italic line-clamp-2">{{ prop.rationale }}</div>{% endif %}
             <div class="flex gap-1 mt-1">
               <button hx-post="/claims/proposals/merge/{{ prop.id }}/confirm"
-                      hx-swap="none"
-                      @htmx:after-request="resolved = true"
+                      hx-target="#merge-pill-{{ prop.id }}"
+                      hx-swap="outerHTML"
                       class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
                 ✓ Merge
               </button>
               <button hx-post="/claims/proposals/merge/{{ prop.id }}/dismiss"
-                      hx-swap="none"
-                      @htmx:after-request="resolved = true"
+                      hx-target="#merge-pill-{{ prop.id }}"
+                      hx-swap="outerHTML"
                       class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
                 ✕ Dismiss
               </button>
@@ -155,8 +157,8 @@
         'refutes': 'var(--color-error)',
         'cites_as_proof': 'var(--color-on-surface-variant)',
       }.get(prop.proposed_role.value, 'var(--color-on-surface-variant)') %}
-      <li class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-outline-variant/30 bg-surface-container/40"
-          x-data="{ resolved: false }" x-show="!resolved">
+      <li id="evidence-pill-{{ prop.id }}"
+          class="flex items-start gap-2 text-[10px] px-2 py-1.5 rounded border border-outline-variant/30 bg-surface-container/40">
         <span class="text-base leading-none flex-shrink-0" style="color:{{ role_color }};">
           {% if prop.proposed_role.value == 'supports' %}✓
           {% elif prop.proposed_role.value == 'contests' %}⚠
@@ -172,14 +174,14 @@
           {% if prop.excerpt %}<div class="text-on-surface-variant/60 italic line-clamp-2">excerpt: {{ prop.excerpt }}</div>{% endif %}
           <div class="flex gap-1 mt-1">
             <button hx-post="/claims/proposals/evidence/{{ prop.id }}/confirm"
-                    hx-swap="none"
-                    @htmx:after-request="resolved = true"
+                    hx-target="#evidence-pill-{{ prop.id }}"
+                    hx-swap="outerHTML"
                     class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
               ✓ Confirm
             </button>
             <button hx-post="/claims/proposals/evidence/{{ prop.id }}/dismiss"
-                    hx-swap="none"
-                    @htmx:after-request="resolved = true"
+                    hx-target="#evidence-pill-{{ prop.id }}"
+                    hx-swap="outerHTML"
                     class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
               ✕ Dismiss
             </button>

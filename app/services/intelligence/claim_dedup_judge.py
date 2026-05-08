@@ -17,8 +17,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.database import Claim, ClaimMergeProposal
-from app.models.enums import ProposalConfidence, ProposalStatus
+from app.models.database import Claim, ClaimEvidence, ClaimMergeProposal
+from app.models.enums import ClaimEvidenceRole, ProposalConfidence, ProposalStatus
 from app.services.ai_config import get_chat_config
 from app.services.claim_embedding import nearest_claims
 from app.services.intelligence._ai_call import call_json_ai
@@ -86,6 +86,21 @@ def propose_merges_for_new_claim(
     if not nearest:
         return []
 
+    # Pre-compute the set of document ids that ASSERT this new_claim.
+    # If the matched existing claim ALSO has an ASSERTS row from one of these
+    # documents, the LLM produced two near-identical claims from the same
+    # source document — auto-apply the merge instead of asking the user, since
+    # there is no user signal worth preserving in an intra-doc duplicate.
+    new_claim_doc_ids = {
+        ev.document_id
+        for ev in db.query(ClaimEvidence)
+        .filter(
+            ClaimEvidence.claim_id == new_claim.id,
+            ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+        )
+        .all()
+    }
+
     proposals: list[ClaimMergeProposal] = []
     confidence_map = {
         "high": ProposalConfidence.HIGH,
@@ -105,6 +120,45 @@ def propose_merges_for_new_claim(
         )
         if verdict is None or verdict.action != "merge":
             continue
+
+        # Intra-document duplicate auto-merge. If both claims are ASSERTED by
+        # the same document, the LLM produced a duplicate within one extraction
+        # pass — collapse it now without bothering the user.
+        existing_doc_ids = {
+            ev.document_id
+            for ev in db.query(ClaimEvidence)
+            .filter(
+                ClaimEvidence.claim_id == existing_id,
+                ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+            )
+            .all()
+        }
+        intra_doc = bool(new_claim_doc_ids & existing_doc_ids)
+        if intra_doc and verdict.confidence in ("high", "medium"):
+            from app.services.claim_proposal_service import confirm_merge
+
+            auto_prop = ClaimMergeProposal(
+                new_claim_id=new_claim.id,
+                existing_claim_id=existing_id,
+                confidence=confidence_map.get(
+                    verdict.confidence, ProposalConfidence.LOW
+                ),
+                rationale=f"intra-doc auto-merge: {verdict.rationale}",
+                status=ProposalStatus.PENDING,
+                proposed_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+            db.add(auto_prop)
+            db.flush()
+            confirm_merge(auto_prop.id, db)
+            db.commit()
+            logger.info(
+                "auto-merged intra-doc duplicate: new claim %s collapsed into existing %s",
+                new_claim.id,
+                existing_id,
+            )
+            # new_claim has been deleted by confirm_merge; stop iterating.
+            return proposals
+
         prop = ClaimMergeProposal(
             new_claim_id=new_claim.id,
             existing_claim_id=existing_id,

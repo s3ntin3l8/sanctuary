@@ -166,30 +166,55 @@ If the assertion is about the very document being analyzed, IT IS NOT A CLAIM. I
 
 ## NEVER extract pure document references
 Statements that ANOTHER document exists / was filed / was served / was issued. The other document, when ingested, carries its own claims. Examples to OMIT:
-- "Yingying Liu filed an objection on 16.01.2026" → reference, not a claim
-- "The lawyer responded on 01.12.2025" → reference, not a claim
-- "The lower court's decision was served on 17.01.2026" → reference
-- "The AG issued a decision on 12.11.2025" → reference
+- "[Party] filed an objection on [date]" → reference, not a claim
+- "The lawyer responded on [date]" → reference, not a claim
+- "The lower court's decision was served on [date]" → reference
+- "The trial court issued a decision on [date]" → reference
 
 DISTINGUISHING TEST: if the sentence's load-bearing meaning is **the existence/timing of a document or filing**, it's a reference. If the load-bearing meaning is **a substantive fact about the world or the dispute**, it might be a claim.
-- "The lower court rejected the request because § 180 III requirements were not substantiated" → SUBSTANTIVE HOLDING (claim, type=procedural or legal)
-- "The lower court issued a decision on 15.01.2026" → REFERENCE (omit)
+- "The lower court rejected the request because the statutory requirements were not substantiated" → SUBSTANTIVE HOLDING (claim, type=procedural or legal)
+- "The lower court issued a decision on [date]" → REFERENCE (omit)
 
-## NEVER extract directives, deadlines, action items
-- "wird dem Gläubiger aufgegeben, … binnen 2 Wochen mitzuteilen" → action_item
-- "Der Antragsgegnerin wird … gesetzt" → action_item
-- Any "by date X, do Y" → action_item, not a claim
+## NEVER extract directives, deadlines, scope-of-action, "must do X" obligations
+Even when phrased declaratively, sentences that describe what someone IS REQUIRED,
+AUTHORIZED, or APPOINTED to do are directives, not claims. They belong in
+`action_items` (handled elsewhere), NOT `new_claims`.
+- "[Party] is ordered to provide a statement within 2 weeks" → directive
+- "[Party] is given a deadline of [date]" → directive
+- "The appointed counsel's scope of action includes conducting conversations with parents" → scope-of-action
+- "The appointed counsel must inform the child about the procedure" → directive
+- "The court appoints [Person] as guardian ad litem" → procedural act, not a contestable claim
+- "[Party] must submit a written statement" → directive
+- Any "by date X, do Y" / "X is required to Y" / "X's duties include Y" → directive
 
-## NEVER extract boilerplate or letterhead
-- Letterhead identity (who the Urkundsbeamtin is, court address)
-- Signature blocks
-- "Datenschutzhinweis…", "elektronisch erstellt und ist ohne Unterschrift gültig"
-- "The court has jurisdiction" (boilerplate, not contested in this matter)
+## NEVER extract administrative metadata about the document, court, parties, or proceeding
+This is the single most common extraction failure. Documents mechanically carry
+metadata that is NOT a claim — even when the metadata names other people, places,
+or statutes. Anything that merely identifies, routes, finalizes, or recites the
+mechanics of this specific document or order is metadata. OMIT.
+- Party / counsel / representative contact info: "[Party] resides at [address]", "the recipient is [Party] at [address]", "the appointed counsel's address is [address]", "the opposing party's legal representation is handled by [Firm]" → addresses and representation info are routing, not propositions about the dispute.
+- Authoring / signing / deciding identity: "the judge signing is [Name]", "the decision was signed by Judge [Name]", "the deciding chamber is [Chamber]" → metadata.
+- Case file numbers, docket numbers, internal references: "the case number is [Number]", "the proceeding bears file number [Number]" → metadata.
+- Procedural-basis citation of THIS decision: "the decision was issued pursuant to [Statute § X]", "the appointment is based on [Statute § Y]" → this is the legal authority FOR THIS act, not a substantive legal holding ABOUT the dispute.
+- Appeal / remedies metadata about THIS decision: "the court decision is not subject to appeal", "no legal remedies are available", "this ruling is final" → finality metadata.
+- Routine boilerplate cost rulings: "court costs for the procedure are waived", "out-of-court costs are not reimbursed" → routine, contestable only via the cost regime, not a substantive claim.
+- Letterhead / signature blocks / "electronically generated and valid without signature" / privacy notices.
+- Acknowledgements: "confirms receipt on date X", "the hearing is scheduled for Y", restatements of known dates/parties.
 
-## NEVER extract acknowledgements/restatements of known facts
-- "confirms receipt on date X" — bookkeeping
-- "the hearing is scheduled for Y" — calendar entry
-- Restatement of identifiers, dates, parties, addresses
+THE TEST: does this assertion shape the case's substance, or does it merely
+identify, route, or finalize this specific document or order? If the latter — OMIT.
+
+## NEVER extract narration of past procedural attempts
+Sentences framed as "an attempt was made to X" describe past procedural mechanics.
+Extract the SUBSTANTIVE outcome instead, if any.
+- "An attempt was made to conduct a supervised visit as a milder measure" → REJECT (procedural narration). If the document also says cooperation failed, extract THAT: "The opposing party refused to cooperate with the supervisor" (substantive finding).
+- "The court attempted to schedule mediation" → REJECT (narration); the substance, if any, is in the outcome.
+
+## NEVER produce intra-document duplicates
+If two of your `new_claims` entries assert essentially the same proposition
+(one paraphrases the other), KEEP ONLY ONE. Pick the most concise wording.
+Cross-document dedup is handled downstream; you must dedupe within a single
+extraction. Outputting two near-identical claims is a hard failure.
 
 # ATOMICITY
 
@@ -200,29 +225,45 @@ Only use claim_ids from the provided existing claims list — never invent IDs.
 
 # PARTY PERSPECTIVE
 
-When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, write the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
+When the document refers to a party by role label (e.g. "the petitioner", "the respondent", "the plaintiff", "the defendant", "the creditor", "the debtor" — in any language) AND the document context (caption, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the role label to the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
 
 # WORKED EXAMPLES
 
 These are based on real extraction failures. Internalize the pattern.
 
-Document: "We, on behalf of Hansen Björn, file this complaint against the LG decision of 24.04.2026 regarding the forced sale order."
-- BAD: "Hansen Björn filed a complaint against the LG decision of 24.04.2026" → REJECTED (this IS the document; it's self-referential metadata)
-- BAD: "The LG issued a decision on 24.04.2026 regarding the forced sale order" → REJECTED (document reference)
+Document: "We, on behalf of [Party A], file this complaint against the lower court's decision of [date] regarding the forced-sale order."
+- BAD: "[Party A] filed a complaint against the lower court's decision of [date]" → REJECTED (this IS the document; it's self-referential metadata)
+- BAD: "The lower court issued a decision on [date] regarding the forced-sale order" → REJECTED (document reference)
 - GOOD: (none) → this content is purely about the document's own filing; no extractable claim.
 
-Document: "The LG ruled that suspension of the partition auction is permissible only for up to six months. The requirements for temporary suspension under § 180 III ZVG were not substantiated."
+Document: "The court ruled that suspension of the partition auction is permissible only for up to six months. The statutory requirements for temporary suspension were not substantiated."
 - GOOD: "Suspension of the partition auction is permissible only for up to six months" → legal doctrine/holding
-- GOOD: "The § 180 III ZVG requirements for temporary suspension were not substantiated in this proceeding" → procedural finding
-- BAD: "The LG ruled on the case" → too generic, no substantive content
+- GOOD: "The statutory requirements for temporary suspension of the partition auction were not substantiated in this proceeding" → procedural finding
+- BAD: "The court ruled on the case" → too generic, no substantive content
 
-Document letterhead: "Landgericht Ingolstadt, Auf der Schanz 37, 85049 Ingolstadt, AZ 15 T 158/26"
-- BAD (all of these): "The court is at Auf der Schanz 37", "The case number is 15 T 158/26", "The document is from LG Ingolstadt" → letterhead metadata, not claims.
+Document letterhead: "[Court Name], [Court Address], File no. [Number]"
+- BAD (all of these): "The court is at [address]", "The case number is [number]", "The document is from [Court]" → letterhead metadata, not claims.
 
-Document content: "We dispute that the auction was properly ordered because the children's welfare was not considered."
+Document content: "We dispute that the auction was properly ordered because the affected parties' welfare was not considered."
 - GOOD: "The auction was not properly ordered" → contestable factual/procedural assertion (originator-side claim)
-- GOOD: "Children's welfare was not adequately considered in the auction order" → contestable factual claim
+- GOOD: "The affected parties' welfare was not adequately considered in the auction order" → contestable factual claim
 - BAD: "We dispute the auction" → too generic, no specific proposition
+
+Court appointment order: "[Person] is appointed as guardian ad litem for the minor children. Scope of action: conducting conversations with the parents. The appointee must submit a written statement to the court. The decision is not subject to appeal. File no. [Number]. Judge: [Name]."
+- GOOD: (none extractable as claims). The appointment, scope-of-action, mandatory statement, finality, file number, and judge name are all directives or metadata.
+- BAD: "[Person] was appointed as guardian ad litem" → procedural act / metadata
+- BAD: "The appointed counsel's scope of action includes conversations with parents" → scope-of-action directive
+- BAD: "The appointed counsel must submit a written statement" → directive
+- BAD: "The court decision is not subject to appeal" → finality metadata
+- BAD: "The case file number is [Number]" → metadata
+- BAD: "The judge signing the decision is [Name]" → metadata
+
+Court suspension order: "The supervisor reported on [date] that cooperation with the opposing party was not possible. An attempt to conduct supervised contact failed. The opposing party resides at [address]. Court costs are not levied."
+- GOOD: "Cooperation with the opposing party is not possible" → substantive factual finding
+- GOOD: "The opposing party refused supervised contact as a milder measure" → substantive finding (the outcome, not the attempt)
+- BAD: "An attempt was made to conduct supervised contact" → procedural narration; the extractable claim is the outcome
+- BAD: "The opposing party resides at [address]" → routing metadata
+- BAD: "Court costs are not levied" → routine cost boilerplate
 
 # CALIBRATION
 
