@@ -67,6 +67,10 @@ def propose_merges_for_new_claim(
     """Compare `new_claim` against the top-K nearest existing claims and
     create a ClaimMergeProposal for each high-confidence match.
 
+    Commits after each proposal so SQLite's WAL write lock isn't held
+    across the slow AI judge calls — otherwise concurrent Celery writers
+    (extract / enrich tasks) hit `database is locked` past busy_timeout.
+
     Returns the proposals created (empty list if none).
     """
     cfg = get_chat_config(db)
@@ -110,6 +114,7 @@ def propose_merges_for_new_claim(
             proposed_at=datetime.now(UTC).replace(tzinfo=None),
         )
         db.add(prop)
+        db.commit()  # release the write lock before the next judge call
         proposals.append(prop)
         logger.info(
             "merge proposal: new claim %s ≈ existing %s (%s confidence)",
@@ -122,8 +127,6 @@ def propose_merges_for_new_claim(
         if verdict.confidence == "high":
             break
 
-    if proposals:
-        db.flush()
     return proposals
 
 
@@ -221,6 +224,10 @@ def find_duplicates_for_case(
                     proposed_at=datetime.now(UTC).replace(tzinfo=None),
                 )
             )
+            # Commit per proposal so the SQLite write lock isn't held across
+            # the next slow judge call. Without this, concurrent Celery
+            # writers hit `database is locked` past the 5s busy_timeout.
+            db.commit()
             proposals_created += 1
             existing_pairs.add(pair)
             logger.info(
@@ -230,8 +237,6 @@ def find_duplicates_for_case(
                 verdict.confidence,
             )
 
-    if proposals_created:
-        db.flush()
     return {
         "scanned": len(claims),
         "proposals_created": proposals_created,
