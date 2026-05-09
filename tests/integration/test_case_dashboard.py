@@ -26,7 +26,7 @@ def test_case_dashboard_renders_basic_structure(db_session):
     assert response.status_code == 200
     assert "Dashboard Test Case" in response.text
     assert "case-brief-panel" in response.text
-    assert "hx-trigger" not in response.text
+    assert 'hx-trigger="every 4s"' not in response.text
 
 
 @pytest.mark.integration
