@@ -101,19 +101,15 @@ class TestCaseGraphServiceLaneAssignment:
         assert _lane_for(doc) == "own"
 
     @pytest.mark.unit
-    def test_unknown_attributed_originator_falls_back_to_originator_type(self, caplog):
-        """A garbage string must not crash — it should fall back to originator_type
-        and emit a warning."""
+    def test_unknown_attributed_originator_falls_back_to_originator_type(self):
+        """A non-role-key string (e.g. a human display name) must fall back to
+        originator_type without crashing or emitting a warning."""
         doc = _mk_doc(
             originator_type=OriginatorType.COURT,
             attributed_originator="garbage_value",
         )
-        with caplog.at_level("WARNING"):
-            lane = _lane_for(doc)
+        lane = _lane_for(doc)
         assert lane == "court"  # falls back to originator_type
-        assert any(
-            "Unknown attributed_originator" in rec.message for rec in caplog.records
-        )
 
     @pytest.mark.unit
     def test_missing_originator_type_defaults_to_own(self, caplog):

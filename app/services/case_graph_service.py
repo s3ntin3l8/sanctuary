@@ -85,19 +85,17 @@ def _clip(s: str, n: int) -> str:
 def _lane_for(doc) -> str:
     """Return the lane key for a document based on its originator_type.
 
-    When attributed_originator is set (e.g. a court-relayed opposing pleading),
-    it takes precedence over originator_type so the node lands in the correct lane.
+    When attributed_originator holds a role key (e.g. "opposing"), it
+    overrides originator_type to route court-relay docs to the correct lane.
+    Human display names stored in attributed_originator silently fall back
+    to originator_type.
     """
     originator = doc.originator_type
     if doc.attributed_originator:
         try:
             originator = OriginatorType(doc.attributed_originator)
         except ValueError:
-            logger.warning(
-                "Unknown attributed_originator value: %r on doc %s",
-                doc.attributed_originator,
-                doc.id,
-            )
+            pass  # display name, not a role key — fall back to originator_type
     if originator is None:
         logger.warning(
             "Document %s has no originator_type, defaulting to 'own'", doc.id

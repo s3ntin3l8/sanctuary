@@ -39,20 +39,17 @@ COVER_LETTER_KEYWORDS = {
 
 
 def _metadata_outranks_batch(child: Document, batch_originator: str | None) -> bool:
-    """True when the metadata stage determined a non-court sender and the batch
-    stage is trying to overwrite it with 'court'.
+    """True when metadata has determined a specific role and batch disagrees.
 
-    The metadata stage sees full text; the batch stage sees one cover-letter
-    candidate plus sibling titles only. OWN/OPPOSING/THIRD_PARTY from metadata
-    outranks a title-only 'court' guess from batch.
+    Metadata sees full document text; batch sees only sibling titles.
+    Trust metadata for any non-UNKNOWN classification, not just court overwrites.
     """
-    if not batch_originator or batch_originator.lower() != "court":
+    if not batch_originator:
         return False
-    return child.originator_type in (
-        OriginatorType.OWN,
-        OriginatorType.OPPOSING,
-        OriginatorType.THIRD_PARTY,
-    )
+    if child.originator_type in (None, OriginatorType.UNKNOWN):
+        return False  # no metadata opinion; let batch decide
+    batch_type = parse_originator_type(batch_originator)
+    return child.originator_type != batch_type
 
 
 def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
@@ -221,11 +218,11 @@ def _apply_batch_results(
                 if child:
                     if _metadata_outranks_batch(child, encl.get("originator_type")):
                         logger.warning(
-                            "Batch #%d doc #%d: skipping enclosure assignment — metadata "
-                            "classified originator as %s but batch claims 'court'. Trusting metadata.",
+                            "Batch #%d doc #%d: metadata classified originator as %s but batch claims %r — trusting metadata.",
                             batch_id,
                             child.id,
                             child.originator_type,
+                            encl.get("originator_type"),
                         )
                         continue
                     claimed_ids.add(child.id)
@@ -306,11 +303,11 @@ def _apply_batch_results(
             if child:
                 if _metadata_outranks_batch(child, encl.get("originator_type")):
                     logger.warning(
-                        "Batch #%d doc #%d: skipping enclosure assignment — metadata "
-                        "classified originator as %s but batch claims 'court'. Trusting metadata.",
+                        "Batch #%d doc #%d: metadata classified originator as %s but batch claims %r — trusting metadata.",
                         batch_id,
                         child.id,
                         child.originator_type,
+                        encl.get("originator_type"),
                     )
                     continue
                 claimed_ids.add(child.id)

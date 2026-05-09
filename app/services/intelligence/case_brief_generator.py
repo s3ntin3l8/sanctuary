@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, defer
 
 from app.config import SessionLocal
 from app.models.database import ActionItem, Case, Document
-from app.models.enums import ActionItemStatus
+from app.models.enums import ActionItemStatus, OriginatorType
 from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -24,26 +24,32 @@ _TRIAGE = "_TRIAGE"
 def _compute_parties(docs: list) -> list[dict]:
     """Aggregate attributed originators from documents into sorted party list.
 
+    Groups by name only — a party has one stable role within a case.
+    When a name appears with multiple roles (e.g. COURT on a cover letter
+    and OPPOSING on its enclosures), the most frequent non-COURT role wins.
+
     Pure function — never calls db.commit().
     """
-    counts: dict[tuple, int] = defaultdict(int)
-    roles: dict[tuple, str] = {}
+    role_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for doc in docs:
         if doc.attributed_originator is None:
             continue
-        key = (doc.attributed_originator, str(doc.originator_type))
-        counts[key] += 1
-        roles[key] = str(doc.originator_type)
+        role_counts[doc.attributed_originator][str(doc.originator_type)] += 1
 
-    result = [
-        {
-            "name": name,
-            "role": role,
-            "document_count": counts[(name, role)],
-        }
-        for (name, role), _ in counts.items()
-    ]
+    result = []
+    for name, counts in role_counts.items():
+        total = sum(counts.values())
+        non_court = {r: c for r, c in counts.items() if r != str(OriginatorType.COURT)}
+        best_pool = non_court if non_court else counts
+        canonical_role = max(best_pool, key=best_pool.get)
+        result.append(
+            {
+                "name": name,
+                "role": canonical_role,
+                "document_count": total,
+            }
+        )
 
     result.sort(key=lambda x: x["document_count"], reverse=True)
     return result
