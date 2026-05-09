@@ -137,16 +137,14 @@ def generate(case_id: str) -> None:
         cfg = get_chat_config(db)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
-            logger.warning(f"Case {case_id} not found for brief generation")
-            return
+            raise ValueError(f"Case {case_id} not found")
 
         _mark_processing(case_id, db)
 
         # Re-query case after commit (expire_on_commit=True means attributes are stale)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
-            logger.warning(f"Case {case_id} not found after marking processing")
-            return
+            raise ValueError(f"Case {case_id} not found after marking processing")
 
         docs = (
             db.query(Document)

@@ -19,6 +19,9 @@ def generate_case_brief_task(self, case_id: str):
     try:
         generate(case_id)
         return {"status": "success", "case_id": case_id}
+    except ValueError as e:
+        logger.warning("Case %s brief skipped: %s", case_id, e)
+        return {"status": "not_found", "case_id": case_id}
     except httpx.ReadTimeout as e:
         if self.request.retries < 1:
             logger.info("Case %s brief timeout — retrying once in 90s", case_id)
@@ -46,6 +49,9 @@ def refresh_case_brief_task(self, case_id: str):
     try:
         generate(case_id)
         return {"status": "success", "case_id": case_id}
+    except ValueError as e:
+        logger.warning("Case %s brief skipped: %s", case_id, e)
+        return {"status": "not_found", "case_id": case_id}
     except httpx.ReadTimeout as e:
         if self.request.retries < 1:
             logger.info("Case %s brief refresh timeout — retrying once in 90s", case_id)
