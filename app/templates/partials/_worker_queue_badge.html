@@ -1,0 +1,15 @@
+{# Self-refreshing badge slot for the worker queue sidebar button.
+   Polled every 5s; disarms when idle (no HTMX attrs rendered).
+#}
+<div id="worker-queue-badge-slot"
+     {% if n_active > 0 %}
+     hx-get="/api/worker/queue/badge"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML"
+     {% endif %}>
+    {% if n_active > 0 %}
+    <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-tertiary text-on-tertiary text-[9px] font-bold rounded-full border-2 border-surface-container-low animate-pulse">
+        {{ n_active }}
+    </span>
+    {% endif %}
+</div>

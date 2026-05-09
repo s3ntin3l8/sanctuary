@@ -356,6 +356,7 @@
     <main class="flex-1 flex overflow-hidden">
         {% block content %}{% endblock %}
     </main>
+    {% include 'partials/_confirm_modal.html' %}
     <div id="shell-toast-host" class="pointer-events-none fixed right-6 bottom-6 z-[99999] flex flex-col gap-2"></div>
     <script>
         (() => {
@@ -423,9 +424,18 @@
                 }
             });
 
-            // HTMX error handling
+            // HTMX error handling — surface FastAPI's `detail` field when present
+            // so guard messages (409 "Cannot delete batch in PROCESSING state…")
+            // reach the user instead of an opaque "409 Conflict".
             document.addEventListener('htmx:responseError', (e) => {
-                window.showToast(`Error: ${e.detail.xhr.status} ${e.detail.xhr.statusText}`, 'error');
+                const xhr = e.detail.xhr;
+                let detail = '';
+                try {
+                    const body = JSON.parse(xhr.responseText);
+                    if (body && typeof body.detail === 'string') detail = body.detail;
+                } catch (_) { /* not JSON — fall back below */ }
+                const msg = detail || `${xhr.status} ${xhr.statusText}`;
+                window.showToast(msg, 'error');
             });
 
             document.addEventListener('htmx:sendError', () => {
@@ -479,6 +489,9 @@
 
     <!-- Notifications Global Panel -->
     {% include "partials/notifications_panel.html" %}
+
+    <!-- Worker Queue Panel -->
+    {% include "partials/worker_queue_panel.html" %}
 
     <!-- Global Confirmation Modal -->
     <div x-data="confirmDialog" x-show="show" @open-confirm.window="open($event.detail)"

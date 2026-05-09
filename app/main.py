@@ -506,6 +506,7 @@ DEFAULT_SIDEBAR_COUNTS = {
     "pending_count": 0,
     "case_count": 0,
     "cost_count": 0,
+    "pipeline_active_count": 0,
 }
 
 
@@ -595,6 +596,10 @@ app.include_router(settings_page_router)
 app.include_router(settings_ai_router)
 app.include_router(settings_appearance_router)
 app.include_router(settings_maintenance_router)
+
+from app.api.worker_queue import router as worker_queue_router
+
+app.include_router(worker_queue_router)
 
 
 if __name__ == "__main__":

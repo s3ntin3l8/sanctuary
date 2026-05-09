@@ -65,6 +65,26 @@
             </span>
         </button>
 
+        <!-- Processing Queue -->
+        <button type="button" onclick="window.dispatchEvent(new CustomEvent('toggle-worker-queue'))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-tertiary hover:bg-surface-container-high/50 transition-colors duration-300 group">
+            <span class="material-symbols-outlined text-[20px]">sync</span>
+            <div id="worker-queue-badge-slot"
+                 {% if sidebar_counts.pipeline_active_count > 0 %}
+                 hx-get="/api/worker/queue/badge"
+                 hx-trigger="every 5s"
+                 hx-swap="outerHTML"
+                 {% endif %}>
+                {% if sidebar_counts.pipeline_active_count > 0 %}
+                <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-tertiary text-on-tertiary text-[9px] font-bold rounded-full border-2 border-surface-container-low animate-pulse">
+                    {{ sidebar_counts.pipeline_active_count }}
+                </span>
+                {% endif %}
+            </div>
+            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
+                Processing Queue
+            </span>
+        </button>
+
         <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">notifications</span>
             <div id="sidebar-notifications-badge-container">
