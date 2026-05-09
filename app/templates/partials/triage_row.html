@@ -288,7 +288,7 @@
                         <button type="button"
                                 role="menuitem"
                                 hx-post="/triage/dismiss?batch_id={{ bundle.batch_id }}"
-                                hx-target="none"
+                                hx-swap="none"
                                 hx-confirm="Archive this bundle? It will be hidden from triage."
                                 @click="open = false"
                                 class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
@@ -298,7 +298,7 @@
                         <button type="button"
                                 role="menuitem"
                                 hx-post="/triage/delete?batch_id={{ bundle.batch_id }}"
-                                hx-target="none"
+                                hx-swap="none"
                                 hx-confirm="Permanently delete this bundle? All {{ bundle.doc_count }} document(s), files, and embeddings will be removed. This cannot be undone."
                                 @click="open = false"
                                 class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-error hover:bg-error/10 transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-error/10">

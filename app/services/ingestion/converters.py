@@ -1,6 +1,5 @@
 import concurrent.futures
 import logging
-import multiprocessing
 import os
 import re
 import threading
@@ -219,43 +218,24 @@ def _convert_in_subprocess(file_path: str) -> dict:
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
 
-_conversion_pool: concurrent.futures.ProcessPoolExecutor | None = None
-_pool_lock = threading.Lock()
+_conversion_executor: concurrent.futures.ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
 
 
-def _get_pool() -> concurrent.futures.ProcessPoolExecutor:
-    """Lazy-init the single-worker subprocess pool used for conversions.
-
-    `max_workers=1` serializes conversions; `spawn` keeps the worker isolated
-    from parent imports (so SQLAlchemy / Celery state doesn't leak in)."""
-    global _conversion_pool
-    if _conversion_pool is None:
-        with _pool_lock:
-            if _conversion_pool is None:
-                ctx = multiprocessing.get_context("spawn")
-                _conversion_pool = concurrent.futures.ProcessPoolExecutor(
-                    max_workers=1, mp_context=ctx
+def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Lazy-init a single-worker thread pool for serialising conversions."""
+    global _conversion_executor
+    if _conversion_executor is None:
+        with _executor_lock:
+            if _conversion_executor is None:
+                _conversion_executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="docling"
                 )
-    return _conversion_pool
-
-
-def _reset_pool() -> None:
-    """Tear down the worker pool — kills any runaway Docling subprocess from a
-    timeout so the next conversion starts fresh instead of inheriting the hang."""
-    global _conversion_pool
-    with _pool_lock:
-        if _conversion_pool is not None:
-            _conversion_pool.shutdown(wait=False, cancel_futures=True)
-            _conversion_pool = None
+    return _conversion_executor
 
 
 def convert_file(file_path: str, timeout: int = None) -> dict:
-    """Convert file to markdown using Docling and extract structural metadata.
-
-    Conversion runs in a single-worker subprocess pool so that a hang inside
-    Docling/Tesseract OCR can be terminated by recycling the worker, instead
-    of leaking a zombie daemon thread that holds memory until the parent exits.
-    """
+    """Convert file to markdown using Docling and extract structural metadata."""
     if timeout is None:
         timeout = CONVERSION_TIMEOUT
 
@@ -268,12 +248,11 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
             "chunks": [],
         }
 
-    pool = _get_pool()
-    future = pool.submit(_convert_in_subprocess, file_path)
+    executor = _get_executor()
+    future = executor.submit(_convert_in_subprocess, file_path)
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
-        _reset_pool()
         raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
 
 

@@ -1,0 +1,74 @@
+{# Global confirm modal — replaces window.confirm() for any element with
+   hx-confirm. Mounted once in base.html. Listens on document for
+   htmx:confirm, calls preventDefault to suppress HTMX's browser-native
+   dialog, then later calls evt.detail.issueRequest(true) when the user
+   accepts. Style mirrors triage_retry_confirm_modal.html so the app's
+   confirm UX is consistent. #}
+<div x-data="{
+        open: false,
+        message: '',
+        _issueRequest: null,
+        init() {
+            document.addEventListener('htmx:confirm', (evt) => {
+                if (!evt.detail.question) return;
+                evt.preventDefault();
+                this.message = evt.detail.question;
+                this._issueRequest = evt.detail.issueRequest;
+                this.open = true;
+                this.$nextTick(() => this.$refs.confirmBtn && this.$refs.confirmBtn.focus());
+            });
+        },
+        confirm() {
+            const fn = this._issueRequest;
+            this._issueRequest = null;
+            this.open = false;
+            if (fn) fn(true);
+        },
+        cancel() {
+            this._issueRequest = null;
+            this.open = false;
+        }
+     }"
+     x-show="open"
+     x-cloak
+     class="fixed inset-0 z-[100] flex items-center justify-center"
+     @keydown.escape.window="if (open) cancel()">
+
+    {# Backdrop #}
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="cancel()"></div>
+
+    {# Panel #}
+    <div class="relative z-10 w-full max-w-md mx-4 bg-surface-container-low rounded-2xl shadow-2xl border border-outline-variant/20 overflow-hidden"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         role="alertdialog"
+         aria-modal="true">
+
+        <div class="px-6 py-4 border-b border-outline-variant/10 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="material-symbols-outlined text-[18px] text-error">warning</span>
+                <h3 class="text-sm font-black text-on-surface tracking-tight">Confirm</h3>
+            </div>
+            <button type="button" @click="cancel()"
+                    class="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer">
+                <span class="material-symbols-outlined text-lg">close</span>
+            </button>
+        </div>
+
+        <div class="px-6 py-4">
+            <p class="text-[11.5px] text-on-surface leading-relaxed" x-text="message"></p>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 px-6 py-3 border-t border-outline-variant/10">
+            <button type="button" @click="cancel()"
+                    class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer px-3 py-1.5">
+                Cancel
+            </button>
+            <button type="button" @click="confirm()" x-ref="confirmBtn"
+                    class="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-error text-on-primary hover:bg-error/85 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>

@@ -37,14 +37,26 @@ setup: .venv ## Install dependencies and pre-commit hooks
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push
 
-run: ## Start the FastAPI development server
-	$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
+redis: ## Start Redis (Docker)
+	docker compose up redis -d --wait
 
-run-debug: ## Start server with DEBUG logging enabled
-	LOG_LEVEL=debug DEBUG=True $(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug
+run: ## Start Redis (Docker), web server, and Celery worker
+	docker compose up redis -d --wait
+	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
+	trap 'kill $$!' EXIT; \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
+
+run-debug: ## Start server with DEBUG logging enabled (+ Redis + worker)
+	docker compose up redis -d --wait
+	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
+	trap 'kill $$!' EXIT; \
+	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
+
+server: ##  web server
+	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
 worker: ## Start the Celery worker (required when CELERY_TASK_ALWAYS_EAGER=false)
-	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery
+	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
 
 watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
