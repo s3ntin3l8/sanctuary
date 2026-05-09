@@ -826,7 +826,19 @@ class TriageService:
             # batch row when it deletes the last document, so batch.* lookups
             # would fail on the final iteration.
             raw_source_path = batch.raw_source_path
-            doc_id_list = [d.id for d in batch.documents]
+            # Children-first order. Document.children carries
+            # cascade="all, delete-orphan", so deleting a parent first triggers
+            # an ORM cascade DELETE on its children before our manual
+            # UserReaction / DocumentPin / DocumentRelationship cleanup runs
+            # for them — tripping the FK guard with `FOREIGN KEY constraint
+            # failed` on documents.id IN (...). Processing children before
+            # their parent makes each delete_document call self-contained:
+            # by the time the parent is deleted, no live children remain in
+            # the session for the cascade to act on.
+            sorted_docs = sorted(
+                batch.documents, key=lambda d: (d.parent_id is None, d.id)
+            )
+            doc_id_list = [d.id for d in sorted_docs]
 
             # Hard-delete ActionItems sourced from this batch's docs while we
             # can still find them — delete_document nulls source_document_id.

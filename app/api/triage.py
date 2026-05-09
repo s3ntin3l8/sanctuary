@@ -125,19 +125,21 @@ async def dismiss_bundle(
 
     # Return OOB swap to delete the row
     target_id = (
-        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-doc-{doc_id}"
+        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-loose-{doc_id}"
     )
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
-    # Check if triage is now empty and return empty state if so
+    # If triage is now empty, OOB-replace the entire feed with its empty state.
+    # The feed partial's outer #triage-feed div carries hx-swap-oob="true"
+    # (via as_oob=True), so HTMX outerHTML-swaps it regardless of the
+    # client's hx-swap setting — without this, the deleted row's polling
+    # children stay in the DOM and 404 the server every 4s.
     bundles = service.get_triage_bundles(limit=1)
     if not bundles:
-        # Re-render the triage feed with empty state
-        return templates.TemplateResponse(
-            "partials/triage_feed.html",
-            {"request": {}, "bundles": [], "hx_swap_oob": "true"},
-            headers={"HX-Reswap": "innerHTML", "HX-Target": "#triage-feed"},
+        empty_feed = templates.get_template("partials/triage_feed.html").render(
+            bundles=[], as_oob=True
         )
+        return HTMLResponse(content=html + empty_feed)
 
     return HTMLResponse(content=html)
 
@@ -162,17 +164,18 @@ async def delete_bundle(
         raise HTTPException(status_code=404, detail="Bundle or document not found")
 
     target_id = (
-        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-doc-{doc_id}"
+        f"triage-row-batch-{batch_id}" if batch_id else f"triage-row-loose-{doc_id}"
     )
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
+    # If triage is now empty, OOB-replace the entire feed with its empty state.
+    # See dismiss_bundle for why this beats relying on response retarget headers.
     bundles = service.get_triage_bundles(limit=1)
     if not bundles:
-        return templates.TemplateResponse(
-            "partials/triage_feed.html",
-            {"request": {}, "bundles": [], "hx_swap_oob": "true"},
-            headers={"HX-Reswap": "innerHTML", "HX-Target": "#triage-feed"},
+        empty_feed = templates.get_template("partials/triage_feed.html").render(
+            bundles=[], as_oob=True
         )
+        return HTMLResponse(content=html + empty_feed)
 
     return HTMLResponse(content=html)
 

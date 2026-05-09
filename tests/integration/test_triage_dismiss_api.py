@@ -55,14 +55,43 @@ def test_dismiss_doc_success(app_client, db_session):
     db_session.add(doc)
     db_session.commit()
     db_session.refresh(doc)
+    doc_id = doc.id
 
     response = app_client.post(f"/triage/dismiss?doc_id={doc.id}")
 
     assert response.status_code == 200
-    assert f'id="triage-row-doc-{doc.id}"' in response.text
+    assert f'id="triage-row-loose-{doc_id}"' in response.text
     assert 'hx-swap-oob="delete"' in response.text
 
 
 def test_dismiss_not_found(app_client, db_session):
     response = app_client.post("/triage/dismiss?batch_id=999999")
     assert response.status_code == 404
+
+
+def test_dismiss_last_bundle_returns_empty_state(app_client, db_session):
+    """When the dismiss empties triage the response must contain BOTH the
+    per-row OOB delete and the OOB-swappable empty feed — otherwise the row's
+    polling children stay live and 404 the server every 4s.
+    """
+    batch = IngestBatch(subject="Only One", source_type=IngestBatchSourceType.EMAIL)
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+    doc = Document(
+        title="Sole Doc",
+        ingest_batch_id=batch.id,
+        pipeline_state=PipelineState.PENDING,
+        significance_tier="significant",
+    )
+    db_session.add(doc)
+    db_session.commit()
+    batch_id = batch.id
+
+    response = app_client.post(f"/triage/dismiss?batch_id={batch_id}")
+
+    assert response.status_code == 200
+    assert 'id="triage-feed"' in response.text
+    assert f'id="triage-row-batch-{batch_id}"' in response.text
+    assert 'hx-swap-oob="delete"' in response.text
+    assert 'hx-swap-oob="true"' in response.text
