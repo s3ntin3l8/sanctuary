@@ -162,18 +162,27 @@ Case AI Brief:
 def _format_with_history(
     context: str, history: list[ConversationMessage], user_message: str
 ) -> str:
-    """Build the full prompt: context block + last N turns + new user message."""
+    """Build full prompt; drop oldest history turns when approaching context limit."""
+    context_section = f"=== CONTEXT ===\n{context}"
+    question_section = f"=== CURRENT QUESTION ===\n{user_message}"
+
     recent = history[-MAX_HISTORY_TURNS * 2 :]
-    history_lines = []
-    for msg in recent:
-        role = "User" if msg.role == "user" else "Assistant"
-        history_lines.append(f"[{role}]: {msg.content}")
+    history_lines = [
+        f"[{'User' if msg.role == 'user' else 'Assistant'}]: {msg.content}"
+        for msg in recent
+    ]
 
-    history_block = "\n".join(history_lines)
+    header = "=== CONVERSATION HISTORY ===\n"
+    fixed_len = len(context_section) + len(question_section) + 4  # separators
+    while history_lines:
+        candidate = header + "\n".join(history_lines)
+        if fixed_len + len(candidate) + 4 <= 110_000:
+            break
+        history_lines.pop(0)
 
-    parts = [f"=== CONTEXT ===\n{context}"]
-    if history_block:
-        parts.append(f"=== CONVERSATION HISTORY ===\n{history_block}")
-    parts.append(f"=== CURRENT QUESTION ===\n{user_message}")
+    parts = [context_section]
+    if history_lines:
+        parts.append(header + "\n".join(history_lines))
+    parts.append(question_section)
 
     return "\n\n".join(parts)

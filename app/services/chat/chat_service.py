@@ -78,7 +78,7 @@ async def stream_answer(
         prompt=prompt,
         system_prompt=system_prompt,
         stream=True,
-        options={"num_ctx": 16384, "temperature": 0.2, "num_predict": 800},
+        options={"num_ctx": 32768, "temperature": 0.2, "num_predict": 800},
     )
     ptype = await chat_provider.get_type()
 
@@ -105,8 +105,21 @@ async def stream_answer(
                     if chunk.get("done"):
                         break
         except Exception as e:
-            logger.error(f"Chat stream error: {e}")
-            yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
+            err_str = str(e).lower()
+            if "context" in err_str and any(
+                w in err_str for w in ("size", "window", "exceeded", "length")
+            ):
+                logger.warning("Chat context too large for model: %s", e)
+                yield _sse(
+                    {
+                        "type": "token",
+                        "t": "\n\nThe conversation is too long for the model's context window. "
+                        "Start a new chat, or ask about a specific document rather than the full case.",
+                    }
+                )
+            else:
+                logger.error("Chat stream error: %s", e)
+                yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
 
     cited_ids, cited_refs = _extract_citations(full_response)
 
