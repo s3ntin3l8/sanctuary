@@ -49,6 +49,15 @@ _SECTION = "──"
 _LABEL_RE = re.compile(r"^(doc|batch|case)_(.+)_([^_]+)$")
 
 
+def _parse_litellm_error_code(body: bytes) -> str | None:
+    """Extract the error code from a LiteLLM JSON error response body."""
+    try:
+        err = json.loads(body).get("error") or {}
+        return err.get("code") or err.get("type") or None
+    except Exception:
+        return None
+
+
 def _scope_file(debug_dir, debug_label: str):
     """Derive the per-scope log file path from a debug_label."""
     m = _LABEL_RE.match(debug_label)
@@ -235,7 +244,22 @@ def _stream_response(
             with client.stream(
                 "POST", params["url"], json=params["json"], headers=params["headers"]
             ) as response:
-                response.raise_for_status()
+                if not response.is_success:
+                    _body = response.read()
+                    _code = _parse_litellm_error_code(_body)
+                    if _code == "context_length_exceeded":
+                        logger.warning(
+                            "call %s: context length exceeded (HTTP %s) — "
+                            "prompt too large for model context window",
+                            debug_label,
+                            response.status_code,
+                        )
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code}"
+                        + (f" [{_code}]" if _code else ""),
+                        request=response.request,
+                        response=response,
+                    )
                 for line in response.iter_lines():
                     if not line:
                         continue
@@ -287,7 +311,14 @@ def _stream_response(
         )
         raise
     except Exception as e:
-        stream_error = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        if isinstance(e, httpx.HTTPStatusError):
+            # Compact form: full traceback is in the scope log; the 200-char
+            # index entry should carry the status + LiteLLM error code.
+            stream_error = str(e)
+        else:
+            stream_error = "".join(
+                traceback.format_exception(type(e), e, e.__traceback__)
+            )
         raise
     finally:
         duration_ms = int((time.perf_counter() - start_perf) * 1000)

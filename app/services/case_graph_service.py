@@ -511,7 +511,14 @@ class CaseGraphService:
             (max((n.get("row", 0) for n in nodes), default=0) + 1) if nodes else 1
         )
         svg_height = TOP + total_rows * ROW_H + 120
-        active_lane_keys = {n["lane"] for n in nodes} | {b["lane"] for b in bundles}
+        child_lanes = {
+            _lane_for(child)
+            for children in bundle_children.values()
+            for child in children
+        }
+        active_lane_keys = (
+            {n["lane"] for n in nodes} | {b["lane"] for b in bundles} | child_lanes
+        )
         max_lane_idx = (
             max(_LANE_INDEX[k] for k in active_lane_keys)
             if active_lane_keys

@@ -556,7 +556,7 @@ async def hud_approve_summary(
 
 
 @router.get("/document/{doc_id}/pipeline")
-async def get_pipeline_status(
+def get_pipeline_status(
     request: Request,
     doc_id: int,
     view: str = "pill",

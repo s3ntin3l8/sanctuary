@@ -4,7 +4,7 @@
    embedded:   docChatOpen lives on the bare { docChatOpen: false } scope on the container
    Required: context, doc
 #}
-<div class="px-5 py-4">
+<div class="px-5 py-4" x-show="!docChatOpen">
   <button @click="docChatOpen = !docChatOpen; if (docChatOpen && typeof chatOpen !== 'undefined') chatOpen = false"
           class="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12.5px] transition-colors hover:opacity-90"
           style="background:var(--color-surface-container); color:var(--color-on-surface-variant); border:1px solid var(--color-outline-variant);">

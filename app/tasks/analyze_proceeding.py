@@ -105,6 +105,10 @@ def analyze_proceeding_task(self, doc_id: int):
                     from app.tasks.analyze_batch import analyze_batch_task
 
                     analyze_batch_task.delay(batch_id)
+                else:
+                    from app.tasks.analyze_batch import _enrich_if_pending
+
+                    _enrich_if_pending(doc_id)
             finally:
                 db_claim.close()
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
@@ -147,6 +151,10 @@ def analyze_proceeding_task(self, doc_id: int):
                     from app.tasks.analyze_batch import analyze_batch_task
 
                     analyze_batch_task.delay(batch_id)
+                else:
+                    from app.tasks.analyze_batch import _enrich_if_pending
+
+                    _enrich_if_pending(doc_id)
             finally:
                 db_claim.close()
 
@@ -165,6 +173,13 @@ def analyze_proceeding_task(self, doc_id: int):
                 logger.info(
                     "Batch #%d: all docs ready, batch analysis dispatched", batch_id
                 )
+            else:
+                # Batch already analyzed — still ensure enrich runs for this doc.
+                # Happens when recovery re-dispatches proceeding_analysis after a
+                # crash but the batch claim was never cleared (fix for Bug B).
+                from app.tasks.analyze_batch import _enrich_if_pending
+
+                _enrich_if_pending(doc_id)
         finally:
             db.close()
 

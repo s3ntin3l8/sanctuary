@@ -50,7 +50,7 @@
        wide enough (inline expand on a wide viewport), 1 col when narrow
        (drawer rail, narrow window). Container query reads the pane's
        width, not the viewport's, so both contexts respond independently. ── #}
-    <div x-show="state === 'confirmed'" x-cloak class="grid grid-cols-1 @[480px]:grid-cols-2 gap-1.5">
+    <div x-show="state === 'confirmed'" x-cloak class="grid grid-cols-2 gap-1.5">
         {% for label, value, level in _fields %}
         <div class="flex items-center gap-1.5 py-1 px-2 rounded bg-surface-low border-l-2 {{ _level_class.get(level, 'border-l-outline-variant') }}">
             <div class="font-headline text-[8px] uppercase tracking-widest font-semibold text-on-surface-variant w-[64px] flex-shrink-0">

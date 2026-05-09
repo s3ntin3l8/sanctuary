@@ -111,6 +111,7 @@
     --color-on-primary-container: #38565e;
     --color-secondary: #466370;
     --color-tertiary: #466371;
+    --color-on-tertiary: #f3faff;
     --color-error: #9f403d;
     --color-error-container: #fe8983;
     --color-originator-court: #0369a1;
@@ -1260,6 +1261,9 @@
   .h-6 {
     height: calc(var(--spacing) * 6);
   }
+  .h-7 {
+    height: calc(var(--spacing) * 7);
+  }
   .h-8 {
     height: calc(var(--spacing) * 8);
   }
@@ -1361,6 +1365,9 @@
   }
   .w-6 {
     width: calc(var(--spacing) * 6);
+  }
+  .w-7 {
+    width: calc(var(--spacing) * 7);
   }
   .w-8 {
     width: calc(var(--spacing) * 8);
@@ -2196,6 +2203,12 @@
     border-color: color-mix(in srgb, #a9b4b7 50%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-outline-variant) 50%, transparent);
+    }
+  }
+  .border-outline-variant\/60 {
+    border-color: color-mix(in srgb, #a9b4b7 60%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-outline-variant) 60%, transparent);
     }
   }
   .border-outline\/20 {
@@ -3436,6 +3449,12 @@
   .text-error {
     color: var(--color-error);
   }
+  .text-error\/60 {
+    color: color-mix(in srgb, #9f403d 60%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-error) 60%, transparent);
+    }
+  }
   .text-green-400 {
     color: var(--color-green-400);
   }
@@ -3486,6 +3505,15 @@
     @supports (color: color-mix(in lab, red, red)) {
       color: color-mix(in oklab, var(--color-on-surface-variant) 80%, transparent);
     }
+  }
+  .text-on-surface\/80 {
+    color: color-mix(in srgb, #2a3437 80%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      color: color-mix(in oklab, var(--color-on-surface) 80%, transparent);
+    }
+  }
+  .text-on-tertiary {
+    color: var(--color-on-tertiary);
   }
   .text-orange-400 {
     color: var(--color-orange-400);
@@ -4489,6 +4517,13 @@
       }
     }
   }
+  .hover\:text-tertiary {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-tertiary);
+      }
+    }
+  }
   .hover\:underline {
     &:hover {
       @media (hover: hover) {
@@ -4795,6 +4830,11 @@
       @supports (color: color-mix(in lab, red, red)) {
         background-color: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
       }
+    }
+  }
+  .dark\:text-amber-300 {
+    &:where(.dark, .dark *) {
+      color: var(--color-amber-300);
     }
   }
   .dark\:text-amber-400 {

@@ -94,8 +94,9 @@
         html {
             background-color: #f8fafb;
             color: var(--color-on-surface);
-            overflow-y: scroll;
-            /* Force scrollbar gutter to prevent horizontal jumping */
+            overflow: hidden;
+            /* Body is h-screen overflow-hidden — page itself never scrolls,
+               only inner panels do. No gutter needed. */
         }
 
         html.dark {

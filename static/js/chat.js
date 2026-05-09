@@ -193,6 +193,28 @@ function registerAiChat() {
       }
     },
 
+    async deleteConversation(id) {
+      const res = await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      this.history = this.history.filter(h => h.id !== id);
+      if (this.conversationId === id) {
+        const next = this.history[0];
+        if (next) {
+          try {
+            await this.loadConversation(next.id);
+          } catch {
+            this.conversationId = null;
+            this.messages = [];
+            this.error = null;
+          }
+        } else {
+          this.conversationId = null;
+          this.messages = [];
+          this.error = null;
+        }
+      }
+    },
+
     scrollToBottom() {
       const el = this.$refs.messageList;
       if (el) el.scrollTop = el.scrollHeight;
@@ -200,16 +222,48 @@ function registerAiChat() {
 
     renderContent(text) {
       if (!text) return '';
-      // Highlight [DOC:n#p=m] citations inline
-      return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\[DOC:(\d+)(?:#p=(\d+))?\]/g, (match, docId, passageIdx) => {
-          const label = passageIdx ? `[DOC:${docId}#p=${passageIdx}]` : `[DOC:${docId}]`;
-          const hash = passageIdx ? `#p=${passageIdx}` : '';
-          return `<a href="/document/${docId}${hash}" class="inline-block px-1 py-0.5 text-[9px] font-mono rounded hover:underline" style="background:var(--color-primary-container);color:var(--color-primary);">${label}</a>`;
-        });
+
+      const escHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const citationRe = /\[DOC:(\d+)(?:#p=(\d+))?\]/g;
+      const processCitations = (s) => s.replace(citationRe, (_, docId, passageIdx) => {
+        const label = passageIdx ? `[DOC:${docId}#p=${passageIdx}]` : `[DOC:${docId}]`;
+        const hash  = passageIdx ? `#p=${passageIdx}` : '';
+        return `<a href="/document/${docId}${hash}" class="inline-block px-1 py-0.5 text-[9px] font-mono rounded hover:underline" style="background:var(--color-primary-container);color:var(--color-primary);">${label}</a>`;
+      });
+
+      // Split on complete <think>…</think> blocks before HTML-escaping.
+      const parts = [];
+      const thinkRe = /<think>([\s\S]*?)<\/think>/g;
+      let last = 0, m;
+      while ((m = thinkRe.exec(text)) !== null) {
+        if (m.index > last) parts.push({ type: 'text', content: text.slice(last, m.index) });
+        parts.push({ type: 'think', content: m[1], streaming: false });
+        last = thinkRe.lastIndex;
+      }
+
+      // Handle unclosed <think> at the tail (mid-stream).
+      const tail = text.slice(last);
+      const openAt = tail.indexOf('<think>');
+      if (openAt !== -1) {
+        if (openAt > 0) parts.push({ type: 'text', content: tail.slice(0, openAt) });
+        parts.push({ type: 'think', content: tail.slice(openAt + 7), streaming: true });
+      } else if (tail) {
+        parts.push({ type: 'text', content: tail });
+      }
+
+      if (parts.length === 0) parts.push({ type: 'text', content: text });
+
+      return parts.map(p => {
+        if (p.type === 'think') {
+          const inner = escHtml(p.content.trim());
+          const label = p.streaming ? 'Thinking…' : 'Thinking';
+          return `<details class="my-1" ${p.streaming ? 'open' : ''}>` +
+            `<summary class="cursor-pointer select-none text-[9px] font-bold uppercase tracking-widest opacity-50 hover:opacity-80 transition-opacity" style="color:var(--color-on-surface-variant);">${label}</summary>` +
+            `<div class="mt-1 pl-3 border-l-2 text-[11px] leading-relaxed whitespace-pre-wrap opacity-60" style="border-color:var(--color-outline-variant);color:var(--color-on-surface-variant);">${inner}</div>` +
+            `</details>`;
+        }
+        return processCitations(escHtml(p.content));
+      }).join('');
     },
   }));
 }

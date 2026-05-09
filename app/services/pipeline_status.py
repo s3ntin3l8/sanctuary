@@ -487,10 +487,10 @@ def recover_orphaned_running_stages(db: Session) -> dict:
 
     Called once at app startup after migrations. Finds documents with
     pipeline_state in (RUNNING, PARTIAL), resets every RUNNING or RETRYING stage
-    (plus its downstream dependents) back to PENDING, recomputes pipeline_state,
-    and unblocks affected IngestBatches. RETRYING stages are stuck the same way
-    as RUNNING ones — a worker that died between `mark_retrying` and the next
-    Celery attempt leaves them in flight forever.
+    back to PENDING (without cascading to downstream stages), recomputes
+    pipeline_state, and unblocks affected IngestBatches. RETRYING stages are
+    stuck the same way as RUNNING ones — a worker that died between
+    `mark_retrying` and the next Celery attempt leaves them in flight forever.
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
@@ -506,6 +506,7 @@ def recover_orphaned_running_stages(db: Session) -> dict:
     docs_reset = 0
     stages_reset = 0
     affected_batch_ids: set[int] = set()
+    batch_analysis_reset_ids: set[int] = set()
 
     _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
@@ -523,8 +524,29 @@ def recover_orphaned_running_stages(db: Session) -> dict:
                 stage_enum = PipelineStage(stage_key)
             except ValueError:
                 continue
-            reset_stage(doc.id, stage_enum, db)
+
+            # Reset only the stuck stage itself — do NOT cascade to already-completed
+            # downstream stages. reset_stage() is for user-initiated retries where
+            # re-running downstream is intentional; here we're just clearing an
+            # in-flight lock left by a crash.
+            _update_stage(
+                doc.id,
+                stage_enum,
+                db,
+                status=StageStatus.PENDING,
+                extra_sets={
+                    "started_at": None,
+                    "completed_at": None,
+                    "error": None,
+                    "attempt": None,
+                    "max_attempts": None,
+                    "next_at": None,
+                },
+                commit=False,
+            )
             stages_reset += 1
+            if stage_enum == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
+                batch_analysis_reset_ids.add(doc.ingest_batch_id)
 
         db.refresh(doc)
         doc.pipeline_state = compute_overall_state(doc.pipeline_stages or {})
@@ -537,7 +559,11 @@ def recover_orphaned_running_stages(db: Session) -> dict:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             continue
-        batch.analysis_queued_at = None
+        # Only unblock the batch claim when BATCH_ANALYSIS itself was stuck —
+        # clearing it when only PROCEEDING_ANALYSIS was stuck triggers redundant
+        # re-analysis of an already-completed batch.
+        if batch_id in batch_analysis_reset_ids:
+            batch.analysis_queued_at = None
         if batch.status == IngestBatchStatus.PROCESSING:
             batch.status = IngestBatchStatus.PENDING
 

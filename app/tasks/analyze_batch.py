@@ -139,13 +139,18 @@ def analyze_batch_task(self, batch_id: int):
 
 
 def _enrich_if_pending(doc_id: int) -> None:
-    """Dispatch enrich only when the stage is currently pending — prevents fan-out."""
+    """Dispatch enrich only when this call wins the atomic pending→running CAS.
+
+    Uses claim_stage_for_dispatch instead of a read-then-dispatch so that
+    concurrent callers (e.g. multiple stale analyze_proceeding tasks draining
+    from the queue) don't all dispatch enrich at the same time.
+    """
+    from app.models.enums import PipelineStage
+    from app.services.pipeline_status import claim_stage_for_dispatch
+
     db = SessionLocal()
     try:
-        stages = (
-            db.query(Document.pipeline_stages).filter(Document.id == doc_id).scalar()
-        ) or {}
-        if stages.get("enrich", {}).get("status") == "pending":
+        if claim_stage_for_dispatch(doc_id, PipelineStage.ENRICH, db):
             enrich_document_task.delay(doc_id)
     finally:
         db.close()

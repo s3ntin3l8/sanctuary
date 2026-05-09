@@ -8,13 +8,12 @@
      x-init="init()">
 
   {# Header #}
-  <div class="flex items-center justify-between px-5 py-4 flex-shrink-0 border-b"
-       style="border-color:var(--color-outline-variant);">
+  <div class="flex items-center justify-between px-4 py-3 flex-shrink-0 border-b border-outline-variant/10">
     <div class="flex items-center gap-2">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.8">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.8">
         <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z"/>
       </svg>
-      <span class="font-semibold text-[13px]" style="color:var(--color-on-surface);">
+      <span class="text-[9.5px] uppercase tracking-widest font-semibold" style="color:var(--color-on-surface-variant);">
         {% if scope_type == 'case' %}Case AI Chat{% else %}Document Chat{% endif %}
       </span>
     </div>
@@ -23,7 +22,7 @@
       <div class="relative" x-data="{ open: false }">
         <button @click="open = !open"
                 :disabled="history.length === 0"
-                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-bold uppercase tracking-wider transition-colors hover:bg-surface-container-high disabled:opacity-30"
+                class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest transition-colors hover:bg-surface-container-high disabled:opacity-30"
                 :style="open ? 'background:var(--color-surface-container-high);' : ''"
                 style="color:var(--color-on-surface-variant);">
           History
@@ -36,13 +35,23 @@
              style="background:var(--color-surface-container); border-color:var(--color-outline-variant);">
           <div class="max-h-[320px] overflow-y-auto custom-scrollbar">
             <template x-for="h in history" :key="h.id">
-              <button @click="loadConversation(h.id); open = false"
-                      class="w-full text-left px-3 py-2 border-b last:border-0 transition-colors hover:bg-surface-container-high"
-                      :class="h.id === conversationId ? 'bg-surface-container-highest' : ''"
-                      style="border-color:var(--color-outline-variant);">
-                <div class="text-[11.5px] font-semibold truncate" style="color:var(--color-on-surface);" x-text="h.title || 'Untitled conversation'"></div>
-                <div class="text-[9px] font-mono mt-0.5" style="color:var(--color-outline);" x-text="new Date(h.ingest_date).toLocaleDateString() + ' ' + new Date(h.ingest_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
-              </button>
+              <div class="flex items-center border-b last:border-0 group"
+                   :class="h.id === conversationId ? 'bg-surface-container-highest' : ''"
+                   style="border-color:var(--color-outline-variant);">
+                <button @click="loadConversation(h.id); open = false"
+                        class="flex-1 min-w-0 text-left px-3 py-2 transition-colors hover:bg-surface-container-high">
+                  <div class="text-[11.5px] font-semibold truncate" style="color:var(--color-on-surface);" x-text="h.title || 'Untitled conversation'"></div>
+                  <div class="text-[9px] font-mono mt-0.5" style="color:var(--color-outline);" x-text="new Date(h.ingest_date).toLocaleDateString() + ' ' + new Date(h.ingest_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+                </button>
+                <button @click.stop="deleteConversation(h.id)"
+                        class="flex-shrink-0 p-2 mr-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-container-high"
+                        style="color:var(--color-outline);"
+                        title="Delete conversation">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+                  </svg>
+                </button>
+              </div>
             </template>
           </div>
         </div>
@@ -67,7 +76,9 @@
   </div>
 
   {# Message list #}
-  <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4"
+  <div class="flex-1 min-h-0 p-4 space-y-4"
+       :class="messages.length > 0 || streaming || loading ? 'overflow-y-auto custom-scrollbar' : 'overflow-hidden'"
+       style="scrollbar-gutter:auto;"
        x-ref="messageList">
 
     {# Empty state / suggested prompts #}
@@ -145,32 +156,45 @@
   </template>
 
   {# Input #}
-  <div class="px-4 py-3 border-t flex-shrink-0" style="border-color:var(--color-outline-variant);">
-    <div class="flex gap-2 items-end">
+  <div class="px-4 py-3 flex-shrink-0">
+    <div class="flex items-end gap-2 rounded-lg border px-3 py-2 transition-colors"
+         style="background:var(--color-surface-container); border-color:var(--color-outline-variant);">
       <textarea
         x-ref="input"
         x-model="draft"
-        @keydown.enter.prevent="if (!$event.shiftKey) submit()"
+        @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); submit(); }"
+        @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 120) + 'px'"
+        x-effect="if (!draft) $el.style.height = 'auto'"
         :disabled="streaming"
-        rows="2"
-        placeholder="Ask a question… (Enter to send, Shift+Enter for newline)"
-        class="flex-1 resize-none rounded-lg px-3 py-2 text-[12.5px] border outline-none transition-colors custom-scrollbar"
-        style="background:var(--color-surface-container); border-color:var(--color-outline-variant); color:var(--color-on-surface); min-height:56px; max-height:140px;"
+        rows="1"
+        placeholder="Ask a question…"
+        class="flex-1 resize-none bg-transparent text-[12.5px] outline-none custom-scrollbar"
+        style="color:var(--color-on-surface); max-height:120px; scrollbar-gutter:auto;"
       ></textarea>
       <button @click="submit()"
               :disabled="streaming || !draft.trim()"
-              class="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+              class="flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors mb-0.5"
               :style="streaming || !draft.trim()
-                ? 'background:var(--color-surface-container); color:var(--color-outline);'
+                ? 'color:var(--color-outline);'
                 : 'background:var(--color-primary); color:var(--color-on-primary);'">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
         </svg>
       </button>
     </div>
-    <div class="mt-1 text-[9.5px] text-right" style="color:var(--color-outline);">
+    <div class="mt-1.5 text-[9px] text-right" style="color:var(--color-outline);">
       Answers cite source documents · citations link to document reader
     </div>
   </div>
+
+  {% if scope_type == 'case' and extra_params.get('currentProceedingId') %}
+  <div class="px-4 py-2 border-t text-[11px]"
+       style="border-color:var(--color-outline-variant); background:var(--color-surface-container-low); color:var(--color-on-surface-variant);">
+    <label class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" x-model="limitToProceeding" class="rounded border-outline-variant text-primary focus:ring-primary">
+      <span>Limit search to current proceeding: <strong>{{ extra_params.get('currentProceedingName', '') }}</strong></span>
+    </label>
+  </div>
+  {% endif %}
 
 </div>

@@ -92,8 +92,14 @@ def process_document_task(self, doc_id: int):
                     exc=e,
                 ) from e
 
-        # Phase 1: metadata extraction + auto-triage (with transient-error retry)
-        _run_phase1_summary(doc_id)
+        # Phase 1: metadata extraction + auto-triage (with transient-error retry).
+        # Skip when already completed — recovery may re-dispatch this task for a
+        # later stuck stage; re-running the AI call here would be wasteful.
+        metadata_done = (
+            stages.get(PipelineStage.METADATA.value, {}).get("status") == "completed"
+        )
+        if not metadata_done:
+            _run_phase1_summary(doc_id)
 
         # Gate: if METADATA ended failed, skip downstream dispatch for this doc.
         # Sibling docs still proceed via the batch analyzer (see below).
@@ -110,44 +116,68 @@ def process_document_task(self, doc_id: int):
             return {"status": "metadata_failed", "doc_id": doc_id}
 
         # Proceeding-ready gating: metadata is done, now check for proceeding changes.
-        # This replaces the direct batch analyzer call — the proceeding analyzer
-        # will trigger the batch analyzer once it finishes (or skips).
+        # claim_stage_for_dispatch is an atomic pending→running CAS — prevents fan-out
+        # when process_document_task is re-dispatched (e.g. by crash recovery) while
+        # a previous run already claimed this stage.
+        from app.services.pipeline_status import claim_stage_for_dispatch
+
+        db_claim = get_db_session()
         try:
-            from app.tasks.analyze_proceeding import analyze_proceeding_task
+            if claim_stage_for_dispatch(
+                doc_id, PipelineStage.PROCEEDING_ANALYSIS, db_claim
+            ):
+                try:
+                    from app.tasks.analyze_proceeding import analyze_proceeding_task
 
-            analyze_proceeding_task.delay(doc_id)
-        except Exception as e:
-            logger.error(
-                "Doc #%d: analyze_proceeding dispatch raised — marking stage failed: %s",
-                doc_id,
-                e,
-                exc_info=True,
-            )
-            mark_failed_with_cascade(
-                doc_id,
-                PipelineStage.PROCEEDING_ANALYSIS,
-                db,
-                error=f"dispatch failed: {e}",
-            )
+                    analyze_proceeding_task.delay(doc_id)
+                except Exception as e:
+                    logger.error(
+                        "Doc #%d: analyze_proceeding dispatch raised — marking stage failed: %s",
+                        doc_id,
+                        e,
+                        exc_info=True,
+                    )
+                    mark_failed_with_cascade(
+                        doc_id,
+                        PipelineStage.PROCEEDING_ANALYSIS,
+                        db,
+                        error=f"dispatch failed: {e}",
+                    )
+            else:
+                logger.debug(
+                    "Doc #%d: PROCEEDING_ANALYSIS already claimed — skipping dispatch",
+                    doc_id,
+                )
+        finally:
+            db_claim.close()
 
-        # Embeddings — now a real Celery task for proper stage tracking
+        # Embeddings — claim before dispatch for the same fan-out protection.
+        db_emb = get_db_session()
         try:
-            from app.tasks.generate_embedding import generate_embedding_task
+            if claim_stage_for_dispatch(doc_id, PipelineStage.EMBEDDINGS, db_emb):
+                try:
+                    from app.tasks.generate_embedding import generate_embedding_task
 
-            generate_embedding_task.delay(doc_id)
-        except Exception as e:
-            logger.error(
-                "Doc #%d: generate_embedding dispatch raised — marking stage failed: %s",
-                doc_id,
-                e,
-                exc_info=True,
-            )
-            mark_failed_with_cascade(
-                doc_id,
-                PipelineStage.EMBEDDINGS,
-                db,
-                error=f"dispatch failed: {e}",
-            )
+                    generate_embedding_task.delay(doc_id)
+                except Exception as e:
+                    logger.error(
+                        "Doc #%d: generate_embedding dispatch raised — marking stage failed: %s",
+                        doc_id,
+                        e,
+                        exc_info=True,
+                    )
+                    mark_failed_with_cascade(
+                        doc_id,
+                        PipelineStage.EMBEDDINGS,
+                        db,
+                        error=f"dispatch failed: {e}",
+                    )
+            else:
+                logger.debug(
+                    "Doc #%d: EMBEDDINGS already claimed — skipping dispatch", doc_id
+                )
+        finally:
+            db_emb.close()
 
         return {"status": "success", "doc_id": doc_id}
     finally:

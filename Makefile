@@ -7,7 +7,7 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run watch-css test test-unit test-integration test-e2e seed migrate lint clean
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed reset migrate lint clean redis
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -40,23 +40,44 @@ setup: .venv ## Install dependencies and pre-commit hooks
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait
 
-run: ## Start Redis (Docker), web server, and Celery worker
+run: ## Start Redis, web server, ingest worker (OCR), and AI worker
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
-	trap 'kill $$!' EXIT; \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	trap 'kill 0' EXIT INT TERM; \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
-run-debug: ## Start server with DEBUG logging enabled (+ Redis + worker)
+run-stable: ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
+	docker compose up redis -d --wait
+	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	trap 'kill 0' EXIT INT TERM; \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+
+run-debug: ## Start server with DEBUG logging (+ Redis + both workers)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
-	trap 'kill $$!' EXIT; \
-	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
+	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	trap 'kill 0' EXIT INT TERM; \
+	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
 server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
-worker: ## Start the Celery worker (required when CELERY_TASK_ALWAYS_EAGER=false)
-	$(PYTHON) -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery --concurrency=1
+# Note: `-Q ai` on the AI worker is a temporary cutover bridge so any
+# tasks still sitting on the legacy `celery` queue from before the two-queue
+# split get drained. After `redis-cli LLEN celery` reads 0 and stays 0 across
+# a restart, drop `,celery` from the AI worker's `-Q` list.
+worker: ## Start both Celery workers (ingest + ai)
+	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	trap 'kill 0' EXIT INT TERM; \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+
+worker-ingest: ## Start only the ingest (OCR) Celery worker
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1
+
+worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
 watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch

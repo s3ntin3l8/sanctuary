@@ -122,6 +122,15 @@ def update_conversation_title(
     return {"id": conv.id, "title": conv.title}
 
 
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
+    """Delete a conversation and all its messages."""
+    repo = ChatRepository(db)
+    if not repo.delete(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"deleted": conversation_id}
+
+
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
     conversation_id: int,

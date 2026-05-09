@@ -193,10 +193,9 @@ def render_bundle_group_oob(request: Request, bundle, triage_service) -> str:
     Replaces the entire bundle row (and its inline expand) in-place without
     touching the rest of the feed — preserves scroll position and Alpine state.
     """
-    reactions_by_doc = {
-        doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
-        for doc in bundle.documents
-    }
+    reactions_by_doc = triage_service.get_reactions_by_doc_ids(
+        [doc.id for doc in bundle.documents]
+    )
     return templates.get_template("partials/triage_row.html").render(
         {
             "request": request,
@@ -217,12 +216,8 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
     from app.models.database import Proceeding
 
     bundles = triage_service.get_triage_bundles()
-    reactions_by_doc = {}
-    for bundle in bundles:
-        for doc in bundle.documents:
-            reactions_by_doc[doc.id] = {
-                r.reaction for r in triage_service.get_reactions(doc.id)
-            }
+    all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
+    reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
     from app.repositories.case import CaseRepository
 
     all_cases = CaseRepository(db).list_for_picker()

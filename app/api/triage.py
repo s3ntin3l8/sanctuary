@@ -34,7 +34,7 @@ router = APIRouter(tags=["pages"])
 
 
 @router.get("/triage")
-async def triage_page(
+def triage_page(
     request: Request,
     limit: int = 50,
     offset: int = 0,
@@ -49,12 +49,8 @@ async def triage_page(
     all_cases = CaseRepository(db).list_for_picker()
     total_docs = sum(b.doc_count for b in bundles)
 
-    reactions_by_doc = {}
-    for bundle in bundles:
-        for doc in bundle.documents:
-            reactions_by_doc[doc.id] = {
-                r.reaction for r in triage_service.get_reactions(doc.id)
-            }  # set for card-level membership check only
+    all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
+    reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
 
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
@@ -860,7 +856,7 @@ async def reject_relationship(
 
 
 @router.get("/triage/card/{doc_id}/live")
-async def triage_card_live(
+def triage_card_live(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
@@ -911,7 +907,7 @@ async def update_doc_title(
 
 
 @router.get("/triage/doc/{doc_id}/hud")
-async def triage_doc_hud(
+def triage_doc_hud(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
@@ -933,7 +929,7 @@ async def triage_doc_hud(
 
 
 @router.get("/triage/doc/{doc_id}/body")
-async def triage_doc_body(
+def triage_doc_body(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
@@ -960,7 +956,7 @@ async def triage_doc_body(
 
 # -----------------------------------------------------------------------------
 @router.get("/triage/bundle/{batch_id}")
-async def get_bundle(
+def get_bundle(
     request: Request,
     batch_id: int,
     db: Session = Depends(get_db),
@@ -971,10 +967,9 @@ async def get_bundle(
     if not bundle:
         raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
-    reactions_by_doc = {
-        doc.id: {r.reaction for r in triage_service.get_reactions(doc.id)}
-        for doc in bundle.documents
-    }
+    reactions_by_doc = triage_service.get_reactions_by_doc_ids(
+        [doc.id for doc in bundle.documents]
+    )
 
     return templates.TemplateResponse(
         request,
@@ -996,7 +991,7 @@ async def get_bundle(
 
 
 @router.get("/triage/bundle/{batch_id}/pipeline")
-async def bundle_pipeline_status(
+def bundle_pipeline_status(
     request: Request,
     batch_id: int,
     db: Session = Depends(get_db),

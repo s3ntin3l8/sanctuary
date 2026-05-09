@@ -116,68 +116,98 @@ def parse_eml_file(file_path: str) -> str:
 
 _converter: object | None = None
 _converter_lock = threading.Lock()
+_ocr_converter: object | None = None
+_ocr_converter_lock = threading.Lock()
+
+
+def _build_converter(force_full_page_ocr: bool = False):
+    """Construct a Docling DocumentConverter with Tesseract OCR configured."""
+    import time
+
+    label = "force_full_page_ocr" if force_full_page_ocr else "standard"
+    start = time.perf_counter()
+    logger.info("Initializing Docling DocumentConverter (%s)...", label)
+    try:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import (
+            PdfPipelineOptions,
+            TableFormerMode,
+            TesseractCliOcrOptions,
+        )
+        from docling.document_converter import (
+            DocumentConverter,
+            PdfFormatOption,
+        )
+
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_table_structure = True
+        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        pipeline_options.do_ocr = True
+        pipeline_options.ocr_options = TesseractCliOcrOptions(
+            lang=["deu", "eng"],
+            force_full_page_ocr=force_full_page_ocr,
+        )
+        if force_full_page_ocr:
+            # Render at 2× scale so Tesseract gets higher-resolution input on
+            # scanned pages where the layout model produced only image placeholders.
+            pipeline_options.images_scale = 2.0
+
+        conv = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+        )
+        logger.info(
+            "Docling DocumentConverter (%s) initialized in %.2fs",
+            label,
+            time.perf_counter() - start,
+        )
+        return conv
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to initialize Docling converter: {e}. "
+            "Ensure Docling is installed and system dependencies are met."
+        ) from e
 
 
 def _get_converter():
-    """Lazy-init the Docling DocumentConverter on first use (thread-safe)."""
+    """Lazy-init the standard DocumentConverter (thread-safe)."""
     global _converter
     if _converter is None:
         with _converter_lock:
             if _converter is None:
-                import time
-
-                start = time.perf_counter()
-                logger.info("Initializing Docling DocumentConverter...")
-                try:
-                    from docling.datamodel.base_models import InputFormat
-                    from docling.datamodel.pipeline_options import (
-                        PdfPipelineOptions,
-                        TableFormerMode,
-                        TesseractCliOcrOptions,
-                    )
-                    from docling.document_converter import (
-                        DocumentConverter,
-                        PdfFormatOption,
-                    )
-
-                    pipeline_options = PdfPipelineOptions()
-                    pipeline_options.do_table_structure = True
-                    pipeline_options.table_structure_options.mode = (
-                        TableFormerMode.ACCURATE
-                    )
-                    pipeline_options.do_ocr = True
-                    pipeline_options.ocr_options = TesseractCliOcrOptions(
-                        lang=["deu", "eng"]
-                    )
-
-                    _converter = DocumentConverter(
-                        format_options={
-                            InputFormat.PDF: PdfFormatOption(
-                                pipeline_options=pipeline_options
-                            )
-                        }
-                    )
-                    elapsed = time.perf_counter() - start
-                    logger.info(
-                        "Docling DocumentConverter initialized in %.2fs", elapsed
-                    )
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to initialize Docling converter: {e}. "
-                        "Ensure Docling is installed and system dependencies are met."
-                    ) from e
+                _converter = _build_converter(force_full_page_ocr=False)
     return _converter
 
 
-def _convert_in_subprocess(file_path: str) -> dict:
-    """Run the full Docling conversion + chunking in a worker subprocess.
+def _get_ocr_converter():
+    """Lazy-init the force_full_page_ocr DocumentConverter for scanned PDFs (thread-safe)."""
+    global _ocr_converter
+    if _ocr_converter is None:
+        with _ocr_converter_lock:
+            if _ocr_converter is None:
+                _ocr_converter = _build_converter(force_full_page_ocr=True)
+    return _ocr_converter
 
-    Each subprocess lazy-initializes its own DocumentConverter on first call
-    and reuses it for the rest of its lifetime. Defined at module scope so it
-    pickles cleanly into the worker.
+
+def _is_image_only_output(content: str | None) -> bool:
+    """Return True when docling output is exclusively image placeholders.
+
+    Distinguishes scanned PDFs (layout model saw images, no text) from PDFs
+    with actual embedded text. Only these need a force_full_page_ocr retry.
     """
+    if not content:
+        return False
+    stripped = content.strip()
+    has_placeholders = bool(_PLACEHOLDER_RE.search(stripped))
+    cleaned = _PLACEHOLDER_RE.sub("", stripped)
+    word_chars = len(re.sub(r"\s+", "", cleaned))
+    return has_placeholders and word_chars < 30
+
+
+def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
+    """Run one Docling conversion pass; return (markdown, chunks, metadata)."""
     ext = os.path.splitext(file_path)[1].lower()
-    conv = _get_converter()
     result = conv.convert(file_path)
 
     metadata = {
@@ -187,14 +217,12 @@ def _convert_in_subprocess(file_path: str) -> dict:
 
     from docling.chunking import HierarchicalChunker
 
-    chunker = HierarchicalChunker()
     chunks = []
     try:
-        doc_chunks = list(chunker.chunk(result.document))
-        for chunk in doc_chunks:
+        for chunk in HierarchicalChunker().chunk(result.document):
             chunks.append(
                 {
-                    "text": chunk.text,
+                    "text": _apply_glyph_fixes(chunk.text),
                     "meta": {
                         "doc_items": [
                             str(item.self_ref) for item in chunk.meta.doc_items
@@ -208,12 +236,33 @@ def _convert_in_subprocess(file_path: str) -> dict:
                 }
             )
     except Exception as e:
-        logger.warning(f"Chunking failed for {file_path}: {e}")
+        logger.warning("Chunking failed for %s: %s", file_path, e)
 
-    markdown = result.document.export_to_markdown()
-    markdown = _apply_glyph_fixes(markdown)
-    for chunk in chunks:
-        chunk["text"] = _apply_glyph_fixes(chunk["text"])
+    markdown = _apply_glyph_fixes(result.document.export_to_markdown())
+    return markdown, chunks, metadata
+
+
+def _convert_in_subprocess(file_path: str) -> dict:
+    """Run the full Docling conversion + chunking in a worker subprocess.
+
+    Each subprocess lazy-initializes its own DocumentConverter on first call
+    and reuses it for the rest of its lifetime. Defined at module scope so it
+    pickles cleanly into the worker.
+
+    When the standard pass produces only image placeholders (scanned PDF whose
+    pages the layout model classified as pictures rather than text), a second
+    pass with force_full_page_ocr=True is attempted so Tesseract gets to run
+    on the full page. Normal PDFs with embedded text are unaffected.
+    """
+    markdown, chunks, metadata = _run_conversion(_get_converter(), file_path)
+
+    if _is_image_only_output(markdown):
+        logger.info(
+            "Scanned PDF detected (image-only output) — retrying with "
+            "force_full_page_ocr: %s",
+            file_path,
+        )
+        markdown, chunks, metadata = _run_conversion(_get_ocr_converter(), file_path)
 
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 

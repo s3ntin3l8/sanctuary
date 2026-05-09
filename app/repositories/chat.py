@@ -77,6 +77,15 @@ class ChatRepository:
             .all()
         )
 
+    def delete(self, conversation_id: int) -> bool:
+        """Delete a conversation and its messages. Returns True if found."""
+        conv = self.get(conversation_id)
+        if not conv:
+            return False
+        self.db.delete(conv)
+        self.db.commit()
+        return True
+
     def update_title(self, conversation_id: int, title: str) -> Conversation | None:
         """Update conversation title."""
         conv = self.get(conversation_id)
