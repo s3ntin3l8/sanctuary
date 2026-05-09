@@ -16,6 +16,6 @@
      x-on:hud-focus-chat.window="$nextTick(() => { const ta = $el.querySelector('textarea'); if (ta) ta.focus(); })"
      x-on:hud-prefill-chat.window="$nextTick(() => { const ta = $el.querySelector('textarea'); if (ta && $event.detail.prompt) { ta.value = $event.detail.prompt; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.focus(); } })"
      class="fixed inset-y-0 right-0 z-[60] flex flex-col slide-in-right"
-     style="width:400px; background:var(--color-surface-lowest); border-left:1px solid var(--color-outline-variant); box-shadow:var(--shadow-drawer);">
+     style="width:400px; background:var(--color-surface-container-low); border-left:1px solid var(--color-outline-variant); box-shadow:var(--shadow-drawer);">
   {% include "partials/chat/_panel.html" %}
 </div>

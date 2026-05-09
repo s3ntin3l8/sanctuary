@@ -34,6 +34,7 @@
             <span class="material-symbols-outlined text-[12px] text-primary">edit_note</span>
             Metadata review
         </h4>
+        {% if mode == 'review' %}
         <button type="button" x-show="state === 'confirmed'" @click="state = 'review'"
                 class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors">
             Edit
@@ -42,6 +43,7 @@
                 class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:border-primary/40 transition-colors">
             Cancel
         </button>
+        {% endif %}
     </div>
 
     {# ── CONFIRMED: read-only grid — 2 cols when the surrounding pane is
@@ -62,8 +64,10 @@
         {% endfor %}
     </div>
 
-    {# ── REVIEW: existing form ── #}
+    {# ── REVIEW: existing form — only rendered in review mode where `cases` is in context ── #}
+    {% if mode == 'review' %}
     <div x-show="state === 'review'">
         {% include "partials/triage_metadata_form.html" %}
     </div>
+    {% endif %}
 </div>

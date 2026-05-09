@@ -8,11 +8,6 @@
 {# 1. AI Summary #}
 {% include "partials/hud/_summary.html" %}
 
-{# 2. Pipeline retry strip — doc detail only; in triage the stepper per-stage icons are sufficient #}
-{% if mode != 'review' %}
-{% include "partials/hud/_review_actions.html" %}
-{% endif %}
-
 {# 3. Pipeline status #}
 {% include "partials/hud/_pipeline.html" %}
 
@@ -23,14 +18,10 @@
 {% include "partials/hud/_case.html" %}
 {% endif %}
 
-{# 4. Metadata review (read-only summary + Edit toggle that flips to the form).
-   Review mode only — triage embedded context and case-dashboard confirm/reject
-   flows that still render _container.html with mode='review'. #}
-{% if mode == 'review' %}
+{# 4. Metadata review — read-only in all modes; Edit toggle + form only in review mode. #}
 {% include "partials/triage/_metadata_review.html" %}
-{% endif %}
 
-{# 4. Passages (spine in standalone/embedded, cards in overlay) #}
+{# 5. Passages (spine in standalone/embedded, cards in overlay) #}
 {% include "partials/hud/_passages_spine.html" %}
 
 {# 4. Relationships #}
