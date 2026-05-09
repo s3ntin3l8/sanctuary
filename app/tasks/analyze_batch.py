@@ -75,6 +75,43 @@ def analyze_batch_task(self, batch_id: int):
         finally:
             db.close()
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
+    except httpx.ConnectError as e:
+        if self.request.retries < self.max_retries:
+            countdown = 15
+            logger.warning(
+                "Batch #%d: AI backend unreachable (%s) — retry %d in %ds",
+                batch_id,
+                e,
+                self.request.retries + 1,
+                countdown,
+            )
+            db = SessionLocal()
+            try:
+                for doc_id in doc_ids:
+                    schedule_retry(
+                        doc_id,
+                        PipelineStage.BATCH_ANALYSIS,
+                        db,
+                        error=str(e),
+                        attempt=self.request.retries + 1,
+                        max_attempts=self.max_retries,
+                        countdown=countdown,
+                    )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error(
+            "Batch #%d: AI backend unreachable after all retries: %s", batch_id, e
+        )
+        db = SessionLocal()
+        try:
+            for doc_id in doc_ids:
+                mark_failed(
+                    doc_id, PipelineStage.BATCH_ANALYSIS, db, error=f"connect: {e}"
+                )
+        finally:
+            db.close()
+        return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
         if self.request.retries < self.max_retries:

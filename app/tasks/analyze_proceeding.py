@@ -112,6 +112,39 @@ def analyze_proceeding_task(self, doc_id: int):
             finally:
                 db_claim.close()
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except httpx.ConnectError as e:
+        if self.request.retries < self.max_retries:
+            countdown = 15
+            logger.warning(
+                "Doc #%d: AI backend unreachable (%s) — retry %d in %ds",
+                doc_id,
+                e,
+                self.request.retries + 1,
+                countdown,
+            )
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.PROCEEDING_ANALYSIS,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error("Doc #%d: AI backend unreachable after all retries: %s", doc_id, e)
+        db = get_db_session()
+        try:
+            mark_failed_with_cascade(
+                doc_id, PipelineStage.PROCEEDING_ANALYSIS, db, error=f"connect: {e}"
+            )
+        finally:
+            db.close()
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} proceeding analysis failed: {e}", exc_info=True)
 
