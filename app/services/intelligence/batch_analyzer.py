@@ -38,20 +38,6 @@ COVER_LETTER_KEYWORDS = {
 }
 
 
-def _metadata_outranks_batch(child: Document, batch_originator: str | None) -> bool:
-    """True when metadata has determined a specific role and batch disagrees.
-
-    Metadata sees full document text; batch sees only sibling titles.
-    Trust metadata for any non-UNKNOWN classification, not just court overwrites.
-    """
-    if not batch_originator:
-        return False
-    if child.originator_type in (None, OriginatorType.UNKNOWN):
-        return False  # no metadata opinion; let batch decide
-    batch_type = parse_originator_type(batch_originator)
-    return child.originator_type != batch_type
-
-
 def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
     """Heuristic: pick the most likely cover letter candidate from the batch.
     Only considers documents with actual content.
@@ -216,29 +202,18 @@ def _apply_batch_results(
                         if len(subs) == 1:
                             child = subs[0]
                 if child:
-                    if _metadata_outranks_batch(child, encl.get("originator_type")):
-                        logger.warning(
-                            "Batch #%d doc #%d: metadata classified originator as %s but batch claims %r — trusting metadata.",
-                            batch_id,
-                            child.id,
-                            child.originator_type,
-                            encl.get("originator_type"),
-                        )
-                        continue
                     claimed_ids.add(child.id)
                     child.role = DocumentRole.ENCLOSURE
                     child.parent_id = cover_id
-                    child.originator_type = (
-                        parse_originator_type(encl.get("originator_type"))
-                        or child.originator_type
-                    )
-                    # For non-court enclosures, prefer metadata's sender extraction
-                    # (full text) over batch's title-only guess. Court relays are
-                    # the legitimate "batch knows better" case.
-                    batch_originator = encl.get("attributed_originator")
-                    is_court = (encl.get("originator_type") or "").lower() == "court"
-                    if is_court or not child.attributed_originator:
-                        child.attributed_originator = batch_originator
+                    # Only fill originator_type when metadata had no opinion;
+                    # full-text metadata beats batch's title-only context.
+                    if child.originator_type in (None, OriginatorType.UNKNOWN):
+                        child.originator_type = (
+                            parse_originator_type(encl.get("originator_type"))
+                            or child.originator_type
+                        )
+                    if not child.attributed_originator:
+                        child.attributed_originator = encl.get("attributed_originator")
     else:
         # Legacy format: single cover letter
         cover_letter_doc_id = result.get("cover_letter_doc_id")
@@ -301,26 +276,16 @@ def _apply_batch_results(
                     if len(subs) == 1:
                         child = subs[0]
             if child:
-                if _metadata_outranks_batch(child, encl.get("originator_type")):
-                    logger.warning(
-                        "Batch #%d doc #%d: metadata classified originator as %s but batch claims %r — trusting metadata.",
-                        batch_id,
-                        child.id,
-                        child.originator_type,
-                        encl.get("originator_type"),
-                    )
-                    continue
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                child.originator_type = (
-                    parse_originator_type(encl.get("originator_type"))
-                    or child.originator_type
-                )
-                batch_originator = encl.get("attributed_originator")
-                is_court = (encl.get("originator_type") or "").lower() == "court"
-                if is_court or not child.attributed_originator:
-                    child.attributed_originator = batch_originator
+                if child.originator_type in (None, OriginatorType.UNKNOWN):
+                    child.originator_type = (
+                        parse_originator_type(encl.get("originator_type"))
+                        or child.originator_type
+                    )
+                if not child.attributed_originator:
+                    child.attributed_originator = encl.get("attributed_originator")
 
     # Cascade case/proceeding from any cover letter to all docs
     if first_cover and first_cover.case_id:
@@ -369,16 +334,16 @@ def _apply_batch_results(
             relay = relays[0]
             relay.role = DocumentRole.COVER_LETTER
             for d in docs:
-                if d.id == relay.id or d.parent_id is not None:
-                    continue
-                if _metadata_outranks_batch(d, "court"):
-                    logger.warning(
-                        "Batch #%d doc #%d: skipping single-relay fallback — metadata "
-                        "classified originator as %s. Trusting metadata.",
-                        batch_id,
-                        d.id,
-                        d.originator_type,
+                if (
+                    d.id == relay.id
+                    or d.parent_id is not None
+                    or d.originator_type
+                    in (
+                        OriginatorType.OWN,
+                        OriginatorType.OPPOSING,
+                        OriginatorType.THIRD_PARTY,
                     )
+                ):
                     continue
                 d.role = DocumentRole.ENCLOSURE
                 d.parent_id = relay.id
@@ -407,14 +372,11 @@ def _apply_batch_results(
                 if not candidate.attributed_originator and candidate.sender:
                     candidate.attributed_originator = candidate.sender
                 for d in siblings_in_proceeding:
-                    if _metadata_outranks_batch(d, "court"):
-                        logger.warning(
-                            "Batch #%d doc #%d: skipping proceeding-grouping fallback — "
-                            "metadata classified originator as %s. Trusting metadata.",
-                            batch_id,
-                            d.id,
-                            d.originator_type,
-                        )
+                    if d.originator_type in (
+                        OriginatorType.OWN,
+                        OriginatorType.OPPOSING,
+                        OriginatorType.THIRD_PARTY,
+                    ):
                         continue
                     d.role = DocumentRole.ENCLOSURE
                     d.parent_id = candidate.id
@@ -450,16 +412,13 @@ def _apply_batch_results(
                 or d.id in claimed_ids
                 or d.parent_id is not None
                 or d.proceeding_id != cover.proceeding_id
-            ):
-                continue
-            if _metadata_outranks_batch(d, "court"):
-                logger.warning(
-                    "Batch #%d doc #%d: skipping proceeding-grouping completion "
-                    "sweep — metadata classified originator as %s. Trusting metadata.",
-                    batch_id,
-                    d.id,
-                    d.originator_type,
+                or d.originator_type
+                in (
+                    OriginatorType.OWN,
+                    OriginatorType.OPPOSING,
+                    OriginatorType.THIRD_PARTY,
                 )
+            ):
                 continue
             d.role = DocumentRole.ENCLOSURE
             d.parent_id = cover.id

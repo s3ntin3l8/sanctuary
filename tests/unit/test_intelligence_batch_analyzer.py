@@ -226,11 +226,12 @@ def test_metadata_originator_not_overwritten_by_batch(db_session, sample_case):
     db_session.expire_all()
     lawyer_letter = db_session.get(Document, lawyer_letter.id)
 
-    # Metadata-determined OWN must survive the batch pass.
+    # Batch owns structure: document is wired as enclosure under the cover letter.
+    assert lawyer_letter.role == DocumentRole.ENCLOSURE
+    assert lawyer_letter.parent_id == court_relay.id
+    # Metadata owns classification: OWN originator and attributed_originator survive.
     assert lawyer_letter.originator_type == OriginatorType.OWN
     assert lawyer_letter.attributed_originator == "Haidl Funk Rechtsanwälte"
-    assert lawyer_letter.role != DocumentRole.ENCLOSURE
-    assert lawyer_letter.parent_id is None
 
 
 @pytest.mark.unit
