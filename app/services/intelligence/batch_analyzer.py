@@ -456,7 +456,12 @@ def analyze(batch_id: int) -> bool:
     Returns True when the AI call ran, False when analysis was skipped
     (single doc or no healthy content). Raises on AI failure so the
     Celery task can retry and update the pipeline stage correctly.
+
+    Three-phase design — see document_enricher.enrich() for the rationale.
+    Early-exit writes (standalone assignment) happen in the read session
+    because they are fast and don't involve any AI call.
     """
+    # --- Phase 1: read (and handle early-exit writes) ---
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
@@ -486,54 +491,70 @@ def analyze(batch_id: int) -> bool:
             return False
 
         siblings = [d for d in healthy_docs if d.id != candidate.id]
+        model = cfg.summary_model
+        # docs objects detach from the session on close but column-level data
+        # (content, title, id, …) stays accessible in memory for the AI call.
+    finally:
+        db.close()
 
+    # --- Phase 2: AI call (no session held) ---
+    try:
+        result = _call_batch_analyzer_sync(
+            candidate,
+            siblings,
+            batch_id,
+            model=model,
+        )
+    except ValueError as first_err:
+        # AI returned empty/unparseable. Retry once with /no_think — same
+        # pattern as METADATA at ai_summary.py:336-356. If the retry also
+        # returns empty, fall through to heuristic fallback in
+        # _apply_batch_results.
+        logger.info(
+            "Batch %d analyzer: empty AI response (%s) — retrying with "
+            "thinking suppressed.",
+            batch_id,
+            first_err,
+        )
         try:
             result = _call_batch_analyzer_sync(
                 candidate,
                 siblings,
                 batch_id,
-                model=cfg.summary_model,
-                db=db,
+                model=model,
+                suppress_thinking=True,
+                debug_label=f"batch_{batch_id}_analyzerretry",
             )
-        except ValueError as first_err:
-            # AI returned empty/unparseable. Retry once with /no_think — same
-            # pattern as METADATA at ai_summary.py:336-356. If the retry also
-            # returns empty, fall through to heuristic fallback in
-            # _apply_batch_results.
-            logger.info(
-                "Batch %d analyzer: empty AI response (%s) — retrying with "
-                "thinking suppressed.",
+        except ValueError as retry_err:
+            logger.warning(
+                "Batch %d: analyzer empty after /no_think retry (%s) — "
+                "applying heuristic fallback.",
                 batch_id,
-                first_err,
+                retry_err,
             )
-            try:
-                result = _call_batch_analyzer_sync(
-                    candidate,
-                    siblings,
-                    batch_id,
-                    model=cfg.summary_model,
-                    db=db,
-                    suppress_thinking=True,
-                    debug_label=f"batch_{batch_id}_analyzerretry",
-                )
-            except ValueError as retry_err:
-                logger.warning(
-                    "Batch %d: analyzer empty after /no_think retry (%s) — "
-                    "applying heuristic fallback.",
-                    batch_id,
-                    retry_err,
-                )
-                result = {}
-        except Exception as e:
-            logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
-            for d in docs:
+            result = {}
+    except Exception as e:
+        logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
+        db = SessionLocal()
+        try:
+            docs_err = (
+                db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+            )
+            for d in docs_err:
                 d.role = DocumentRole.STANDALONE
             db.commit()
-            raise
+        finally:
+            db.close()
+        raise
 
-        _apply_batch_results(batch_id, docs, result, db)
+    # --- Phase 3: write results ---
+    db = SessionLocal()
+    try:
+        docs_write = (
+            db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+        )
+        _apply_batch_results(batch_id, docs_write, result, db)
         logger.info(f"Batch {batch_id} analyzed successfully")
-
         return True
     finally:
         db.close()

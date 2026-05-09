@@ -11,6 +11,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 # Python 3.12 deprecated sqlite3's default datetime adapter/converter. Without
 # explicit registration, every DateTime column read or write raises a
@@ -77,7 +78,7 @@ if _is_sqlite:
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         connect_args={"check_same_thread": False},
-        pool_pre_ping=True,
+        poolclass=NullPool,
     )
 else:
     engine = create_engine(
@@ -118,7 +119,7 @@ def load_sqlite_extensions(dbapi_conn, connection_record):
         # claim, while interactive page renders need to land their writes).
         # Bump to 30s; AI calls themselves don't hold the lock, so the
         # contention windows are short bursts of pure DB work.
-        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA busy_timeout=60000")
         cursor.close()
 
 

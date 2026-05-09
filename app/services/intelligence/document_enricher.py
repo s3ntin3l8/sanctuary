@@ -38,8 +38,10 @@ THREAD_OPEN_TYPES = {
 }
 
 
-def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
-    """Synchronous AI call to enrich a single document."""
+def _call_enricher_sync(
+    doc: Document, model: str = "", reactions_block: str = ""
+) -> dict:
+    """Synchronous AI call to enrich a single document. No DB session held."""
     content_preview = get_content_preview(doc, 60000)
 
     batch_context = ""
@@ -59,12 +61,6 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
     if doc.issued_date:
         dates_context += f"\nIssued date: {doc.issued_date.strftime('%Y-%m-%d')}"
 
-    reactions_block = ""
-    if db is not None:
-        formatted = format_reactions_for_document(db, doc.id)
-        if formatted:
-            reactions_block = f"\n\n{formatted}"
-
     prompt = (
         f"{batch_context}{dates_context}{reactions_block}\n\n{content_preview}".lstrip(
             "\n"
@@ -78,7 +74,6 @@ def _call_enricher_sync(doc: Document, model: str = "", db=None) -> dict:
         debug_label=f"doc_{doc.id}_enricher",
         schema=DocumentEnrichment,
         model=model or None,
-        db=db,
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
@@ -229,7 +224,16 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
 
 
 def enrich(doc_id: int) -> None:
-    """Run AI enrichment for a single document."""
+    """Run AI enrichment for a single document.
+
+    Three-phase design to avoid holding a DB session open during the AI call
+    (which takes 10–60 s and would otherwise cause SQLite write-lock contention
+    when multiple workers race to commit their results simultaneously):
+      1. Read phase  — fetch all needed data, close session.
+      2. AI phase    — call the model with no session held.
+      3. Write phase — open a fresh session, apply results, commit, close.
+    """
+    # --- Phase 1: read ---
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
@@ -237,23 +241,41 @@ def enrich(doc_id: int) -> None:
         if not doc:
             logger.warning(f"Doc {doc_id} not found for enrichment")
             return
-
         if not is_content_ai_ready(doc):
             logger.info(f"Doc {doc_id} has no usable content for enrichment, skipping")
             return
+        # Pre-format reactions while session is still open.
+        formatted_reactions = format_reactions_for_document(db, doc_id)
+        reactions_block = f"\n\n{formatted_reactions}" if formatted_reactions else ""
+        model = cfg.summary_model
+        # Capture metadata needed for the write phase before detaching.
+        case_id = doc.case_id
+        proceeding_id = doc.proceeding_id
+        issued_date = doc.issued_date
+    finally:
+        db.close()
 
-        result = _call_enricher_sync(doc, model=cfg.summary_model, db=db)
+    # --- Phase 2: AI call (no session held) ---
+    result = _call_enricher_sync(doc, model=model, reactions_block=reactions_block)
+
+    # --- Phase 3: write ---
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            logger.warning(f"Doc {doc_id} disappeared before write phase")
+            return
         _apply_enrichment(doc, result, db=db)
 
         from app.services.intelligence.action_items import create_from_payload
 
         create_from_payload(
-            doc.case_id,
-            doc.id,
-            doc.proceeding_id,
+            case_id,
+            doc_id,
+            proceeding_id,
             result.get("action_items") or [],
             db,
-            source_doc_date=doc.issued_date,
+            source_doc_date=issued_date,
         )
 
         db.commit()

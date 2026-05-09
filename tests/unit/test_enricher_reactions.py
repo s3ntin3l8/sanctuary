@@ -40,6 +40,11 @@ def test_enricher_prompt_includes_user_reactions(db_session):
     )
     db_session.commit()
 
+    from app.services.intelligence.reaction_context import format_reactions_for_document
+
+    formatted = format_reactions_for_document(db_session, doc.id)
+    reactions_block = f"\n\n{formatted}" if formatted else ""
+
     captured = {}
 
     def fake_call(system_prompt, user_prompt, **kwargs):
@@ -49,7 +54,9 @@ def test_enricher_prompt_includes_user_reactions(db_session):
         return DocumentEnrichment.model_validate({})
 
     with patch.object(document_enricher, "call_json_ai", side_effect=fake_call):
-        document_enricher._call_enricher_sync(doc, model="", db=db_session)
+        document_enricher._call_enricher_sync(
+            doc, model="", reactions_block=reactions_block
+        )
 
     assert "user_prompt" in captured
     prompt = captured["user_prompt"]
@@ -91,6 +98,6 @@ def test_enricher_prompt_skips_reactions_block_when_none(db_session):
         return DocumentEnrichment.model_validate({})
 
     with patch.object(document_enricher, "call_json_ai", side_effect=fake_call):
-        document_enricher._call_enricher_sync(doc, model="", db=db_session)
+        document_enricher._call_enricher_sync(doc, model="", reactions_block="")
 
     assert "User reactions on this document" not in captured["user_prompt"]
