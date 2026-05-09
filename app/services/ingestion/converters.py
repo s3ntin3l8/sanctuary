@@ -297,6 +297,11 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
             "chunks": [],
         }
 
+    if ext in {".txt", ".md"}:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        return {"content": content, "metadata": {"pages": 1}, "chunks": []}
+
     executor = _get_executor()
     future = executor.submit(_convert_in_subprocess, file_path)
     try:
