@@ -385,9 +385,15 @@ class CaseGraphService:
         # referenced by documents in this proceeding.
         external_doc_ids = set()
         for rel in relationships:
-            if rel.from_document_id not in node_by_id:
+            if (
+                rel.from_document_id not in node_by_id
+                and rel.from_document_id not in child_doc_ids
+            ):
                 external_doc_ids.add(rel.from_document_id)
-            if rel.to_document_id not in node_by_id:
+            if (
+                rel.to_document_id not in node_by_id
+                and rel.to_document_id not in child_doc_ids
+            ):
                 external_doc_ids.add(rel.to_document_id)
 
         if external_doc_ids:
