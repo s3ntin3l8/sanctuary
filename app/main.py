@@ -50,6 +50,30 @@ class RequestIDFilter(logging.Filter):
         return True
 
 
+class SuccessfulAccessFilter(logging.Filter):
+    """Downgrade uvicorn.access records for 2xx/3xx responses to DEBUG.
+
+    At INFO log level the handler suppresses DEBUG records, so polling
+    traffic disappears. At DEBUG log level every request is still visible.
+    4xx/5xx stay at INFO so real failures always surface.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn.access uses positional args: (client, request_line, status)
+        status = None
+        if isinstance(record.args, tuple) and len(record.args) >= 3:
+            status = record.args[2]
+        else:
+            status = getattr(record, "status_code", None)
+        try:
+            if status is not None and 200 <= int(status) < 400:
+                record.levelno = logging.DEBUG
+                record.levelname = "DEBUG"
+        except (TypeError, ValueError):
+            pass
+        return True
+
+
 def setup_logging():
     """Configure robust logging by hijacking third-party loggers."""
     log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -98,6 +122,12 @@ def setup_logging():
             target.setLevel(logging.WARNING)
         else:
             target.setLevel(level)
+
+        # Drop successful HTTP access logs from uvicorn at non-DEBUG levels —
+        # 2xx/3xx polling traffic dominates the log otherwise. 4xx/5xx still
+        # propagate so real failures stay visible.
+        if name == "uvicorn.access":
+            target.addFilter(SuccessfulAccessFilter())
 
 
 setup_logging()
@@ -219,7 +249,7 @@ async def add_request_id(request: Request, call_next):
     request_id = str(uuid4())[:8]
     request.state.request_id = request_id
 
-    logger.info(f"→ {request.method} {request.url.path}")
+    logger.debug(f"→ {request.method} {request.url.path}")
 
     try:
         response = await call_next(request)
@@ -230,7 +260,12 @@ async def add_request_id(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
 
     status = response.status_code
-    level = logging.WARNING if status >= 400 else logging.INFO
+    if status >= 500:
+        level = logging.ERROR
+    elif status >= 400:
+        level = logging.WARNING
+    else:
+        level = logging.DEBUG
     logger.log(level, f"← {status} {request.method} {request.url.path}")
 
     return response
