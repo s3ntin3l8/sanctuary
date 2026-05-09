@@ -320,8 +320,12 @@
          class="hidden"></div>
     {% endif %}
 
-    {# Inline expand body. Lazy-loads the active doc's HUD via HTMX. #}
+    {# Inline expand body. Lazy-loads the active doc's HUD via HTMX.
+       hx-preserve: HTMX keeps the current DOM element during OOB row swaps
+       (pipeline milestone reloads) so the loaded HUD is not reset to the
+       loading spinner every time a stage completes. #}
     <div id="triage-row-expanded-{{ bundle.key }}"
+         hx-preserve
          x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
          x-cloak>
         {% include "partials/triage_row_expanded.html" %}
