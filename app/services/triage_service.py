@@ -747,6 +747,47 @@ class TriageService:
             self.db.commit()
         return len(orphaned)
 
+    def get_bundle_suggestion(
+        self, batch_id: int | None = None, doc_id: int | None = None
+    ) -> tuple[str | None, int | None]:
+        """Return (suggested_case_id, suggested_proceeding_id) for a bundle.
+
+        Used by batch confirm to obtain per-bundle suggestions without rebuilding
+        the full triage feed. Returns (None, None) when no suggestion exists.
+        """
+        from app.models.database import IngestBatch
+
+        if batch_id:
+            batch = self.db.get(IngestBatch, batch_id)
+            if not batch:
+                return None, None
+            # Suggested case: batch.case_id if it's a real (non-triage) case or a draft
+            case_id = (
+                batch.case_id if batch.case_id and batch.case_id != "_TRIAGE" else None
+            )
+            if not case_id:
+                # Fall back to doc-level extraction that hasn't cascaded to batch yet
+                doc = (
+                    self.db.query(Document)
+                    .filter(
+                        Document.ingest_batch_id == batch_id,
+                        Document.case_id.isnot(None),
+                        Document.case_id != "_TRIAGE",
+                    )
+                    .first()
+                )
+                case_id = doc.case_id if doc else None
+            proceeding_id = batch.proceeding_id if batch.proceeding_id else None
+            return case_id, proceeding_id
+        elif doc_id:
+            doc = self.db.get(Document, doc_id)
+            if not doc:
+                return None, None
+            case_id = doc.case_id if doc.case_id and doc.case_id != "_TRIAGE" else None
+            proceeding_id = doc.proceeding_id if doc.proceeding_id else None
+            return case_id, proceeding_id
+        return None, None
+
     def toggle_reaction(
         self,
         document_id: int,

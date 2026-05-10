@@ -94,6 +94,30 @@
              bundleConfirm = { open: true, batch_id: String(d.batch_id || ''), is_synthetic: !!d.is_synthetic, doc_id: String(d.doc_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, suggested_case_id: d.suggested_case_id || '', suggested_case_title: d.suggested_case_title || '', suggested_case_is_draft: !!d.suggested_case_is_draft, suggested_proceeding_id: d.suggested_proceeding_id ? String(d.suggested_proceeding_id) : '', suggested_proceeding_az: d.suggested_proceeding_az || '', suggested_proceeding_subtitle: d.suggested_proceeding_subtitle || '', suggested_proceeding_is_draft: !!d.suggested_proceeding_is_draft, action: d.action || 'confirm_bundle', is_new_case: !!d.is_new_case };
          "
          @triage:bundle-confirmed.document="bundleConfirm.open = false"
+         @triage:open-batch-assign.document="
+             const d = $event.detail || {};
+             bundleConfirm = { ...bundleConfirm, open: true, isBatch: true, batchKeys: d.batchKeys || [], doc_count: d.count || 0, subject: '', suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', suggested_proceeding_is_draft: false, is_new_case: false, action: 'batch_assign' };
+         "
+         @triage:batch-confirmed.document="
+             const d = ($event.detail && ($event.detail[0] || $event.detail)) || {};
+             $store.triage.clearSelection();
+             if (window.showToast) {
+                 const confirmed = d.confirmed || 0;
+                 const skipped = d.skipped || 0;
+                 const msg = skipped > 0 ? `Confirmed ${confirmed} bundle${confirmed !== 1 ? 's' : ''} (${skipped} skipped — no suggestion)` : `Confirmed ${confirmed} bundle${confirmed !== 1 ? 's' : ''}`;
+                 window.showToast(msg, 'success');
+             }
+         "
+         @triage:batch-assigned.document="
+             const d = ($event.detail && ($event.detail[0] || $event.detail)) || {};
+             bundleConfirm.open = false;
+             $store.triage.clearSelection();
+             if (window.showToast && d.case_id) {
+                 const n = d.count || 0;
+                 const title = d.case_title ? ` — ${d.case_title}` : '';
+                 window.showToast(`Assigned ${n} bundle${n !== 1 ? 's' : ''} to ${d.case_id}${title}`, 'success', { href: `/cases/${d.case_id}`, label: 'Open →' });
+             }
+         "
          @triage:open-retry-confirm.document="
              const d = $event.detail || {};
              retryConfirm = { open: true, submitting: false, batch_id: String(d.batch_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0 };
@@ -114,6 +138,49 @@
     {% include "partials/create_case_modal.html" %}
     {% include "partials/triage_header.html" %}
     {% include "partials/triage_column_header.html" %}
+
+    {# Batch action toolbar — appears when any rows are selected #}
+    <div x-show="$store.triage.selectedCount > 0"
+         x-cloak
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         x-transition:leave="transition ease-in duration-100"
+         x-transition:leave-start="opacity-100 translate-y-0"
+         x-transition:leave-end="opacity-0 -translate-y-1"
+         class="border-b border-primary/30 bg-primary/5 px-8 py-2 flex items-center gap-3">
+        <span class="text-[11px] font-bold text-primary tabular-nums"
+              x-text="`${$store.triage.selectedCount} selected`"></span>
+        <button type="button"
+                @click="allVisibleSelected() ? $store.triage.clearSelection() : selectAllVisible()"
+                x-text="allVisibleSelected() ? 'Deselect all' : 'Select all'"
+                class="text-[11px] font-bold text-primary/70 hover:text-primary transition-colors cursor-pointer underline underline-offset-2">
+        </button>
+        <span class="text-outline-variant">·</span>
+        {# Batch confirm: generates hidden inputs from selection, posts to batch endpoint #}
+        <form hx-post="/triage/batch/confirm" hx-swap="none" class="contents">
+            <template x-for="key in Object.keys($store.triage.selected)" :key="key">
+                <input type="hidden" name="bundle_keys" :value="key">
+            </template>
+            <button type="submit"
+                    class="flex items-center gap-1 text-[11.5px] px-2.5 py-1 rounded bg-primary text-on-primary hover:bg-primary/90 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+                <span class="material-symbols-outlined text-[12px]">check_circle</span>
+                Confirm (<span x-text="$store.triage.selectedCount"></span>)
+            </button>
+        </form>
+        <button type="button"
+                @click="$dispatch('triage:open-batch-assign', { batchKeys: Object.keys($store.triage.selected), count: $store.triage.selectedCount })"
+                class="flex items-center gap-1 text-[11.5px] px-2.5 py-1 rounded bg-surface-container-high text-on-surface border border-outline-variant/30 hover:bg-surface-container-highest transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+            <span class="material-symbols-outlined text-[12px]">folder_open</span>
+            Assign to…
+        </button>
+        <button type="button"
+                @click="$store.triage.clearSelection()"
+                class="ml-auto text-[11px] font-bold text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer flex items-center gap-1">
+            <span class="material-symbols-outlined text-[13px]">close</span>
+            Clear
+        </button>
+    </div>
 
     {# Single-column scroll region #}
     <div id="triage-queue" class="flex-1 overflow-y-auto custom-scrollbar">
@@ -145,6 +212,15 @@ function triagePage() {
             drawerOpen: false,
             drawer: { rowKey: null, docId: null },
             stats: { pending: {{ header_stats.pending if header_stats else 0 }}, completedToday: {{ header_stats.completed_today if header_stats else 0 }} },
+            selected: {},
+            get selectedCount() { return Object.keys(this.selected).length; },
+            isSelected(key) { return !!this.selected[key]; },
+            toggleSelected(key) {
+                if (this.selected[key]) delete this.selected[key];
+                else this.selected[key] = true;
+                this.selected = { ...this.selected };
+            },
+            clearSelection() { this.selected = {}; },
             setFilter(k) { this.filter = k; },
             toggleRow(key) {
                 this.expandedRowKey = (this.expandedRowKey === key) ? null : key;
@@ -159,12 +235,24 @@ function triagePage() {
     }
 
     return {
-        bundleConfirm: { open: false, batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', suggested_proceeding_is_draft: false, is_new_case: false, action: 'confirm_bundle' },
+        bundleConfirm: { open: false, isBatch: false, batchKeys: [], batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', suggested_proceeding_is_draft: false, is_new_case: false, action: 'confirm_bundle' },
         retryConfirm: { open: false, submitting: false, batch_id: '', subject: '', doc_count: 0 },
         _visibleRowKeys() {
+            const f = Alpine.store('triage').filter;
             return Array.from(document.querySelectorAll('[data-triage-row-id]'))
-                .filter(el => el.offsetParent !== null)
+                .filter(el => f === 'all' || el.getAttribute('data-mock-status') === f)
                 .map(el => el.getAttribute('data-triage-row-id'));
+        },
+        selectAllVisible() {
+            const store = Alpine.store('triage');
+            this._visibleRowKeys().forEach(key => {
+                if (!store.isSelected(key)) store.toggleSelected(key);
+            });
+        },
+        allVisibleSelected() {
+            const keys = this._visibleRowKeys();
+            const store = Alpine.store('triage');
+            return keys.length > 0 && keys.every(k => store.isSelected(k));
         },
         _step(delta) {
             const keys = this._visibleRowKeys();

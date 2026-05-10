@@ -351,6 +351,38 @@ def render_triage_header_stats_oob(request: Request, triage_service) -> str:
     )
 
 
+def render_batch_oob(
+    request: Request,
+    bundle_keys: list[str],
+    triage_service,
+    db: Session,
+) -> str:
+    """Build a concatenated OOB response for multiple bundle keys.
+
+    For each key, either swaps the updated row (if the bundle is still in triage)
+    or deletes it from the DOM (if it left triage). Always appends badges and
+    header-stats OOB fragments.
+    """
+    parts: list[str] = []
+    remaining = triage_service.get_triage_bundles()
+    remaining_by_key = {b.key: b for b in remaining}
+
+    for key in bundle_keys:
+        if key in remaining_by_key:
+            parts.append(
+                render_bundle_group_oob(request, remaining_by_key[key], triage_service)
+            )
+        else:
+            parts.append(
+                f'<div id="triage-row-{key}" hx-swap-oob="delete"></div>'
+                f'<div id="triage-row-expanded-{key}" hx-swap-oob="delete"></div>'
+            )
+
+    parts.append(render_sidebar_badges_oob(db))
+    parts.append(render_triage_header_stats_oob(request, triage_service))
+    return "".join(parts)
+
+
 def failed_doc_summary(bundles) -> tuple[int, int | None]:
     """Return (count, first_failed_doc_id) for docs with pipeline_state=failed
     across the bundles list. Used by the status bar chip + the page-render

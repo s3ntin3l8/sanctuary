@@ -43,6 +43,14 @@
          @keydown.enter.prevent="$store.triage.toggleRow('{{ bundle.key }}')"
          @keydown.space.prevent="$store.triage.toggleRow('{{ bundle.key }}')">
 
+        {# Selection checkbox — @click.stop prevents row expand when checking #}
+        <div class="flex-shrink-0 flex items-center self-stretch pr-0" @click.stop>
+            <input type="checkbox"
+                   :checked="$store.triage.isSelected('{{ bundle.key }}')"
+                   @change="$store.triage.toggleSelected('{{ bundle.key }}')"
+                   class="w-3.5 h-3.5 rounded border border-outline-variant bg-surface accent-primary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+        </div>
+
         {# Status stripe #}
         <div class="w-[3px] self-stretch rounded-sm flex-shrink-0 {{ status_color_class }}"></div>
 

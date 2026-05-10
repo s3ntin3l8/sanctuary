@@ -510,6 +510,218 @@ async def confirm(
 
 
 # -----------------------------------------------------------------------------
+# Batch operations
+# -----------------------------------------------------------------------------
+
+
+def _parse_bundle_key(key: str) -> tuple[int | None, int | None]:
+    """Parse a bundle key into (batch_id, doc_id). Returns (None, None) on failure."""
+    if key.startswith("batch-"):
+        try:
+            return int(key[6:]), None
+        except ValueError:
+            return None, None
+    if key.startswith("loose-"):
+        try:
+            return None, int(key[6:])
+        except ValueError:
+            return None, None
+    return None, None
+
+
+@router.post("/triage/batch/confirm")
+async def batch_confirm(
+    request: Request,
+    bundle_keys: list[str] = Form(...),
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Silently confirm each selected bundle to its own AI-suggested case+proceeding.
+
+    Bundles without a suggestion are skipped. Returns OOB swaps for all affected
+    rows and fires `triage:batch-confirmed` with confirmed/skipped counts.
+    """
+    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_view import render_batch_oob
+
+    confirmed_count = 0
+    skipped_count = 0
+    confirmed_keys: list[str] = []
+
+    for key in bundle_keys:
+        batch_id, doc_id = _parse_bundle_key(key)
+        if batch_id is None and doc_id is None:
+            skipped_count += 1
+            continue
+
+        case_id, proceeding_id = triage_service.get_bundle_suggestion(
+            batch_id=batch_id, doc_id=doc_id
+        )
+        if not case_id:
+            skipped_count += 1
+            continue
+
+        if batch_id:
+            pre_triage_docs = (
+                db.query(Document)
+                .filter(
+                    Document.ingest_batch_id == batch_id,
+                    Document.case_id == "_TRIAGE",
+                )
+                .all()
+            )
+            batch = triage_service.confirm_bundle(
+                batch_id,
+                case_id=case_id,
+                proceeding_id=proceeding_id,
+                finalize=True,
+            )
+            if batch and case_id != "_TRIAGE" and pre_triage_docs:
+                for d in pre_triage_docs:
+                    db.refresh(d)
+                _reset_and_reenrich(db, pre_triage_docs)
+        else:
+            pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
+            updated_doc = triage_service.confirm_document(
+                doc_id, case_id=case_id, finalize=True
+            )
+            if updated_doc and proceeding_id:
+                updated_doc.proceeding_id = proceeding_id
+                db.commit()
+                db.refresh(updated_doc)
+            if (
+                updated_doc
+                and (not pre_case or pre_case == "_TRIAGE")
+                and case_id != "_TRIAGE"
+            ):
+                _reset_and_reenrich(db, [updated_doc])
+
+        confirmed_keys.append(key)
+        confirmed_count += 1
+
+    oob_html = render_batch_oob(request, bundle_keys, triage_service, db)
+    trigger = {
+        "triage:batch-confirmed": {
+            "confirmed": confirmed_count,
+            "skipped": skipped_count,
+        }
+    }
+    response = HTMLResponse(content=oob_html)
+    response.headers["HX-Trigger"] = json.dumps(trigger)
+    return response
+
+
+@router.post("/triage/batch/assign")
+async def batch_assign(
+    request: Request,
+    bundle_keys: list[str] = Form(...),
+    case_id: str | None = Form(None),
+    new_case_id: str | None = Form(None),
+    new_case_title: str | None = Form(None),
+    proceeding_id: str | None = Form(None),
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Assign all selected bundles to a single case and optional proceeding.
+
+    Mirrors the logic of POST /triage/confirm but applied to a list of bundle
+    keys at once. Returns OOB swaps for all affected rows.
+    """
+    from app.services.case_service import get_or_create_case_from_reference
+    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_view import render_batch_oob
+
+    if new_case_id:
+        new_case_obj, _, _ = get_or_create_case_from_reference(
+            db,
+            internal_id=new_case_id,
+            batch_subject=new_case_title or None,
+            is_draft=False,
+        )
+        db.flush()
+        case_id = new_case_obj.id
+
+    if not case_id:
+        raise HTTPException(status_code=422, detail="case_id is required")
+
+    parsed_proceeding_id: int | None = None
+    if proceeding_id:
+        try:
+            parsed_proceeding_id = int(proceeding_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid proceeding_id: {proceeding_id}"
+            ) from exc
+
+    assigned_count = 0
+
+    for key in bundle_keys:
+        batch_id, doc_id = _parse_bundle_key(key)
+        if batch_id is None and doc_id is None:
+            continue
+
+        if batch_id:
+            pre_triage_docs = (
+                db.query(Document)
+                .filter(
+                    Document.ingest_batch_id == batch_id,
+                    Document.case_id == "_TRIAGE",
+                )
+                .all()
+            )
+            batch = triage_service.confirm_bundle(
+                batch_id,
+                case_id=case_id,
+                proceeding_id=parsed_proceeding_id,
+                finalize=True,
+            )
+            if batch and case_id != "_TRIAGE" and pre_triage_docs:
+                for d in pre_triage_docs:
+                    db.refresh(d)
+                _reset_and_reenrich(db, pre_triage_docs)
+        else:
+            pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
+            updated_doc = triage_service.confirm_document(
+                doc_id, case_id=case_id, finalize=True
+            )
+            if updated_doc and parsed_proceeding_id:
+                from app.models.database import Proceeding
+
+                updated_doc.proceeding_id = parsed_proceeding_id
+                proc = (
+                    db.query(Proceeding)
+                    .filter(Proceeding.id == parsed_proceeding_id)
+                    .first()
+                )
+                if proc and proc.is_draft:
+                    proc.is_draft = False
+                db.commit()
+                db.refresh(updated_doc)
+            if (
+                updated_doc
+                and (not pre_case or pre_case == "_TRIAGE")
+                and case_id != "_TRIAGE"
+            ):
+                _reset_and_reenrich(db, [updated_doc])
+
+        assigned_count += 1
+
+    case_obj = db.query(Case).filter(Case.id == case_id).first()
+    oob_html = render_batch_oob(request, bundle_keys, triage_service, db)
+    trigger = {
+        "triage:batch-assigned": {
+            "count": assigned_count,
+            "case_id": case_id,
+            "case_title": case_obj.title if case_obj else "",
+        },
+        "triage:bundle-confirmed": {},
+    }
+    response = HTMLResponse(content=oob_html)
+    response.headers["HX-Trigger"] = json.dumps(trigger)
+    return response
+
+
+# -----------------------------------------------------------------------------
 # Document actions (reingest, summarize, approve-summary)
 # -----------------------------------------------------------------------------
 

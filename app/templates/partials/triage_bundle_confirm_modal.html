@@ -23,8 +23,9 @@
         <div class="px-6 py-4 border-b border-outline-variant/10 flex items-start justify-between gap-3">
             <div class="min-w-0">
                 <h3 class="text-sm font-black text-on-surface tracking-tight"
-                    x-text="bundleConfirm.action === 'assign_case' ? 'Assign Case & Proceeding' : 'Confirm Bundle'"></h3>
-                <p class="text-[10px] text-on-surface-variant mt-0.5 truncate" x-text="bundleConfirm.subject"></p>
+                    x-text="bundleConfirm.isBatch ? 'Assign Case & Proceeding' : (bundleConfirm.action === 'assign_case' ? 'Assign Case & Proceeding' : 'Confirm Bundle')"></h3>
+                <p class="text-[10px] text-on-surface-variant mt-0.5 truncate"
+                   x-text="bundleConfirm.isBatch ? `${bundleConfirm.doc_count} bundle${bundleConfirm.doc_count !== 1 ? 's' : ''} selected` : bundleConfirm.subject"></p>
             </div>
             <button type="button" @click="bundleConfirm.open = false"
                     class="shrink-0 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer">
@@ -32,9 +33,69 @@
             </button>
         </div>
 
+        {# Batch assign form — shown only in batch mode #}
+        <form id="bundle-batch-assign-form"
+              x-show="bundleConfirm.isBatch"
+              hx-post="/triage/batch/assign"
+              hx-target="this"
+              hx-swap="none"
+              class="px-6 py-4 space-y-4">
+
+            {# Serialise selected bundle keys as repeated hidden inputs via x-for #}
+            <template x-for="key in bundleConfirm.batchKeys" :key="key">
+                <input type="hidden" name="bundle_keys" :value="key">
+            </template>
+
+            <div>
+                <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">
+                    All selected bundles will be assigned to:
+                </p>
+            </div>
+
+            {# Case picker #}
+            <div class="space-y-2">
+                <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Case</label>
+                <select name="case_id" required x-model="bundleConfirm.suggested_case_id"
+                        class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
+                    <option value="">Select case…</option>
+                    {% for case in cases %}
+                    <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {# Proceeding picker — filtered to selected case #}
+            <div class="space-y-2">
+                <label class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest">Proceeding <span class="font-normal normal-case text-on-surface-variant/60">(optional)</span></label>
+                <select name="proceeding_id" x-model="bundleConfirm.suggested_proceeding_id"
+                        class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
+                    <option value="">No specific proceeding</option>
+                    {% for p in (proceedings or []) %}
+                    <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
+                            x-show="!bundleConfirm.suggested_case_id || bundleConfirm.suggested_case_id === '{{ p.case_id }}'">
+                        {{ p.court_name }}{% if p.az_court %} — {{ p.az_court }}{% endif %}{% if p.court_level %} · {{ p.court_level.value|upper }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-2 border-t border-outline-variant/10">
+                <button type="button" @click="bundleConfirm.open = false"
+                        class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer px-3 py-1.5">
+                    Cancel
+                </button>
+                <button type="submit"
+                        :disabled="!bundleConfirm.suggested_case_id"
+                        class="btn btn-primary btn-xs">
+                    Assign (<span x-text="bundleConfirm.doc_count"></span>) →
+                </button>
+            </div>
+        </form>
+
         {# Form — static hx-post avoids HTMX/Alpine `:hx-post` URL caching issues.
            Dynamic routing is handled server-side via hidden inputs. #}
         <form id="bundle-confirm-form"
+              x-show="!bundleConfirm.isBatch"
               x-data="{
                   isNewCase: false,
                   showCasePicker: false,
