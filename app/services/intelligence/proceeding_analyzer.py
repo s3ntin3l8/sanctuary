@@ -1,9 +1,10 @@
 import logging
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.database import Case, Document, Proceeding
+from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -12,6 +13,18 @@ from app.services.intelligence.prompts import PROCEEDING_ANALYZER_SYSTEM
 from app.services.intelligence.schemas import ProceedingExtraction
 
 logger = logging.getLogger(__name__)
+
+_LAW_FIRM_INDICATORS = re.compile(
+    r"\b(?:rechtsanw[äa]lt(?:e|in)?|kanzlei|partnerschaft|partner\b)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_court(name: str | None) -> bool:
+    """Return False if name looks like a law firm rather than a court."""
+    if not name:
+        return False
+    return not (_LAW_FIRM_INDICATORS.search(name) and "gericht" not in name.lower())
 
 
 def extract_proceeding_details(
@@ -52,19 +65,25 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
 
     # Fallback for AI failure (empty response, parse error, server timeout):
     # if METADATA already extracted an AZ for a court letter, use that instead
-    # of skipping silently. Bounded by originator_type=COURT to avoid creating
-    # bogus proceedings from polluted az_court hints on lawyer/own letters.
+    # of skipping silently. Bounded by originator_type=COURT AND sender looks like a
+    # court (not a law firm) to avoid creating proceedings from lawyer letters.
     if (
         not doc.proceeding_id
         and not data.get("is_court_document")
         and doc.az_court
         and doc.originator_type == OriginatorType.COURT
+        and _looks_like_court(doc.sender)
     ):
         inferred_level = infer_court_level(doc.sender)
+        court_name = (
+            data.get("court_name")
+            if _looks_like_court(data.get("court_name"))
+            else (doc.sender if _looks_like_court(doc.sender) else None)
+        )
         data = {
             "is_court_document": True,
             "az_court": doc.az_court,
-            "court_name": data.get("court_name") or doc.sender,
+            "court_name": court_name,
             "court_level": data.get("court_level")
             or (inferred_level.value if inferred_level else None),
             "subject_matter": data.get("subject_matter"),
@@ -80,6 +99,26 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
         return "not a court document"
 
     extracted_az = normalize_az_court(data.get("az_court"))
+
+    # Secondary fallback: AI identified a court document but returned a garbage/concatenated
+    # AZ (normalize_az_court returned None). Use the METADATA-extracted hint if available.
+    if (
+        not doc.proceeding_id
+        and data.get("is_court_document")
+        and not extracted_az
+        and doc.az_court
+        and doc.originator_type == OriginatorType.COURT
+    ):
+        extracted_az = normalize_az_court(doc.az_court)
+        if extracted_az:
+            logger.info(
+                "Doc %d: AI returned invalid az_court=%r — falling back to "
+                "Document.az_court=%s from METADATA.",
+                doc.id,
+                data.get("az_court"),
+                extracted_az,
+            )
+
     extracted_level_str = data.get("court_level")
 
     try:
@@ -123,23 +162,23 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 placeholder.az_court = extracted_az
                 if extracted_level:
                     placeholder.court_level = extracted_level
-                if data.get("court_name"):
+                if data.get("court_name") and _looks_like_court(data.get("court_name")):
                     placeholder.court_name = data["court_name"]
                 if data.get("subject_matter") and not placeholder.subject_matter:
                     placeholder.subject_matter = data["subject_matter"]
                 doc.proceeding_id = placeholder.id
             elif extracted_az:
-                # AI-detected proceeding — inherit draft state from parent case.
-                parent_case = db.query(Case).filter(Case.id == doc.case_id).first()
                 new_proc = Proceeding(
                     case_id=doc.case_id,
-                    court_name=data.get("court_name") or "Unknown Court",
+                    court_name=data.get("court_name")
+                    if _looks_like_court(data.get("court_name"))
+                    else "Unknown Court",
                     court_level=extracted_level or ProceedingCourtLevel.AG,
                     az_court=extracted_az,
                     subject_matter=data.get("subject_matter"),
                     status=ProceedingStatus.ACTIVE,
                     started_at=datetime.now(UTC),
-                    is_draft=bool(parent_case and parent_case.is_draft),
+                    is_draft=True,
                 )
                 db.add(new_proc)
                 db.flush()
@@ -202,17 +241,17 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
                 current_proc.status = ProceedingStatus.CLOSED
                 current_proc.ended_at = datetime.now(UTC)
         else:
-            # AI-detected escalation — inherit draft state from parent case.
-            parent_case = db.query(Case).filter(Case.id == current_proc.case_id).first()
             new_proc = Proceeding(
                 case_id=current_proc.case_id,
-                court_name=data.get("court_name") or "Unknown Court",
+                court_name=data.get("court_name")
+                if _looks_like_court(data.get("court_name"))
+                else "Unknown Court",
                 court_level=extracted_level or ProceedingCourtLevel.AG,
                 az_court=extracted_az,
                 subject_matter=data.get("subject_matter"),
                 status=ProceedingStatus.ACTIVE,
                 started_at=datetime.now(UTC),
-                is_draft=bool(parent_case and parent_case.is_draft),
+                is_draft=True,
             )
             db.add(new_proc)
 
@@ -233,9 +272,13 @@ def analyze_and_update_proceeding(doc: Document, model: str, db: Session) -> str
         if not current_proc.az_court and extracted_az:
             current_proc.az_court = extracted_az
         if (
-            not current_proc.court_name
-            or current_proc.court_name in ("Unknown Court", "General")
-        ) and data.get("court_name"):
+            (
+                not current_proc.court_name
+                or current_proc.court_name in ("Unknown Court", "General")
+            )
+            and data.get("court_name")
+            and _looks_like_court(data.get("court_name"))
+        ):
             current_proc.court_name = data.get("court_name")
         if not current_proc.subject_matter and data.get("subject_matter"):
             current_proc.subject_matter = data.get("subject_matter")

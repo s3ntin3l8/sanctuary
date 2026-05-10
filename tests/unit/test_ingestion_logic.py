@@ -146,16 +146,49 @@ def test_extract_internal_id_none_when_absent():
 
 
 @pytest.mark.unit
-def test_normalize_az_court_canonicalizes_dashes_and_spaces():
-    # Filename-style dashes collapse to body-style spaces.
+def test_normalize_az_court_canonicalizes():
+    # Dashes collapse to spaces
     assert normalize_az_court("22-T-342/26") == "22 T 342/26"
-    assert normalize_az_court("003-F-426/25") == "003 F 426/25"
-    # Body-style input already canonical — idempotent.
+    # Leading zeros stripped from initial numeric segment
+    assert normalize_az_court("003-F-426/25") == "3 F 426/25"
+    assert normalize_az_court("003 F 951/25") == "3 F 951/25"
+    assert normalize_az_court("3 F 951/25") == "3 F 951/25"
+    # Missing space between digit and letter code repaired
+    assert normalize_az_court("003F 951/25") == "3 F 951/25"
+    # Already canonical — idempotent
     assert normalize_az_court("22 T 342/26") == "22 T 342/26"
-    # Mixed: parenthetical annotations stripped, spacing around / fixed.
+    # Parenthetical annotations stripped, spacing around / fixed
     assert normalize_az_court("26 UF 288/ 26 E (ELTERL. SORGE)") == "26 UF 288/26 E"
-    # None / empty stays None.
+    # Lowercase uppercased; optional single-letter suffix preserved
+    assert normalize_az_court("26 uf 288/26 e") == "26 UF 288/26 E"
+    # None / empty stays None
     assert normalize_az_court(None) is None
     assert normalize_az_court("") is None
-    # Lowercase letters are uppercased.
-    assert normalize_az_court("26 uf 288/26 e") == "26 UF 288/26 E"
+    # Garbage strings rejected — return None
+    assert normalize_az_court("26 UF 288/26 E 003 F 951/25 AG INGOLSTADT") is None
+    assert normalize_az_court("003 F 1824/25003 F 951/25") is None
+    assert normalize_az_court("Funk, Haidl & Partner") is None
+    assert normalize_az_court("high") is None
+    assert normalize_az_court("...") is None
+    assert normalize_az_court("8372/25") is None  # internal ID, not a valid AZ
+
+
+@pytest.mark.unit
+def test_extract_originator_court_score_uses_header_only():
+    from app.services.ingestion.extractors import extract_originator
+
+    # Body text mentioning courts should NOT push a lawyer letter to COURT
+    lawyer_body = "Sehr geehrte Frau Müller,\n\n" * 20 + (
+        "Das Amtsgericht hat per Beschluss entschieden. "
+        "Das Oberlandesgericht hat bestätigt. "
+        "Az.: 3 F 951/25 wurde verhandelt. " * 10
+    )
+    result = extract_originator("brief.pdf", lawyer_body)
+    assert result["value"] != "court", (
+        "Court keywords in body text should not classify a lawyer letter as court"
+    )
+
+    # Court letterhead in first 500 chars SHOULD classify as court
+    court_header = "Amtsgericht Ingolstadt\nRichter Dr. Meier\n\nBeschluss\n\n"
+    result2 = extract_originator("beschluss.pdf", court_header)
+    assert result2["value"] == "court"

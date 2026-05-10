@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -9,7 +8,6 @@ from app.models.database import Document, Proceeding
 from app.models.enums import OriginatorType
 from app.services.ai_config import get_chat_config
 from app.services.ingestion.extractors import (
-    extract_case_id,
     extract_internal_id,
     infer_court_level,
     normalize_az_court,
@@ -298,14 +296,9 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         )
         if row:
             batch_subject, batch_sender_email = row
-    safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
     content_for_hints = doc.content or ""
 
-    az_hint = (
-        doc.proceeding.az_court
-        if doc.proceeding
-        else extract_case_id(safe_filename, content_for_hints)["value"]
-    )
+    az_hint = doc.proceeding.az_court if doc.proceeding else None
     internal_id_hint = (
         doc.internal_id
         if doc.internal_id

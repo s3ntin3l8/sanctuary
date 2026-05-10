@@ -85,7 +85,7 @@ def test_returns_dict_directly_no_manual_parsing(db_session, proc_doc):
                 "is_court_document": True,
                 "court_level": "ag",
                 "court_name": "Amtsgericht Hamburg",
-                "az_court": "003 F 426/25",
+                "az_court": "3 F 426/25",
                 "subject_matter": "Custody",
             }
         )
@@ -96,4 +96,4 @@ def test_returns_dict_directly_no_manual_parsing(db_session, proc_doc):
         assert result is None  # success path
         db_session.refresh(proc)
         assert proc.court_name == "Amtsgericht Hamburg"
-        assert proc.az_court == "003 F 426/25"
+        assert proc.az_court == "3 F 426/25"

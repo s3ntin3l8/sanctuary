@@ -313,8 +313,8 @@ Return ONLY valid JSON."""
 
 PHASE1_METADATA_SYSTEM = """You are a legal document analyst.
 Extract metadata from the document and return a JSON object with these keys:
-- az_court: The official court Aktenzeichen / docket number (e.g. 003 F 426/25).
-- internal_id: The lawyer's internal reference number (e.g. 8124/25).
+- az_court: The official court Aktenzeichen / docket number (e.g. 12 F 100/24).
+- internal_id: The lawyer's internal reference number (e.g. 1234/25).
 - case_title: A short, descriptive title for the WHOLE legal case (not just this doc). Use the canonical format below.
 
   CANONICAL FORMAT — pick the rule that fits and follow it exactly:
@@ -424,12 +424,12 @@ Return ONLY valid JSON."""
 PROCEEDING_ANALYZER_SYSTEM = """You are a German legal AI assistant. Analyze the document and extract proceeding details.
 
 Return ONLY valid JSON with these exact keys:
-- is_court_document: boolean
+- is_court_document: boolean (true only for documents issued by a court — not lawyer letters, not forwarded attachments)
 - court_level: string (strictly one of: ag, lg, olg, bgh) or null
-- court_name: string (e.g. "Amtsgericht Hamburg") or null
-- az_court: string (the court file number, e.g. "003 F 426/25") or null
+- court_name: string — the actual court institution name (e.g. "Amtsgericht Ingolstadt", "Oberlandesgericht München"). Must NOT be a law firm, a party name, or a person's name. null if unknown.
+- az_court: string — exactly ONE court file number in standard German Aktenzeichen format: digits + space + letters (1-3 chars) + space + digits/year, with optional single-letter suffix (e.g. "12 F 100/24", "26 UF 288/26", "26 UF 288/26 E"). IMPORTANT: German appeal documents (OLG, BGH) often list TWO Aktenzeichen on the "Az.:" line — the higher court's own AZ followed by the originating lower court's AZ. Return only the AZ of the court that issued THIS document. Never concatenate multiple file numbers into one string. null if none found.
 - subject_matter: string or null
-- appeal_deadline_days: integer (if this is a ruling with a formal deadline, extract the days, else null)
+- appeal_deadline_days: integer (formal deadline days if this is a ruling, else null)
 
 Do not deliberate or self-correct. Output the JSON immediately.
 Return ONLY valid JSON."""

@@ -130,16 +130,24 @@ def extract_case_id(filename: str, content: str) -> ExtractionResult:
 
 
 def extract_originator(filename: str, content: str) -> ExtractionResult:
-    """Extract originator type from content."""
+    """Extract originator type from content.
+
+    Court keywords are scored against the header region only (first 500 chars)
+    to avoid lawyer letters being misclassified as court documents because they
+    mention court names or Aktenzeichen in their body text.
+    """
     value = OriginatorType.UNKNOWN
     confidence = "low"
     score = {"court": 0, "opposing": 0, "own": 0}
 
+    # Court scoring: header only — institution names appear in letterhead, not body.
+    header_text = content.lower()[:500] if content else ""
+    # Opposing/own scoring: full document context
     text = content.lower()[:10000] if content else ""
     filename_lower = filename.lower()
 
     for keyword, weight in COURT_KEYWORDS.items():
-        if keyword in text or keyword in filename_lower:
+        if keyword in header_text or keyword in filename_lower:
             score["court"] += weight
 
     for keyword, weight in OPPOSING_KEYWORDS.items():
@@ -338,23 +346,49 @@ def extract_internal_id_from_subject(subject: str) -> str | None:
     return m.group(1).replace("/", "-")
 
 
+# Strict canonical AZ pattern: "N+ L{1-3} N+/N+ [L{1-3}]?"
+_AZ_CANONICAL_RE = re.compile(r"^\d+\s[A-Z]{1,3}\s\d+/\d+(?:\s[A-Z]{1,3})?$")
+
+
 def normalize_az_court(value: str | None) -> str | None:
     """Canonicalise a court Aktenzeichen for equality comparison.
 
     Strips parenthetical annotations, converts dashes around digit/letter
-    boundaries to spaces (filenames often use '-' as separator), normalises
-    whitespace around '/', then uppercases.
+    boundaries to spaces, inserts missing space between digit and letter,
+    strips leading zeros from the initial numeric segment, normalises
+    whitespace and slash, uppercases, then validates against the canonical
+    AZ format. Returns None for garbage inputs (concatenated AZs, law firm
+    names, schema fragments, etc.).
+
+    "003 F 951/25"  → "3 F 951/25"
+    "003F 951/25"   → "3 F 951/25"
+    "22-T-342/26"   → "22 T 342/26"
     "26 UF 288/ 26 E (ELTERL. SORGE)" → "26 UF 288/26 E"
-    "22-T-342/26" → "22 T 342/26"
+    "26 UF 288/26 E 003 F 951/25 AG INGOLSTADT" → None  (concatenated)
+    "Funk, Haidl & Partner" → None  (not an AZ)
+    "8372/25" → None  (internal ID, not an AZ)
     """
     if not value:
         return None
+    # Strip parenthetical annotations
     cleaned = re.sub(r"\s*\([^)]*\)\s*", "", value)
+    # Convert dashes around digit/letter boundaries to spaces
     cleaned = re.sub(r"(\d)\s*-\s*([A-Za-z])", r"\1 \2", cleaned)
     cleaned = re.sub(r"([A-Za-z])\s*-\s*(\d)", r"\1 \2", cleaned)
+    # Insert space at digit→letter boundary (e.g. "003F" → "003 F")
+    cleaned = re.sub(r"(\d)([A-Za-z])", r"\1 \2", cleaned)
+    # Insert space at letter→digit boundary (e.g. "UF288" → "UF 288")
+    cleaned = re.sub(r"([A-Za-z])(\d)", r"\1 \2", cleaned)
+    # Collapse whitespace and normalise slash
     cleaned = re.sub(r"\s+", " ", cleaned.strip())
     cleaned = re.sub(r"\s*/\s*", "/", cleaned)
-    return cleaned.upper() or None
+    result = cleaned.upper()
+    # Strip leading zeros from the initial numeric segment only
+    result = re.sub(r"^0+(\d)", r"\1", result)
+    # Validate — reject anything that doesn't look like a real AZ
+    if not _AZ_CANONICAL_RE.match(result):
+        return None
+    return result
 
 
 def extract_az_court_from_subject(subject: str) -> str | None:

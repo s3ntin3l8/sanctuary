@@ -50,7 +50,7 @@ def test_autofill_empty_proceeding(
             "is_court_document": True,
             "court_level": "ag",
             "court_name": "Amtsgericht Hamburg",
-            "az_court": "003 F 426/25",
+            "az_court": "3 F 426/25",
             "subject_matter": "Custody",
             "appeal_deadline_days": None,
         }
@@ -63,7 +63,7 @@ def test_autofill_empty_proceeding(
     assert result is None
     db_session.refresh(sample_proceeding)
     assert sample_proceeding.court_name == "Amtsgericht Hamburg"
-    assert sample_proceeding.az_court == "003 F 426/25"
+    assert sample_proceeding.az_court == "3 F 426/25"
     assert sample_proceeding.subject_matter == "Custody"
 
 
