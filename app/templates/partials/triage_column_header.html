@@ -33,14 +33,14 @@
             <span>Docs</span>
             {{ sort_arrow(sort == 'docs', dir) }}
         </a>
-        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+        <div x-data="{ open: false }" @click.outside="open = false" class="relative ml-auto flex items-center gap-0.5">
             {% if pipeline_filter %}
             <a href="{{ qs(pipeline_filter=None) }}" title="Clear pipeline filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
-            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+            <button type="button" @click.stop="open = !open"
                     class="{{ 'text-primary' if pipeline_filter else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">
                     {{ 'filter_alt' if pipeline_filter else 'filter_list' }}
@@ -76,14 +76,14 @@
             <span>Status / Case</span>
             {{ sort_arrow(sort == 'status', dir) }}
         </a>
-        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+        <div x-data="{ open: false }" @click.outside="open = false" class="relative ml-auto flex items-center gap-0.5">
             {% if case_id %}
             <a href="{{ qs(case_id=None) }}" title="Clear case filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
-            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+            <button type="button" @click.stop="open = !open"
                     class="{{ 'text-primary' if case_id else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">
                     {{ 'filter_alt' if case_id else 'filter_list' }}
@@ -113,14 +113,14 @@
 
     <div class="w-[200px] flex-shrink-0 flex items-center gap-1">
         <span>Proceeding</span>
-        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+        <div x-data="{ open: false }" @click.outside="open = false" class="relative ml-auto flex items-center gap-0.5">
             {% if proceeding_id %}
             <a href="{{ qs(proceeding_id=None) }}" title="Clear proceeding filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
-            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+            <button type="button" @click.stop="open = !open"
                     class="{{ 'text-primary' if proceeding_id else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
                 <span class="material-symbols-outlined text-[13px]">
                     {{ 'filter_alt' if proceeding_id else 'filter_list' }}

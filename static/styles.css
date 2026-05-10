@@ -480,6 +480,9 @@
   .mx-auto {
     margin-inline: auto;
   }
+  .my-0\.5 {
+    margin-block: calc(var(--spacing) * 0.5);
+  }
   .my-1 {
     margin-block: calc(var(--spacing) * 1);
   }
@@ -1316,6 +1319,9 @@
   .h-screen {
     height: 100vh;
   }
+  .max-h-56 {
+    max-height: calc(var(--spacing) * 56);
+  }
   .max-h-64 {
     max-height: calc(var(--spacing) * 64);
   }
@@ -1516,6 +1522,9 @@
   }
   .min-w-\[160px\] {
     min-width: 160px;
+  }
+  .min-w-\[180px\] {
+    min-width: 180px;
   }
   .min-w-\[200px\] {
     min-width: 200px;
@@ -5384,6 +5393,9 @@
   z-index: 20;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+[x-cloak] {
+  display: none !important;
 }
 @property --tw-translate-x {
   syntax: "*";
