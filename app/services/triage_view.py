@@ -215,7 +215,18 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
     """Renders the full triage feed as an OOB swap (used by bundle confirms)."""
     from app.models.database import Proceeding
 
-    bundles = triage_service.get_triage_bundles()
+    # Preserve active filters from the request URL
+    case_id = request.query_params.get("case_id")
+    proceeding_id_str = request.query_params.get("proceeding_id")
+    proceeding_id = int(proceeding_id_str) if proceeding_id_str else None
+    pipeline_filter = request.query_params.get("pipeline_filter")
+
+    filter_options = triage_service.get_triage_filter_options()
+    bundles = triage_service.get_triage_bundles(
+        case_id=case_id,
+        proceeding_id=proceeding_id,
+        pipeline_filter=pipeline_filter,
+    )
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
     from app.repositories.case import CaseRepository
@@ -235,6 +246,12 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
             "OriginatorType": OriginatorType,
             "UserReactionType": UserReactionType,
             "as_oob": True,
+            "case_id": case_id,
+            "proceeding_id": proceeding_id,
+            "pipeline_filter": pipeline_filter,
+            "case_options": filter_options["case_options"],
+            "proceeding_options": filter_options["proceeding_options"],
+            "pipeline_options": filter_options["pipeline_options"],
         }
     )
 

@@ -14,6 +14,6 @@
 {%- if dir %}{% set _ = parts.append('dir=' ~ dir) %}{% endif %}
 {%- if case_id %}{% set _ = parts.append('case_id=' ~ case_id | urlencode) %}{% endif %}
 {%- if proceeding_id %}{% set _ = parts.append('proceeding_id=' ~ proceeding_id) %}{% endif %}
-{%- if pipeline_filter %}{% set _ = parts.append('pipeline_filter=' ~ pipeline_filter) %}{% endif %}
-?{{ parts | join('&') }}
+{%- if pipeline_filter %}{% set _ = parts.append('pipeline_filter=' ~ pipeline_filter) %}{% endif -%}
+?{{ parts | join('&') -}}
 {%- endmacro %}
