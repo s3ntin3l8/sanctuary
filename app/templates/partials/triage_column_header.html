@@ -1,5 +1,5 @@
 {# Triage column headers with sort buttons and filter dropdowns. Required context: sort (str), dir (str), case_id, proceeding_id, pipeline_filter, case_options, proceeding_options, pipeline_options #}
-{% from "partials/_qs.html" import qs %}
+{% from "partials/_qs.html" import qs with context %}
 {% macro sort_arrow(active, direction) %}
   {% if active %}
     {% if direction == 'asc' %}
