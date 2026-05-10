@@ -93,6 +93,7 @@ def setup_logging():
 
     # Console Handler
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
     console_handler.addFilter(RequestIDFilter())
     root.addHandler(console_handler)
@@ -105,6 +106,7 @@ def setup_logging():
         maxBytes=10 * 1024 * 1024,  # 10 MB
         backupCount=5,
     )
+    file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
     file_handler.addFilter(RequestIDFilter())
     root.addHandler(file_handler)
