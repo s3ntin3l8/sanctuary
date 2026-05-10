@@ -2,7 +2,6 @@
 
    Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS, case_ids, proceeding_ids, pipeline_filters
 #}
-{% from "partials/_qs.html" import qs with context %}
 <div id="triage-feed" {% if as_oob %}hx-swap-oob="true"{% endif %}>
     {% if bundles %}
         {% for bundle in bundles %}
@@ -21,10 +20,10 @@
                 <div class="text-[12.5px] text-on-surface-variant mb-3">
                     No triage bundles match the active filter.
                 </div>
-                <a href="{{ qs(case_ids=[], proceeding_ids=[], pipeline_filters=[]) }}"
+                <a @click.prevent="$store.triageFilters.clearAll()"
                    class="text-[11.5px] px-3 py-1.5 rounded border border-outline-variant
                           text-on-surface-variant hover:border-primary/40 hover:text-primary
-                          hover:bg-surface-container transition-colors">
+                          hover:bg-surface-container transition-colors cursor-pointer">
                     Clear filters
                 </a>
             {% else %}

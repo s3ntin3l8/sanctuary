@@ -234,6 +234,63 @@ function triagePage() {
         });
     }
 
+    if (window.Alpine && !Alpine.store('triageFilters')) {
+        Alpine.store('triageFilters', {
+            sort: '{{ sort }}',
+            dir: '{{ dir }}',
+            caseIds: {{ case_ids | tojson | forceescape }},
+            proceedingIds: {{ proceeding_ids | tojson | forceescape }},
+            pipelineFilters: {{ pipeline_filters | tojson | forceescape }},
+
+            feedUrl() {
+                const p = new URLSearchParams();
+                p.set('sort', this.sort);
+                p.set('dir', this.dir);
+                for (const v of this.caseIds) p.append('case_id', v);
+                for (const v of this.proceedingIds) p.append('proceeding_id', v);
+                for (const v of this.pipelineFilters) p.append('pipeline_filter', v);
+                return '/triage/feed?' + p.toString();
+            },
+
+            apply() {
+                Alpine.store('triage').expandedRowKey = null;
+                Alpine.store('triage').expandedActiveDocId = null;
+                htmx.ajax('GET', this.feedUrl(), {target: '#triage-feed', swap: 'outerHTML'});
+                history.pushState(null, '', this.feedUrl().replace('/triage/feed', '/triage'));
+            },
+
+            toggleSort(key) {
+                if (this.sort === key) {
+                    this.dir = this.dir === 'desc' ? 'asc' : 'desc';
+                } else {
+                    this.sort = key;
+                    this.dir = 'desc';
+                }
+                this.apply();
+            },
+
+            toggleFilter(filter, value) {
+                const arr = this[filter];
+                const idx = arr.indexOf(value);
+                if (idx >= 0) arr.splice(idx, 1);
+                else arr.push(value);
+                this.apply();
+            },
+
+            clearFilter(filter) {
+                this[filter] = [];
+                this.apply();
+            },
+
+            clearAll() {
+                this.caseIds = [];
+                this.proceedingIds = [];
+                this.pipelineFilters = [];
+                this.apply();
+            }
+        });
+    }
+
     return {
         bundleConfirm: { open: false, isBatch: false, batchKeys: [], batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', suggested_proceeding_is_draft: false, is_new_case: false, action: 'confirm_bundle' },
         retryConfirm: { open: false, submitting: false, batch_id: '', subject: '', doc_count: 0 },
@@ -340,5 +397,15 @@ function triageDrawer(rowKey) {
         if (q && saved !== null) { q.scrollTop = saved; saved = null; }
     });
 })();
+</script>
+
+<script>
+window.addEventListener('popstate', function() {
+    var url = new URL(window.location.href);
+    var feedUrl = '/triage/feed?' + url.searchParams.toString();
+    Alpine.store('triage').expandedRowKey = null;
+    Alpine.store('triage').expandedActiveDocId = null;
+    htmx.ajax('GET', feedUrl, {target: '#triage-feed', swap: 'outerHTML'});
+});
 </script>
 {% endblock %}

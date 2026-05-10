@@ -174,10 +174,18 @@
                                 class="text-[9px] font-bold text-primary hover:underline transition-colors uppercase tracking-widest">+ Create new</button>
                     </div>
                     <select name="case_id" required x-model="bundleConfirm.suggested_case_id"
+                            @change="
+                                const opt = $event.target.selectedOptions[0];
+                                if (opt && opt.value) {
+                                    bundleConfirm.suggested_case_title = opt.dataset.title;
+                                    bundleConfirm.suggested_case_is_draft = false;
+                                    showCasePicker = false;
+                                }
+                            "
                             class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
                         <option value="">Select case…</option>
                         {% for case in cases %}
-                        <option value="{{ case.id }}">{{ case.title }} ({{ case.id }})</option>
+                        <option value="{{ case.id }}" data-title="{{ case.title }}">{{ case.title }} ({{ case.id }})</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -241,9 +249,21 @@
                     <select name="proceeding_id"
                             :required="!isNewCase"
                             x-model="bundleConfirm.suggested_proceeding_id"
+                            @change="
+                                const opt = $event.target.selectedOptions[0];
+                                if (opt && opt.value) {
+                                    bundleConfirm.suggested_proceeding_az = opt.dataset.az;
+                                    bundleConfirm.suggested_proceeding_subtitle = opt.dataset.subtitle;
+                                    bundleConfirm.suggested_proceeding_is_draft = false;
+                                    showProceedingPicker = false;
+                                }
+                            "
                             class="w-full px-3 py-1.5 bg-surface rounded-lg border border-outline-variant/20 text-xs text-on-surface focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none">
                         {% for p in (proceedings or []) %}
-                        <option value="{{ p.id }}" data-case-id="{{ p.case_id }}"
+                        <option value="{{ p.id }}"
+                                data-case-id="{{ p.case_id }}"
+                                data-az="{{ p.az_court or '' }}"
+                                data-subtitle="{{ p.court_name }}{% if p.court_level %} · {{ p.court_level.value|upper }}{% endif %}"
                                 x-show="!bundleConfirm.suggested_case_id || bundleConfirm.suggested_case_id === '{{ p.case_id }}'">
                             {{ p.court_name }}{% if p.az_court %} — {{ p.az_court }}{% endif %}{% if p.court_level %} · {{ p.court_level.value|upper }}{% endif %}
                         </option>

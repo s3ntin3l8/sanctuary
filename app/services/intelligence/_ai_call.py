@@ -23,11 +23,15 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 # Thinking-loop watchdog: pathological-case safety net only. The primary
-# anti-loop mechanism is the Qwen sampling config in ai_options.py
+# primary anti-loop mechanism is the Qwen sampling config in ai_options.py
 # (presence_penalty=1.5). This watchdog catches cases that escape that —
 # it only triggers after ~4 minutes of pure thinking with zero response.
 _THINK_WATCHDOG_CHARS = 16000
 _THINK_WATCHDOG_SECS = 240.0
+
+# Watchdog for runaway prose in the main response channel. Qwen3.5 sometimes
+# monologues for 30k+ characters in the response channel instead of thinking.
+_RESPONSE_WATCHDOG_CHARS = 25000
 
 # Stop sequences that match the literal self-correction phrases observed in loops.
 _LOOP_STOP_SEQS = [
@@ -36,6 +40,14 @@ _LOOP_STOP_SEQS = [
     "\n(Wait,",
     "\n(Okay, ready)",
 ]
+
+_PASS1_ANALYSIS_SYSTEM_PREFIX = (
+    "You are a legal document analyst. Perform a deep, step-by-step reasoning "
+    "analysis of the provided document. "
+    "Focus on identifying key entities, legal claims, and procedural context. "
+    "Thinking in plain English or the document's language is encouraged. "
+    "Do NOT output JSON yet."
+)
 
 # Pass-1 max-tokens override. None = use whatever the stage's options dict
 # already specified (typically 6000-10000 per ai_options.STAGE_OPTIONS). The
@@ -291,6 +303,20 @@ def _stream_response(
                             time.perf_counter() - start_perf,
                         )
                         break
+
+                    # Abort when response monologue consumes budget
+                    if (
+                        len(full_response) > _RESPONSE_WATCHDOG_CHARS
+                        and (time.perf_counter() - start_perf) > _THINK_WATCHDOG_SECS
+                    ):
+                        logger.warning(
+                            "call %s: response-monologue watchdog triggered "
+                            "(%d response chars, %.0fs elapsed) — aborting stream",
+                            debug_label,
+                            len(full_response),
+                            time.perf_counter() - start_perf,
+                        )
+                        break
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)
@@ -528,9 +554,10 @@ def call_json_ai(
             f"English. Do NOT output JSON yet — the structured JSON output "
             f"is produced in a follow-up step. Just analyze. ---"
         )
+        pass1_system_prompt = f"{_PASS1_ANALYSIS_SYSTEM_PREFIX}\n\n{system_prompt}"
         pass1_label = f"{debug_label}-p1"
         pass1_params = _build_params(
-            system_prompt=system_prompt,
+            system_prompt=pass1_system_prompt,
             user_prompt=pass1_user_prompt,
             options=options,
             schema=None,  # crucial: no grammar → thinking unblocked

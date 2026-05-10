@@ -1,58 +1,34 @@
 {# Triage column headers with sort buttons and filter dropdowns. Required context: sort (str), dir (str), case_ids, proceeding_ids, pipeline_filters, case_options, proceeding_options, pipeline_options #}
-{% from "partials/_qs.html" import qs with context %}
-{% macro sort_arrow(active, direction) %}
-  {% if active %}
-    {% if direction == 'asc' %}
-      <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 5,3 8,7"/></svg>
-    {% else %}
-      <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
-    {% endif %}
-  {% else %}
-    <span class="w-2.5 h-2.5 flex-shrink-0"></span>
-  {% endif %}
-{% endmacro %}
-
-{% set recv_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'received' else 'desc' %}
-{% set docs_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'docs' else 'desc' %}
-{% set status_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'status' else 'desc' %}
 
 <div class="flex items-center gap-4 px-8 py-2 text-[10.5px] uppercase tracking-widest font-headline font-semibold border-b border-outline-variant text-on-surface-variant bg-surface-low flex-shrink-0">
     {# checkbox + stripe placeholders — match triage row structure #}
     <div class="w-3.5 flex-shrink-0"></div>
     <div class="w-[3px] flex-shrink-0"></div>
 
-    <a href="{{ qs(sort='received', dir=recv_dir) }}"
-       class="w-[120px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
+    <a @click.prevent="$store.triageFilters.toggleSort('received')"
+       class="w-[120px] flex-shrink-0 text-left focus-ring flex items-center gap-1 cursor-pointer {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
         <span>Received</span>
-        {{ sort_arrow(sort == 'received', dir) }}
+        <svg x-show="$store.triageFilters.sort === 'received' && $store.triageFilters.dir === 'asc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 5,3 8,7"/></svg>
+        <svg x-show="$store.triageFilters.sort === 'received' && $store.triageFilters.dir === 'desc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
+        <span x-show="$store.triageFilters.sort !== 'received'" class="w-2.5 h-2.5 flex-shrink-0"></span>
     </a>
 
     <div class="w-[240px] flex-shrink-0 flex items-center gap-1">
-        <a href="{{ qs(sort='docs', dir=docs_dir) }}"
-           class="text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
+        <a @click.prevent="$store.triageFilters.toggleSort('docs')"
+           class="text-left focus-ring flex items-center gap-1 cursor-pointer {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
             <span>Docs</span>
-            {{ sort_arrow(sort == 'docs', dir) }}
+            <svg x-show="$store.triageFilters.sort === 'docs' && $store.triageFilters.dir === 'asc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 5,3 8,7"/></svg>
+            <svg x-show="$store.triageFilters.sort === 'docs' && $store.triageFilters.dir === 'desc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
+            <span x-show="$store.triageFilters.sort !== 'docs'" class="w-2.5 h-2.5 flex-shrink-0"></span>
         </a>
-        <div x-data="{
-            open: false,
-            selected: {{ pipeline_filters | tojson }},
-            baseUrl: '{{ qs(pipeline_filters=[]) }}',
-            toggle(val) {
-                const idx = this.selected.indexOf(val);
-                if (idx >= 0) this.selected.splice(idx, 1); else this.selected.push(val);
-            },
-            isSelected(val) { return this.selected.includes(val); },
-            apply() {
-                let url = this.baseUrl;
-                for (const v of this.selected) url += '&pipeline_filter=' + encodeURIComponent(v);
-                window.location.href = url;
-            }
-        }" @click.outside="open = false"
+        <div x-data="{ open: false }"
+             @click.outside="open = false"
              @triage-filter-opened.window="if ($event.detail !== $root) open = false"
              class="relative ml-auto flex items-center gap-0.5">
             {% if pipeline_filters %}
-            <a href="{{ qs(pipeline_filters=[]) }}" title="Clear pipeline filter"
-               class="text-primary/70 hover:text-primary transition-colors leading-none">
+            <a @click.prevent="$store.triageFilters.clearFilter('pipelineFilters')"
+               title="Clear pipeline filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
@@ -65,20 +41,14 @@
             <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
                  class="absolute top-full right-0 mt-1 z-50 min-w-[200px] max-h-64 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
                 {% for val, label in pipeline_options %}
-                <button type="button" @click.stop="toggle('{{ val }}')"
+                <button type="button" @click.stop="$store.triageFilters.toggleFilter('pipelineFilters', '{{ val }}')"
                         class="flex items-center gap-2 w-full px-3 py-1.5 text-[11.5px] text-left cursor-pointer hover:bg-surface-container transition-colors"
-                        :class="isSelected('{{ val }}') ? 'text-primary' : 'text-on-surface-variant'">
+                        :class="$store.triageFilters.pipelineFilters.includes('{{ val }}') ? 'text-primary' : 'text-on-surface-variant'">
                     <span class="material-symbols-outlined text-[13px] flex-shrink-0"
-                          x-text="isSelected('{{ val }}') ? 'check_box' : 'check_box_outline_blank'"></span>
+                          x-text="$store.triageFilters.pipelineFilters.includes('{{ val }}') ? 'check_box' : 'check_box_outline_blank'"></span>
                     <span>{{ label }}</span>
                 </button>
                 {% endfor %}
-                <div class="border-t border-outline-variant/40 mt-0.5 px-2 py-1.5">
-                    <button type="button" @click="apply()"
-                            class="w-full text-center text-[11px] font-semibold px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-                        Apply
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -86,31 +56,21 @@
     <span class="flex-1 min-w-0">Preview</span>
 
     <div class="w-[260px] flex-shrink-0 flex items-center gap-1">
-        <a href="{{ qs(sort='status', dir=status_dir) }}"
-           class="text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
+        <a @click.prevent="$store.triageFilters.toggleSort('status')"
+           class="text-left focus-ring flex items-center gap-1 cursor-pointer {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
             <span>Status / Case</span>
-            {{ sort_arrow(sort == 'status', dir) }}
+            <svg x-show="$store.triageFilters.sort === 'status' && $store.triageFilters.dir === 'asc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 5,3 8,7"/></svg>
+            <svg x-show="$store.triageFilters.sort === 'status' && $store.triageFilters.dir === 'desc'" class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
+            <span x-show="$store.triageFilters.sort !== 'status'" class="w-2.5 h-2.5 flex-shrink-0"></span>
         </a>
-        <div x-data="{
-            open: false,
-            selected: {{ case_ids | tojson }},
-            baseUrl: '{{ qs(case_ids=[]) }}',
-            toggle(val) {
-                const idx = this.selected.indexOf(val);
-                if (idx >= 0) this.selected.splice(idx, 1); else this.selected.push(val);
-            },
-            isSelected(val) { return this.selected.includes(val); },
-            apply() {
-                let url = this.baseUrl;
-                for (const v of this.selected) url += '&case_id=' + encodeURIComponent(v);
-                window.location.href = url;
-            }
-        }" @click.outside="open = false"
+        <div x-data="{ open: false }"
+             @click.outside="open = false"
              @triage-filter-opened.window="if ($event.detail !== $root) open = false"
              class="relative ml-auto flex items-center gap-0.5">
             {% if case_ids %}
-            <a href="{{ qs(case_ids=[]) }}" title="Clear case filter"
-               class="text-primary/70 hover:text-primary transition-colors leading-none">
+            <a @click.prevent="$store.triageFilters.clearFilter('caseIds')"
+               title="Clear case filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
@@ -123,46 +83,28 @@
             <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
                  class="absolute top-full right-0 mt-1 z-50 min-w-[200px] max-h-64 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
                 {% for cid, label in case_options %}
-                <button type="button" @click.stop="toggle('{{ cid }}')"
+                <button type="button" @click.stop="$store.triageFilters.toggleFilter('caseIds', '{{ cid }}')"
                         class="flex items-center gap-2 w-full px-3 py-1.5 text-[11.5px] text-left cursor-pointer hover:bg-surface-container transition-colors"
-                        :class="isSelected('{{ cid }}') ? 'text-primary' : 'text-on-surface-variant'">
+                        :class="$store.triageFilters.caseIds.includes('{{ cid }}') ? 'text-primary' : 'text-on-surface-variant'">
                     <span class="material-symbols-outlined text-[13px] flex-shrink-0"
-                          x-text="isSelected('{{ cid }}') ? 'check_box' : 'check_box_outline_blank'"></span>
+                          x-text="$store.triageFilters.caseIds.includes('{{ cid }}') ? 'check_box' : 'check_box_outline_blank'"></span>
                     <span class="font-mono">{{ label }}</span>
                 </button>
                 {% endfor %}
-                <div class="border-t border-outline-variant/40 mt-0.5 px-2 py-1.5">
-                    <button type="button" @click="apply()"
-                            class="w-full text-center text-[11px] font-semibold px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-                        Apply
-                    </button>
-                </div>
             </div>
         </div>
     </div>
 
     <div class="w-[200px] flex-shrink-0 flex items-center gap-1">
         <span>Proceeding</span>
-        <div x-data="{
-            open: false,
-            selected: {{ proceeding_ids | tojson }},
-            baseUrl: '{{ qs(proceeding_ids=[]) }}',
-            toggle(val) {
-                const idx = this.selected.indexOf(val);
-                if (idx >= 0) this.selected.splice(idx, 1); else this.selected.push(val);
-            },
-            isSelected(val) { return this.selected.includes(val); },
-            apply() {
-                let url = this.baseUrl;
-                for (const v of this.selected) url += '&proceeding_id=' + encodeURIComponent(v);
-                window.location.href = url;
-            }
-        }" @click.outside="open = false"
+        <div x-data="{ open: false }"
+             @click.outside="open = false"
              @triage-filter-opened.window="if ($event.detail !== $root) open = false"
              class="relative ml-auto flex items-center gap-0.5">
             {% if proceeding_ids %}
-            <a href="{{ qs(proceeding_ids=[]) }}" title="Clear proceeding filter"
-               class="text-primary/70 hover:text-primary transition-colors leading-none">
+            <a @click.prevent="$store.triageFilters.clearFilter('proceedingIds')"
+               title="Clear proceeding filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
                 <span class="material-symbols-outlined text-[13px]">close</span>
             </a>
             {% endif %}
@@ -175,20 +117,14 @@
             <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
                  class="absolute top-full right-0 mt-1 z-50 min-w-[200px] max-h-64 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
                 {% for pid, label in proceeding_options %}
-                <button type="button" @click.stop="toggle('{{ pid }}')"
+                <button type="button" @click.stop="$store.triageFilters.toggleFilter('proceedingIds', '{{ pid }}')"
                         class="flex items-center gap-2 w-full px-3 py-1.5 text-[11.5px] text-left cursor-pointer hover:bg-surface-container transition-colors"
-                        :class="isSelected('{{ pid }}') ? 'text-primary' : 'text-on-surface-variant'">
+                        :class="$store.triageFilters.proceedingIds.includes('{{ pid }}') ? 'text-primary' : 'text-on-surface-variant'">
                     <span class="material-symbols-outlined text-[13px] flex-shrink-0"
-                          x-text="isSelected('{{ pid }}') ? 'check_box' : 'check_box_outline_blank'"></span>
+                          x-text="$store.triageFilters.proceedingIds.includes('{{ pid }}') ? 'check_box' : 'check_box_outline_blank'"></span>
                     <span>{{ label }}</span>
                 </button>
                 {% endfor %}
-                <div class="border-t border-outline-variant/40 mt-0.5 px-2 py-1.5">
-                    <button type="button" @click="apply()"
-                            class="w-full text-center text-[11px] font-semibold px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
-                        Apply
-                    </button>
-                </div>
             </div>
         </div>
     </div>

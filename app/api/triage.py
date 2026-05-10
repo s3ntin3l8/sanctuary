@@ -125,6 +125,69 @@ def triage_page(
 
 
 # -----------------------------------------------------------------------------
+# Triage feed partial (HTMX)
+# -----------------------------------------------------------------------------
+
+
+@router.get("/triage/feed")
+def triage_feed_partial(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    sort: str = "received",
+    dir: str = "desc",
+    case_id: list[str] = Query(default=[]),
+    proceeding_id: list[str] = Query(default=[]),
+    pipeline_filter: list[str] = Query(default=[]),
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    from app.services.triage_view import stats_for_chips
+
+    bundles = triage_service.get_triage_bundles(
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        direction=dir,
+        case_ids=case_id,
+        proceeding_ids=proceeding_id,
+        pipeline_filters=pipeline_filter,
+    )
+    all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
+    reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
+    header_stats = stats_for_chips(bundles)
+    sub_bundles_by_key = {b.key: b.sub_bundles for b in bundles}
+    mock_status_by_key = {b.key: b.mock_status for b in bundles}
+
+    feed_html = templates.get_template("partials/triage_feed.html").render(
+        {
+            "request": request,
+            "bundles": bundles,
+            "case_ids": case_id,
+            "proceeding_ids": proceeding_id,
+            "pipeline_filters": pipeline_filter,
+            "reactions_by_doc": reactions_by_doc,
+            "sub_bundles_by_key": sub_bundles_by_key,
+            "mock_status_by_key": mock_status_by_key,
+            "originator_colors": ORIGINATOR_COLORS,
+            "originator_icons": ORIGINATOR_ICONS,
+            "OriginatorType": OriginatorType,
+            "UserReactionType": UserReactionType,
+        }
+    )
+
+    stats_html = templates.get_template("partials/triage_filter_chips.html").render(
+        {
+            "request": request,
+            "header_stats": header_stats,
+            "as_oob": True,
+        }
+    )
+
+    return HTMLResponse(content=feed_html + stats_html)
+
+
+# -----------------------------------------------------------------------------
 # Dismiss bundle (POST)
 # -----------------------------------------------------------------------------
 
@@ -701,7 +764,7 @@ async def batch_assign(
                 batch_id,
                 case_id=case_id,
                 proceeding_id=parsed_proceeding_id,
-                finalize=True,
+                finalize=False,
             )
             if batch and case_id != "_TRIAGE" and pre_triage_docs:
                 for d in pre_triage_docs:
@@ -710,7 +773,7 @@ async def batch_assign(
         else:
             pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
             updated_doc = triage_service.confirm_document(
-                doc_id, case_id=case_id, finalize=True
+                doc_id, case_id=case_id, finalize=False
             )
             if updated_doc and parsed_proceeding_id:
                 from app.models.database import Proceeding

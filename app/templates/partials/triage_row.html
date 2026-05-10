@@ -27,7 +27,7 @@
      data-bundle-key="{{ bundle.key }}"
      data-mock-status="{{ status }}"
      {% if hx_swap_oob %}hx-swap-oob="true"{% endif %}
-     x-show="$store.triage.filter === 'all' || $store.triage.filter === '{{ status }}'"
+     x-effect="$el.style.display = ($store.triage.filter === 'all' || $store.triage.filter === '{{ status }}') ? '' : 'none'"
      :class="$store.triage.expandedRowKey === '{{ bundle.key }}' ? 'border-outline-variant/0' : 'border-b border-outline-variant'"
      class="transition-colors hover:bg-surface-container-low/50">
 
@@ -365,9 +365,8 @@
 {% if not hx_swap_oob %}
 <div id="triage-row-expanded-{{ bundle.key }}"
      data-bundle-key="{{ bundle.key }}"
-     x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
-     x-cloak
-     class="border-b border-outline-variant">
+     x-effect="$el.style.display = $store.triage.expandedRowKey === '{{ bundle.key }}' ? '' : 'none'"
+     class="border-b border-outline-variant" style="display:none">
     {% include "partials/triage_row_expanded.html" %}
 </div>
 
