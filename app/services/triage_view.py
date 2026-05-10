@@ -271,7 +271,10 @@ def render_row_targeted_oob(
     )
     should_delete = not in_triage_via_case and not in_triage_via_batch
     if should_delete and allow_delete:
-        return f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
+        return (
+            f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
+            f'<div id="triage-row-expanded-{bundle_key}" hx-swap-oob="delete"></div>'
+        )
 
     bundle = None
     if doc.ingest_batch_id:
@@ -298,7 +301,10 @@ def render_row_targeted_oob(
     if not bundle or not any(d.id == doc.id for d in bundle.documents):
         if not allow_delete:
             return ""
-        return f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
+        return (
+            f'<div id="triage-row-{bundle_key}" hx-swap-oob="delete"></div>'
+            f'<div id="triage-row-expanded-{bundle_key}" hx-swap-oob="delete"></div>'
+        )
 
     return render_bundle_group_oob(request, bundle, triage_service)
 

@@ -28,7 +28,8 @@
      data-mock-status="{{ status }}"
      {% if hx_swap_oob %}hx-swap-oob="true"{% endif %}
      x-show="$store.triage.filter === 'all' || $store.triage.filter === '{{ status }}'"
-     class="border-b border-outline-variant transition-colors hover:bg-surface-container-low/50">
+     :class="$store.triage.expandedRowKey === '{{ bundle.key }}' ? 'border-outline-variant/0' : 'border-b border-outline-variant'"
+     class="transition-colors hover:bg-surface-container-low/50">
 
     {# Row click target. Can't be a real <button> because it contains nested
        action buttons (Confirm/Retry/Route below) — nested <button> is invalid
@@ -319,18 +320,20 @@
          hx-swap="none"
          class="hidden"></div>
     {% endif %}
-
-    {# Inline expand body. Lazy-loads the active doc's HUD via HTMX.
-       hx-preserve: HTMX keeps the current DOM element during OOB row swaps
-       (pipeline milestone reloads) so the loaded HUD is not reset to the
-       loading spinner every time a stage completes. #}
-    <div id="triage-row-expanded-{{ bundle.key }}"
-         hx-preserve
-         x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
-         x-cloak>
-        {% include "partials/triage_row_expanded.html" %}
-    </div>
-
-    {# Slide-out drawer mount — hidden until the row's drawer is opened. #}
-    {% include "partials/triage_drawer.html" %}
 </div>
+
+{# Inline expand body and drawer are siblings of (not children of) #triage-row-{key}
+   so that OOB row swaps (pipeline milestone reloads) never replace them.
+   Only emitted on initial page render; OOB responses use hx_swap_oob=True which
+   skips this block, leaving the expanded body and drawer untouched in the DOM. #}
+{% if not hx_swap_oob %}
+<div id="triage-row-expanded-{{ bundle.key }}"
+     x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
+     x-cloak
+     class="border-b border-outline-variant">
+    {% include "partials/triage_row_expanded.html" %}
+</div>
+
+{# Slide-out drawer mount — hidden until the row's drawer is opened. #}
+{% include "partials/triage_drawer.html" %}
+{% endif %}
