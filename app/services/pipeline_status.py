@@ -12,7 +12,7 @@ are derived from it so they stay in sync automatically.
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import text
@@ -575,6 +575,54 @@ def recover_orphaned_running_stages(db: Session) -> dict:
         "stages_reset": stages_reset,
         "batches_reset": len(affected_batch_ids),
     }
+
+
+def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
+    """Find batches where analysis_queued_at is set but analysis never completed.
+
+    Finds batches stuck > 1 hour with analysis_queued_at set, checks if any docs
+    are still running, and if not, clears the claim to allow re-triggering.
+    """
+
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchStatus, PipelineState
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=max_age_seconds)
+
+    # Find batches stuck with analysis_queued_at set before cutoff
+    stuck_batches = (
+        db.query(IngestBatch)
+        .filter(
+            IngestBatch.analysis_queued_at.isnot(None),
+            IngestBatch.analysis_queued_at < cutoff,
+        )
+        .all()
+    )
+
+    recovered_ids = []
+    for batch in stuck_batches:
+        # Check if any docs in this batch are still in RUNNING state
+        running_docs = (
+            db.query(Document)
+            .filter(
+                Document.ingest_batch_id == batch.id,
+                Document.pipeline_state == PipelineState.RUNNING.value,
+            )
+            .count()
+        )
+
+        if running_docs == 0:
+            # No docs are running, but batch is still "claimed". Release it.
+            batch.analysis_queued_at = None
+            if batch.status == IngestBatchStatus.PROCESSING:
+                batch.status = IngestBatchStatus.PENDING
+            recovered_ids.append(batch.id)
+
+    if recovered_ids:
+        db.commit()
+        logger.info("recover_stuck_batches: released %d batch(es)", len(recovered_ids))
+
+    return {"batches_recovered": len(recovered_ids), "batch_ids": recovered_ids}
 
 
 def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:

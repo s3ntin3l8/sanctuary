@@ -68,10 +68,17 @@ def analyze_batch_task(self, batch_id: int):
         )
         db = SessionLocal()
         try:
+            from app.models.database import IngestBatch
+
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            if batch:
+                batch.analysis_queued_at = None
+
             for doc_id in doc_ids:
                 mark_failed(
                     doc_id, PipelineStage.BATCH_ANALYSIS, db, error=f"timeout: {e}"
                 )
+            db.commit()
         finally:
             db.close()
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
@@ -105,10 +112,17 @@ def analyze_batch_task(self, batch_id: int):
         )
         db = SessionLocal()
         try:
+            from app.models.database import IngestBatch
+
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            if batch:
+                batch.analysis_queued_at = None
+
             for doc_id in doc_ids:
                 mark_failed(
                     doc_id, PipelineStage.BATCH_ANALYSIS, db, error=f"connect: {e}"
                 )
+            db.commit()
         finally:
             db.close()
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
@@ -135,8 +149,15 @@ def analyze_batch_task(self, batch_id: int):
         # All retries exhausted — terminal failure.
         db = SessionLocal()
         try:
+            from app.models.database import IngestBatch
+
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            if batch:
+                batch.analysis_queued_at = None
+
             for doc_id in doc_ids:
                 mark_failed(doc_id, PipelineStage.BATCH_ANALYSIS, db, error=str(e))
+            db.commit()
         finally:
             db.close()
         logger.info(

@@ -164,3 +164,35 @@ def prune_ai_debug_logs_task():
         "files_removed": files_removed,
         "errors": errors,
     }
+
+
+@celery_app.task(name="app.tasks.maintenance.recover_pipeline_task")
+def recover_pipeline_task():
+    """Run all pipeline recovery heuristics (orphaned stages, stuck dispatches, stuck batches)."""
+    from app.config import SessionLocal
+    from app.services.pipeline_status import (
+        recover_orphaned_running_stages,
+        recover_stuck_batches,
+        recover_stuck_pending_dispatches,
+    )
+
+    db = SessionLocal()
+    try:
+        orphaned = recover_orphaned_running_stages(db)
+        dispatches = recover_stuck_pending_dispatches(db)
+        batches = recover_stuck_batches(db)
+
+        result = {
+            "status": "success",
+            "orphaned_docs": orphaned.get("docs_reset", 0),
+            "orphaned_stages": orphaned.get("stages_reset", 0),
+            "stuck_dispatches": dispatches.get("docs_redispatched", 0),
+            "stuck_batches": batches.get("batches_recovered", 0),
+        }
+        logger.info("recover_pipeline: %s", result)
+        return result
+    except Exception as e:
+        logger.error("recover_pipeline failed: %s", e, exc_info=True)
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()

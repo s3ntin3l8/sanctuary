@@ -127,6 +127,9 @@ def process_document_task(self, doc_id: int):
             if claim_stage_for_dispatch(
                 doc_id, PipelineStage.PROCEEDING_ANALYSIS, db_claim
             ):
+                from app.services.pipeline_status import mark_started
+
+                mark_started(doc_id, PipelineStage.PROCEEDING_ANALYSIS, db_claim)
                 try:
                     from app.tasks.analyze_proceeding import analyze_proceeding_task
 

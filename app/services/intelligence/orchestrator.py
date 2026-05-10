@@ -30,8 +30,16 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
               AND NOT EXISTS (
                 SELECT 1 FROM documents
                 WHERE ingest_batch_id = :batch_id
-                  AND json_extract(pipeline_stages, '$.metadata.status')
-                      NOT IN ('completed', 'failed')
+                  AND (
+                    COALESCE(json_extract(pipeline_stages, '$.extract.status'), 'pending')
+                        NOT IN ('completed', 'failed', 'skipped')
+                    OR
+                    COALESCE(json_extract(pipeline_stages, '$.metadata.status'), 'pending')
+                        NOT IN ('completed', 'failed', 'skipped')
+                    OR
+                    COALESCE(json_extract(pipeline_stages, '$.proceeding_analysis.status'), 'pending')
+                        NOT IN ('completed', 'failed', 'skipped')
+                  )
               )
             """
         ),

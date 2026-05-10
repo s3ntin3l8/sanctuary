@@ -1074,3 +1074,23 @@ def bundle_pipeline_status(
         )
 
     return response
+
+
+@router.post("/triage/batch/{batch_id}/retry-analysis")
+def retry_batch_analysis(batch_id: int, db: Session = Depends(get_db)):
+    """Manually retry batch analysis for a stuck or failed batch."""
+    from app.models.database import IngestBatch
+    from app.tasks.analyze_batch import analyze_batch_task
+
+    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    # Clear the claim to allow re-analysis
+    batch.analysis_queued_at = None
+    db.commit()
+
+    # Trigger analysis
+    analyze_batch_task.delay(batch_id)
+
+    return {"status": "retry_scheduled", "batch_id": batch_id}

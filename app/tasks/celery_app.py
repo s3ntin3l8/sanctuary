@@ -57,6 +57,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.maintenance.prune_ai_debug_logs_task",
         "schedule": 86400.0,  # daily
     },
+    "recover-pipeline-hourly": {
+        "task": "app.tasks.maintenance.recover_pipeline_task",
+        "schedule": 3600.0,  # hourly
+    },
 }
 
 celery_app.conf.update(
