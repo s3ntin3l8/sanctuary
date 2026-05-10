@@ -1,19 +1,36 @@
 {# Triage feed — single-column list of bundle rows.
 
-   Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS
+   Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS, case_id, proceeding_id, pipeline_filter
 #}
+{% from "partials/_qs.html" import qs with context %}
 <div id="triage-feed" {% if as_oob %}hx-swap-oob="true"{% endif %}>
     {% if bundles %}
         {% for bundle in bundles %}
             {% include "partials/triage_row.html" %}
         {% endfor %}
     {% else %}
+        {% set any_filter = case_id or proceeding_id or pipeline_filter %}
         <div class="flex flex-col items-center justify-center py-24 text-center">
             <div class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-primary-container/30 text-primary">
-                <span class="material-symbols-outlined text-[22px]">check</span>
+                <span class="material-symbols-outlined text-[22px]">
+                    {{ 'filter_alt' if any_filter else 'check' }}
+                </span>
             </div>
-            <div class="font-headline text-[18px] font-semibold mb-1 text-on-surface">Inbox empty.</div>
-            <div class="text-[12.5px] text-on-surface-variant">Nothing to classify right now.</div>
+            {% if any_filter %}
+                <div class="font-headline text-[18px] font-semibold mb-1 text-on-surface">No matches.</div>
+                <div class="text-[12.5px] text-on-surface-variant mb-3">
+                    No triage bundles match the active filter.
+                </div>
+                <a href="{{ qs(case_id=None, proceeding_id=None, pipeline_filter=None) }}"
+                   class="text-[11.5px] px-3 py-1.5 rounded border border-outline-variant
+                          text-on-surface-variant hover:border-primary/40 hover:text-primary
+                          hover:bg-surface-container transition-colors">
+                    Clear filters
+                </a>
+            {% else %}
+                <div class="font-headline text-[18px] font-semibold mb-1 text-on-surface">Inbox empty.</div>
+                <div class="text-[12.5px] text-on-surface-variant">Nothing to classify right now.</div>
+            {% endif %}
         </div>
     {% endif %}
 </div>
