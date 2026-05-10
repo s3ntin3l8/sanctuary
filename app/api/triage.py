@@ -40,13 +40,24 @@ def triage_page(
     offset: int = 0,
     sort: str = "received",
     dir: str = "desc",
+    case_id: str | None = None,
+    proceeding_id: int | None = None,
+    pipeline_filter: str | None = None,
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.models.database import Proceeding
 
+    filter_options = triage_service.get_triage_filter_options()
+
     bundles = triage_service.get_triage_bundles(
-        limit=limit, offset=offset, sort=sort, direction=dir
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        direction=dir,
+        case_id=case_id,
+        proceeding_id=proceeding_id,
+        pipeline_filter=pipeline_filter,
     )
     slicing_queue = triage_service.get_slicing_queue()
     all_cases = CaseRepository(db).list_for_picker()
@@ -100,6 +111,12 @@ def triage_page(
         offset=offset,
         sort=sort,
         dir=dir,
+        case_id=case_id,
+        proceeding_id=proceeding_id,
+        pipeline_filter=pipeline_filter,
+        case_options=filter_options["case_options"],
+        proceeding_options=filter_options["proceeding_options"],
+        pipeline_options=filter_options["pipeline_options"],
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
         OriginatorType=OriginatorType,
