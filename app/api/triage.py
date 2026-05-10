@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -40,9 +40,9 @@ def triage_page(
     offset: int = 0,
     sort: str = "received",
     dir: str = "desc",
-    case_id: str | None = None,
-    proceeding_id: str | None = None,
-    pipeline_filter: str | None = None,
+    case_id: list[str] = Query(default=[]),
+    proceeding_id: list[str] = Query(default=[]),
+    pipeline_filter: list[str] = Query(default=[]),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
@@ -55,9 +55,9 @@ def triage_page(
         offset=offset,
         sort=sort,
         direction=dir,
-        case_id=case_id,
-        proceeding_id=proceeding_id,
-        pipeline_filter=pipeline_filter,
+        case_ids=case_id,
+        proceeding_ids=proceeding_id,
+        pipeline_filters=pipeline_filter,
     )
     slicing_queue = triage_service.get_slicing_queue()
     all_cases = CaseRepository(db).list_for_picker()
@@ -111,9 +111,9 @@ def triage_page(
         offset=offset,
         sort=sort,
         dir=dir,
-        case_id=case_id,
-        proceeding_id=proceeding_id,
-        pipeline_filter=pipeline_filter,
+        case_ids=case_id,
+        proceeding_ids=proceeding_id,
+        pipeline_filters=pipeline_filter,
         case_options=filter_options["case_options"],
         proceeding_options=filter_options["proceeding_options"],
         pipeline_options=filter_options["pipeline_options"],

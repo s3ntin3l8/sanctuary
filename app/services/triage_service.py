@@ -295,9 +295,9 @@ class TriageService:
         offset: int = 0,
         sort: str = "received",
         direction: str = "desc",
-        case_id: str | None = None,
-        proceeding_id: str | None = None,
-        pipeline_filter: str | None = None,
+        case_ids: list[str] | None = None,
+        proceeding_ids: list[str] | None = None,
+        pipeline_filters: list[str] | None = None,
     ) -> list[BundleView]:
         """All triage documents grouped into bundles."""
         from sqlalchemy import and_, or_
@@ -430,23 +430,24 @@ class TriageService:
                 reverse=(direction == "asc"),
             )
 
-        if case_id:
+        if case_ids:
             ordered = [
                 b
                 for b in ordered
-                if b.confirmed_case_id == case_id or b.suggested_case_id == case_id
+                if b.confirmed_case_id in case_ids or b.suggested_case_id in case_ids
             ]
-        if proceeding_id:
-            if proceeding_id == "unassigned":
-                ordered = [b for b in ordered if not b.proceeding]
-            else:
-                pid_int = int(proceeding_id)
-                ordered = [
-                    b for b in ordered if b.proceeding and b.proceeding.id == pid_int
-                ]
-        if pipeline_filter:
+        if proceeding_ids:
+            unassigned = "unassigned" in proceeding_ids
+            pid_ints = {int(p) for p in proceeding_ids if p != "unassigned"}
             ordered = [
-                b for b in ordered if _bundle_pipeline_label(b) == pipeline_filter
+                b
+                for b in ordered
+                if (unassigned and not b.proceeding)
+                or (b.proceeding and b.proceeding.id in pid_ints)
+            ]
+        if pipeline_filters:
+            ordered = [
+                b for b in ordered if _bundle_pipeline_label(b) in pipeline_filters
             ]
 
         for bundle in ordered:

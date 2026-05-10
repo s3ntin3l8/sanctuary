@@ -1,19 +1,19 @@
 {# Query-string builder for triage filter/sort navigation links.
-   Defaults to current template-context values; override any param.
-   Always resets offset to 0 (filter/sort changes restart pagination).
+   All filter params are lists; pass [] or omit to clear that filter.
+   Always resets offset to 0.
 
    Usage:
-     {% from "partials/_qs.html" import qs %}
+     {% from "partials/_qs.html" import qs with context %}
      <a href="{{ qs(sort='received', dir='asc') }}">Received ↑</a>
-     <a href="{{ qs(case_id=some_id) }}">Filter by case</a>
-     <a href="{{ qs(case_id=None, proceeding_id=None, pipeline_filter=None) }}">Clear all</a>
+     <a href="{{ qs(proceeding_ids=[]) }}">Clear proceeding filter</a>
+     <a href="{{ qs(case_ids=[], proceeding_ids=[], pipeline_filters=[]) }}">Clear all</a>
 #}
-{% macro qs(sort=sort, dir=dir, case_id=case_id, proceeding_id=proceeding_id, pipeline_filter=pipeline_filter) %}
+{% macro qs(sort=sort, dir=dir, case_ids=case_ids, proceeding_ids=proceeding_ids, pipeline_filters=pipeline_filters) %}
 {%- set parts = [] %}
 {%- if sort %}{% set _ = parts.append('sort=' ~ sort) %}{% endif %}
 {%- if dir %}{% set _ = parts.append('dir=' ~ dir) %}{% endif %}
-{%- if case_id %}{% set _ = parts.append('case_id=' ~ case_id | urlencode) %}{% endif %}
-{%- if proceeding_id %}{% set _ = parts.append('proceeding_id=' ~ proceeding_id) %}{% endif %}
-{%- if pipeline_filter %}{% set _ = parts.append('pipeline_filter=' ~ pipeline_filter) %}{% endif -%}
+{%- for cid in (case_ids or []) %}{% set _ = parts.append('case_id=' ~ cid | urlencode) %}{% endfor %}
+{%- for pid in (proceeding_ids or []) %}{% set _ = parts.append('proceeding_id=' ~ pid | urlencode) %}{% endfor %}
+{%- for pf in (pipeline_filters or []) %}{% set _ = parts.append('pipeline_filter=' ~ pf) %}{% endfor -%}
 ?{{ parts | join('&') -}}
 {%- endmacro %}

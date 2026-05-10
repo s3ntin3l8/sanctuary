@@ -129,10 +129,11 @@ if (window.Alpine) {
     document.addEventListener('alpine:init', () => registerGlobalAlpineData());
 }
 
-// Re-initialize Alpine on OOB swaps to ensure directives like :class work on injected elements
+// Re-initialize Alpine on OOB swaps to ensure directives like :class work on injected elements.
+// event.target is the newly swapped-in node; event.detail.target is the old (detached) element.
 document.addEventListener('htmx:oobAfterSwap', (event) => {
-    if (window.Alpine && event.detail.target) {
-        window.Alpine.initTree(event.detail.target);
+    if (window.Alpine && event.target) {
+        window.Alpine.initTree(event.target);
     }
 });
 

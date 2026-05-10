@@ -216,15 +216,15 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
     from app.models.database import Proceeding
 
     # Preserve active filters from the request URL
-    case_id = request.query_params.get("case_id")
-    proceeding_id = request.query_params.get("proceeding_id") or None
-    pipeline_filter = request.query_params.get("pipeline_filter")
+    case_ids = request.query_params.getlist("case_id")
+    proceeding_ids = request.query_params.getlist("proceeding_id")
+    pipeline_filters = request.query_params.getlist("pipeline_filter")
 
     filter_options = triage_service.get_triage_filter_options()
     bundles = triage_service.get_triage_bundles(
-        case_id=case_id,
-        proceeding_id=proceeding_id,
-        pipeline_filter=pipeline_filter,
+        case_ids=case_ids or None,
+        proceeding_ids=proceeding_ids or None,
+        pipeline_filters=pipeline_filters or None,
     )
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
@@ -245,9 +245,9 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
             "OriginatorType": OriginatorType,
             "UserReactionType": UserReactionType,
             "as_oob": True,
-            "case_id": case_id,
-            "proceeding_id": proceeding_id,
-            "pipeline_filter": pipeline_filter,
+            "case_ids": case_ids,
+            "proceeding_ids": proceeding_ids,
+            "pipeline_filters": pipeline_filters,
             "case_options": filter_options["case_options"],
             "proceeding_options": filter_options["proceeding_options"],
             "pipeline_options": filter_options["pipeline_options"],

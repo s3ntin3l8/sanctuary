@@ -1,6 +1,6 @@
 {# Triage feed — single-column list of bundle rows.
 
-   Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS, case_id, proceeding_id, pipeline_filter
+   Required context: bundles, reactions_by_doc, ORIGINATOR_COLORS, case_ids, proceeding_ids, pipeline_filters
 #}
 {% from "partials/_qs.html" import qs with context %}
 <div id="triage-feed" {% if as_oob %}hx-swap-oob="true"{% endif %}>
@@ -9,7 +9,7 @@
             {% include "partials/triage_row.html" %}
         {% endfor %}
     {% else %}
-        {% set any_filter = case_id or proceeding_id or pipeline_filter %}
+        {% set any_filter = case_ids or proceeding_ids or pipeline_filters %}
         <div class="flex flex-col items-center justify-center py-24 text-center">
             <div class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-primary-container/30 text-primary">
                 <span class="material-symbols-outlined text-[22px]">
@@ -21,7 +21,7 @@
                 <div class="text-[12.5px] text-on-surface-variant mb-3">
                     No triage bundles match the active filter.
                 </div>
-                <a href="{{ qs(case_id=None, proceeding_id=None, pipeline_filter=None) }}"
+                <a href="{{ qs(case_ids=[], proceeding_ids=[], pipeline_filters=[]) }}"
                    class="text-[11.5px] px-3 py-1.5 rounded border border-outline-variant
                           text-on-surface-variant hover:border-primary/40 hover:text-primary
                           hover:bg-surface-container transition-colors">

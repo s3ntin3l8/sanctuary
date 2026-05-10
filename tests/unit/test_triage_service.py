@@ -626,6 +626,105 @@ def test_open_batch_with_needs_review_still_appears_in_feed(db_session):
 
 
 @pytest.mark.unit
+def test_get_triage_bundles_proceeding_filter_mixed(db_session):
+    """proceeding_ids=["unassigned", "<id>"] returns both unassigned bundles AND
+    proceeding-id bundles (OR semantics)."""
+    from app.models.database import Case, Proceeding
+    from app.services.triage_service import TriageService
+
+    triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
+    target_case = Case(
+        id="ADV-PMIX-T",
+        title="Proceeding Mix Test",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add_all([triage_case, target_case])
+    db_session.commit()
+
+    proceeding = Proceeding(
+        case_id=target_case.id,
+        court_name="OLG Munich",
+        court_level="OLG",
+        az_court="5 U 10/25",
+    )
+    db_session.add(proceeding)
+    db_session.commit()
+    db_session.refresh(proceeding)
+
+    # Batch WITH proceeding
+    batch_with_proc = IngestBatch(
+        source_type=IngestBatchSourceType.MANUAL,
+        case_id="_TRIAGE",
+        proceeding_id=proceeding.id,
+        received_at=datetime(2026, 4, 1, tzinfo=UTC),
+    )
+    db_session.add(batch_with_proc)
+    db_session.flush()
+    doc_with_proc = Document(
+        title="Proceeding Doc",
+        content="content",
+        case_id="_TRIAGE",
+        role=DocumentRole.COVER_LETTER,
+        originator_type=OriginatorType.COURT,
+        sender="court@example.com",
+        received_date=datetime(2026, 4, 1, tzinfo=UTC),
+        ingest_batch_id=batch_with_proc.id,
+        needs_review=True,
+        review_reasons=["missing_case_id"],
+    )
+    db_session.add(doc_with_proc)
+
+    # Batch WITHOUT proceeding (unassigned)
+    batch_no_proc = IngestBatch(
+        source_type=IngestBatchSourceType.MANUAL,
+        case_id="_TRIAGE",
+        proceeding_id=None,
+        received_at=datetime(2026, 4, 2, tzinfo=UTC),
+    )
+    db_session.add(batch_no_proc)
+    db_session.flush()
+    doc_no_proc = Document(
+        title="Unassigned Doc",
+        content="content",
+        case_id="_TRIAGE",
+        role=DocumentRole.COVER_LETTER,
+        originator_type=OriginatorType.COURT,
+        sender="court2@example.com",
+        received_date=datetime(2026, 4, 2, tzinfo=UTC),
+        ingest_batch_id=batch_no_proc.id,
+        needs_review=True,
+        review_reasons=["missing_case_id"],
+    )
+    db_session.add(doc_no_proc)
+    db_session.commit()
+
+    svc = TriageService(db_session)
+
+    # Filter: only "unassigned" — should return only the no-proceeding bundle
+    unassigned_only = svc.get_triage_bundles(proceeding_ids=["unassigned"])
+    unassigned_batch_ids = {b.batch_id for b in unassigned_only}
+    assert batch_no_proc.id in unassigned_batch_ids
+    assert batch_with_proc.id not in unassigned_batch_ids
+
+    # Filter: only the specific proceeding — should return only the proceeding bundle
+    proc_only = svc.get_triage_bundles(proceeding_ids=[str(proceeding.id)])
+    proc_batch_ids = {b.batch_id for b in proc_only}
+    assert batch_with_proc.id in proc_batch_ids
+    assert batch_no_proc.id not in proc_batch_ids
+
+    # Filter: BOTH "unassigned" AND specific proceeding — OR semantics, returns both
+    mixed = svc.get_triage_bundles(proceeding_ids=["unassigned", str(proceeding.id)])
+    mixed_batch_ids = {b.batch_id for b in mixed}
+    assert batch_with_proc.id in mixed_batch_ids, (
+        "bundle with proceeding must appear in mixed filter"
+    )
+    assert batch_no_proc.id in mixed_batch_ids, (
+        "unassigned bundle must appear in mixed filter"
+    )
+
+
+@pytest.mark.unit
 def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
     """Loose docs (no batch) with needs_review must still surface in triage —
     they have no batch.status to gate on, so needs_review is the only signal."""
