@@ -1,5 +1,7 @@
 import logging
 
+from sqlalchemy.exc import OperationalError as SA_OperationalError
+
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
 
@@ -22,8 +24,10 @@ def _trigger_case_brief(doc_id: int) -> None:
         db.close()
 
 
-@celery_app.task(name="app.tasks.extract_claims.extract_claims_task")
-def extract_claims_task(doc_id: int):
+@celery_app.task(
+    bind=True, max_retries=3, name="app.tasks.extract_claims.extract_claims_task"
+)
+def extract_claims_task(self, doc_id: int):
     """Extract factual/legal/procedural claims from a document and link evidence to existing claims."""
     from app.dependencies import get_db_session
     from app.models.database import Document
@@ -75,6 +79,40 @@ def extract_claims_task(doc_id: int):
     logger.info("Doc #%d: claims started", doc_id)
     try:
         skipped = extract(doc_id)
+    except SA_OperationalError as e:
+        if "database is locked" in str(e) and self.request.retries < self.max_retries:
+            countdown = 30 * (self.request.retries + 1)
+            logger.warning(
+                "Doc #%d: db locked — retry %d in %ds",
+                doc_id,
+                self.request.retries + 1,
+                countdown,
+            )
+            db = get_db_session()
+            try:
+                from app.services.pipeline_status import schedule_retry
+
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.CLAIMS,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
+        finally:
+            db.close()
+        logger.info("Doc #%d: claims failed — still triggering case brief", doc_id)
+        _trigger_case_brief(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
         db = get_db_session()

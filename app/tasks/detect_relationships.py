@@ -1,5 +1,7 @@
 import logging
 
+from sqlalchemy.exc import OperationalError as SA_OperationalError
+
 from app.models.enums import PipelineStage, StageStatus
 from app.tasks.celery_app import celery_app
 
@@ -29,8 +31,12 @@ def _dispatch_claims_safely(doc_id: int) -> None:
             db.close()
 
 
-@celery_app.task(name="app.tasks.detect_relationships.detect_relationships_task")
-def detect_relationships_task(doc_id: int):
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    name="app.tasks.detect_relationships.detect_relationships_task",
+)
+def detect_relationships_task(self, doc_id: int):
     """Detect AI relationships from this doc to prior docs in the same proceeding."""
     from app.dependencies import get_db_session
     from app.services.intelligence.relationship_detector import detect
@@ -91,6 +97,45 @@ def detect_relationships_task(doc_id: int):
 
     try:
         skipped = detect(doc_id)
+    except SA_OperationalError as e:
+        if "database is locked" in str(e) and self.request.retries < self.max_retries:
+            countdown = 30 * (self.request.retries + 1)
+            logger.warning(
+                "Doc #%d: db locked — retry %d in %ds",
+                doc_id,
+                self.request.retries + 1,
+                countdown,
+            )
+            db = get_db_session()
+            try:
+                from app.services.pipeline_status import schedule_retry
+
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.RELATIONSHIPS,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error(
+            f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
+        )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
+        finally:
+            db.close()
+        logger.info(
+            "Doc #%d: relationships failed — still dispatching claims",
+            doc_id,
+        )
+        _dispatch_claims_safely(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(
             f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True

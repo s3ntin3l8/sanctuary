@@ -61,8 +61,8 @@ class SuccessfulAccessFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         # uvicorn.access uses positional args: (client, request_line, status)
         status = None
-        if isinstance(record.args, tuple) and len(record.args) >= 3:
-            status = record.args[2]
+        if isinstance(record.args, tuple) and len(record.args) >= 5:
+            status = record.args[-1]
         else:
             status = getattr(record, "status_code", None)
         try:
@@ -136,7 +136,7 @@ logger.info("Logging initialized.")
 
 
 # --- Rate Limiter ---
-limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
+limiter = Limiter(key_func=get_remote_address, default_limits=["600/minute"])
 
 
 # --- Lifespan ---

@@ -2,6 +2,7 @@ import logging
 import time
 
 import httpx
+from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.dependencies import get_db_session
 from app.models.database import Document
@@ -188,6 +189,10 @@ _METADATA_MAX_RETRIES = 3
 _METADATA_BACKOFF = [10, 30, 60]  # seconds between attempts 1→2, 2→3, and final
 
 
+def _is_db_locked(exc: Exception) -> bool:
+    return "database is locked" in str(exc).lower()
+
+
 def _run_phase1_summary(doc_id: int) -> None:
     """Run Phase 1 metadata extraction with transient-error retry.
 
@@ -219,7 +224,12 @@ def _run_phase1_summary(doc_id: int) -> None:
             _summarize_document_sync(doc_id, db2)
             mark_completed(doc_id, PipelineStage.METADATA, db2)
             return
-        except _TRANSIENT_AI_ERRORS as e:
+        except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
+            if isinstance(e, SA_OperationalError) and not _is_db_locked(e):
+                db2.rollback()
+                mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
+                logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+                return
             last_error = e
             db2.close()
             if attempt < _METADATA_MAX_RETRIES - 1:
