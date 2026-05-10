@@ -82,12 +82,15 @@ def enrich_document_task(self, doc_id: int):
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except httpx.ConnectError as e:
         # Backend not yet reachable (startup race, proxy restarting, etc.)
-        # Retry quickly without a noisy ERROR traceback.
+        # Retry quietly without a noisy ERROR traceback.
         if self.request.retries < self.max_retries:
-            countdown = 15
+            from app.services.ai_provider import chat_provider
+
+            countdown = 30
             logger.warning(
-                "Doc #%d: AI backend unreachable (%s) — retry %d in %ds",
+                "Doc #%d: AI backend unreachable at %s (%s) — retry %d in %ds",
                 doc_id,
+                chat_provider.base_url,
                 e,
                 self.request.retries + 1,
                 countdown,
@@ -106,7 +109,14 @@ def enrich_document_task(self, doc_id: int):
             finally:
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
-        logger.error("Doc #%d: AI backend unreachable after all retries: %s", doc_id, e)
+        from app.services.ai_provider import chat_provider
+
+        logger.error(
+            "Doc #%d: AI backend unreachable at %s after all retries: %s",
+            doc_id,
+            chat_provider.base_url,
+            e,
+        )
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.ENRICH, db, error=f"connect: {e}")

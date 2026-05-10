@@ -253,7 +253,11 @@ class TriageService:
     # --- reads ----------------------------------------------------------------
 
     def get_triage_bundles(
-        self, limit: int = 50, offset: int = 0, sort: str = "received"
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "received",
+        direction: str = "desc",
     ) -> list[BundleView]:
         """All triage documents grouped into bundles."""
         from sqlalchemy import and_, or_
@@ -360,14 +364,21 @@ class TriageService:
         }
 
         if sort == "docs":
-            ordered = sorted(bundles.values(), key=lambda b: b.doc_count, reverse=True)
+            ordered = sorted(
+                bundles.values(),
+                key=lambda b: b.doc_count,
+                reverse=(direction == "desc"),
+            )
         elif sort == "status":
             ordered = sorted(
                 bundles.values(),
                 key=lambda b: _STATUS_ORDER.get(b.mock_status, 99),
+                reverse=(direction == "desc"),
             )
         else:
             # "received" (default) — urgency-first, recency as tiebreaker.
+            # desc (default): reverse=False keeps urgency=0 first and newest-first via -timestamp key.
+            # asc: reverse=True flips to oldest-first.
             ordered = sorted(
                 bundles.values(),
                 key=lambda b: (
@@ -376,6 +387,7 @@ class TriageService:
                     else 1,
                     -(b.received_at.timestamp() if b.received_at else 0),
                 ),
+                reverse=(direction == "asc"),
             )
 
         for bundle in ordered:

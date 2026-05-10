@@ -145,6 +145,15 @@
                     {{ bundle.suggested_case_title }}
                 </div>
                 {% endif %}
+                {% if bundle.proceeding %}
+                <div class="flex items-center gap-1 mt-0.5">
+                    <span class="font-mono text-[9px] px-1 py-px rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant">{{ bundle.proceeding.court_level.value }}</span>
+                    <span class="font-mono text-[10px] text-on-surface-variant truncate">{{ bundle.proceeding.az_court or '—' }}</span>
+                </div>
+                <div class="text-[10.5px] mt-0.5 truncate text-on-surface-variant" title="{{ bundle.proceeding.court_name or '' }}">
+                    {{ bundle.proceeding.court_name or '' }}
+                </div>
+                {% endif %}
             {% elif bundle.suggested_case_id %}
                 {# AI suggestion or AI-created draft awaiting ratification #}
                 <div class="flex items-center gap-2">
@@ -161,6 +170,15 @@
                 {% if bundle.suggested_case_title %}
                 <div class="text-[11.5px] mt-0.5 truncate text-on-surface" title="{{ bundle.suggested_case_title }}">
                     {{ bundle.suggested_case_title }}
+                </div>
+                {% endif %}
+                {% if bundle.proceeding %}
+                <div class="flex items-center gap-1 mt-0.5">
+                    <span class="font-mono text-[9px] px-1 py-px rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant">{{ bundle.proceeding.court_level.value }}</span>
+                    <span class="font-mono text-[10px] text-on-surface-variant truncate">{{ bundle.proceeding.az_court or '—' }}</span>
+                </div>
+                <div class="text-[10.5px] mt-0.5 truncate text-on-surface-variant" title="{{ bundle.proceeding.court_name or '' }}">
+                    {{ bundle.proceeding.court_name or '' }}
                 </div>
                 {% endif %}
                 {% if sub_bundles|length > 1 %}
@@ -328,6 +346,7 @@
    skips this block, leaving the expanded body and drawer untouched in the DOM. #}
 {% if not hx_swap_oob %}
 <div id="triage-row-expanded-{{ bundle.key }}"
+     data-bundle-key="{{ bundle.key }}"
      x-show="$store.triage.expandedRowKey === '{{ bundle.key }}'"
      x-cloak
      class="border-b border-outline-variant">

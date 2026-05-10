@@ -76,7 +76,7 @@
             data-proceeding-az="{{ _proceeding_az }}"
             data-proceeding-subtitle="{{ _proceeding_subtitle }}"
             data-proceeding-is-draft="{{ _proceeding_is_draft }}"
-            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:d.caseIsDraft==='true', suggested_proceeding_id:d.proceedingId, suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:d.proceedingSubtitle, suggested_proceeding_is_draft:d.proceedingIsDraft==='true', action:'assign_case', is_new_case:false}}))"
+            onclick="const d=this.dataset; document.dispatchEvent(new CustomEvent('triage:open-bundle-confirm', {bubbles:true, detail:{batch_id:d.batchId, is_synthetic:d.synthetic==='true', doc_id:d.docId, subject:d.subject, doc_count:parseInt(d.docCount), suggested_case_id:d.caseId, suggested_case_title:d.caseTitle, suggested_case_is_draft:d.caseIsDraft==='true', suggested_proceeding_id:'', suggested_proceeding_az:d.proceedingAz, suggested_proceeding_subtitle:'', suggested_proceeding_is_draft:false, action:'assign_case', is_new_case:false}}))"
             class="text-[10px] font-bold text-primary hover:underline transition-colors cursor-pointer">
       Change court file →
     </button>

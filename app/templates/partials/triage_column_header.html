@@ -1,23 +1,42 @@
-{# Triage column headers with sort buttons. Required context: sort (str) #}
+{# Triage column headers with sort buttons. Required context: sort (str), dir (str) #}
+{% macro sort_arrow(active, direction) %}
+  {% if active %}
+    {% if direction == 'asc' %}
+      <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,7 5,3 8,7"/></svg>
+    {% else %}
+      <svg class="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg>
+    {% endif %}
+  {% else %}
+    <span class="w-2.5 h-2.5 flex-shrink-0"></span>
+  {% endif %}
+{% endmacro %}
+
+{% set recv_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'received' else 'desc' %}
+{% set docs_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'docs' else 'desc' %}
+{% set status_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'status' else 'desc' %}
+
 <div class="flex items-center gap-4 px-8 py-2 text-[10.5px] uppercase tracking-widest font-headline font-semibold border-b border-outline-variant text-on-surface-variant bg-surface-low flex-shrink-0">
     {# stripe placeholder — matches triage row w-[3px] stripe #}
     <div class="w-[3px] flex-shrink-0"></div>
 
-    <button onclick="location.href='?sort=received'"
-            class="w-[120px] flex-shrink-0 text-left focus-ring {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
-        Received
+    <button type="button" onclick="location.href='?sort=received&dir={{ recv_dir }}'"
+            class="w-[120px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
+        <span>Received</span>
+        {{ sort_arrow(sort == 'received', dir) }}
     </button>
 
-    <button onclick="location.href='?sort=docs'"
-            class="w-[240px] flex-shrink-0 text-left focus-ring {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
-        Docs
+    <button type="button" onclick="location.href='?sort=docs&dir={{ docs_dir }}'"
+            class="w-[240px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
+        <span>Docs</span>
+        {{ sort_arrow(sort == 'docs', dir) }}
     </button>
 
     <span class="flex-1 min-w-0">Preview</span>
 
-    <button onclick="location.href='?sort=status'"
-            class="w-[260px] flex-shrink-0 text-left focus-ring {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
-        Status / Case
+    <button type="button" onclick="location.href='?sort=status&dir={{ status_dir }}'"
+            class="w-[260px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
+        <span>Status / Case</span>
+        {{ sort_arrow(sort == 'status', dir) }}
     </button>
 
     <span class="flex-shrink-0 min-w-[110px] text-right">Actions</span>

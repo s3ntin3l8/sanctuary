@@ -237,6 +237,9 @@ def enrich(doc_id: int) -> None:
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
+        from app.services.ai_provider import chat_provider
+
+        chat_provider.reload_from_db(db)
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for enrichment")

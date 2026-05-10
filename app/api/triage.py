@@ -39,12 +39,15 @@ def triage_page(
     limit: int = 50,
     offset: int = 0,
     sort: str = "received",
+    dir: str = "desc",
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.models.database import Proceeding
 
-    bundles = triage_service.get_triage_bundles(limit=limit, offset=offset, sort=sort)
+    bundles = triage_service.get_triage_bundles(
+        limit=limit, offset=offset, sort=sort, direction=dir
+    )
     slicing_queue = triage_service.get_slicing_queue()
     all_cases = CaseRepository(db).list_for_picker()
     total_docs = sum(b.doc_count for b in bundles)
@@ -96,6 +99,7 @@ def triage_page(
         limit=limit,
         offset=offset,
         sort=sort,
+        dir=dir,
         originator_colors=ORIGINATOR_COLORS,
         originator_icons=ORIGINATOR_ICONS,
         OriginatorType=OriginatorType,
