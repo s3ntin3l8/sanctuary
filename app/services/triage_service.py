@@ -264,6 +264,21 @@ def _reset_and_reenrich(db: Session, docs: list) -> None:
         enrich_document_task.delay(doc.id)
 
 
+def _bundle_pipeline_label(bundle: "BundleView") -> str:
+    """Pipeline aggregate state — matches the chip labels in _pipeline_aggregate.html.
+
+    Returns: 'ready', 'review_metadata', 'processing', or 'failed'
+    """
+    summary = bundle.pipeline_summary
+    if summary.get("failed", 0) > 0:
+        return "failed"
+    if summary.get("running", 0) + summary.get("pending", 0) > 0:
+        return "processing"
+    if bundle.has_unconfirmed_metadata:
+        return "review_metadata"
+    return "ready"
+
+
 class TriageService:
     def __init__(self, db: Session):
         self.db = db
@@ -280,6 +295,9 @@ class TriageService:
         offset: int = 0,
         sort: str = "received",
         direction: str = "desc",
+        case_id: str | None = None,
+        proceeding_id: int | None = None,
+        pipeline_filter: str | None = None,
     ) -> list[BundleView]:
         """All triage documents grouped into bundles."""
         from sqlalchemy import and_, or_
@@ -412,10 +430,165 @@ class TriageService:
                 reverse=(direction == "asc"),
             )
 
+        if case_id:
+            ordered = [
+                b
+                for b in ordered
+                if b.confirmed_case_id == case_id or b.suggested_case_id == case_id
+            ]
+        if proceeding_id:
+            ordered = [
+                b for b in ordered if b.proceeding and b.proceeding.id == proceeding_id
+            ]
+        if pipeline_filter:
+            ordered = [
+                b for b in ordered if _bundle_pipeline_label(b) == pipeline_filter
+            ]
+
         for bundle in ordered:
             self.enrich_bundle(bundle)
 
         return ordered[offset : offset + limit]
+
+    def get_triage_filter_options(self) -> dict:
+        """Return filter option lists derived from the live triage queue.
+
+        Returns a dict with keys:
+          case_options:       list of (case_id, label) sorted by case_id
+          proceeding_options: list of (proceeding.id, label) sorted by label
+          pipeline_options:   list of (value, display_label) for pipeline states
+                              present in the queue, in canonical display order
+        Only options that have at least one matching bundle are included.
+        """
+        from sqlalchemy import and_, or_
+        from sqlalchemy.orm import contains_eager
+
+        from app.models.database import IngestBatch, IngestBatchStatus
+
+        docs = (
+            self.db.query(Document)
+            .outerjoin(IngestBatch, Document.ingest_batch_id == IngestBatch.id)
+            .options(
+                contains_eager(Document.ingest_batch).joinedload(
+                    IngestBatch.proceeding
+                ),
+                joinedload(Document.proceeding),
+            )
+            .filter(
+                Document.status != DocumentStatus.DISMISSED,
+                or_(
+                    and_(
+                        IngestBatch.id.isnot(None),
+                        IngestBatch.status != IngestBatchStatus.COMPLETED,
+                        IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+                    ),
+                    Document.case_id == "_TRIAGE",
+                    and_(
+                        Document.needs_review,
+                        or_(
+                            IngestBatch.id.is_(None),
+                            IngestBatch.status != IngestBatchStatus.COMPLETED,
+                        ),
+                    ),
+                ),
+            )
+            .order_by(Document.ingest_date.desc())
+            .all()
+        )
+
+        bundles: dict[str, BundleView] = {}
+        for doc in docs:
+            if doc.ingest_batch_id and doc.ingest_batch:
+                key = f"batch-{doc.ingest_batch_id}"
+                if key not in bundles:
+                    batch = doc.ingest_batch
+                    confirmed = (
+                        batch.case_id
+                        if batch.case_id and batch.case_id != "_TRIAGE"
+                        else None
+                    )
+                    bundles[key] = BundleView(
+                        key=key,
+                        batch_id=batch.id,
+                        source_type=batch.source_type,
+                        subject=batch.subject,
+                        sender_email=batch.sender_email,
+                        received_at=batch.received_at,
+                        confirmed_case_id=confirmed,
+                        proceeding=batch.proceeding,
+                    )
+                bundles[key].documents.append(doc)
+                bundle = bundles[key]
+                if (
+                    not bundle.confirmed_case_id
+                    and doc.case_id
+                    and doc.case_id != "_TRIAGE"
+                ):
+                    bundle.suggested_case_id = doc.case_id
+            else:
+                key = f"loose-{doc.id}"
+                confirmed = (
+                    doc.case_id if doc.case_id and doc.case_id != "_TRIAGE" else None
+                )
+                bundles[key] = BundleView(
+                    key=key,
+                    batch_id=None,
+                    source_type=IngestBatchSourceType.MANUAL,
+                    subject=doc.title,
+                    sender_email=None,
+                    received_at=doc.ingest_date or datetime.now(),
+                    confirmed_case_id=confirmed,
+                    proceeding=doc.proceeding,
+                    documents=[doc],
+                )
+
+        # Extract unique case options
+        case_ids: dict[str, str] = {}
+        proceeding_opts: dict[int, str] = {}
+        pipeline_labels_present: set[str] = set()
+
+        for b in bundles.values():
+            # Case options
+            cid = b.confirmed_case_id or b.suggested_case_id
+            if cid and cid != "_TRIAGE":
+                case_ids[cid] = cid
+
+            # Proceeding options
+            if b.proceeding:
+                proc = b.proceeding
+                if proc.az_court:
+                    label = f"{proc.court_name} · {proc.az_court}"
+                else:
+                    label = proc.court_name
+                proceeding_opts[proc.id] = label
+
+            # Pipeline options
+            pipeline_labels_present.add(_bundle_pipeline_label(b))
+
+        # Build sorted case options
+        case_options = sorted(case_ids.items(), key=lambda x: x[0])
+
+        # Build sorted proceeding options
+        proceeding_options = sorted(proceeding_opts.items(), key=lambda x: x[1])
+
+        # Build pipeline options in canonical order (only those present)
+        canonical_pipeline = [
+            ("ready", "✓ ready"),
+            ("review_metadata", "review metadata"),
+            ("processing", "processing"),
+            ("failed", "failed"),
+        ]
+        pipeline_options = [
+            (value, label)
+            for value, label in canonical_pipeline
+            if value in pipeline_labels_present
+        ]
+
+        return {
+            "case_options": case_options,
+            "proceeding_options": proceeding_options,
+            "pipeline_options": pipeline_options,
+        }
 
     def enrich_bundle(self, bundle: BundleView) -> None:
         """Sort documents and resolve action items, proof edges, and case metadata in-place."""
