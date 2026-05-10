@@ -161,6 +161,28 @@ class BundleView:
         return None
 
     @property
+    def has_unconfirmed_metadata(self) -> bool:
+        """True if any doc has an explicitly low/medium confidence on a tracked field.
+
+        Uses explicit-only matching (no default fallback) so fields absent from
+        extraction_confidence — e.g. significance_tier and document_type on older
+        documents — don't wrongly trigger the 'review metadata' badge.
+        """
+        tracked = (
+            "originator",
+            "sender",
+            "issued_date",
+            "significance_tier",
+            "document_type",
+        )
+        for doc in self.documents:
+            conf = doc.extraction_confidence or {}
+            for key in tracked:
+                if conf.get(key) in ("low", "medium"):
+                    return True
+        return False
+
+    @property
     def mock_status(self) -> str:
         """Filter-chip taxonomy for the redesigned triage page.
 
@@ -628,6 +650,20 @@ class TriageService:
             doc.significance_tier = significance_tier
         if document_type is not None:
             doc.document_type = document_type
+
+        if finalize:
+            conf = dict(doc.extraction_confidence or {})
+            field_map = {
+                "originator": originator_type,
+                "sender": sender,
+                "issued_date": issued_date,
+                "significance_tier": significance_tier,
+                "document_type": document_type,
+            }
+            for key, val in field_map.items():
+                if val is not None:
+                    conf[key] = "user_set"
+            doc.extraction_confidence = conf
 
         from app.services.ingestion.service import compute_review_reasons
 

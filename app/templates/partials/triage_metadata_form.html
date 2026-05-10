@@ -17,14 +17,15 @@
     'sender':     conf.get('sender')     or 'low',
     'issued_date': conf.get('issued_date') or 'low',
     'received_date': 'high' if doc.received_date else 'low',
-    'significance_tier': 'high' if doc.significance_tier else 'low',
-    'document_type':     'high' if doc.document_type     else 'low',
+    'significance_tier': conf.get('significance_tier') or ('high' if doc.significance_tier else 'low'),
+    'document_type':     conf.get('document_type')     or ('high' if doc.document_type     else 'low'),
     'az_court': 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low',
 } %}
 {% set _level_class = {
-    'high':   'border-l-originator-own',
-    'medium': 'border-l-warning',
-    'low':    'border-l-originator-opposing',
+    'user_set': 'border-l-sky-500',
+    'high':     'border-l-originator-own',
+    'medium':   'border-l-warning',
+    'low':      'border-l-originator-opposing',
 } %}
 
 {# Compact field row — visually identical to the review's read-only rows.
@@ -151,7 +152,7 @@
         <div class="@[480px]:col-span-2 pt-2 flex justify-end">
             <button type="submit"
                     class="btn btn-primary btn-xs flex items-center gap-1.5">
-                <span data-loading-idle>Confirm &rarr;</span>
+                <span data-loading-idle>Save</span>
                 <span class="material-symbols-outlined text-xs htmx-indicator animate-spin" data-loading-active>progress_activity</span>
                 <span data-loading-active class="text-[10px]">Saving…</span>
             </button>

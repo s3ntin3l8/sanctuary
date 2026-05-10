@@ -130,6 +130,29 @@
     {# 3. Metadata review — new 2-column read-only with [Edit] toggle #}
     {% include "partials/triage/_metadata_review.html" %}
 
+    {# Tier-change requeue prompt — shown only when significance tier was just changed
+       and enrichment has already completed. User can re-run from enrich or dismiss. #}
+    {% if tier_requeue_prompt %}
+    <div x-data="{ show: true }" x-show="show" x-cloak
+         class="mx-4 mb-2 mt-1 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] flex items-center justify-between gap-2">
+        <span class="flex items-center gap-1.5 text-amber-600">
+            <span class="material-symbols-outlined text-[12px]">info</span>
+            Significance tier changed — re-run enrichment and downstream stages?
+        </span>
+        <div class="flex items-center gap-1 flex-shrink-0">
+            <button hx-post="/document/{{ doc.id }}/pipeline/retry/enrich"
+                    hx-swap="none"
+                    @click="show = false"
+                    class="btn btn-xs"
+                    style="background:rgb(245 158 11/0.15);color:rgb(180 120 0);border:1px solid rgb(245 158 11/0.4)">
+                Re-run
+            </button>
+            <button @click="show = false"
+                    class="btn btn-xs btn-ghost text-on-surface-variant">Dismiss</button>
+        </div>
+    </div>
+    {% endif %}
+
     {# 4. AI summary #}
     {% include "partials/hud/_summary.html" %}
 

@@ -36,8 +36,14 @@
     {{ n_pending }} queued
   </span>
   {% elif n_failed == 0 and n_done == n_total and n_total > 0 %}
+  {% if bundle.has_unconfirmed_metadata %}
+  <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500">
+    <span class="material-symbols-outlined text-[10px]">rate_review</span> review metadata
+  </span>
+  {% else %}
   <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-originator-own/10 text-originator-own">
     <span class="material-symbols-outlined text-[10px]">done_all</span> ready
   </span>
+  {% endif %}
   {% endif %}
 </span>

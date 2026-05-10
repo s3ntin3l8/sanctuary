@@ -153,15 +153,6 @@
                     {{ bundle.suggested_case_title }}
                 </div>
                 {% endif %}
-                {% if bundle.proceeding %}
-                <div class="flex items-center gap-1 mt-0.5">
-                    <span class="font-mono text-[9px] px-1 py-px rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant">{{ bundle.proceeding.court_level.value }}</span>
-                    <span class="font-mono text-[10px] text-on-surface-variant truncate">{{ bundle.proceeding.az_court or '—' }}</span>
-                </div>
-                <div class="text-[10.5px] mt-0.5 truncate text-on-surface-variant" title="{{ bundle.proceeding.court_name or '' }}">
-                    {{ bundle.proceeding.court_name or '' }}
-                </div>
-                {% endif %}
             {% elif bundle.suggested_case_id %}
                 {# AI suggestion or AI-created draft awaiting ratification #}
                 <div class="flex items-center gap-2">
@@ -178,15 +169,6 @@
                 {% if bundle.suggested_case_title %}
                 <div class="text-[11.5px] mt-0.5 truncate text-on-surface" title="{{ bundle.suggested_case_title }}">
                     {{ bundle.suggested_case_title }}
-                </div>
-                {% endif %}
-                {% if bundle.proceeding %}
-                <div class="flex items-center gap-1 mt-0.5">
-                    <span class="font-mono text-[9px] px-1 py-px rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant">{{ bundle.proceeding.court_level.value }}</span>
-                    <span class="font-mono text-[10px] text-on-surface-variant truncate">{{ bundle.proceeding.az_court or '—' }}</span>
-                </div>
-                <div class="text-[10.5px] mt-0.5 truncate text-on-surface-variant" title="{{ bundle.proceeding.court_name or '' }}">
-                    {{ bundle.proceeding.court_name or '' }}
                 </div>
                 {% endif %}
                 {% if sub_bundles|length > 1 %}
@@ -207,9 +189,37 @@
             {% endif %}
         </div>
 
+        {# Proceeding column — AZ + badge / court name + level #}
+        <div class="w-[200px] flex-shrink-0 pt-0.5">
+            {% if bundle.proceeding %}
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-[11px] text-primary">{{ bundle.proceeding.az_court or '—' }}</span>
+                    {% if bundle.confirmed_case_id and not bundle.proceeding.is_draft %}
+                        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-own/15 text-originator-own" title="User confirmed">
+                            <span class="material-symbols-outlined text-[8px]">check</span>confirmed
+                        </span>
+                    {% elif bundle.proceeding.is_draft %}
+                        {{ draft_pill() }}
+                    {% else %}
+                        <span class="flex items-center gap-0.5 px-1 py-px rounded border border-outline-variant bg-surface-lowest">
+                            <span class="text-amber-500 text-[10px] font-bold" title="AI Suggested">?</span>
+                        </span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                    <span class="text-[11.5px] truncate text-on-surface-variant" title="{{ bundle.proceeding.court_name or '' }}">{{ bundle.proceeding.court_name or '' }}</span>
+                    <span class="font-mono text-[9px] px-1 py-px rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant flex-shrink-0">{{ bundle.proceeding.court_level.value }}</span>
+                </div>
+            {% elif status == 'processing' %}
+                <span class="text-[11.5px] text-on-surface-variant/50 italic">pending…</span>
+            {% else %}
+                <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/15 text-primary">unassigned</span>
+            {% endif %}
+        </div>
+
         {# Action buttons — min-w keeps the case-assignment column aligned across rows
            regardless of whether a Confirm/Route/Retry button is currently shown. #}
-        <div class="flex items-center justify-end gap-1 pt-0.5 flex-shrink-0 min-w-[110px]">
+        <div class="flex items-center justify-end gap-1 pt-0.5 flex-shrink-0 min-w-[140px]">
             {% if status == 'stuck' %}
                 {# String values go in data-* so the JS expression stays HTML-attribute-safe. #}
                 <button type="button"

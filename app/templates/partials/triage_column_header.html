@@ -16,7 +16,8 @@
 {% set status_dir = ('asc' if dir == 'desc' else 'desc') if sort == 'status' else 'desc' %}
 
 <div class="flex items-center gap-4 px-8 py-2 text-[10.5px] uppercase tracking-widest font-headline font-semibold border-b border-outline-variant text-on-surface-variant bg-surface-low flex-shrink-0">
-    {# stripe placeholder — matches triage row w-[3px] stripe #}
+    {# checkbox + stripe placeholders — match triage row structure #}
+    <div class="w-3.5 flex-shrink-0"></div>
     <div class="w-[3px] flex-shrink-0"></div>
 
     <button type="button" onclick="location.href='?sort=received&dir={{ recv_dir }}'"
@@ -39,5 +40,7 @@
         {{ sort_arrow(sort == 'status', dir) }}
     </button>
 
-    <span class="flex-shrink-0 min-w-[110px] text-right">Actions</span>
+    <span class="w-[200px] flex-shrink-0">Proceeding</span>
+
+    <span class="flex-shrink-0 min-w-[140px] text-right">Actions</span>
 </div>

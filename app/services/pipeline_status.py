@@ -407,12 +407,20 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
         return
     stages: dict = json.loads(row[0]) if row[0] else {}
     for stage_key, record in stages.items():
-        if record.get("status") == StageStatus.SKIPPED.value:
-            continue
         try:
             stage_enum = PipelineStage(stage_key)
         except ValueError:
             continue
+
+        # Preserve "permanent" skips that shouldn't be re-evaluated
+        if record.get("status") == StageStatus.SKIPPED.value and record.get(
+            "reason"
+        ) in (
+            "manual upload",
+            "no batch (manual upload)",
+        ):
+            continue
+
         _update_stage(
             doc_id,
             stage_enum,

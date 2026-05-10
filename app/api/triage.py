@@ -207,6 +207,7 @@ async def confirm_document(
 
     pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
     pre_confirm_case_id = pre_confirm_doc.case_id if pre_confirm_doc else None
+    pre_confirm_tier = pre_confirm_doc.significance_tier if pre_confirm_doc else None
 
     parsed_originator = None
     if originator_type:
@@ -280,8 +281,18 @@ async def confirm_document(
 
         _reset_and_reenrich(db, [doc])
 
+    # Offer to re-run pipeline from enrich when significance tier was changed and
+    # enrichment has already completed (no point prompting if pipeline is still running).
+    tier_requeue_prompt = (
+        parsed_significance is not None
+        and pre_confirm_tier != parsed_significance
+        and (doc.pipeline_stages or {}).get("enrich", {}).get("status")
+        in ("completed", "skipped")
+    )
+
     cases = CaseRepository(db).list_for_picker()
     ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
+    ctx["tier_requeue_prompt"] = tier_requeue_prompt
     response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
     targeted_oob = render_row_targeted_oob(request, doc, triage_service, db)
@@ -819,13 +830,21 @@ def _retry_batch(batch, db) -> int:
 
     for doc in batch.documents:
         stages = doc.pipeline_stages or {}
-        # Reset non-EXTRACT, non-SKIPPED stages to PENDING
+        # Reset all non-EXTRACT stages to PENDING. We reset SKIPPED stages too
+        # to ensure the cascade flows correctly (Fix for 'enrichment pending' bug).
         for stage in PipelineStage:
             if stage == PipelineStage.EXTRACT:
                 continue
+
             record = stages.get(stage.value, {})
-            if record.get("status") == StageStatus.SKIPPED.value:
+            if record.get("status") == StageStatus.SKIPPED.value and record.get(
+                "reason"
+            ) in (
+                "manual upload",
+                "no batch (manual upload)",
+            ):
                 continue
+
             stages[stage.value] = {"status": StageStatus.PENDING.value}
 
         new_state = compute_overall_state(stages)

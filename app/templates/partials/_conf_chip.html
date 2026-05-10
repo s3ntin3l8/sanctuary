@@ -9,7 +9,11 @@
 #}
 
 {% macro conf_chip(level) %}
-    {% if level == 'high' %}
+    {% if level == 'user_set' %}
+        <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-sky-500/15 text-sky-500" title="Set by you">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-500 flex-shrink-0"></span>U
+        </span>
+    {% elif level == 'high' %}
         <span class="inline-flex items-center gap-0.5 text-[7px] font-bold font-mono px-1 py-px rounded bg-originator-own/15 text-originator-own" title="High confidence — extracted cleanly">
             <span class="w-1.5 h-1.5 rounded-full bg-originator-own flex-shrink-0"></span>H
         </span>
