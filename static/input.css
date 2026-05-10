@@ -379,3 +379,5 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
+
+[x-cloak] { display: none !important; }

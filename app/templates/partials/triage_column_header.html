@@ -1,4 +1,5 @@
-{# Triage column headers with sort buttons. Required context: sort (str), dir (str) #}
+{# Triage column headers with sort buttons and filter dropdowns. Required context: sort (str), dir (str), case_id, proceeding_id, pipeline_filter, case_options, proceeding_options, pipeline_options #}
+{% from "partials/_qs.html" import qs %}
 {% macro sort_arrow(active, direction) %}
   {% if active %}
     {% if direction == 'asc' %}
@@ -20,27 +21,132 @@
     <div class="w-3.5 flex-shrink-0"></div>
     <div class="w-[3px] flex-shrink-0"></div>
 
-    <button type="button" onclick="location.href='?sort=received&dir={{ recv_dir }}'"
-            class="w-[120px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
+    <a href="{{ qs(sort='received', dir=recv_dir) }}"
+       class="w-[120px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'received' else 'hover:text-on-surface' }}">
         <span>Received</span>
         {{ sort_arrow(sort == 'received', dir) }}
-    </button>
+    </a>
 
-    <button type="button" onclick="location.href='?sort=docs&dir={{ docs_dir }}'"
-            class="w-[240px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
-        <span>Docs</span>
-        {{ sort_arrow(sort == 'docs', dir) }}
-    </button>
+    <div class="w-[240px] flex-shrink-0 flex items-center gap-1">
+        <a href="{{ qs(sort='docs', dir=docs_dir) }}"
+           class="text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'docs' else 'hover:text-on-surface' }}">
+            <span>Docs</span>
+            {{ sort_arrow(sort == 'docs', dir) }}
+        </a>
+        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+            {% if pipeline_filter %}
+            <a href="{{ qs(pipeline_filter=None) }}" title="Clear pipeline filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">close</span>
+            </a>
+            {% endif %}
+            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+                    class="{{ 'text-primary' if pipeline_filter else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">
+                    {{ 'filter_alt' if pipeline_filter else 'filter_list' }}
+                </span>
+            </button>
+            <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
+                 class="absolute top-full right-0 mt-1 z-50 min-w-[160px] rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
+                <a href="{{ qs(pipeline_filter=None) }}"
+                   class="block px-3 py-1.5 text-[11.5px] cursor-pointer {{ 'text-primary font-semibold' if not pipeline_filter else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    All
+                </a>
+                {% if pipeline_options %}
+                <div class="border-t border-outline-variant/40 my-0.5"></div>
+                {% for val, label in pipeline_options %}
+                <a href="{{ qs(pipeline_filter=val) }}"
+                   class="flex items-center justify-between px-3 py-1.5 text-[11.5px] cursor-pointer {{ 'text-primary font-semibold bg-primary/5' if pipeline_filter == val else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    <span>{{ label }}</span>
+                    {% if pipeline_filter == val %}
+                    <span class="material-symbols-outlined text-[11px]">check</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
     <span class="flex-1 min-w-0">Preview</span>
 
-    <button type="button" onclick="location.href='?sort=status&dir={{ status_dir }}'"
-            class="w-[260px] flex-shrink-0 text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
-        <span>Status / Case</span>
-        {{ sort_arrow(sort == 'status', dir) }}
-    </button>
+    <div class="w-[260px] flex-shrink-0 flex items-center gap-1">
+        <a href="{{ qs(sort='status', dir=status_dir) }}"
+           class="text-left focus-ring flex items-center gap-1 {{ 'text-on-surface' if sort == 'status' else 'hover:text-on-surface' }}">
+            <span>Status / Case</span>
+            {{ sort_arrow(sort == 'status', dir) }}
+        </a>
+        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+            {% if case_id %}
+            <a href="{{ qs(case_id=None) }}" title="Clear case filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">close</span>
+            </a>
+            {% endif %}
+            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+                    class="{{ 'text-primary' if case_id else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">
+                    {{ 'filter_alt' if case_id else 'filter_list' }}
+                </span>
+            </button>
+            <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
+                 class="absolute top-full right-0 mt-1 z-50 min-w-[180px] max-h-56 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
+                <a href="{{ qs(case_id=None) }}"
+                   class="block px-3 py-1.5 text-[11.5px] cursor-pointer {{ 'text-primary font-semibold' if not case_id else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    All cases
+                </a>
+                {% if case_options %}
+                <div class="border-t border-outline-variant/40 my-0.5"></div>
+                {% for cid, label in case_options %}
+                <a href="{{ qs(case_id=cid) }}"
+                   class="flex items-center justify-between px-3 py-1.5 text-[11.5px] font-mono cursor-pointer {{ 'text-primary font-semibold bg-primary/5' if case_id == cid else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    <span>{{ label }}</span>
+                    {% if case_id == cid %}
+                    <span class="material-symbols-outlined text-[11px]">check</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
-    <span class="w-[200px] flex-shrink-0">Proceeding</span>
+    <div class="w-[200px] flex-shrink-0 flex items-center gap-1">
+        <span>Proceeding</span>
+        <div x-data="{ open: false }" class="relative ml-auto flex items-center gap-0.5">
+            {% if proceeding_id %}
+            <a href="{{ qs(proceeding_id=None) }}" title="Clear proceeding filter"
+               class="text-primary/70 hover:text-primary transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">close</span>
+            </a>
+            {% endif %}
+            <button type="button" @click.stop="open = !open" @click.outside="open = false"
+                    class="{{ 'text-primary' if proceeding_id else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
+                <span class="material-symbols-outlined text-[13px]">
+                    {{ 'filter_alt' if proceeding_id else 'filter_list' }}
+                </span>
+            </button>
+            <div x-show="open" x-cloak x-transition @keydown.escape.window="open = false"
+                 class="absolute top-full right-0 mt-1 z-50 min-w-[200px] max-h-56 overflow-y-auto rounded border border-outline-variant bg-surface-container-lowest shadow-lg normal-case tracking-normal font-normal">
+                <a href="{{ qs(proceeding_id=None) }}"
+                   class="block px-3 py-1.5 text-[11.5px] cursor-pointer {{ 'text-primary font-semibold' if not proceeding_id else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    All proceedings
+                </a>
+                {% if proceeding_options %}
+                <div class="border-t border-outline-variant/40 my-0.5"></div>
+                {% for pid, label in proceeding_options %}
+                <a href="{{ qs(proceeding_id=pid) }}"
+                   class="flex items-center justify-between px-3 py-1.5 text-[11.5px] cursor-pointer {{ 'text-primary font-semibold bg-primary/5' if proceeding_id == pid else 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container' }}">
+                    <span>{{ label }}</span>
+                    {% if proceeding_id == pid %}
+                    <span class="material-symbols-outlined text-[11px]">check</span>
+                    {% endif %}
+                </a>
+                {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
     <span class="flex-shrink-0 min-w-[140px] text-right">Actions</span>
 </div>
