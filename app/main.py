@@ -119,8 +119,10 @@ def setup_logging():
         target.handlers = []
         target.propagate = True
 
-        # Suppress SQLAlchemy INFO noise (like executed queries) by default
-        if name.startswith("sqlalchemy") and level != logging.DEBUG:
+        # Suppress noisy INFO-only libraries at non-DEBUG levels
+        if (
+            name.startswith("sqlalchemy") or name == "httpx"
+        ) and level != logging.DEBUG:
             target.setLevel(logging.WARNING)
         else:
             target.setLevel(level)

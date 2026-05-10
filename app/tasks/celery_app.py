@@ -1,6 +1,18 @@
+import logging
 import os
 
 from celery import Celery
+from celery.signals import after_setup_logger, after_setup_task_logger
+
+
+def _suppress_httpx_noise(logger, **kwargs):
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    if log_level_str != "DEBUG":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+after_setup_logger.connect(_suppress_httpx_noise)
+after_setup_task_logger.connect(_suppress_httpx_noise)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
