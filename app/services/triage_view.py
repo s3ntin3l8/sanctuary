@@ -217,8 +217,7 @@ def render_triage_feed_oob(request: Request, triage_service, db: Session) -> str
 
     # Preserve active filters from the request URL
     case_id = request.query_params.get("case_id")
-    proceeding_id_str = request.query_params.get("proceeding_id")
-    proceeding_id = int(proceeding_id_str) if proceeding_id_str else None
+    proceeding_id = request.query_params.get("proceeding_id") or None
     pipeline_filter = request.query_params.get("pipeline_filter")
 
     filter_options = triage_service.get_triage_filter_options()

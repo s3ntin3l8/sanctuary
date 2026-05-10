@@ -296,7 +296,7 @@ class TriageService:
         sort: str = "received",
         direction: str = "desc",
         case_id: str | None = None,
-        proceeding_id: int | None = None,
+        proceeding_id: str | None = None,
         pipeline_filter: str | None = None,
     ) -> list[BundleView]:
         """All triage documents grouped into bundles."""
@@ -437,9 +437,13 @@ class TriageService:
                 if b.confirmed_case_id == case_id or b.suggested_case_id == case_id
             ]
         if proceeding_id:
-            ordered = [
-                b for b in ordered if b.proceeding and b.proceeding.id == proceeding_id
-            ]
+            if proceeding_id == "unassigned":
+                ordered = [b for b in ordered if not b.proceeding]
+            else:
+                pid_int = int(proceeding_id)
+                ordered = [
+                    b for b in ordered if b.proceeding and b.proceeding.id == pid_int
+                ]
         if pipeline_filter:
             ordered = [
                 b for b in ordered if _bundle_pipeline_label(b) == pipeline_filter
@@ -553,14 +557,17 @@ class TriageService:
             if cid and cid != "_TRIAGE":
                 case_ids[cid] = cid
 
-            # Proceeding options
+            # Proceeding options — key is str for URL compat; "unassigned" for no proceeding
             if b.proceeding:
                 proc = b.proceeding
-                if proc.az_court:
-                    label = f"{proc.court_name} · {proc.az_court}"
-                else:
-                    label = proc.court_name
-                proceeding_opts[proc.id] = label
+                label = (
+                    f"{proc.court_name} · {proc.az_court}"
+                    if proc.az_court
+                    else proc.court_name
+                )
+                proceeding_opts[str(proc.id)] = label
+            else:
+                proceeding_opts["unassigned"] = "Unassigned"
 
             # Pipeline options
             pipeline_labels_present.add(_bundle_pipeline_label(b))
@@ -568,8 +575,11 @@ class TriageService:
         # Build sorted case options
         case_options = sorted(case_ids.items(), key=lambda x: x[0])
 
-        # Build sorted proceeding options
-        proceeding_options = sorted(proceeding_opts.items(), key=lambda x: x[1])
+        # Build sorted proceeding options — "Unassigned" first, then alphabetical by label
+        proceeding_options = sorted(
+            proceeding_opts.items(),
+            key=lambda x: ("" if x[0] == "unassigned" else x[1]),
+        )
 
         # Build pipeline options in canonical order (only those present)
         canonical_pipeline = [

@@ -41,7 +41,7 @@ def triage_page(
     sort: str = "received",
     dir: str = "desc",
     case_id: str | None = None,
-    proceeding_id: int | None = None,
+    proceeding_id: str | None = None,
     pipeline_filter: str | None = None,
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
