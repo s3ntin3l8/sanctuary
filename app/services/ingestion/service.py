@@ -349,6 +349,7 @@ def _create_document(
     safe_filename: str,
     parent_id: int | None,
     ingest_batch_id: int | None,
+    original_filename: str | None = None,
     content: str | None = None,
     markdown_content: str | None = None,
     conversion_metadata: dict | None = None,
@@ -366,6 +367,7 @@ def _create_document(
         content=content or markdown_content,
         case_id=case_id,
         file_path=file_path,
+        original_filename=original_filename or safe_filename,
         content_hash=content_hash,
         parent_id=parent_id,
         originator_type=OriginatorType.UNKNOWN,
@@ -498,6 +500,7 @@ async def ingest_file(
                 safe_filename=safe_filename,
                 parent_id=parent_id,
                 ingest_batch_id=ingest_batch_id,
+                original_filename=file.filename,
                 content=None,
             )
             db.add(new_doc)
@@ -536,6 +539,7 @@ async def ingest_file(
             safe_filename=safe_filename,
             parent_id=parent_id,
             ingest_batch_id=ingest_batch_id,
+            original_filename=file.filename,
             markdown_content=markdown_content,
             conversion_metadata=conversion_metadata,
         )

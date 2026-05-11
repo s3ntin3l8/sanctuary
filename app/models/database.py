@@ -1,4 +1,8 @@
+import shutil
 from datetime import UTC, datetime
+from pathlib import Path
+
+from sqlalchemy import event, inspect
 
 
 def _utcnow():
@@ -81,6 +85,7 @@ class Document(Base):
         index=True,
     )
     file_path = Column(String, nullable=True)
+    original_filename = Column(String, nullable=True)
     content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex digest
     originator_type = Column(
         SAEnum(OriginatorType), default=OriginatorType.UNKNOWN, nullable=False
@@ -193,6 +198,100 @@ class Document(Base):
     @validates("case_id")
     def validate_case_id(self, key, case_id):
         return normalize_case_id(case_id)
+
+
+def generate_normalized_filename(target) -> str:
+    """Generate a normalized filename: YYYYMMDD_sanitized-title.ext"""
+    import re
+
+    # 1. Date (YYYYMMDD)
+    date_val = target.issued_date or target.ingest_date or datetime.now(UTC)
+    date_str = date_val.strftime("%Y%m%d")
+
+    # 2. Sanitized Title
+    title = target.title or "unnamed"
+    # Replace non-alphanumeric (allowing umlauts) with underscores
+    safe_title = re.sub(r"[^a-zA-Z0-9\u00C0-\u017F]+", "_", title).strip("_")
+
+    # 3. Extension
+    ext = ""
+    if target.file_path:
+        ext = Path(target.file_path).suffix
+    if not ext and target.original_filename:
+        ext = Path(target.original_filename).suffix
+
+    if not ext:
+        ext = ".pdf"
+
+    return f"{date_str}_{safe_title}{ext}"
+
+
+@event.listens_for(Document, "before_update")
+def move_document_file_on_assignment(mapper, connection, target):
+    """Physically move the document file when assigned to a case/proceeding.
+
+    Only triggers when needs_review is False (finalized).
+    """
+    from app.config import DATA_DIR
+
+    if target.needs_review or not target.file_path:
+        return
+
+    state = inspect(target)
+    h_case = state.attrs.case_id.history
+    h_proc = state.attrs.proceeding_id.history
+    h_review = state.attrs.needs_review.history
+
+    # Move if it just left triage, or if it was already out and case/proc changed.
+    moved_to_final = h_review.has_changes() and not target.needs_review
+    assignment_changed = h_case.has_changes() or h_proc.has_changes()
+
+    if not (moved_to_final or assignment_changed):
+        return
+
+    if not target.case_id or target.case_id == "_TRIAGE":
+        return
+
+    old_path = Path(target.file_path)
+    if not old_path.is_absolute():
+        old_path = DATA_DIR / old_path
+
+    if not old_path.exists():
+        return
+
+    # Calculate new directory: data/CASE_ID/AZ_COURT/
+    new_dir = DATA_DIR / target.case_id
+    if target.proceeding_id:
+        # Fetch az_court for folder name. We use connection to avoid session issues.
+        res = connection.execute(
+            _sa_text("SELECT az_court FROM proceedings WHERE id = :id"),
+            {"id": target.proceeding_id},
+        ).fetchone()
+        az_court = res[0] if res else None
+
+        if az_court:
+            # Sanitize: spaces -> _, / -> -
+            safe_az = az_court.replace(" ", "_").replace("/", "-")
+            new_dir = new_dir / safe_az
+        else:
+            new_dir = new_dir / f"proc_{target.proceeding_id}"
+
+    new_dir.mkdir(parents=True, exist_ok=True)
+    normalized_name = generate_normalized_filename(target)
+    new_path = new_dir / normalized_name
+
+    # Collision handling
+    if new_path.exists() and new_path.resolve() != old_path.resolve():
+        stem = new_path.stem
+        suffix = new_path.suffix
+        counter = 1
+        while new_path.exists():
+            new_path = new_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+
+    if new_path.resolve() != old_path.resolve():
+        shutil.move(str(old_path), str(new_path))
+        target.file_path = str(new_path.relative_to(DATA_DIR))
 
 
 class Case(Base):

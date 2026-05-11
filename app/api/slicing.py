@@ -147,6 +147,7 @@ async def slicing_confirm(
             doc = Document(
                 title=f"{pdf_path.stem} – Part {slice_idx + 1}",
                 file_path=str(slice_filename),
+                original_filename=slice_filename.name,
                 content_hash=content_hash,
                 case_id="_TRIAGE",
                 ingest_batch_id=batch.id,

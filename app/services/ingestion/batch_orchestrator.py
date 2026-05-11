@@ -172,7 +172,8 @@ def ingest_raw_email(
 
     case_dir = DATA_DIR / "_TRIAGE"
     case_dir.mkdir(parents=True, exist_ok=True)
-    # Attachment paths written here are immutable — case assignment never moves files.
+    # Attachment paths written here initially — SQLAlchemy event moves them to
+    # the case/proceeding folder once confirmed.
 
     docs_to_process = []
     has_attachments = bool(parsed["attachments"])
@@ -196,6 +197,7 @@ def ingest_raw_email(
         doc = Document(
             title=subject,
             file_path=str(body_path),
+            original_filename=f"email_body_{batch.id}.txt",
             content_hash=body_hash,
             case_id=batch.case_id or "_TRIAGE",
             proceeding_id=batch.proceeding_id,
@@ -252,6 +254,7 @@ def ingest_raw_email(
         doc = Document(
             title=att["filename"],
             file_path=str(att_path),
+            original_filename=att["filename"],
             content_hash=att_hash,
             case_id=batch.case_id or "_TRIAGE",
             proceeding_id=batch.proceeding_id,
@@ -325,6 +328,7 @@ def ingest_scanned_file(
         doc = Document(
             title=pdf_path.name,
             file_path=str(pdf_path),
+            original_filename=pdf_path.name,
             content_hash=content_hash,
             case_id="_TRIAGE",
             ingest_batch_id=batch.id,
