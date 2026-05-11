@@ -47,6 +47,8 @@
                         {% endif %}
                         <span class="font-mono">#{% if bundle.batch_id %}ib-{{ '%04d' % bundle.batch_id }}{% else %}loose-{{ bundle.documents[0].id if bundle.documents else '?' }}{% endif %}</span>
                         <span>·</span>
+                        <span class="font-mono" x-text="'#' + $store.triage.drawer.docId"></span>
+                        <span>·</span>
                         <span class="font-mono">{{ bundle.received_at.strftime('%-d %b · %H:%M') if bundle.received_at }}</span>
                     </div>
                     {% if bundle.subject %}

@@ -71,27 +71,33 @@
                    @keydown.escape.prevent="currentTitle = titleOriginal; editingTitle = false"
                    @htmx:after-request.camel="if ($event.detail.successful && currentTitle.trim()) titleOriginal = currentTitle"
                    class="w-full text-[13px] font-semibold text-on-surface bg-surface-container-lowest outline-none rounded px-1 -mx-1 ring-1 ring-primary/40 focus:ring-primary truncate placeholder:text-on-surface-variant/50">
-            <div class="text-[10.5px] flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
-                {% if doc.originator_type %}
-                <span class="capitalize">{{ doc.originator_type.value | replace('_', ' ') }}</span>
-                <span>·</span>
-                {% endif %}
-                {% if doc.role %}
-                <span>{{ doc.role.value | replace('_', ' ') }}</span>
-                <span>·</span>
-                {% endif %}
-                {% if doc.document_type %}
-                <span>{{ doc.document_type.value }}</span>
-                <span>·</span>
-                {% endif %}
-                {% if doc.received_date %}
-                <span class="font-mono">{{ doc.received_date.strftime('%Y-%m-%d') }}</span>
-                {% elif doc.ingest_date %}
-                <span class="font-mono">{{ doc.ingest_date.strftime('%Y-%m-%d') }}</span>
-                {% endif %}
-                <span>·</span>
-                <span class="font-mono">{{ doc.page_count or 0 }} pp</span>
-            </div>
+<div class="text-[10.5px] flex items-center gap-1.5 mt-0.5 text-on-surface-variant">
+                 <span class="font-mono">#{{ doc.id }}</span>
+                 <span>·</span>
+                 {% if doc.originator_type %}
+                 <span class="capitalize">{{ doc.originator_type.value | replace('_', ' ') }}</span>
+                 <span>·</span>
+                 {% endif %}
+                 {% if doc.role %}
+                 <span>{{ doc.role.value | replace('_', ' ') }}</span>
+                 <span>·</span>
+                 {% endif %}
+                 {% if doc.document_type %}
+                 <span>{{ doc.document_type.value }}</span>
+                 <span>·</span>
+                 {% endif %}
+                 {% if doc.received_date %}
+                 <span class="font-mono">{{ doc.received_date.strftime('%Y-%m-%d') }}</span>
+                 {% elif doc.ingest_date %}
+                 <span class="font-mono">{{ doc.ingest_date.strftime('%Y-%m-%d') }}</span>
+                 {% endif %}
+                 <span>·</span>
+                 <span class="font-mono">{{ doc.page_count or 0 }} pp</span>
+                 {% if doc.original_filename %}
+                 <span>·</span>
+                 <span class="truncate" title="{{ doc.original_filename }}">{{ doc.original_filename }}</span>
+                 {% endif %}
+             </div>
         </div>
         {# Open the slide-out drawer for this doc. Walks up to find the bundle
            key from the row's data-bundle-key (set on the row container).
