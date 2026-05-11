@@ -22,7 +22,7 @@
         {# Header #}
         <div class="px-6 py-4 border-b border-outline-variant/10 flex items-start justify-between gap-3">
             <div class="min-w-0">
-                <h3 class="text-sm font-black text-on-surface tracking-tight" x-text="retryConfirm.full ? 'Re-Ingest bundle' : 'Retry AI pipeline'"></h3>
+                <h3 class="text-sm font-black text-on-surface tracking-tight" x-text="retryConfirm.full ? 'Re-Ingest bundle' : 'Re-Analyze AI pipeline'"></h3>
                 <p class="text-[10px] text-on-surface-variant mt-0.5 truncate" x-text="retryConfirm.subject || '—'"></p>
             </div>
             <button type="button" @click="retryConfirm.open = false"
@@ -34,7 +34,7 @@
         {# Body #}
         <div class="px-6 py-4 space-y-3">
             <p class="text-[11.5px] text-on-surface">
-                <span x-show="!retryConfirm.full">Re-run AI analysis on</span>
+                <span x-show="!retryConfirm.full">Re-Analyze</span>
                 <span x-show="retryConfirm.full">Re-ingest</span>
                 <span class="font-bold" x-text="retryConfirm.doc_count"></span>
                 <span x-text="retryConfirm.doc_count === 1 ? 'doc' : 'docs'"></span>
@@ -78,7 +78,7 @@
             <button type="submit"
                     :disabled="!retryConfirm.batch_id || retryConfirm.submitting"
                     class="btn btn-primary btn-xs"
-                    x-text="retryConfirm.submitting ? (retryConfirm.full ? 'Ingesting…' : 'Retrying…') : (retryConfirm.full ? 'Re-Ingest →' : 'Retry →')">
+                    x-text="retryConfirm.submitting ? (retryConfirm.full ? 'Ingesting…' : 'Analyzing…') : (retryConfirm.full ? 'Re-Ingest →' : 'Re-Analyze →')">
             </button>
         </form>
     </div>

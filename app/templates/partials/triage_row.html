@@ -234,7 +234,7 @@
                         })"
                         class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error hover:bg-error/85 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
                     <span class="material-symbols-outlined text-[12px]">refresh</span>
-                    Retry
+                    Re-Analyze
                 </button>
             {% elif status != 'processing' and lead_sub and lead_sub.suggested_case_id %}
                 <button type="button"
@@ -321,7 +321,7 @@
                                 })"
                                 class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">restart_alt</span>
-                            Retry
+                            Re-Analyze
                         </button>
                         {% endif %}
                         <button type="button"
