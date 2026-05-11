@@ -229,7 +229,8 @@
                         @click.stop="$dispatch('triage:open-retry-confirm', {
                             batch_id: $el.dataset.batchId,
                             subject: $el.dataset.subject,
-                            doc_count: parseInt($el.dataset.docCount, 10) || 0
+                            doc_count: parseInt($el.dataset.docCount, 10) || 0,
+                            full: false
                         })"
                         class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error hover:bg-error/85 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
                     <span class="material-symbols-outlined text-[12px]">refresh</span>
@@ -315,13 +316,29 @@
                                 @click="open = false; $dispatch('triage:open-retry-confirm', {
                                     batch_id: $el.dataset.batchId,
                                     subject: $el.dataset.subject,
-                                    doc_count: parseInt($el.dataset.docCount, 10) || 0
+                                    doc_count: parseInt($el.dataset.docCount, 10) || 0,
+                                    full: false
                                 })"
                                 class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">restart_alt</span>
                             Retry
                         </button>
                         {% endif %}
+                        <button type="button"
+                                role="menuitem"
+                                data-batch-id="{{ bundle.batch_id or '' }}"
+                                data-subject="{{ bundle.subject or '' }}"
+                                data-doc-count="{{ bundle.doc_count }}"
+                                @click="open = false; $dispatch('triage:open-retry-confirm', {
+                                    batch_id: $el.dataset.batchId,
+                                    subject: $el.dataset.subject,
+                                    doc_count: parseInt($el.dataset.docCount, 10) || 0,
+                                    full: true
+                                })"
+                                class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
+                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant">refresh</span>
+                            Full Retry (Re-ingest)
+                        </button>
                         <button type="button"
                                 role="menuitem"
                                 hx-post="/triage/dismiss?batch_id={{ bundle.batch_id }}"

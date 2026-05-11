@@ -872,7 +872,7 @@ async def summarize_document(
 # -----------------------------------------------------------------------------
 
 
-def _retry_batch(batch, db) -> int:
+def _retry_batch(batch, db, full: bool = False) -> int:
     """Reset pipeline stages and dispatch tasks for one batch.
 
     Returns the number of documents for which tasks were dispatched, or -1 if
@@ -882,6 +882,7 @@ def _retry_batch(batch, db) -> int:
     from sqlalchemy import text as _text
 
     from app.api.documents import _dispatch_retry_task
+    from app.models.database import Case, Proceeding
     from app.models.enums import (
         DocumentRole,
         IngestBatchStatus,
@@ -913,7 +914,7 @@ def _retry_batch(batch, db) -> int:
         # Reset all non-EXTRACT stages to PENDING. We reset SKIPPED stages too
         # to ensure the cascade flows correctly (Fix for 'enrichment pending' bug).
         for stage in PipelineStage:
-            if stage == PipelineStage.EXTRACT:
+            if stage == PipelineStage.EXTRACT and not full:
                 continue
 
             record = stages.get(stage.value, {})
@@ -940,12 +941,37 @@ def _retry_batch(batch, db) -> int:
         doc.court_relay = False
         doc.attributed_originator = None
 
+        # Full retry preservation logic: clear draft assignments so extraction
+        # can re-run fresh, but keep manually confirmed ones.
+        if full:
+            # Case preservation
+            if doc.case_id and doc.case_id != "_TRIAGE":
+                c = db.query(Case).filter(Case.id == doc.case_id).first()
+                if not c or c.is_draft:
+                    doc.case_id = "_TRIAGE"
+            # Proceeding preservation
+            if doc.proceeding_id:
+                p = (
+                    db.query(Proceeding)
+                    .filter(Proceeding.id == doc.proceeding_id)
+                    .first()
+                )
+                if not p or p.is_draft:
+                    doc.proceeding_id = None
+
         db.execute(
             _text(
-                "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state "
+                "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state, "
+                "case_id = :case_id, proceeding_id = :proc_id "
                 "WHERE id = :doc_id"
             ),
-            {"stages": json.dumps(stages), "state": new_state.value, "doc_id": doc.id},
+            {
+                "stages": json.dumps(stages),
+                "state": new_state.value,
+                "case_id": doc.case_id,
+                "proc_id": doc.proceeding_id,
+                "doc_id": doc.id,
+            },
         )
 
     # Dispatch head-of-cascade only per doc, plus the parallel EMBEDDINGS branch.
@@ -957,6 +983,11 @@ def _retry_batch(batch, db) -> int:
 
         head: PipelineStage | None = None
         for spec in _STAGE_ORDER:
+            # If full retry, EXTRACT is the head.
+            if full:
+                head = PipelineStage.EXTRACT
+                break
+
             if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
                 continue
             status = stages.get(spec.stage.value, {}).get("status")
@@ -990,6 +1021,7 @@ def _retry_batch(batch, db) -> int:
 async def retry_bundle_pipeline(
     request: Request,
     batch_id: int = Form(...),
+    full: str = Form("false"),
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
@@ -1001,11 +1033,13 @@ async def retry_bundle_pipeline(
     """
     from app.models.database import IngestBatch
 
+    is_full = full.lower() == "true"
+
     batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
-    result = _retry_batch(batch, db)
+    result = _retry_batch(batch, db, full=is_full)
     if result == -1:
         raise HTTPException(
             status_code=409,
