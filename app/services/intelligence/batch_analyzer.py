@@ -465,6 +465,9 @@ def analyze(batch_id: int) -> bool:
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
+        from app.services.ai_provider import chat_provider
+
+        chat_provider.reload_from_db(db)
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
         if not batch:
             logger.warning(f"Batch {batch_id} not found for analysis")
