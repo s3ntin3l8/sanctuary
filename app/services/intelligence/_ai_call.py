@@ -136,7 +136,7 @@ def _write_block(
 
     body = (
         f"{_SECTION} payload {_SECTION}\n"
-        f"{json.dumps(payload)}\n"
+        f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n"
         f"{_SECTION} thinking {_SECTION}\n"
         f"{thinking}\n"
     )
