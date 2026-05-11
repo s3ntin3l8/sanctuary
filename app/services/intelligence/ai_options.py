@@ -6,7 +6,7 @@ _TAIL_CHARS = 2000  # chars to include from document tail in head+tail previews
 # Hybrid of the "precise coding" profile (lower temperature for structured JSON)
 # with presence_penalty=1.5 from the "general tasks" profile — the latter is the
 # primary mechanism that prevents the literal "Wait, actually..." self-correction
-# loops observed in data/ai_debug/doc_22.log (50+ repetitions, 67k thinking
+# loops observed in data/ai_debug/doc_22.md (50+ repetitions, 67k thinking
 # chars, 0 response chars). Setting temperature=0.0 with reasoning models is
 # documented to make these ruts worse, not better.
 # Source: https://huggingface.co/Qwen/Qwen3.5-9B

@@ -33,14 +33,14 @@ def migrate_ai_debug_logs():
 
     moved_count = 0
     # Search recursively because some files might have already been moved to unbatched
-    for log_file in data_dir.rglob("*.log"):
+    for log_file in list(data_dir.rglob("*.log")) + list(data_dir.rglob("*.md")):
         if not log_file.is_file():
             continue
 
         filename = log_file.name
 
         # Try to infer debug_label
-        debug_label = filename[:-4]  # strip .log
+        debug_label = filename[:-4] if filename.endswith(".log") else filename[:-3]
 
         # Determine target folder
         if filename.startswith("case_"):
