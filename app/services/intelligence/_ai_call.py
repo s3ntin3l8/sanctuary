@@ -75,7 +75,7 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
     m = _LABEL_RE.match(debug_label)
     if m:
         kind, scope_id, _ = m.groups()
-        filename = f"{kind}_{scope_id}.log"
+        filename = f"{kind}_{scope_id}.md"
         if ingest_batch_id is not None:
             folder = debug_dir / f"ib-{ingest_batch_id:04d}"
             folder.mkdir(parents=True, exist_ok=True)
@@ -87,7 +87,7 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
             folder.mkdir(parents=True, exist_ok=True)
             return folder / filename
 
-    filename = f"misc_{debug_label}.log"
+    filename = f"misc_{debug_label}.md"
     folder = debug_dir / "unbatched"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / filename
@@ -131,20 +131,34 @@ def _write_block(
     ttfb_str = f"{ttfb_ms}" if ttfb_ms is not None else "n/a"
     header += (
         f"duration_ms={duration_ms} | ttfb_ms={ttfb_str}\n"
-        f"response_len={len(response)} | thinking_len={len(thinking)} | status={status}\n"
+        f"response_len={len(response)} | thinking_len={len(thinking)} | status={status}\n\n"
     )
 
-    body = (
-        f"{_SECTION} payload {_SECTION}\n"
-        f"{json.dumps(payload, indent=2, ensure_ascii=False)}\n"
-        f"{_SECTION} thinking {_SECTION}\n"
-        f"{thinking}\n"
-    )
+    body = "## Payload\n\n"
+    payload_copy = payload.copy()
+    if "messages" in payload_copy:
+        for msg in payload_copy["messages"]:
+            role = msg.get("role", "unknown").capitalize()
+            content = msg.get("content", "")
+            body += f"### {role}\n{content}\n\n"
+        del payload_copy["messages"]
+
+    if payload_copy:
+        body += "### Other Parameters\n```json\n"
+        body += json.dumps(payload_copy, indent=2, ensure_ascii=False)
+        body += "\n```\n\n"
+
+    if thinking:
+        body += "## Thinking\n"
+        body += f"{thinking}\n\n"
+
     if error:
-        body += f"{_SECTION} error {_SECTION}\n{error}\n"
+        body += "## Error\n"
+        body += f"{error}\n\n"
     else:
-        body += f"{_SECTION} response {_SECTION}\n{response}\n"
-    body += f"{_SECTION} end {_SECTION}\n"
+        body += "## Response\n```json\n" if "```" not in response else "## Response\n"
+        body += f"{response}\n"
+        body += "```\n\n" if "```" not in response else "\n"
 
     block = header + body
 
