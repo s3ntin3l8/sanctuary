@@ -14,7 +14,7 @@ _SEPARATOR = "═" * 64
 
 
 def _prune_log_file(log_file: Path, cutoff: datetime) -> tuple[int, int]:
-    """Prune blocks older than cutoff from a single .log file.
+    """Prune blocks older than cutoff from a single .log or .md file.
 
     Returns (blocks_kept, blocks_pruned). Removes the file if all blocks pruned.
     Blocks without a parsable ts= header (legacy format) are always pruned.
@@ -143,7 +143,7 @@ def prune_ai_debug_logs_task():
             errors += 1
 
     # Prune recursive log files
-    for entry in debug_dir.rglob("*.log"):
+    for entry in list(debug_dir.rglob("*.log")) + list(debug_dir.rglob("*.md")):
         if not entry.is_file():
             continue
         try:
