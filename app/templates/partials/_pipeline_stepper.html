@@ -93,8 +93,13 @@
     {% set s_status = s.get('status', 'pending') %}
     {% set retryable = s_status not in ('running', 'retrying', 'skipped') %}
 
+    {% set is_ocr_fallback = (stage_key == 'extract' and doc.meta and doc.meta.get('ocr_fallback')) %}
+
     {# Tooltip text — combines label + status + timestamp/error + retry hint. #}
     {% set tooltip_parts = [stage_label, s_status | capitalize] %}
+    {% if is_ocr_fallback %}
+      {% set _ = tooltip_parts.append('Fallback OCR used — text quality may be lower') %}
+    {% endif %}
     {% if s_status == 'completed' and s.get('completed_at') %}
       {% set _ = tooltip_parts.append(s['completed_at'][:16].replace('T', ' ')) %}
     {% elif s_status == 'failed' and s.get('error') %}
@@ -117,7 +122,11 @@
 
     {# Dot color + icon by status. #}
     {% if s_status == 'completed' %}
-      {% set dot_class = 'bg-originator-own/15 border-originator-own text-originator-own' %}
+      {% if is_ocr_fallback %}
+        {% set dot_class = 'bg-amber-500/15 border-amber-500 text-amber-500' %}
+      {% else %}
+        {% set dot_class = 'bg-originator-own/15 border-originator-own text-originator-own' %}
+      {% endif %}
     {% elif s_status == 'failed' %}
       {% set dot_class = 'bg-error/15 border-error text-error' %}
     {% elif s_status == 'running' %}
@@ -147,7 +156,11 @@
       <span class="absolute inset-0 flex items-center justify-center transition-opacity duration-150
                    group-hover:opacity-0 group-focus-visible:opacity-0
                    group-[.htmx-request]:opacity-0">
+        {% if is_ocr_fallback and s_status == 'completed' %}
+        <span class="material-symbols-outlined text-[11px]">priority_high</span>
+        {% else %}
         <span class="material-symbols-outlined text-[11px]">{{ stage_icon }}</span>
+        {% endif %}
       </span>
       {# Retry icon — fades in on hover/focus and spins. Spin keeps going
          (just faster) while a retry request is in flight. #}
@@ -170,6 +183,8 @@
       <span class="material-symbols-outlined text-[11px] animate-spin" style="animation-duration:2.4s">refresh</span>
       {% elif s_status == 'skipped' %}
       <span class="material-symbols-outlined text-[11px]">remove</span>
+      {% elif is_ocr_fallback and s_status == 'completed' %}
+      <span class="material-symbols-outlined text-[11px]">priority_high</span>
       {% else %}
       <span class="material-symbols-outlined text-[11px]">{{ stage_icon }}</span>
       {% endif %}

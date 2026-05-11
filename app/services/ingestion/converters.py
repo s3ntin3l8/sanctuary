@@ -38,6 +38,12 @@ def _apply_glyph_fixes(text: str | None) -> str | None:
         return text
     for glyph, char in _GLYPH_MAP.items():
         text = text.replace(glyph, char)
+
+    # Bavarian court footer artifacts (commonly seen in OLG München / AG Ingolstadt docs)
+    # "Datenschutzhinweis" often breaks due to non-standard font mapping in the footer.
+    text = re.sub(r"D\s*hutzhi\s*[_:]", "Datenschutzhinweis:", text)
+    text = re.sub(r"Dat\s*hutzhi\s*12[;:]", "Datenschutzhinweis:", text)
+
     return text
 
 
@@ -199,7 +205,9 @@ def _is_image_only_output(content: str | None) -> bool:
     if not content:
         return False
     stripped = content.strip()
-    has_placeholders = bool(_PLACEHOLDER_RE.search(stripped))
+    # has_placeholders should only check for actual image markers (<!-- image -->)
+    # and not our injected page markers (--- PAGE N ---).
+    has_placeholders = bool(re.search(r"<!--[^>]*-->", stripped))
     cleaned = _PLACEHOLDER_RE.sub("", stripped)
     word_chars = len(re.sub(r"\s+", "", cleaned))
     return has_placeholders and word_chars < 30
@@ -238,7 +246,19 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     except Exception as e:
         logger.warning("Chunking failed for %s: %s", file_path, e)
 
-    markdown = _apply_glyph_fixes(result.document.export_to_markdown())
+    # Export with page break placeholders so we can inject explicit headers
+    page_break = "<!-- PAGE_BREAK -->"
+    markdown = result.document.export_to_markdown(page_break_placeholder=page_break)
+
+    # Post-process to add --- PAGE {N} --- markers. Docling doesn't support
+    # dynamic placeholders like {page_no} yet.
+    parts = markdown.split(page_break)
+    processed_parts = []
+    for i, part in enumerate(parts):
+        header = f"--- PAGE {i + 1} ---"
+        processed_parts.append(f"{header}\n\n{part.strip()}")
+
+    markdown = _apply_glyph_fixes("\n\n".join(processed_parts))
     return markdown, chunks, metadata
 
 
@@ -263,6 +283,7 @@ def _convert_in_subprocess(file_path: str) -> dict:
             file_path,
         )
         markdown, chunks, metadata = _run_conversion(_get_ocr_converter(), file_path)
+        metadata["ocr_fallback"] = True
 
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
@@ -310,7 +331,7 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
 
 
-_PLACEHOLDER_RE = re.compile(r"<!--[^>]*-->")
+_PLACEHOLDER_RE = re.compile(r"<!--[^>]*-->|--- PAGE \d+ ---")
 
 
 def is_valid_docling_output(content: str | None) -> bool:
