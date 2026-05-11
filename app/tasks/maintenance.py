@@ -129,25 +129,41 @@ def prune_ai_debug_logs_task():
     files_removed = 0
     errors = 0
 
-    for entry in debug_dir.iterdir():
+    # Prune global index
+    runs_file = debug_dir / "runs.jsonl"
+    if runs_file.is_file():
+        try:
+            k, p = _prune_jsonl(runs_file, cutoff)
+            blocks_kept += k
+            blocks_pruned += p
+            if not runs_file.exists():
+                files_removed += 1
+        except OSError as exc:
+            logger.warning("Could not prune ai_debug file %s: %s", runs_file, exc)
+            errors += 1
+
+    # Prune recursive log files
+    for entry in debug_dir.rglob("*.log"):
         if not entry.is_file():
             continue
         try:
-            if entry.name == "runs.jsonl":
-                k, p = _prune_jsonl(entry, cutoff)
-                blocks_kept += k
-                blocks_pruned += p
-                if not entry.exists():
-                    files_removed += 1
-            elif entry.suffix == ".log":
-                k, p = _prune_log_file(entry, cutoff)
-                blocks_kept += k
-                blocks_pruned += p
-                if not entry.exists():
-                    files_removed += 1
+            k, p = _prune_log_file(entry, cutoff)
+            blocks_kept += k
+            blocks_pruned += p
+            if not entry.exists():
+                files_removed += 1
         except OSError as exc:
             logger.warning("Could not prune ai_debug file %s: %s", entry, exc)
             errors += 1
+
+    # Cleanup empty directories
+    for subdir in debug_dir.iterdir():
+        if subdir.is_dir():
+            try:
+                # rmdir safely raises OSError if not empty
+                subdir.rmdir()
+            except OSError:
+                pass
 
     logger.info(
         "prune_ai_debug_logs: kept=%d pruned=%d files_removed=%d errors=%d cutoff=%s",
