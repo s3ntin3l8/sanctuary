@@ -70,13 +70,27 @@ def _parse_litellm_error_code(body: bytes) -> str | None:
         return None
 
 
-def _scope_file(debug_dir, debug_label: str):
+def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None):
     """Derive the per-scope log file path from a debug_label."""
     m = _LABEL_RE.match(debug_label)
     if m:
         kind, scope_id, _ = m.groups()
-        return debug_dir / f"{kind}_{scope_id}.log"
-    return debug_dir / f"misc_{debug_label}.log"
+        filename = f"{kind}_{scope_id}.log"
+        if ingest_batch_id is not None:
+            folder = debug_dir / f"ib-{ingest_batch_id:04d}"
+            folder.mkdir(parents=True, exist_ok=True)
+            return folder / filename
+        elif kind == "case":
+            return debug_dir / filename
+        else:
+            folder = debug_dir / "unbatched"
+            folder.mkdir(parents=True, exist_ok=True)
+            return folder / filename
+
+    filename = f"misc_{debug_label}.log"
+    folder = debug_dir / "unbatched"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / filename
 
 
 def _write_block(
@@ -230,7 +244,7 @@ def _stream_response(
     """
     debug_dir = DATA_DIR / "ai_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
-    scope_file = _scope_file(debug_dir, debug_label)
+    scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
     index_file = debug_dir / "runs.jsonl"
 
     m = _LABEL_RE.match(debug_label)
@@ -535,7 +549,7 @@ def call_json_ai(
     ptype = run_async(chat_provider.get_type())
 
     debug_dir = DATA_DIR / "ai_debug"
-    scope_file = _scope_file(debug_dir, debug_label)
+    scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
 
     # Pass 1: free-form analysis (only when two_pass=True).
     analysis = ""
