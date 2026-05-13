@@ -3,7 +3,7 @@
 
    Required context: bundle (BundleView), active_doc_id (str | None)
 #}
-{% set lead_doc_id = bundle.sub_bundles[0].lead_doc.id if bundle.sub_bundles else (bundle.documents[0].id if bundle.documents else None) %}
+{% set lead_doc_id = bundle.sub_bundles[0].lead_doc.id if (bundle.sub_bundles and bundle.sub_bundles[0].lead_doc) else (bundle.documents[0].id if bundle.documents else None) %}
 
 <div class="px-8 pb-4 pl-[68px]">
     <div class="rounded-md grid bg-surface-container-lowest/60 border border-outline-variant/30 overflow-hidden"

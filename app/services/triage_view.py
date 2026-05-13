@@ -29,20 +29,23 @@ class SubBundleView:
 
     id: str  # f"{bundle.key}-g{group_index}"
     label: str  # cover doc title or "Group A"
-    lead_doc: Document
+    lead_doc: Document | None  # None for empty groups
     docs: list[tuple[int, Document]] = field(default_factory=list)  # (depth, doc)
     suggested_case_id: str | None = None
     suggested_case_title: str | None = None
     field_confidence_case: str | None = None  # "high" | "medium" | "low" | None
+    sub_group_id: int | None = None  # DB id of BatchSubGroup; None in auto mode
 
     @property
     def doc_count(self) -> int:
         return len(self.docs)
 
 
-def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document:
-    """Cover-letter wins; else most-significant; else lowest id (stable)."""
+def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document | None:
+    """Cover-letter wins; else most-significant; else lowest id (stable). None for empty group."""
     docs = [d for _, d in group]
+    if not docs:
+        return None
     cover = next((d for d in docs if d.role == DocumentRole.COVER_LETTER), None)
     if cover:
         return cover
@@ -55,8 +58,8 @@ def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document:
     )
 
 
-def _label_for_group(lead: Document, fallback_index: int) -> str:
-    if lead.title:
+def _label_for_group(lead: Document | None, fallback_index: int) -> str:
+    if lead and lead.title:
         return lead.title
     return f"Group {chr(ord('A') + fallback_index)}"
 
@@ -103,7 +106,7 @@ def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
             and suggested_case == bundle.confirmed_case_id
         ):
             suggested_title = bundle.suggested_case_title
-        confidence = (lead.extraction_confidence or {}).get("case_id")
+        confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
         sub_bundles.append(
             SubBundleView(
                 id=f"{bundle.key}-g{idx}",

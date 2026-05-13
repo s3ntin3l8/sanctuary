@@ -343,6 +343,13 @@ def _make_mock_doc(
 
 
 @pytest.mark.unit
+def test_pick_lead_doc_empty_returns_none():
+    from app.services.triage_view import _pick_lead_doc
+
+    assert _pick_lead_doc([]) is None
+
+
+@pytest.mark.unit
 def test_pick_lead_doc_cover_letter_wins():
     cover = _make_mock_doc(id=2, role=DocumentRole.COVER_LETTER)
     other = _make_mock_doc(id=1, role=DocumentRole.STANDALONE)
