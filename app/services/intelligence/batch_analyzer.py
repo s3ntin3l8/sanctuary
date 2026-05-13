@@ -50,6 +50,9 @@ def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
             return doc
 
     if healthy_docs:
+        # Prefer short docs as cover candidates — always provide one so the AI
+        # pipeline runs. The AI decides whether the batch has a real relay letter;
+        # _apply_batch_results handles the case where it returns no cover_letter_doc_id.
         return min(healthy_docs, key=lambda d: len(d.content or ""))
 
     return None
@@ -67,11 +70,27 @@ def _call_batch_analyzer_sync(
     """Synchronous AI call for batch analysis."""
     content_preview = get_content_preview(candidate, 60000)
     sibling_sections = []
+    temporal_map = []
+    if candidate.issued_date:
+        temporal_map.append(
+            f"doc_{candidate.id}: {candidate.issued_date.strftime('%Y-%m-%d')}"
+        )
+
     for d in siblings:
         sibling_preview = get_content_preview(d, 3000)
         sibling_sections.append(f"=== (doc_id={d.id}) {d.title} ===\n{sibling_preview}")
+        if d.issued_date:
+            temporal_map.append(f"doc_{d.id}: {d.issued_date.strftime('%Y-%m-%d')}")
+
     sibling_block = "\n\n".join(sibling_sections)
+    temporal_block = ""
+    if temporal_map:
+        temporal_block = (
+            "### Batch Temporal Map (Known Dates):\n" + ", ".join(temporal_map) + "\n\n"
+        )
+
     prompt = (
+        f"{temporal_block}"
         f"Cover letter candidate (doc_id={candidate.id}):\n"
         f"Title: {candidate.title}\n\n"
         f"{content_preview}\n\n"

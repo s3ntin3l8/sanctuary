@@ -28,8 +28,8 @@
      data-mock-status="{{ status }}"
      {% if hx_swap_oob %}hx-swap-oob="true"{% endif %}
      x-effect="$el.style.display = ($store.triage.filter === 'all' || $store.triage.filter === '{{ status }}') ? '' : 'none'"
-     :class="$store.triage.expandedRowKey === '{{ bundle.key }}' ? 'border-outline-variant/0' : 'border-b border-outline-variant'"
-     class="transition-colors hover:bg-surface-container-low/50">
+     x-effect="$el.dataset.rowExpanded = ($store.triage.expandedRowKey === '{{ bundle.key }}') ? 'true' : 'false'"
+     class="transition-colors hover:bg-surface-container-low/50 border-b border-outline-variant">
 
     {# Row click target. Can't be a real <button> because it contains nested
        action buttons (Confirm/Retry/Route below) — nested <button> is invalid

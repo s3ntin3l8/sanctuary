@@ -213,6 +213,11 @@ class AIProvider:
                 "temperature": options.get("temperature", 0.1) if options else 0.1,
                 "max_tokens": options.get("max_tokens", -1) if options else -1,
             }
+            if stream:
+                # Many OpenAI-compatible gateways (LiteLLM, vLLM) require this
+                # to send the final usage chunk at the end of the stream.
+                payload["stream_options"] = {"include_usage": True}
+
             if options:
                 # Forward Qwen sampling params that LMStudio / OpenAI-compat accept.
                 for key in (
@@ -346,7 +351,21 @@ class AIProvider:
 
         if ptype == ProviderType.OLLAMA:
             try:
-                return json.loads(line)
+                data = json.loads(line)
+                result = {
+                    "response": data.get("response", ""),
+                    "thinking": data.get("thinking", ""),
+                    "done": data.get("done", False),
+                }
+                # Ollama token usage
+                if "prompt_eval_count" in data or "eval_count" in data:
+                    result["usage"] = {
+                        "prompt_tokens": data.get("prompt_eval_count", 0),
+                        "completion_tokens": data.get("eval_count", 0),
+                        "total_tokens": data.get("prompt_eval_count", 0)
+                        + data.get("eval_count", 0),
+                    }
+                return result
             except json.JSONDecodeError:
                 return None
         else:
@@ -357,9 +376,18 @@ class AIProvider:
                     return {"done": True}
                 try:
                     chunk = json.loads(data_str)
+
+                    # OpenAI-compatible token usage (usually in final chunk)
+                    usage = chunk.get("usage")
+
                     choices = chunk.get("choices", [])
                     if not choices:
-                        return {"response": "", "done": False}
+                        return {
+                            "response": "",
+                            "thinking": "",
+                            "done": False,
+                            "usage": usage,
+                        }
 
                     delta = choices[0].get("delta", {})
                     content = delta.get("content") or ""
@@ -371,6 +399,7 @@ class AIProvider:
                         "response": content,
                         "thinking": thinking,
                         "done": False,
+                        "usage": usage,
                     }
                 except json.JSONDecodeError:
                     return None

@@ -1,6 +1,8 @@
 import logging
 
 import httpx
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
 from app.models.database import Document
@@ -181,6 +183,22 @@ def analyze_batch_task(self, batch_id: int):
                     db,
                     reason="single-doc or empty batch",
                 )
+
+        # Reset ENRICH for any doc that completed it before BATCH_ANALYSIS started.
+        # The enricher uses doc.role / attributed_originator (written by BATCH_ANALYSIS)
+        # for cover-letter framing; docs enriched early got stale STANDALONE context.
+        if ran and doc_ids:
+            batch_started = _batch_analysis_started_at(doc_ids[0], db)
+            if batch_started:
+                from app.services.pipeline_status import reset_stage
+
+                for doc_id in doc_ids:
+                    if _enrich_completed_before(doc_id, batch_started, db):
+                        reset_stage(doc_id, PipelineStage.ENRICH, db)
+                        logger.info(
+                            "Doc #%d: ENRICH reset — ran before batch context was available",
+                            doc_id,
+                        )
     finally:
         db.close()
 
@@ -194,6 +212,31 @@ def analyze_batch_task(self, batch_id: int):
         _enrich_if_pending(doc_id)
 
     return {"status": "success", "batch_id": batch_id, "enqueued_docs": len(doc_ids)}
+
+
+def _batch_analysis_started_at(doc_id: int, db: Session) -> str | None:
+    """Return the BATCH_ANALYSIS started_at ISO string for doc_id, or None."""
+    row = db.execute(
+        text(
+            "SELECT json_extract(pipeline_stages, '$.batch_analysis.started_at')"
+            " FROM documents WHERE id = :doc_id"
+        ),
+        {"doc_id": doc_id},
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _enrich_completed_before(doc_id: int, cutoff_iso: str, db: Session) -> bool:
+    """Return True if this doc's ENRICH completed before cutoff_iso."""
+    row = db.execute(
+        text(
+            "SELECT json_extract(pipeline_stages, '$.enrich.completed_at')"
+            " FROM documents WHERE id = :doc_id"
+        ),
+        {"doc_id": doc_id},
+    ).fetchone()
+    completed_at = row[0] if row else None
+    return bool(completed_at and completed_at < cutoff_iso)
 
 
 def _enrich_if_pending(doc_id: int) -> None:

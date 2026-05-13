@@ -194,7 +194,7 @@ def test_two_pass_skips_analysis_block_when_pass1_truly_empty(patched_provider):
         )
 
     p2_prompt = calls[1]["user_prompt"]
-    assert p2_prompt == "ORIGINAL_PROMPT"
+    assert p2_prompt.startswith("ORIGINAL_PROMPT")
     assert "Your prior analysis" not in p2_prompt
 
 

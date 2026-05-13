@@ -181,9 +181,11 @@ def test_call_enricher_sync_includes_cover_letter_context(db_session, doc_with_c
     ):
         _call_enricher_sync(doc_with_content)
 
-    assert "Batch context: This document is a cover letter" in captured["user_prompt"]
-    assert "document_type='relay'" in captured["user_prompt"]
-    assert "significance_tier='administrative'" in captured["user_prompt"]
+    assert (
+        "Batch context: This document is flagged as a cover letter"
+        in captured["user_prompt"]
+    )
+    assert "prioritize the substantive content" in captured["user_prompt"]
 
 
 @pytest.mark.unit

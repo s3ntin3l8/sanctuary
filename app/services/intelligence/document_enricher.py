@@ -47,10 +47,12 @@ def _call_enricher_sync(
     batch_context = ""
     if doc.role == DocumentRole.COVER_LETTER:
         batch_context = (
-            "\nBatch context: This document is a cover letter (Begleitschreiben/"
-            "Schreiben) introducing other documents in this delivery. Title it "
-            "as a cover letter — NOT by the subject of the attachments. "
-            "Set document_type='relay' and significance_tier='administrative'."
+            "\nBatch context: This document is flagged as a cover letter (Begleitschreiben/"
+            "Schreiben). If it is a pure relay, title it as such. If it contains "
+            "substantive primary content (like a Motion/Antrag) that just happens "
+            "to have attachments, prioritize the substantive content for the title. "
+            "Keep document_type as 'relay' and significance_tier as 'administrative' "
+            "unless you are certain this is NOT a relay at all."
         )
     elif doc.role == DocumentRole.ENCLOSURE and doc.attributed_originator:
         batch_context = f"\nBatch context: This document was enclosed in a cover letter. True originator: {doc.attributed_originator}"

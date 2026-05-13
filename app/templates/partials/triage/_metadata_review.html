@@ -26,7 +26,7 @@
 } %}
 
 <div id="triage-metadata-{{ doc.id }}"
-     class="@container px-5 py-3 border-b border-outline-variant/20"
+     class="px-5 py-3 border-b border-outline-variant/20"
      x-data="{ state: 'confirmed' }">
 
     <div class="flex items-center justify-between mb-2">
@@ -46,11 +46,11 @@
         {% endif %}
     </div>
 
-    {# ── CONFIRMED: read-only grid — 2 cols when the surrounding pane is
-       wide enough (inline expand on a wide viewport), 1 col when narrow
-       (drawer rail, narrow window). Container query reads the pane's
-       width, not the viewport's, so both contexts respond independently. ── #}
-    <div x-show="state === 'confirmed'" x-cloak class="grid grid-cols-2 gap-1.5">
+    {# ── CONFIRMED: read-only grid — 2 cols when container ≥340px (covers
+       the drawer HUD rail on wide viewports), 1 col when narrow (300px
+       rail minimum, narrow windows). Container query reads the pane's
+       width, not the viewport's. ── #}
+    <div x-show="state === 'confirmed'" x-cloak class="grid grid-cols-1 @[340px]:grid-cols-2 gap-1.5">
         {% for label, value, level in _fields %}
         <div class="flex items-center gap-1.5 py-1 px-2 rounded bg-surface-low border-l-2 {{ _level_class.get(level, 'border-l-outline-variant') }}">
             <div class="font-headline text-[8px] uppercase tracking-widest font-semibold text-on-surface-variant w-[64px] flex-shrink-0">

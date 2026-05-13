@@ -212,15 +212,14 @@ def extract_issued_date(content: str, filename: str) -> ExtractionResult:
 
     text = content[:5000] if content else ""
 
-    date_patterns = [
+    # Specific patterns — highest priority first; broad first-date scan is last resort.
+    specific_patterns = [
         r"(?:eingegangen|eingereicht|erhalten|dated|received|received on)[\s:]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
-        r"(\d{1,2}\.\d{1,2}\.\d{2,4})",
+        r"Datum[\s:]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
         r"(?:vom|from)[\s]*(\d{1,2}\.\d{1,2}\.\d{2,4})",
     ]
 
-    for pattern in date_patterns:
-        import re
-
+    for pattern in specific_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             parsed = _parse_date_string(match.group(1))
@@ -231,9 +230,35 @@ def extract_issued_date(content: str, filename: str) -> ExtractionResult:
                 confidence = "medium"
                 break
 
+    # City+date closing line in document tail (e.g. "Ingolstadt, 07.08.2025").
+    # Searched before the broad head-scan so Ladungsschreiben return the letter
+    # date (footer) instead of the hearing date (top table).
     if not value:
-        import re
+        tail = (content or "")[-2000:]
+        city_match = re.search(
+            r"[A-ZÄÖÜ][a-zäöü]{2,},\s*(?:den\s+)?(\d{1,2}\.\d{1,2}\.\d{2,4})",
+            tail,
+        )
+        if city_match:
+            parsed = _parse_date_string(city_match.group(1))
+            if parsed:
+                if parsed.year < 100:
+                    parsed = parsed.replace(year=parsed.year + 2000)
+                value = parsed.replace(tzinfo=UTC)
+                confidence = "medium"
 
+    # Broad first-date fallback — grabs first date in document head, last resort.
+    if not value:
+        match = re.search(r"(\d{1,2}\.\d{1,2}\.\d{2,4})", text, re.IGNORECASE)
+        if match:
+            parsed = _parse_date_string(match.group(1))
+            if parsed:
+                if parsed.year < 100:
+                    parsed = parsed.replace(year=parsed.year + 2000)
+                value = parsed.replace(tzinfo=UTC)
+                confidence = "medium"
+
+    if not value:
         match = re.search(r"(\d{4})-(\d{2})-(\d{2})", filename)
         if match:
             try:
@@ -363,7 +388,9 @@ def normalize_az_court(value: str | None) -> str | None:
     "003 F 951/25"  → "3 F 951/25"
     "003F 951/25"   → "3 F 951/25"
     "22-T-342/26"   → "22 T 342/26"
-    "26 UF 288/ 26 E (ELTERL. SORGE)" → "26 UF 288/26 E"
+    "26 UF 288/ 26 E" → "26 UF 288/26 E"
+    "26 UF 288/26e" → "26 UF 288/26 E"
+    "26 UF 288/26 E (ELTERL. SORGE)" → "26 UF 288/26 E"
     "26 UF 288/26 E 003 F 951/25 AG INGOLSTADT" → None  (concatenated)
     "Funk, Haidl & Partner" → None  (not an AZ)
     "8372/25" → None  (internal ID, not an AZ)
@@ -382,6 +409,8 @@ def normalize_az_court(value: str | None) -> str | None:
     # Collapse whitespace and normalise slash
     cleaned = re.sub(r"\s+", " ", cleaned.strip())
     cleaned = re.sub(r"\s*/\s*", "/", cleaned)
+    # Re-check for digit→letter boundary after slash normalization (e.g. "26/e" -> "26/E" -> "26 E")
+    # Actually "288/26E" -> "288/26 E" is already handled by the (\d)([A-Za-z]) rule.
     result = cleaned.upper()
     # Strip leading zeros from the initial numeric segment only
     result = re.sub(r"^0+(\d)", r"\1", result)

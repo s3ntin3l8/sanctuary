@@ -59,20 +59,32 @@ class ProceedingExtraction(BaseModel):
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
-    is_court_document: bool
-    court_level: ProceedingCourtLevel | None = None
-    court_name: str | None = None
-    az_court: str | None = None
+    is_court_document: bool = Field(
+        description="True ONLY for documents issued by a court (not lawyer letters)."
+    )
+    court_level: ProceedingCourtLevel | None = Field(
+        None, description="One of: ag, lg, olg, bgh."
+    )
+    court_name: str | None = Field(
+        None, description="Actual court name (e.g. 'Amtsgericht Ingolstadt')."
+    )
+    az_court: str | None = Field(
+        None, description="Single court file number (Aktenzeichen) in standard format."
+    )
     subject_matter: str | None = None
-    appeal_deadline_days: int | None = None
+    appeal_deadline_days: int | None = Field(
+        None, description="Formal appeal deadline days if this is a ruling."
+    )
 
 
 class _Entity(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    type: _EntityType
-    name: str
-    context_quote: str | None = None
+    type: _EntityType = Field(description="The entity category (lowercase).")
+    name: str = Field(description="Canonical full official name.")
+    context_quote: str | None = Field(
+        None, description="10–30 words of surrounding text from the document."
+    )
 
 
 class EntityList(BaseModel):
@@ -238,11 +250,28 @@ class Phase1Metadata(BaseModel):
 
     model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
-    az_court: str | None = None
-    internal_id: str | None = None
-    case_title: str | None = None
-    sender: str | None = None
-    issued_date: str | None = None
-    originator: OriginatorType | None = None
+    az_court: str | None = Field(
+        None,
+        description="The official court Aktenzeichen / docket number (e.g. 12 F 100/24).",
+    )
+    internal_id: str | None = Field(
+        None, description="The lawyer's internal reference number (e.g. 1234/25)."
+    )
+    case_title: str | None = Field(
+        None,
+        description="Short title: '[Party1] ./. [Party2] - [Matter]'. Surnames only.",
+    )
+    sender: str | None = Field(
+        None, description="The organization or person who authored/sent the document."
+    )
+    issued_date: str | None = Field(
+        None, description="The date shown on the document (ISO format: YYYY-MM-DD)."
+    )
+    originator: OriginatorType | None = Field(
+        None, description="Categorize the document's author/source."
+    )
     confidence: _Phase1Confidence = Field(default_factory=_Phase1Confidence)
-    contradictions: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(
+        default_factory=list,
+        description="List of factual/procedural contradictions with case knowledge.",
+    )

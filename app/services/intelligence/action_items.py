@@ -27,6 +27,11 @@ def create_from_payload(
     Deduplicates when source_doc_id is set: deletes existing ActionItems for
     that source doc before inserting, so re-running enrichment doesn't duplicate.
 
+    Also deduplicates across documents: skips any item whose (due_date, action_type)
+    already exists for the case from another source document. This prevents the
+    letter + Verfügung pattern (German Ladungen) from producing two identical
+    court-date action items.
+
     When source_doc_date is provided, drops actions whose due_date is more than
     one day before source_doc_date — guards against the AI extracting past
     hearing dates from Sitzungsprotokolle / Terminsprotokolle as if they were
@@ -51,14 +56,29 @@ def create_from_payload(
         else None
     )
 
+    # Load existing (due_date, action_type) pairs for this case so we can skip
+    # cross-document duplicates (e.g. cover letter + Verfügung both extracting
+    # the same court date).
+    existing_keys: set[tuple] = {
+        (row.due_date.date(), row.action_type.value)
+        for row in db.query(ActionItem)
+        .filter(
+            ActionItem.case_id == case_id,
+            ActionItem.due_date.isnot(None),
+        )
+        .all()
+    }
+
     count = 0
     for action in actions:
         raw_type = (action.get("action_type") or "deadline").lower()
         if raw_type not in VALID_ACTION_TYPES:
             raw_type = "deadline"
         due_str = action.get("due_date")
+        # Truncate to YYYY-MM-DD — the batch analyzer may return full ISO
+        # datetimes like "2025-09-22T10:00:00+02:00".
         try:
-            due_date = datetime.strptime(due_str, "%Y-%m-%d") if due_str else None
+            due_date = datetime.strptime(due_str[:10], "%Y-%m-%d") if due_str else None
         except ValueError:
             due_date = None
         if not due_date:
@@ -66,6 +86,11 @@ def create_from_payload(
 
         if cutoff_date is not None and due_date.date() < cutoff_date:
             continue
+
+        key = (due_date.date(), raw_type)
+        if key in existing_keys:
+            continue
+        existing_keys.add(key)
 
         db.add(
             ActionItem(

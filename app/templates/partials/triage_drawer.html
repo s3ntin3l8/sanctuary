@@ -24,7 +24,7 @@
 
         {# Drawer panel #}
         <div class="fixed top-0 right-0 bottom-0 z-[90] flex flex-col bg-surface shadow-2xl drawer-slide-in"
-             style="width: min(1040px, 98vw); border-left: 1px solid var(--color-outline-variant);">
+             style="width: min(1200px, 98vw); border-left: 1px solid var(--color-outline-variant);">
 
             {# Top bar #}
             <div class="px-6 py-3 flex items-center gap-3 bg-surface-container-lowest"
@@ -58,15 +58,30 @@
                     {% endif %}
                 </div>
 
+                {# Action buttons: fullscreen HUD + view PDF #}
+                <div class="flex items-center gap-1">
+                    <a :href="'/document/' + $store.triage.drawer.docId"
+                       class="p-1.5 rounded text-on-surface-variant hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                       title="Open full document HUD">
+                        <span class="material-symbols-outlined text-[14px]">open_in_full</span>
+                    </a>
+                    <a :href="'/document/' + $store.triage.drawer.docId + '/original'"
+                       target="_blank"
+                       class="p-1.5 rounded text-on-surface-variant hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                       title="View original PDF">
+                        <span class="material-symbols-outlined text-[14px]">picture_as_pdf</span>
+                    </a>
+                </div>
+
                 {# Doc nav [ / ] #}
                 <div class="flex items-center gap-1 mr-2">
                     <button type="button"
                             @click="prevDoc()"
                             :disabled="!hasPrev()"
                             :class="hasPrev() ? 'text-on-surface-variant hover:bg-surface-container' : 'text-outline-variant cursor-not-allowed'"
-                            class="p-1.5 rounded border border-outline-variant/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            class="p-1.5 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                             title="Prev doc ([)">
-                        <span class="material-symbols-outlined text-[13px]">chevron_left</span>
+                        <span class="material-symbols-outlined text-[14px]">chevron_left</span>
                     </button>
                     <span class="font-mono text-[10.5px] px-1 text-on-surface-variant"
                           x-text="`doc ${idx() + 1}/${docs.length}`"></span>
@@ -74,16 +89,16 @@
                             @click="nextDoc()"
                             :disabled="!hasNext()"
                             :class="hasNext() ? 'text-on-surface-variant hover:bg-surface-container' : 'text-outline-variant cursor-not-allowed'"
-                            class="p-1.5 rounded border border-outline-variant/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            class="p-1.5 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                             title="Next doc (])">
-                        <span class="material-symbols-outlined text-[13px]">chevron_right</span>
+                        <span class="material-symbols-outlined text-[14px]">chevron_right</span>
                     </button>
                 </div>
             </div>
 
             {# Body: spine | doc body (Docling markdown) | doc HUD rail #}
             <div class="flex-1 min-h-0 grid overflow-hidden"
-                 style="grid-template-columns: 220px minmax(0, 1.2fr) minmax(340px, 0.9fr);">
+                 style="grid-template-columns: 220px minmax(0, 1.4fr) minmax(300px, 0.85fr);">
 
                 {# LEFT spine #}
                 <div class="overflow-y-auto custom-scrollbar p-3 bg-surface-container-lowest"

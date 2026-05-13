@@ -17,6 +17,7 @@ from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
+from app.services.intelligence.prompts import PASS1_USER_SUFFIX, PASS2_USER_SUFFIX
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +42,6 @@ _LOOP_STOP_SEQS = [
     "\n(Okay, ready)",
 ]
 
-_PASS1_ANALYSIS_SYSTEM_PREFIX = (
-    "You are a legal document analyst. Perform a deep, step-by-step reasoning "
-    "analysis of the provided document. "
-    "Focus on identifying key entities, legal claims, and procedural context. "
-    "Thinking in plain English or the document's language is encouraged. "
-    "Do NOT output JSON yet."
-)
 
 # Pass-1 max-tokens override. None = use whatever the stage's options dict
 # already specified (typically 6000-10000 per ai_options.STAGE_OPTIONS). The
@@ -93,6 +87,12 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
     return folder / filename
 
 
+def _shift_headers(text: str, depth: int = 4) -> str:
+    """Prepend # depth times to any lines starting with # to subordinate them."""
+    prefix = "#" * depth
+    return re.sub(r"^(#+)", prefix + r"\1", text, flags=re.MULTILINE)
+
+
 def _write_block(
     scope_file,
     *,
@@ -110,29 +110,42 @@ def _write_block(
     thinking: str,
     response: str,
     error: str | None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
 ) -> None:
     status = "error" if error else "ok"
     doc_id = int(scope_id) if kind == "doc" else None
-    batch_id = int(scope_id) if kind == "batch" else None
     case_id = scope_id if kind == "case" else None
 
-    header = (
-        f"{_SEPARATOR}\n"
-        f"call: {debug_label} | stage={stage} | ts={started_at}\n"
-        f"model={model} | provider={provider}\n"
-    )
-    if doc_id is not None:
-        header += f"doc_id={doc_id} | ingest_batch_id={ingest_batch_id}\n"
-    elif batch_id is not None:
-        header += f"batch_id={batch_id} | ingest_batch_id={ingest_batch_id}\n"
-    elif case_id is not None:
-        header += f"case_id={case_id}\n"
+    header = f"{_SEPARATOR}\n"
+    header += f"# call: {debug_label} | stage={stage} | ts={started_at}\n\n"
 
     ttfb_str = f"{ttfb_ms}" if ttfb_ms is not None else "n/a"
-    header += (
-        f"duration_ms={duration_ms} | ttfb_ms={ttfb_str}\n"
-        f"response_len={len(response)} | thinking_len={len(thinking)} | status={status}\n\n"
-    )
+    meta = [
+        f"model={model}",
+        f"provider={provider}",
+        f"duration={duration_ms}ms",
+        f"ttfb={ttfb_str}ms",
+        f"status={status}",
+    ]
+
+    # Add token usage metrics if available
+    if prompt_tokens is not None:
+        meta.append(f"prompt_tokens={prompt_tokens}")
+    if completion_tokens is not None:
+        meta.append(f"completion_tokens={completion_tokens}")
+    if reasoning_tokens is not None:
+        meta.append(f"reasoning_tokens={reasoning_tokens}")
+
+    if doc_id:
+        meta.append(f"doc_id={doc_id}")
+    if ingest_batch_id:
+        meta.append(f"ib={ingest_batch_id}")
+    if case_id:
+        meta.append(f"case_id={case_id}")
+
+    header += f"**Metadata:** {' | '.join(meta)}\n\n"
 
     body = "## Payload\n\n"
     payload_copy = payload.copy()
@@ -140,7 +153,22 @@ def _write_block(
         for msg in payload_copy["messages"]:
             role = msg.get("role", "unknown").capitalize()
             content = msg.get("content", "")
-            body += f"### {role}\n{content}\n\n"
+
+            body += f"### {role}\n"
+
+            if len(content) > 5000:
+                orig_len = len(content)
+                content = (
+                    content[:2500]
+                    + f"\n\n... [TRUNCATED {orig_len - 3500} chars] ...\n\n"
+                    + content[-1000:]
+                )
+
+            # Shift headers to subordinate them to the role (###)
+            # depth=3 ensures # becomes #### (child) and ## becomes ##### (per user request)
+            content = _shift_headers(content, depth=3)
+            body += f"{content}\n\n"
+
         del payload_copy["messages"]
 
     if payload_copy:
@@ -156,9 +184,12 @@ def _write_block(
         body += "## Error\n"
         body += f"{error}\n\n"
     else:
-        body += "## Response\n```json\n" if "```" not in response else "## Response\n"
-        body += f"{response}\n"
-        body += "```\n\n" if "```" not in response else "\n"
+        # Wrap response in code block for structure
+        body += "## Response\n"
+        if "```" not in response:
+            body += f"```json\n{response}\n```\n\n"
+        else:
+            body += f"{response}\n\n"
 
     block = header + body
 
@@ -187,6 +218,9 @@ def _append_index(
     thinking_len: int,
     status: str,
     error: str | None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    reasoning_tokens: int | None = None,
 ) -> None:
     # Each entry carries three IDs so jq filters / log greps work uniformly
     # regardless of scope kind:
@@ -225,6 +259,9 @@ def _append_index(
         "ttfb_ms": ttfb_ms,
         "response_len": response_len,
         "thinking_len": thinking_len,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "reasoning_tokens": reasoning_tokens,
         "status": status,
         "error": error,
     }
@@ -273,6 +310,7 @@ def _stream_response(
 
     full_thinking = ""
     full_response = ""
+    final_usage: dict | None = None
     stream_error: str | None = None
 
     try:
@@ -306,6 +344,9 @@ def _stream_response(
                     chunk = chat_provider.parse_stream_line(line, ptype)
                     if not chunk:
                         continue
+
+                    if chunk.get("usage"):
+                        final_usage = chunk["usage"]
 
                     if "thinking" in chunk:
                         full_thinking += chunk["thinking"]
@@ -380,6 +421,16 @@ def _stream_response(
             int((ttfb_perf - start_perf) * 1000) if ttfb_perf is not None else None
         )
 
+        prompt_tokens = None
+        completion_tokens = None
+        reasoning_tokens = None
+        if final_usage:
+            prompt_tokens = final_usage.get("prompt_tokens")
+            completion_tokens = final_usage.get("completion_tokens")
+            # OpenAI / LiteLLM specific detail field
+            details = final_usage.get("completion_tokens_details") or {}
+            reasoning_tokens = details.get("reasoning_tokens")
+
         _write_block(
             scope_file,
             debug_label=debug_label,
@@ -396,6 +447,9 @@ def _stream_response(
             thinking=full_thinking,
             response=full_response,
             error=stream_error,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            reasoning_tokens=reasoning_tokens,
         )
         _append_index(
             index_file,
@@ -413,6 +467,9 @@ def _stream_response(
             thinking_len=len(full_thinking),
             status="error" if stream_error else "ok",
             error=stream_error[:200] if stream_error else None,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            reasoning_tokens=reasoning_tokens,
         )
 
     return full_response, full_thinking
@@ -568,21 +625,8 @@ def call_json_ai(
     # Pass 1: free-form analysis (only when two_pass=True).
     analysis = ""
     if two_pass:
-        # Stage system prompts say "Return ONLY valid JSON". In pass 1 we
-        # don't want JSON — we want the model to spend its budget on
-        # reasoning, not on emitting structure that pass 2 will produce
-        # under grammar enforcement. Override at the user-prompt level
-        # (most recent instruction wins). Without this override, pass 1
-        # routinely hits the stage's max_tokens cap mid-JSON-emit, leaving
-        # pass 2 with truncated analysis context — observed empirically
-        # (claims-p1 at 119-127% of cap, entities-p1 truncating mid-string).
-        pass1_user_prompt = (
-            f"{user_prompt}\n\n"
-            f"--- Analysis pass: think through this carefully in plain "
-            f"English. Do NOT output JSON yet — the structured JSON output "
-            f"is produced in a follow-up step. Just analyze. ---"
-        )
-        pass1_system_prompt = f"{_PASS1_ANALYSIS_SYSTEM_PREFIX}\n\n{system_prompt}"
+        pass1_user_prompt = f"{user_prompt}\n\n{PASS1_USER_SUFFIX}"
+        pass1_system_prompt = system_prompt
         pass1_label = f"{debug_label}-p1"
         pass1_params = _build_params(
             system_prompt=pass1_system_prompt,
@@ -629,15 +673,14 @@ def call_json_ai(
             analysis = p1_response
 
     # Pass 2 (or single-pass): schema-constrained formatting.
-    pass2_user_prompt = (
-        (
+    if two_pass and analysis.strip():
+        pass2_user_prompt = (
             f"{user_prompt}\n\n"
             f"--- Your prior analysis ---\n{analysis.strip()}\n\n"
-            f"--- Now output ONLY the JSON matching the schema. No prose. ---"
+            f"{PASS2_USER_SUFFIX}"
         )
-        if (two_pass and analysis.strip())
-        else user_prompt
-    )
+    else:
+        pass2_user_prompt = f"{user_prompt}\n\n{PASS2_USER_SUFFIX}"
     # Pass 2 (or single-pass) suppress_thinking: in two-pass we already have
     # the model's reasoning from pass 1, so suppress thinking for the format
     # pass. In single-pass, honor the caller's flag.

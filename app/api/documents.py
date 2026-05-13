@@ -463,9 +463,16 @@ async def document_detail(
         ctx = build_hud_context(db, doc, mode=mode, context="embedded", cases=cases)
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    # Full-page navigations redirect to the canonical full-screen HUD URL.
+    # Full-page navigations: case docs redirect to the canonical URL (which
+    # renders pages/document.html). Triage docs render it directly since they
+    # have no canonical /cases/… URL yet.
     if not doc.case_id or doc.case_id == "_TRIAGE":
-        return RedirectResponse(url="/triage", status_code=302)
+        from app.helpers import render_page
+
+        ctx = build_hud_context(db, doc, mode="read")
+        ctx["context"] = "standalone"
+        ctx["case_id"] = "_TRIAGE"
+        return render_page(request, "pages/document.html", db=db, **ctx)
     return RedirectResponse(
         url=f"/cases/{doc.case_id}/document/{doc.id}", status_code=302
     )
@@ -921,6 +928,13 @@ async def document_original(
     if not resolved.exists():
         raise HTTPException(status_code=404, detail="Original file not found on disk")
 
+    if resolved.suffix.lower() == ".pdf":
+        return FileResponse(
+            path=str(resolved),
+            filename=resolved.name,
+            media_type="application/pdf",
+            content_disposition_type="inline",
+        )
     return FileResponse(
         path=str(resolved),
         filename=resolved.name,

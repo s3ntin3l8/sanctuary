@@ -1469,6 +1469,9 @@
   .max-w-\[14rem\] {
     max-width: 14rem;
   }
+  .max-w-\[16rem\] {
+    max-width: 16rem;
+  }
   .max-w-\[70\%\] {
     max-width: 70%;
   }
@@ -1778,6 +1781,9 @@
       margin-block-end: calc(calc(var(--spacing) * 8) * calc(1 - var(--tw-space-y-reverse)));
     }
   }
+  .gap-x-1\.5 {
+    column-gap: calc(var(--spacing) * 1.5);
+  }
   .gap-x-3 {
     column-gap: calc(var(--spacing) * 3);
   }
@@ -1790,6 +1796,9 @@
       margin-inline-start: calc(calc(var(--spacing) * 2) * var(--tw-space-x-reverse));
       margin-inline-end: calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-x-reverse)));
     }
+  }
+  .gap-y-0\.5 {
+    row-gap: calc(var(--spacing) * 0.5);
   }
   .gap-y-1 {
     row-gap: calc(var(--spacing) * 1);
@@ -2179,12 +2188,6 @@
   }
   .border-outline-variant {
     border-color: var(--color-outline-variant);
-  }
-  .border-outline-variant\/0 {
-    border-color: color-mix(in srgb, #a9b4b7 0%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      border-color: color-mix(in oklab, var(--color-outline-variant) 0%, transparent);
-    }
   }
   .border-outline-variant\/5 {
     border-color: color-mix(in srgb, #a9b4b7 5%, transparent);
@@ -3414,6 +3417,9 @@
   .tracking-widest {
     --tw-tracking: var(--tracking-widest);
     letter-spacing: var(--tracking-widest);
+  }
+  .text-ellipsis {
+    text-overflow: ellipsis;
   }
   .whitespace-nowrap {
     white-space: nowrap;
@@ -4865,6 +4871,11 @@
       box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
     }
   }
+  .\@\[340px\]\:grid-cols-2 {
+    @container (width >= 340px) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
   .\@\[480px\]\:col-span-2 {
     @container (width >= 480px) {
       grid-column: span 2 / span 2;
@@ -4873,6 +4884,16 @@
   .\@\[480px\]\:grid-cols-2 {
     @container (width >= 480px) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .\@\[480px\]\:flex-nowrap {
+    @container (width >= 480px) {
+      flex-wrap: nowrap;
+    }
+  }
+  .\@\[480px\]\:overflow-hidden {
+    @container (width >= 480px) {
+      overflow: hidden;
     }
   }
   .dark\:bg-amber-500\/10 {
@@ -5387,6 +5408,9 @@
 }
 [x-cloak] {
   display: none !important;
+}
+[data-row-expanded="true"] {
+  border-bottom-color: transparent;
 }
 @property --tw-translate-x {
   syntax: "*";

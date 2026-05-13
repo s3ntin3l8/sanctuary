@@ -381,3 +381,7 @@
 }
 
 [x-cloak] { display: none !important; }
+
+/* Triage row border: hide when expanded via data attribute.
+   Uses data-* (not :class) so HTMX attribute-settle cannot strip it. */
+[data-row-expanded="true"] { border-bottom-color: transparent; }

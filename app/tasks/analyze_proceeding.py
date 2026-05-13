@@ -207,12 +207,19 @@ def analyze_proceeding_task(self, doc_id: int):
                     "Batch #%d: all docs ready, batch analysis dispatched", batch_id
                 )
             else:
-                # Batch already analyzed — still ensure enrich runs for this doc.
-                # Happens when recovery re-dispatches proceeding_analysis after a
-                # crash but the batch claim was never cleared (fix for Bug B).
-                from app.tasks.analyze_batch import _enrich_if_pending
+                # claim_batch_for_analysis returns False in two cases:
+                # (a) siblings not done yet — do nothing, the last sibling will claim
+                # (b) batch already claimed — dispatch enrich now for this doc
+                # Distinguish by checking analysis_queued_at.
+                from app.models.database import IngestBatch
 
-                _enrich_if_pending(doc_id)
+                batch_row = (
+                    db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+                )
+                if batch_row and batch_row.analysis_queued_at is not None:
+                    from app.tasks.analyze_batch import _enrich_if_pending
+
+                    _enrich_if_pending(doc_id)
         finally:
             db.close()
 
