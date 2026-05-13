@@ -152,6 +152,36 @@ if (window.Alpine) {
     });
 }
 
+window.initTriageSortable = function (rootEl, batchId, bundleKey) {
+    if (typeof Sortable === 'undefined' || !rootEl) return;
+    rootEl.querySelectorAll('[data-sortable-container]').forEach(function (el) {
+        if (el._sortable) { el._sortable.destroy(); }
+        el._sortable = Sortable.create(el, {
+            group: 'subgroups-' + bundleKey,
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'ring-1 ring-primary/40 opacity-50',
+            chosenClass: 'opacity-70',
+            onEnd: function (evt) {
+                if (!batchId) return;
+                var containers = evt.from === evt.to ? [evt.from] : [evt.from, evt.to];
+                containers.forEach(function (container) {
+                    var subGroupId = container.dataset.subGroupId || '';
+                    var leadDocId = container.dataset.leadDocId || '';
+                    var docIds = Array.from(container.querySelectorAll('[data-doc-id]'))
+                        .map(function (node) { return node.dataset.docId; })
+                        .join(',');
+                    htmx.ajax('POST', '/triage/bundle/' + batchId + '/reorder', {
+                        target: '#triage-tree-' + bundleKey,
+                        swap: 'outerHTML',
+                        values: { sub_group_id: subGroupId, lead_doc_id: leadDocId, doc_ids: docIds },
+                    });
+                });
+            },
+        });
+    });
+};
+
 function slicingGrid(slicingData, batchId) {
     return {
         batchId,

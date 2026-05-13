@@ -9,45 +9,13 @@
 <div class="space-y-2"
      id="triage-tree-{{ bundle.key }}"
      x-data
-     x-init="
-         function initSortable(root) {
-             if (typeof Sortable === 'undefined') return;
-             root.querySelectorAll('[data-sortable-container]').forEach(function(el) {
-                 if (el._sortable) { el._sortable.destroy(); }
-                 el._sortable = Sortable.create(el, {
-                     group: 'subgroups-{{ bundle.key }}',
-                     animation: 150,
-                     handle: '.drag-handle',
-                     ghostClass: 'ring-1 ring-primary/40 opacity-50',
-                     chosenClass: 'opacity-70',
-                     onEnd: function(evt) {
-                         var batchId = '{{ bundle.batch_id or "" }}';
-                         var containers = evt.from === evt.to ? [evt.from] : [evt.from, evt.to];
-                         containers.forEach(function(container) {
-                             var subGroupId = container.dataset.subGroupId;
-                             var leadDocId = container.dataset.leadDocId || '';
-                             var docIds = Array.from(container.querySelectorAll('[data-doc-id]'))
-                                 .map(function(el) { return el.dataset.docId; })
-                                 .join(',');
-                             htmx.ajax('POST', '/triage/bundle/' + batchId + '/reorder', {
-                                 target: '#triage-tree-{{ bundle.key }}',
-                                 swap: 'outerHTML',
-                                 values: { sub_group_id: subGroupId, lead_doc_id: leadDocId, doc_ids: docIds }
-                             });
-                         });
-                     }
-                 });
-             });
-         }
-         initSortable($el);
-         $el.addEventListener('htmx:afterSettle', function() { initSortable($el); });
-     ">
+     x-init="window.initTriageSortable && window.initTriageSortable($el, '{{ bundle.batch_id or '' }}', '{{ bundle.key }}')">
 
     {% for sb in bundle.sub_bundles %}
     <div>
         {# Group header: label + hover-rename edit icon (Alpine hover, not CSS media-hover) #}
         <div class="flex items-center gap-1.5 mb-1 px-1"
-             x-data="{ editing: false, labelVal: {{ sb.label | tojson }}, headerHovered: false }"
+             x-data="{ editing: false, labelVal: {{ sb.label | tojson | forceescape }}, headerHovered: false }"
              @mouseenter="headerHovered = true"
              @mouseleave="headerHovered = false">
             <span class="material-symbols-outlined text-[10px] text-on-surface-variant">folder_open</span>
@@ -72,7 +40,7 @@
 
             <template x-if="editing">
                 <div class="flex items-center gap-1 flex-1 min-w-0"
-                     @keydown.escape.prevent="editing = false; labelVal = {{ sb.label | tojson }}">
+                     @keydown.escape.prevent="editing = false; labelVal = {{ sb.label | tojson | forceescape }}">
                     <input type="text"
                            name="label"
                            x-model="labelVal"
