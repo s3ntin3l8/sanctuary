@@ -29,8 +29,8 @@
                     {% if bundle.batch_id %}
                     <button type="button"
                             title="Rename group"
-                            x-show="headerHovered"
-                            class="p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                            :class="headerHovered ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+                            class="p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-opacity cursor-pointer"
                             @click.stop="editing = true; $nextTick(() => { var inp = $root.querySelector('input[name=label]'); if (inp) inp.select(); })">
                         <span class="material-symbols-outlined text-[10px]">edit</span>
                     </button>

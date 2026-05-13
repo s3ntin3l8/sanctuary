@@ -160,7 +160,7 @@ window.initTriageSortable = function (rootEl, batchId, bundleKey) {
             group: 'subgroups-' + bundleKey,
             animation: 150,
             handle: '.drag-handle',
-            ghostClass: 'ring-1 ring-primary/40 opacity-50',
+            ghostClass: 'triage-drag-ghost',
             chosenClass: 'opacity-70',
             onEnd: function (evt) {
                 if (!batchId) return;

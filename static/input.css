@@ -385,3 +385,10 @@
 /* Triage row border: hide when expanded via data attribute.
    Uses data-* (not :class) so HTMX attribute-settle cannot strip it. */
 [data-row-expanded="true"] { border-bottom-color: transparent; }
+
+/* SortableJS drop placeholder for the triage doc tree picker.
+   ghostClass must be a single CSS token, so we can't use Tailwind multi-class. */
+.triage-drag-ghost {
+    opacity: 0.5;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
