@@ -73,20 +73,27 @@ def _majority_case(docs: list[Document]) -> str | None:
 
 
 def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
-    """Aggregate `bundle.parent_groups` into `SubBundleView` rows.
+    """Aggregate bundle documents into SubBundleView rows.
 
-    Each parent-root subtree becomes one sub-bundle. The lead doc, the
-    suggested case (majority across leaves), and the lead doc's case_id
-    extraction confidence are surfaced for the metadata-review chip. When the
-    bundle has no parent_groups (rare), returns a single sub-bundle covering
-    every doc.
+    Auto mode: uses bundle.parent_groups (existing parent_id hierarchy).
+    Manual mode: activates when any doc has sub_group_id set; uses BatchSubGroup rows.
     """
+    docs_with_sg = [d for d in bundle.documents if d.sub_group_id is not None]
+    if docs_with_sg and bundle.batch_id:
+        return _build_sub_bundles_manual(bundle)
+    return _build_sub_bundles_auto(bundle)
+
+
+def _build_sub_bundles_auto(bundle) -> list[SubBundleView]:
+    """Original auto logic using parent_groups."""
     sub_bundles: list[SubBundleView] = []
     groups = bundle.parent_groups or []
     if not groups and bundle.documents:
         groups = [[(0, d) for d in bundle.documents]]
 
     for idx, group in enumerate(groups):
+        if not group:
+            continue
         lead = _pick_lead_doc(group)
         leaf_docs = [d for _, d in group]
         suggested_case = _majority_case(leaf_docs) or bundle.suggested_case_id
@@ -110,14 +117,112 @@ def build_sub_bundles(bundle) -> list[SubBundleView]:  # bundle: BundleView
         sub_bundles.append(
             SubBundleView(
                 id=f"{bundle.key}-g{idx}",
-                label=_label_for_group(lead, idx),
+                label=_label_for_group(lead, idx)
+                if lead
+                else f"Group {chr(ord('A') + idx)}",
                 lead_doc=lead,
                 docs=group,
                 suggested_case_id=suggested_case,
                 suggested_case_title=suggested_title,
                 field_confidence_case=confidence,
+                sub_group_id=None,
             )
         )
+    return sub_bundles
+
+
+def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
+    """Manual mode: group by sub_group_id, ordered by BatchSubGroup.sort_order."""
+    from collections import defaultdict
+
+    groups_by_sgid: dict[int, list] = defaultdict(list)
+    sg_meta: dict[int, object] = {}
+
+    for d in sorted(
+        bundle.documents, key=lambda x: (x.sub_group_sort_order or 0, x.id)
+    ):
+        if d.sub_group_id is not None:
+            groups_by_sgid[d.sub_group_id].append((0, d))
+            if d.sub_group and d.sub_group_id not in sg_meta:
+                sg_meta[d.sub_group_id] = d.sub_group
+
+    def sg_sort_key(sgid: int) -> int:
+        sg = sg_meta.get(sgid)
+        return sg.sort_order if sg else 0
+
+    ordered_sgids = sorted(groups_by_sgid.keys(), key=sg_sort_key)
+
+    sub_bundles: list[SubBundleView] = []
+    for idx, sgid in enumerate(ordered_sgids):
+        group = groups_by_sgid[sgid]
+        sg = sg_meta.get(sgid)
+        lead = _pick_lead_doc(group)
+        leaf_docs = [d for _, d in group]
+        suggested_case = _majority_case(leaf_docs) or bundle.suggested_case_id
+        suggested_title = (
+            bundle.suggested_case_title
+            if suggested_case == bundle.suggested_case_id
+            else None
+        )
+        if (
+            not suggested_title
+            and suggested_case
+            and suggested_case == bundle.confirmed_case_id
+        ):
+            suggested_title = bundle.suggested_case_title
+        confidence = (lead.extraction_confidence or {}).get("case_id") if lead else None
+
+        label: str
+        if sg and sg.label:
+            label = sg.label
+        elif lead:
+            label = _label_for_group(lead, idx)
+        else:
+            label = f"Group {chr(ord('A') + idx)}"
+
+        sub_bundles.append(
+            SubBundleView(
+                id=f"{bundle.key}-g{sgid}",
+                label=label,
+                lead_doc=lead,
+                docs=group,
+                suggested_case_id=suggested_case,
+                suggested_case_title=suggested_title,
+                field_confidence_case=confidence,
+                sub_group_id=sgid,
+            )
+        )
+
+    # Orphaned docs (sub_group_id=None while manual mode is active) → prepend to first group.
+    ungrouped = [(0, d) for d in bundle.documents if d.sub_group_id is None]
+    if ungrouped:
+        if sub_bundles:
+            first = sub_bundles[0]
+            sub_bundles[0] = SubBundleView(
+                id=first.id,
+                label=first.label,
+                lead_doc=first.lead_doc,
+                docs=ungrouped + first.docs,
+                suggested_case_id=first.suggested_case_id,
+                suggested_case_title=first.suggested_case_title,
+                field_confidence_case=first.field_confidence_case,
+                sub_group_id=first.sub_group_id,
+            )
+        else:
+            lead = _pick_lead_doc(ungrouped)
+            sub_bundles.append(
+                SubBundleView(
+                    id=f"{bundle.key}-g0",
+                    label=_label_for_group(lead, 0) if lead else "Group A",
+                    lead_doc=lead,
+                    docs=ungrouped,
+                    suggested_case_id=bundle.suggested_case_id,
+                    suggested_case_title=bundle.suggested_case_title,
+                    field_confidence_case=None,
+                    sub_group_id=None,
+                )
+            )
+
     return sub_bundles
 
 

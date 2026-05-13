@@ -355,3 +355,136 @@ def test_pick_lead_doc_cover_letter_wins():
     other = _make_mock_doc(id=1, role=DocumentRole.STANDALONE)
     result = _pick_lead_doc([(0, other), (0, cover)])
     assert result.id == 2
+
+
+# ---------------------------------------------------------------------------
+# build_sub_bundles — manual mode (BatchSubGroup)
+# Helpers: make_doc, make_sg, FakeBundle
+# ---------------------------------------------------------------------------
+
+
+def make_sg(id, sort_order=0, label=None):
+    """Create a minimal BatchSubGroup-like object for testing."""
+    sg = MagicMock()
+    sg.id = id
+    sg.sort_order = sort_order
+    sg.label = label
+    return sg
+
+
+def make_doc(
+    id=1,
+    role=DocumentRole.STANDALONE,
+    sub_group_id=None,
+    sub_group_sort_order=0,
+    sub_group=None,
+    case_id=None,
+    extraction_confidence=None,
+):
+    """Create a minimal Document-like mock for manual-mode tests."""
+    d = MagicMock()
+    d.id = id
+    d.title = f"Doc {id}"
+    d.role = role
+    d.significance_tier = None
+    d.sub_group_id = sub_group_id
+    d.sub_group_sort_order = sub_group_sort_order
+    d.sub_group = sub_group
+    d.parent_id = None
+    d.ingest_batch_id = 1
+    d.case_id = case_id
+    d.extraction_confidence = extraction_confidence or {}
+    return d
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class FakeBundle:
+    """Minimal BundleView-like object for manual-mode unit tests."""
+
+    batch_id: int | None
+    documents: list
+    key: str = "batch-1"
+    parent_groups: list | None = None
+    suggested_case_id: str | None = None
+    suggested_case_title: str | None = None
+    confirmed_case_id: str | None = None
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_manual_mode_groups_by_sub_group_id():
+    """Manual mode: docs grouped by sub_group_id, ordered by BatchSubGroup.sort_order."""
+    from app.services.triage_view import build_sub_bundles
+
+    sg1 = make_sg(id=1, sort_order=0)
+    sg2 = make_sg(id=2, sort_order=1)
+    docs = [
+        make_doc(id=10, sub_group_id=2, sub_group_sort_order=0, sub_group=sg2),
+        make_doc(id=11, sub_group_id=1, sub_group_sort_order=0, sub_group=sg1),
+        make_doc(id=12, sub_group_id=1, sub_group_sort_order=1, sub_group=sg1),
+    ]
+    bundle = FakeBundle(batch_id=1, documents=docs)
+    result = build_sub_bundles(bundle)
+    assert len(result) == 2
+    assert result[0].sub_group_id == 1  # sg1 sorts first (sort_order=0)
+    assert result[1].sub_group_id == 2
+    assert len(result[0].docs) == 2
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_manual_explicit_label_used():
+    from app.services.triage_view import build_sub_bundles
+
+    sg = make_sg(id=1, sort_order=0, label="My Custom Group")
+    doc = make_doc(id=10, sub_group_id=1, sub_group=sg)
+    bundle = FakeBundle(batch_id=1, documents=[doc])
+    result = build_sub_bundles(bundle)
+    assert result[0].label == "My Custom Group"
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_manual_cover_letter_is_lead():
+    from app.services.triage_view import build_sub_bundles
+
+    sg = make_sg(id=1, sort_order=0)
+    docs = [
+        make_doc(id=10, sub_group_id=1, role=DocumentRole.STANDALONE, sub_group=sg),
+        make_doc(id=11, sub_group_id=1, role=DocumentRole.COVER_LETTER, sub_group=sg),
+    ]
+    bundle = FakeBundle(batch_id=1, documents=docs)
+    result = build_sub_bundles(bundle)
+    assert result[0].lead_doc.id == 11
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_ungrouped_docs_go_to_first_group():
+    """Docs without sub_group_id when manual mode is active go into first group."""
+    from app.services.triage_view import build_sub_bundles
+
+    sg = make_sg(id=1, sort_order=0)
+    docs = [
+        make_doc(id=10, sub_group_id=1, sub_group=sg),
+        make_doc(id=11, sub_group_id=None, sub_group=None),  # orphan
+    ]
+    bundle = FakeBundle(batch_id=1, documents=docs)
+    result = build_sub_bundles(bundle)
+    assert len(result) == 1
+    doc_ids = [d.id for _, d in result[0].docs]
+    assert 11 in doc_ids
+
+
+@pytest.mark.unit
+def test_build_sub_bundles_auto_mode_no_sub_group_ids():
+    """Auto mode used when no docs have sub_group_id set."""
+    from app.services.triage_view import build_sub_bundles
+
+    docs = [make_doc(id=10, sub_group_id=None), make_doc(id=11, sub_group_id=None)]
+    bundle = FakeBundle(
+        batch_id=1,
+        documents=docs,
+        parent_groups=[[(0, docs[0])], [(0, docs[1])]],
+    )
+    result = build_sub_bundles(bundle)
+    assert len(result) == 2
