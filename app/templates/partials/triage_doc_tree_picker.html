@@ -1,27 +1,102 @@
-{# Sub-bundle / doc tree picker. Used by both the inline expand and the
-   slide-out drawer's left spine.
-
+{# Sub-bundle / doc tree picker. Used by the inline expand and drawer's left spine.
    Required context:
-     bundle      — BundleView (carries .sub_bundles)
-     active_doc_id — int | None (highlight)
-     compact     — bool (suppress the alt-case affordance + significance dots)
+     bundle      — BundleView
+     active_doc_id — int | None
+     compact     — bool (suppress significance dots)
+
+   Mutations target: #triage-tree-{{ bundle.key }} (outerHTML swap)
 #}
-<div class="space-y-2">
+<div class="space-y-2"
+     id="triage-tree-{{ bundle.key }}"
+     x-data
+     x-init="
+         function initSortable(root) {
+             if (typeof Sortable === 'undefined') return;
+             root.querySelectorAll('[data-sortable-container]').forEach(function(el) {
+                 if (el._sortable) { el._sortable.destroy(); }
+                 el._sortable = Sortable.create(el, {
+                     group: 'subgroups-{{ bundle.key }}',
+                     animation: 150,
+                     handle: '.drag-handle',
+                     ghostClass: 'ring-1 ring-primary/40 opacity-50',
+                     chosenClass: 'opacity-70',
+                     onEnd: function(evt) {
+                         var batchId = '{{ bundle.batch_id or "" }}';
+                         var containers = evt.from === evt.to ? [evt.from] : [evt.from, evt.to];
+                         containers.forEach(function(container) {
+                             var subGroupId = container.dataset.subGroupId;
+                             var docIds = Array.from(container.querySelectorAll('[data-doc-id]'))
+                                 .map(function(el) { return el.dataset.docId; })
+                                 .join(',');
+                             htmx.ajax('POST', '/triage/bundle/' + batchId + '/reorder', {
+                                 target: '#triage-tree-{{ bundle.key }}',
+                                 swap: 'outerHTML',
+                                 values: { sub_group_id: subGroupId, doc_ids: docIds }
+                             });
+                         });
+                     }
+                 });
+             });
+         }
+         initSortable($el);
+         $el.addEventListener('htmx:afterSettle', function() { initSortable($el); });
+     ">
+
     {% for sb in bundle.sub_bundles %}
     <div>
-        <div class="flex items-center gap-1.5 mb-1 px-1">
+        {# Group header: label + hover-rename edit icon #}
+        <div class="flex items-center gap-1.5 mb-1 px-1 group/header"
+             x-data="{ editing: false, labelVal: {{ sb.label | tojson }} }">
             <span class="material-symbols-outlined text-[10px] text-on-surface-variant">folder_open</span>
-            <div class="font-headline text-[9.5px] uppercase tracking-widest font-bold flex-1 truncate text-on-surface-variant"
-                 title="{{ sb.label }}">
-                {{ sb.label }}
-            </div>
+
+            <template x-if="!editing">
+                <div class="flex items-center gap-1 flex-1 min-w-0">
+                    <div class="font-headline text-[9.5px] uppercase tracking-widest font-bold flex-1 truncate text-on-surface-variant"
+                         title="{{ sb.label }}">
+                        {{ sb.label }}
+                    </div>
+                    {% if sb.sub_group_id %}
+                    <button type="button"
+                            title="Rename group"
+                            class="invisible group-hover/header:visible p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                            @click.stop="editing = true; $nextTick(() => { var inp = $root.querySelector('input[name=label]'); if (inp) inp.select(); })">
+                        <span class="material-symbols-outlined text-[10px]">edit</span>
+                    </button>
+                    {% endif %}
+                </div>
+            </template>
+
+            <template x-if="editing">
+                <div class="flex items-center gap-1 flex-1 min-w-0"
+                     @keydown.escape.prevent="editing = false; labelVal = {{ sb.label | tojson }}">
+                    <input type="text"
+                           name="label"
+                           x-model="labelVal"
+                           @blur="
+                               editing = false;
+                               htmx.ajax('POST', '/triage/bundle/{{ bundle.batch_id }}/rename-group', {
+                                   target: '#triage-tree-{{ bundle.key }}',
+                                   swap: 'outerHTML',
+                                   values: { sub_group_id: '{{ sb.sub_group_id or "" }}', label: labelVal }
+                               })"
+                           @keydown.enter.prevent="$el.blur()"
+                           class="flex-1 min-w-0 font-headline text-[9.5px] uppercase tracking-widest font-bold bg-surface-container border border-primary/60 rounded px-1 py-0.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/60"
+                           placeholder="Group name…">
+                </div>
+            </template>
+
             {% if sb.suggested_case_id %}
-            <span class="font-mono text-[9.5px] text-primary">{{ sb.suggested_case_id }}</span>
+            <span class="font-mono text-[9.5px] text-primary flex-shrink-0">{{ sb.suggested_case_id }}</span>
             {% endif %}
         </div>
-        <div class="space-y-0.5">
+
+        {# Doc list — sortable container #}
+        <div class="space-y-0.5"
+             data-sortable-container
+             data-sub-group-id="{{ sb.sub_group_id or '' }}"
+             data-batch-id="{{ bundle.batch_id or '' }}">
             {% for depth, d in sb.docs %}
-            {% set is_lead = (d.id == sb.lead_doc.id) %}
+            {% set is_cover = (d.role and d.role.value == 'cover_letter') %}
             {% set is_active = (active_doc_id and d.id|string == active_doc_id|string) %}
             <button type="button"
                     data-doc-id="{{ d.id }}"
@@ -36,20 +111,49 @@
                         ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
                         || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
                     ) ? 'bg-primary-container/60 border-primary' : 'border-transparent hover:bg-surface-container-low/50'"
-                    class="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    class="group/docrow w-full flex items-center gap-2 text-left px-2 py-1.5 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     style="padding-left: {{ 8 + depth * 12 }}px;">
-                <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-originator-{{ 'third_party' if (d.originator_type and d.originator_type.value == 'third_party') else (d.originator_type.value if d.originator_type else 'unknown') }}"></span>
-                {% if is_lead %}
-                <span class="material-symbols-outlined text-[9px] text-on-surface-variant" title="Lead document in this sub-bundle">push_pin</span>
+
+                {# Drag handle — only for real batches #}
+                {% if bundle.batch_id %}
+                <span class="drag-handle material-symbols-outlined text-[10px] text-on-surface-variant/30 group-hover/docrow:text-on-surface-variant/60 cursor-grab flex-shrink-0 select-none">
+                    drag_indicator
+                </span>
                 {% endif %}
+
+                {# Originator dot #}
+                <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-originator-{{ 'third_party' if (d.originator_type and d.originator_type.value == 'third_party') else (d.originator_type.value if d.originator_type else 'unknown') }}"></span>
+
+                {# Cover letter pin — always visible when cover, hover-only otherwise #}
+                {% if bundle.batch_id %}
+                <button type="button"
+                        title="{{ 'Cover letter' if is_cover else 'Set as cover letter' }}"
+                        class="flex-shrink-0 p-0 leading-none {{ 'text-primary' if is_cover else 'text-on-surface-variant/30 invisible group-hover/docrow:visible' }} hover:text-primary transition-colors"
+                        hx-post="/triage/bundle/{{ bundle.batch_id }}/set-cover"
+                        hx-vals='{"doc_id": "{{ d.id }}"}'
+                        hx-target="#triage-tree-{{ bundle.key }}"
+                        hx-swap="outerHTML"
+                        @click.stop>
+                    <span class="material-symbols-outlined text-[9px]">push_pin</span>
+                </button>
+                {% else %}
+                {# Synthetic bundle — static pin indicator only #}
+                {% if is_cover %}
+                <span class="material-symbols-outlined text-[9px] text-on-surface-variant flex-shrink-0" title="Cover letter">push_pin</span>
+                {% endif %}
+                {% endif %}
+
+                {# Title #}
                 <span :class="(
-                        ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
-                        || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
-                      ) ? 'text-primary font-semibold' : 'text-on-surface'"
+                          ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
+                          || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
+                        ) ? 'text-primary font-semibold' : 'text-on-surface'"
                       class="flex-1 min-w-0 truncate text-[11.5px]">
                     {{ d.title or 'Untitled doc' }}
                 </span>
-                <span class="font-mono text-[10px] text-on-surface-variant">{{ d.page_count or 0 }}pp</span>
+
+                <span class="font-mono text-[10px] text-on-surface-variant flex-shrink-0">{{ d.page_count or 0 }}pp</span>
+
                 {% if not compact and d.significance_tier %}
                 {% set sig_n = {'critical': 3, 'significant': 2, 'informational': 1, 'administrative': 0}.get(d.significance_tier.value, 0) %}
                 <span class="flex items-center gap-0.5 flex-shrink-0">
@@ -63,4 +167,18 @@
         </div>
     </div>
     {% endfor %}
+
+    {# "New Group" button — only for real batches #}
+    {% if bundle.batch_id %}
+    <div class="mt-1 px-1">
+        <button type="button"
+                class="w-full flex items-center gap-1.5 text-[10px] text-on-surface-variant/60 hover:text-on-surface-variant py-1 px-2 rounded hover:bg-surface-container-low/50 transition-colors border border-dashed border-outline-variant/30 cursor-pointer"
+                hx-post="/triage/bundle/{{ bundle.batch_id }}/new-group"
+                hx-target="#triage-tree-{{ bundle.key }}"
+                hx-swap="outerHTML">
+            <span class="material-symbols-outlined text-[11px]">add</span>
+            New group
+        </button>
+    </div>
+    {% endif %}
 </div>
