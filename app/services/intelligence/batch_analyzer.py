@@ -29,6 +29,24 @@ from app.services.intelligence.schemas import BatchAnalysis
 
 logger = logging.getLogger(__name__)
 
+
+def _has_manual_groups(batch_id: int, db) -> bool:
+    """Return True when the user has manually organized this batch into sub-groups.
+
+    When True, batch_analyzer skips all Document.role assignments to preserve
+    the user's manually-set cover letter and enclosure roles.
+    """
+    from app.models.database import BatchSubGroup
+
+    return (
+        db.query(BatchSubGroup)
+        .filter(BatchSubGroup.batch_id == batch_id)
+        .limit(1)
+        .count()
+        > 0
+    )
+
+
 COVER_LETTER_KEYWORDS = {
     "begleitschreiben",
     "anschreiben",
@@ -123,6 +141,7 @@ def _apply_batch_results(
     docs: list[Document],
     result: dict,
     db: Session,
+    skip_role_assignment: bool = False,
 ) -> None:
     """Write batch analyzer results to the DB.
 
@@ -130,6 +149,9 @@ def _apply_batch_results(
     New format: bundles = [{"cover_letter_doc_id": int|null, "enclosed": [...]}]
     Legacy format: cover_letter_doc_id, is_cover_letter, enclosed_descriptions
     """
+    if skip_role_assignment:
+        return
+
     bundles = result.get("bundles")
     detected_actions = result.get("detected_actions") or []
 
@@ -452,6 +474,20 @@ def _apply_batch_results(
                 cover.proceeding_id,
             )
 
+    # Downgrade cover letters with no enclosures to STANDALONE.
+    # Happens when the AI assigned a cover role but matched no enclosures,
+    # or a bundle-assignment error left a cover unclaimed after all wiring.
+    child_parent_ids = {d.parent_id for d in docs if d.parent_id is not None}
+    for cover in covers:
+        if cover.id not in child_parent_ids:
+            cover.role = DocumentRole.STANDALONE
+            cover.parent_id = None
+            logger.info(
+                "Batch #%d cover doc=%d has no enclosures — downgrading to STANDALONE.",
+                batch_id,
+                cover.id,
+            )
+
     # Mark unclaimed docs as STANDALONE
     for d in docs:
         if (
@@ -499,8 +535,10 @@ def analyze(batch_id: int) -> bool:
         healthy_docs = [d for d in docs if d.content and len(d.content.strip()) > 10]
 
         if not healthy_docs or len(healthy_docs) == 1:
-            for d in docs:
-                d.role = DocumentRole.STANDALONE
+            manual_groups = _has_manual_groups(batch_id, db)
+            if not manual_groups:
+                for d in docs:
+                    d.role = DocumentRole.STANDALONE
             db.commit()
             return False
 
@@ -548,11 +586,15 @@ def analyze(batch_id: int) -> bool:
         logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
         db = SessionLocal()
         try:
-            docs_err = (
-                db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
-            )
-            for d in docs_err:
-                d.role = DocumentRole.STANDALONE
+            has_manual = _has_manual_groups(batch_id, db)
+            if not has_manual:
+                docs_err = (
+                    db.query(Document)
+                    .filter(Document.ingest_batch_id == batch_id)
+                    .all()
+                )
+                for d in docs_err:
+                    d.role = DocumentRole.STANDALONE
             db.commit()
         finally:
             db.close()
@@ -564,7 +606,10 @@ def analyze(batch_id: int) -> bool:
         docs_write = (
             db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
         )
-        _apply_batch_results(batch_id, docs_write, result, db)
+        has_manual = _has_manual_groups(batch_id, db)
+        _apply_batch_results(
+            batch_id, docs_write, result, db, skip_role_assignment=has_manual
+        )
         logger.info(f"Batch {batch_id} analyzed successfully")
         return True
     finally:

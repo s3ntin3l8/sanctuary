@@ -116,3 +116,22 @@ def test_reorder_documents(db_session):
     db_session.refresh(doc_a)
     db_session.refresh(doc_b)
     assert doc_b.sub_group_sort_order < doc_a.sub_group_sort_order
+
+
+@pytest.mark.unit
+def test_has_manual_groups_returns_false_when_none(db_session):
+    from app.services.intelligence.batch_analyzer import _has_manual_groups
+
+    batch = _make_batch(db_session)
+    _make_doc(db_session, batch.id)
+    assert _has_manual_groups(batch.id, db_session) is False
+
+
+@pytest.mark.unit
+def test_has_manual_groups_returns_true_after_init(db_session):
+    from app.services.intelligence.batch_analyzer import _has_manual_groups
+
+    batch = _make_batch(db_session)
+    _make_doc(db_session, batch.id)
+    ensure_sub_groups_initialized(batch.id, db_session)
+    assert _has_manual_groups(batch.id, db_session) is True
