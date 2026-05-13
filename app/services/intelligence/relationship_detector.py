@@ -159,6 +159,7 @@ def detect(doc_id: int) -> str | None:
             doc, candidates, model=cfg.summary_model, db=db
         )
         relationships = result.get("relationships") or []
+        candidate_date_map = {c.id: c.issued_date for c in candidates}
 
         new_count = 0
         for rel in relationships:
@@ -180,6 +181,24 @@ def detect(doc_id: int) -> str | None:
             rel_type_enum = RelationshipType(rel_type_raw)
             if (to_id, rel_type_enum) in existing_set:
                 continue
+
+            # Temporal guard: a document cannot supersede or reply to something
+            # dated later than itself. Skip when either date is unknown.
+            if rel_type_enum in (
+                RelationshipType.SUPERSEDES,
+                RelationshipType.REPLIES_TO,
+            ):
+                target_date = candidate_date_map.get(to_id)
+                if doc.issued_date and target_date and doc.issued_date < target_date:
+                    logger.info(
+                        "Doc %d: dropping %s→%d — new doc (%s) predates target (%s)",
+                        doc_id,
+                        rel_type_raw,
+                        to_id,
+                        doc.issued_date.date(),
+                        target_date.date(),
+                    )
+                    continue
 
             notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
             db.add(

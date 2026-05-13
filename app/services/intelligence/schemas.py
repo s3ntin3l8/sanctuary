@@ -142,6 +142,7 @@ class _ActionItem(BaseModel):
     due_date: str | None = None
     description: str | None = None
     confidence: _ConfidenceLevel | None = None
+    supersedes_date: str | None = None
 
 
 class DocumentEnrichment(BaseModel):

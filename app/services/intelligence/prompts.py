@@ -53,7 +53,8 @@ Extract these fields:
 - Every document in this batch MUST appear at most once: as a cover letter (cover_letter_doc_id), as an enclosure under a non-null cover letter, or omitted from `bundles` entirely (which marks it standalone). Do NOT list a standalone doc inside another bundle's enclosed list.
 - A document listed as `cover_letter_doc_id` must NOT appear in its own `enclosed` list — no self-referential bundles. A cover letter's own title must not be used as a `matched_filename` within its own bundle.
 - detected_actions: list of deadlines/actions found across all bundles:
-  {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low"}
+  {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null"}
+  - When a Terminsverlegung, Umladung, or any hearing rescheduling is present in the batch, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
 
 Example response:
 {
@@ -61,7 +62,7 @@ Example response:
     {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
     {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
   ],
-  "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high"}]
+  "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high", "supersedes_date": null}]
 }"""
 
 # ---------------------------------------------------------------------------
@@ -207,9 +208,9 @@ Response shape:
 Rules:
 - Only include document IDs from the provided candidate list — never invent IDs
 - relationship_type must be exactly one of: replies_to, references, supersedes
-- replies_to: this document directly responds to the target
+- replies_to: this document directly responds to the target — only valid when the new document is dated AFTER the target; never use for a document that predates the target
 - references: this document cites or mentions the target without directly responding
-- supersedes: this document replaces or overrides the target
+- supersedes: this document replaces or overrides the target — only valid when the new document is dated AFTER the target; never use for a document that predates the target
 - Only include relationships you are confident about (skip uncertain ones)
 - Return an empty list if no clear relationships exist"""
 

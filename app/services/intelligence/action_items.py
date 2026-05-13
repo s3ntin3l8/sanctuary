@@ -87,6 +87,39 @@ def create_from_payload(
         if cutoff_date is not None and due_date.date() < cutoff_date:
             continue
 
+        # Remove any action item the AI says this date supersedes (Umladung /
+        # Terminsverlegung pattern: the old date is now void).
+        supersedes_str = action.get("supersedes_date")
+        try:
+            supersedes_date = (
+                datetime.strptime(supersedes_str[:10], "%Y-%m-%d")
+                if supersedes_str
+                else None
+            )
+        except (ValueError, TypeError):
+            supersedes_date = None
+        if supersedes_date:
+            deleted = (
+                db.query(ActionItem)
+                .filter(
+                    ActionItem.case_id == case_id,
+                    ActionItem.due_date == supersedes_date,
+                    ActionItem.action_type == ActionItemType(raw_type),
+                )
+                .delete(synchronize_session=False)
+            )
+            if deleted:
+                logger.info(
+                    "ActionItem: removed %d superseded item(s) for case=%s "
+                    "date=%s type=%s (replaced by %s)",
+                    deleted,
+                    case_id,
+                    supersedes_date.date(),
+                    raw_type,
+                    due_date.date(),
+                )
+            existing_keys.discard((supersedes_date.date(), raw_type))
+
         key = (due_date.date(), raw_type)
         if key in existing_keys:
             continue
