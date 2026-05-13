@@ -1332,6 +1332,32 @@ def triage_rename_sub_group(
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
 
+@router.post("/triage/bundle/{batch_id}/delete-group")
+def triage_delete_sub_group(
+    batch_id: int,
+    sub_group_id: str = Form(""),
+    lead_doc_id: str = Form(""),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Delete a sub-group. Docs reassign to the next remaining group, or
+    revert to auto mode if this was the only sub-group.
+
+    sub_group_id may be empty when the bundle is still in auto mode; in that
+    case lead_doc_id is used to identify the group after lazy init.
+    """
+    sub_group_id_int = int(sub_group_id) if sub_group_id.strip() else None
+    lead_doc_id_int = int(lead_doc_id) if lead_doc_id.strip() else None
+    triage_service.delete_sub_group(
+        sub_group_id=sub_group_id_int,
+        batch_id=batch_id,
+        lead_doc_id=lead_doc_id_int,
+    )
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
+
+
 @router.post("/triage/bundle/{batch_id}/reorder")
 def triage_reorder_documents(
     batch_id: int,

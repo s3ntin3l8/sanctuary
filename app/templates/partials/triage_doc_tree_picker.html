@@ -34,6 +34,21 @@
                             @click.stop="editing = true; $nextTick(() => { var inp = $root.querySelector('input[name=label]'); if (inp) inp.select(); })">
                         <span class="material-symbols-outlined text-[10px]">edit</span>
                     </button>
+                    <button type="button"
+                            title="Delete group"
+                            :class="headerHovered ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+                            class="p-0.5 rounded text-on-surface-variant/50 hover:text-error hover:bg-surface-container-high transition-opacity cursor-pointer"
+                            @click.stop="window.dispatchEvent(new CustomEvent('open-confirm', { detail: {
+                                title: 'Delete group?',
+                                message: 'Documents in this group will be moved to the next group, or revert to auto layout if this is the only group.',
+                                onConfirm: () => htmx.ajax('POST', '/triage/bundle/{{ bundle.batch_id }}/delete-group', {
+                                    target: '#triage-tree-{{ bundle.key }}',
+                                    swap: 'outerHTML',
+                                    values: { sub_group_id: '{{ sb.sub_group_id or '' }}', lead_doc_id: '{{ sb.lead_doc.id if sb.lead_doc else '' }}' }
+                                })
+                            }}))">
+                        <span class="material-symbols-outlined text-[10px]">delete</span>
+                    </button>
                     {% endif %}
                 </div>
             </template>

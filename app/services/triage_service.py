@@ -886,6 +886,58 @@ class TriageService:
 
         self.db.flush()
 
+    def delete_sub_group(
+        self,
+        sub_group_id: int | None,
+        batch_id: int,
+        lead_doc_id: int | None = None,
+    ) -> None:
+        """Delete a sub-group; reassign its docs to the next remaining sub-group.
+
+        When sub_group_id is None (auto mode), lazy-initializes BatchSubGroup rows
+        and identifies the target group via lead_doc_id. If no other sub-groups
+        remain, docs' sub_group_id falls back to NULL via the SET NULL cascade
+        and the batch reverts to auto mode.
+        """
+        groups = ensure_sub_groups_initialized(batch_id, self.db)
+
+        if sub_group_id is not None:
+            sg = next((g for g in groups if g.id == sub_group_id), None)
+        else:
+            sg = None
+            if lead_doc_id is not None:
+                doc = self.db.get(Document, lead_doc_id)
+                if doc and doc.sub_group_id:
+                    sg = next((g for g in groups if g.id == doc.sub_group_id), None)
+        if not sg:
+            raise ValueError(f"Cannot identify sub-group to delete in batch {batch_id}")
+
+        remaining = sorted(
+            (g for g in groups if g.id != sg.id), key=lambda g: g.sort_order
+        )
+        target = remaining[0] if remaining else None
+        if target is not None:
+            max_row = (
+                self.db.query(Document.sub_group_sort_order)
+                .filter(Document.sub_group_id == target.id)
+                .order_by(Document.sub_group_sort_order.desc())
+                .first()
+            )
+            next_order = (max_row[0] + 1) if max_row and max_row[0] is not None else 0
+            moved = (
+                self.db.query(Document)
+                .filter(Document.sub_group_id == sg.id)
+                .order_by(Document.sub_group_sort_order)
+                .all()
+            )
+            for offset, doc in enumerate(moved):
+                doc.sub_group_id = target.id
+                doc.sub_group_sort_order = next_order + offset
+            self.db.flush()
+
+        self.db.delete(sg)
+        self.db.flush()
+
     def get_slicing_queue(self) -> list:
         """Batches awaiting document slicing review."""
         from app.models.database import IngestBatch, IngestBatchStatus
