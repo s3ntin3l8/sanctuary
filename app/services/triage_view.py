@@ -152,6 +152,14 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
 
     ordered_sgids = sorted(groups_by_sgid.keys(), key=sg_sort_key)
 
+    # Include empty sub-groups (no docs yet, e.g. freshly created by "New Group")
+    if getattr(bundle, "sub_groups", None):
+        known_ids = set(ordered_sgids)
+        for sg in sorted(bundle.sub_groups, key=lambda s: s.sort_order):
+            if sg.id not in known_ids:
+                ordered_sgids.append(sg.id)
+                sg_meta[sg.id] = sg
+
     sub_bundles: list[SubBundleView] = []
     for idx, sgid in enumerate(ordered_sgids):
         group = groups_by_sgid[sgid]

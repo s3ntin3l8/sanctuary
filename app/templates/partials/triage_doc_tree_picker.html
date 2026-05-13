@@ -25,14 +25,14 @@
                          var containers = evt.from === evt.to ? [evt.from] : [evt.from, evt.to];
                          containers.forEach(function(container) {
                              var subGroupId = container.dataset.subGroupId;
-                             var groupSortOrder = container.dataset.groupSortOrder || '0';
+                             var leadDocId = container.dataset.leadDocId || '';
                              var docIds = Array.from(container.querySelectorAll('[data-doc-id]'))
                                  .map(function(el) { return el.dataset.docId; })
                                  .join(',');
                              htmx.ajax('POST', '/triage/bundle/' + batchId + '/reorder', {
                                  target: '#triage-tree-{{ bundle.key }}',
                                  swap: 'outerHTML',
-                                 values: { sub_group_id: subGroupId, group_sort_order: groupSortOrder, doc_ids: docIds }
+                                 values: { sub_group_id: subGroupId, lead_doc_id: leadDocId, doc_ids: docIds }
                              });
                          });
                      }
@@ -45,9 +45,11 @@
 
     {% for sb in bundle.sub_bundles %}
     <div>
-        {# Group header: label + hover-rename edit icon #}
-        <div class="flex items-center gap-1.5 mb-1 px-1 group/header"
-             x-data="{ editing: false, labelVal: {{ sb.label | tojson }} }">
+        {# Group header: label + hover-rename edit icon (Alpine hover, not CSS media-hover) #}
+        <div class="flex items-center gap-1.5 mb-1 px-1"
+             x-data="{ editing: false, labelVal: {{ sb.label | tojson }}, headerHovered: false }"
+             @mouseenter="headerHovered = true"
+             @mouseleave="headerHovered = false">
             <span class="material-symbols-outlined text-[10px] text-on-surface-variant">folder_open</span>
 
             <template x-if="!editing">
@@ -59,7 +61,8 @@
                     {% if bundle.batch_id %}
                     <button type="button"
                             title="Rename group"
-                            class="invisible group-hover/header:visible p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                            x-show="headerHovered"
+                            class="p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
                             @click.stop="editing = true; $nextTick(() => { var inp = $root.querySelector('input[name=label]'); if (inp) inp.select(); })">
                         <span class="material-symbols-outlined text-[10px]">edit</span>
                     </button>
@@ -78,7 +81,7 @@
                                htmx.ajax('POST', '/triage/bundle/{{ bundle.batch_id }}/rename-group', {
                                    target: '#triage-tree-{{ bundle.key }}',
                                    swap: 'outerHTML',
-                                   values: { sub_group_id: '{{ sb.sub_group_id or "" }}', group_sort_order: '{{ loop.index0 }}', label: labelVal }
+                                   values: { sub_group_id: '{{ sb.sub_group_id or "" }}', lead_doc_id: '{{ sb.lead_doc.id if sb.lead_doc else "" }}', label: labelVal }
                                })"
                            @keydown.enter.prevent="$el.blur()"
                            class="flex-1 min-w-0 font-headline text-[9.5px] uppercase tracking-widest font-bold bg-surface-container border border-primary/60 rounded px-1 py-0.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/60"
@@ -95,7 +98,7 @@
         <div class="space-y-0.5"
              data-sortable-container
              data-sub-group-id="{{ sb.sub_group_id or '' }}"
-             data-group-sort-order="{{ loop.index0 }}"
+             data-lead-doc-id="{{ sb.lead_doc.id if sb.lead_doc else '' }}"
              data-batch-id="{{ bundle.batch_id or '' }}">
             {% for depth, d in sb.docs %}
             {% set is_cover = (d.role and d.role.value == 'cover_letter') %}
@@ -130,7 +133,7 @@
                 {# Originator dot #}
                 <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-originator-{{ 'third_party' if (d.originator_type and d.originator_type.value == 'third_party') else (d.originator_type.value if d.originator_type else 'unknown') }}"></span>
 
-                {# Cover letter pin — always visible when cover, hover-only otherwise #}
+                {# Cover letter bookmark — always visible when cover, hover-only otherwise #}
                 {% if bundle.batch_id %}
                 <button type="button"
                         title="{{ 'Cover letter' if is_cover else 'Set as cover letter' }}"
@@ -140,12 +143,12 @@
                         hx-target="#triage-tree-{{ bundle.key }}"
                         hx-swap="outerHTML"
                         @click.stop>
-                    <span class="material-symbols-outlined text-[9px]">push_pin</span>
+                    <span class="material-symbols-outlined text-[9px]">{{ 'bookmark' if is_cover else 'bookmark_border' }}</span>
                 </button>
                 {% else %}
-                {# Synthetic bundle — static pin indicator only #}
+                {# Synthetic bundle — static bookmark indicator only #}
                 {% if is_cover %}
-                <span class="material-symbols-outlined text-[9px] text-on-surface-variant flex-shrink-0" title="Cover letter">push_pin</span>
+                <span class="material-symbols-outlined text-[9px] text-on-surface-variant flex-shrink-0" title="Cover letter">bookmark</span>
                 {% endif %}
                 {% endif %}
 

@@ -80,6 +80,7 @@ class BundleView:
     proof_doc_ids: set = field(default_factory=set)
     documents: list[Document] = field(default_factory=list)
     action_items: list = field(default_factory=list)
+    sub_groups: list = field(default_factory=list)  # BatchSubGroup ORM rows
 
     @property
     def doc_count(self) -> int:
@@ -383,6 +384,9 @@ class TriageService:
                 contains_eager(Document.ingest_batch).joinedload(
                     IngestBatch.proceeding
                 ),
+                contains_eager(Document.ingest_batch).joinedload(
+                    IngestBatch.sub_groups
+                ),
                 joinedload(Document.proceeding),
                 joinedload(Document.sub_group),
             )
@@ -431,6 +435,7 @@ class TriageService:
                         received_at=batch.received_at,
                         confirmed_case_id=confirmed,
                         proceeding=batch.proceeding,
+                        sub_groups=list(batch.sub_groups or []),
                     )
                 bundles[key].documents.append(doc)
                 # Populate suggested_case_id from AI-extracted doc case_ids not yet cascaded
@@ -788,12 +793,12 @@ class TriageService:
         sub_group_id: int | None,
         batch_id: int,
         label: str,
-        group_sort_order: int = 0,
+        lead_doc_id: int | None = None,
     ) -> BatchSubGroup:
         """Set explicit label on a sub-group. Empty string clears to auto-derived.
 
         When sub_group_id is None (auto mode), lazy-initializes BatchSubGroup rows
-        and identifies the target group by group_sort_order.
+        and identifies the target group via lead_doc_id.
         """
         if sub_group_id is not None:
             sg = (
@@ -808,12 +813,21 @@ class TriageService:
                     f"SubGroup {sub_group_id} not found in batch {batch_id}"
                 )
         else:
-            groups = ensure_sub_groups_initialized(batch_id, self.db)
-            sg = next((g for g in groups if g.sort_order == group_sort_order), None)
-            if not sg and groups:
-                sg = groups[0]
+            ensure_sub_groups_initialized(batch_id, self.db)
+            sg = None
+            if lead_doc_id is not None:
+                doc = self.db.get(Document, lead_doc_id)
+                if doc and doc.sub_group_id:
+                    sg = (
+                        self.db.query(BatchSubGroup)
+                        .filter(
+                            BatchSubGroup.id == doc.sub_group_id,
+                            BatchSubGroup.batch_id == batch_id,
+                        )
+                        .first()
+                    )
             if not sg:
-                raise ValueError(f"No sub-groups in batch {batch_id}")
+                raise ValueError(f"Cannot identify sub-group in batch {batch_id}")
         sg.label = label.strip() or None
         self.db.flush()
         return sg
@@ -823,14 +837,14 @@ class TriageService:
         batch_id: int,
         ordered_doc_ids: list[int],
         target_sub_group_id: int | None,
-        group_sort_order: int = 0,
+        lead_doc_id: int | None = None,
     ) -> None:
         """Assign docs to target_sub_group_id with sequential sub_group_sort_order.
 
         Called once per sub-group after drag-drop completes. The frontend sends
         each sub-group's current doc order as a separate POST.
         When target_sub_group_id is None (auto mode), lazy-initializes BatchSubGroup
-        rows and identifies the target by group_sort_order.
+        rows and identifies the target via lead_doc_id.
         """
         groups = ensure_sub_groups_initialized(batch_id, self.db)
 
@@ -841,12 +855,14 @@ class TriageService:
                     f"SubGroup {target_sub_group_id} not in batch {batch_id}"
                 )
         else:
-            sg = next((g for g in groups if g.sort_order == group_sort_order), None)
-            if not sg and groups:
-                sg = groups[0]
-            if not sg:
+            if lead_doc_id is not None:
+                doc = self.db.get(Document, lead_doc_id)
+                if doc and doc.sub_group_id:
+                    target_sub_group_id = doc.sub_group_id
+            if target_sub_group_id is None:
+                target_sub_group_id = groups[0].id if groups else None
+            if not target_sub_group_id:
                 raise ValueError(f"No sub-groups in batch {batch_id}")
-            target_sub_group_id = sg.id
 
         for order, doc_id in enumerate(ordered_doc_ids):
             self.db.query(Document).filter(
@@ -875,7 +891,10 @@ class TriageService:
 
         batch = (
             self.db.query(IngestBatch)
-            .options(joinedload(IngestBatch.proceeding))
+            .options(
+                joinedload(IngestBatch.proceeding),
+                joinedload(IngestBatch.sub_groups),
+            )
             .filter(IngestBatch.id == batch_id)
             .first()
         )
@@ -906,6 +925,7 @@ class TriageService:
             confirmed_case_id=confirmed,
             proceeding=batch.proceeding,
             documents=docs,
+            sub_groups=list(batch.sub_groups or []),
         )
         for doc in docs:
             if (
