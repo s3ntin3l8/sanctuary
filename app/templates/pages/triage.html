@@ -2,6 +2,10 @@
 
 {% block title %}Triage | The Sanctuary{% endblock %}
 
+{% block scripts %}
+<script src="/static/vendor/sortable.min.js"></script>
+{% endblock %}
+
 {% block content %}
 {% set first_bundle_doc = bundles[0].documents[0] if bundles and bundles[0].documents else None %}
 
