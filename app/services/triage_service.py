@@ -281,6 +281,18 @@ def ensure_sub_groups_initialized(batch_id: int, db: Session) -> list[BatchSubGr
     if not roots:
         roots = list(docs)
 
+    # Flat bundle: all docs are roots with no children → collapse into one group.
+    # Creating one group per doc produces a confusing N-group UI with no useful structure.
+    if len(roots) == len(docs):
+        sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=0)
+        db.add(sg)
+        db.flush()
+        for order, doc in enumerate(roots):
+            doc.sub_group_id = sg.id
+            doc.sub_group_sort_order = order
+        db.flush()
+        return [sg]
+
     sub_groups: list[BatchSubGroup] = []
     for group_idx, root in enumerate(roots):
         sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=group_idx)
