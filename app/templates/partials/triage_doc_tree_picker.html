@@ -25,13 +25,14 @@
                          var containers = evt.from === evt.to ? [evt.from] : [evt.from, evt.to];
                          containers.forEach(function(container) {
                              var subGroupId = container.dataset.subGroupId;
+                             var groupSortOrder = container.dataset.groupSortOrder || '0';
                              var docIds = Array.from(container.querySelectorAll('[data-doc-id]'))
                                  .map(function(el) { return el.dataset.docId; })
                                  .join(',');
                              htmx.ajax('POST', '/triage/bundle/' + batchId + '/reorder', {
                                  target: '#triage-tree-{{ bundle.key }}',
                                  swap: 'outerHTML',
-                                 values: { sub_group_id: subGroupId, doc_ids: docIds }
+                                 values: { sub_group_id: subGroupId, group_sort_order: groupSortOrder, doc_ids: docIds }
                              });
                          });
                      }
@@ -55,7 +56,7 @@
                          title="{{ sb.label }}">
                         {{ sb.label }}
                     </div>
-                    {% if sb.sub_group_id %}
+                    {% if bundle.batch_id %}
                     <button type="button"
                             title="Rename group"
                             class="invisible group-hover/header:visible p-0.5 rounded text-on-surface-variant/50 hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
@@ -77,7 +78,7 @@
                                htmx.ajax('POST', '/triage/bundle/{{ bundle.batch_id }}/rename-group', {
                                    target: '#triage-tree-{{ bundle.key }}',
                                    swap: 'outerHTML',
-                                   values: { sub_group_id: '{{ sb.sub_group_id or "" }}', label: labelVal }
+                                   values: { sub_group_id: '{{ sb.sub_group_id or "" }}', group_sort_order: '{{ loop.index0 }}', label: labelVal }
                                })"
                            @keydown.enter.prevent="$el.blur()"
                            class="flex-1 min-w-0 font-headline text-[9.5px] uppercase tracking-widest font-bold bg-surface-container border border-primary/60 rounded px-1 py-0.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/60"
@@ -94,25 +95,30 @@
         <div class="space-y-0.5"
              data-sortable-container
              data-sub-group-id="{{ sb.sub_group_id or '' }}"
+             data-group-sort-order="{{ loop.index0 }}"
              data-batch-id="{{ bundle.batch_id or '' }}">
             {% for depth, d in sb.docs %}
             {% set is_cover = (d.role and d.role.value == 'cover_letter') %}
             {% set is_active = (active_doc_id and d.id|string == active_doc_id|string) %}
-            <button type="button"
-                    data-doc-id="{{ d.id }}"
-                    @click.stop="
-                        if ($store.triage.drawerOpen && $store.triage.drawer.rowKey === '{{ bundle.key }}') {
-                            $store.triage.drawer = { ...$store.triage.drawer, docId: '{{ d.id }}' };
-                        } else {
-                            $store.triage.expandedActiveDocId = '{{ d.id }}';
-                            htmx.ajax('GET', '/triage/doc/{{ d.id }}/hud', {target: '#triage-row-expanded-body-{{ bundle.key }}', swap: 'innerHTML'});
-                        }"
-                    :class="(
-                        ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
-                        || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
-                    ) ? 'bg-primary-container/60 border-primary' : 'border-transparent hover:bg-surface-container-low/50'"
-                    class="group/docrow w-full flex items-center gap-2 text-left px-2 py-1.5 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                    style="padding-left: {{ 8 + depth * 12 }}px;">
+            {# div instead of button: nested <button> (pin) inside <button> is invalid HTML
+               and causes browsers to break the flex row, making the title wrap. #}
+            <div role="button"
+                 tabindex="0"
+                 data-doc-id="{{ d.id }}"
+                 @click.stop="
+                     if ($store.triage.drawerOpen && $store.triage.drawer.rowKey === '{{ bundle.key }}') {
+                         $store.triage.drawer = { ...$store.triage.drawer, docId: '{{ d.id }}' };
+                     } else {
+                         $store.triage.expandedActiveDocId = '{{ d.id }}';
+                         htmx.ajax('GET', '/triage/doc/{{ d.id }}/hud', {target: '#triage-row-expanded-body-{{ bundle.key }}', swap: 'innerHTML'});
+                     }"
+                 @keydown.enter.stop="$el.click()"
+                 :class="(
+                     ($store.triage.drawerOpen && $store.triage.drawer.docId === '{{ d.id }}')
+                     || (!$store.triage.drawerOpen && $store.triage.expandedActiveDocId === '{{ d.id }}')
+                 ) ? 'bg-primary-container/60 border-primary' : 'border-transparent hover:bg-surface-container-low/50'"
+                 class="group/docrow w-full flex items-center gap-2 text-left px-2 py-1.5 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+                 style="padding-left: {{ 8 + depth * 12 }}px;">
 
                 {# Drag handle — only for real batches #}
                 {% if bundle.batch_id %}
@@ -162,7 +168,7 @@
                     {% endfor %}
                 </span>
                 {% endif %}
-            </button>
+            </div>
             {% endfor %}
         </div>
     </div>

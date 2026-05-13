@@ -784,18 +784,36 @@ class TriageService:
         return sg
 
     def rename_sub_group(
-        self, sub_group_id: int, batch_id: int, label: str
+        self,
+        sub_group_id: int | None,
+        batch_id: int,
+        label: str,
+        group_sort_order: int = 0,
     ) -> BatchSubGroup:
-        """Set explicit label on a sub-group. Empty string clears to auto-derived."""
-        sg = (
-            self.db.query(BatchSubGroup)
-            .filter(
-                BatchSubGroup.id == sub_group_id, BatchSubGroup.batch_id == batch_id
+        """Set explicit label on a sub-group. Empty string clears to auto-derived.
+
+        When sub_group_id is None (auto mode), lazy-initializes BatchSubGroup rows
+        and identifies the target group by group_sort_order.
+        """
+        if sub_group_id is not None:
+            sg = (
+                self.db.query(BatchSubGroup)
+                .filter(
+                    BatchSubGroup.id == sub_group_id, BatchSubGroup.batch_id == batch_id
+                )
+                .first()
             )
-            .first()
-        )
-        if not sg:
-            raise ValueError(f"SubGroup {sub_group_id} not found in batch {batch_id}")
+            if not sg:
+                raise ValueError(
+                    f"SubGroup {sub_group_id} not found in batch {batch_id}"
+                )
+        else:
+            groups = ensure_sub_groups_initialized(batch_id, self.db)
+            sg = next((g for g in groups if g.sort_order == group_sort_order), None)
+            if not sg and groups:
+                sg = groups[0]
+            if not sg:
+                raise ValueError(f"No sub-groups in batch {batch_id}")
         sg.label = label.strip() or None
         self.db.flush()
         return sg
@@ -804,25 +822,31 @@ class TriageService:
         self,
         batch_id: int,
         ordered_doc_ids: list[int],
-        target_sub_group_id: int,
+        target_sub_group_id: int | None,
+        group_sort_order: int = 0,
     ) -> None:
         """Assign docs to target_sub_group_id with sequential sub_group_sort_order.
 
         Called once per sub-group after drag-drop completes. The frontend sends
         each sub-group's current doc order as a separate POST.
+        When target_sub_group_id is None (auto mode), lazy-initializes BatchSubGroup
+        rows and identifies the target by group_sort_order.
         """
-        ensure_sub_groups_initialized(batch_id, self.db)
+        groups = ensure_sub_groups_initialized(batch_id, self.db)
 
-        sg = (
-            self.db.query(BatchSubGroup)
-            .filter(
-                BatchSubGroup.id == target_sub_group_id,
-                BatchSubGroup.batch_id == batch_id,
-            )
-            .first()
-        )
-        if not sg:
-            raise ValueError(f"SubGroup {target_sub_group_id} not in batch {batch_id}")
+        if target_sub_group_id is not None:
+            sg = next((g for g in groups if g.id == target_sub_group_id), None)
+            if not sg:
+                raise ValueError(
+                    f"SubGroup {target_sub_group_id} not in batch {batch_id}"
+                )
+        else:
+            sg = next((g for g in groups if g.sort_order == group_sort_order), None)
+            if not sg and groups:
+                sg = groups[0]
+            if not sg:
+                raise ValueError(f"No sub-groups in batch {batch_id}")
+            target_sub_group_id = sg.id
 
         for order, doc_id in enumerate(ordered_doc_ids):
             self.db.query(Document).filter(

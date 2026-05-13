@@ -1308,15 +1308,24 @@ def triage_create_sub_group(
 @router.post("/triage/bundle/{batch_id}/rename-group")
 def triage_rename_sub_group(
     batch_id: int,
-    sub_group_id: int = Form(...),
-    label: str = Form(...),
+    sub_group_id: str = Form(""),
+    group_sort_order: int = Form(0),
+    label: str = Form(""),
     request: Request = None,
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
-    """Rename a sub-group label. Empty label clears to auto-derived."""
+    """Rename a sub-group label. Empty label clears to auto-derived.
+
+    sub_group_id may be empty when the bundle is still in auto mode; in that
+    case group_sort_order is used to identify the group after lazy init.
+    """
+    sub_group_id_int = int(sub_group_id) if sub_group_id.strip() else None
     triage_service.rename_sub_group(
-        sub_group_id=sub_group_id, batch_id=batch_id, label=label
+        sub_group_id=sub_group_id_int,
+        batch_id=batch_id,
+        label=label,
+        group_sort_order=group_sort_order,
     )
     db.commit()
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
@@ -1325,7 +1334,8 @@ def triage_rename_sub_group(
 @router.post("/triage/bundle/{batch_id}/reorder")
 def triage_reorder_documents(
     batch_id: int,
-    sub_group_id: int = Form(...),
+    sub_group_id: str = Form(""),
+    group_sort_order: int = Form(0),
     doc_ids: str = Form(...),
     request: Request = None,
     db: Session = Depends(get_db),
@@ -1335,12 +1345,16 @@ def triage_reorder_documents(
 
     Frontend sends one POST per affected sub-group with its full ordered doc list.
     doc_ids is a comma-separated string of integer doc ids.
+    sub_group_id may be empty when the bundle is still in auto mode; in that
+    case group_sort_order is used to identify the group after lazy init.
     """
+    sub_group_id_int = int(sub_group_id) if sub_group_id.strip() else None
     ordered_ids = [int(x) for x in doc_ids.split(",") if x.strip()]
     triage_service.reorder_documents(
         batch_id=batch_id,
         ordered_doc_ids=ordered_ids,
-        target_sub_group_id=sub_group_id,
+        target_sub_group_id=sub_group_id_int,
+        group_sort_order=group_sort_order,
     )
     db.commit()
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
