@@ -1,6 +1,7 @@
 """Unit tests for triage_view — sub-bundle aggregation, mock_status, stats."""
 
 from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,6 +19,7 @@ from app.services.triage_view import (
     STATUS_NEEDS_REVIEW,
     STATUS_PROCESSING,
     STATUS_STUCK,
+    _pick_lead_doc,
     build_sub_bundles,
     mock_status,
     stats_for_chips,
@@ -306,3 +308,43 @@ def test_stats_for_chips_empty_returns_zeros():
         "needs_classification": 0,
         "needs_review": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# _pick_lead_doc
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_doc(
+    id=1,
+    title="Doc",
+    role=DocumentRole.STANDALONE,
+    significance_tier=None,
+    sub_group_id=None,
+    sub_group_sort_order=0,
+    sub_group=None,
+    parent_id=None,
+    ingest_batch_id=1,
+    case_id=None,
+):
+    d = MagicMock()
+    d.id = id
+    d.title = title
+    d.role = role
+    d.significance_tier = significance_tier
+    d.sub_group_id = sub_group_id
+    d.sub_group_sort_order = sub_group_sort_order
+    d.sub_group = sub_group
+    d.parent_id = parent_id
+    d.ingest_batch_id = ingest_batch_id
+    d.case_id = case_id
+    d.extraction_confidence = {}
+    return d
+
+
+@pytest.mark.unit
+def test_pick_lead_doc_cover_letter_wins():
+    cover = _make_mock_doc(id=2, role=DocumentRole.COVER_LETTER)
+    other = _make_mock_doc(id=1, role=DocumentRole.STANDALONE)
+    result = _pick_lead_doc([(0, other), (0, cover)])
+    assert result.id == 2

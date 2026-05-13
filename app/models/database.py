@@ -73,6 +73,7 @@ class Document(Base):
         Index("ix_documents_ingest_batch", "ingest_batch_id"),
         Index("ix_documents_significance", "significance_tier"),
         Index("ix_documents_pipeline_state", "pipeline_state"),
+        Index("ix_documents_sub_group", "sub_group_id"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -156,6 +157,13 @@ class Document(Base):
 
     # Self-referential relationship for 'Russian Doll' nesting
     parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+    sub_group_id = Column(
+        Integer,
+        ForeignKey("batch_sub_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sub_group_sort_order = Column(Integer, nullable=True, default=0)
 
     # Phase 1: bundle / proceeding grouping
     ingest_batch_id = Column(
@@ -183,6 +191,7 @@ class Document(Base):
         "Document", back_populates="parent", cascade="all, delete-orphan"
     )
     parent = relationship("Document", back_populates="children", remote_side=[id])
+    sub_group = relationship("BatchSubGroup", back_populates="documents")
     ingest_batch = relationship("IngestBatch", back_populates="documents")
     proceeding = relationship("Proceeding", back_populates="documents")
     pins = relationship(
@@ -405,6 +414,12 @@ class IngestBatch(Base):
     case = relationship("Case")
     proceeding = relationship("Proceeding")
     documents = relationship("Document", back_populates="ingest_batch")
+    sub_groups = relationship(
+        "BatchSubGroup",
+        back_populates="batch",
+        order_by="BatchSubGroup.sort_order",
+        cascade="all, delete-orphan",
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -427,6 +442,31 @@ class IngestBatch(Base):
             for d in self.documents
         )
         return {"total": len(self.documents), **counts}
+
+
+class BatchSubGroup(Base):
+    """A manually-created grouping of documents within an IngestBatch.
+
+    When BatchSubGroup rows exist for a batch, the triage tree picker uses them
+    for grouping instead of the auto parent_groups hierarchy.
+    """
+
+    __tablename__ = "batch_sub_groups"
+    __table_args__ = (Index("ix_batch_sub_groups_batch", "batch_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(
+        Integer,
+        ForeignKey("ingest_batches.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    label = Column(String, nullable=True)  # None = auto-derived from lead doc title
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    batch = relationship("IngestBatch", back_populates="sub_groups")
+    documents = relationship("Document", back_populates="sub_group")
 
 
 class DocumentRelationship(Base):
