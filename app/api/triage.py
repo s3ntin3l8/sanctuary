@@ -28,6 +28,24 @@ from app.services.triage_view import (
 router = APIRouter(tags=["pages"])
 
 
+def _render_picker(
+    request: Request, batch_id: int, triage_service: TriageService
+) -> str:
+    """Re-fetch bundle and render triage_doc_tree_picker.html for HTMX outerHTML swap."""
+    bundle = triage_service.get_bundle_by_batch_id(batch_id)
+    if not bundle:
+        return "<div>Bundle not found</div>"
+
+    return templates.get_template("partials/triage_doc_tree_picker.html").render(
+        {
+            "request": request,
+            "bundle": bundle,
+            "active_doc_id": None,
+            "compact": True,
+        }
+    )
+
+
 # -----------------------------------------------------------------------------
 # Triage page (GET)
 # -----------------------------------------------------------------------------
@@ -1253,6 +1271,79 @@ async def update_doc_title(
         doc.title = new_title
         db.commit()
     return HTMLResponse("", status_code=204)
+
+
+# -----------------------------------------------------------------------------
+# Bundle sub-group management (HTMX)
+# -----------------------------------------------------------------------------
+
+
+@router.post("/triage/bundle/{batch_id}/set-cover")
+def triage_set_cover_letter(
+    batch_id: int,
+    doc_id: int = Form(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Mark a document as cover letter of its sub-group."""
+    triage_service.set_cover_letter(doc_id=doc_id, batch_id=batch_id)
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
+
+
+@router.post("/triage/bundle/{batch_id}/new-group")
+def triage_create_sub_group(
+    batch_id: int,
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Create a new empty sub-group at the end of this batch's group list."""
+    triage_service.create_sub_group(batch_id=batch_id)
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
+
+
+@router.post("/triage/bundle/{batch_id}/rename-group")
+def triage_rename_sub_group(
+    batch_id: int,
+    sub_group_id: int = Form(...),
+    label: str = Form(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Rename a sub-group label. Empty label clears to auto-derived."""
+    triage_service.rename_sub_group(
+        sub_group_id=sub_group_id, batch_id=batch_id, label=label
+    )
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
+
+
+@router.post("/triage/bundle/{batch_id}/reorder")
+def triage_reorder_documents(
+    batch_id: int,
+    sub_group_id: int = Form(...),
+    doc_ids: str = Form(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Update document ordering and sub-group membership after drag-drop.
+
+    Frontend sends one POST per affected sub-group with its full ordered doc list.
+    doc_ids is a comma-separated string of integer doc ids.
+    """
+    ordered_ids = [int(x) for x in doc_ids.split(",") if x.strip()]
+    triage_service.reorder_documents(
+        batch_id=batch_id,
+        ordered_doc_ids=ordered_ids,
+        target_sub_group_id=sub_group_id,
+    )
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
 
 @router.get("/triage/doc/{doc_id}/hud")
