@@ -312,6 +312,8 @@ def _stream_response(
     full_response = ""
     final_usage: dict | None = None
     stream_error: str | None = None
+    _drain_mode = False
+    _drain_deadline: float | None = None
 
     try:
         with httpx.Client(
@@ -348,6 +350,24 @@ def _stream_response(
                     if chunk.get("usage"):
                         final_usage = chunk["usage"]
 
+                    if chunk.get("done"):
+                        break
+
+                    # After a watchdog fires we keep reading to reach the final
+                    # usage chunk (OpenAI sends it right before [DONE]) but
+                    # discard all content. Give up after 30 s if it never arrives.
+                    if _drain_mode:
+                        if (
+                            _drain_deadline is not None
+                            and time.perf_counter() > _drain_deadline
+                        ):
+                            logger.warning(
+                                "call %s: drain timeout — giving up on usage chunk",
+                                debug_label,
+                            )
+                            break
+                        continue
+
                     if "thinking" in chunk:
                         full_thinking += chunk["thinking"]
                     if "response" in chunk:
@@ -356,9 +376,9 @@ def _stream_response(
                             if ttfb_perf is None:
                                 ttfb_perf = time.perf_counter()
                             full_response += token
-                    if chunk.get("done"):
-                        break
-                    # Abort when thinking consumes budget with zero response tokens
+
+                    # Abort content accumulation when thinking consumes budget
+                    # with zero response tokens; keep draining for usage chunk.
                     if (
                         not full_response
                         and len(full_thinking) > _THINK_WATCHDOG_CHARS
@@ -366,26 +386,28 @@ def _stream_response(
                     ):
                         logger.warning(
                             "call %s: thinking-loop watchdog triggered "
-                            "(%d thinking chars, %.0fs elapsed) — aborting stream",
+                            "(%d thinking chars, %.0fs elapsed) — draining for usage",
                             debug_label,
                             len(full_thinking),
                             time.perf_counter() - start_perf,
                         )
-                        break
+                        _drain_mode = True
+                        _drain_deadline = time.perf_counter() + 30.0
 
-                    # Abort when response monologue consumes budget
-                    if (
+                    # Abort content accumulation when response monologue consumes budget
+                    elif (
                         len(full_response) > _RESPONSE_WATCHDOG_CHARS
                         and (time.perf_counter() - start_perf) > _THINK_WATCHDOG_SECS
                     ):
                         logger.warning(
                             "call %s: response-monologue watchdog triggered "
-                            "(%d response chars, %.0fs elapsed) — aborting stream",
+                            "(%d response chars, %.0fs elapsed) — draining for usage",
                             debug_label,
                             len(full_response),
                             time.perf_counter() - start_perf,
                         )
-                        break
+                        _drain_mode = True
+                        _drain_deadline = time.perf_counter() + 30.0
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)

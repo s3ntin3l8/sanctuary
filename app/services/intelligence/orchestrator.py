@@ -36,9 +36,6 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
                     OR
                     COALESCE(json_extract(pipeline_stages, '$.metadata.status'), 'pending')
                         NOT IN ('completed', 'failed', 'skipped')
-                    OR
-                    COALESCE(json_extract(pipeline_stages, '$.proceeding_analysis.status'), 'pending')
-                        NOT IN ('completed', 'failed', 'skipped')
                   )
               )
             """

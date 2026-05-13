@@ -54,29 +54,6 @@ _CostDeltaKind = Literal[
 _CostDirection = Literal["incoming", "outgoing", "ruling", "none"]
 
 
-class ProceedingExtraction(BaseModel):
-    """PROCEEDING_ANALYZER_SYSTEM output."""
-
-    model_config = ConfigDict(extra="ignore", use_enum_values=True)
-
-    is_court_document: bool = Field(
-        description="True ONLY for documents issued by a court (not lawyer letters)."
-    )
-    court_level: ProceedingCourtLevel | None = Field(
-        None, description="One of: ag, lg, olg, bgh."
-    )
-    court_name: str | None = Field(
-        None, description="Actual court name (e.g. 'Amtsgericht Ingolstadt')."
-    )
-    az_court: str | None = Field(
-        None, description="Single court file number (Aktenzeichen) in standard format."
-    )
-    subject_matter: str | None = None
-    appeal_deadline_days: int | None = Field(
-        None, description="Formal appeal deadline days if this is a ruling."
-    )
-
-
 class _Entity(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -274,4 +251,18 @@ class Phase1Metadata(BaseModel):
     contradictions: list[str] = Field(
         default_factory=list,
         description="List of factual/procedural contradictions with case knowledge.",
+    )
+    is_court_document: bool = Field(
+        False,
+        description="True ONLY for documents issued by a court (not lawyer letters).",
+    )
+    court_level: ProceedingCourtLevel | None = Field(
+        None, description="One of: ag, lg, olg, bgh, other."
+    )
+    court_name: str | None = Field(
+        None, description="Actual court name (e.g. 'Amtsgericht Ingolstadt')."
+    )
+    subject_matter: str | None = None
+    appeal_deadline_days: int | None = Field(
+        None, description="Formal appeal deadline days if this is a ruling."
     )

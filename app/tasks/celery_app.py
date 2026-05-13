@@ -24,7 +24,6 @@ celery_app = Celery(
         "app.tasks.document_processing",
         "app.tasks.gmail_sync",
         "app.tasks.analyze_batch",
-        "app.tasks.analyze_proceeding",
         "app.tasks.enrich_document",
         "app.tasks.detect_relationships",
         "app.tasks.extract_claims",

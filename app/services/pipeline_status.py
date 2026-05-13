@@ -43,7 +43,6 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         order=0,
         downstream=(
             PipelineStage.METADATA,
-            PipelineStage.PROCEEDING_ANALYSIS,
             PipelineStage.ENRICH,
             PipelineStage.RELATIONSHIPS,
             PipelineStage.CLAIMS,
@@ -55,7 +54,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         stage=PipelineStage.METADATA,
         order=1,
         downstream=(
-            PipelineStage.PROCEEDING_ANALYSIS,
+            PipelineStage.BATCH_ANALYSIS,
             PipelineStage.ENRICH,
             PipelineStage.RELATIONSHIPS,
             PipelineStage.CLAIMS,
@@ -63,21 +62,9 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         ),
         retry_task="app.tasks.document_processing.process_document_task",
     ),
-    PipelineStage.PROCEEDING_ANALYSIS: StageSpec(
-        stage=PipelineStage.PROCEEDING_ANALYSIS,
-        order=2,
-        downstream=(
-            PipelineStage.BATCH_ANALYSIS,
-            PipelineStage.ENRICH,
-            PipelineStage.RELATIONSHIPS,
-            PipelineStage.CLAIMS,
-            PipelineStage.ENTITIES,
-        ),
-        retry_task="app.tasks.analyze_proceeding.analyze_proceeding_task",
-    ),
     PipelineStage.BATCH_ANALYSIS: StageSpec(
         stage=PipelineStage.BATCH_ANALYSIS,
-        order=3,
+        order=2,
         downstream=(),
         retry_task="app.tasks.analyze_batch.analyze_batch_task",
         dispatch_arg="batch_id",

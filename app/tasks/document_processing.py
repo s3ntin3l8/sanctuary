@@ -116,46 +116,29 @@ def process_document_task(self, doc_id: int):
             )
             return {"status": "metadata_failed", "doc_id": doc_id}
 
-        # Proceeding-ready gating: metadata is done, now check for proceeding changes.
-        # claim_stage_for_dispatch is an atomic pending→running CAS — prevents fan-out
-        # when process_document_task is re-dispatched (e.g. by crash recovery) while
-        # a previous run already claimed this stage.
-        from app.services.pipeline_status import claim_stage_for_dispatch
+        # Batch analysis gate: when every doc in this batch has completed METADATA,
+        # claim and dispatch the batch analyzer. Uses an atomic CAS so only one
+        # worker fires the task even when multiple docs finish near-simultaneously.
+        if doc.ingest_batch_id:
+            from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
-        db_claim = get_db_session()
-        try:
-            if claim_stage_for_dispatch(
-                doc_id, PipelineStage.PROCEEDING_ANALYSIS, db_claim
-            ):
-                from app.services.pipeline_status import mark_started
+            db_batch = get_db_session()
+            try:
+                if claim_batch_for_analysis(doc.ingest_batch_id, db_batch):
+                    from app.tasks.analyze_batch import analyze_batch_task
 
-                mark_started(doc_id, PipelineStage.PROCEEDING_ANALYSIS, db_claim)
-                try:
-                    from app.tasks.analyze_proceeding import analyze_proceeding_task
-
-                    analyze_proceeding_task.delay(doc_id)
-                except Exception as e:
-                    logger.error(
-                        "Doc #%d: analyze_proceeding dispatch raised — marking stage failed: %s",
+                    analyze_batch_task.delay(doc.ingest_batch_id)
+                    logger.info(
+                        "Doc #%d: batch #%d ready — dispatched analyze_batch_task",
                         doc_id,
-                        e,
-                        exc_info=True,
+                        doc.ingest_batch_id,
                     )
-                    mark_failed_with_cascade(
-                        doc_id,
-                        PipelineStage.PROCEEDING_ANALYSIS,
-                        db,
-                        error=f"dispatch failed: {e}",
-                    )
-            else:
-                logger.debug(
-                    "Doc #%d: PROCEEDING_ANALYSIS already claimed — skipping dispatch",
-                    doc_id,
-                )
-        finally:
-            db_claim.close()
+            finally:
+                db_batch.close()
 
         # Embeddings — claim before dispatch for the same fan-out protection.
+        from app.services.pipeline_status import claim_stage_for_dispatch
+
         db_emb = get_db_session()
         try:
             if claim_stage_for_dispatch(doc_id, PipelineStage.EMBEDDINGS, db_emb):

@@ -12,9 +12,26 @@ The single-pass path is exercised by other tests; here we focus on:
 from unittest.mock import patch
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from app.services.intelligence import _ai_call
-from app.services.intelligence.schemas import ProceedingExtraction
+
+
+class _TestSchema(BaseModel):
+    """Minimal schema used as a stand-in to test the two-pass call_json_ai mechanism."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    is_court_document: bool = False
+    court_level: str | None = None
+    court_name: str | None = None
+    az_court: str | None = None
+    subject_matter: str | None = None
+    appeal_deadline_days: int | None = None
+
+
+# Alias used throughout this file
+ProceedingExtraction = _TestSchema
 
 
 @pytest.fixture

@@ -901,7 +901,7 @@ def _retry_batch(batch, db, full: bool = False) -> int:
         ):
             return -1
 
-    # Clear the cascade gate so analyze_proceeding_task can re-claim
+    # Clear the cascade gate so the batch analysis can re-run
     batch.analysis_queued_at = None
     batch.status = IngestBatchStatus.PENDING
     if batch.meta:
@@ -1028,8 +1028,8 @@ async def retry_bundle_pipeline(
     """Re-run every AI stage for every doc in the bundle.
 
     Skips EXTRACT (preserves manual case assignments) and leaves SKIPPED stages
-    alone. Clears analysis_queued_at so the analyze_proceeding→analyze_batch
-    cascade can re-fire. Returns 409 if any stage is actively running.
+    alone. Clears analysis_queued_at so the batch analysis can re-fire.
+    Returns 409 if any stage is actively running.
     """
     from app.models.database import IngestBatch
 
