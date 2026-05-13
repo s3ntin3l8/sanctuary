@@ -29,6 +29,11 @@ MAGIC_BYTES = {
 # Known Docling glyph mapping artifacts (Common in German legal PDFs)
 _GLYPH_MAP = {
     "GLYPH(cmap:df00)": "G",
+    "Äug": "Aug.",
+    "Äug.": "Aug.",
+    "esizese": "festgesetzt",
+    "Verfah'erswwe7": "Verfahrenswert",
+    "Bescserdeverfanren": "Beschwerdeverfahren",
 }
 
 
@@ -43,6 +48,9 @@ def _apply_glyph_fixes(text: str | None) -> str | None:
     # "Datenschutzhinweis" often breaks due to non-standard font mapping in the footer.
     text = re.sub(r"D\s*hutzhi\s*[_:]", "Datenschutzhinweis:", text)
     text = re.sub(r"Dat\s*hutzhi\s*12[;:]", "Datenschutzhinweis:", text)
+
+    # Standardize court-style date spacing artifacts (e.g., "0 1. Aug" -> "01. Aug")
+    text = re.sub(r"(\d)\s+(\d\.)\s+([A-Z][a-z]{2})", r"\1\2 \3", text)
 
     return text
 
@@ -196,6 +204,52 @@ def _get_ocr_converter():
     return _ocr_converter
 
 
+_image_ocr_converter = None
+_image_ocr_converter_lock = threading.Lock()
+
+
+def _build_image_ocr_converter():
+    """Construct a Docling DocumentConverter for IMAGE input with Tesseract OCR.
+
+    Used by the rotation-corrected OCR path, which renders pages via pypdfium2
+    at 300 DPI with corrected orientation and passes the PNGs into Docling's
+    IMAGE pipeline. Pre-rendered at 300 DPI so images_scale stays at 1.0.
+    """
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import (
+        PdfPipelineOptions,
+        TableFormerMode,
+        TesseractCliOcrOptions,
+    )
+    from docling.document_converter import DocumentConverter, ImageFormatOption
+
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.do_table_structure = True
+    pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+    pipeline_options.do_ocr = True
+    pipeline_options.ocr_options = TesseractCliOcrOptions(
+        lang=["deu", "eng"],
+        force_full_page_ocr=True,
+    )
+    pipeline_options.images_scale = 1.0  # pre-rendered at 300 DPI, no extra scaling
+
+    return DocumentConverter(
+        format_options={
+            InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options)
+        }
+    )
+
+
+def _get_image_ocr_converter():
+    """Lazy-init the IMAGE-input DocumentConverter (thread-safe)."""
+    global _image_ocr_converter
+    if _image_ocr_converter is None:
+        with _image_ocr_converter_lock:
+            if _image_ocr_converter is None:
+                _image_ocr_converter = _build_image_ocr_converter()
+    return _image_ocr_converter
+
+
 def _is_image_only_output(content: str | None) -> bool:
     """Return True when docling output is exclusively image placeholders.
 
@@ -262,6 +316,107 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     return markdown, chunks, metadata
 
 
+def _extract_pdf_text_layer(file_path: str) -> str | None:
+    """Extract the embedded text layer from a sandwich PDF using pypdfium2.
+
+    Returns formatted markdown with --- PAGE N --- markers, or None if the
+    text layer is absent or contains fewer than 100 non-whitespace characters.
+    Sandwich PDFs (scanner output) have text rendered invisible (Tr=3) so the
+    layout model ignores it — this reads it directly from the PDF structure.
+    """
+    try:
+        import pypdfium2 as pdfium
+
+        doc = pdfium.PdfDocument(file_path)
+        parts = []
+        for i, page in enumerate(doc):
+            textpage = page.get_textpage()
+            text = textpage.get_text_range().strip()
+            textpage.close()
+            page.close()
+            if text:
+                parts.append(f"--- PAGE {i + 1} ---\n\n{text}")
+        doc.close()
+        combined = "\n\n".join(parts)
+        if len(re.sub(r"\s+", "", combined)) < 100:
+            return None
+        return _apply_glyph_fixes(combined)
+    except Exception as e:
+        logger.debug("pdf text layer extraction failed for %s: %s", file_path, e)
+        return None
+
+
+def _ocr_with_rotation_correction(file_path: str) -> tuple[str, list, dict]:
+    """Per-page rotation-corrected OCR for truly scanned PDFs (no text layer).
+
+    pypdfium2 does not automatically apply a PDF page's /Rotate attribute when
+    rendering; if the scanner stored pages as rotated (e.g. 270°), Tesseract
+    sees a sideways image and misses content. This function:
+
+    1. Reads each page's stored rotation via page.get_rotation().
+    2. Renders at the inverse angle at 300 DPI to produce an upright image.
+    3. Runs the Docling IMAGE pipeline (with table detection) on each page.
+    4. Combines per-page markdown with --- PAGE N --- markers.
+
+    If the metadata-corrected render still yields image-only output for a page
+    (rotation metadata absent/wrong), that page is retried at +90° as a safety
+    net before giving up on that page.
+    """
+    import tempfile
+    from pathlib import Path
+
+    import pypdfium2 as pdfium
+
+    RENDER_SCALE = 300 / 72  # 300 DPI
+
+    pdf = pdfium.PdfDocument(file_path)
+    page_parts = []
+    any_rotation_applied = False
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        conv = _get_image_ocr_converter()
+        for i, page in enumerate(pdf):
+            stored_rot = page.get_rotation()
+            correction = (360 - stored_rot) % 360
+            if correction:
+                any_rotation_applied = True
+
+            bitmap = page.render(scale=RENDER_SCALE, rotation=correction)
+            img = bitmap.to_pil()
+            page.close()
+
+            img_path = str(Path(tmpdir) / f"page_{i + 1}.png")
+            img.save(img_path)
+
+            page_md, _, _ = _run_conversion(conv, img_path)
+
+            # Safety net: metadata rotation absent or wrong — try +90°
+            if _is_image_only_output(page_md):
+                img_90_path = str(Path(tmpdir) / f"page_{i + 1}_90.png")
+                img.rotate(-90, expand=True).save(img_90_path)
+                page_md_90, _, _ = _run_conversion(conv, img_90_path)
+                if not _is_image_only_output(page_md_90):
+                    page_md = page_md_90
+                    any_rotation_applied = True
+
+            # Strip any PAGE markers Docling added (each image = 1-page doc)
+            cleaned = _PLACEHOLDER_RE.sub("", page_md).strip()
+            page_parts.append(f"--- PAGE {i + 1} ---\n\n{cleaned}")
+
+    pdf.close()
+
+    metadata = {
+        "pages": len(page_parts),
+        "format": "pdf",
+        "ocr_fallback": True,
+    }
+    if any_rotation_applied:
+        metadata["ocr_rotation_corrected"] = True
+
+    combined = _apply_glyph_fixes("\n\n".join(page_parts))
+    return combined, [], metadata
+
+
 def _convert_in_subprocess(file_path: str) -> dict:
     """Run the full Docling conversion + chunking in a worker subprocess.
 
@@ -270,20 +425,30 @@ def _convert_in_subprocess(file_path: str) -> dict:
     pickles cleanly into the worker.
 
     When the standard pass produces only image placeholders (scanned PDF whose
-    pages the layout model classified as pictures rather than text), a second
-    pass with force_full_page_ocr=True is attempted so Tesseract gets to run
-    on the full page. Normal PDFs with embedded text are unaffected.
+    pages the layout model classified as pictures rather than text), we first
+    try to extract the PDF's own embedded text layer (sandwich PDFs from
+    scanners carry an invisible OCR layer that is more complete than re-running
+    Tesseract on a JPEG). If no usable text layer exists, fall back to
+    rotation-corrected per-page OCR via the IMAGE pipeline.
     """
     markdown, chunks, metadata = _run_conversion(_get_converter(), file_path)
 
     if _is_image_only_output(markdown):
-        logger.info(
-            "Scanned PDF detected (image-only output) — retrying with "
-            "force_full_page_ocr: %s",
-            file_path,
-        )
-        markdown, chunks, metadata = _run_conversion(_get_ocr_converter(), file_path)
-        metadata["ocr_fallback"] = True
+        text_layer = _extract_pdf_text_layer(file_path)
+        if text_layer:
+            logger.info(
+                "Sandwich PDF detected — using embedded text layer: %s",
+                file_path,
+            )
+            markdown = text_layer
+            metadata["pdf_text_layer"] = True
+        else:
+            logger.info(
+                "Scanned PDF detected (no text layer) — running "
+                "rotation-corrected OCR: %s",
+                file_path,
+            )
+            markdown, chunks, metadata = _ocr_with_rotation_correction(file_path)
 
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 

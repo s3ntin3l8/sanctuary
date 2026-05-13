@@ -94,11 +94,14 @@
     {% set retryable = s_status not in ('running', 'retrying', 'skipped') %}
 
     {% set is_ocr_fallback = (stage_key == 'extract' and doc.meta and doc.meta.get('ocr_fallback')) %}
+    {% set is_pdf_text_layer = (stage_key == 'extract' and doc.meta and doc.meta.get('pdf_text_layer')) %}
 
     {# Tooltip text — combines label + status + timestamp/error + retry hint. #}
     {% set tooltip_parts = [stage_label, s_status | capitalize] %}
     {% if is_ocr_fallback %}
-      {% set _ = tooltip_parts.append('Fallback OCR used — text quality may be lower') %}
+      {% set _ = tooltip_parts.append('Scanned PDF — OCR applied (no embedded text)') %}
+    {% elif is_pdf_text_layer %}
+      {% set _ = tooltip_parts.append('Searchable scan — scanner OCR used') %}
     {% endif %}
     {% if s_status == 'completed' and s.get('completed_at') %}
       {% set _ = tooltip_parts.append(s['completed_at'][:16].replace('T', ' ')) %}
@@ -122,7 +125,7 @@
 
     {# Dot color + icon by status. #}
     {% if s_status == 'completed' %}
-      {% if is_ocr_fallback %}
+      {% if is_ocr_fallback or is_pdf_text_layer %}
         {% set dot_class = 'bg-amber-500/15 border-amber-500 text-amber-500' %}
       {% else %}
         {% set dot_class = 'bg-originator-own/15 border-originator-own text-originator-own' %}
@@ -156,7 +159,7 @@
       <span class="absolute inset-0 flex items-center justify-center transition-opacity duration-150
                    group-hover:opacity-0 group-focus-visible:opacity-0
                    group-[.htmx-request]:opacity-0">
-        {% if is_ocr_fallback and s_status == 'completed' %}
+        {% if (is_ocr_fallback or is_pdf_text_layer) and s_status == 'completed' %}
         <span class="material-symbols-outlined text-[11px]">priority_high</span>
         {% else %}
         <span class="material-symbols-outlined text-[11px]">{{ stage_icon }}</span>
