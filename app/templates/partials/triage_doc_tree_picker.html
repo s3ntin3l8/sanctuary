@@ -126,12 +126,12 @@
                         hx-target="#triage-tree-{{ bundle.key }}"
                         hx-swap="outerHTML"
                         @click.stop>
-                    <span class="material-symbols-outlined text-[9px]">{{ 'bookmark' if is_cover else 'bookmark_border' }}</span>
+                    <span class="material-symbols-outlined text-[7px]">{{ 'bookmark' if is_cover else 'bookmark_border' }}</span>
                 </button>
                 {% else %}
                 {# Synthetic bundle — static bookmark indicator only #}
                 {% if is_cover %}
-                <span class="material-symbols-outlined text-[9px] text-on-surface-variant flex-shrink-0" title="Cover letter">bookmark</span>
+                <span class="material-symbols-outlined text-[7px] text-on-surface-variant flex-shrink-0" title="Cover letter">bookmark</span>
                 {% endif %}
                 {% endif %}
 
