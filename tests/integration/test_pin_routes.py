@@ -130,15 +130,14 @@ def test_document_detail_no_htmx_redirects_to_fullscreen(db_session, doc_in_case
 
 
 @pytest.mark.integration
-def test_document_detail_unassigned_redirects_to_triage(db_session):
-    """GET /document/:id for an unassigned doc redirects to /triage."""
+def test_document_detail_unassigned_renders_standalone(db_session):
+    """GET /document/:id for an unassigned doc renders the document page directly."""
     doc = Document(title="Unassigned Doc", case_id=None)
     db_session.add(doc)
     db_session.commit()
 
     response = client.get(f"/document/{doc.id}", follow_redirects=False)
-    assert response.status_code == 302
-    assert response.headers["location"] == "/triage"
+    assert response.status_code == 200
 
 
 @pytest.mark.integration

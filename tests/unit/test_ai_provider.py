@@ -184,7 +184,7 @@ def test_parse_stream_line_ollama_normal():
     result = p.parse_stream_line(
         '{"response": "Hello", "done": false}', ProviderType.OLLAMA
     )
-    assert result == {"response": "Hello", "done": False}
+    assert result == {"response": "Hello", "done": False, "thinking": ""}
 
 
 def test_parse_stream_line_ollama_done():
@@ -203,7 +203,7 @@ def test_parse_stream_line_openai_data():
     p = AIProvider()
     line = 'data: {"choices": [{"delta": {"content": "Hi"}}]}'
     result = p.parse_stream_line(line, ProviderType.LMSTUDIO)
-    assert result == {"response": "Hi", "thinking": "", "done": False}
+    assert result == {"response": "Hi", "thinking": "", "done": False, "usage": None}
 
 
 def test_parse_stream_line_openai_done():
@@ -458,19 +458,17 @@ def test_intelligence_schemas_emit_valid_json_schema():
         DocumentEnrichment,
         EntityList,
         Phase1Metadata,
-        ProceedingExtraction,
         RelationshipDetection,
     )
 
     for model_cls in [
-        ProceedingExtraction,
+        Phase1Metadata,
         EntityList,
         ClaimExtraction,
         DocumentEnrichment,
         BatchAnalysis,
         RelationshipDetection,
         CaseBrief,
-        Phase1Metadata,
     ]:
         schema = model_cls.model_json_schema()
         assert isinstance(schema, dict)
@@ -478,11 +476,11 @@ def test_intelligence_schemas_emit_valid_json_schema():
         assert "properties" in schema or "$defs" in schema
 
 
-def test_proceeding_extraction_validates_minimal_response():
-    """Verifies the schema accepts a realistic minimum response shape."""
-    from app.services.intelligence.schemas import ProceedingExtraction
+def test_phase1_metadata_accepts_proceeding_fields():
+    """Verifies Phase1Metadata accepts the merged proceeding fields."""
+    from app.services.intelligence.schemas import Phase1Metadata
 
-    m = ProceedingExtraction.model_validate(
+    m = Phase1Metadata.model_validate(
         {
             "is_court_document": True,
             "court_level": "ag",

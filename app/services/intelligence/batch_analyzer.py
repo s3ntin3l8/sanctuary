@@ -58,44 +58,43 @@ def _pick_cover_letter_candidate(docs: list[Document]) -> Document | None:
     return None
 
 
+_BUDGET_CHARS = 150_000  # total chars across all doc previews
+_MIN_PREVIEW = 3_000
+_MAX_PREVIEW = 20_000
+
+
 def _call_batch_analyzer_sync(
-    candidate: Document,
-    siblings: list[Document],
+    docs: list[Document],
     batch_id: int,
     model: str = "",
     db=None,
     suppress_thinking: bool = False,
     debug_label: str | None = None,
 ) -> dict:
-    """Synchronous AI call for batch analysis."""
-    content_preview = get_content_preview(candidate, 60000)
-    sibling_sections = []
-    temporal_map = []
-    if candidate.issued_date:
-        temporal_map.append(
-            f"doc_{candidate.id}: {candidate.issued_date.strftime('%Y-%m-%d')}"
-        )
+    """Synchronous AI call for batch analysis.
 
-    for d in siblings:
-        sibling_preview = get_content_preview(d, 3000)
-        sibling_sections.append(f"=== (doc_id={d.id}) {d.title} ===\n{sibling_preview}")
+    All documents receive an equal share of the token budget — no single
+    'candidate' is given priority. This lets the model identify all cover
+    letters from content rather than from a heuristic hint.
+    """
+    n = len(docs)
+    per_doc = min(_MAX_PREVIEW, max(_MIN_PREVIEW, _BUDGET_CHARS // n))
+
+    sections = []
+    temporal_map = []
+    for d in docs:
+        preview = get_content_preview(d, per_doc)
+        sections.append(f"=== (doc_id={d.id}) {d.title} ===\n{preview}")
         if d.issued_date:
             temporal_map.append(f"doc_{d.id}: {d.issued_date.strftime('%Y-%m-%d')}")
 
-    sibling_block = "\n\n".join(sibling_sections)
-    temporal_block = ""
-    if temporal_map:
-        temporal_block = (
-            "### Batch Temporal Map (Known Dates):\n" + ", ".join(temporal_map) + "\n\n"
-        )
-
-    prompt = (
-        f"{temporal_block}"
-        f"Cover letter candidate (doc_id={candidate.id}):\n"
-        f"Title: {candidate.title}\n\n"
-        f"{content_preview}\n\n"
-        f"Other documents in this batch:\n\n{sibling_block}"
+    temporal_block = (
+        ("### Batch Temporal Map (Known Dates):\n" + ", ".join(temporal_map) + "\n\n")
+        if temporal_map
+        else ""
     )
+
+    prompt = temporal_block + "\n\n".join(sections)
 
     result = call_json_ai(
         system_prompt=BATCH_ANALYZER_SYSTEM,
@@ -106,7 +105,7 @@ def _call_batch_analyzer_sync(
         model=model or None,
         db=db,
         ingest_batch_id=batch_id,
-        case_id=candidate.case_id,
+        case_id=docs[0].case_id,
         suppress_thinking=suppress_thinking,
         two_pass=True,
     )
@@ -505,14 +504,6 @@ def analyze(batch_id: int) -> bool:
             db.commit()
             return False
 
-        candidate = _pick_cover_letter_candidate(healthy_docs)
-        if not candidate:
-            for d in docs:
-                d.role = DocumentRole.STANDALONE
-            db.commit()
-            return False
-
-        siblings = [d for d in healthy_docs if d.id != candidate.id]
         model = cfg.summary_model
         # docs objects detach from the session on close but column-level data
         # (content, title, id, …) stays accessible in memory for the AI call.
@@ -522,8 +513,7 @@ def analyze(batch_id: int) -> bool:
     # --- Phase 2: AI call (no session held) ---
     try:
         result = _call_batch_analyzer_sync(
-            candidate,
-            siblings,
+            healthy_docs,
             batch_id,
             model=model,
         )
@@ -540,8 +530,7 @@ def analyze(batch_id: int) -> bool:
         )
         try:
             result = _call_batch_analyzer_sync(
-                candidate,
-                siblings,
+                healthy_docs,
                 batch_id,
                 model=model,
                 suppress_thinking=True,

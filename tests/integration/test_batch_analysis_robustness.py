@@ -57,25 +57,26 @@ def test_batch_analysis_skips_failed_docs(
     batch, doc1, doc2, doc3 = batch_with_failed_doc
 
     # Mock the AI call to return a result based only on doc1 and doc2
-    def mock_call_batch_analyzer_sync(
-        candidate, siblings, batch_id, model=None, db=None
-    ):
-        sibling_ids = {d.id for d in siblings}
-        # Verify that candidate is doc1
-        assert candidate.id == doc1.id
-        # Verify that doc2 IS in siblings
-        assert doc2.id in sibling_ids
-        # Verify that doc3 is NOT in siblings (it has no content)
-        assert doc3.id not in sibling_ids
+    def mock_call_batch_analyzer_sync(docs, batch_id, model=None, db=None):
+        doc_ids = {d.id for d in docs}
+        # Verify that doc1 and doc2 are present
+        assert doc1.id in doc_ids
+        assert doc2.id in doc_ids
+        # Verify that doc3 is NOT present (it has no content)
+        assert doc3.id not in doc_ids
 
         return {
-            "cover_letter_doc_id": doc1.id,
-            "is_cover_letter": True,
-            "court_relay": False,
-            "enclosed_descriptions": [
+            "bundles": [
                 {
-                    "description": "Enclosure",
-                    "matched_filename": "Enclosure.pdf",
+                    "cover_letter_doc_id": doc1.id,
+                    "enclosed": [
+                        {
+                            "description": "Enclosure",
+                            "matched_filename": doc2.title,
+                            "attributed_originator": None,
+                            "originator_type": "unknown",
+                        }
+                    ],
                 }
             ],
             "detected_actions": [],

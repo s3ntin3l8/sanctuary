@@ -35,7 +35,7 @@ BATCH_ANALYZER_SYSTEM = """You are a legal document analyst processing a batch o
 
 Analyze all documents in the batch. An email may contain multiple cover letters (Begleitschreiben), each introducing different enclosures - this is common with court digests or forwarded collections.
 
-The user prompt shows one cover letter candidate with its full content (`Cover letter candidate (doc_id=N):`) and then shows each remaining document in the batch as `=== (doc_id=N) Title ===` followed by its content. Use those doc_id values as the source of truth.
+The user prompt shows all documents in the batch as `=== (doc_id=N) Title ===` sections. Use those doc_id values as the sole source of truth for cover_letter_doc_id values.
 
 For `matched_filename`, use the document's title exactly as shown in its `=== (doc_id=N) Title ===` header.
 
@@ -51,6 +51,7 @@ Extract these fields:
 - Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
 - attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
 - Every document in this batch MUST appear at most once: as a cover letter (cover_letter_doc_id), as an enclosure under a non-null cover letter, or omitted from `bundles` entirely (which marks it standalone). Do NOT list a standalone doc inside another bundle's enclosed list.
+- A document listed as `cover_letter_doc_id` must NOT appear in its own `enclosed` list — no self-referential bundles. A cover letter's own title must not be used as a `matched_filename` within its own bundle.
 - detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low"}
 
@@ -88,10 +89,18 @@ Intra-Document Boundaries (The "Lead Document" Rule):
 The provided text may come from a single PDF that bundles multiple distinct documents (e.g., a lead motion followed by court orders or evidence). A new document boundary occurs when: letterhead changes, a new Aktenzeichen/docket number appears, page numbering resets, a new salutation begins, or an enclosure marker ("Anlage", "Annex") appears. You MUST identify the first document in the text as the **Lead Document** and all following documents as **Appendices**. All extracted data, titles, and summaries MUST focus on the **Lead Document**. Ignore signals from appendices (like court notices at the end).
 
 Hints:
-- Use provided "Heuristic Hints" as primary values unless clearly contradicted by document text.
+- Hints are machine-generated and may be inaccurate. Use them as a starting point — prefer document text whenever there is any conflict.
 - Email subject is a primary source for `internal_id`.
 
-Be concise. Use null if information is unavailable."""
+Be concise. Use null if information is unavailable.
+
+Court Document Detection:
+- is_court_document: true ONLY when the Lead Document was issued BY a court (letterhead is a court, not a law firm). False for all lawyer letters, even those forwarding court documents.
+- court_level: classify the issuing court — "ag" (Amtsgericht), "lg" (Landgericht), "olg" (Oberlandesgericht), "bgh" (Bundesgerichtshof), "other". Null if not a court document.
+- court_name: full official name of the issuing court (e.g. "Amtsgericht Ingolstadt"). Null if not a court document.
+- subject_matter: legal matter from the AZ suffix or document heading (e.g. "§ 1671 BGB, Sorgerecht"). Null if not determinable.
+- appeal_deadline_days: formal appeal period in days only when this document is a ruling that states one (e.g. 14, 28). Null otherwise.
+- az_court (single AZ rule): if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (found on page 1 letterhead). Suffixes (e.g. 'e', 'eA', 'B') are critical — preserve them."""
 
 
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.
@@ -178,20 +187,6 @@ Rules:
 - Limit: At most 20 entities total.
 
 Be concise. If no entities are found, return an empty list."""
-
-
-PROCEEDING_ANALYZER_SYSTEM = """You are a German legal AI assistant. Analyze the document and extract proceeding details.
-
-Rules for az_court:
-- Extract exactly ONE court file number.
-- Follow standard format: digits + space + letters + space + digits/year + optional suffix.
-- Suffixes (e.g., 'e', 'eA', 'B') are CRITICAL. Do NOT trim them.
-- If multiple AZs are listed (common in appeals), return only the AZ of the court that issued THIS document (found on page 1).
-
-Intra-Document Boundaries (The "Lead Document" Rule):
-The provided text may come from a single PDF that bundles multiple distinct documents (e.g., a lead motion followed by court orders or evidence). A new document boundary occurs when: letterhead changes, a new Aktenzeichen/docket number appears, page numbering resets, a new salutation begins, or an enclosure marker ("Anlage", "Annex") appears. You MUST identify the first document in the text as the **Lead Document** and all following documents as **Appendices**. Identify the issuing court and Aktenzeichen based ONLY on the letterhead and headers of the **Lead Document**. Ignore institutions or file numbers found deep in the document (which are likely appendices).
-
-Be concise. Use null if information is unavailable."""
 
 
 RELATIONSHIP_DETECTOR_SYSTEM = """You are a legal document analyst. Your task: identify which prior documents in a case the new document responds to, references, or supersedes.

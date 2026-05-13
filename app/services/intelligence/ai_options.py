@@ -32,7 +32,7 @@ STAGE_OPTIONS: dict[str, dict] = {
         "max_tokens": 8000,
     },
     "batch_analysis": {
-        "num_ctx": 32768,
+        "num_ctx": 65536,
         **_QWEN_SAMPLING,
         "num_predict": 10000,
         "max_tokens": 10000,
@@ -70,16 +70,6 @@ STAGE_OPTIONS: dict[str, dict] = {
     "case_brief": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 8000,
-        "max_tokens": 8000,
-    },
-    "proceeding": {
-        "num_ctx": 16384,
-        **_QWEN_SAMPLING,
-        # 8000 (was 2000) — qwen-3.5-9b's thinking chain alone consumes ~1975
-        # tokens on this stage's prompt; the old 2000 cap left zero budget for
-        # the ~50-token JSON response and produced empty responses ~50% of the
-        # time. See data/ai_debug/runs.jsonl thinking_len pattern.
         "num_predict": 8000,
         "max_tokens": 8000,
     },

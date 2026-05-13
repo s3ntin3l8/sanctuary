@@ -38,10 +38,6 @@ def test_extract_already_completed_is_skipped_by_task(db_session, monkeypatch):
         "app.tasks.document_processing._run_phase1_summary", lambda doc_id: None
     )
     monkeypatch.setattr(
-        "app.tasks.analyze_proceeding.analyze_proceeding_task.delay",
-        lambda doc_id: None,
-    )
-    monkeypatch.setattr(
         "app.tasks.generate_embedding.generate_embedding_task.delay",
         lambda doc_id: None,
     )

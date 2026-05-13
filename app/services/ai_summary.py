@@ -1,11 +1,12 @@
 import json
 import logging
+import re
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, Proceeding
-from app.models.enums import OriginatorType
+from app.models.enums import OriginatorType, ProceedingCourtLevel, ProceedingStatus
 from app.services.ai_config import get_chat_config
 from app.services.ingestion.extractors import (
     extract_internal_id,
@@ -18,6 +19,18 @@ from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 from app.services.intelligence.schemas import Phase1Metadata
 
 logger = logging.getLogger(__name__)
+
+_LAW_FIRM_INDICATORS = re.compile(
+    r"\b(?:rechtsanw[äa]lt(?:e|in)?|kanzlei|partnerschaft|partner\b)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_court(name: str | None) -> bool:
+    """Return False if name looks like a law firm rather than a court."""
+    if not name:
+        return False
+    return not (_LAW_FIRM_INDICATORS.search(name) and "gericht" not in name.lower())
 
 
 def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
@@ -49,6 +62,221 @@ def get_content_preview(doc: Document, max_chars: int = 60000) -> str:
 
     separator = "\n\n[... Omitted for brevity ...]\n\n"
     return f"{head}{separator}{mid}{separator}{tail}"
+
+
+def _apply_proceeding_extraction(
+    doc: Document, summary_data: dict, db: Session
+) -> str | None:
+    """Create or update the Proceeding for this document based on METADATA extraction.
+
+    Returns a skip reason string, or None on success.
+    """
+    from app.services.ingestion.extractors import infer_court_level as _infer_level
+
+    if not doc.case_id or doc.case_id == "_TRIAGE":
+        return "no case assigned"
+
+    data = dict(summary_data)
+
+    # Fallback: AI flagged not-court but metadata signals court origin.
+    if (
+        not doc.proceeding_id
+        and not data.get("is_court_document")
+        and doc.az_court
+        and doc.originator_type == OriginatorType.COURT
+        and _looks_like_court(doc.sender)
+    ):
+        inferred_level = _infer_level(doc.sender)
+        court_name = (
+            data.get("court_name")
+            if _looks_like_court(data.get("court_name"))
+            else (doc.sender if _looks_like_court(doc.sender) else None)
+        )
+        data = {
+            **data,
+            "is_court_document": True,
+            "az_court": doc.az_court,
+            "court_name": court_name,
+            "court_level": data.get("court_level")
+            or (inferred_level.value if inferred_level else None),
+        }
+        logger.info(
+            "Doc %d: proceeding AI empty/uncertain — falling back to Document.az_court=%s.",
+            doc.id,
+            doc.az_court,
+        )
+
+    if not data.get("is_court_document"):
+        return "not a court document"
+
+    extracted_az = normalize_az_court(data.get("az_court"))
+
+    # Secondary fallback: court doc but invalid AZ — use METADATA hint.
+    if (
+        not doc.proceeding_id
+        and data.get("is_court_document")
+        and not extracted_az
+        and doc.az_court
+        and doc.originator_type == OriginatorType.COURT
+    ):
+        extracted_az = normalize_az_court(doc.az_court)
+        if extracted_az:
+            logger.info(
+                "Doc %d: invalid az_court=%r — falling back to Document.az_court=%s.",
+                doc.id,
+                data.get("az_court"),
+                extracted_az,
+            )
+
+    extracted_level_str = data.get("court_level")
+    try:
+        extracted_level = (
+            ProceedingCourtLevel(extracted_level_str.lower())
+            if extracted_level_str
+            else None
+        )
+    except ValueError:
+        extracted_level = None
+
+    if not doc.proceeding_id:
+        existing = None
+        if extracted_az:
+            existing = (
+                db.query(Proceeding)
+                .filter(
+                    Proceeding.case_id == doc.case_id,
+                    Proceeding.az_court == extracted_az,
+                )
+                .first()
+            )
+        if existing:
+            doc.proceeding_id = existing.id
+        else:
+            placeholder = None
+            if extracted_az:
+                placeholder = (
+                    db.query(Proceeding)
+                    .filter(
+                        Proceeding.case_id == doc.case_id,
+                        Proceeding.court_name.in_(["General", "Unknown Court"]),
+                        Proceeding.az_court.is_(None),
+                    )
+                    .first()
+                )
+            if placeholder:
+                placeholder.az_court = extracted_az
+                if extracted_level:
+                    placeholder.court_level = extracted_level
+                if data.get("court_name") and _looks_like_court(data.get("court_name")):
+                    placeholder.court_name = data["court_name"]
+                if data.get("subject_matter") and not placeholder.subject_matter:
+                    placeholder.subject_matter = data["subject_matter"]
+                doc.proceeding_id = placeholder.id
+            elif extracted_az:
+                new_proc = Proceeding(
+                    case_id=doc.case_id,
+                    court_name=data.get("court_name")
+                    if _looks_like_court(data.get("court_name"))
+                    else "Unknown Court",
+                    court_level=extracted_level or ProceedingCourtLevel.AG,
+                    az_court=extracted_az,
+                    subject_matter=data.get("subject_matter"),
+                    status=ProceedingStatus.ACTIVE,
+                    started_at=datetime.now(UTC),
+                    is_draft=True,
+                )
+                db.add(new_proc)
+                db.flush()
+                doc.proceeding_id = new_proc.id
+            else:
+                return "no az extracted"
+
+        if doc.ingest_batch and not doc.ingest_batch.proceeding_id:
+            doc.ingest_batch.proceeding_id = doc.proceeding_id
+
+        return None
+
+    current_proc = (
+        db.query(Proceeding).filter(Proceeding.id == doc.proceeding_id).first()
+    )
+    if not current_proc:
+        return "proceeding not found"
+
+    is_new_instance = False
+    levels = list(ProceedingCourtLevel)
+
+    if extracted_level and current_proc.court_level:
+        try:
+            if levels.index(extracted_level) > levels.index(current_proc.court_level):
+                is_new_instance = True
+        except ValueError:
+            pass
+
+    if extracted_az and current_proc.az_court and extracted_az != current_proc.az_court:
+        is_new_instance = True
+
+    if is_new_instance:
+        existing_match = None
+        if extracted_az:
+            existing_match = (
+                db.query(Proceeding)
+                .filter(
+                    Proceeding.case_id == current_proc.case_id,
+                    Proceeding.az_court == extracted_az,
+                    Proceeding.id != current_proc.id,
+                )
+                .first()
+            )
+
+        if existing_match:
+            new_proc = existing_match
+            if current_proc.az_court != extracted_az:
+                current_proc.status = ProceedingStatus.CLOSED
+                current_proc.ended_at = datetime.now(UTC)
+        else:
+            new_proc = Proceeding(
+                case_id=current_proc.case_id,
+                court_name=data.get("court_name")
+                if _looks_like_court(data.get("court_name"))
+                else "Unknown Court",
+                court_level=extracted_level or ProceedingCourtLevel.AG,
+                az_court=extracted_az,
+                subject_matter=data.get("subject_matter"),
+                status=ProceedingStatus.ACTIVE,
+                started_at=datetime.now(UTC),
+                is_draft=True,
+            )
+            db.add(new_proc)
+            current_proc.status = ProceedingStatus.CLOSED
+            current_proc.ended_at = datetime.now(UTC)
+            db.flush()
+
+        doc.proceeding_id = new_proc.id
+        if doc.ingest_batch:
+            doc.ingest_batch.proceeding_id = new_proc.id
+            for batch_doc in doc.ingest_batch.documents:
+                batch_doc.proceeding_id = new_proc.id
+    else:
+        if not current_proc.az_court and extracted_az:
+            current_proc.az_court = extracted_az
+        if (
+            (
+                not current_proc.court_name
+                or current_proc.court_name in ("Unknown Court", "General")
+            )
+            and data.get("court_name")
+            and _looks_like_court(data.get("court_name"))
+        ):
+            current_proc.court_name = data.get("court_name")
+        if not current_proc.subject_matter and data.get("subject_matter"):
+            current_proc.subject_matter = data.get("subject_matter")
+        if extracted_level and current_proc.court_level in (
+            ProceedingCourtLevel.AG,
+            ProceedingCourtLevel.OTHER,
+        ):
+            current_proc.court_level = extracted_level
+
+    return None
 
 
 def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> None:
@@ -198,11 +426,15 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
             batch_subject = doc.ingest_batch.subject if doc.ingest_batch else None
 
-            # Derive court_name from Phase 1 sender when it looks like a court letterhead
+            # Prefer AI-extracted court_name; fall back to sender heuristic.
             court_name_for_proc = (
-                doc.sender
-                if (doc.sender and infer_court_level(doc.sender) is not None)
-                else None
+                summary_data.get("court_name")
+                if _looks_like_court(summary_data.get("court_name"))
+                else (
+                    doc.sender
+                    if (doc.sender and infer_court_level(doc.sender) is not None)
+                    else None
+                )
             )
 
             draft_case, draft_proc, created = get_or_create_case_from_reference(
@@ -226,6 +458,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
     # 4. Re-evaluate review status
     refresh_review_reasons(doc, db, commit=False)
+
+    # 5. Create/update Proceeding (merged from former PROCEEDING_ANALYSIS stage).
+    #    Must run after auto-triage above so doc.case_id is set.
+    skip_reason = _apply_proceeding_extraction(doc, summary_data, db)
+    if skip_reason:
+        logger.debug("Doc %d: proceeding extraction skipped: %s", doc.id, skip_reason)
 
 
 def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
@@ -305,13 +543,16 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         else extract_internal_id(content_for_hints)["value"]
     )
 
+    # Strip Docling markdown heading artifacts (e.g. "## Amtsgericht Ingolstadt")
+    _md_prefix = re.compile(r"^[#\s]+")
+    sender_clean = _md_prefix.sub("", doc.sender or "").strip() or None
+
     hints = {
         "az_court": az_hint,
         "internal_id": internal_id_hint,
-        "sender": doc.sender,
-        "issued_date": doc.issued_date.strftime("%Y-%m-%d")
-        if doc.issued_date
-        else None,
+        "sender": sender_clean,
+        # issued_date intentionally omitted: it comes from a prior AI extraction
+        # and feeding it back creates a feedback loop that amplifies earlier errors.
         "originator": (
             doc.originator_type.value
             if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN
@@ -321,7 +562,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
     }
     hints = {k: v for k, v in hints.items() if v is not None}
 
-    prompt = f"Document: {doc.title}\n\n"
+    prompt = ""
     if hints:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
     prompt += f"### Document Content Preview:\n{content_preview}"
@@ -369,6 +610,13 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document:
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
         return doc
+
+    # Reset to original filename before each metadata run so that AI-enriched
+    # titles from prior runs don't anchor the next extraction pass.
+    if doc.original_filename:
+        from app.services.ingestion.service import extract_clean_title
+
+        doc.title = extract_clean_title(doc.original_filename, doc.content)
 
     db.commit()
 
