@@ -129,9 +129,15 @@ if (window.Alpine) {
     document.addEventListener('alpine:init', () => registerGlobalAlpineData());
 }
 
-// Re-initialize Alpine on OOB swaps to ensure directives like :class work on
-// injected elements. Only OOB swaps need manual initTree because they bypass
-// HTMX's normal swap path; regular swaps are handled by Alpine's MutationObserver.
+// Re-initialize Alpine after any HTMX swap so x-init (Sortable) and x-if/x-show
+// directives activate on injected content. Alpine's MutationObserver does not
+// reliably fire for programmatic htmx.ajax() outerHTML swaps.
+document.addEventListener('htmx:afterSwap', (event) => {
+    if (window.Alpine && event.target) {
+        window.Alpine.initTree(event.target);
+    }
+});
+
 document.addEventListener('htmx:oobAfterSwap', (event) => {
     if (window.Alpine && event.target) {
         window.Alpine.initTree(event.target);
