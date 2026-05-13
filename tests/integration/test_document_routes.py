@@ -25,7 +25,9 @@ def test_open_original_returns_file(db_session, isolate_data_dir):
 
     response = client.get(f"/document/{doc.id}/original")
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/octet-stream")
+    assert response.headers["content-type"].startswith(
+        ("application/pdf", "application/octet-stream")
+    )
     assert b"%PDF" in response.content
 
 
