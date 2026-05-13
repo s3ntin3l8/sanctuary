@@ -60,7 +60,7 @@
                 #{% if bundle.batch_id %}ib-{{ '%04d' % bundle.batch_id }}{% else %}loose-{{ bundle.documents[0].id if bundle.documents else '?' }}{% endif %}
             </div>
             <div class="font-headline text-[10px] mt-0.5 flex items-center gap-1 text-on-surface-variant uppercase tracking-widest">
-                <span class="material-symbols-outlined text-[11px]">
+                <span class="material-symbols-outlined text-[10px]">
                     {%- if bundle.source_type.value == 'email' -%}attach_email
                     {%- elif bundle.source_type.value == 'scan' -%}scanner
                     {%- else -%}upload_file
@@ -76,7 +76,7 @@
         {# Docs column — count, sub-bundle pill, origin dots #}
         <div class="w-[240px] flex-shrink-0 pt-0.5">
             <div class="text-[12.5px] font-medium text-on-surface flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[13px] text-on-surface-variant">folder_open</span>
+                <span class="material-symbols-outlined text-[12px] text-on-surface-variant">folder_open</span>
                 <span class="font-mono">{{ bundle.doc_count }}</span>
                 <span class="text-on-surface-variant">doc{{ 's' if bundle.doc_count != 1 else '' }}</span>
                 <span class="font-mono text-[10.5px] text-on-surface-variant">· {{ bundle.total_pages }} pp</span>

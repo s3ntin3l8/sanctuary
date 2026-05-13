@@ -29,12 +29,12 @@
             <a @click.prevent="$store.triageFilters.clearFilter('pipelineFilters')"
                title="Clear pipeline filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
-                <span class="material-symbols-outlined text-[13px]">close</span>
+                <span class="material-symbols-outlined text-[11px]">close</span>
             </a>
             {% endif %}
             <button type="button" @click.stop="open = !open; if (open) window.dispatchEvent(new CustomEvent('triage-filter-opened', {detail: $root}))"
                     class="{{ 'text-primary' if pipeline_filters else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
-                <span class="material-symbols-outlined text-[13px]">
+                <span class="material-symbols-outlined text-[11px]">
                     {{ 'filter_alt' if pipeline_filters else 'filter_list' }}
                 </span>
             </button>
@@ -71,12 +71,12 @@
             <a @click.prevent="$store.triageFilters.clearFilter('caseIds')"
                title="Clear case filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
-                <span class="material-symbols-outlined text-[13px]">close</span>
+                <span class="material-symbols-outlined text-[11px]">close</span>
             </a>
             {% endif %}
             <button type="button" @click.stop="open = !open; if (open) window.dispatchEvent(new CustomEvent('triage-filter-opened', {detail: $root}))"
                     class="{{ 'text-primary' if case_ids else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
-                <span class="material-symbols-outlined text-[13px]">
+                <span class="material-symbols-outlined text-[11px]">
                     {{ 'filter_alt' if case_ids else 'filter_list' }}
                 </span>
             </button>
@@ -105,12 +105,12 @@
             <a @click.prevent="$store.triageFilters.clearFilter('proceedingIds')"
                title="Clear proceeding filter"
                class="text-primary/70 hover:text-primary transition-colors leading-none cursor-pointer">
-                <span class="material-symbols-outlined text-[13px]">close</span>
+                <span class="material-symbols-outlined text-[11px]">close</span>
             </a>
             {% endif %}
             <button type="button" @click.stop="open = !open; if (open) window.dispatchEvent(new CustomEvent('triage-filter-opened', {detail: $root}))"
                     class="{{ 'text-primary' if proceeding_ids else 'text-on-surface-variant hover:text-on-surface' }} transition-colors leading-none">
-                <span class="material-symbols-outlined text-[13px]">
+                <span class="material-symbols-outlined text-[11px]">
                     {{ 'filter_alt' if proceeding_ids else 'filter_list' }}
                 </span>
             </button>
