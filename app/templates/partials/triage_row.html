@@ -60,7 +60,7 @@
                 #{% if bundle.batch_id %}ib-{{ '%04d' % bundle.batch_id }}{% else %}loose-{{ bundle.documents[0].id if bundle.documents else '?' }}{% endif %}
             </div>
             <div class="font-headline text-[10px] mt-0.5 flex items-center gap-1 text-on-surface-variant uppercase tracking-widest">
-                <span class="material-symbols-outlined text-[9px]">
+                <span class="material-symbols-outlined text-[8.5px]">
                     {%- if bundle.source_type.value == 'email' -%}attach_email
                     {%- elif bundle.source_type.value == 'scan' -%}scanner
                     {%- else -%}upload_file
