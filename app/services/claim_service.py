@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
@@ -10,11 +11,17 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.database import (
     Claim,
     ClaimEvidence,
+    ClaimEvidenceProposal,
     ClaimMergeProposal,
     Document,
     UserReaction,
 )
-from app.models.enums import ClaimStatus, ProposalStatus
+from app.models.enums import (
+    ClaimEvidenceRole,
+    ClaimStatus,
+    OriginatorType,
+    ProposalStatus,
+)
 from app.repositories.claim import ClaimRepository
 from app.repositories.user_reaction import UserReactionRepository
 
@@ -102,12 +109,31 @@ class PendingMergeRow:
 
 
 @dataclass
+class PendingEvidenceRow:
+    """A pending ClaimEvidenceProposal scoped to a case, hydrated for the
+    "Pending cross-doc stances" block on the Truth Map. Mirrors the
+    per-document HUD pill but surfaces it at case level so REFUTES
+    proposals don't sit unconfirmed forever."""
+
+    proposal_id: int
+    proposed_role: ClaimEvidenceRole
+    excerpt: str | None
+    target_claim_id: int
+    target_claim_text: str
+    target_claim_status: ClaimStatus
+    source_document_id: int
+    source_document_title: str | None
+    source_document_originator: OriginatorType | None
+
+
+@dataclass
 class TruthMapView:
     case_id: str
     filter: TruthMapFilter
     groups: list[ClaimGroup] = field(default_factory=list)
     open_claim_count: int = 0
     pending_merges: list[PendingMergeRow] = field(default_factory=list)
+    pending_evidence: list[PendingEvidenceRow] = field(default_factory=list)
 
 
 class ClaimService:
@@ -178,12 +204,18 @@ class ClaimService:
         # cross-case overlap for the rendering.
         pending_merges = self._load_pending_merges_for_case(case_id)
 
+        # Pending cross-doc evidence proposals (the path to REFUTED status).
+        # Surfaced here at case level so confirmed REFUTES proposals actually
+        # land — they used to be reachable only via the per-document HUD.
+        pending_evidence = self._load_pending_evidence_for_case(case_id)
+
         return TruthMapView(
             case_id=case_id,
             filter=filter_,
             groups=groups,
             open_claim_count=open_count,
             pending_merges=pending_merges,
+            pending_evidence=pending_evidence,
         )
 
     def _load_pending_merges_for_case(self, case_id: str) -> list[PendingMergeRow]:
@@ -250,6 +282,89 @@ class ClaimService:
             )
         return out
 
+    def _load_pending_evidence_for_case(self, case_id: str) -> list[PendingEvidenceRow]:
+        """Find PENDING ClaimEvidenceProposal rows touching this case — either
+        the source document is in this case OR the target claim has evidence
+        in this case. Skips proposals targeting dismissed claims."""
+        rows = (
+            self._db.query(ClaimEvidenceProposal)
+            .filter(ClaimEvidenceProposal.status == ProposalStatus.PENDING)
+            .order_by(ClaimEvidenceProposal.proposed_at.desc())
+            .all()
+        )
+        if not rows:
+            return []
+
+        target_claim_ids = {r.target_claim_id for r in rows}
+        source_doc_ids = {r.source_document_id for r in rows}
+
+        # Source-doc-in-this-case set.
+        in_case_doc_ids = {
+            did
+            for (did,) in self._db.query(Document.id)
+            .filter(
+                Document.id.in_(source_doc_ids),
+                Document.case_id == case_id,
+            )
+            .all()
+        }
+
+        # Target-claim-has-evidence-in-this-case set.
+        in_case_target_ids = {
+            cid
+            for (cid,) in self._db.query(Claim.id)
+            .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
+            .join(Document, Document.id == ClaimEvidence.document_id)
+            .filter(
+                Claim.id.in_(target_claim_ids),
+                Document.case_id == case_id,
+            )
+            .distinct()
+            .all()
+        }
+
+        claims_by_id = {
+            c.id: c
+            for c in self._db.query(Claim)
+            .filter(
+                Claim.id.in_(target_claim_ids),
+                Claim.dismissed_at.is_(None),
+            )
+            .all()
+        }
+        docs_by_id = {
+            d.id: d
+            for d in self._db.query(Document)
+            .filter(Document.id.in_(source_doc_ids))
+            .all()
+        }
+
+        out: list[PendingEvidenceRow] = []
+        for r in rows:
+            target = claims_by_id.get(r.target_claim_id)
+            if target is None:
+                continue  # target was dismissed or deleted
+            doc = docs_by_id.get(r.source_document_id)
+            if (
+                r.source_document_id not in in_case_doc_ids
+                and r.target_claim_id not in in_case_target_ids
+            ):
+                continue
+            out.append(
+                PendingEvidenceRow(
+                    proposal_id=r.id,
+                    proposed_role=r.proposed_role,
+                    excerpt=r.excerpt,
+                    target_claim_id=r.target_claim_id,
+                    target_claim_text=target.claim_text,
+                    target_claim_status=target.status,
+                    source_document_id=r.source_document_id,
+                    source_document_title=doc.title if doc else None,
+                    source_document_originator=doc.originator_type if doc else None,
+                )
+            )
+        return out
+
     def transition_status(self, claim_id: int, target: ClaimStatus) -> Claim:
         """User-initiated status transition. Only ESTABLISHED and ASSERTED (reopen) are user-owned."""
         claim = self._claim_repo.get(claim_id)
@@ -268,3 +383,24 @@ class ClaimService:
         if updated is None:
             raise ValueError(f"Claim {claim_id} not found")
         return updated
+
+    def dismiss_claim(self, claim_id: int) -> Claim:
+        """Soft-delete a claim. Hides it from the Truth Map, the HUD, and the
+        extractor's candidate-claims context. Pending evidence proposals
+        targeting this claim are auto-dismissed so the new Pending Stances
+        block on the Truth Map doesn't surface them with no live target."""
+        claim = self._claim_repo.get(claim_id)
+        if claim is None:
+            raise ValueError(f"Claim {claim_id} not found")
+
+        now = datetime.now()
+        claim.dismissed_at = now
+        self._db.query(ClaimEvidenceProposal).filter(
+            ClaimEvidenceProposal.target_claim_id == claim_id,
+            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
+        ).update(
+            {"status": ProposalStatus.DISMISSED, "resolved_at": now},
+            synchronize_session=False,
+        )
+        self._db.flush()
+        return claim

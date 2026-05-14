@@ -95,6 +95,69 @@
   </div>
   {% endif %}
 
+  {# Pending cross-doc evidence proposals (the path to REFUTED status). #}
+  {% if truth_map.pending_evidence %}
+  <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+    <h4 class="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-sm">fact_check</span>
+      Pending Cross-Doc Stances ({{ truth_map.pending_evidence | length }})
+    </h4>
+    {% for p in truth_map.pending_evidence %}
+    {% set role = p.proposed_role.value %}
+    {% set role_color = {
+        'supports': 'var(--color-originator-own)',
+        'contests': 'var(--color-amber-500)',
+        'refutes': 'var(--color-error)',
+        'cites_as_proof': 'var(--color-on-surface-variant)',
+    }.get(role, 'var(--color-on-surface-variant)') %}
+    <div id="evidence-pill-{{ p.proposal_id }}"
+         class="text-xs px-2 py-1.5 rounded border border-primary/20 bg-surface-container/40">
+      <div class="flex items-start gap-2">
+        <span class="text-base leading-none flex-shrink-0" style="color:{{ role_color }};">
+          {% if role == 'supports' %}✓
+          {% elif role == 'contests' %}⚠
+          {% elif role == 'refutes' %}✕
+          {% else %}📎{% endif %}
+        </span>
+        <div class="flex-1 min-w-0">
+          <div class="text-on-surface-variant">
+            <span class="font-bold uppercase text-[10px] tracking-wider" style="color:{{ role_color }};">{{ role | replace('_', ' ') }}</span>
+            <span class="text-outline">→ claim</span>
+            <span class="font-mono">#{{ p.target_claim_id }}</span>
+            <span class="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded ml-1 bg-surface-container-highest text-on-surface-variant/80">{{ p.target_claim_status.value | replace('_', ' ') }}</span>
+          </div>
+          <div class="mt-1 text-on-surface/80 line-clamp-2">"{{ p.target_claim_text }}"</div>
+          <div class="mt-0.5 text-[10px] text-on-surface-variant/70 flex items-center gap-1">
+            {% if p.source_document_originator %}
+            <span class="w-1.5 h-1.5 rounded-full inline-block"
+                  style="background-color: {{ originator_colors.get(p.source_document_originator, '#64748b') if originator_colors else '#64748b' }}"></span>
+            {% endif %}
+            <span class="text-outline">from</span> {{ p.source_document_title or 'Untitled' }}
+          </div>
+          {% if p.excerpt %}
+          <div class="mt-0.5 text-[10px] italic text-on-surface-variant/60 line-clamp-2">excerpt: {{ p.excerpt }}</div>
+          {% endif %}
+          <div class="flex gap-1 mt-1.5">
+            <button hx-post="/claims/proposals/evidence/{{ p.proposal_id }}/confirm"
+                    hx-target="#evidence-pill-{{ p.proposal_id }}"
+                    hx-swap="delete"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
+              ✓ Confirm
+            </button>
+            <button hx-post="/claims/proposals/evidence/{{ p.proposal_id }}/dismiss"
+                    hx-target="#evidence-pill-{{ p.proposal_id }}"
+                    hx-swap="delete"
+                    class="text-[10px] font-bold px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
+              ✕ Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# Claim groups #}
   {% if truth_map.groups %}
     {% for group in truth_map.groups %}

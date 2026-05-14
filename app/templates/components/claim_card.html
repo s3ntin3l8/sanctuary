@@ -68,8 +68,16 @@
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
-                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors {% if c.is_precedent %}text-amber-600 dark:text-amber-400{% else %}text-on-surface{% endif %} rounded-b-lg">
+                class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors {% if c.is_precedent %}text-amber-600 dark:text-amber-400{% else %}text-on-surface{% endif %}">
           ⚖ {% if c.is_precedent %}Unmark Precedent{% else %}Mark as Precedent{% endif %}
+        </button>
+        <button hx-post="/claims/{{ c.id }}/dismiss"
+                hx-target="#claim-card-{{ c.id }}"
+                hx-swap="delete"
+                hx-confirm="Dismiss this claim? It will be hidden from the Truth Map."
+                @click="open = false"
+                class="w-full text-left px-3 py-2 hover:bg-error/10 transition-colors text-error rounded-b-lg">
+          🗑 Dismiss claim
         </button>
       </div>
     </div>

@@ -240,6 +240,125 @@ def test_non_court_doc_claims_arrive_asserted(db_session, significant_doc):
 
 
 @pytest.mark.unit
+def test_court_relay_doc_claims_arrive_asserted(db_session, sample_case):
+    """A court RELAY document (sender=court but it's just forwarding a
+    party submission) carries the party's claims, not the court's. Its
+    claims must arrive ASSERTED, not ESTABLISHED — even though
+    `originator_type == COURT`."""
+    relay_doc = Document(
+        title="Zustellung durch das Gericht",
+        content="Die Antragstellerin trägt vor: Die Wohnung wurde am 12.03.2024 übergeben.",
+        case_id=sample_case.id,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        originator_type=OriginatorType.COURT,
+        court_relay=True,
+        ai_summary={
+            "legal_significance": "Forwarded submission",
+            "required_action": "none",
+            "financial_impact": "none",
+        },
+    )
+    db_session.add(relay_doc)
+    db_session.commit()
+    db_session.refresh(relay_doc)
+
+    ai_result = {
+        "new_claims": [
+            {
+                "claim_text": "The apartment was handed over on 2024-03-12",
+                "claim_type": "factual",
+                "excerpt": "Die Wohnung wurde am 12.03.2024 übergeben",
+            }
+        ],
+        "evidence_links": [],
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(relay_doc.id)
+
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(ClaimRepository(db_session).claims_asserted_by_document(relay_doc.id))
+    assert len(claims) == 1
+    assert claims[0].status == ClaimStatus.ASSERTED, (
+        "court-relay doc must not produce ESTABLISHED claims — it's forwarding "
+        "a party submission, not making a court finding"
+    )
+
+
+@pytest.mark.unit
+def test_attributed_originator_overrides_court_originator(db_session, sample_case):
+    """When `attributed_originator` names the true author as non-court
+    (e.g. "opposing"), claims must arrive ASSERTED even if the bare
+    `originator_type` is COURT (a common misclassification path)."""
+    misclassified_doc = Document(
+        title="Schriftsatz",
+        content="Die Beklagtenseite bestreitet die Übergabe und behauptet die Wohnung sei mangelhaft.",
+        case_id=sample_case.id,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        originator_type=OriginatorType.COURT,
+        attributed_originator="opposing",
+        ai_summary={
+            "legal_significance": "Opposing submission",
+            "required_action": "none",
+            "financial_impact": "none",
+        },
+    )
+    db_session.add(misclassified_doc)
+    db_session.commit()
+    db_session.refresh(misclassified_doc)
+
+    ai_result = {
+        "new_claims": [
+            {
+                "claim_text": "The apartment was defective at handover and unfit for tenancy",
+                "claim_type": "factual",
+                "excerpt": "die Wohnung sei mangelhaft",
+            }
+        ],
+        "evidence_links": [],
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.claim_extractor import extract
+
+        extract(misclassified_doc.id)
+
+    from app.repositories.claim import ClaimRepository
+
+    claims = list(
+        ClaimRepository(db_session).claims_asserted_by_document(misclassified_doc.id)
+    )
+    assert len(claims) == 1
+    assert claims[0].status == ClaimStatus.ASSERTED, (
+        "attributed_originator='opposing' must override originator_type=COURT — "
+        "those are party claims, not procedural reality"
+    )
+
+
+@pytest.mark.unit
 def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_case):
     """Wave 1 invariant: an ESTABLISHED claim (typically a court finding) is
     not auto-flipped to REFUTED when a later document takes a refutes stance.

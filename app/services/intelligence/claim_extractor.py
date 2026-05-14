@@ -132,13 +132,22 @@ def _apply_claims(
             continue
 
         # Court-originated claims arrive ESTABLISHED — they are the
-        # procedural reality. The truth-status workflow (asserted → contested
-        # → established/refuted) only applies to opposing/own/third-party
-        # assertions. See Sharpen-Claims plan, Wave 1.
+        # procedural reality. But a court RELAY (sender=court forwarding a
+        # party submission) carries the party's claims, not the court's;
+        # those stay ASSERTED. When attributed_originator names the true
+        # author, it overrides originator_type for this decision —
+        # same convention as case_graph_service._lane_for.
+        effective_ot = doc.originator_type
+        if doc.attributed_originator:
+            try:
+                effective_ot = OriginatorType(doc.attributed_originator)
+            except ValueError:
+                pass  # display name, not a role key — fall back
+        is_court_origination = (
+            effective_ot == OriginatorType.COURT and not doc.court_relay
+        )
         initial_status = (
-            ClaimStatus.ESTABLISHED
-            if doc.originator_type == OriginatorType.COURT
-            else ClaimStatus.ASSERTED
+            ClaimStatus.ESTABLISHED if is_court_origination else ClaimStatus.ASSERTED
         )
 
         claim = claim_repo.create_claim(

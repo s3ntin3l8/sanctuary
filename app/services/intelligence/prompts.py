@@ -251,6 +251,26 @@ Response shape:
   ]
 }
 
+# EVIDENCE LINK ROLES
+
+When this document takes a stance on a listed existing claim, choose one role:
+
+- **supports** — the document affirms, repeats, or aligns with the claim without
+  being its originator. Verbal agreement counts.
+- **contests** — the document disputes, denies, or disagrees with the claim, but
+  does NOT bring conclusive proof against it. "Wir bestreiten / we deny / das ist
+  falsch" without an exhibit = contests.
+- **refutes** — the document brings concrete, verifiable evidence that the claim
+  is FALSE: a contradicting document, exhibit, dated record, bank statement,
+  expert finding, prior admission, or directly contradictory fact in this very
+  document's content. The bar is HIGH. If you are uncertain whether the
+  evidence is conclusive, downgrade to "contests".
+- **cites_as_proof** — the document points to another document as proof of the
+  claim (use when the source IS the evidence, not when it merely references it).
+
+Decision test: would a neutral reader say "this proves the other claim wrong"?
+If yes → refutes. If only "this party disagrees" → contests.
+
 # THE CONTESTABILITY TEST
 
 A claim is something a reasonable opponent COULD dispute. Before extracting any candidate, ask:

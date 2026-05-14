@@ -587,6 +587,7 @@ class Claim(Base):
     last_updated_at = Column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
+    dismissed_at = Column(DateTime, nullable=True, index=True)
 
     evidence = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"

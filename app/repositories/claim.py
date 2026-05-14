@@ -47,12 +47,12 @@ class ClaimRepository(BaseRepository[Claim]):
     def claims_for_case(
         self, case_id: str, statuses: list[ClaimStatus] | None = None
     ) -> Sequence[Claim]:
-        """All claims with at least one piece of evidence rooted in `case_id`."""
+        """All non-dismissed claims with at least one piece of evidence rooted in `case_id`."""
         q = (
             self.db.query(Claim)
             .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
             .join(Document, Document.id == ClaimEvidence.document_id)
-            .filter(Document.case_id == case_id)
+            .filter(Document.case_id == case_id, Claim.dismissed_at.is_(None))
             .distinct()
         )
         if statuses:
@@ -60,18 +60,21 @@ class ClaimRepository(BaseRepository[Claim]):
         return q.order_by(Claim.last_updated_at.desc()).all()
 
     def claims_for_document(self, document_id: int) -> Sequence[Claim]:
-        """All claims with any evidence (any role) anchored on `document_id`."""
+        """All non-dismissed claims with any evidence (any role) anchored on `document_id`."""
         return (
             self.db.query(Claim)
             .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
-            .filter(ClaimEvidence.document_id == document_id)
+            .filter(
+                ClaimEvidence.document_id == document_id,
+                Claim.dismissed_at.is_(None),
+            )
             .distinct()
             .order_by(Claim.last_updated_at.desc())
             .all()
         )
 
     def claims_asserted_by_document(self, document_id: int) -> Sequence[Claim]:
-        """Claims this document originally ASSERTED (one row per claim).
+        """Non-dismissed claims this document originally ASSERTED (one row per claim).
 
         Replaces the old `Claim.source_document_id == doc.id` filter — the
         ASSERTS evidence row is the canonical "originated by" link.
@@ -82,15 +85,19 @@ class ClaimRepository(BaseRepository[Claim]):
             .filter(
                 ClaimEvidence.document_id == document_id,
                 ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+                Claim.dismissed_at.is_(None),
             )
             .order_by(Claim.id)
             .all()
         )
 
     def get_open_in_case(self, case_id: str, limit: int = 20) -> Sequence[Claim]:
-        """Open claims (ASSERTED/CONTESTED) with evidence in this case.
+        """Open, non-dismissed claims (ASSERTED/CONTESTED) with evidence in this case.
 
         Used by the extractor to feed candidate-claims context to the AI.
+        Dismissed claims are deliberately excluded — once a user says "this
+        isn't a claim", we must not feed it back to the LLM as a candidate
+        for cross-document evidence linking.
         """
         return (
             self.db.query(Claim)
@@ -99,6 +106,7 @@ class ClaimRepository(BaseRepository[Claim]):
             .filter(
                 Document.case_id == case_id,
                 Claim.status.in_([ClaimStatus.ASSERTED, ClaimStatus.CONTESTED]),
+                Claim.dismissed_at.is_(None),
             )
             .distinct()
             .order_by(Claim.last_updated_at.desc())

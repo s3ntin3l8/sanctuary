@@ -405,3 +405,17 @@ async def update_claim_status(
     )
 
     return HTMLResponse(content=card_html + badge_html)
+
+
+@router.post("/claims/{claim_id}/dismiss")
+async def dismiss_claim(claim_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+    """Soft-delete a claim from the Truth Map. Cascades to PENDING evidence
+    proposals targeting this claim. The caller is expected to hx-swap='delete'
+    the claim card, so the response body is empty."""
+    svc = ClaimService(db)
+    try:
+        svc.dismiss_claim(claim_id)
+    except ValueError as exc:
+        return HTMLResponse(str(exc), status_code=404)
+    db.commit()
+    return HTMLResponse("", status_code=200)
