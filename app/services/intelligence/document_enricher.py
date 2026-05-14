@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 
 VALID_SIGNIFICANCE_TIERS = {e.value for e in SignificanceTier}
 VALID_DOCUMENT_TYPES = {e.value for e in DocumentType}
+VALID_PASSAGE_KINDS = {
+    "ruling",
+    "holding",
+    "deadline",
+    "finding",
+    "concession",
+    "neutral",
+}
 VALID_COST_DIRECTIONS = {"incoming", "outgoing", "ruling", "none"}
 
 THREAD_OPEN_TYPES = {
@@ -155,7 +163,7 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     if doc.document_type in THREAD_OPEN_TYPES:
         doc.thread_open = True
 
-    # key_passages — validate schema and repair offsets
+    # key_passages — validate schema, stamp kind fallback, repair offsets
     passages = result.get("key_passages")
     if isinstance(passages, list):
         validated = []
@@ -163,11 +171,14 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             if isinstance(p, dict) and p.get("text"):
                 try:
                     passage_dict = KeyPassageSchema(**p).model_dump()
+                    kind_raw = (passage_dict.get("kind") or "").strip().lower()
+                    passage_dict["kind"] = (
+                        kind_raw if kind_raw in VALID_PASSAGE_KINDS else "neutral"
+                    )
                     if not passage_dict.get("id"):
                         text = passage_dict["text"]
-                        kind = (passage_dict.get("kind") or "neutral").lower()
                         passage_dict["id"] = hashlib.sha1(
-                            f"{text}|{kind}".encode()
+                            f"{text}|{passage_dict['kind']}".encode()
                         ).hexdigest()[:12]
                     passage_dict = _repair_passage_offsets(doc, passage_dict)
                     validated.append(passage_dict)

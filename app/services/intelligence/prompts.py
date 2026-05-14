@@ -132,9 +132,10 @@ Extract these fields:
   * Base this on the **Lead Document**.
   * If the batch context flags this document as a cover letter, set this to "relay" UNLESS the document contains substantive primary content.
 - key_passages: list of up to 3 most important passages. Each passage is a verbatim quote from the document — copy it exactly so the UI can locate and highlight it:
-  [{"text": "exact quote from document", "rationale": "why this matters legally"}]
-  At least one (ideally all) passages MUST be taken from the **Lead Document**.
-  Do NOT compute or include character offsets — the system locates passages by matching the text.
+  [{"text": "exact quote from document", "rationale": "why this matters legally", "kind": "ruling|holding|deadline|finding|concession|neutral"}]
+  * kind picks the passage's role: "ruling" (Beschluss tenor / court order), "holding" (legal conclusion that binds), "deadline" (Frist / due date / hearing), "finding" (factual determination), "concession" (admission against interest), "neutral" (everything else).
+  * At least one (ideally all) passages MUST be taken from the **Lead Document**.
+  * Do NOT compute or include character offsets — the system locates passages by matching the text.
 - cost_delta: if the document introduces a cost-relevant signal, object with:
   {"kind": "...", "amount": float_or_null, "direction": "incoming|outgoing|ruling|none", "description": "..."}
 

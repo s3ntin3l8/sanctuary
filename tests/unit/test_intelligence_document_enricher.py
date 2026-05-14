@@ -33,6 +33,48 @@ def doc_with_content(db_session, sample_case):
 
 
 @pytest.mark.unit
+def test_apply_enrichment_stores_passage_kind(doc_with_content):
+    """Enricher persists `kind` from the AI response on each key passage."""
+    result = {
+        "key_passages": [
+            {
+                "text": "Das Gericht ordnet an",
+                "rationale": "core ruling",
+                "kind": "ruling",
+            },
+        ],
+    }
+    _apply_enrichment(doc_with_content, result)
+
+    assert doc_with_content.key_passages is not None
+    passage = doc_with_content.key_passages[0]
+    assert passage["kind"] == "ruling"
+    assert passage["start_offset"] is not None  # offset still repaired
+
+
+@pytest.mark.unit
+def test_apply_enrichment_defaults_kind_to_neutral(doc_with_content):
+    """When the AI omits `kind`, the enricher stamps 'neutral'."""
+    result = {
+        "key_passages": [{"text": "Das Gericht ordnet an", "rationale": "ctx"}],
+    }
+    _apply_enrichment(doc_with_content, result)
+    assert doc_with_content.key_passages[0]["kind"] == "neutral"
+
+
+@pytest.mark.unit
+def test_apply_enrichment_invalid_kind_falls_back_to_neutral(doc_with_content):
+    """AI returning an out-of-vocabulary kind falls back to 'neutral'."""
+    result = {
+        "key_passages": [
+            {"text": "Das Gericht ordnet an", "rationale": "ctx", "kind": "outcome"}
+        ],
+    }
+    _apply_enrichment(doc_with_content, result)
+    assert doc_with_content.key_passages[0]["kind"] == "neutral"
+
+
+@pytest.mark.unit
 def test_apply_enrichment_populates_fields(doc_with_content):
     result = {
         "significance_tier": "critical",
