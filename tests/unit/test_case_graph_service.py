@@ -351,3 +351,204 @@ class TestCaseGraphServiceBuildPayload:
         edge = payload.edges[0]
         assert edge["kind"] == "reply"
         assert edge["arrow"] is True
+
+
+# ===========================================================================
+# Ghost node positioning — TDD tests for inline cross-proceeding placement
+# ===========================================================================
+
+
+@pytest.fixture
+def cross_proceeding_setup(db_session, sample_case):
+    """Two proceedings under the same case with a cross-proceeding reference.
+
+    proceeding_a  — the one we call build_payload() on
+      doc_a1: issued 2025-03-12  (OWN, STANDALONE, SIGNIFICANT)
+      doc_a2: issued 2025-03-20  (COURT, STANDALONE, SIGNIFICANT)
+      doc_a_undated: no issued_date  (OWN, STANDALONE, SIGNIFICANT)
+
+    proceeding_b  — the external proceeding
+      doc_b: issued 2025-03-15  (OPPOSING, STANDALONE, SIGNIFICANT)
+
+    Relationship: doc_b REFERENCES doc_a1
+    When build_payload(proceeding_a.id) is called, doc_b surfaces as a
+    cross-proceeding ghost node because it is referenced by/to a doc in
+    proceeding_a.
+    """
+    proceeding_a = Proceeding(
+        case_id=sample_case.id,
+        court_name="Amtsgericht Hamburg",
+        court_level=ProceedingCourtLevel.AG,
+        az_court="003 F 426/25",
+        status=ProceedingStatus.ACTIVE,
+        ingest_date=datetime(2025, 1, 1),
+    )
+    proceeding_b = Proceeding(
+        case_id=sample_case.id,
+        court_name="Oberlandesgericht Hamburg",
+        court_level=ProceedingCourtLevel.OLG,
+        az_court="26 UF 288/26",
+        status=ProceedingStatus.ACTIVE,
+        ingest_date=datetime(2026, 1, 1),
+    )
+    db_session.add_all([proceeding_a, proceeding_b])
+    db_session.flush()
+
+    doc_a1 = Document(
+        title="Klageschrift",
+        case_id=sample_case.id,
+        proceeding_id=proceeding_a.id,
+        originator_type=OriginatorType.OWN,
+        role=DocumentRole.STANDALONE,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        issued_date=datetime(2025, 3, 12),
+    )
+    doc_a2 = Document(
+        title="Gerichtsbeschluss",
+        case_id=sample_case.id,
+        proceeding_id=proceeding_a.id,
+        originator_type=OriginatorType.COURT,
+        role=DocumentRole.STANDALONE,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        issued_date=datetime(2025, 3, 20),
+    )
+    doc_a_undated = Document(
+        title="Entwurf ohne Datum",
+        case_id=sample_case.id,
+        proceeding_id=proceeding_a.id,
+        originator_type=OriginatorType.OWN,
+        role=DocumentRole.STANDALONE,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        issued_date=None,
+    )
+    doc_b = Document(
+        title="Berufungsbegründung",
+        case_id=sample_case.id,
+        proceeding_id=proceeding_b.id,
+        originator_type=OriginatorType.OPPOSING,
+        role=DocumentRole.STANDALONE,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+        issued_date=datetime(2025, 3, 15),
+    )
+    db_session.add_all([doc_a1, doc_a2, doc_a_undated, doc_b])
+    db_session.flush()
+
+    # Cross-proceeding relationship: doc_b (in proceeding_b) references doc_a1
+    rel = DocumentRelationship(
+        from_document_id=doc_b.id,
+        to_document_id=doc_a1.id,
+        relationship_type=RelationshipType.REFERENCES,
+    )
+    db_session.add(rel)
+    db_session.commit()
+    db_session.refresh(proceeding_a)
+    db_session.refresh(proceeding_b)
+
+    return {
+        "proceeding_a": proceeding_a,
+        "proceeding_b": proceeding_b,
+        "doc_a1": doc_a1,
+        "doc_a2": doc_a2,
+        "doc_a_undated": doc_a_undated,
+        "doc_b": doc_b,
+    }
+
+
+class TestCaseGraphServiceGhostNodes:
+    @pytest.mark.unit
+    @pytest.mark.xfail(
+        reason="TDD: inline ghost positioning not yet implemented — y is currently negative",
+        strict=True,
+    )
+    def test_ghost_nodes_are_sorted_inline_in_timeline(
+        self, db_session, cross_proceeding_setup
+    ):
+        """Cross-proceeding ghost nodes must appear at a positive y coordinate
+        that corresponds to their date position inline with regular nodes.
+
+        Current (broken) behaviour: y = -60 - (i * 70) — negative, stacked above
+        the timeline.  After the fix every node's y must be >= TOP (32).
+        """
+        setup = cross_proceeding_setup
+        payload = CaseGraphService(db_session).build_payload(
+            setup["proceeding_a"].id, significance_filter="all"
+        )
+
+        # doc_b from proceeding_b must appear as a ghost node in the payload
+        doc_b_id = setup["doc_b"].id
+        ghost_node = next((n for n in payload.nodes if n["id"] == doc_b_id), None)
+        assert ghost_node is not None, "Ghost node for cross-proceeding doc not found"
+
+        # The ghost node must be inline — positive y, not stacked above timeline
+        assert ghost_node["y"] >= 0, (
+            f"Ghost node y={ghost_node['y']} is negative — still using old stacking logic"
+        )
+
+        # Its row should place it between doc_a1 (2025-03-12) and doc_a2 (2025-03-20)
+        # because doc_b is dated 2025-03-15.
+        doc_a1_node = next(n for n in payload.nodes if n["id"] == setup["doc_a1"].id)
+        doc_a2_node = next(n for n in payload.nodes if n["id"] == setup["doc_a2"].id)
+        assert ghost_node["row"] > doc_a1_node["row"], (
+            "Ghost node row should come after doc_a1 (2025-03-12)"
+        )
+        assert ghost_node["row"] < doc_a2_node["row"], (
+            "Ghost node row should come before doc_a2 (2025-03-20)"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.xfail(
+        reason="TDD: cross_proceeding/proceeding_label fields not yet added to build_payload",
+        strict=True,
+    )
+    def test_ghost_node_has_cross_proceeding_fields(
+        self, db_session, cross_proceeding_setup
+    ):
+        """External docs from other proceedings must carry cross_proceeding=True,
+        a non-None proceeding_label (the az_court string), and ghost=True.
+        """
+        setup = cross_proceeding_setup
+        payload = CaseGraphService(db_session).build_payload(
+            setup["proceeding_a"].id, significance_filter="all"
+        )
+
+        doc_b_id = setup["doc_b"].id
+        ghost_node = next((n for n in payload.nodes if n["id"] == doc_b_id), None)
+        assert ghost_node is not None, "Ghost node for cross-proceeding doc not found"
+
+        assert ghost_node["ghost"] is True
+        assert ghost_node["cross_proceeding"] is True, (
+            "cross_proceeding field missing or False for external proceeding doc"
+        )
+        assert ghost_node["proceeding_label"] == setup["proceeding_b"].az_court, (
+            f"proceeding_label should be '{setup['proceeding_b'].az_court}', "
+            f"got {ghost_node.get('proceeding_label')!r}"
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.xfail(
+        reason="TDD: cross_proceeding field not yet added to regular-doc nodes in build_payload",
+        strict=True,
+    )
+    def test_undated_regular_doc_not_cross_proceeding(
+        self, db_session, cross_proceeding_setup
+    ):
+        """A regular doc with no issued_date gets ghost=True (undated placeholder)
+        but cross_proceeding must be False — it lives in this proceeding.
+        """
+        setup = cross_proceeding_setup
+        payload = CaseGraphService(db_session).build_payload(
+            setup["proceeding_a"].id, significance_filter="all"
+        )
+
+        doc_a_undated_id = setup["doc_a_undated"].id
+        undated_node = next(
+            (n for n in payload.nodes if n["id"] == doc_a_undated_id), None
+        )
+        assert undated_node is not None, "Undated regular doc node not found"
+
+        assert undated_node["ghost"] is True, (
+            "Undated doc should still have ghost=True (existing behaviour)"
+        )
+        assert undated_node["cross_proceeding"] is False, (
+            "cross_proceeding must be False for docs belonging to this proceeding"
+        )
