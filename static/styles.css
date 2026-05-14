@@ -1130,6 +1130,9 @@
   .mt-px {
     margin-top: 1px;
   }
+  .-mr-1 {
+    margin-right: calc(var(--spacing) * -1);
+  }
   .mr-1 {
     margin-right: calc(var(--spacing) * 1);
   }

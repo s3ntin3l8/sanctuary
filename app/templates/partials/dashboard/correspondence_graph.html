@@ -250,6 +250,8 @@
     <g class="cursor-pointer group/bundle graph-node"
        data-id="{{ bundle.id }}"
        @click="openDoc({{ bundle.id }})"
+       @mouseenter="onNodeHover({{ bundle.id }})"
+       @mouseleave="onNodeLeave()"
        :class="{
          'opacity-30': isNodeDimmed('{{ bundle.lane }}'),
          'is-hovered': hoveredNodeId === {{ bundle.id }}
