@@ -290,8 +290,15 @@ class CaseGraphService:
         relationships = self.rel_repo.get_for_proceeding(proceeding_id)
         visible_doc_ids = {doc.id for doc in visible_docs}
         all_proceeding_doc_ids = {doc.id for doc in all_docs}
+        _EDGE_DRAWING_TYPES = {
+            RelationshipType.REPLIES_TO,
+            RelationshipType.REFERENCES,
+            RelationshipType.SUPERSEDES,
+        }
         external_doc_ids: set[int] = set()
         for rel in relationships:
+            if rel.relationship_type not in _EDGE_DRAWING_TYPES:
+                continue
             if (
                 rel.from_document_id not in visible_doc_ids
                 and rel.from_document_id not in child_doc_ids
