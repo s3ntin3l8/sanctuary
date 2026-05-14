@@ -452,6 +452,12 @@ class CaseGraphService:
                         "id": child.id,
                         "title": _clip(child.title or "Untitled", 22),
                         "origin": _lane_for(child),
+                        "date": child.issued_date.strftime("%d.%m")
+                        if child.issued_date
+                        else "—",
+                        "tier": child.significance_tier.value
+                        if child.significance_tier
+                        else "informational",
                     }
                     for child in children
                 ],

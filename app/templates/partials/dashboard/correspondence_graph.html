@@ -241,14 +241,14 @@
 
     {# Bundle nodes #}
     {% for bundle in graph.bundles %}
-    {% set child_row_h = 32 %}
+    {% set child_row_h = 48 %}
     {% set bundle_h = 16 + (bundle.children | length) * child_row_h + 16 %}
     <g class="cursor-pointer group/bundle graph-node"
        data-id="{{ bundle.id }}"
-       x-data="{ expanded: false, pinned: false }"
+       x-data="{ expanded: true }"
        @mouseenter="expanded = true"
-       @mouseleave="if (!pinned) expanded = false"
-       @click="pinned = !pinned; expanded = true"
+       @mouseleave="expanded = false"
+       @click="openDoc({{ bundle.id }})"
        :class="{
          'opacity-30': isNodeDimmed('{{ bundle.lane }}'),
          'is-hovered': hoveredNodeId === {{ bundle.id }}
@@ -287,11 +287,18 @@
           <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
                 width="4" height="{{ child_row_h - 4 }}"
                 fill="var(--color-originator-{{ child.origin }})"/>
-          <text x="{{ bundle.x + 13 }}" y="{{ cy + 17 }}"
-                font-size="13" font-weight="600"
+          <text x="{{ bundle.x + 13 }}" y="{{ cy + 16 }}"
+                font-size="12" font-weight="600"
                 fill="var(--color-on-surface)"
                 font-family="Inter, sans-serif">
             {{ child.title }}
+          </text>
+          <text x="{{ bundle.x + 13 }}" y="{{ cy + 32 }}"
+                font-size="11"
+                fill="var(--color-on-surface-variant)"
+                font-family="JetBrains Mono, monospace"
+                opacity="0.7">
+            {{ child.date }} · {{ child.tier[:3] }}
           </text>
         </g>
         {% endfor %}
@@ -307,9 +314,6 @@
         {% endif %}
       </g>
 
-      {# Indicator for pinned state #}
-      <text x="{{ bundle.x + 175 }}" y="{{ bundle.y + 10 }}"
-            x-show="pinned" font-size="14" fill="var(--color-amber)">📌</text>
     </g>
     {% endfor %}
 
