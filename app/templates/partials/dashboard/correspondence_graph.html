@@ -71,6 +71,18 @@
               markerWidth="6" markerHeight="6" orient="auto">
         <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-outline)"/>
       </marker>
+      {# Per-node clip regions — title text hard stop, prevents overflow into badges #}
+      {% for node in graph.nodes %}{% if not node.is_bundle %}
+      <clipPath id="clip-title-{{ node.id }}">
+        {# Width 140: card 180 minus 14 left pad minus 26 right badge zone #}
+        <rect x="{{ node.x + 14 }}" y="{{ node.y }}" width="140" height="{{ node.h }}"/>
+      </clipPath>
+      {% if node.cross_proceeding %}
+      <clipPath id="clip-proc-{{ node.id }}">
+        <rect x="{{ node.x + 14 }}" y="{{ node.y }}" width="150" height="18"/>
+      </clipPath>
+      {% endif %}
+      {% endif %}{% endfor %}
     </defs>
 
     {# Lane separator lines #}
@@ -102,7 +114,6 @@
 
     {# Regular doc nodes (bundle headers rendered separately below) #}
     {% for node in graph.nodes %}{% if not node.is_bundle %}
-    {% set proof_count = graph.proof_badges.get(node.id, 0) %}
     <g class="graph-node cursor-pointer"
        data-id="{{ node.id }}"
        :class="{
@@ -116,17 +127,64 @@
        @contextmenu.prevent="openContextMenu($event, {{ node.id }})"
        style="transition:opacity .15s, transform .1s;">
 
+      {% if node.cross_proceeding %}
+      {# Cross-proceeding ghost node — 3-line card layout #}
+
+      {# Card rect: dashed outline in originator color, subdued fill #}
+      <rect x="{{ node.x }}" y="{{ node.y }}"
+            width="180" height="{{ node.h }}" rx="4"
+            fill="var(--color-surface-lowest)"
+            stroke="var(--color-originator-{{ node.lane }})"
+            stroke-width="0.75" stroke-dasharray="4 2"
+            opacity="0.85"/>
+
+      {# Left originator stripe #}
+      <rect x="{{ node.x }}" y="{{ node.y }}"
+            width="5" height="{{ node.h }}" rx="4"
+            fill="var(--color-originator-{{ node.lane }})"/>
+
+      {# Line 1 — proceeding label #}
+      <text x="{{ node.x + 14 }}" y="{{ node.y + 13 }}"
+            font-size="10" font-weight="600"
+            fill="var(--color-originator-{{ node.lane }})"
+            font-family="JetBrains Mono, monospace"
+            opacity="0.9"
+            clip-path="url(#clip-proc-{{ node.id }})">
+        → {{ node.proceeding_label }}
+      </text>
+
+      {# Line 2 — title #}
+      <text x="{{ node.x + 14 }}" y="{{ node.y + 27 }}"
+            font-size="13" font-weight="600"
+            fill="var(--color-on-surface)"
+            font-family="Inter, sans-serif"
+            clip-path="url(#clip-title-{{ node.id }})">
+        {{ node.title }}
+      </text>
+
+      {# Line 3 — role #}
+      <text x="{{ node.x + 14 }}" y="{{ node.y + 42 }}"
+            font-size="11"
+            fill="var(--color-on-surface-variant)"
+            font-family="Inter, sans-serif">
+        {{ node.role }}
+      </text>
+
+      {% else %}
+      {# Regular node — standard card layout #}
+      {% set proof_count = graph.proof_badges.get(node.id, 0) %}
+
       {# Thread-open amber glow ring #}
       {% if node.thread_open %}
       <rect x="{{ node.x - 4 }}" y="{{ node.y - 4 }}"
-            width="188" height="58" rx="9"
+            width="188" height="{{ node.h + 8 }}" rx="9"
             fill="none" stroke="var(--color-amber)" stroke-width="1"
             opacity="0.5" class="pulse-amber"/>
       {% endif %}
 
       {# Card background #}
       <rect x="{{ node.x }}" y="{{ node.y }}"
-            width="180" height="50" rx="6"
+            width="180" height="{{ node.h }}" rx="6"
             fill="{{ 'transparent' if node.ghost else 'var(--color-surface-container)' }}"
             stroke="{{ 'var(--color-primary)' if node.is_new_since_last_visit else 'var(--color-outline-variant)' }}"
             stroke-width="1"
@@ -134,7 +192,7 @@
 
       {# Originator stripe (5px left bar) #}
       <rect x="{{ node.x }}" y="{{ node.y }}"
-            width="5" height="50" rx="6"
+            width="5" height="{{ node.h }}" rx="6"
             fill="var(--color-originator-{{ node.lane }})"/>
 
       {# Significance flag #}
@@ -160,11 +218,12 @@
             font-size="13" text-anchor="end">{{ _rxn.get(node.reaction, '?') }}</text>
       {% endif %}
 
-      {# Title text (pre-clipped server-side by _clip) #}
+      {# Title text — SVG clipPath prevents overflow into right badge zone #}
       <text x="{{ node.x + 15 }}" y="{{ node.y + 22 }}"
             font-size="14" font-weight="600"
             fill="var(--color-on-surface)"
-            font-family="Inter, sans-serif">
+            font-family="Inter, sans-serif"
+            clip-path="url(#clip-title-{{ node.id }})">
         {{ node.title }}
       </text>
 
@@ -174,6 +233,8 @@
             font-family="Inter, sans-serif">
         {{ node.role }}
       </text>
+
+      {% endif %}
     </g>
     {% endif %}{% endfor %}
 
