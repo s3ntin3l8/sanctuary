@@ -144,9 +144,9 @@ def compute_edge_path(from_node: dict, to_node: dict) -> str:
     """Compute SVG path string for an edge between two nodes (Bezier routing)."""
     # Start/End is center-middle of cards
     ax = from_node["x"] + NODE_W / 2
-    ay = from_node["y"] + NODE_H / 2
+    ay = from_node["y"] + from_node["h"] / 2
     bx = to_node["x"] + NODE_W / 2
-    by = to_node["y"] + NODE_H / 2
+    by = to_node["y"] + to_node["h"] / 2
 
     dx = bx - ax
     dy = by - ay
@@ -155,7 +155,7 @@ def compute_edge_path(from_node: dict, to_node: dict) -> str:
     # If same lane and far apart, cards have a vertical entry/exit
     if same_lane:
         # Exit bottom of A, enter top of B
-        path = f"M {ax} {ay + NODE_H / 2} L {bx} {by - NODE_H / 2}"
+        path = f"M {ax} {ay + from_node['h'] / 2} L {bx} {by - to_node['h'] / 2}"
     else:
         # Cubic bezier for cross-lane movement.
         # Exit/Enter from side edges
@@ -289,16 +289,19 @@ class CaseGraphService:
         # ------------------------------------------------------------------
         relationships = self.rel_repo.get_for_proceeding(proceeding_id)
         visible_doc_ids = {doc.id for doc in visible_docs}
+        all_proceeding_doc_ids = {doc.id for doc in all_docs}
         external_doc_ids: set[int] = set()
         for rel in relationships:
             if (
                 rel.from_document_id not in visible_doc_ids
                 and rel.from_document_id not in child_doc_ids
+                and rel.from_document_id not in all_proceeding_doc_ids
             ):
                 external_doc_ids.add(rel.from_document_id)
             if (
                 rel.to_document_id not in visible_doc_ids
                 and rel.to_document_id not in child_doc_ids
+                and rel.to_document_id not in all_proceeding_doc_ids
             ):
                 external_doc_ids.add(rel.to_document_id)
 
