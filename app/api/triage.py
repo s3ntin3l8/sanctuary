@@ -1388,6 +1388,19 @@ def triage_reorder_documents(
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
 
+@router.post("/triage/bundle/{batch_id}/reset-groups")
+def triage_reset_sub_groups(
+    batch_id: int,
+    request: Request = None,
+    db: Session = Depends(get_db),
+    triage_service: TriageService = Depends(get_triage_service),
+):
+    """Remove manual sub-groups, reverting this batch to auto-grouped mode."""
+    triage_service.reset_sub_groups(batch_id)
+    db.commit()
+    return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
+
+
 @router.get("/triage/doc/{doc_id}/hud")
 def triage_doc_hud(
     request: Request,

@@ -11,6 +11,21 @@
      x-data
      x-init="window.initTriageSortable && window.initTriageSortable($el, '{{ bundle.batch_id or '' }}', '{{ bundle.key }}')">
 
+    {% if bundle.sub_groups %}
+    <div class="flex items-center gap-1.5 px-2 py-1 mb-1 rounded text-[9.5px] text-on-surface-variant bg-surface-container-highest/50 border border-outline-variant/20">
+        <span class="material-symbols-outlined text-[10px]"
+              style="font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20">lock</span>
+        <span class="flex-1">Manually organized · AI re-analyze won't override</span>
+        <button type="button"
+                class="text-[9px] text-on-surface-variant/60 hover:text-on-surface-variant underline underline-offset-2 cursor-pointer transition-colors"
+                hx-post="/triage/bundle/{{ bundle.batch_id }}/reset-groups"
+                hx-target="#triage-tree-{{ bundle.key }}"
+                hx-swap="outerHTML"
+                hx-confirm="Reset to auto grouping? Your manual group names, order, and cover letter pins will be lost.">
+            Reset to auto
+        </button>
+    </div>
+    {% endif %}
     {% for sb in bundle.sub_bundles %}
     <div>
         {# Group header: label + hover-rename edit icon (Alpine hover, not CSS media-hover) #}

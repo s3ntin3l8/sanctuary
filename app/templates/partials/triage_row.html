@@ -86,6 +86,11 @@
                     {{ sub_bundles|length }}×
                 </span>
                 {% endif %}
+                {% if bundle.sub_groups %}
+                <span class="material-symbols-outlined text-[11px] text-on-surface-variant/60"
+                      title="Manually organized — groupings and cover letter preserved on re-analyze"
+                      style="font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20">lock</span>
+                {% endif %}
             </div>
             <div class="flex items-center gap-2 mt-1 text-[11px] text-on-surface-variant capitalize">
                 {% set seen_origins = [] %}
@@ -230,7 +235,8 @@
                             batch_id: $el.dataset.batchId,
                             subject: $el.dataset.subject,
                             doc_count: parseInt($el.dataset.docCount, 10) || 0,
-                            full: false
+                            full: false,
+                            has_manual_groups: {{ 'true' if bundle.sub_groups else 'false' }}
                         })"
                         class="flex items-center gap-1 text-[11.5px] px-2 py-1 rounded bg-error text-on-primary border border-error hover:bg-error/85 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error/40">
                     <span class="material-symbols-outlined text-[12px]">refresh</span>
@@ -317,7 +323,8 @@
                                     batch_id: $el.dataset.batchId,
                                     subject: $el.dataset.subject,
                                     doc_count: parseInt($el.dataset.docCount, 10) || 0,
-                                    full: false
+                                    full: false,
+                                    has_manual_groups: {{ 'true' if bundle.sub_groups else 'false' }}
                                 })"
                                 class="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer text-left focus-visible:outline-none focus-visible:bg-surface-container-high">
                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant">restart_alt</span>

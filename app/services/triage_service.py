@@ -938,6 +938,19 @@ class TriageService:
         self.db.delete(sg)
         self.db.flush()
 
+    def reset_sub_groups(self, batch_id: int) -> None:
+        """Remove all BatchSubGroup rows for this batch, reverting to auto mode.
+
+        Clears sub_group_id and sub_group_sort_order from all docs in the batch.
+        The batch_sub_groups rows are cascade-deleted when the BatchSubGroup ORM
+        objects are deleted.
+        """
+        self.db.query(Document).filter(Document.ingest_batch_id == batch_id).update(
+            {"sub_group_id": None, "sub_group_sort_order": None}
+        )
+        self.db.query(BatchSubGroup).filter(BatchSubGroup.batch_id == batch_id).delete()
+        self.db.flush()
+
     def get_slicing_queue(self) -> list:
         """Batches awaiting document slicing review."""
         from app.models.database import IngestBatch, IngestBatchStatus
