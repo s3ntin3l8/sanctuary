@@ -351,7 +351,7 @@ class CaseGraphService:
                     "date_short": doc.issued_date.strftime("%m-%d")
                     if doc.issued_date
                     else "\u2014",
-                    "tier": "administrative",
+                    "tier": "informational",
                     "thread_open": False,
                     "ghost": True,
                     "cross_proceeding": True,
