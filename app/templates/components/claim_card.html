@@ -104,13 +104,27 @@
       {# Originator color dot #}
       <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
             style="background-color: {{ originator_colors.get(doc.originator_type, '#64748b') if originator_colors else '#64748b' }}"></span>
-      {# Doc title + date #}
+      {# Doc title + date — clickable when the doc lives in a real case #}
+      {% if doc.case_id and doc.case_id != '_TRIAGE' %}
+      <button type="button"
+              hx-get="/cases/{{ doc.case_id }}/document/{{ doc.id }}/hud"
+              hx-target="#case-dashboard-hud"
+              hx-swap="innerHTML"
+              class="text-on-surface-variant flex-1 truncate text-left hover:text-primary hover:underline cursor-pointer"
+              title="Open document in HUD">
+        {{ doc.title or 'Untitled' }}
+        {% if doc.issued_date %}
+        <span class="text-outline">· {{ doc.issued_date | format_relative_time }}</span>
+        {% endif %}
+      </button>
+      {% else %}
       <span class="text-on-surface-variant flex-1 truncate">
         {{ doc.title or 'Untitled' }}
         {% if doc.issued_date %}
         <span class="text-outline">· {{ doc.issued_date | format_relative_time }}</span>
         {% endif %}
       </span>
+      {% endif %}
       {# Reaction emojis from triage #}
       {% for rxn in ev_row.reactions %}
       <span class="flex-shrink-0" title="{{ rxn.notes or rxn.reaction.value }}">

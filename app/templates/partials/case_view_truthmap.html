@@ -132,7 +132,17 @@
             <span class="w-1.5 h-1.5 rounded-full inline-block"
                   style="background-color: {{ originator_colors.get(p.source_document_originator, '#64748b') if originator_colors else '#64748b' }}"></span>
             {% endif %}
-            <span class="text-outline">from</span> {{ p.source_document_title or 'Untitled' }}
+            <span class="text-outline">from</span>
+            {% if p.source_document_case_id and p.source_document_case_id != '_TRIAGE' %}
+            <button type="button"
+                    hx-get="/cases/{{ p.source_document_case_id }}/document/{{ p.source_document_id }}/hud"
+                    hx-target="#case-dashboard-hud"
+                    hx-swap="innerHTML"
+                    class="hover:text-primary hover:underline cursor-pointer"
+                    title="Open document in HUD">{{ p.source_document_title or 'Untitled' }}</button>
+            {% else %}
+            {{ p.source_document_title or 'Untitled' }}
+            {% endif %}
           </div>
           {% if p.excerpt %}
           <div class="mt-0.5 text-[10px] italic text-on-surface-variant/60 line-clamp-2">excerpt: {{ p.excerpt }}</div>
