@@ -33,6 +33,7 @@ LEFT = 36
 NODE_W = 180
 NODE_H = 50
 GHOST_NODE_H = 56
+BUNDLE_CHILD_ROW_H = 48  # must match child_row_h in correspondence_graph.html
 
 # ---------------------------------------------------------------------------
 # Lane definitions (fixed order)
@@ -336,7 +337,9 @@ class CaseGraphService:
         nodes: list[dict] = []
         node_by_id: dict[int, dict] = {}
 
-        for row_index, doc in enumerate(all_timeline_docs):
+        row_cursor = 0
+        for doc in all_timeline_docs:
+            row_index = row_cursor
             is_cross_proceeding = doc.id in external_doc_map
             lane_key = _lane_for(doc)
             lane_idx = _LANE_INDEX[lane_key]
@@ -420,6 +423,15 @@ class CaseGraphService:
                 }
             nodes.append(node)
             node_by_id[doc.id] = node
+
+            n_children = len(bundle_children.get(doc.id, []))
+            if n_children > 0:
+                rows_to_advance = (
+                    42 + n_children * BUNDLE_CHILD_ROW_H + ROW_H - 1
+                ) // ROW_H
+            else:
+                rows_to_advance = 1
+            row_cursor += rows_to_advance
 
         # ------------------------------------------------------------------
         # Bundle dicts (for each bundle header that is in the visible set)
@@ -544,6 +556,11 @@ class CaseGraphService:
             (max((n.get("row", 0) for n in nodes), default=0) + 1) if nodes else 1
         )
         svg_height = TOP + total_rows * ROW_H + 120
+        if bundles:
+            max_bundle_bottom = max(
+                b["y"] + 40 + len(b["children"]) * BUNDLE_CHILD_ROW_H for b in bundles
+            )
+            svg_height = max(svg_height, max_bundle_bottom + 40)
         child_lanes = {
             _lane_for(child)
             for children in bundle_children.values()

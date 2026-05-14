@@ -245,9 +245,6 @@
     {% set bundle_h = 16 + (bundle.children | length) * child_row_h + 16 %}
     <g class="cursor-pointer group/bundle graph-node"
        data-id="{{ bundle.id }}"
-       x-data="{ expanded: true }"
-       @mouseenter="expanded = true"
-       @mouseleave="expanded = false"
        @click="openDoc({{ bundle.id }})"
        :class="{
          'opacity-30': isNodeDimmed('{{ bundle.lane }}'),
@@ -257,15 +254,14 @@
 
       {# Outer dashed amber backdrop (collapsed state is just the header area) #}
       <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
-            width="195" :height="expanded ? {{ bundle_h + 16 }} : 40" rx="10"
+            width="195" height="{{ bundle_h + 16 }}" rx="10"
             fill="var(--color-surface-container)"
             stroke="var(--color-amber)" stroke-width="1"
-            stroke-dasharray="3 3" opacity="0.9"
-            style="transition: height 0.2s cubic-bezier(0.4, 0, 0.2, 1);"/>
+            stroke-dasharray="3 3" opacity="0.9"/>
 
       {# Court originator stripe on bundle #}
       <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
-            width="5" :height="expanded ? {{ bundle_h + 16 }} : 40" rx="10"
+            width="5" height="{{ bundle_h + 16 }}" rx="10"
             fill="var(--color-originator-{{ bundle.lane }})"/>
 
       {# Bundle header label #}
@@ -275,7 +271,7 @@
         {{ bundle.header }}
       </text>
 
-      <g x-show="expanded" x-transition.opacity>
+      <g>
         {# Child rows #}
         {% for child in bundle.children %}
         {% set cy = bundle.y + 16 + loop.index0 * child_row_h %}
