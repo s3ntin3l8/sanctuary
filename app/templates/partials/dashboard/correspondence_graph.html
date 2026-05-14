@@ -31,13 +31,17 @@
        style="display:block; overflow:visible;">
     {# Sticky Date Axis #}
     <g id="axis-viewport">
-      {# Date axis ticks — one text per node row #}
+      {# Date axis ticks — suppress consecutive duplicates (same-date docs) #}
+      {% set ns = namespace(prev_date=None) %}
       {% for node in graph.nodes %}
+      {% if node.date_short != ns.prev_date %}
       <text x="8" y="{{ node.y + 30 }}"
             font-family="JetBrains Mono, monospace" font-size="13"
             fill="var(--color-on-surface-variant)" opacity="0.6">
         {{ node.date_short }}
       </text>
+      {% set ns.prev_date = node.date_short %}
+      {% endif %}
       {% endfor %}
       {% for bundle in graph.bundles %}
       {# Bundle footers moved back to bundle expansion block #}
