@@ -281,7 +281,7 @@
         {# Child rows #}
         {% for child in bundle.children %}
         {% set cy = bundle.y + 16 + loop.index0 * child_row_h %}
-        <g @click.stop="openDoc({{ child.id }})" class="cursor-pointer graph-node" data-id="{{ child.id }}">
+        <g @click.stop="openDoc({{ child.id }})" class="cursor-pointer" data-id="{{ child.id }}">
           <rect x="{{ bundle.x + 2 }}" y="{{ cy }}"
                 width="175" height="{{ child_row_h - 4 }}" rx="3"
                 fill="var(--color-surface-lowest)"
