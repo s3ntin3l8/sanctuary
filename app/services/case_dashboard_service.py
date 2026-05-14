@@ -28,6 +28,8 @@ from app.models.database import (
     ActionItem,
     CostStatus,
     Document,
+    IngestBatch,
+    LegalCost,
     Proceeding,
     UserReaction,
 )
@@ -87,6 +89,38 @@ class CaseDashboardService:
         for p, count in proceedings_with_counts:
             p.doc_count = count
             proceedings.append(p)
+
+        # Compute is_deletable: empty AND not the sole remaining proceeding.
+        if len(proceedings) > 1:
+            proc_ids = [p.id for p in proceedings]
+            batch_counts = dict(
+                self.db.query(IngestBatch.proceeding_id, func.count(IngestBatch.id))
+                .filter(IngestBatch.proceeding_id.in_(proc_ids))
+                .group_by(IngestBatch.proceeding_id)
+                .all()
+            )
+            action_counts = dict(
+                self.db.query(ActionItem.proceeding_id, func.count(ActionItem.id))
+                .filter(ActionItem.proceeding_id.in_(proc_ids))
+                .group_by(ActionItem.proceeding_id)
+                .all()
+            )
+            cost_counts = dict(
+                self.db.query(LegalCost.proceeding_id, func.count(LegalCost.id))
+                .filter(LegalCost.proceeding_id.in_(proc_ids))
+                .group_by(LegalCost.proceeding_id)
+                .all()
+            )
+            for p in proceedings:
+                p.is_deletable = (
+                    p.doc_count == 0
+                    and batch_counts.get(p.id, 0) == 0
+                    and action_counts.get(p.id, 0) == 0
+                    and cost_counts.get(p.id, 0) == 0
+                )
+        else:
+            for p in proceedings:
+                p.is_deletable = False
 
         active_proceeding: Proceeding | None = None
         if active_proceeding_id is not None:

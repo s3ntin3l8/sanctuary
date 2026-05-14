@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
 from app.repositories.proceeding import ProceedingRepository
+from app.services.case_service import CaseService
+from app.services.user_settings_service import set_active_proceeding
 
 router = APIRouter(prefix="/proceedings", tags=["proceedings"])
 
@@ -38,6 +40,24 @@ async def update_proceeding(
 
     if update_data:
         repo.update(proceeding_id, **update_data)
+        db.commit()
+
+    return Response(headers={"HX-Refresh": "true"})
+
+
+@router.delete("/{proceeding_id}")
+async def delete_proceeding(proceeding_id: int, db: Session = Depends(get_db)):
+    """Delete an empty proceeding (no documents, batches, action items, or costs).
+    Refuses to delete the last proceeding of a case."""
+    try:
+        result = CaseService(db).delete_empty_proceeding(proceeding_id)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "not found" in msg.lower() else 400
+        raise HTTPException(status_code=code, detail=msg) from e
+
+    if result["was_active"]:
+        set_active_proceeding(result["case_id"], None, db)
         db.commit()
 
     return Response(headers={"HX-Refresh": "true"})

@@ -918,6 +918,64 @@ class CaseService:
 
         return {"docs": docs, "doc_count": len(docs)}
 
+    def delete_empty_proceeding(self, proceeding_id: int) -> dict:
+        """Delete a proceeding that has no attached documents, batches, action items, or costs.
+
+        Refuses to delete the last remaining proceeding of a case.
+        Returns {"case_id": str, "was_active": bool} on success.
+        Raises ValueError on guard violation (caller maps to 400/404).
+        """
+        from app.models.database import IngestBatch
+        from app.services.user_settings_service import get_active_proceeding
+
+        proceeding = (
+            self.db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
+        )
+        if not proceeding:
+            raise ValueError("Proceeding not found")
+
+        case_id = proceeding.case_id
+
+        doc_count = (
+            self.db.query(Document)
+            .filter(Document.proceeding_id == proceeding_id)
+            .count()
+        )
+        batch_count = (
+            self.db.query(IngestBatch)
+            .filter(IngestBatch.proceeding_id == proceeding_id)
+            .count()
+        )
+        action_count = (
+            self.db.query(ActionItem)
+            .filter(ActionItem.proceeding_id == proceeding_id)
+            .count()
+        )
+        cost_count = (
+            self.db.query(LegalCost)
+            .filter(LegalCost.proceeding_id == proceeding_id)
+            .count()
+        )
+
+        if doc_count + batch_count + action_count + cost_count > 0:
+            raise ValueError("Proceeding has attached records and cannot be deleted")
+
+        sibling_count = (
+            self.db.query(Proceeding)
+            .filter(Proceeding.case_id == case_id, Proceeding.id != proceeding_id)
+            .count()
+        )
+        if sibling_count == 0:
+            raise ValueError("Cannot delete the only proceeding of a case")
+
+        active_id = get_active_proceeding(case_id, self.db)
+        was_active = active_id == proceeding_id
+
+        self.db.delete(proceeding)
+        self.db.commit()
+
+        return {"case_id": case_id, "was_active": was_active}
+
     def get_dashboard_stats(self) -> dict:
         """Get statistics for dashboard."""
         all_cases = self.case_repo.get_all()

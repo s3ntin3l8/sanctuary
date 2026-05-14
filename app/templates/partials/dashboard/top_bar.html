@@ -53,25 +53,40 @@
       <div class="px-3 py-2 text-[10.5px] uppercase tracking-[0.12em]"
            style="color:var(--color-on-surface-variant);">Switch proceeding</div>
       {% for p in proceedings %}
-      <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}&amp;view={{ active_view }}"
-         hx-target="#case-dashboard-main"
-         hx-swap="outerHTML"
-         hx-select="#case-dashboard-main"
-         @click="open = false"
-         class="w-full text-left px-3 py-2 flex items-center gap-3 border-t cursor-pointer hover:bg-surface-low transition-colors"
-         style="text-decoration:none; color:var(--color-on-surface); border-color:var(--color-outline-variant);">
-        <span class="kbd">{{ loop.index }}</span>
-        <div class="flex-1">
-          <div class="text-[12.5px] font-semibold" style="color:var(--color-on-surface);">{{ p.court_name }}</div>
-          <div class="text-[11px] font-mono" style="color:var(--color-on-surface-variant);">{{ p.az_court }} · {{ p.court_level.value | upper }}</div>
-        </div>
-        <span class="chip">{{ p.doc_count }} docs</span>
-        {% if p.id == active_proceeding.id %}
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 6L9 17l-5-5"/>
-        </svg>
+      <div class="flex items-center border-t" style="border-color:var(--color-outline-variant);">
+        <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}&amp;view={{ active_view }}"
+           hx-target="#case-dashboard-main"
+           hx-swap="outerHTML"
+           hx-select="#case-dashboard-main"
+           @click="open = false"
+           class="flex-1 text-left px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-surface-low transition-colors"
+           style="text-decoration:none; color:var(--color-on-surface);">
+          <span class="kbd">{{ loop.index }}</span>
+          <div class="flex-1">
+            <div class="text-[12.5px] font-semibold" style="color:var(--color-on-surface);">{{ p.court_name }}</div>
+            <div class="text-[11px] font-mono" style="color:var(--color-on-surface-variant);">{{ p.az_court }} · {{ p.court_level.value | upper }}</div>
+          </div>
+          <span class="chip">{{ p.doc_count }} docs</span>
+          {% if p.id == active_proceeding.id %}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+          {% endif %}
+        </a>
+        {% if p.is_deletable %}
+        <button type="button"
+                hx-delete="/api/v1/proceedings/{{ p.id }}"
+                hx-confirm="Delete proceeding {{ p.court_name }}{% if p.az_court %} · {{ p.az_court }}{% endif %}? This cannot be undone."
+                @click.stop
+                class="mr-2 p-1 text-on-surface-variant hover:text-error transition-colors rounded flex-shrink-0"
+                aria-label="Delete proceeding">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
         {% endif %}
-      </a>
+      </div>
       {% endfor %}
     </div>
   </div>
