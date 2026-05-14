@@ -180,6 +180,7 @@ class RelationshipType(enum.StrEnum):
     ATTACHES_AS_PROOF = "attaches_as_proof"  # cited as evidence, not independent
     SUPERSEDES = "supersedes"
     CITED_BY = "cited_by"
+    ENCLOSES = "encloses"  # cover-letter → enclosure within a single ingest batch
 
 
 class RelationshipConfidence(enum.StrEnum):

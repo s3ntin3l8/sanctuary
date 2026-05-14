@@ -87,6 +87,80 @@ def test_cover_letter_detected(db_session, batch_with_two_docs):
 
 
 @pytest.mark.unit
+def test_apply_batch_results_persists_encloses_relationship(
+    db_session, batch_with_two_docs
+):
+    """Cover-letter → enclosure pairs are written as DocumentRelationship(ENCLOSES)."""
+    from app.models.database import DocumentRelationship
+    from app.models.enums import RelationshipType
+
+    batch, cover, enclosure = batch_with_two_docs
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "Klageerwiderung",
+                        "attributed_originator": "Opposing counsel",
+                        "originator_type": "opposing",
+                        "matched_filename": "Klageerwiderung.pdf",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+    db_session.commit()
+
+    rels = (
+        db_session.query(DocumentRelationship)
+        .filter(DocumentRelationship.from_document_id == cover.id)
+        .all()
+    )
+    assert len(rels) == 1
+    assert rels[0].to_document_id == enclosure.id
+    assert rels[0].relationship_type == RelationshipType.ENCLOSES
+
+
+@pytest.mark.unit
+def test_apply_batch_results_encloses_idempotent(db_session, batch_with_two_docs):
+    """Re-applying the same batch result does not duplicate the ENCLOSES row."""
+    from app.models.database import DocumentRelationship
+
+    batch, cover, enclosure = batch_with_two_docs
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "x",
+                        "originator_type": "opposing",
+                        "matched_filename": "Klageerwiderung.pdf",
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+    db_session.commit()
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+    db_session.commit()
+
+    count = (
+        db_session.query(DocumentRelationship)
+        .filter(DocumentRelationship.from_document_id == cover.id)
+        .count()
+    )
+    assert count == 1
+
+
+@pytest.mark.unit
 def test_single_doc_gets_standalone_role(db_session, sample_case):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.SCAN,

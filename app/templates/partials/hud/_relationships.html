@@ -24,6 +24,7 @@
     {% elif rel.rel_type == 'references' %}{% set arrow = '→' %}
     {% elif rel.rel_type == 'attaches_as_proof' %}{% set arrow = '⫸' %}
     {% elif rel.rel_type == 'supersedes' %}{% set arrow = '⊃' %}
+    {% elif rel.rel_type == 'encloses' %}{% set arrow = '⇣' %}
     {% else %}{% set arrow = '→' %}{% endif %}
     <li id="hud-rel-{{ rel_id }}"
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
@@ -60,6 +61,7 @@
     {% elif rel.rel_type == 'references' %}{% set arrow = '←' %}
     {% elif rel.rel_type == 'attaches_as_proof' %}{% set arrow = '⫷' %}
     {% elif rel.rel_type == 'supersedes' %}{% set arrow = '⊂' %}
+    {% elif rel.rel_type == 'encloses' %}{% set arrow = '⇡' %}
     {% else %}{% set arrow = '←' %}{% endif %}
     <li id="hud-rel-{{ rel_id }}"
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">

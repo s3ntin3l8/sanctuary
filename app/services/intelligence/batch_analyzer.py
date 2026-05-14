@@ -10,14 +10,17 @@ Legacy format (backward compat):
 
 import logging
 import re
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     DocumentRole,
     OriginatorType,
+    RelationshipConfidence,
+    RelationshipType,
     parse_originator_type,
 )
 from app.services.ai_config import get_chat_config
@@ -136,6 +139,31 @@ def _norm_filename(s: str) -> str:
     return re.sub(r"[-_.\s]+", " ", s).lower().strip()
 
 
+def _ensure_encloses_edge(db: Session, cover_id: int, enclosure_id: int) -> None:
+    """Idempotently write a cover→enclosure ENCLOSES edge."""
+    existing = (
+        db.query(DocumentRelationship)
+        .filter(
+            DocumentRelationship.from_document_id == cover_id,
+            DocumentRelationship.to_document_id == enclosure_id,
+            DocumentRelationship.relationship_type == RelationshipType.ENCLOSES,
+        )
+        .first()
+    )
+    if existing:
+        return
+    db.add(
+        DocumentRelationship(
+            from_document_id=cover_id,
+            to_document_id=enclosure_id,
+            relationship_type=RelationshipType.ENCLOSES,
+            confidence=RelationshipConfidence.AI_DETECTED,
+            notes="batch analyzer: cover→enclosure",
+            ingest_date=datetime.now(UTC),
+        )
+    )
+
+
 def _apply_batch_results(
     batch_id: int,
     docs: list[Document],
@@ -245,6 +273,7 @@ def _apply_batch_results(
                     claimed_ids.add(child.id)
                     child.role = DocumentRole.ENCLOSURE
                     child.parent_id = cover_id
+                    _ensure_encloses_edge(db, cover_id, child.id)
                     # Only fill originator_type when metadata had no opinion;
                     # full-text metadata beats batch's title-only context.
                     if child.originator_type in (None, OriginatorType.UNKNOWN):
@@ -319,6 +348,7 @@ def _apply_batch_results(
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
+                _ensure_encloses_edge(db, cover_letter_doc_id, child.id)
                 if child.originator_type in (None, OriginatorType.UNKNOWN):
                     child.originator_type = (
                         parse_originator_type(encl.get("originator_type"))

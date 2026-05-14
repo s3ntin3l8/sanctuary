@@ -29,7 +29,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 
 * `IngestBatch` — email/scan group; case assignment cascades to all children
 * `Proceeding` — court level within a case (AG → OLG → BGH); graphs are scoped per proceeding
-* `DocumentRelationship` — typed N:N edges (`replies_to`, `references`, `attaches_as_proof`, `supersedes`, `cited_by`)
+* `DocumentRelationship` — typed N:N edges (`replies_to`, `references`, `attaches_as_proof`, `supersedes`, `cited_by`, `encloses`)
 * `Claim` + `ClaimEvidence` — atomic factual assertions and their evidence chain (the Truth Map)
 * `UserReaction` — triage reactions (🚩/✅/🔍/⚖️) stored and recalled by AI during case brief and document enrichment
 * `ActionItem` — deadlines and court dates extracted from documents, first-class records
