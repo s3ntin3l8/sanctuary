@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import Document
+from app.models.database import Document, IngestBatch
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
 from app.models.schemas import (
     AISummarySchema,
@@ -39,9 +39,14 @@ THREAD_OPEN_TYPES = {
 
 
 def _call_enricher_sync(
-    doc: Document, model: str = "", reactions_block: str = ""
+    doc: Document,
+    model: str = "",
+    reactions_block: str = "",
+    batch_detected_actions: list[dict] | None = None,
 ) -> dict:
     """Synchronous AI call to enrich a single document. No DB session held."""
+    import json
+
     content_preview = get_content_preview(doc, 60000)
 
     batch_context = ""
@@ -63,11 +68,21 @@ def _call_enricher_sync(
     if doc.issued_date:
         dates_context += f"\nIssued date: {doc.issued_date.strftime('%Y-%m-%d')}"
 
-    prompt = (
-        f"{batch_context}{dates_context}{reactions_block}\n\n{content_preview}".lstrip(
-            "\n"
+    batch_actions_context = ""
+    if batch_detected_actions:
+        batch_actions_context = (
+            "\n\nBatch-detected actions (from cross-document analysis of all documents "
+            "in this email/delivery):\n"
+            + json.dumps(batch_detected_actions, ensure_ascii=False, indent=2)
+            + "\nInclude any of these in your action_items ONLY if THIS document "
+            "directly establishes or orders the action (e.g. a Verfügung, Ladung, or "
+            "court order — not a relay cover letter). Set supersedes_date as indicated."
         )
-    )
+
+    prompt = (
+        f"{batch_context}{dates_context}{reactions_block}"
+        f"{batch_actions_context}\n\n{content_preview}"
+    ).lstrip("\n")
 
     result = call_json_ai(
         system_prompt=DOCUMENT_ENRICHER_SYSTEM,
@@ -257,11 +272,26 @@ def enrich(doc_id: int) -> None:
         case_id = doc.case_id
         proceeding_id = doc.proceeding_id
         issued_date = doc.issued_date
+        # Load batch-level detected actions as hints for the enricher AI.
+        batch_detected_actions: list[dict] = []
+        if doc.ingest_batch_id:
+            batch = (
+                db.query(IngestBatch)
+                .filter(IngestBatch.id == doc.ingest_batch_id)
+                .first()
+            )
+            if batch and batch.detected_actions:
+                batch_detected_actions = batch.detected_actions
     finally:
         db.close()
 
     # --- Phase 2: AI call (no session held) ---
-    result = _call_enricher_sync(doc, model=model, reactions_block=reactions_block)
+    result = _call_enricher_sync(
+        doc,
+        model=model,
+        reactions_block=reactions_block,
+        batch_detected_actions=batch_detected_actions or None,
+    )
 
     # --- Phase 3: write ---
     db = SessionLocal()

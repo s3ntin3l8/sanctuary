@@ -128,36 +128,37 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
 @pytest.mark.unit
 def test_action_items_created(db_session, sample_case, batch_with_two_docs):
     from app.models.database import ActionItem
-    from app.models.enums import ActionItemStatus, ActionItemType
 
     batch, cover, enclosure = batch_with_two_docs
 
+    detected = [
+        {
+            "title": "File response",
+            "action_type": "deadline",
+            "due_date": "2025-06-30",
+            "description": "Must respond to opposing motion",
+            "confidence": "high",
+        }
+    ]
     result = {
         "cover_letter_doc_id": cover.id,
         "is_cover_letter": True,
         "court_relay": False,
         "enclosed_descriptions": [],
-        "detected_actions": [
-            {
-                "title": "File response",
-                "action_type": "deadline",
-                "due_date": "2025-06-30",
-                "description": "Must respond to opposing motion",
-                "confidence": "high",
-            }
-        ],
+        "detected_actions": detected,
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
 
+    # Batch analyzer stores detected_actions as hints; it does NOT create ActionItem rows.
+    db_session.refresh(batch)
+    assert batch.detected_actions == detected
+
+    # No ActionItem rows created at batch-analysis time — enricher is sole owner.
     items = (
         db_session.query(ActionItem).filter(ActionItem.case_id == sample_case.id).all()
     )
-    assert len(items) == 1
-    assert items[0].action_type == ActionItemType.DEADLINE
-    assert items[0].title == "File response"
-    assert items[0].status == ActionItemStatus.OPEN
-    assert items[0].source_document_id == cover.id
+    assert len(items) == 0
 
 
 @pytest.mark.unit

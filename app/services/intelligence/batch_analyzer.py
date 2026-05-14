@@ -346,22 +346,11 @@ def _apply_batch_results(
         if first_cover.proceeding_id and not batch.proceeding_id:
             batch.proceeding_id = first_cover.proceeding_id
 
-    case_id = batch.case_id if batch else None
-
-    # Create action items from batch-level cross-document analysis
-    if case_id and detected_actions:
-        from app.services.intelligence.action_items import create_from_payload
-
-        source_doc_id = first_cover.id if first_cover else None
-        source_doc_date = first_cover.issued_date if first_cover else None
-        create_from_payload(
-            case_id,
-            source_doc_id,
-            batch.proceeding_id if batch else None,
-            detected_actions,
-            db,
-            source_doc_date=source_doc_date,
-        )
+    # Store batch-level detected actions on the batch so each document enricher
+    # can read them as hints and decide which apply to its own document.
+    # The enricher is the sole creator of ActionItem rows.
+    if batch and detected_actions:
+        batch.detected_actions = detected_actions
 
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
     # one doc in the batch is flagged as a court relay (set in Phase 1 from

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.models.database import ActionItem, Document, IngestBatch
+from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.services.intelligence.batch_analyzer import _apply_batch_results, analyze
 
@@ -143,10 +143,9 @@ def test_action_items_created_for_triage_case(db_session):
 
     _apply_batch_results(batch.id, [doc], result, db_session)
 
-    # Verify action item is created even for _TRIAGE case
-    # Expire to force reload from DB
+    # Batch analyzer stores detected_actions as hints; enricher creates ActionItem rows.
     db_session.expire_all()
-    items = db_session.query(ActionItem).filter(ActionItem.case_id == "_TRIAGE").all()
-    assert len(items) == 1
-    assert items[0].title == "Triage Deadline"
-    assert items[0].source_document_id == doc.id
+    db_session.refresh(batch)
+    assert batch.detected_actions is not None
+    assert len(batch.detected_actions) == 1
+    assert batch.detected_actions[0]["title"] == "Triage Deadline"

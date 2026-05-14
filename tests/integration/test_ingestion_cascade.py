@@ -109,6 +109,15 @@ def _mock_enrich_result() -> dict:
         },
         "cost_delta": None,
         "thread_open": False,
+        "action_items": [
+            {
+                "title": "Urteil prüfen",
+                "action_type": "deadline",
+                "due_date": "2026-05-01",
+                "description": "Berufung prüfen",
+                "confidence": "high",
+            }
+        ],
     }
 
 
@@ -169,14 +178,10 @@ def test_ingestion_cascade(db_session, email_batch):
     assert enclosure.role == DocumentRole.ENCLOSURE
     assert enclosure.attributed_originator == "Amtsgericht Berlin"
 
-    action_items = (
-        db_session.query(ActionItem).filter(ActionItem.case_id == cover.case_id).all()
-    )
-    assert len(action_items) >= 1
-    assert any(
-        "Urteil" in (ai.title or "") or "prüfen" in (ai.title or "")
-        for ai in action_items
-    )
+    # Batch analyzer stores detected_actions as hints — no ActionItem rows yet.
+    db_session.refresh(batch)
+    assert batch.detected_actions is not None
+    assert len(batch.detected_actions) >= 1
 
     # ── Stage 2: Document enrichment ─────────────────────────────────────────
     from app.services.intelligence.document_enricher import enrich
@@ -204,6 +209,16 @@ def test_ingestion_cascade(db_session, email_batch):
     assert "legal_significance" in bullets
     assert "required_action" in bullets
     assert "financial_impact" in bullets
+
+    # Enricher is sole owner of ActionItem rows.
+    action_items = (
+        db_session.query(ActionItem).filter(ActionItem.case_id == cover.case_id).all()
+    )
+    assert len(action_items) >= 1
+    assert any(
+        "Urteil" in (ai.title or "") or "prüfen" in (ai.title or "")
+        for ai in action_items
+    )
 
     # ── Stage 3: Claim extraction ────────────────────────────────────────────
     from app.services.intelligence.claim_extractor import extract

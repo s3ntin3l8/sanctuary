@@ -410,6 +410,7 @@ class IngestBatch(Base):
     analysis_queued_at = Column(DateTime, nullable=True)
     source_hash = Column(String, index=True, nullable=True)
     meta = Column(JSON, nullable=True)
+    detected_actions = Column(JSON, nullable=True)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
@@ -520,6 +521,9 @@ class ActionItem(Base):
         Index("ix_action_items_case_due", "case_id", "due_date"),
         Index("ix_action_items_due_status", "due_date", "status"),
         Index("ix_action_items_proceeding", "proceeding_id"),
+        UniqueConstraint(
+            "case_id", "due_date", "action_type", name="uq_action_items_case_due_type"
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)

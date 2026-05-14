@@ -125,8 +125,11 @@ def create_from_payload(
             continue
         existing_keys.add(key)
 
-        db.add(
-            ActionItem(
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        stmt = (
+            sqlite_insert(ActionItem.__table__)
+            .values(
                 case_id=case_id,
                 proceeding_id=proceeding_id,
                 source_document_id=source_doc_id,
@@ -137,8 +140,12 @@ def create_from_payload(
                 status=ActionItemStatus.OPEN,
                 ingest_date=datetime.now(UTC),
             )
+            .on_conflict_do_nothing(
+                index_elements=["case_id", "due_date", "action_type"]
+            )
         )
-        count += 1
+        if db.execute(stmt).rowcount > 0:
+            count += 1
 
     if count:
         logger.info(
