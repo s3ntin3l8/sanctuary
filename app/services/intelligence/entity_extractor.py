@@ -13,6 +13,7 @@ from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import ENTITY_EXTRACTOR_SYSTEM
 from app.services.intelligence.schemas import EntityList
+from app.services.normalization import normalize_entity_name
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,30 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
     if not isinstance(entities_raw, list):
         return 0
 
-    existing_keys = {
-        (e.type, e.name)
-        for e in db.query(Entity.type, Entity.name)
-        .filter(Entity.case_id == doc.case_id)
-        .all()
+    # Build the canonical set from existing rows (case-scoped) so variants
+    # of the same name collapse to one row instead of stacking duplicates.
+    existing_rows = (
+        db.query(Entity.type, Entity.name).filter(Entity.case_id == doc.case_id).all()
+    )
+    existing_keys: set[tuple[EntityType, str]] = {
+        (t, normalize_entity_name(n, t)) for t, n in existing_rows
     }
+
+    # First pass: collect canonical names from this payload so sub-unit
+    # collapse (e.g. "Landratsamt X, Amt Y" → "Landratsamt X") can fire
+    # when the parent appears in the same batch as the sub-unit.
+    payload_canonicals: set[str] = set()
+    for item in entities_raw:
+        if not isinstance(item, dict):
+            continue
+        type_raw = (item.get("type") or "").upper()
+        name = (item.get("name") or "").strip()
+        if not name or type_raw not in VALID_ENTITY_TYPES:
+            continue
+        et = EntityType[type_raw]
+        canonical = normalize_entity_name(name, et)
+        if canonical:
+            payload_canonicals.add(canonical)
 
     count = 0
     for item in entities_raw:
@@ -83,10 +102,15 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             continue
 
         entity_type = EntityType[type_raw]  # Look up by NAME (uppercase)
-
-        if (entity_type, name) in existing_keys:
+        canonical = normalize_entity_name(
+            name, entity_type, canonical_names=payload_canonicals
+        )
+        if not canonical:
             continue
-        existing_keys.add((entity_type, name))
+
+        if (entity_type, canonical) in existing_keys:
+            continue
+        existing_keys.add((entity_type, canonical))
 
         context = (item.get("context_quote") or "")[:500]
 
@@ -94,7 +118,7 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             Entity(
                 case_id=doc.case_id,
                 type=entity_type,
-                name=name,
+                name=name,  # store the original spelling on first occurrence
                 source_document_id=doc.id,
                 extra_data={"context_quote": context} if context else None,
             )

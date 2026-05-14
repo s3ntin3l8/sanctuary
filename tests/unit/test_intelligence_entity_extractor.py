@@ -52,6 +52,49 @@ def test_save_entities_dedup(db_session, sample_document):
 
 
 @pytest.mark.unit
+def test_save_entities_collapses_name_variants(db_session, sample_document):
+    """Diacritic / honorific / order variants of the same name produce one Entity."""
+    case_id = sample_document.case_id
+
+    result = {
+        "entities": [
+            {"type": "PERSON", "name": "Björn Hansen", "context_quote": "v1"},
+            {"type": "PERSON", "name": "Bjoern Hansen", "context_quote": "v2"},
+            {"type": "PERSON", "name": "Hansen, Björn", "context_quote": "v3"},
+            {"type": "PERSON", "name": "Herr Björn Hansen", "context_quote": "v4"},
+        ]
+    }
+    count = _save_entities(sample_document, result, db_session)
+    assert count == 1
+
+    rows = db_session.query(Entity).filter(Entity.case_id == case_id).all()
+    assert len(rows) == 1
+    # The first variant's original spelling is preserved.
+    assert rows[0].name == "Björn Hansen"
+
+
+@pytest.mark.unit
+def test_save_entities_court_diacritic_variants_dedup(db_session, sample_document):
+    """'Amtsgericht Köln' and 'Amtsgericht Koeln' collapse to one row."""
+    case_id = sample_document.case_id
+
+    result = {
+        "entities": [
+            {"type": "COURT", "name": "Amtsgericht Köln", "context_quote": ""},
+            {"type": "COURT", "name": "Amtsgericht Koeln", "context_quote": ""},
+        ]
+    }
+    count = _save_entities(sample_document, result, db_session)
+    assert count == 1
+    assert (
+        db_session.query(Entity)
+        .filter(Entity.case_id == case_id, Entity.type == "COURT")
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.unit
 def test_save_entities_unknown_type_skipped(db_session, sample_document):
     """Entities with invalid type strings are silently skipped."""
     result = {
