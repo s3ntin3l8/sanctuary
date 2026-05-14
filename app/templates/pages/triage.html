@@ -124,7 +124,7 @@
          "
          @triage:open-retry-confirm.document="
              const d = $event.detail || {};
-             retryConfirm = { open: true, submitting: false, batch_id: String(d.batch_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, full: !!d.full, has_manual_groups: !!d.has_manual_groups };
+             retryConfirm = { open: true, submitting: false, batch_id: String(d.batch_id || ''), subject: d.subject || '', doc_count: d.doc_count || 0, full: !!d.full };
          "
          @triage:bundle-retried.document="retryConfirm.open = false; retryConfirm.submitting = false"
          @triage:bundles-retried.document="
@@ -297,7 +297,7 @@ function triagePage() {
 
     return {
         bundleConfirm: { open: false, isBatch: false, batchKeys: [], batch_id: '', is_synthetic: false, doc_id: '', subject: '', doc_count: 0, suggested_case_id: '', suggested_case_title: '', suggested_case_is_draft: false, suggested_proceeding_id: '', suggested_proceeding_az: '', suggested_proceeding_subtitle: '', suggested_proceeding_is_draft: false, is_new_case: false, action: 'confirm_bundle' },
-        retryConfirm: { open: false, submitting: false, batch_id: '', subject: '', doc_count: 0, full: false, has_manual_groups: false },
+        retryConfirm: { open: false, submitting: false, batch_id: '', subject: '', doc_count: 0, full: false },
         _visibleRowKeys() {
             const f = Alpine.store('triage').filter;
             return Array.from(document.querySelectorAll('[data-triage-row-id]'))
