@@ -455,6 +455,7 @@ class CaseGraphService:
             bundle = {
                 "id": bundle_doc_id,
                 "lane": bundle_lane,
+                "originator": _lane_for(doc_obj),
                 "row": node["row"],
                 "x": LEFT + bundle_lane_idx * LANE_W + (LANE_W - NODE_W) / 2 - 6,
                 "y": TOP + node["row"] * ROW_H - 6,
