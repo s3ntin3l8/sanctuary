@@ -6,6 +6,7 @@ Jinja template is pure rendering with no logic.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
@@ -31,6 +32,7 @@ TOP = 32
 LEFT = 36
 NODE_W = 180
 NODE_H = 50
+GHOST_NODE_H = 56
 
 # ---------------------------------------------------------------------------
 # Lane definitions (fixed order)
@@ -282,60 +284,130 @@ class CaseGraphService:
                 node_counts["informational"] += 1
 
         # ------------------------------------------------------------------
-        # Row assignment: docs are already sorted by issued_date ASC NULLS LAST,
-        # then id ASC (guaranteed by get_by_proceeding).
+        # Pre-fetch cross-proceeding ghost docs so they can be merged inline
+        # into the sorted timeline rather than stacked above it.
+        # ------------------------------------------------------------------
+        relationships = self.rel_repo.get_for_proceeding(proceeding_id)
+        visible_doc_ids = {doc.id for doc in visible_docs}
+        external_doc_ids: set[int] = set()
+        for rel in relationships:
+            if (
+                rel.from_document_id not in visible_doc_ids
+                and rel.from_document_id not in child_doc_ids
+            ):
+                external_doc_ids.add(rel.from_document_id)
+            if (
+                rel.to_document_id not in visible_doc_ids
+                and rel.to_document_id not in child_doc_ids
+            ):
+                external_doc_ids.add(rel.to_document_id)
+
+        external_doc_map: dict[int, Document] = {}
+        if external_doc_ids:
+            ext_list = (
+                self.db.query(Document)
+                .options(joinedload(Document.proceeding))
+                .filter(Document.id.in_(external_doc_ids))
+                .all()
+            )
+            external_doc_map = {d.id: d for d in ext_list}
+
+        # Merge external docs into the timeline, maintaining SQL sort order:
+        # issued_date ASC NULLS LAST, id ASC.
+        all_timeline_docs = sorted(
+            list(visible_docs) + list(external_doc_map.values()),
+            key=lambda d: (d.issued_date is None, d.issued_date or datetime.min, d.id),
+        )
+
+        # ------------------------------------------------------------------
+        # Row assignment: docs are sorted by issued_date ASC NULLS LAST,
+        # then id ASC. External ghost docs are merged inline by date.
         # ------------------------------------------------------------------
         nodes: list[dict] = []
         node_by_id: dict[int, dict] = {}
 
-        for row_index, doc in enumerate(visible_docs):
+        for row_index, doc in enumerate(all_timeline_docs):
+            is_cross_proceeding = doc.id in external_doc_map
             lane_key = _lane_for(doc)
             lane_idx = _LANE_INDEX[lane_key]
             x = LEFT + lane_idx * LANE_W + (LANE_W - NODE_W) / 2
             y = TOP + row_index * ROW_H
 
-            # Determine max title length based on available flags to prevent overlap
-            # Card width is 180px. Start X is 15px.
-            # Critical flag is at 163px. Reaction is at 174px.
-            max_title_len = 21
-            has_reaction = bool(reaction_map.get(doc.id))
-            is_critical = doc.significance_tier == SignificanceTier.CRITICAL
+            if is_cross_proceeding:
+                node: dict = {
+                    "id": doc.id,
+                    "lane": lane_key,
+                    "row": row_index,
+                    "x": x,
+                    "y": y,
+                    "w": NODE_W,
+                    "h": GHOST_NODE_H,
+                    "title": _clip(doc.title or "Untitled", 18),
+                    "full_title": doc.title or "Untitled",
+                    "role": doc.role.value if doc.role else "standalone",
+                    "date_short": doc.issued_date.strftime("%m-%d")
+                    if doc.issued_date
+                    else "\u2014",
+                    "tier": "administrative",
+                    "thread_open": False,
+                    "ghost": True,
+                    "cross_proceeding": True,
+                    "proceeding_label": doc.proceeding.az_court
+                    if doc.proceeding
+                    else "External",
+                    "is_bundle": False,
+                    "is_new_since_last_visit": False,
+                    "reaction": None,
+                    "court_relay": False,
+                    "originator_type": doc.originator_type.value
+                    if doc.originator_type
+                    else "unknown",
+                }
+            else:
+                # Determine max title length based on available flags to prevent overlap
+                # Card width is 180px. Start X is 15px.
+                # Critical flag is at 163px. Reaction is at 174px.
+                max_title_len = 21
+                has_reaction = bool(reaction_map.get(doc.id))
+                is_critical = doc.significance_tier == SignificanceTier.CRITICAL
 
-            if has_reaction:
-                max_title_len = 16
-            if is_critical:
-                # Tighten to 14 (from 15) to be safer with variable-width fonts
-                max_title_len = min(max_title_len, 14)
+                if has_reaction:
+                    max_title_len = 16
+                if is_critical:
+                    # Tighten to 14 (from 15) to be safer with variable-width fonts
+                    max_title_len = min(max_title_len, 14)
 
-            node: dict = {
-                "id": doc.id,
-                "lane": lane_key,
-                "row": row_index,
-                "x": x,
-                "y": y,
-                "w": NODE_W,
-                "h": NODE_H,
-                "title": _clip(doc.title or "Untitled", max_title_len),
-                "full_title": doc.title or "Untitled",
-                "role": doc.role.value if doc.role else "standalone",
-                "date_short": doc.issued_date.strftime("%m-%d")
-                if doc.issued_date
-                else "\u2014",
-                "tier": doc.significance_tier.value
-                if doc.significance_tier
-                else "informational",
-                "thread_open": bool(doc.thread_open)
-                if hasattr(doc, "thread_open")
-                else False,
-                "ghost": doc.issued_date is None,
-                "is_bundle": doc.id in bundle_header_ids,
-                "is_new_since_last_visit": doc.id in new_doc_ids,
-                "reaction": reaction_map.get(doc.id),
-                "court_relay": bool(doc.court_relay),
-                "originator_type": doc.originator_type.value
-                if doc.originator_type
-                else "unknown",
-            }
+                node = {
+                    "id": doc.id,
+                    "lane": lane_key,
+                    "row": row_index,
+                    "x": x,
+                    "y": y,
+                    "w": NODE_W,
+                    "h": NODE_H,
+                    "title": _clip(doc.title or "Untitled", max_title_len),
+                    "full_title": doc.title or "Untitled",
+                    "role": doc.role.value if doc.role else "standalone",
+                    "date_short": doc.issued_date.strftime("%m-%d")
+                    if doc.issued_date
+                    else "\u2014",
+                    "tier": doc.significance_tier.value
+                    if doc.significance_tier
+                    else "informational",
+                    "thread_open": bool(doc.thread_open)
+                    if hasattr(doc, "thread_open")
+                    else False,
+                    "ghost": doc.issued_date is None,
+                    "cross_proceeding": False,
+                    "proceeding_label": None,
+                    "is_bundle": doc.id in bundle_header_ids,
+                    "is_new_since_last_visit": doc.id in new_doc_ids,
+                    "reaction": reaction_map.get(doc.id),
+                    "court_relay": bool(doc.court_relay),
+                    "originator_type": doc.originator_type.value
+                    if doc.originator_type
+                    else "unknown",
+                }
             nodes.append(node)
             node_by_id[doc.id] = node
 
@@ -377,63 +449,8 @@ class CaseGraphService:
             bundles.append(bundle)
 
         # ------------------------------------------------------------------
-        # Edges and ghost nodes for cross-proceeding references
+        # Edges for cross-proceeding and same-proceeding references
         # ------------------------------------------------------------------
-        relationships = self.rel_repo.get_for_proceeding(proceeding_id)
-
-        # We may need to add "ghost" nodes for documents from other proceedings
-        # referenced by documents in this proceeding.
-        external_doc_ids = set()
-        for rel in relationships:
-            if (
-                rel.from_document_id not in node_by_id
-                and rel.from_document_id not in child_doc_ids
-            ):
-                external_doc_ids.add(rel.from_document_id)
-            if (
-                rel.to_document_id not in node_by_id
-                and rel.to_document_id not in child_doc_ids
-            ):
-                external_doc_ids.add(rel.to_document_id)
-
-        if external_doc_ids:
-            external_docs = (
-                self.db.query(Document)
-                .options(joinedload(Document.proceeding))
-                .filter(Document.id.in_(external_doc_ids))
-                .all()
-            )
-            for i, doc in enumerate(external_docs):
-                # Ghost nodes are placed at the boundary of their lane
-                lane_key = _lane_for(doc)
-                lane_idx = _LANE_INDEX[lane_key]
-                x = LEFT + lane_idx * LANE_W + (LANE_W - NODE_W) / 2
-                # Stack ghost nodes upwards to avoid overlap at the top
-                node = {
-                    "id": doc.id,
-                    "lane": lane_key,
-                    "x": x,
-                    "y": -60 - (i * 70),  # Stack upwards with spacing
-                    "w": NODE_W,
-                    "h": NODE_H,
-                    "title": _clip(
-                        f"\u2192 {doc.proceeding.az_court if doc.proceeding else 'External'} \u00b7 {doc.title or 'Untitled'}",
-                        24,
-                    ),
-                    "full_title": doc.title or "Untitled",
-                    "role": doc.role.value if doc.role else "standalone",
-                    "date_short": doc.issued_date.strftime("%m-%d")
-                    if doc.issued_date
-                    else "\u2014",
-                    "tier": "administrative",
-                    "ghost": True,
-                    "is_bundle": False,
-                    "is_new_since_last_visit": False,
-                    "reaction": None,
-                }
-                nodes.append(node)
-                node_by_id[doc.id] = node
-
         proof_badges: dict[int, int] = {}
         edges: list[dict] = []
 

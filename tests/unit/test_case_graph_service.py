@@ -456,10 +456,6 @@ def cross_proceeding_setup(db_session, sample_case):
 
 class TestCaseGraphServiceGhostNodes:
     @pytest.mark.unit
-    @pytest.mark.xfail(
-        reason="TDD: inline ghost positioning not yet implemented — y is currently negative",
-        strict=True,
-    )
     def test_ghost_nodes_are_sorted_inline_in_timeline(
         self, db_session, cross_proceeding_setup
     ):
@@ -496,10 +492,6 @@ class TestCaseGraphServiceGhostNodes:
         )
 
     @pytest.mark.unit
-    @pytest.mark.xfail(
-        reason="TDD: cross_proceeding/proceeding_label fields not yet added to build_payload",
-        strict=True,
-    )
     def test_ghost_node_has_cross_proceeding_fields(
         self, db_session, cross_proceeding_setup
     ):
@@ -525,10 +517,6 @@ class TestCaseGraphServiceGhostNodes:
         )
 
     @pytest.mark.unit
-    @pytest.mark.xfail(
-        reason="TDD: cross_proceeding field not yet added to regular-doc nodes in build_payload",
-        strict=True,
-    )
     def test_undated_regular_doc_not_cross_proceeding(
         self, db_session, cross_proceeding_setup
     ):
