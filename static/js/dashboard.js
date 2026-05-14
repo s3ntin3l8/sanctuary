@@ -315,11 +315,20 @@ function registerCaseDashboard() {
     },
 
     openDoc(id) {
+      if (this.selectedDocId === id) {
+        this.closeDoc();
+        return;
+      }
+      const wasOpen = this.selectedDocId !== null;
       this.selectedDocId = id;
+      if (wasOpen) document.body.classList.add('hud-swapping');
       htmx.ajax('GET', `/cases/${initial.caseId}/document/${id}/hud`, {
         target: '#case-dashboard-hud',
         swap: 'innerHTML',
       });
+      if (wasOpen) {
+        requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.remove('hud-swapping')));
+      }
     },
 
     closeDoc() {

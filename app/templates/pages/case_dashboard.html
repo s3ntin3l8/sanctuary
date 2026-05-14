@@ -97,7 +97,7 @@
 
         {# Timeline view #}
         <div x-show="view === 'timeline'" x-cloak
-             class="h-full overflow-auto custom-scrollbar p-4">
+             class="h-full overflow-hidden">
           {% include "partials/case_timeline_panel.html" %}
         </div>
 
@@ -109,8 +109,9 @@
 
       </div>
 
-      {# ── Action Items (under graph only, ~280px) ─────────────────── #}
-      <div class="flex-shrink-0 border-t overflow-hidden"
+      {# ── Action Items (hidden on timeline — that view owns full height) ── #}
+      <div x-show="view !== 'timeline'"
+           class="flex-shrink-0 border-t overflow-hidden"
            style="height:280px; border-color:var(--color-outline-variant); background:var(--color-surface-low);">
         <div class="h-full overflow-y-auto custom-scrollbar">
           {% include "partials/case_action_items_panel.html" %}

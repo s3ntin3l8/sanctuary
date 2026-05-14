@@ -42,6 +42,7 @@ from app.services.case_service import (
     _compute_dormancy_alert,
     build_proceeding_exposure,
 )
+from app.services.case_timeline_service import CaseTimelineService
 from app.services.claim_service import ClaimService
 
 
@@ -187,6 +188,9 @@ class CaseDashboardService:
             reverse=True,
         )
 
+        # --- Timeline payload (always built; cheap aggregation) ---------
+        timeline = CaseTimelineService(self.db).build_payload(case_id)
+
         from app.services import user_settings_service
 
         return {
@@ -195,6 +199,7 @@ class CaseDashboardService:
             "active_proceeding": active_proceeding,
             "dedup_job": user_settings_service.get_dedup_job(case_id, self.db),
             "graph": graph_dict,
+            "timeline": timeline,
             "action_items": action_items,
             "new_docs": new_docs_for_template,
             "parties": case.parties or [],

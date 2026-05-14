@@ -43,14 +43,13 @@ def test_timeline_rendering_order(app_client, db_session, sample_case):
     db_session.add_all([d1, d2])
     db_session.commit()
 
-    # Toggling view=timeline should show them in descending order
+    # Timeline renders in ascending chronological order (oldest first)
     resp = app_client.get(f"/cases/{sample_case.id}?view=timeline")
     assert resp.status_code == 200
 
-    # Simple check for order in text (descending)
     text = resp.text
-    idx_newer = text.find("Newer")
     idx_older = text.find("Older")
-    assert idx_newer != -1
+    idx_newer = text.find("Newer")
     assert idx_older != -1
-    assert idx_newer < idx_older
+    assert idx_newer != -1
+    assert idx_older < idx_newer

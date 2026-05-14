@@ -1,25 +1,386 @@
-<div class="space-y-2">
-  {% for doc in documents %}
-  <div class="flex items-start gap-3 rounded-lg border border-surface-container-high bg-surface-container p-3 text-sm cursor-pointer hover:bg-surface-container-high transition-colors"
-       hx-get="/cases/{{ case.id }}/document/{{ doc.id }}/hud"
-       hx-target="#case-dashboard-hud"
-       hx-swap="innerHTML"
-       @click="selectedDocId = {{ doc.id }}">
-    <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded
-      {{ 'bg-error/20 text-error' if doc.significance_tier and doc.significance_tier.value == 'critical'
-         else 'bg-secondary/20 text-secondary' if doc.significance_tier and doc.significance_tier.value == 'significant'
-         else 'bg-surface-container-highest text-on-surface-variant' }}">
-      {{ doc.significance_tier.value if doc.significance_tier else '—' }}
-    </span>
-    <div class="flex-1 min-w-0">
-      <p class="font-medium text-on-surface truncate">{{ doc.title or 'Untitled' }}</p>
-      <p class="text-xs text-on-surface-variant">
-        {{ doc.attributed_originator or doc.sender or 'Unknown sender' }}
-        {% if doc.issued_date %}· {{ doc.issued_date | format_relative_time }}{% endif %}
-      </p>
+{#
+  Case Timeline Panel — full chronological view.
+  Expects: timeline (dict from CaseTimelineService.build_payload), case
+#}
+{% set _events       = timeline.events %}
+{% set _buckets      = timeline.month_buckets %}
+{% set _today        = timeline.today %}
+{% set _total        = timeline.total_count %}
+{% set _quiet_gaps   = timeline.quiet_gaps %}
+
+{# Kind → Material Symbols icon name #}
+{% set _kind_icons = {
+  'filing':    'upload',
+  'order':     'gavel',
+  'statement': 'description',
+  'report':    'summarize',
+  'relay':     'forward',
+  'payment':   'euro',
+  'hearing':   'event',
+  'deadline':  'flag',
+  'pending':   'hourglass_empty',
+  'milestone': 'bookmark',
+  'ack':       'check'
+} %}
+
+{# Kind → icon colour class #}
+{% set _kind_colors = {
+  'filing':    'text-originator-own',
+  'order':     'text-originator-court',
+  'statement': 'text-originator-opposing',
+  'report':    'text-originator-third',
+  'relay':     'text-on-surface-variant',
+  'payment':   'text-amber-400',
+  'hearing':   'text-originator-court',
+  'deadline':  'text-error',
+  'pending':   'text-on-surface-variant',
+  'milestone': 'text-primary',
+  'ack':       'text-originator-own'
+} %}
+
+<div class="h-full flex flex-col"
+     x-data="{
+       actor: 'all',
+       kind: 'all',
+       includeFuture: true,
+       compact: false,
+
+       matchesActor(a) { return this.actor === 'all' || this.actor === a; },
+       matchesKind(k, isOverdue) {
+         if (this.kind === 'all') return true;
+         if (this.kind === 'doc')      return ['filing','order','ack','statement','report','relay','pending'].includes(k);
+         if (this.kind === 'deadline') return k === 'deadline' || k === 'pending' || isOverdue;
+         if (this.kind === 'payment')  return k === 'payment';
+         if (this.kind === 'hearing')  return k === 'hearing';
+         if (this.kind === 'milestone')return k === 'milestone';
+         return true;
+       },
+       matchesFuture(isFuture) { return this.includeFuture || !isFuture; },
+
+       jumpToMonth(key) {
+         const el = this.$root.querySelector('[data-month=\'' + key + '\']');
+         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+       },
+       jumpToToday() {
+         const el = this.$root.querySelector('#timeline-today-marker');
+         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+       },
+       rowOpacity(sig, isFuture, f) {
+         const base = isFuture ? 0.5 : 1;
+         if (f === 'all') return base;
+         if (sig === 'critical') return base;
+         if (f === 'significant+' && sig !== 'administrative') return base;
+         return 0.18;
+       },
+     }">
+
+  {# ── Header bar ──────────────────────────────────────────────────── #}
+  <div class="flex items-center justify-between gap-3 px-4 py-2.5 border-b shrink-0"
+       style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+    <div class="flex items-center gap-2">
+      <h3 class="text-[10.5px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">Timeline</h3>
+      {% if _total > 0 %}
+      <span class="text-[10.5px] text-on-surface-variant">· {{ _total }} event{{ 's' if _total != 1 }}</span>
+      {% endif %}
+      <span class="text-[10.5px] text-on-surface-variant">· today {{ _today.strftime('%d %b') }}</span>
     </div>
+    <button type="button"
+            @click="jumpToToday()"
+            class="text-[10.5px] font-medium text-primary hover:underline underline-offset-2 transition-colors shrink-0">
+      Jump to today →
+    </button>
   </div>
+
+  {% if _total == 0 %}
+  {# ── Empty state ────────────────────────────────────────────────── #}
+  <div class="flex-1 flex items-center justify-center p-8 text-center">
+    <p class="text-sm italic text-on-surface-variant">No events yet for this case.</p>
+  </div>
+
   {% else %}
-  <p class="text-sm italic text-on-surface-variant text-center py-8">No documents yet.</p>
-  {% endfor %}
+
+  {# ── Month-density ribbon — grouped by year ──────────────────── #}
+  <div class="flex items-end gap-1.5 px-4 py-3 border-b overflow-x-auto shrink-0"
+       style="border-color:var(--color-outline-variant); background:var(--color-surface-low); min-height:84px;">
+    {% set _cur_year = namespace(v='') %}
+    {% for b in _buckets %}
+    {% set _year = b.key[:4] %}
+    {% set _bar_h = [((b.total / b.max_total) * 48) | int, 4] | max %}
+    {% set _crit_h = [((b.critical / b.max_total) * 48) | int, 0] | max %}
+    {% set _is_current = b.key == _today.strftime('%Y-%m') %}
+
+    {# Year separator — vertical line + year label, inserted before each new year #}
+    {% if _year != _cur_year.v %}
+    {% if _cur_year.v != '' %}
+    <div class="shrink-0 flex flex-col items-center mx-3"
+         style="align-self:stretch; gap:4px;">
+      <div style="flex:1; width:1px; background:var(--color-outline-variant); opacity:0.5;"></div>
+      <span style="font-size:11px; font-family:monospace; color:var(--color-on-surface-variant); line-height:1;">{{ _year }}</span>
+    </div>
+    {% endif %}
+    {% set _cur_year.v = _year %}
+    {% endif %}
+
+    <button type="button"
+            @click="jumpToMonth('{{ b.key }}')"
+            title="{{ b.label }} · {{ b.total }} event{{ 's' if b.total != 1 }}"
+            class="flex flex-col items-center group shrink-0" style="gap:5px;">
+      <div class="relative flex items-end" style="height:52px; width:28px;">
+        {# Current-month dot — centered above the bar column #}
+        {% if _is_current %}
+        <div class="absolute rounded-full"
+             style="width:6px; height:6px; background:var(--color-primary);
+                    top:0; left:50%; transform:translateX(-50%);"></div>
+        {% endif %}
+        <div class="absolute bottom-0 left-0 w-full rounded-sm transition-opacity group-hover:opacity-80"
+             style="height:{{ _bar_h }}px; background:var(--color-outline-variant);"></div>
+        {% if _crit_h > 0 %}
+        <div class="absolute bottom-0 left-0 w-full rounded-sm"
+             style="height:{{ _crit_h }}px; background:var(--color-error); opacity:.85;"></div>
+        {% endif %}
+        {% if b.future > 0 %}
+        <div class="absolute bottom-0 right-0 w-1/2 rounded-sm opacity-50"
+             style="height:{{ _bar_h }}px; background:var(--color-primary);"></div>
+        {% endif %}
+      </div>
+      <span style="font-size:12px; font-family:monospace; white-space:nowrap; line-height:1;
+                   color:{{ 'var(--color-primary)' if _is_current else 'var(--color-on-surface-variant)' }};
+                   font-weight:{{ '700' if _is_current else '400' }};">
+        {{ b.label[:3] }}
+      </span>
+    </button>
+    {% endfor %}
+  </div>
+
+  {# ── Filter chips ─────────────────────────────────────────────── #}
+  <div class="px-4 py-2 border-b flex flex-wrap items-center gap-1.5 text-[10.5px] shrink-0"
+       style="border-color:var(--color-outline-variant); background:var(--color-surface-low);">
+
+    {# Actor chips #}
+    <span class="text-[9px] uppercase tracking-widest text-on-surface-variant mr-0.5">Actor</span>
+    {% for key, label in [('all','All'),('own','You'),('court','Court'),('opposing','Opposing'),('third','Third')] %}
+    <button type="button"
+            @click="actor = '{{ key }}'"
+            :class="actor === '{{ key }}'
+                     ? 'bg-primary/20 text-primary border-primary/30'
+                     : 'text-on-surface-variant border-outline-variant/40 hover:bg-surface-container-high'"
+            class="px-2 py-0.5 rounded border font-medium transition-colors">{{ label }}</button>
+    {% endfor %}
+
+    <div class="w-px h-3 mx-1" style="background:var(--color-outline-variant);"></div>
+
+    {# Kind chips #}
+    <span class="text-[9px] uppercase tracking-widest text-on-surface-variant mr-0.5">Kind</span>
+    {% for key, label in [('all','All'),('doc','Docs'),('deadline','Deadlines'),('payment','Costs'),('hearing','Hearings'),('milestone','Milestones')] %}
+    <button type="button"
+            @click="kind = '{{ key }}'"
+            :class="kind === '{{ key }}'
+                     ? 'bg-primary/20 text-primary border-primary/30'
+                     : 'text-on-surface-variant border-outline-variant/40 hover:bg-surface-container-high'"
+            class="px-2 py-0.5 rounded border font-medium transition-colors">{{ label }}</button>
+    {% endfor %}
+
+    <div class="w-px h-3 mx-1" style="background:var(--color-outline-variant);"></div>
+
+    {# Toggle chips #}
+    <button type="button"
+            @click="includeFuture = !includeFuture"
+            :class="includeFuture
+                     ? 'bg-primary/20 text-primary border-primary/30'
+                     : 'text-on-surface-variant border-outline-variant/40 hover:bg-surface-container-high'"
+            class="px-2 py-0.5 rounded border font-medium transition-colors">future</button>
+    <button type="button"
+            @click="compact = !compact"
+            :class="compact
+                     ? 'bg-primary/20 text-primary border-primary/30'
+                     : 'text-on-surface-variant border-outline-variant/40 hover:bg-surface-container-high'"
+            class="px-2 py-0.5 rounded border font-medium transition-colors">compact</button>
+  </div>
+
+  {# ── Event stream ─────────────────────────────────────────────── #}
+  <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+
+    {# Track month for sticky headers and today marker insertion #}
+    {% set _cur_month = namespace(key='') %}
+    {% set _today_shown = namespace(done=false) %}
+
+    {% for ev in _events %}
+    {% set _ev_month = ev.date.strftime('%Y-%m') %}
+    {% set _icon = _kind_icons.get(ev.kind, 'event_note') %}
+    {% set _icon_color = _kind_colors.get(ev.kind, 'text-on-surface-variant') %}
+
+    {# ── Today marker — insert before first future event ──────── #}
+    {% if not _today_shown.done and ev.is_future %}
+    {% set _today_shown.done = true %}
+    <div id="timeline-today-marker"
+         class="flex items-center gap-2 px-4 py-1.5"
+         style="position:sticky; top:0; z-index:20; background:var(--color-surface); border-top:1px solid var(--color-primary); border-bottom:1px solid var(--color-primary);">
+      <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
+      <span class="text-[10px] font-bold tracking-widest uppercase text-primary">
+        TODAY · {{ _today.strftime('%d %b · %A') }}
+      </span>
+      <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
+    </div>
+    {% endif %}
+
+    {# ── Month header — new month ─────────────────────────────── #}
+    {% if _ev_month != _cur_month.key %}
+    {% set _cur_month.key = _ev_month %}
+    {% set _bucket = _buckets | selectattr('key','equalto',_ev_month) | first | default(none) %}
+    {% set _is_cur = _ev_month == _today.strftime('%Y-%m') %}
+    <div class="flex items-center gap-2 px-4 py-1.5"
+         data-month="{{ _ev_month }}"
+         style="position:sticky; top:0; z-index:10; background:var(--color-surface-low); border-bottom:1px solid var(--color-outline-variant);">
+      <span class="text-[10.5px] font-bold uppercase tracking-widest {{ 'text-primary' if _is_cur else 'text-on-surface-variant' }}">
+        {{ ev.date.strftime('%B %Y') }}
+      </span>
+      {% if _bucket %}
+      <span class="text-[9.5px] text-on-surface-variant">
+        · {{ _bucket.total }} event{{ 's' if _bucket.total != 1 }}{% if _bucket.critical %} · <span class="text-error">{{ _bucket.critical }} critical</span>{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Quiet-gap separator ──────────────────────────────────── #}
+    {% if ev.id in _quiet_gaps %}
+    <div class="flex items-center gap-2 px-4 py-1 text-[9.5px] text-on-surface-variant italic">
+      <div class="flex-1 border-t border-dashed" style="border-color:var(--color-outline-variant);"></div>
+      ╲ {{ _quiet_gaps[ev.id] }} quiet days
+      <div class="flex-1 border-t border-dashed" style="border-color:var(--color-outline-variant);"></div>
+    </div>
+    {% endif %}
+
+    {# ── Event row ──────────────────────────────────────────────── #}
+    <div class="flex items-stretch border-b"
+         style="border-color:var(--color-outline-variant); transition: opacity 0.2s ease, background-color 0.15s ease;"
+         :style="{ opacity: rowOpacity('{{ ev.sig or '' }}', {{ 'true' if ev.is_future else 'false' }}, filter) }"
+         x-show="matchesActor('{{ ev.actor }}') && matchesKind('{{ ev.kind }}', {{ 'true' if ev.is_overdue else 'false' }}) && matchesFuture({{ 'true' if ev.is_future else 'false' }})"
+         {% if ev.source_document_id %}
+         @click="window._dashOpenDoc({{ ev.source_document_id }})"
+         class="cursor-pointer hover:bg-surface-container-high"
+         {% else %}
+         class="hover:bg-surface-container"
+         {% endif %}>
+
+      {# Date column — 72px, right-aligned day + DOW #}
+      <div class="shrink-0 flex flex-col items-end justify-center pl-4 pr-3"
+           style="width:72px; min-width:72px;"
+           :class="compact ? 'py-1.5' : 'py-2.5'">
+        <span class="font-mono text-[15px] font-semibold leading-none text-on-surface">{{ ev.date.strftime('%d') }}</span>
+        <span class="font-mono text-[9px] uppercase tracking-wider text-on-surface-variant leading-none mt-1">
+          {{ ev.date.strftime('%a') }}
+        </span>
+      </div>
+
+      {# Actor stripe — 3px #}
+      <div class="self-stretch shrink-0 w-[3px]"
+           style="background:var(--color-originator-{{ ev.actor }}); opacity:0.6;"></div>
+
+      {# Icon — left-aligned, 14px left gap from stripe, 14px right gap to content.
+         Width locked to 46px (14 + 18 icon + 14) so glyph-width variance between
+         Material Symbols (e.g. "euro" vs "description") can't shift the column. #}
+      <div class="shrink-0 flex items-start justify-center"
+           style="width:46px; padding-top:22px;"
+           :style="{ paddingTop: compact ? '8px' : '22px' }">
+        <span class="material-symbols-outlined ready {{ _icon_color }}"
+              style="font-size:18px; line-height:1;">{{ _icon }}</span>
+      </div>
+
+      {# Content — flex-1 #}
+      <div class="flex-1 min-w-0 pr-3"
+           :class="compact ? 'py-1.5' : 'py-2.5'">
+
+        {# Row 1: kind label + chips #}
+        <div class="flex items-center gap-1.5 mb-0.5">
+          <span class="text-[8.5px] uppercase tracking-widest font-semibold text-on-surface-variant">
+            {{ ev.kind | replace('_', ' ') }}
+          </span>
+          {% if ev.sig == 'critical' and not ev.is_overdue %}
+          <span class="text-[8px] font-bold px-1 py-0.5 rounded bg-error/20 text-error">critical</span>
+          {% endif %}
+          {% if ev.is_overdue %}
+          <span class="text-[8px] font-bold px-1 py-0.5 rounded" style="background:var(--color-error); color:#fff;">OVERDUE</span>
+          {% endif %}
+        </div>
+
+        {# Row 2: title #}
+        <div class="text-[12.5px] text-on-surface leading-snug">{{ ev.title }}</div>
+
+        {# Row 3: note (comfortable mode only) #}
+        {% if ev.note %}
+        <div class="text-[11px] text-on-surface-variant mt-0.5 leading-snug"
+             x-show="!compact">{{ ev.note }}</div>
+        {% endif %}
+
+        {# Row 4: amount (payment events) #}
+        {% if ev.amount_eur is not none %}
+        <div class="font-mono text-[11px] mt-0.5 {{ 'text-error' if ev.direction == 'debit' else 'text-originator-own' }}"
+             x-show="!compact">
+          {{ '+' if ev.direction == 'debit' else '−' }}{{ '%.2f'|format(ev.amount_eur) }} €
+        </div>
+        {% endif %}
+      </div>
+
+      {# Badges column — fixed grid slots so icons + counts align across rows.
+         Each slot uses `grid-template-columns: 14px 1fr`: the icon sits in a
+         fixed-width left column (consistent x across all rows), and the count
+         is left-aligned in the remaining column so it sits right next to the
+         icon. Slot widths are sized to fit realistic counts ("99 claims") plus
+         a small buffer, so the empty space at each slot's right edge stays
+         minimal and the icon→text grouping reads as one unit.
+         `:style` must be an object — a string would replace the entire style
+         attribute and wipe out width / align-self set in the static `style`. #}
+      <div class="shrink-0 flex items-center"
+           style="align-self:start; padding-top:20px; width:168px;"
+           :style="{ paddingTop: compact ? '6px' : '20px' }">
+        <span class="text-[10px]"
+              style="display:inline-grid; grid-template-columns:14px 1fr; column-gap:12px; align-items:center; width:84px; color:var(--color-on-surface-variant); {{ 'visibility:hidden;' if not ev.claim_count }}">
+          <span class="material-symbols-outlined ready" style="font-size:12px; line-height:1;">balance</span>
+          <span style="white-space:nowrap;">{{ ev.claim_count }} claim{{ 's' if ev.claim_count != 1 }}</span>
+        </span>
+        <span class="text-[10px]"
+              style="display:inline-grid; grid-template-columns:14px 1fr; column-gap:12px; align-items:center; width:84px; padding-right:12px; color:var(--color-on-surface-variant); {{ 'visibility:hidden;' if not ev.rel_count }}">
+          <span class="material-symbols-outlined ready" style="font-size:12px; line-height:1;">share</span>
+          <span style="white-space:nowrap;">{{ ev.rel_count }} link{{ 's' if ev.rel_count != 1 }}</span>
+        </span>
+      </div>
+
+      {# Right: days-relative label + optional chevron.
+         Fixed width so the badges column to the left of this sits at a stable
+         x-position across rows — otherwise variable text widths like
+         "9y 11mo ago" vs "1y ago" shift the entire badges block sideways and
+         break icon alignment between rows. `:style` MUST be an object: with a
+         string, Alpine calls setAttribute('style', …) and wipes out width. #}
+      <div class="shrink-0 flex items-center justify-end gap-0.5 pl-2 pr-6"
+           style="align-self:start; padding-top:22px; width:130px;"
+           :style="{ paddingTop: compact ? '8px' : '22px' }">
+        <span class="font-mono text-[10.5px] text-on-surface-variant whitespace-nowrap">
+          {{ ev.date | format_days_ago }}
+        </span>
+        {% if ev.source_document_id %}
+        <span class="material-symbols-outlined ready text-on-surface-variant" style="font-size:14px; line-height:1;">chevron_right</span>
+        {% endif %}
+      </div>
+
+    </div>
+    {% endfor %}
+
+    {# ── Today marker at end (no future events in list) ───────── #}
+    {% if not _today_shown.done %}
+    <div id="timeline-today-marker"
+         class="flex items-center gap-2 px-4 py-1.5"
+         style="border-top:1px solid var(--color-primary); border-bottom:1px solid var(--color-primary);">
+      <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
+      <span class="text-[10px] font-bold tracking-widest uppercase text-primary">
+        TODAY · {{ _today.strftime('%d %b · %A') }}
+      </span>
+      <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
+    </div>
+    {% endif %}
+
+    <div class="h-6"></div>
+  </div>
+
+  {% endif %}{# _total > 0 #}
 </div>

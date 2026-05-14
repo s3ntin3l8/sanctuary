@@ -278,6 +278,27 @@ async def case_graph_partial(
     )
 
 
+@router.get("/{case_id}/timeline")
+async def case_timeline_partial(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Return just the timeline panel partial for HTMX deep-link refresh."""
+    from app.services.case_timeline_service import CaseTimelineService
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return HTMLResponse(content="<p>Case not found</p>", status_code=404)
+
+    timeline = CaseTimelineService(db).build_payload(case_id)
+    return templates.TemplateResponse(
+        request,
+        "partials/case_timeline_panel.html",
+        {"case": case, "timeline": timeline},
+    )
+
+
 def _empty_graph_dict(filter_mode: str) -> dict:
     from app.services.case_graph_service import LANE_W, LANES, LEFT, TOP
 

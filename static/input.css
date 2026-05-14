@@ -326,6 +326,7 @@
 }
 
 .slide-in-right { animation: slideRight .24s cubic-bezier(.2,.7,.2,1) both; }
+.hud-swapping .slide-in-right { animation: none; }
 
 .fade-in { animation: fadeIn .16s ease both; }
 

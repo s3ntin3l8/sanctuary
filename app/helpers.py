@@ -208,6 +208,39 @@ def format_relative_time(value: datetime) -> str:
     return value.strftime("%b %d, %Y")
 
 
+def format_days_ago(value: datetime) -> str:
+    """Always-relative compact label used in the timeline right column.
+
+    Past:   'Xd ago', 'Xmo ago', 'Xy ago'
+    Future: 'in Xd', 'in Xmo'
+    Today:  'today'
+    """
+    if value is None:
+        return "—"
+    now = datetime.now(UTC)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    delta = now - value
+    days = int(delta.total_seconds() / 86400)
+    if abs(days) == 0:
+        return "today"
+    if days > 0:
+        if days < 60:
+            return f"{days}d ago"
+        if days < 365:
+            return f"{days // 30}mo ago"
+        years = days // 365
+        rem = (days % 365) // 30
+        return f"{years}y {rem}mo ago" if rem else f"{years}y ago"
+    # future
+    future_days = -days
+    if future_days < 60:
+        return f"in {future_days}d"
+    if future_days < 365:
+        return f"in {future_days // 30}mo"
+    return f"in {future_days // 365}y"
+
+
 def format_upcoming_datetime(value: datetime) -> str:
     """Formats upcoming deadlines/hearings for compact dashboard display."""
     now = datetime.now(UTC)
