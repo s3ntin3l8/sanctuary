@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Geometry constants — must match the SVG template exactly
 # ---------------------------------------------------------------------------
-LANE_W = 225
+LANE_W = 280
 ROW_H = 80
 TOP = 32
 LEFT = 36
@@ -446,10 +446,15 @@ class CaseGraphService:
             doc_obj = next(d for d in all_docs if d.id == bundle_doc_id)
             children = bundle_children.get(bundle_doc_id, [])
 
-            bundle_lane_idx = _LANE_INDEX[_lane_for(doc_obj)]
+            child_origins = {_lane_for(child) for child in children}
+            if len(child_origins) == 1 and "court" not in child_origins:
+                bundle_lane = next(iter(child_origins))
+            else:
+                bundle_lane = _lane_for(doc_obj)
+            bundle_lane_idx = _LANE_INDEX[bundle_lane]
             bundle = {
                 "id": bundle_doc_id,
-                "lane": _lane_for(doc_obj),
+                "lane": bundle_lane,
                 "row": node["row"],
                 "x": LEFT + bundle_lane_idx * LANE_W + (LANE_W - NODE_W) / 2 - 6,
                 "y": TOP + node["row"] * ROW_H - 6,

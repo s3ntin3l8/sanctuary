@@ -15,7 +15,7 @@
        style="top:0; padding-left:36px; padding-top:10px; padding-bottom:18px;
               background:linear-gradient(to bottom, var(--color-surface) 52%, transparent);">
     {% for lane in graph.lanes %}
-    <div style="width:225px;" class="flex items-center justify-center gap-2">
+    <div style="width:280px;" class="flex items-center justify-center gap-2">
       <span class="inline-block h-2.5 w-2.5 rounded-full"
             style="background:var(--color-originator-{{ lane.color }});"></span>
       <span class="font-semibold text-[13px] tracking-[0.12em] uppercase"
@@ -87,8 +87,8 @@
 
     {# Lane separator lines #}
     {% for i in range(graph.lanes | length + 1) %}
-    <line x1="{{ 36 + i * 225 }}" y1="8"
-          x2="{{ 36 + i * 225 }}" y2="{{ graph.svg_height - 20 }}"
+    <line x1="{{ 36 + i * 280 }}" y1="8"
+          x2="{{ 36 + i * 280 }}" y2="{{ graph.svg_height - 20 }}"
           stroke="var(--color-outline-variant)" stroke-width="0.5"
           stroke-dasharray="2 6" opacity="0.4"/>
     {% endfor %}
