@@ -21,6 +21,29 @@ logger = logging.getLogger(__name__)
 _TRIAGE = "_TRIAGE"
 
 
+def _normalize_originator(name: str, canonical_names: set[str]) -> str:
+    """Normalize an attributed_originator string for consistent party grouping.
+
+    Two transformations, both conservative:
+    1. Comma reversal: "Liu, Yingying" → "Yingying Liu" (single-token surname before comma).
+    2. Sub-unit collapse: "Landratsamt X, Amt Y" → "Landratsamt X" only when the
+       prefix "Landratsamt X" already exists as a distinct originator in this case.
+    """
+    # Comma reversal: "Nachname, Vorname" → "Vorname Nachname"
+    if "," in name:
+        parts = [p.strip() for p in name.split(",", 1)]
+        if len(parts) == 2 and parts[0] and " " not in parts[0]:
+            name = f"{parts[1]} {parts[0]}"
+
+    # Sub-unit collapse: only when the parent is already a known canonical name
+    if ", " in name:
+        prefix = name.split(", ", 1)[0]
+        if prefix in canonical_names:
+            name = prefix
+
+    return name
+
+
 def _compute_parties(docs: list) -> list[dict]:
     """Aggregate attributed originators from documents into sorted party list.
 
@@ -30,12 +53,16 @@ def _compute_parties(docs: list) -> list[dict]:
 
     Pure function — never calls db.commit().
     """
+    # First pass: collect raw names to enable sub-unit collapse in normalization.
+    raw_names = {doc.attributed_originator for doc in docs if doc.attributed_originator}
+
     role_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for doc in docs:
         if doc.attributed_originator is None:
             continue
-        role_counts[doc.attributed_originator][str(doc.originator_type)] += 1
+        name = _normalize_originator(doc.attributed_originator, raw_names)
+        role_counts[name][str(doc.originator_type)] += 1
 
     result = []
     for name, counts in role_counts.items():
