@@ -184,7 +184,7 @@ def propose_merges_for_new_claim(
     return proposals
 
 
-def find_duplicates_for_case(
+async def find_duplicates_for_case(
     case_id: str,
     db: Session,
     *,
@@ -229,14 +229,12 @@ def find_duplicates_for_case(
     seen_pairs_this_run: set[tuple[int, int]] = set()
 
     for claim in claims:
-        nearest = asyncio.run(
-            nearest_claims(
-                claim.claim_text,
-                db,
-                k=k,
-                case_id=case_id,
-                exclude_claim_id=claim.id,
-            )
+        nearest = await nearest_claims(
+            claim.claim_text,
+            db,
+            k=k,
+            case_id=case_id,
+            exclude_claim_id=claim.id,
         )
         for existing_id, _distance in nearest:
             pair = tuple(sorted((claim.id, existing_id)))

@@ -169,7 +169,7 @@ async def find_duplicates_in_case(
 
     from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
 
-    stats = find_duplicates_for_case(case_id, db)
+    stats = await find_duplicates_for_case(case_id, db)
     db.commit()
 
     pending_count = (
@@ -191,6 +191,61 @@ async def find_duplicates_in_case(
             "case": db.query(Case).filter(Case.id == case_id).first(),
             "stats": stats,
             "pending_count": pending_count,
+        },
+    )
+
+
+@router.post("/cases/{case_id}/claims/proposals/merge/batch")
+async def batch_merge_proposals(
+    request: Request,
+    case_id: str,
+    action: str = Form(...),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Bulk-confirm or bulk-dismiss every PENDING merge proposal for the case."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        return HTMLResponse("<p>Case not found</p>", status_code=404)
+    if action not in ("confirm", "dismiss"):
+        return HTMLResponse(f"Unknown action: {action}", status_code=422)
+
+    pending_ids = [
+        pid
+        for (pid,) in db.query(ClaimMergeProposal.id)
+        .join(ClaimEvidence, ClaimEvidence.claim_id == ClaimMergeProposal.new_claim_id)
+        .join(Document, Document.id == ClaimEvidence.document_id)
+        .filter(
+            Document.case_id == case_id,
+            ClaimMergeProposal.status == "PENDING",
+        )
+        .distinct()
+        .all()
+    ]
+
+    for pid in pending_ids:
+        # Expire session cache before each call: a preceding confirm_merge may have
+        # cascade-deleted later proposals at the DB level without the ORM knowing.
+        # expire_all forces db.get() to re-query the DB; confirm_merge's guard
+        # then returns early if the row is gone.
+        db.expire_all()
+        if action == "confirm":
+            proposal_svc.confirm_merge(pid, db)
+        else:
+            proposal_svc.dismiss_merge(pid, db)
+    db.commit()
+
+    svc = ClaimService(db)
+    truth_map = svc.get_truth_map(case_id, "open")
+    return templates.TemplateResponse(
+        request,
+        "partials/case_view_truthmap.html",
+        {
+            "case": case,
+            "truth_map": truth_map,
+            "originator_colors": ORIGINATOR_COLORS,
+            "ClaimStatus": ClaimStatus,
+            "ClaimEvidenceRole": ClaimEvidenceRole,
+            "UserReactionType": UserReactionType,
         },
     )
 
