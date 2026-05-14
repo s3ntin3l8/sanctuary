@@ -13,6 +13,15 @@ from app.tasks.extract_claims import extract_claims_task
 
 
 @pytest.mark.unit
+def test_claim_dedup_task_imports_and_is_registered():
+    from app.tasks.celery_app import celery_app
+    from app.tasks.claim_dedup import claim_dedup_task
+
+    assert claim_dedup_task.name == "app.tasks.claim_dedup.claim_dedup_task"
+    assert "app.tasks.claim_dedup" in celery_app.conf.include
+
+
+@pytest.mark.unit
 def test_process_document_task_success(db_session, sample_document):
     with (
         patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,

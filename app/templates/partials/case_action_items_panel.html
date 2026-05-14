@@ -42,26 +42,51 @@
     {% for item in _items[:12] %}
     {% set is_open = (item.status.value == 'open') if item.status else true %}
     {% set is_done = (item.status.value in ('completed','dismissed')) if item.status else false %}
-    <li class="flex items-start gap-2 text-sm"
+    <li class="flex flex-col gap-0.5 text-sm"
+        x-data="{ closed: false }"
         x-show="filter === 'all'
                  || (filter === 'open' && {{ 'true' if is_open else 'false' }})
                  || (filter === 'completed' && {{ 'true' if is_done else 'false' }})">
-      <span class="mt-0.5 text-xs px-1.5 py-0.5 rounded
-                   {{ 'bg-error/20 text-error' if item.action_type.value == 'deadline' else 'bg-tertiary/20 text-tertiary' }}">
-        {{ item.action_type.value | replace('_', ' ') | title }}
-      </span>
-      <div class="flex-1 min-w-0">
-        <p class="truncate text-on-surface">{{ item.title }}</p>
-        {% if item.due_date %}
-        <p class="text-xs text-on-surface-variant">{{ item.due_date | format_relative_time }}</p>
+      {# Row 1: badge + title #}
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="shrink-0 text-xs px-1.5 py-0.5 rounded
+                     {{ 'bg-error/20 text-error' if item.action_type.value == 'deadline' else 'bg-tertiary/20 text-tertiary' }}">
+          {{ item.action_type.value | replace('_', ' ') | title }}
+        </span>
+        {% if item.source_document_id %}
+        <button type="button"
+                @click="window._dashOpenDoc({{ item.source_document_id }})"
+                class="flex-1 truncate text-left text-on-surface hover:text-primary hover:underline underline-offset-2 cursor-pointer transition-colors"
+                title="Open source document">{{ item.title }}</button>
+        {% else %}
+        <span class="flex-1 truncate text-on-surface">{{ item.title }}</span>
         {% endif %}
       </div>
-      {% if item.source_document_id %}
-      <button type="button"
-              @click="window._dashOpenDoc({{ item.source_document_id }})"
-              class="shrink-0 text-[11px] text-primary hover:underline underline-offset-2 transition-colors"
-              title="Open source document">source ↗</button>
-      {% endif %}
+      {# Row 2: date + action buttons #}
+      <div class="flex items-center gap-2 pl-1">
+        {% if item.due_date %}
+        <span class="text-xs text-on-surface-variant">{{ item.due_date | format_relative_time }}</span>
+        {% endif %}
+        {% if is_open %}
+        <div class="flex gap-1" x-show="!closed">
+          <button hx-patch="/action-item/{{ item.id }}/status"
+                  hx-vals='{"status": "completed"}'
+                  hx-swap="none"
+                  @htmx:after-request="closed = true"
+                  class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">
+            ✓ done
+          </button>
+          <button hx-patch="/action-item/{{ item.id }}/status"
+                  hx-vals='{"status": "dismissed"}'
+                  hx-swap="none"
+                  @htmx:after-request="closed = true"
+                  class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline/30 text-outline hover:bg-surface-container-high transition-colors">
+            dismiss
+          </button>
+        </div>
+        <span x-show="closed" class="text-[9px] text-originator-own font-bold">✓ updated</span>
+        {% endif %}
+      </div>
     </li>
     {% endfor %}
   </ul>

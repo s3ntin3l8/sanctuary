@@ -40,7 +40,7 @@ async def update_ingest_settings(
     return RedirectResponse(url="/settings/gmail", status_code=303)
 
 
-@router.get("/gmail/oauth_start")
+@router.get("/gmail/oauth/start")
 async def gmail_oauth_start(request: Request):
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_COOKIE] = state

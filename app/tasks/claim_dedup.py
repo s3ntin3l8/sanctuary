@@ -1,9 +1,10 @@
 import asyncio
 import logging
 
+from app.config import SessionLocal
 from app.services import user_settings_service
 from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
-from app.tasks.celery_app import SessionLocal, celery_app
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 

@@ -44,6 +44,20 @@ class IngestionError(Exception):
         super().__init__(self.message)
 
 
+def _unique_upload_path(directory, filename: str) -> str:
+    """Return a non-existing path in directory while preserving the display name."""
+    candidate = directory / filename
+    if not candidate.exists():
+        return str(candidate)
+    stem, suffix = os.path.splitext(filename)
+    counter = 1
+    while True:
+        candidate = directory / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return str(candidate)
+        counter += 1
+
+
 def create_manual_upload_batch(
     db: Session,
     filenames: list[str],
@@ -436,7 +450,7 @@ async def ingest_file(
                 detail="case_id resolves outside the data directory.",
             )
         case_dir.mkdir(parents=True, exist_ok=True)
-        file_path = str(case_dir / safe_filename)
+        file_path = _unique_upload_path(case_dir, safe_filename)
 
         sha256 = hashlib.sha256()
         try:

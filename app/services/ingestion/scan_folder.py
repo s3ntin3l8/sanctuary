@@ -32,12 +32,13 @@ def _is_ready(path: Path) -> bool:
         return False
 
 
-def _archive_batch(processing_batch_dir: Path, batch_id: str) -> None:
+def _archive_batch(processing_batch_dir: Path, batch_id: str) -> Path:
     from datetime import UTC, datetime
 
     dest = SCAN_PROCESSED_DIR / datetime.now(tz=UTC).date().isoformat() / batch_id
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(processing_batch_dir), str(dest))
+    return dest
 
 
 def _fail_batch(processing_batch_dir: Path, batch_id: str, reason: str) -> None:
@@ -103,21 +104,24 @@ def scan_and_ingest(db: Session) -> int:
 
         source_hash = hashlib.sha256(file_bytes).hexdigest()
 
+        archive_dir = None
         try:
-            batch = ingest_scanned_file(db, dest_path, batch_id, source_hash)
+            archive_dir = _archive_batch(processing_batch_dir, batch_id)
+            archived_pdf_path = archive_dir / dest_path.name
+            batch = ingest_scanned_file(db, archived_pdf_path, batch_id, source_hash)
             if batch is None:
-                # Duplicate — silently skip; clean up processing dir
-                shutil.rmtree(processing_batch_dir, ignore_errors=True)
+                # Duplicate — silently skip; clean up archived copy
+                shutil.rmtree(archive_dir, ignore_errors=True)
                 logger.info(
                     "scan_and_ingest: duplicate file skipped (hash=%s)", source_hash
                 )
             else:
-                _archive_batch(processing_batch_dir, batch_id)
                 processed += 1
         except Exception as exc:
             logger.error(
                 "scan_and_ingest: ingest failed for %s: %s", incoming_path.name, exc
             )
-            _fail_batch(processing_batch_dir, batch_id, str(exc))
+            failed_source = archive_dir or processing_batch_dir
+            _fail_batch(failed_source, batch_id, str(exc))
 
     return processed

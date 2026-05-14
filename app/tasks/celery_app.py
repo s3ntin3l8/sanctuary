@@ -29,6 +29,7 @@ celery_app = Celery(
         "app.tasks.extract_claims",
         "app.tasks.extract_entities",
         "app.tasks.generate_embedding",
+        "app.tasks.claim_dedup",
         "app.tasks.thread_open_scan",
         "app.tasks.scan_ingest",
         "app.tasks.prepare_slicing",

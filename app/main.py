@@ -1,3 +1,7 @@
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -10,12 +14,13 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from starlette.datastructures import MutableHeaders
 
 from app.api import api_router
 from app.config import (
@@ -137,6 +142,53 @@ def setup_logging():
 setup_logging()
 logger = logging.getLogger(__name__)
 logger.info("Logging initialized.")
+
+
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_SESSION_COOKIE = "session"
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
+    return origin == expected
+
+
+def _session_secret() -> bytes:
+    return os.getenv(
+        "SESSION_SECRET", os.getenv("SECRET_KEY", "dev-session-key")
+    ).encode()
+
+
+def _load_session_cookie(raw: str | None) -> dict:
+    if not raw or "." not in raw:
+        return {}
+    payload_b64, sig_b64 = raw.rsplit(".", 1)
+    expected = hmac.new(
+        _session_secret(), payload_b64.encode(), hashlib.sha256
+    ).digest()
+    try:
+        actual = base64.urlsafe_b64decode(sig_b64.encode())
+    except Exception:
+        return {}
+    if not hmac.compare_digest(expected, actual):
+        return {}
+    try:
+        payload = base64.urlsafe_b64decode(payload_b64.encode())
+        data = json.loads(payload.decode())
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _dump_session_cookie(data: dict) -> str:
+    payload = json.dumps(data, separators=(",", ":"), sort_keys=True).encode()
+    payload_b64 = base64.urlsafe_b64encode(payload).decode()
+    sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).decode()
+    return f"{payload_b64}.{sig_b64}"
 
 
 # --- Rate Limiter ---
@@ -275,6 +327,65 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
+class OriginGuardMiddleware:
+    """Block cross-origin browser mutations for localhost/no-auth deployments."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope, receive)
+        if request.method in _MUTATING_METHODS and not _same_origin(request):
+            await Response("Cross-origin mutation blocked", status_code=403)(
+                scope, receive, send
+            )
+            return
+        await self.app(scope, receive, send)
+
+
+class SignedCookieSessionMiddleware:
+    """Minimal signed cookie session for OAuth state storage."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+        scope["session"] = _load_session_cookie(request.cookies.get(_SESSION_COOKIE))
+        had_cookie = _SESSION_COOKIE in request.cookies
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                session = scope.get("session") or {}
+                if session:
+                    secure = (
+                        os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+                    )
+                    cookie = (
+                        f"{_SESSION_COOKIE}={_dump_session_cookie(session)}; "
+                        "Path=/; HttpOnly; SameSite=lax"
+                    )
+                    if secure:
+                        cookie += "; Secure"
+                    headers.append("set-cookie", cookie)
+                elif had_cookie:
+                    headers.append(
+                        "set-cookie",
+                        f"{_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=lax",
+                    )
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 # --- FastAPI App ---
 app = FastAPI(
     title="The Sanctuary",
@@ -285,6 +396,7 @@ app = FastAPI(
 
 # Compression middleware (outermost - processes responses first)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(SignedCookieSessionMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -299,6 +411,7 @@ app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
 app.middleware("http")(add_request_id)
+app.add_middleware(OriginGuardMiddleware)
 
 # Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -316,7 +429,6 @@ async def health_check():
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
 
 
-import hashlib
 import re
 
 
