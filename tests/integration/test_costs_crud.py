@@ -43,6 +43,32 @@ def test_costs_crud_flow(app_client, sample_case):
 
 
 @pytest.mark.integration
+def test_create_cost_persists_vat_rate(app_client, db_session, sample_case):
+    """POST /costs with vat_rate stores the rate on the LegalCost row."""
+    resp = app_client.post(
+        "/costs",
+        data={
+            "case_id": sample_case.id,
+            "category": "anwaltskosten",
+            "title": "VAT Test",
+            "amount_net": "100.0",
+            "vat_rate": "0.19",
+            "status": "offen",
+        },
+    )
+    assert resp.status_code == 200
+
+    row = (
+        db_session.query(LegalCost)
+        .filter(LegalCost.case_id == sample_case.id, LegalCost.title == "VAT Test")
+        .first()
+    )
+    assert row is not None
+    assert row.vat_rate == pytest.approx(0.19)
+    assert row.amount_gross == pytest.approx(119.0)
+
+
+@pytest.mark.integration
 def test_promote_cost_delta(app_client, db_session, sample_case):
     # Setup doc with cost_delta
     doc = Document(

@@ -138,6 +138,7 @@ async def create_cost(
         amount_net=amount_net,
         amount_gross=amount_gross,
         status=status,
+        vat_rate=vat_rate,
         issued_at=issued_date,
         due_at=due_date,
         proceeding_id=proceeding_id,
