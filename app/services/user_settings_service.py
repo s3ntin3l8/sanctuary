@@ -82,6 +82,34 @@ def set_active_proceeding(case_id: str, proceeding_id: int, db) -> None:
     db.flush()
 
 
+def get_dedup_job(case_id: str, db) -> dict | None:
+    settings = db.query(UserSettings).first()
+    if not settings:
+        return None
+    return settings.settings_json.get("dedup_jobs", {}).get(case_id)
+
+
+def set_dedup_running(case_id: str, db) -> None:
+    settings = _get_or_create(db)
+    jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+    jobs[case_id] = {"status": "running"}
+    settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+    db.flush()
+
+
+def set_dedup_result(
+    case_id: str, stats: dict | None, db, *, failed: bool = False
+) -> None:
+    settings = _get_or_create(db)
+    jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+    jobs[case_id] = {
+        "status": "failed" if failed else "done",
+        "stats": stats or {},
+    }
+    settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+    db.flush()
+
+
 def get_last_home_visit(db) -> datetime | None:
     """Return the datetime the user last visited the home page."""
     settings = db.query(UserSettings).first()

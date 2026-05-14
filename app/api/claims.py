@@ -80,6 +80,8 @@ async def get_truthmap(
     if filter not in ("open", "established", "refuted", "all"):
         filter = "open"
 
+    from app.services import user_settings_service as uss
+
     svc = ClaimService(db)
     truth_map = svc.get_truth_map(case_id, filter)  # type: ignore[arg-type]
 
@@ -89,6 +91,7 @@ async def get_truthmap(
         {
             "case": case,
             "truth_map": truth_map,
+            "dedup_job": uss.get_dedup_job(case_id, db),
             "originator_colors": ORIGINATOR_COLORS,
             "ClaimStatus": ClaimStatus,
             "ClaimEvidenceRole": ClaimEvidenceRole,
@@ -161,37 +164,71 @@ async def find_duplicates_in_case(
     case_id: str,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Wave 2C: run the dedup judge over every claim in this case to
-    surface historical duplicates. Returns an HTML status fragment for
-    the Truth Map view to swap in."""
-    if db.query(Case).filter(Case.id == case_id).first() is None:
+    """Wave 2C: kick off the dedup judge as a background Celery task and
+    return a polling fragment immediately so the UI stays responsive."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
         return HTMLResponse("<p>Case not found</p>", status_code=404)
 
-    from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
+    from app.services import user_settings_service as uss
+    from app.tasks.claim_dedup import claim_dedup_task
 
-    stats = await find_duplicates_for_case(case_id, db)
+    uss.set_dedup_running(case_id, db)
     db.commit()
-
-    pending_count = (
-        db.query(ClaimMergeProposal)
-        .join(ClaimEvidence, ClaimEvidence.claim_id == ClaimMergeProposal.new_claim_id)
-        .join(Document, Document.id == ClaimEvidence.document_id)
-        .filter(
-            Document.case_id == case_id,
-            ClaimMergeProposal.status == "PENDING",
-        )
-        .distinct()
-        .count()
-    )
+    claim_dedup_task.delay(case_id)
 
     return templates.TemplateResponse(
         request,
-        "partials/find_duplicates_result.html",
-        {
-            "case": db.query(Case).filter(Case.id == case_id).first(),
-            "stats": stats,
-            "pending_count": pending_count,
-        },
+        "partials/find_duplicates_running.html",
+        {"case": case},
+    )
+
+
+@router.get("/cases/{case_id}/claims/find-duplicates/status")
+async def find_duplicates_status(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Poll target: returns the running fragment while dedup is active,
+    the result fragment when done, or a failed pill on error."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        return HTMLResponse("", status_code=404)
+
+    from app.services import user_settings_service as uss
+
+    job = uss.get_dedup_job(case_id, db)
+
+    if job is None or job["status"] == "running":
+        return templates.TemplateResponse(
+            request, "partials/find_duplicates_running.html", {"case": case}
+        )
+
+    if job["status"] == "done":
+        stats = job.get("stats", {})
+        pending_count = (
+            db.query(ClaimMergeProposal)
+            .join(
+                ClaimEvidence, ClaimEvidence.claim_id == ClaimMergeProposal.new_claim_id
+            )
+            .join(Document, Document.id == ClaimEvidence.document_id)
+            .filter(
+                Document.case_id == case_id,
+                ClaimMergeProposal.status == "PENDING",
+            )
+            .distinct()
+            .count()
+        )
+        return templates.TemplateResponse(
+            request,
+            "partials/find_duplicates_result.html",
+            {"case": case, "stats": stats, "pending_count": pending_count},
+        )
+
+    # failed
+    return templates.TemplateResponse(
+        request, "partials/find_duplicates_running.html", {"case": case, "failed": True}
     )
 
 
@@ -234,6 +271,8 @@ async def batch_merge_proposals(
             proposal_svc.dismiss_merge(pid, db)
     db.commit()
 
+    from app.services import user_settings_service as uss
+
     svc = ClaimService(db)
     truth_map = svc.get_truth_map(case_id, "open")
     return templates.TemplateResponse(
@@ -242,6 +281,7 @@ async def batch_merge_proposals(
         {
             "case": case,
             "truth_map": truth_map,
+            "dedup_job": uss.get_dedup_job(case_id, db),
             "originator_colors": ORIGINATOR_COLORS,
             "ClaimStatus": ClaimStatus,
             "ClaimEvidenceRole": ClaimEvidenceRole,

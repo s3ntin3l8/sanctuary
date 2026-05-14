@@ -187,10 +187,13 @@ class CaseDashboardService:
             reverse=True,
         )
 
+        from app.services import user_settings_service
+
         return {
             # Phase 8 additions
             "proceedings": proceedings,
             "active_proceeding": active_proceeding,
+            "dedup_job": user_settings_service.get_dedup_job(case_id, self.db),
             "graph": graph_dict,
             "action_items": action_items,
             "new_docs": new_docs_for_template,

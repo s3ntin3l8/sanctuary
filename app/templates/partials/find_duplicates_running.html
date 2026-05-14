@@ -1,0 +1,10 @@
+<span id="find-duplicates-running"
+      class="text-xs px-2.5 py-1 rounded-full inline-flex items-center gap-1.5
+             border border-primary/40 bg-primary/8 text-primary"
+      hx-get="/cases/{{ case.id }}/claims/find-duplicates/status"
+      hx-trigger="load delay:4s, every 4s"
+      hx-target="#find-duplicates-slot"
+      hx-swap="innerHTML">
+  <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+  {% if failed %}Scan failed · retrying…{% else %}Scanning claims…{% endif %}
+</span>

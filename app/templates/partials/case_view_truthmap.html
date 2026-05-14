@@ -16,6 +16,9 @@
     </button>
     {% endfor %}
     <span class="ml-auto" id="find-duplicates-slot">
+      {% if dedup_job and dedup_job.status == 'running' %}
+        {% include "partials/find_duplicates_running.html" %}
+      {% else %}
       <button hx-post="/cases/{{ case.id }}/claims/find-duplicates"
               hx-target="#find-duplicates-slot"
               hx-swap="innerHTML"
@@ -24,8 +27,8 @@
               title="Run the dedup judge over all claims in this case to surface historical duplicates as merge proposals">
         <span class="material-symbols-outlined text-sm">spellcheck</span>
         Find Duplicates
-        <span class="htmx-indicator inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
       </button>
+      {% endif %}
     </span>
   </div>
 

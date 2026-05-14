@@ -1,12 +1,13 @@
-"""Wave 2B: dedup judge that reads a freshly-extracted claim and the top-K
-embedding-nearest existing claims, then asks an LLM whether the candidate
-restates one of them. High-confidence "merge" verdicts become
-ClaimMergeProposal rows; the user confirms or dismisses before the merge
-is applied.
+"""Claim dedup judge — two entry points:
 
-The judge runs once per (candidate claim, nearest existing claim) pair —
-typically K=5 calls per new claim. Each call is small and constrained;
-the cost is dominated by the embedding lookup, not the judging.
+propose_merges_for_new_claim  (Wave 2B)
+    Per-new-claim, real-time during extraction. Judges each embedding-nearest
+    pair individually so intra-doc auto-merge logic can fire immediately.
+
+find_duplicates_for_case  (Wave 2C)
+    Retroactive case-wide scan. Collects all embedding-candidate pairs first,
+    then judges them in a single batched LLM call rather than one call per pair.
+    Batch size is capped at BATCH_SIZE to keep prompts manageable.
 """
 
 from __future__ import annotations
@@ -22,12 +23,20 @@ from app.models.enums import ClaimEvidenceRole, ProposalConfidence, ProposalStat
 from app.services.ai_config import get_chat_config
 from app.services.claim_embedding import nearest_claims
 from app.services.intelligence._ai_call import call_json_ai
-from app.services.intelligence.prompts import CLAIM_DEDUP_JUDGE_SYSTEM
-from app.services.intelligence.schemas import ClaimDedupJudgement
+from app.services.intelligence.prompts import (
+    CLAIM_DEDUP_BATCH_SYSTEM,
+    CLAIM_DEDUP_JUDGE_SYSTEM,
+)
+from app.services.intelligence.schemas import (
+    ClaimDedupBatchResult,
+    ClaimDedupJudgement,
+    ClaimPairJudgement,
+)
 
 logger = logging.getLogger(__name__)
 
 JUDGE_OPTIONS = {"temperature": 0.0, "num_predict": 200}
+BATCH_SIZE = 50  # max candidate pairs per batched LLM call
 
 
 def _judge_pair(
@@ -184,6 +193,50 @@ def propose_merges_for_new_claim(
     return proposals
 
 
+def _build_batch_prompt(pairs: list[tuple[int, str, int, str]]) -> str:
+    """Format a list of (new_id, new_text, existing_id, existing_text) as a
+    numbered pair list for CLAIM_DEDUP_BATCH_SYSTEM."""
+    lines = [f"CANDIDATE CLAIM PAIRS ({len(pairs)} pairs):\n"]
+    for i, (nid, ntxt, eid, etxt) in enumerate(pairs, 1):
+        lines.append(f"Pair {i} [new=#{nid}, existing=#{eid}]:")
+        lines.append(f"  #{nid}: {ntxt!r}")
+        lines.append(f"  #{eid}: {etxt!r}\n")
+    return "\n".join(lines)
+
+
+def _judge_batch(
+    pairs: list[tuple[int, str, int, str]],
+    model: str,
+    db: Session,
+) -> list[ClaimPairJudgement]:
+    """Send all candidate pairs to the LLM in one call. Returns only merge
+    verdicts; unrecognised claim-ID pairs are dropped (LLM hallucination guard).
+    """
+    if not pairs:
+        return []
+    user_prompt = _build_batch_prompt(pairs)
+    try:
+        result: ClaimDedupBatchResult = call_json_ai(
+            system_prompt=CLAIM_DEDUP_BATCH_SYSTEM,
+            user_prompt=user_prompt,
+            options={"temperature": 0.0, "num_predict": 1500},
+            debug_label="dedup_batch",
+            schema=ClaimDedupBatchResult,
+            model=model or None,
+            db=db,
+            two_pass=False,
+        )
+        valid_pairs = {(nid, eid) for nid, _, eid, _ in pairs}
+        return [
+            m
+            for m in result.merges
+            if (m.new_claim_id, m.existing_claim_id) in valid_pairs
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dedup batch call failed: %s", exc)
+        return []
+
+
 async def find_duplicates_for_case(
     case_id: str,
     db: Session,
@@ -191,13 +244,16 @@ async def find_duplicates_for_case(
     k: int = 3,
     skip_pair_if_proposal_exists: bool = True,
 ) -> dict[str, int]:
-    """Wave 2C: retroactive duplicate-finder. Iterates every claim in the
-    case, runs the dedup judge against each claim's top-K nearest, and
-    creates ClaimMergeProposal rows for high-confidence merges.
+    """Wave 2C: retroactive duplicate-finder.
 
-    Idempotent: by default, skips (claim_a, claim_b) pairs that already
-    have an active proposal in either direction.
+    Phase 1 — collect candidate pairs: for each claim, get its top-K
+    embedding-nearest neighbours and deduplicate the resulting pair set.
 
+    Phase 2 — batch judge: send all candidate pairs to the LLM in one call
+    (chunked to BATCH_SIZE). Creates ClaimMergeProposal rows for each
+    high/medium-confidence merge verdict returned.
+
+    Idempotent: skips pairs that already have a proposal in either direction.
     Returns {scanned, proposals_created, judge_calls} for UI feedback.
     """
     from app.models.database import ClaimMergeProposal
@@ -219,13 +275,12 @@ async def find_duplicates_for_case(
         for a, b in rows:
             existing_pairs.add(tuple(sorted((a, b))))
 
-    confidence_map = {
-        "high": ProposalConfidence.HIGH,
-        "medium": ProposalConfidence.MEDIUM,
-        "low": ProposalConfidence.LOW,
-    }
-    proposals_created = 0
-    judge_calls = 0
+    # ------------------------------------------------------------------ #
+    # Phase 1: collect all unique candidate pairs via embedding KNN       #
+    # ------------------------------------------------------------------ #
+    # Each entry: (new_id, new_text, existing_id, existing_text)
+    # new_id is always the higher-id claim (deterministic directionality).
+    candidate_pairs: list[tuple[int, str, int, str]] = []
     seen_pairs_this_run: set[tuple[int, int]] = set()
 
     for claim in claims:
@@ -237,56 +292,69 @@ async def find_duplicates_for_case(
             exclude_claim_id=claim.id,
         )
         for existing_id, _distance in nearest:
-            pair = tuple(sorted((claim.id, existing_id)))
-            if pair in existing_pairs or pair in seen_pairs_this_run:
-                continue
-            seen_pairs_this_run.add(pair)
-
-            existing = db.get(Claim, existing_id)
-            if not existing:
-                continue
-            judge_calls += 1
-            verdict = _judge_pair(
-                claim.claim_text,
-                existing_id,
-                existing.claim_text,
-                cfg.summary_model,
-                db,
-            )
-            if verdict is None or verdict.action != "merge":
-                continue
-
-            # Pick a deterministic "new" side: the higher-id claim
-            # (typically the more recently extracted one). The user can
-            # always swap directionality manually in the queue.
             new_id, existing_target_id = (
                 (claim.id, existing_id)
                 if claim.id > existing_id
                 else (existing_id, claim.id)
             )
+            pair = (new_id, existing_target_id)
+            if pair in existing_pairs or pair in seen_pairs_this_run:
+                continue
+            seen_pairs_this_run.add(pair)
+
+            new_claim_obj = db.get(Claim, new_id)
+            existing_claim_obj = db.get(Claim, existing_target_id)
+            if not new_claim_obj or not existing_claim_obj:
+                continue
+            candidate_pairs.append(
+                (
+                    new_id,
+                    new_claim_obj.claim_text,
+                    existing_target_id,
+                    existing_claim_obj.claim_text,
+                )
+            )
+
+    if not candidate_pairs:
+        return {"scanned": len(claims), "proposals_created": 0, "judge_calls": 0}
+
+    # ------------------------------------------------------------------ #
+    # Phase 2: batch judge — one LLM call per BATCH_SIZE chunk           #
+    # ------------------------------------------------------------------ #
+    confidence_map = {
+        "high": ProposalConfidence.HIGH,
+        "medium": ProposalConfidence.MEDIUM,
+        "low": ProposalConfidence.LOW,
+    }
+    proposals_created = 0
+    judge_calls = 0
+
+    for batch_start in range(0, len(candidate_pairs), BATCH_SIZE):
+        batch = candidate_pairs[batch_start : batch_start + BATCH_SIZE]
+        judge_calls += 1
+        judgements = _judge_batch(batch, cfg.summary_model, db)
+
+        for j in judgements:
+            if j.confidence not in ("high", "medium"):
+                continue
             db.add(
                 ClaimMergeProposal(
-                    new_claim_id=new_id,
-                    existing_claim_id=existing_target_id,
-                    confidence=confidence_map.get(
-                        verdict.confidence, ProposalConfidence.LOW
-                    ),
-                    rationale=verdict.rationale,
+                    new_claim_id=j.new_claim_id,
+                    existing_claim_id=j.existing_claim_id,
+                    confidence=confidence_map.get(j.confidence, ProposalConfidence.LOW),
+                    rationale=j.rationale,
                     status=ProposalStatus.PENDING,
                     proposed_at=datetime.now(UTC).replace(tzinfo=None),
                 )
             )
-            # Commit per proposal so the SQLite write lock isn't held across
-            # the next slow judge call. Without this, concurrent Celery
-            # writers hit `database is locked` past the 5s busy_timeout.
             db.commit()
             proposals_created += 1
-            existing_pairs.add(pair)
+            existing_pairs.add((j.new_claim_id, j.existing_claim_id))
             logger.info(
                 "retroactive merge proposal: claim %s ≈ %s (%s)",
-                new_id,
-                existing_target_id,
-                verdict.confidence,
+                j.new_claim_id,
+                j.existing_claim_id,
+                j.confidence,
             )
 
     return {

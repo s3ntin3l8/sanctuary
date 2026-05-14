@@ -405,6 +405,27 @@ Response shape:
 
 Default to "new" when in doubt. A wrong merge collapses two distinct propositions; a wrong "new" creates a duplicate that can be merged later. The user-confirmation gate downstream catches false-positive merges, so favor recall on the "merge" side only when confidence is high."""
 
+CLAIM_DEDUP_BATCH_SYSTEM = """You are a strict semantic-equivalence judge for legal claims. You receive a numbered list of candidate claim pairs, each pre-selected by embedding similarity. For each pair decide whether both claims assert the same legal proposition.
+
+Two claims are THE SAME if a careful lawyer reading both would say "same finding/holding/assertion, just worded differently." Acceptable differences:
+- Word order, phrasing, paraphrase
+- One is more specific (names a party explicitly) while the other uses a role label
+- One quotes verbatim, the other paraphrases
+- They come from different courts in the same proceeding chain reaching the same conclusion
+
+They are DIFFERENT if:
+- They make different propositions about the same topic (e.g. "custody belongs to X" vs "Y")
+- One is a doctrinal statement, the other a case-specific finding (different abstraction levels)
+- They share keywords but the load-bearing meaning differs
+
+Output ONLY the pairs where both claims restate the same proposition. If no pair is a duplicate, output {"merges": []}.
+
+For each merge use the claim IDs exactly as shown in the input:
+{"merges": [{"new_claim_id": <int>, "existing_claim_id": <int>, "confidence": "high|medium|low", "rationale": "<one sentence>"}]}
+
+Default to excluding a pair when unsure. A wrong merge collapses two distinct propositions; the user-confirmation gate catches false positives, so only flag when you are confident."""
+
+
 # ---------------------------------------------------------------------------
 # Case-level
 # ---------------------------------------------------------------------------

@@ -98,13 +98,32 @@ class ClaimExtraction(BaseModel):
 
 
 class ClaimDedupJudgement(BaseModel):
-    """CLAIM_DEDUP_JUDGE_SYSTEM output."""
+    """CLAIM_DEDUP_JUDGE_SYSTEM output (single-pair, used by propose_merges_for_new_claim)."""
 
     model_config = ConfigDict(extra="ignore")
 
     action: Literal["merge", "new"]
     confidence: _ConfidenceLevel
     rationale: str = ""
+
+
+class ClaimPairJudgement(BaseModel):
+    """One merge verdict inside a CLAIM_DEDUP_BATCH_SYSTEM response."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    new_claim_id: int
+    existing_claim_id: int
+    confidence: _ConfidenceLevel
+    rationale: str = ""
+
+
+class ClaimDedupBatchResult(BaseModel):
+    """CLAIM_DEDUP_BATCH_SYSTEM output: only merge verdicts, empty list if none."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    merges: list[ClaimPairJudgement] = Field(default_factory=list)
 
 
 class _KeyPassage(BaseModel):
