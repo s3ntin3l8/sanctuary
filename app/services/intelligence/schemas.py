@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import (
+    CaseStatus,
     ClaimEvidenceRole,
     ClaimType,
     DocumentType,
@@ -224,11 +225,17 @@ class RelationshipDetection(BaseModel):
 class CaseBrief(BaseModel):
     """CASE_BRIEF_SYSTEM output."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
     posture: str
     pressure_points: list[str] = Field(default_factory=list)
     next_move: str
+    detected_status: CaseStatus = Field(
+        description="The procedural stage the case is currently in, derived from documents, action items, and proceedings."
+    )
+    status_rationale: str = Field(
+        description="One short sentence naming the concrete signal that pinned the status (e.g. 'Ruling issued 2026-03-12; appeal window open')."
+    )
 
 
 class _Phase1Confidence(BaseModel):

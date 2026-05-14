@@ -63,6 +63,11 @@
     {% if brief.get('next_move') %}
     <p class="text-primary font-medium">→ {{ brief.next_move }}</p>
     {% endif %}
+    {% if brief.get('status_rationale') %}
+    <p class="text-[11px] text-on-surface-variant italic pt-1">
+      Status: <span class="text-on-surface">{{ brief.detected_status | replace('_', ' ') | title }}</span> — {{ brief.status_rationale }}
+    </p>
+    {% endif %}
     {% endif %}
   </div>
   {% if ai_brief_updated_at %}

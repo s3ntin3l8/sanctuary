@@ -7,8 +7,13 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session, defer
 
 from app.config import SessionLocal
-from app.models.database import ActionItem, Case, Document
-from app.models.enums import ActionItemStatus, OriginatorType
+from app.models.database import ActionItem, Case, Document, Proceeding
+from app.models.enums import (
+    ActionItemStatus,
+    CaseStatus,
+    OriginatorType,
+    ProceedingStatus,
+)
 from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -82,10 +87,14 @@ def _compute_parties(docs: list) -> list[dict]:
     return result
 
 
-def _apply_brief(case: Case, result: dict) -> None:
+def _apply_brief(case: Case, result: dict, db: Session) -> None:
     """Write AI brief results to the case object (caller commits).
 
-    Pure function — never calls db.commit().
+    Applies detected_status to case.status when it changed, cascading
+    closure to proceedings when the new status is CLOSED. Mirrors the
+    cascade in the PATCH /cases/{case_id} handler.
+
+    Never calls db.commit() — the caller owns the transaction.
     """
     posture = str(result.get("posture", ""))
 
@@ -94,10 +103,34 @@ def _apply_brief(case: Case, result: dict) -> None:
 
     next_move = str(result.get("next_move", ""))
 
+    detected_status_raw = result.get("detected_status")
+    status_rationale = str(result.get("status_rationale", ""))
+
+    new_status: CaseStatus | None = None
+    if detected_status_raw:
+        try:
+            new_status = CaseStatus(detected_status_raw)
+        except ValueError:
+            logger.warning(
+                f"Case {case.id}: invalid detected_status {detected_status_raw!r}, keeping {case.status}"
+            )
+
+    if new_status and new_status != case.status:
+        logger.info(
+            f"Case {case.id}: status {case.status} → {new_status} ({status_rationale})"
+        )
+        case.status = new_status
+        if new_status == CaseStatus.CLOSED:
+            db.query(Proceeding).filter(Proceeding.case_id == case.id).update(
+                {"status": ProceedingStatus.CLOSED}
+            )
+
     case.ai_brief = {
         "posture": posture,
         "pressure_points": pressure_points,
         "next_move": next_move,
+        "detected_status": str(case.status),
+        "status_rationale": status_rationale,
     }
     case.ai_brief_updated_at = datetime.now(UTC)
 
@@ -119,13 +152,26 @@ def _call_brief_sync(
     db=None,
 ) -> dict:
     """Synchronous AI call to generate the case brief."""
-    prompt = f"""Case: {case.title} ({case.id}) — Status: {case.status}
+    proceedings = sorted(
+        case.proceedings,
+        key=lambda p: p.started_at or datetime.min.replace(tzinfo=UTC),
+    )
+    proc_lines = [
+        f"- {p.court_level} ({p.status})"
+        + (f" — ended {p.ended_at.date()}" if p.ended_at else "")
+        for p in proceedings
+    ] or ["None"]
+
+    prompt = f"""Case: {case.title} ({case.id}) — current_status: {case.status}
 Cost exposure: {case.total_cost_exposure or 0} cents
+
+Proceedings:
+{chr(10).join(proc_lines)}
 
 Documents ({len(docs)}):
 {
         chr(10).join(
-            f"- [{d.significance_tier}] {d.title or 'Untitled'} ({d.issued_date}) — by {d.attributed_originator or 'unknown'} ({d.originator_type})\n  Summary: {(d.ai_summary or {}).get('legal_significance', 'N/A')}"
+            f"- [{d.significance_tier}/{d.document_type}] {d.title or 'Untitled'} ({d.issued_date}) — by {d.attributed_originator or 'unknown'} ({d.originator_type})\n  Summary: {(d.ai_summary or {}).get('legal_significance', 'N/A')}"
             for d in docs
         )
     }
@@ -204,7 +250,7 @@ def generate(case_id: str) -> None:
                 model=cfg.summary_model,
                 db=db,
             )
-            _apply_brief(case, result)
+            _apply_brief(case, result, db)
 
             parties = _compute_parties(docs)
             case.parties = parties

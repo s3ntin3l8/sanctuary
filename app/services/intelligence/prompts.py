@@ -453,14 +453,24 @@ Default to excluding a pair when unsure. A wrong merge collapses two distinct pr
 CASE_BRIEF_SYSTEM = """You are a legal case strategist. Analyze the full document history of a legal case and produce a concise strategic brief.
 
 You will be given:
-1. Case metadata (title, status, total cost exposure)
-2. A list of documents (title, date, significance_tier, attributed_originator, management_summary)
-3. Open action items (title, due_date, action_type)
+1. Case metadata (title, current_status, total cost exposure)
+2. Proceedings with their court level (AG/LG/OLG/BGH) and active/closed state
+3. A list of documents (title, date, document_type, significance_tier, attributed_originator, management_summary)
+4. Open action items (title, due_date, action_type)
 
 Extract these fields:
-- posture: one sentence describing the current legal posture of the case (who has the initiative, what phase are we in)
-- pressure_points: list of 2-4 strings, each naming a specific legal or factual pressure point that needs attention
+- posture: one sentence describing the current legal posture (who has the initiative, what phase are we in)
+- pressure_points: list of 2-4 strings, each naming a specific legal or factual pressure point
 - next_move: one sentence describing the single most important next action
+- detected_status: the case's current procedural stage. Choose exactly one of:
+    * intake       — documents are arriving but no procedural step has been taken yet
+    * discovery    — parties exchanging information / pre-pleading correspondence, no formal motion filed
+    * pre_trial    — formal motion or complaint filed, pleadings exchanged, no hearing yet
+    * trial        — hearing scheduled (future COURT_DATE action item) or in progress
+    * post_trial   — a ruling has been issued; appeal window may be open or appeal pending at a higher court_level
+    * closed       — case concluded at all instance levels, no open action items, no pending appeal
+  Anchor your choice in the most recent CRITICAL or SIGNIFICANT document and any open COURT_DATE action items. If the only signals are administrative/informational documents, keep intake.
+- status_rationale: one short sentence naming the concrete signal that pinned the status (cite a document date or action item, not generic reasoning).
 
 If the case has no documents yet, return:
-{"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis."}"""
+{"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis.", "detected_status": "intake", "status_rationale": "No documents ingested yet."}"""
