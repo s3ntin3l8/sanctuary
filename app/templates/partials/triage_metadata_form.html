@@ -104,13 +104,13 @@
         {% endcall %}
 
         {% call field_row('Issued', field_confs.issued_date, needs_review=field_confs.issued_date in ('low', 'medium')) %}
-            <input type="date" name="issued_date" value="{{ doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '' }}"
+            <input type="date" name="issued_date" value="{{ doc.issued_date | local_strftime('%Y-%m-%d') if doc.issued_date else '' }}"
                    {% if field_confs.issued_date in ('low', 'medium') %}data-needs-review{% endif %}
                    class="{{ _input_cls }} font-mono">
         {% endcall %}
 
         {% call field_row('Received', field_confs.received_date) %}
-            <input type="date" name="received_date" value="{{ doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '' }}"
+            <input type="date" name="received_date" value="{{ doc.received_date | local_strftime('%Y-%m-%d') if doc.received_date else '' }}"
                    class="{{ _input_cls }} font-mono">
         {% endcall %}
 

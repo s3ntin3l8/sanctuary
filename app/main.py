@@ -84,6 +84,16 @@ class SuccessfulAccessFilter(logging.Filter):
         return True
 
 
+class LocalTimeFormatter(logging.Formatter):
+    """Formatter that renders asctime in the user-configured timezone."""
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        from app.services.timezone_service import get_user_tz
+
+        dt = datetime.fromtimestamp(record.created, tz=get_user_tz())
+        return dt.strftime(datefmt) if datefmt else dt.isoformat(timespec="seconds")
+
+
 def setup_logging():
     """Configure robust logging by hijacking third-party loggers."""
     log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -97,7 +107,7 @@ def setup_logging():
     for h in root.handlers[:]:
         root.removeHandler(h)
 
-    formatter = logging.Formatter(
+    formatter = LocalTimeFormatter(
         "%(asctime)s | %(request_id)-8s | [%(levelname)s] %(name)s: %(message)s"
     )
 
@@ -441,6 +451,24 @@ def _hash_id(text: str, kind: str = "neutral", length: int = 12) -> str:
     return hashlib.sha1(f"{text}|{kind}".encode()).hexdigest()[:length]
 
 
+def _local_strftime(dt, fmt: str) -> str:
+    from datetime import UTC as _UTC
+    from datetime import date
+    from datetime import datetime as _dt
+
+    from app.services.timezone_service import get_user_tz
+
+    if dt is None:
+        return ""
+    if isinstance(dt, _dt):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_UTC)
+        return dt.astimezone(get_user_tz()).strftime(fmt)
+    if isinstance(dt, date):
+        return dt.strftime(fmt)
+    return ""
+
+
 templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
 templates.env.filters["hm"] = normalize_hm
 templates.env.filters["hash"] = _hash_id
@@ -449,6 +477,7 @@ templates.env.filters["format_relative_time"] = format_relative_time
 templates.env.filters["format_days_ago"] = format_days_ago
 templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
+templates.env.filters["local_strftime"] = _local_strftime
 
 # Markdown renderer.
 # html=False blocks raw-HTML passthrough — Docling-produced markdown can't inject

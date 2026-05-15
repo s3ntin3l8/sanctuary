@@ -68,6 +68,20 @@
             </form>
             <p class="text-[10px] text-on-surface-variant/60 italic">Takes effect on the next case dashboard load.</p>
         </div>
+
+        <!-- Timezone -->
+        <div class="space-y-3">
+            <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Timezone</label>
+            <form hx-post="/api/settings/timezone" hx-swap="none">
+                <select name="tz" onchange="this.form.requestSubmit()"
+                        class="w-full max-w-xs bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40">
+                    {% for tz in timezone_choices %}
+                    <option value="{{ tz }}" {% if settings.get('timezone', 'Europe/Berlin') == tz %}selected{% endif %}>{{ tz }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <p class="text-[10px] text-on-surface-variant/60 italic">Applies to logs, timestamps, and all displayed dates. Takes effect immediately without restart.</p>
+        </div>
     </div>
 </section>
 

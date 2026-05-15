@@ -49,7 +49,7 @@
                         <span>·</span>
                         <span class="font-mono" x-text="'#' + $store.triage.drawer.docId"></span>
                         <span>·</span>
-                        <span class="font-mono">{{ bundle.received_at.strftime('%-d %b · %H:%M') if bundle.received_at }}</span>
+                        <span class="font-mono">{{ bundle.received_at | local_strftime('%-d %b · %H:%M') if bundle.received_at }}</span>
                     </div>
                     {% if bundle.subject %}
                     <div class="text-[14px] font-headline font-semibold truncate text-on-surface" title="{{ bundle.subject }}">

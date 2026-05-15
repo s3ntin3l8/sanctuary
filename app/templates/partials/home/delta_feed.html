@@ -10,7 +10,7 @@
                 Since your last visit
             </h2>
             <span class="text-[11px] text-on-surface-variant">
-                ({{ last_home_visit.strftime('%b %d, %H:%M') if last_home_visit else 'first visit' }})
+                ({{ last_home_visit | local_strftime('%b %d, %H:%M') if last_home_visit else 'first visit' }})
             </span>
         </div>
         <button hx-post="/home/review-all" hx-swap="none" @click="$el.closest('section').remove()" class="text-[11px] flex items-center gap-1 text-primary hover:underline transition-colors">

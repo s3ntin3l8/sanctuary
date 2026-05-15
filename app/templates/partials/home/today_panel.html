@@ -33,7 +33,7 @@
             <!-- date column -->
             <div class="font-mono text-[11px] w-[100px] shrink-0 {{ 'text-error' if (item.due_date - now).days < 7 else 'text-on-surface-variant' }}">
                 {% set days = (item.due_date - now).days %}
-                {{ item.due_date.strftime('%b %d') }} ·
+                {{ item.due_date | local_strftime('%b %d') }} ·
                 {% if days < 0 %}{{ days|abs }}d late
                 {% elif days == 0 %}today
                 {% else %}{{ days }}d{% endif %}

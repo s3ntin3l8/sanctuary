@@ -11,6 +11,7 @@ from app.dependencies import get_db
 from app.helpers import render_page
 from app.services.ai_config import _ensure_migrated, _get_ai_section, get_embed_config
 from app.services.ai_provider import chat_provider, embed_provider
+from app.services.timezone_service import get_timezone_choices
 from app.services.user_settings_service import _get_or_create
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ async def settings_appearance(request: Request, db: Session = Depends(get_db)):
         "pages/settings/appearance.html",
         db=db,
         settings=settings_json,
+        timezone_choices=get_timezone_choices(),
     )
 
 

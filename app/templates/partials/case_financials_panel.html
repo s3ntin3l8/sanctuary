@@ -53,7 +53,7 @@
           {% if direction == 'incoming' %}&plus;{% elif direction == 'outgoing' %}&minus;{% endif %}{{ format_eur(amount) if amount else '—' }}
         </span>
         {% endif %}
-        <span class="text-[9px] font-mono text-outline">{{ last_doc.issued_date.strftime('%d.%m.%y') if last_doc.issued_date else '' }}</span>
+        <span class="text-[9px] font-mono text-outline">{{ last_doc.issued_date | local_strftime('%d.%m.%y') if last_doc.issued_date else '' }}</span>
       </div>
       <div class="text-[11px] text-on-surface truncate group-hover:underline">{{ last_doc.title }}</div>
     </button>

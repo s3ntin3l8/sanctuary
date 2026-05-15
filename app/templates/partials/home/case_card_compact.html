@@ -40,7 +40,7 @@
     <div class="shrink-0 flex items-center gap-1 text-[10px] w-36 justify-end">
         {% set days = (case.next_action.due_date - now).days %}
         <span class="material-symbols-outlined text-[12px] {{ 'text-error' if days <= 7 else 'text-on-surface-variant' }}">timer</span>
-        <span class="{{ 'text-error font-bold' if days <= 7 else 'text-on-surface-variant' }}">{{ case.next_action.due_date.strftime('%b %d') }}</span>
+        <span class="{{ 'text-error font-bold' if days <= 7 else 'text-on-surface-variant' }}">{{ case.next_action.due_date | local_strftime('%b %d') }}</span>
     </div>
     {% else %}
     <div class="shrink-0 w-36 flex justify-end">

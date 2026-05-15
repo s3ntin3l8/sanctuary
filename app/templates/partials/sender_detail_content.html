@@ -33,7 +33,7 @@
                 <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Last Contact</p>
                 <p class="text-sm font-bold text-on-surface mt-1">
                     {% if documents %}
-                        {{ documents[0].ingest_date.strftime('%d.%m.%Y') }}
+                        {{ documents[0].ingest_date | local_strftime('%d.%m.%Y') }}
                     {% else %}
                         —
                     {% endif %}
@@ -58,7 +58,7 @@
                         <div class="flex items-center gap-2 mb-1">
                             {% set stripe_color = originator_colors.get(doc.originator_type, '#64748b') %}
                             <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ stripe_color }};"></span>
-                            <span class="text-[10px] font-mono text-on-surface-variant">{{ doc.ingest_date.strftime('%d.%m.%Y') }}</span>
+                            <span class="text-[10px] font-mono text-on-surface-variant">{{ doc.ingest_date | local_strftime('%d.%m.%Y') }}</span>
                             {% if doc.case_id %}
                             <span class="text-[9px] font-bold text-primary uppercase bg-primary/5 px-1.5 py-0.5 rounded">{{ cases.get(doc.case_id, doc.case_id) }}</span>
                             {% endif %}

@@ -69,7 +69,7 @@
                 {{ bundle.source_type.value }}
             </div>
             <div class="text-[10.5px] mt-0.5 text-on-surface-variant/80 font-mono">
-                {{ bundle.received_at.strftime('%-d %b · %H:%M') if bundle.received_at }}
+                {{ bundle.received_at | local_strftime('%-d %b · %H:%M') if bundle.received_at }}
             </div>
         </div>
 
@@ -117,7 +117,7 @@
             <div class="flex items-center gap-2 mt-1.5 flex-wrap">
                 {% for item in bundle.action_items[:3] %}
                 <span class="text-[10.5px] font-mono px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/40">
-                    {% if item.due_date %}{{ item.due_date.strftime('%d.%m.%Y') }}{% else %}{{ item.title|truncate(24) }}{% endif %}
+                    {% if item.due_date %}{{ item.due_date | local_strftime('%d.%m.%Y') }}{% else %}{{ item.title|truncate(24) }}{% endif %}
                 </span>
                 {% endfor %}
             </div>

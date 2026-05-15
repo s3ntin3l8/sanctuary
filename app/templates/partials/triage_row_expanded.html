@@ -28,7 +28,7 @@
                 {% if bundle.sender_email %}
                 Source: <span class="font-mono">{{ bundle.sender_email }}</span><br/>
                 {% endif %}
-                Received: <span class="font-mono">{{ bundle.received_at.strftime('%-d %b %Y · %H:%M') if bundle.received_at }}</span>
+                Received: <span class="font-mono">{{ bundle.received_at | local_strftime('%-d %b %Y · %H:%M') if bundle.received_at }}</span>
             </div>
         </div>
 

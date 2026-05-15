@@ -73,7 +73,7 @@
         {{ ot.replace('_', ' ') }}
       </span>
       {% if doc.issued_date %}
-      <span class="font-mono">{{ doc.issued_date.strftime('%d.%m.%Y') }}</span>
+      <span class="font-mono">{{ doc.issued_date | local_strftime('%d.%m.%Y') }}</span>
       {% endif %}
       {% if doc.significance_tier %}
       {{ significance_indicator(doc.significance_tier) }}

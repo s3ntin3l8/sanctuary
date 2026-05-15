@@ -6,7 +6,7 @@ import logging
 import re
 import time
 import traceback
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TypeVar, overload
 
 import httpx
@@ -18,6 +18,7 @@ from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
 from app.services.intelligence.prompts import PASS1_USER_SUFFIX, PASS2_USER_SUFFIX
+from app.services.timezone_service import get_user_tz
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +305,7 @@ def _stream_response(
     else:
         kind, scope_id, stage = "misc", debug_label, debug_label
 
-    started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    started_at = datetime.now(get_user_tz()).isoformat(timespec="seconds")
     start_perf = time.perf_counter()
     ttfb_perf: float | None = None
 

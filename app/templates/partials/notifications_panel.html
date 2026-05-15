@@ -54,7 +54,7 @@
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-on-surface line-clamp-1 group-hover:text-error transition-colors">OVERDUE: {{ d.title }}</p>
                         <p class="text-[9px] text-on-surface-variant mt-0.5">{{ case_titles.get(d.case_id, d.case_id) }}</p>
-                        <p class="text-[8px] font-black text-error uppercase mt-1">Due {{ d.due_date.strftime('%d.%m.%Y') }}</p>
+                        <p class="text-[8px] font-black text-error uppercase mt-1">Due {{ d.due_date | local_strftime('%d.%m.%Y') }}</p>
                     </div>
                 </div>
             </a>
@@ -70,7 +70,7 @@
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-on-surface line-clamp-1 group-hover:text-primary transition-colors">Hearing: {{ h.title }}</p>
                         <p class="text-[9px] text-on-surface-variant mt-0.5">{{ case_titles.get(h.case_id, h.case_id) }}</p>
-                        <p class="text-[8px] font-black text-primary uppercase mt-1">{{ h.due_date.strftime('%d.%m.%Y %H:%M') }}</p>
+                        <p class="text-[8px] font-black text-primary uppercase mt-1">{{ h.due_date | local_strftime('%d.%m.%Y %H:%M') }}</p>
                     </div>
                 </div>
             </a>
@@ -86,7 +86,7 @@
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-on-surface line-clamp-1 group-hover:text-amber-600 transition-colors">Triage: {{ doc.title }}</p>
                         <p class="text-[9px] text-on-surface-variant mt-0.5">Unlinked Document</p>
-                        <p class="text-[8px] font-black text-amber-600 uppercase mt-1">Uploaded {{ doc.ingest_date.strftime('%d.%m.%Y') }}</p>
+                        <p class="text-[8px] font-black text-amber-600 uppercase mt-1">Uploaded {{ doc.ingest_date | local_strftime('%d.%m.%Y') }}</p>
                     </div>
                 </div>
             </a>
@@ -102,7 +102,7 @@
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-on-surface line-clamp-1 group-hover:text-primary transition-colors">Deadline: {{ d.title }}</p>
                         <p class="text-[9px] text-on-surface-variant mt-0.5">{{ case_titles.get(d.case_id, d.case_id) }}</p>
-                        <p class="text-[8px] font-black text-on-surface-variant uppercase mt-1">Due {{ d.due_date.strftime('%d.%m.%Y') }}</p>
+                        <p class="text-[8px] font-black text-on-surface-variant uppercase mt-1">Due {{ d.due_date | local_strftime('%d.%m.%Y') }}</p>
                     </div>
                 </div>
             </a>

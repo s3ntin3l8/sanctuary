@@ -66,7 +66,7 @@
                         <div class="flex items-center justify-between bg-surface-container/50 rounded-lg px-3 py-2">
                             <div>
                                 <p class="text-xs font-bold text-on-surface">{{ cost.title }}</p>
-                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at.strftime('%b %d, %Y') }}</p>
+                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at | local_strftime('%b %d, %Y') }}</p>
                             </div>
                             <p class="text-sm font-black font-mono text-error">{{ format_eur(cost.amount_gross - cost.amount_paid) }}</p>
                         </div>
@@ -86,7 +86,7 @@
                         <div class="flex items-center justify-between bg-surface-container/50 rounded-lg px-3 py-2">
                             <div>
                                 <p class="text-xs font-bold text-on-surface">{{ cost.title }}</p>
-                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at.strftime('%b %d, %Y') }}</p>
+                                <p class="text-[10px] text-on-surface-variant">{{ case_titles.get(cost.case_id, cost.case_id) }} &middot; Due {{ cost.due_at | local_strftime('%b %d, %Y') }}</p>
                             </div>
                             <p class="text-sm font-black font-mono text-originator-opposing">{{ format_eur(cost.amount_gross - cost.amount_paid) }}</p>
                         </div>

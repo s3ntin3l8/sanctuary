@@ -82,7 +82,7 @@
       {% if _total > 0 %}
       <span class="text-[10.5px] text-on-surface-variant">· {{ _total }} event{{ 's' if _total != 1 }}</span>
       {% endif %}
-      <span class="text-[10.5px] text-on-surface-variant">· today {{ _today.strftime('%d %b') }}</span>
+      <span class="text-[10.5px] text-on-surface-variant">· today {{ _today | local_strftime('%d %b') }}</span>
     </div>
     <button type="button"
             @click="jumpToToday()"
@@ -107,7 +107,7 @@
     {% set _year = b.key[:4] %}
     {% set _bar_h = [((b.total / b.max_total) * 48) | int, 4] | max %}
     {% set _crit_h = [((b.critical / b.max_total) * 48) | int, 0] | max %}
-    {% set _is_current = b.key == _today.strftime('%Y-%m') %}
+    {% set _is_current = b.key == _today | local_strftime('%Y-%m') %}
 
     {# Year separator — vertical line + year label, inserted before each new year #}
     {% if _year != _cur_year.v %}
@@ -205,7 +205,7 @@
     {% set _today_shown = namespace(done=false) %}
 
     {% for ev in _events %}
-    {% set _ev_month = ev.date.strftime('%Y-%m') %}
+    {% set _ev_month = ev.date | local_strftime('%Y-%m') %}
     {% set _icon = _kind_icons.get(ev.kind, 'event_note') %}
     {% set _icon_color = _kind_colors.get(ev.kind, 'text-on-surface-variant') %}
 
@@ -217,7 +217,7 @@
          style="position:sticky; top:0; z-index:20; background:var(--color-surface); border-top:1px solid var(--color-primary); border-bottom:1px solid var(--color-primary);">
       <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
       <span class="text-[10px] font-bold tracking-widest uppercase text-primary">
-        TODAY · {{ _today.strftime('%d %b · %A') }}
+        TODAY · {{ _today | local_strftime('%d %b · %A') }}
       </span>
       <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
     </div>
@@ -227,12 +227,12 @@
     {% if _ev_month != _cur_month.key %}
     {% set _cur_month.key = _ev_month %}
     {% set _bucket = _buckets | selectattr('key','equalto',_ev_month) | first | default(none) %}
-    {% set _is_cur = _ev_month == _today.strftime('%Y-%m') %}
+    {% set _is_cur = _ev_month == _today | local_strftime('%Y-%m') %}
     <div class="flex items-center gap-2 px-4 py-1.5"
          data-month="{{ _ev_month }}"
          style="position:sticky; top:0; z-index:10; background:var(--color-surface-low); border-bottom:1px solid var(--color-outline-variant);">
       <span class="text-[10.5px] font-bold uppercase tracking-widest {{ 'text-primary' if _is_cur else 'text-on-surface-variant' }}">
-        {{ ev.date.strftime('%B %Y') }}
+        {{ ev.date | local_strftime('%B %Y') }}
       </span>
       {% if _bucket %}
       <span class="text-[9.5px] text-on-surface-variant">
@@ -267,9 +267,9 @@
       <div class="shrink-0 flex flex-col items-end justify-center pl-4 pr-3"
            style="width:72px; min-width:72px;"
            :class="compact ? 'py-1.5' : 'py-2.5'">
-        <span class="font-mono text-[15px] font-semibold leading-none text-on-surface">{{ ev.date.strftime('%d') }}</span>
+        <span class="font-mono text-[15px] font-semibold leading-none text-on-surface">{{ ev.date | local_strftime('%d') }}</span>
         <span class="font-mono text-[9px] uppercase tracking-wider text-on-surface-variant leading-none mt-1">
-          {{ ev.date.strftime('%a') }}
+          {{ ev.date | local_strftime('%a') }}
         </span>
       </div>
 
@@ -373,7 +373,7 @@
          style="border-top:1px solid var(--color-primary); border-bottom:1px solid var(--color-primary);">
       <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
       <span class="text-[10px] font-bold tracking-widest uppercase text-primary">
-        TODAY · {{ _today.strftime('%d %b · %A') }}
+        TODAY · {{ _today | local_strftime('%d %b · %A') }}
       </span>
       <div class="flex-1 h-px" style="background:var(--color-primary); opacity:.3;"></div>
     </div>

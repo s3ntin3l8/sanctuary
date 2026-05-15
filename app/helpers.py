@@ -205,7 +205,9 @@ def format_relative_time(value: datetime) -> str:
         return "yesterday"
     if days < 7:
         return f"{days}d ago"
-    return value.strftime("%b %d, %Y")
+    from app.services.timezone_service import get_user_tz
+
+    return value.astimezone(get_user_tz()).strftime("%b %d, %Y")
 
 
 def format_days_ago(value: datetime) -> str:
@@ -243,18 +245,21 @@ def format_days_ago(value: datetime) -> str:
 
 def format_upcoming_datetime(value: datetime) -> str:
     """Formats upcoming deadlines/hearings for compact dashboard display."""
-    now = datetime.now(UTC)
-    # Ensure value is comparable
+    from app.services.timezone_service import get_user_tz
+
+    tz = get_user_tz()
+    now = datetime.now(tz)
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
-    delta_days = (value.date() - now.date()).days
+    local_value = value.astimezone(tz)
+    delta_days = (local_value.date() - now.date()).days
     if delta_days == 0:
         day_label = "Today"
     elif delta_days == 1:
         day_label = "Tomorrow"
     else:
-        day_label = value.strftime("%a, %b %d")
-    return f"{day_label} at {value.strftime('%H:%M')}"
+        day_label = local_value.strftime("%a, %b %d")
+    return f"{day_label} at {local_value.strftime('%H:%M')}"
 
 
 def format_deadline_badge(value: datetime) -> dict:
@@ -277,8 +282,10 @@ def format_deadline_badge(value: datetime) -> dict:
             "label": f"{day_delta} days left",
             "tone": "bg-originator-opposing/10 text-originator-opposing",
         }
+    from app.services.timezone_service import get_user_tz
+
     return {
-        "label": value.strftime("%b %d"),
+        "label": value.astimezone(get_user_tz()).strftime("%b %d"),
         "tone": "bg-surface-container-high text-on-surface-variant",
     }
 

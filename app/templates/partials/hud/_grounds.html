@@ -39,7 +39,7 @@
                   title="Court findings are the procedural reality — not contestable propositions.">⚖ Court Finding</span>
             {% endif %}
             <span class="text-[9px] font-mono" style="color:var(--color-outline);">
-              #{{ claim.id }} · {{ claim.first_made_at.strftime('%d.%m.%y') if claim.first_made_at else '—' }}
+              #{{ claim.id }} · {{ claim.first_made_at | local_strftime('%d.%m.%y') if claim.first_made_at else '—' }}
             </span>
           </div>
         </div>

@@ -62,6 +62,8 @@ SCAN_PROCESSED_DIR = SCAN_INGEST_ROOT / "processed"
 SCAN_FAILED_DIR = SCAN_INGEST_ROOT / "failed"
 SCAN_POLL_INTERVAL_SECONDS = int(os.getenv("SCAN_POLL_INTERVAL_SECONDS", "30"))
 
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
+
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

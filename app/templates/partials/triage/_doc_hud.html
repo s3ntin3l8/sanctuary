@@ -83,9 +83,9 @@
                  <span class="whitespace-nowrap">· {{ doc.document_type.value }}</span>
                  {% endif %}
                  {% if doc.received_date %}
-                 <span class="font-mono whitespace-nowrap">· {{ doc.received_date.strftime('%Y-%m-%d') }}</span>
+                 <span class="font-mono whitespace-nowrap">· {{ doc.received_date | local_strftime('%Y-%m-%d') }}</span>
                  {% elif doc.ingest_date %}
-                 <span class="font-mono whitespace-nowrap">· {{ doc.ingest_date.strftime('%Y-%m-%d') }}</span>
+                 <span class="font-mono whitespace-nowrap">· {{ doc.ingest_date | local_strftime('%Y-%m-%d') }}</span>
                  {% endif %}
                  <span class="font-mono whitespace-nowrap">· {{ doc.page_count or 0 }} pp</span>
                  {% if doc.original_filename %}

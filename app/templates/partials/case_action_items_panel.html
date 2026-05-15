@@ -72,7 +72,7 @@
         <div class="flex items-center gap-2 mb-0.5">
           {% if item.due_date %}
           <span class="font-mono text-[12px] {{ 'text-error' if _is_deadline and is_open else 'text-on-surface' }}">
-            {{- item.due_date.strftime('%d.%m.%Y') -}}
+            {{- item.due_date | local_strftime('%d.%m.%Y') -}}
           </span>
           <span class="font-mono text-[10.5px] text-on-surface-variant">
             {{- item.due_date | format_relative_time -}}
@@ -133,7 +133,7 @@
   </div>
   <div class="text-right flex-shrink-0">
     <div class="text-[11px] font-mono" style="color:var(--color-amber);">{{ _next.item.due_date | format_relative_time }}</div>
-    <div class="text-[9.5px]" style="color:var(--color-on-surface-variant);">{{ _next.item.due_date.strftime('%d.%m.%Y') }}</div>
+    <div class="text-[9.5px]" style="color:var(--color-on-surface-variant);">{{ _next.item.due_date | local_strftime('%d.%m.%Y') }}</div>
   </div>
 </div>
 {% endif %}

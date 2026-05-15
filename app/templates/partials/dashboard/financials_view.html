@@ -175,7 +175,7 @@
           <tr class="hover:bg-surface-container-high/30 cursor-pointer" @click="openDoc({{ doc.id }})">
             <td class="px-4 py-2 text-[11px] text-on-surface">{{ doc.title or doc.filename }}</td>
             <td class="px-4 py-2 text-[11px] text-on-surface-variant font-mono">
-              {{ doc.issued_date.strftime('%d.%m.%Y') if doc.issued_date else '—' }}
+              {{ doc.issued_date | local_strftime('%d.%m.%Y') if doc.issued_date else '—' }}
             </td>
             <td class="px-4 py-2 text-[11px]">
               {% set kind_chip = {

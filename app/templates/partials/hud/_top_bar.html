@@ -50,7 +50,7 @@
         {{ significance_indicator(doc.significance_tier) }}
         {% endif %}
         {% if doc.issued_date %}
-        <span class="font-mono text-[9px]" style="color:var(--color-outline);">{{ doc.issued_date.strftime('%d.%m.%Y') }}</span>
+        <span class="font-mono text-[9px]" style="color:var(--color-outline);">{{ doc.issued_date | local_strftime('%d.%m.%Y') }}</span>
         {% endif %}
         {% if doc.thread_open %}
         <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"

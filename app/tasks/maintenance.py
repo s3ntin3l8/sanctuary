@@ -63,8 +63,9 @@ def _parse_block_ts(block: str) -> datetime | None:
                 if part.startswith("ts="):
                     raw = part[3:].strip()
                     try:
-                        return datetime.fromisoformat(raw.rstrip("Z")).replace(
-                            tzinfo=UTC
+                        dt = datetime.fromisoformat(raw)
+                        return (
+                            dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
                         )
                     except ValueError:
                         return None
@@ -89,7 +90,8 @@ def _prune_jsonl(jsonl_file: Path, cutoff: datetime) -> tuple[int, int]:
                 try:
                     entry = json.loads(line)
                     ts_raw = entry.get("ts", "")
-                    ts = datetime.fromisoformat(ts_raw.rstrip("Z")).replace(tzinfo=UTC)
+                    dt = datetime.fromisoformat(ts_raw)
+                    ts = dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
                     if ts >= cutoff:
                         kept.append(line)
                     else:

@@ -14,7 +14,7 @@
                     {{ greeting }}, {{ user_name }}.
                 </h1>
                 <div class="text-[13px] mt-1 text-on-surface-variant">
-                    {{ now.strftime('%A · %b %d, %Y') }}
+                    {{ now | local_strftime('%A · %b %d, %Y') }}
                 </div>
             </div>
             <div class="flex items-center gap-2">

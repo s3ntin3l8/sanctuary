@@ -13,8 +13,8 @@
 {% set _fields = [
     ('Originator', (doc.originator_type.value | capitalize) if doc.originator_type else '—',        _conf.get('originator') or 'low'),
     ('Sender',     doc.sender or '—',                                                               _conf.get('sender')     or 'low'),
-    ('Issued',     (doc.issued_date.strftime('%Y-%m-%d') if doc.issued_date else '—'),              _conf.get('issued_date') or 'low'),
-    ('Received',   (doc.received_date.strftime('%Y-%m-%d') if doc.received_date else '—'),          'high' if doc.received_date else 'low'),
+    ('Issued',     (doc.issued_date | local_strftime('%Y-%m-%d') if doc.issued_date else '—'),              _conf.get('issued_date') or 'low'),
+    ('Received',   (doc.received_date | local_strftime('%Y-%m-%d') if doc.received_date else '—'),          'high' if doc.received_date else 'low'),
     ('Tier',       (doc.significance_tier.value | capitalize) if doc.significance_tier else '—',    'high' if doc.significance_tier else 'low'),
     ('Type',       (doc.document_type.value | capitalize) if doc.document_type else '—',            'high' if doc.document_type else 'low'),
     ('AZ',         doc.proceeding.az_court if (doc.proceeding and doc.proceeding.az_court) else '—', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low'),
