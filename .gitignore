@@ -77,3 +77,4 @@ competitor_analysis.md
 .codex
 scratch/
 superpowers/
+celerybeat-schedule.*
