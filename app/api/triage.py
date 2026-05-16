@@ -847,7 +847,7 @@ async def reingest_document(
     db: Session = Depends(get_db),
     triage_service: TriageService = Depends(get_triage_service),
 ):
-    from app.services.pipeline_status import reset_all_stages
+    from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
     from app.tasks.dispatch import dispatch_task
     from app.tasks.document_processing import process_document_task
 
@@ -855,7 +855,12 @@ async def reingest_document(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    reset_all_stages(doc.id, db)
+    try:
+        retry_on_db_locked(lambda: reset_all_stages(doc.id, db), db)
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=409, detail="Worker busy — try again in a moment"
+        ) from exc
     dispatch_task(process_document_task, doc.id)
     db.refresh(doc)
     return _render_document_hud(request, doc, db, triage_service)
@@ -895,16 +900,18 @@ async def summarize_document(
 # -----------------------------------------------------------------------------
 
 
-def _retry_batch(batch, db, full: bool = False) -> int:
-    """Reset pipeline stages and dispatch tasks for one batch.
+def _retry_batch_reset(batch, db, *, full: bool = False):
+    """Reset pipeline stages for one batch without committing or dispatching.
 
-    Returns the number of documents for which tasks were dispatched, or -1 if
-    any stage is actively running (caller should treat this as a skip/409).
-    Does NOT commit — the caller is responsible for committing after all batches.
+    Returns (dispatch_items, batch_fallback) on success, or -1 if any stage is
+    actively running (caller treats as skip/409). Does NOT commit — the caller
+    must commit before calling _retry_batch_dispatch with the returned items.
+
+    dispatch_items is a list of (doc_id, batch_id, head_stage | None, needs_emb).
+    batch_fallback is True when no per-doc head was found (BATCH_ANALYSIS fallback).
     """
     from sqlalchemy import text as _text
 
-    from app.api.documents import _dispatch_retry_task
     from app.models.database import Case, Proceeding
     from app.models.enums import (
         DocumentRole,
@@ -913,6 +920,9 @@ def _retry_batch(batch, db, full: bool = False) -> int:
         StageStatus,
     )
     from app.services.pipeline_status import _STAGE_ORDER, compute_overall_state
+
+    # Re-read after any rollback so ORM state reflects DB reality.
+    db.refresh(batch)
 
     # Bail out if any doc has a running stage
     for doc in batch.documents:
@@ -931,6 +941,8 @@ def _retry_batch(batch, db, full: bool = False) -> int:
         meta = dict(batch.meta)
         meta.pop("reload_fired", None)
         batch.meta = meta
+
+    dispatch_items: list = []
 
     for doc in batch.documents:
         stages = doc.pipeline_stages or {}
@@ -997,47 +1009,60 @@ def _retry_batch(batch, db, full: bool = False) -> int:
             },
         )
 
-    # Dispatch head-of-cascade only per doc, plus the parallel EMBEDDINGS branch.
-    # Firing every stage at once bypasses the cascade and overloads a local model.
-    any_head_dispatched = False
-    for doc in batch.documents:
-        db.refresh(doc)
-        stages = doc.pipeline_stages or {}
-
+        # Build dispatch plan from the stages we just wrote.
         head: PipelineStage | None = None
-        for spec in _STAGE_ORDER:
-            # If full retry, EXTRACT is the head.
-            if full:
-                head = PipelineStage.EXTRACT
-                break
-
-            if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
-                continue
-            status = stages.get(spec.stage.value, {}).get("status")
-            if status not in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value):
-                head = spec.stage
-                break
-
-        if head is not None:
-            _dispatch_retry_task(doc.id, batch.id, head)
-            any_head_dispatched = True
+        if full:
+            head = PipelineStage.EXTRACT
+        else:
+            for spec in _STAGE_ORDER:
+                if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
+                    continue
+                status = stages.get(spec.stage.value, {}).get("status")
+                if status not in (
+                    StageStatus.COMPLETED.value,
+                    StageStatus.SKIPPED.value,
+                ):
+                    head = spec.stage
+                    break
 
         emb_status = stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
-        if emb_status not in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value):
-            _dispatch_retry_task(doc.id, batch.id, PipelineStage.EMBEDDINGS)
+        needs_emb = emb_status not in (
+            StageStatus.COMPLETED.value,
+            StageStatus.SKIPPED.value,
+        )
+        dispatch_items.append((doc.id, batch.id, head, needs_emb))
+
+    batch_fallback = not any(head is not None for _, _, head, _ in dispatch_items)
+    return dispatch_items, batch_fallback
+
+
+def _retry_batch_dispatch(
+    dispatch_items: list, *, batch_fallback: bool, batch_id: int, db
+) -> None:
+    """Dispatch Celery tasks from a plan built by _retry_batch_reset.
+
+    Must only be called after the DB transaction for the reset has committed.
+    Dispatch is fire-and-forget; errors are logged but not propagated.
+    """
+    from app.api.documents import _dispatch_retry_task
+    from app.models.enums import PipelineStage
+
+    for doc_id, b_id, head, needs_emb in dispatch_items:
+        if head is not None:
+            _dispatch_retry_task(doc_id, b_id, head)
+        if needs_emb:
+            _dispatch_retry_task(doc_id, b_id, PipelineStage.EMBEDDINGS)
 
     # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
     # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it
     # naturally since no per-doc head task was dispatched.
-    if not any_head_dispatched:
+    if batch_fallback:
         from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
-        if claim_batch_for_analysis(batch.id, db):
+        if claim_batch_for_analysis(batch_id, db):
             from app.tasks.analyze_batch import analyze_batch_task
 
-            analyze_batch_task.delay(batch.id)
-
-    return len(batch.documents)
+            analyze_batch_task.delay(batch_id)
 
 
 @router.post("/triage/bundle/retry")
@@ -1055,6 +1080,7 @@ async def retry_bundle_pipeline(
     Returns 409 if any stage is actively running.
     """
     from app.models.database import IngestBatch
+    from app.services.pipeline_status import retry_on_db_locked
 
     is_full = full.lower() == "true"
 
@@ -1062,14 +1088,31 @@ async def retry_bundle_pipeline(
     if not batch:
         raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
-    result = _retry_batch(batch, db, full=is_full)
-    if result == -1:
+    def _do_reset():
+        result = _retry_batch_reset(batch, db, full=is_full)
+        if result == -1:
+            return -1, None, None
+        items, batch_fallback = result
+        db.commit()
+        return items, batch_fallback, len(batch.documents)
+
+    try:
+        items, batch_fallback, doc_count = retry_on_db_locked(_do_reset, db)
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Worker busy — try again in a moment",
+        ) from exc
+
+    if items == -1:
         raise HTTPException(
             status_code=409,
             detail="A pipeline stage is actively running — retry not allowed",
         )
 
-    db.commit()
+    _retry_batch_dispatch(
+        items, batch_fallback=batch_fallback, batch_id=batch_id, db=db
+    )
 
     # OOB row update + global badges
     bundles = triage_service.get_triage_bundles()
@@ -1084,7 +1127,6 @@ async def retry_bundle_pipeline(
     oob_parts.append(render_sidebar_badges_oob(db))
     oob_parts.append(render_triage_header_stats_oob(request, triage_service))
 
-    doc_count = len(batch.documents)
     trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
 
     response = HTMLResponse(content="".join(oob_parts))
@@ -1101,8 +1143,10 @@ async def retry_all_bundles(
     """Retry the AI pipeline for every bundle currently in triage.
 
     Bundles with an actively running stage are skipped rather than rejected.
+    Bundles that can't acquire the write lock after retries are also skipped.
     """
     from app.models.database import IngestBatch
+    from app.services.pipeline_status import retry_on_db_locked
     from app.services.triage_view import render_triage_feed_oob
 
     bundles = triage_service.get_triage_bundles(limit=500)
@@ -1112,11 +1156,29 @@ async def retry_all_bundles(
 
     retried = 0
     for batch in batches:
-        result = _retry_batch(batch, db)
-        if result >= 0:
-            retried += 1
 
-    db.commit()
+        def _do_reset(b=batch):
+            res = _retry_batch_reset(b, db, full=False)
+            if res == -1:
+                return -1
+            its, bf = res
+            db.commit()
+            return its, bf
+
+        try:
+            result = retry_on_db_locked(_do_reset, db)
+        except OperationalError:
+            logger.warning(
+                "retry-all: batch %s still locked after retries; skipping", batch.id
+            )
+            continue
+        if result == -1:
+            continue  # actively-running bundles are silently skipped
+        items, batch_fallback = result
+        _retry_batch_dispatch(
+            items, batch_fallback=batch_fallback, batch_id=batch.id, db=db
+        )
+        retried += 1
 
     oob_parts = [
         render_triage_feed_oob(request, triage_service, db),

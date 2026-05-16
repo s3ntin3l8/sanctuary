@@ -5,6 +5,7 @@ from html import escape
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
@@ -656,22 +657,38 @@ async def retry_pipeline_all(
     user has to wait for the in-flight task to finish before retrying.
     """
     from app.models.enums import PipelineStage, StageStatus
-    from app.services.pipeline_status import reset_all_stages
+    from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    # Take SQLite writer lock on this row before reading stages so a concurrent
-    # worker can't mark_started between our guard check and reset_all_stages.
-    _lock_row_for_retry(doc_id, db)
-    db.refresh(doc)
-    stages = doc.pipeline_stages or {}
-    running = [
-        key
-        for key, val in stages.items()
-        if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
-    ]
+    def _do_reset():
+        # Take SQLite writer lock before reading stages so a concurrent worker
+        # can't mark_started between the guard check and reset_all_stages.
+        _lock_row_for_retry(doc_id, db)
+        db.refresh(doc)
+        stages = doc.pipeline_stages or {}
+        running_stages = [
+            key
+            for key, val in stages.items()
+            if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+        ]
+        if running_stages:
+            return running_stages
+        reset_all_stages(doc_id, db)  # commits internally
+        return []
+
+    try:
+        running = retry_on_db_locked(_do_reset, db)
+    except OperationalError:
+        return templates.TemplateResponse(
+            request,
+            "partials/_pipeline_stepper.html",
+            {"doc": doc, "retry_error": "Worker busy — try again in a moment"},
+            status_code=409,
+        )
+
     if running:
         return templates.TemplateResponse(
             request,
@@ -684,8 +701,6 @@ async def retry_pipeline_all(
             },
             status_code=409,
         )
-
-    reset_all_stages(doc_id, db)
 
     # Clear the per-stage reload latch on the parent batch so the triage row
     # re-renders when each major stage finishes after this retry.

@@ -1,4 +1,7 @@
 import os
+
+os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
+
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 

@@ -118,18 +118,19 @@ def setup_logging():
     console_handler.addFilter(RequestIDFilter())
     root.addHandler(console_handler)
 
-    # Rotating File Handler
-    log_dir = Path("scratch")
-    log_dir.mkdir(exist_ok=True)
-    file_handler = RotatingFileHandler(
-        log_dir / "sanctuary.log",
-        maxBytes=10 * 1024 * 1024,  # 10 MB
-        backupCount=5,
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
-    file_handler.addFilter(RequestIDFilter())
-    root.addHandler(file_handler)
+    # Rotating File Handler — disabled when SANCTUARY_LOG_FILE=0 (e.g. test suite)
+    if os.getenv("SANCTUARY_LOG_FILE", "1") != "0":
+        log_dir = Path("scratch")
+        log_dir.mkdir(exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_dir / "sanctuary.log",
+            maxBytes=10 * 1024 * 1024,  # 10 MB
+            backupCount=5,
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(RequestIDFilter())
+        root.addHandler(file_handler)
 
     root.setLevel(level)
 

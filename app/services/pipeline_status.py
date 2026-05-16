@@ -11,11 +11,13 @@ are derived from it so they stay in sync automatically.
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models.enums import PipelineStage, PipelineState, StageStatus
@@ -777,3 +779,28 @@ def _update_stage(
     )
     if commit:
         db.commit()
+
+
+def retry_on_db_locked(fn, db, *, attempts: int = 3, base_backoff: float = 0.05):
+    """Run `fn()` with rollback+retry on SQLITE_BUSY_SNAPSHOT.
+
+    WAL-mode SQLite returns "database is locked" immediately when a read
+    snapshot can't upgrade to writer (Celery worker committed in between).
+    busy_timeout doesn't apply to snapshot conflicts — rollback + retry does.
+
+    Returns fn's return value, or re-raises the final OperationalError so the
+    caller can decide between 409 and skip-and-continue.
+    """
+    last_exc: OperationalError | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except OperationalError as exc:
+            if "database is locked" not in str(exc).lower():
+                raise
+            db.rollback()
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(base_backoff * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc

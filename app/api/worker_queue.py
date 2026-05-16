@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.config import templates
@@ -83,7 +84,7 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
 
 @router.post("/retry-failed")
 async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
-    from app.services.pipeline_status import reset_all_stages
+    from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
     from app.tasks.dispatch import dispatch_task
     from app.tasks.document_processing import process_document_task
 
@@ -91,10 +92,15 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
         db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED).all()
     )
     for doc in failed_docs:
-        reset_all_stages(doc.id, db)
-        dispatch_task(process_document_task, doc.id)
-
-    db.commit()
+        doc_id = doc.id
+        try:
+            retry_on_db_locked(lambda _id=doc_id: reset_all_stages(_id, db), db)
+        except OperationalError:
+            logger.warning(
+                "retry-failed: doc %d still locked after retries; skipping", doc_id
+            )
+            continue
+        dispatch_task(process_document_task, doc_id)
 
     running, pending, failed = _get_queue_docs(db)
     docs_with_stage = [(doc, _current_stage(doc)) for doc in running + pending + failed]
