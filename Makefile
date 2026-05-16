@@ -40,10 +40,11 @@ setup: .venv ## Install dependencies and pre-commit hooks
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait
 
-run: ## Start Redis, web server, ingest worker (OCR), and AI worker
+run: ## Start Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
@@ -51,6 +52,7 @@ run-stable: ## Start without --reload (use for ingestion/pipeline testing — av
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
@@ -58,6 +60,7 @@ run-debug: ## Start server with DEBUG logging (+ Redis + both workers)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
 	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
@@ -68,8 +71,9 @@ server: ##  web server
 # tasks still sitting on the legacy `celery` queue from before the two-queue
 # split get drained. After `redis-cli LLEN celery` reads 0 and stays 0 across
 # a restart, drop `,celery` from the AI worker's `-Q` list.
-worker: ## Start both Celery workers (ingest + ai)
+worker: ## Start both Celery workers (ingest + ai) and beat scheduler
 	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 

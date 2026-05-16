@@ -1,9 +1,14 @@
 import json
+import logging
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
@@ -1555,11 +1560,27 @@ def bundle_pipeline_status(
             if fire_reload:
                 meta["reload_fired"] = fired
                 batch.meta = meta
-                db.commit()
+                # Celery workers write to ingest_batches concurrently, so
+                # SQLite's single-writer lock can transiently lock us out.
+                # The latch is idempotent — next poll retries — so brief
+                # retry + skip-on-busy avoids 500s without losing correctness.
+                for _attempt in range(3):
+                    try:
+                        db.commit()
+                        break
+                    except OperationalError as exc:
+                        db.rollback()
+                        if (
+                            "database is locked" not in str(exc).lower()
+                            or _attempt == 2
+                        ):
+                            logger.debug(
+                                "pipeline latch commit busy, deferring: %s", exc
+                            )
+                            break
+                        time.sleep(0.05 * (_attempt + 1))
 
     if fire_reload:
-        import time
-
         response.headers["HX-Trigger"] = json.dumps(
             {f"reload-bundle-{batch_id}": {"ts": time.time()}}
         )

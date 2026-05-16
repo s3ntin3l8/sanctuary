@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 _TRANSIENT_AI_ERRORS = (
     httpx.ReadTimeout,
     httpx.RemoteProtocolError,
+    httpx.ConnectError,
+    httpx.ReadError,
 )
 
 
@@ -92,6 +94,15 @@ def process_document_task(self, doc_id: int):
                     f"Document {doc_id} failed after {self.max_retries} retries",
                     exc=e,
                 ) from e
+            except BaseException as e:
+                db.rollback()
+                mark_failed_with_cascade(
+                    doc_id,
+                    PipelineStage.EXTRACT,
+                    db,
+                    error=f"task aborted: {type(e).__name__}",
+                )
+                raise
 
         # Phase 1: metadata extraction + auto-triage (with transient-error retry).
         # Skip when already completed — recovery may re-dispatch this task for a
@@ -204,56 +215,72 @@ def _run_phase1_summary(doc_id: int) -> None:
         db2.close()
 
     last_error: Exception | None = None
-    for attempt in range(_METADATA_MAX_RETRIES):
-        db2 = get_db_session()
-        try:
-            _summarize_document_sync(doc_id, db2)
-            mark_completed(doc_id, PipelineStage.METADATA, db2)
-            return
-        except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
-            if isinstance(e, SA_OperationalError) and not _is_db_locked(e):
+    try:
+        for attempt in range(_METADATA_MAX_RETRIES):
+            db2 = get_db_session()
+            try:
+                _summarize_document_sync(doc_id, db2)
+                mark_completed(doc_id, PipelineStage.METADATA, db2)
+                return
+            except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
+                if isinstance(e, SA_OperationalError) and not _is_db_locked(e):
+                    db2.rollback()
+                    mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
+                    logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
+                    return
+                last_error = e
+                db2.close()
+                if attempt < _METADATA_MAX_RETRIES - 1:
+                    wait = _METADATA_BACKOFF[attempt]
+                    logger.info(
+                        f"Doc {doc_id}: METADATA transient error (attempt {attempt + 1}/{_METADATA_MAX_RETRIES}), "
+                        f"retrying in {wait}s: {e}"
+                    )
+                    # Flip to RETRYING so the UI shows "Retrying METADATA (N/M) in Ws"
+                    # instead of a silent spin.
+                    db_retry = get_db_session()
+                    try:
+                        schedule_retry(
+                            doc_id,
+                            PipelineStage.METADATA,
+                            db_retry,
+                            error=str(e),
+                            attempt=attempt + 1,
+                            max_attempts=_METADATA_MAX_RETRIES,
+                            countdown=wait,
+                        )
+                    finally:
+                        db_retry.close()
+                    time.sleep(wait)
+                    # Flip back to RUNNING for the next attempt — keeps the
+                    # Celery and in-process retry semantics consistent.
+                    db_start = get_db_session()
+                    try:
+                        mark_started(doc_id, PipelineStage.METADATA, db_start)
+                    finally:
+                        db_start.close()
+            except Exception as e:
                 db2.rollback()
                 mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
                 logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
                 return
-            last_error = e
-            db2.close()
-            if attempt < _METADATA_MAX_RETRIES - 1:
-                wait = _METADATA_BACKOFF[attempt]
-                logger.info(
-                    f"Doc {doc_id}: METADATA transient error (attempt {attempt + 1}/{_METADATA_MAX_RETRIES}), "
-                    f"retrying in {wait}s: {e}"
+            finally:
+                db2.close()
+    except BaseException as e:
+        if not isinstance(e, Exception):
+            _db = get_db_session()
+            try:
+                mark_failed(
+                    doc_id,
+                    PipelineStage.METADATA,
+                    _db,
+                    error=f"task aborted: {type(e).__name__}",
                 )
-                # Flip to RETRYING so the UI shows "Retrying METADATA (N/M) in Ws"
-                # instead of a silent spin.
-                db_retry = get_db_session()
-                try:
-                    schedule_retry(
-                        doc_id,
-                        PipelineStage.METADATA,
-                        db_retry,
-                        error=str(e),
-                        attempt=attempt + 1,
-                        max_attempts=_METADATA_MAX_RETRIES,
-                        countdown=wait,
-                    )
-                finally:
-                    db_retry.close()
-                time.sleep(wait)
-                # Flip back to RUNNING for the next attempt — keeps the
-                # Celery and in-process retry semantics consistent.
-                db_start = get_db_session()
-                try:
-                    mark_started(doc_id, PipelineStage.METADATA, db_start)
-                finally:
-                    db_start.close()
-        except Exception as e:
-            db2.rollback()
-            mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
-            logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
-            return
-        finally:
-            db2.close()
+            except Exception:
+                pass
+            finally:
+                _db.close()
+        raise
 
     # All transient retries exhausted
     db2 = get_db_session()
