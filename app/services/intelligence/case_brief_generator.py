@@ -152,10 +152,13 @@ def _call_brief_sync(
     db=None,
 ) -> dict:
     """Synchronous AI call to generate the case brief."""
-    proceedings = sorted(
-        case.proceedings,
-        key=lambda p: p.started_at or datetime.min.replace(tzinfo=UTC),
-    )
+
+    def _as_utc(dt: datetime | None) -> datetime:
+        if dt is None:
+            return datetime.min.replace(tzinfo=UTC)
+        return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+    proceedings = sorted(case.proceedings, key=lambda p: _as_utc(p.started_at))
     proc_lines = [
         f"- {p.court_level} ({p.status})"
         + (f" — ended {p.ended_at.date()}" if p.ended_at else "")
