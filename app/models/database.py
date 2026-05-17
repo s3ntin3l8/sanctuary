@@ -50,6 +50,7 @@ from app.models.enums import (
     IngestBatchStatus,
     Jurisdiction,
     OriginatorType,
+    PipelineStage,
     PipelineState,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -58,6 +59,7 @@ from app.models.enums import (
     RelationshipConfidence,
     RelationshipType,
     SignificanceTier,
+    StageStatus,
     UserReactionType,
 )
 
@@ -215,10 +217,50 @@ class Document(Base):
     claim_evidence = relationship(
         "ClaimEvidence", back_populates="document", cascade="all, delete-orphan"
     )
+    stage_rows = relationship(
+        "DocumentPipelineStage",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
         return normalize_case_id(case_id)
+
+
+class DocumentPipelineStage(Base):
+    __tablename__ = "document_pipeline_stages"
+
+    document_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    stage = Column(
+        SAEnum(PipelineStage, values_callable=lambda obj: [e.value for e in obj]),
+        primary_key=True,
+        nullable=False,
+    )
+    status = Column(
+        SAEnum(StageStatus, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+    )
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    reason = Column(String, nullable=True)
+    attempt = Column(Integer, nullable=True)
+    max_attempts = Column(Integer, nullable=True)
+    next_at = Column(DateTime, nullable=True)
+
+    document = relationship("Document", back_populates="stage_rows")
+
+    __table_args__ = (
+        Index("ix_dps_status", "status"),
+        Index("ix_dps_stage_status", "stage", "status"),
+    )
 
 
 def generate_normalized_filename(target) -> str:
