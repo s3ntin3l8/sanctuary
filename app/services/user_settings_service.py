@@ -211,6 +211,28 @@ def set_dashboard_cards(cards: dict, db) -> None:
     db.flush()
 
 
+def get_ai_debug_redact(db) -> bool:
+    """Return True if AI debug log message bodies should be redacted."""
+    settings = db.query(UserSettings).first()
+    if settings and isinstance(settings.settings_json, dict):
+        return bool(settings.settings_json.get("ai", {}).get("ai_debug_redact", False))
+    return False
+
+
+def set_ai_debug_redact(db, value: bool) -> None:
+    """Persist the AI debug log redaction toggle and emit an audit event."""
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json or {})
+    ai = dict(data.get("ai", {}))
+    ai["ai_debug_redact"] = value
+    data["ai"] = ai
+    settings.settings_json = data
+    audit_service.record(
+        db, AuditEventType.AI_DEBUG_REDACT_TOGGLED, payload={"enabled": value}
+    )
+    db.commit()
+
+
 def count_new_since(case_id: str, since: datetime | None, db) -> int:
     """Count documents added to the case after `since`. Returns 0 if since is None."""
     if since is None:

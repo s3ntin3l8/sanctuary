@@ -9,6 +9,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, Document
@@ -379,7 +380,7 @@ async def delete_document(
     if context == "triage" and bundle_key:
         import json
 
-        from app.services.triage_view import (
+        from app.services.triage_oob_render import (
             render_bundle_group_oob,
             render_sidebar_badges_oob,
             render_triage_feed_oob,
@@ -515,8 +516,8 @@ async def hud_toggle_reaction(
     )
 
     # OOB row refresh for triage (selector misses gracefully outside triage)
+    from app.services.triage_oob_render import render_row_targeted_oob
     from app.services.triage_service import TriageService
-    from app.services.triage_view import render_row_targeted_oob
 
     triage_service = TriageService(db)
     response.body += render_row_targeted_oob(request, doc, triage_service, db).encode()
@@ -584,6 +585,7 @@ def get_pipeline_status(
 
 
 @router.post("/document/{doc_id}/pipeline/{stage}/retry")
+@limiter.limit("30/minute")
 async def retry_pipeline_stage(
     request: Request,
     doc_id: int,
@@ -646,6 +648,7 @@ async def retry_pipeline_stage(
 
 
 @router.post("/document/{doc_id}/pipeline/retry-all")
+@limiter.limit("30/minute")
 async def retry_pipeline_all(
     request: Request,
     doc_id: int,

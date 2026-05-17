@@ -934,3 +934,28 @@ def test_retry_on_db_locked_exhausts_and_reraises(db_session, monkeypatch):
 
     assert fn.call_count == 2
     assert db_session.rollback.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# SQL injection hardening — _update_stage extra_sets whitelist
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_update_stage_rejects_disallowed_key(db_session):
+    """_update_stage raises ValueError for unknown extra_sets keys (SQL injection guard)."""
+    from unittest.mock import MagicMock
+
+    from app.services.pipeline_status import PipelineStage, StageStatus, _update_stage
+
+    db = MagicMock()
+    with pytest.raises(ValueError, match="disallowed extra_sets key"):
+        _update_stage(
+            doc_id=1,
+            stage=PipelineStage.ENRICH,
+            db=db,
+            status=StageStatus.COMPLETED,
+            extra_sets={"'; DROP TABLE documents; --": "evil"},
+        )
+    # db.execute should NOT have been called
+    db.execute.assert_not_called()

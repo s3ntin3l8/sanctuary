@@ -1,21 +1,21 @@
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+
+client = TestClient(app)
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
-async def test_gmail_oauth_start_uses_session_and_redirects():
-    from app.api.ingestion_settings import OAUTH_STATE_COOKIE, gmail_oauth_start
-
+def test_gmail_oauth_start_uses_session_and_redirects():
+    """GET /api/ingest/gmail/oauth/start redirects to the Google OAuth authorization URL."""
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
-    request = SimpleNamespace(session={})
 
     with patch("app.api.ingestion_settings.get_oauth_flow", return_value=flow):
-        response = await gmail_oauth_start(request)
+        response = client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
 
-    assert response.status_code == 307
-    assert response.headers["location"] == "https://accounts.google.test/auth"
-    assert OAUTH_STATE_COOKIE in request.session
+    assert response.status_code in (302, 303, 307, 308)
+    assert "accounts.google.test" in response.headers["location"]

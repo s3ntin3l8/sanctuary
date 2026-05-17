@@ -18,6 +18,7 @@
                 ('/settings/ai',         'model_training', 'AI & Models'),
                 ('/settings/appearance', 'palette',        'Appearance'),
                 ('/settings/data',       'database',       'Data'),
+                ('/settings/export',     'download',       'Export'),
             ] %}
             {% for href, icon, label in nav_items %}
             {% set is_active = request.url.path == href %}

@@ -1,0 +1,38 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block settings_body %}
+
+<section class="space-y-6">
+    <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-[24px]">download</span>
+        <h2 class="text-xl font-extrabold text-on-surface tracking-tight">Data Export</h2>
+    </div>
+
+    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-4">
+        <p class="text-sm text-on-surface-variant">
+            Download a complete copy of your data for portability or backup (GDPR Art. 15/20).
+            The export is rate-limited to one download per hour.
+        </p>
+
+        <div class="space-y-2">
+            <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Export includes</p>
+            <ul class="text-sm text-on-surface-variant space-y-1 list-disc list-inside">
+                <li>All cases, proceedings, and documents (metadata)</li>
+                <li>Claims, entities, costs, and action items</li>
+                <li>Audit log and conversation history</li>
+                <li>Original document files (PDFs, scans)</li>
+            </ul>
+        </div>
+
+        <div class="pt-2 border-t border-outline-variant/10">
+            <a href="/api/export"
+               class="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl text-on-primary transition-colors hover:opacity-90"
+               style="background:var(--color-primary);">
+                <span class="material-symbols-outlined text-[18px]">download</span>
+                Download export zip
+            </a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

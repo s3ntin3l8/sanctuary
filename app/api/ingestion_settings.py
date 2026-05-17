@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import UserSettings
 from app.models.enums import AuditEventType
@@ -20,7 +21,9 @@ OAUTH_STATE_COOKIE = "oauth_state"
 
 
 @router.post("/settings/update")
+@limiter.limit("20/minute")
 async def update_ingest_settings(
+    request: Request,
     allowlist: str = Form(""),
     label_filter: str = Form(""),
     db: Session = Depends(get_db),
@@ -32,7 +35,7 @@ async def update_ingest_settings(
         settings = UserSettings(user_id="single_user")
         db.add(settings)
 
-    s_json = dict(settings.settings_json)
+    s_json = dict(settings.settings_json or {})
     s_json["gmail_allowlist"] = [e.strip() for e in allowlist.split(",") if e.strip()]
     s_json["gmail_label_filter"] = label_filter.strip()
 
@@ -44,6 +47,7 @@ async def update_ingest_settings(
 
 
 @router.get("/gmail/oauth/start")
+@limiter.limit("20/minute")
 async def gmail_oauth_start(request: Request):
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_COOKIE] = state
@@ -57,6 +61,7 @@ async def gmail_oauth_start(request: Request):
 
 
 @router.get("/gmail/oauth/callback")
+@limiter.limit("20/minute")
 async def gmail_oauth_callback(
     request: Request,
     code: str,
@@ -79,7 +84,7 @@ async def gmail_oauth_callback(
         settings = UserSettings(user_id="single_user")
         db.add(settings)
 
-    s_json = dict(settings.settings_json)
+    s_json = dict(settings.settings_json or {})
     s_json["gmail_credentials_json"] = creds.to_json()
     s_json["gmail_connected_at"] = datetime.now().isoformat()
 

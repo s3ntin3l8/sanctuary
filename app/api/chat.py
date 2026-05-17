@@ -2,11 +2,12 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.repositories.chat import ChatRepository
 from app.services.chat.chat_service import stream_answer
@@ -132,8 +133,10 @@ def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/conversations/{conversation_id}/messages")
+@limiter.limit("30/minute")
 async def send_message(
     conversation_id: int,
+    request: Request,
     req: MessageRequest,
     db: Session = Depends(get_db),
 ):

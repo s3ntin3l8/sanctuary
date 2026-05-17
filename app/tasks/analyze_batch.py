@@ -257,5 +257,5 @@ def _enrich_if_pending(doc_id: int) -> None:
 
 
 from app.tasks.enrich_document import (
-    enrich_document_task,  # noqa: E402 — avoids circular at task-registration time
+    enrich_document_task,
 )

@@ -12,7 +12,11 @@ from app.helpers import render_page
 from app.services.ai_config import _get_ai_section, get_embed_config
 from app.services.ai_provider import chat_provider, embed_provider
 from app.services.timezone_service import get_timezone_choices
-from app.services.user_settings_service import _get_or_create, get_party_identity
+from app.services.user_settings_service import (
+    _get_or_create,
+    get_ai_debug_redact,
+    get_party_identity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +99,7 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         active_chat_id=active_chat_id,
         active_embed_id=active_embed_id,
         embed_cfg=embed_cfg,
+        ai_debug_redact=get_ai_debug_redact(db),
     )
 
 
@@ -121,4 +126,13 @@ async def settings_data(request: Request, db: Session = Depends(get_db)):
         db=db,
         settings=settings_json,
         stats=_stats(db),
+    )
+
+
+@router.get("/settings/export", response_class=HTMLResponse)
+async def settings_export(request: Request, db: Session = Depends(get_db)):
+    return render_page(
+        request,
+        "pages/settings/export.html",
+        db=db,
     )

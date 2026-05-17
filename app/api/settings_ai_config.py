@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import templates
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.enums import AuditEventType
 from app.services import audit_service
@@ -317,8 +318,10 @@ async def delete_instance_route(
 
 
 @router.post("/instances/{instance_id}/test", response_class=HTMLResponse)
+@limiter.limit("20/minute")
 async def test_instance(
     instance_id: str,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     inst = get_instance(db, instance_id)
@@ -460,7 +463,8 @@ async def save_user_context(
 
 
 @router.post("/reindex", response_class=HTMLResponse)
-async def reindex_documents(db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def reindex_documents(request: Request, db: Session = Depends(get_db)):
     """Quick reindex using current settings (no DDL change)."""
     embed_provider.reload_from_db(db)
     result = await reindex_all_docs(db)
@@ -475,7 +479,9 @@ async def reindex_documents(db: Session = Depends(get_db)):
 
 
 @router.post("/rebuild-index", response_class=HTMLResponse)
+@limiter.limit("5/minute")
 async def rebuild_index(
+    request: Request,
     db: Session = Depends(get_db),
 ):
     cfg = get_embed_config(db)
@@ -515,3 +521,22 @@ async def rebuild_index(
     except Exception as e:
         logger.error(f"Reindex failed: {e}")
         return HTMLResponse(_toast(False, f"Reindex failed: {e}"))
+
+
+# ---------------------------------------------------------------------------
+# Debug log redaction
+# ---------------------------------------------------------------------------
+
+
+@router.post("/debug-redact")
+async def set_debug_redact(
+    request: Request,
+    enabled: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    from app.services.user_settings_service import set_ai_debug_redact
+
+    set_ai_debug_redact(db, enabled.lower() == "true")
+    from fastapi.responses import Response
+
+    return Response(status_code=204)

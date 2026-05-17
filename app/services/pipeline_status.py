@@ -25,6 +25,18 @@ from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
 
+# SQL injection hardening: whitelist of allowed extra_sets keys in _update_stage()
+_ALLOWED_EXTRA_KEYS = frozenset(
+    {
+        "started_at",
+        "completed_at",
+        "error",
+        "reason",
+        "attempt",
+        "max_attempts",
+        "next_at",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Stage registry — single source of truth for the pipeline DAG.
@@ -182,6 +194,7 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
     recover_orphaned_running_stages() handles the stale running state.
     """
     sk = stage.value
+    assert sk.isidentifier(), f"pipeline_status: invalid stage key {sk!r}"
     result = db.execute(
         text(
             f"UPDATE documents "
@@ -785,6 +798,12 @@ def _update_stage(
     serialises writes so the RHS json_set reads the last committed state).
     """
     sk = stage.value  # e.g. "enrich"
+    assert sk.isidentifier(), f"pipeline_status: invalid stage key {sk!r}"
+
+    # SQL injection hardening: validate extra_sets keys against whitelist
+    for key in extra_sets:
+        if key not in _ALLOWED_EXTRA_KEYS:
+            raise ValueError(f"_update_stage: disallowed extra_sets key {key!r}")
 
     # Build json_set argument list: path, value, path, value, ...
     set_pairs: list[str] = [f"'$.{sk}.status'", ":_status_val"]

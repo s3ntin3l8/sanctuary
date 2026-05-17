@@ -39,6 +39,10 @@ def downgrade() -> None:
     with op.batch_alter_table("cases", schema=None) as batch_op:
         batch_op.drop_column("opposing_parties")
 
+    # Intentional asymmetry: upgrade replaces a plain index with a unique constraint of the same name.
+    # Downgrade restores the plain index. SQLAlchemy batch mode handles this correctly because
+    # batch_alter_table rebuilds the table in a fresh copy, so the old object is fully gone before
+    # the new one is created — no naming collision occurs across the round-trip.
     with op.batch_alter_table("action_items", schema=None) as batch_op:
         batch_op.drop_constraint("uq_action_items_case_due_type", type_="unique")
         batch_op.create_index(

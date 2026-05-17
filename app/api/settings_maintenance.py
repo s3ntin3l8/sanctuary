@@ -4,13 +4,14 @@ import logging
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app import config as cfg
 from app.core.cache import cache
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import Base
 from app.models.enums import AuditEventType
@@ -23,7 +24,8 @@ router = APIRouter(prefix="/api/settings/maintenance", tags=["settings"])
 
 
 @router.post("/reset-enrichment", response_class=HTMLResponse)
-def reset_ai_enrichment(db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
     vectors_cleared = db.execute(text("DELETE FROM document_vectors")).rowcount
 
     result = db.execute(
@@ -46,7 +48,8 @@ def reset_ai_enrichment(db: Session = Depends(get_db)):
 
 
 @router.post("/clear-all-data", response_class=HTMLResponse)
-def clear_all_data(db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def clear_all_data(request: Request, db: Session = Depends(get_db)):
     # Purge queued Celery tasks so in-flight jobs don't repopulate rows.
     try:
         from app.tasks.celery_app import celery_app  # noqa: PLC0415

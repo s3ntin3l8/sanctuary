@@ -79,6 +79,41 @@
                             </form>
                             {% endif %}
                         </div>
+
+                        <hr class="my-6 border-outline-variant/30">
+
+                        {# Purge case button — separate from "Delete case" (which reverts to triage) #}
+                        <div x-data="{ purging: false, confirmed: '' }">
+                            <button @click="purging = true"
+                                    class="text-xs text-red-400 hover:text-red-300 px-3 py-1.5 rounded-md border border-red-500/20 hover:border-red-500/40 transition-colors">
+                                Purge case (erase files)
+                            </button>
+                            <div x-show="purging" x-transition class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                                <div class="bg-surface-container rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+                                    <h3 class="text-base font-bold text-on-surface">Permanently erase case?</h3>
+                                    <p class="text-sm text-on-surface-variant">
+                                        This deletes all documents, entities, costs, and the <code>data/{{ case.id }}/</code> directory from disk. This action <strong>cannot be undone</strong>.
+                                    </p>
+                                    <p class="text-xs text-on-surface-variant">Type <code class="font-mono">purge {{ case.id }}</code> to confirm:</p>
+                                    <input x-model="confirmed" type="text" placeholder="purge {{ case.id }}"
+                                           class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-red-500/50">
+                                    <div class="flex gap-2 justify-end">
+                                        <button @click="purging = false; confirmed = ''"
+                                                class="px-3 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors">Cancel</button>
+                                        <button :disabled="confirmed !== 'purge {{ case.id }}'"
+                                                :class="confirmed === 'purge {{ case.id }}' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-surface-container-high text-on-surface-variant cursor-not-allowed'"
+                                                class="px-4 py-1.5 text-sm rounded-md transition-colors"
+                                                hx-delete="/cases/{{ case.id }}/purge"
+                                                hx-vals='{"confirm": "purge {{ case.id }}"}'
+                                                hx-encoding="application/json"
+                                                @htmx:after-request="if ($event.detail.successful) { window.location.href = '/cases'; }">
+                                            Erase permanently
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>

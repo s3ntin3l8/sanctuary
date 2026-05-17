@@ -937,6 +937,138 @@ class CaseService:
 
         return {"docs": docs, "doc_count": len(docs)}
 
+    def purge(self, case_id: str) -> dict | None:
+        """Hard-delete a case and all its data, including the on-disk directory.
+
+        Unlike ``delete_and_revert``, this permanently erases all documents,
+        entities, costs, conversations, and the ``data/{case_id}/`` directory.
+
+        Returns ``{"doc_count": N, "dir_erased": bool}`` on success.
+        Returns ``None`` if the case does not exist.
+        Raises ``ValueError`` for the Triage singleton or an unsafe path.
+        """
+        import shutil
+
+        from app.config import DATA_DIR
+        from app.models.database import (
+            ClaimEvidence,
+            Conversation,
+            DocumentRelationship,
+            Entity,
+            IngestBatch,
+            LegalCost,
+        )
+
+        if case_id == "_TRIAGE":
+            raise ValueError("Triage Inbox cannot be purged")
+
+        case = self.db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return None
+
+        # Snapshot document IDs for FK-dependent deletes
+        docs = self.db.query(Document).filter(Document.case_id == case_id).all()
+        doc_ids = [d.id for d in docs]
+
+        if doc_ids:
+            # 1. DocumentRelationship (both directions)
+            self.db.query(DocumentRelationship).filter(
+                DocumentRelationship.from_document_id.in_(doc_ids)
+                | DocumentRelationship.to_document_id.in_(doc_ids)
+            ).delete(synchronize_session=False)
+
+            # 1.5. Delete Claims that will become fully evidenceless after this purge
+            from app.models.database import Claim
+
+            evidenced_by_case = (
+                self.db.query(ClaimEvidence.claim_id)
+                .filter(ClaimEvidence.document_id.in_(doc_ids))
+                .subquery()
+            )
+            still_evidenced_elsewhere = (
+                self.db.query(ClaimEvidence.claim_id)
+                .filter(
+                    ClaimEvidence.claim_id.in_(evidenced_by_case),
+                    ClaimEvidence.document_id.notin_(doc_ids),
+                )
+                .subquery()
+            )
+            self.db.query(Claim).filter(
+                Claim.id.in_(evidenced_by_case),
+                Claim.id.notin_(still_evidenced_elsewhere),
+            ).delete(synchronize_session=False)
+
+            # 2. ClaimEvidence for this case's documents
+            self.db.query(ClaimEvidence).filter(
+                ClaimEvidence.document_id.in_(doc_ids)
+            ).delete(synchronize_session=False)
+
+        # 3. ActionItem
+        self.db.query(ActionItem).filter(ActionItem.case_id == case_id).delete(
+            synchronize_session=False
+        )
+
+        # 4. LegalCost
+        self.db.query(LegalCost).filter(LegalCost.case_id == case_id).delete(
+            synchronize_session=False
+        )
+
+        # 5. Entity
+        self.db.query(Entity).filter(Entity.case_id == case_id).delete(
+            synchronize_session=False
+        )
+
+        # 6. Conversation (case-scoped)
+        self.db.query(Conversation).filter(
+            Conversation.scope_type == "case",
+            Conversation.scope_id == case_id,
+        ).delete(synchronize_session=False)
+
+        # 6.5. Delete document-scoped conversations for this case's documents
+        if doc_ids:
+            doc_id_strs = [str(d_id) for d_id in doc_ids]
+            self.db.query(Conversation).filter(
+                Conversation.scope_type == "document",
+                Conversation.scope_id.in_(doc_id_strs),
+            ).delete(synchronize_session=False)
+
+        # 7. Documents (hard delete)
+        if doc_ids:
+            self.db.query(Document).filter(Document.case_id == case_id).delete(
+                synchronize_session=False
+            )
+
+        # 8. IngestBatch rows that belonged to this case
+        self.db.query(IngestBatch).filter(IngestBatch.case_id == case_id).delete(
+            synchronize_session=False
+        )
+
+        # 9. Case itself (ORM cascade handles Proceedings)
+        self.db.delete(case)
+
+        # Flush so any DB constraint violations abort before touching the filesystem
+        self.db.flush()
+
+        # Filesystem deletion — path safety guard required
+        case_dir = (DATA_DIR / case_id).resolve()
+        if not case_dir.is_relative_to(DATA_DIR.resolve()):
+            raise ValueError(f"purge: unsafe path {case_id!r}")
+        dir_existed = case_dir.exists()
+        if dir_existed:
+            shutil.rmtree(case_dir)
+
+        audit_service.record(
+            self.db,
+            AuditEventType.CASE_PURGED,
+            target_type="case",
+            target_id=case_id,
+            payload={"doc_count": len(docs), "dir_erased": dir_existed},
+        )
+
+        self.db.commit()
+
+        return {"doc_count": len(docs), "dir_erased": dir_existed}
+
     def delete_empty_proceeding(self, proceeding_id: int) -> dict:
         """Delete a proceeding that has no attached documents, batches, action items, or costs.
 

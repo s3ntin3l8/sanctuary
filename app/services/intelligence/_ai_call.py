@@ -118,6 +118,7 @@ def _write_block(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     reasoning_tokens: int | None = None,
+    redact: bool = False,
 ) -> None:
     status = "error" if error else "ok"
     doc_id = int(scope_id) if kind == "doc" else None
@@ -161,7 +162,10 @@ def _write_block(
 
             body += f"### {role}\n"
 
-            if len(content) > 5000:
+            if redact:
+                orig_len = len(content)
+                content = f"[REDACTED {orig_len} chars]"
+            elif len(content) > 5000:
                 orig_len = len(content)
                 content = (
                     content[:2500]
@@ -289,6 +293,7 @@ def _stream_response(
     resolved_model: str,
     ingest_batch_id: int | None,
     doc_case_id: str | None = None,
+    redact: bool = False,
 ) -> tuple[str, str]:
     """Stream one AI request, write its debug-log block, return (response, thinking).
 
@@ -478,6 +483,7 @@ def _stream_response(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
+            redact=redact,
         )
         _append_index(
             index_file,
@@ -642,6 +648,10 @@ def call_json_ai(
     resolved_model = model or cfg.summary_model
     ptype = run_async(chat_provider.get_type())
 
+    from app.services.user_settings_service import get_ai_debug_redact
+
+    redact = get_ai_debug_redact(db) if db is not None else False
+
     debug_dir = DATA_DIR / "ai_debug"
     scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
 
@@ -668,6 +678,7 @@ def call_json_ai(
                 resolved_model=resolved_model,
                 ingest_batch_id=ingest_batch_id,
                 doc_case_id=case_id,
+                redact=redact,
             )
         except Exception as e:
             # Pass 1 errored — pass 2 can still run cold (with no analysis).
@@ -726,6 +737,7 @@ def call_json_ai(
         resolved_model=resolved_model,
         ingest_batch_id=ingest_batch_id,
         doc_case_id=case_id,
+        redact=redact,
     )
 
     # Qwen3.5 + LMStudio + structured output: the schema-constrained JSON

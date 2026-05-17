@@ -3,9 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import (
@@ -454,11 +456,11 @@ async def create_case_from_triage(
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    from app.services.triage_service import TriageService
-    from app.services.triage_view import (
+    from app.services.triage_oob_render import (
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
+    from app.services.triage_service import TriageService
 
     triage_service = TriageService(db)
     response.body += (
@@ -522,11 +524,11 @@ async def confirm_draft_case(
     )
     response = _templates.TemplateResponse(request, template, ctx)
 
-    from app.services.triage_service import TriageService
-    from app.services.triage_view import (
+    from app.services.triage_oob_render import (
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
+    from app.services.triage_service import TriageService
 
     response.body += (
         render_sidebar_badges_oob(db)
@@ -603,11 +605,11 @@ async def reject_draft_case(
     )
     response = _templates.TemplateResponse(request, template, ctx)
 
-    from app.services.triage_service import TriageService
-    from app.services.triage_view import (
+    from app.services.triage_oob_render import (
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
+    from app.services.triage_service import TriageService
 
     response.body += (
         render_sidebar_badges_oob(db)
@@ -626,6 +628,34 @@ async def delete_case(case_id: str, db: Session = Depends(get_db)):
     return JSONResponse(
         content={"status": "success", "reverted_docs": result["doc_count"]}
     )
+
+
+class PurgeConfirm(BaseModel):
+    confirm: str  # must equal f"purge {case_id}"
+
+
+@router.delete("/{case_id}/purge")
+@limiter.limit("5/minute")
+def purge_case(
+    case_id: str,
+    body: PurgeConfirm,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Hard-delete a case and erase its on-disk data directory."""
+    expected = f"purge {case_id}"
+    if body.confirm != expected:
+        raise HTTPException(
+            status_code=400, detail=f"confirm must be exactly '{expected}'"
+        )
+    service = CaseService(db)
+    try:
+        result = service.purge(case_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if result is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return result
 
 
 @router.post("")

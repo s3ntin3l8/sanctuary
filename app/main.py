@@ -16,10 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 from starlette.datastructures import MutableHeaders
 
 from app.api import api_router
@@ -33,6 +32,7 @@ from app.config import (
     templates,
 )
 from app.constants import REVIEW_FIELD_LABELS
+from app.core.rate_limit import limiter
 from app.helpers import (
     format_days_ago,
     format_due_relative,
@@ -206,10 +206,6 @@ def _dump_session_cookie(data: dict) -> str:
     sig = hmac.new(_session_secret(), payload_b64.encode(), hashlib.sha256).digest()
     sig_b64 = base64.urlsafe_b64encode(sig).decode()
     return f"{payload_b64}.{sig_b64}"
-
-
-# --- Rate Limiter ---
-limiter = Limiter(key_func=get_remote_address, default_limits=["600/minute"])
 
 
 # --- Lifespan ---
@@ -766,6 +762,7 @@ from app.api import (
 )
 from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
+from app.api.export import router as export_router
 from app.api.settings_ai_config import router as settings_ai_router
 from app.api.settings_appearance import router as settings_appearance_router
 from app.api.settings_maintenance import router as settings_maintenance_router
@@ -791,6 +788,7 @@ app.include_router(settings_ai_router)
 app.include_router(settings_appearance_router)
 app.include_router(settings_maintenance_router)
 app.include_router(settings_parties_router)
+app.include_router(export_router)
 
 from app.api.worker_queue import router as worker_queue_router
 

@@ -88,7 +88,14 @@ def test_two_pass_makes_two_stream_calls_with_correct_schema_split(patched_provi
     calls: list[dict] = []
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         calls.append(
             {
@@ -130,7 +137,14 @@ def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
     calls: list[dict] = []
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -163,7 +177,14 @@ def test_two_pass_promotes_pass1_thinking_when_response_empty(patched_provider):
     calls: list[dict] = []
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -193,7 +214,14 @@ def test_two_pass_skips_analysis_block_when_pass1_truly_empty(patched_provider):
     calls: list[dict] = []
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         calls.append({"label": debug_label, "user_prompt": params["json"]["prompt"]})
         if debug_label.endswith("-p1"):
@@ -225,7 +253,14 @@ def test_two_pass_pass2_empty_triggers_retry(patched_provider):
     )
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         if debug_label.endswith("-p1"):
             call_count["p1"] += 1
@@ -263,7 +298,14 @@ def test_single_pass_unchanged(patched_provider):
     calls: list[str] = []
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         calls.append(debug_label)
         return ('{"is_court_document": true}', "")
@@ -295,7 +337,14 @@ def test_pass1_user_prompt_carries_no_json_directive(patched_provider):
     seen_prompts: dict[str, str] = {}
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         seen_prompts[debug_label] = params["json"]["prompt"]
         if debug_label.endswith("-p1"):
@@ -329,7 +378,14 @@ def test_pass1_inherits_caller_max_tokens_by_default(patched_provider):
     seen_max_tokens: dict[str, int | None] = {}
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):
@@ -360,7 +416,14 @@ def test_pass1_max_tokens_caps_max_tokens(patched_provider):
     seen_max_tokens: dict[str, int | None] = {}
 
     def fake_stream(
-        *, params, ptype, debug_label, resolved_model, ingest_batch_id, doc_case_id=None
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
     ):
         seen_max_tokens[debug_label] = params["json"]["options"].get("max_tokens")
         if debug_label.endswith("-p1"):

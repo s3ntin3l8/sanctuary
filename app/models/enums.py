@@ -287,3 +287,6 @@ class AuditEventType(enum.StrEnum):
     MAINTENANCE_CLEAR_ALL_DATA = "maintenance_clear_all_data"
     MAINTENANCE_REBUILD_INDEX = "maintenance_rebuild_index"
     MAINTENANCE_REINDEX_DOCUMENTS = "maintenance_reindex_documents"
+    AI_DEBUG_REDACT_TOGGLED = "ai_debug_redact_toggled"
+    CASE_PURGED = "case_purged"
+    DATA_EXPORTED = "data_exported"

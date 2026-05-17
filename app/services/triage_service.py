@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.constants import SIG_ORDER as _SIG_ORDER  # noqa: E402
+from app.constants import SIG_ORDER as _SIG_ORDER
 from app.models.database import (
     BatchSubGroup,
     Case,

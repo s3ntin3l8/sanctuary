@@ -21,14 +21,16 @@ from app.models.enums import (
 )
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
-from app.services.triage_service import TriageService
-from app.services.triage_view import (
-    failed_doc_summary,
+from app.services.triage_oob_render import (
+    render_batch_oob,
     render_bundle_group_oob,
     render_row_targeted_oob,
     render_sidebar_badges_oob,
+    render_triage_feed_oob,
     render_triage_header_stats_oob,
 )
+from app.services.triage_service import TriageService
+from app.services.triage_view import failed_doc_summary
 
 router = APIRouter(tags=["pages"])
 
@@ -656,7 +658,6 @@ async def batch_confirm(
     rows and fires `triage:batch-confirmed` with confirmed/skipped counts.
     """
     from app.services.triage_service import _reset_and_reenrich
-    from app.services.triage_view import render_batch_oob
 
     confirmed_count = 0
     skipped_count = 0
@@ -743,7 +744,6 @@ async def batch_assign(
     """
     from app.services.case_service import get_or_create_case_from_reference
     from app.services.triage_service import _reset_and_reenrich
-    from app.services.triage_view import render_batch_oob
 
     if new_case_id:
         new_case_obj, _, _ = get_or_create_case_from_reference(
@@ -1147,7 +1147,6 @@ async def retry_all_bundles(
     """
     from app.models.database import IngestBatch
     from app.services.pipeline_status import retry_on_db_locked
-    from app.services.triage_view import render_triage_feed_oob
 
     bundles = triage_service.get_triage_bundles(limit=500)
     batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}

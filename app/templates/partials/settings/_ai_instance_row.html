@@ -85,23 +85,33 @@
             </div>
         </div>
 
-        {# Provider + API Key #}
-        <div class="grid grid-cols-2 gap-3">
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Provider</label>
-                <select name="provider"
-                        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                    {% for p in ['auto', 'ollama', 'lmstudio', 'openai'] %}
-                    <option value="{{ p }}" {% if inst.provider == p %}selected{% endif %}>{{ p }}</option>
-                    {% endfor %}
-                </select>
+        {# Provider + API Key + cloud PII warning #}
+        <div x-data="{ provider: '{{ inst.provider }}' }">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Provider</label>
+                    <select name="provider"
+                            x-model="provider"
+                            class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
+                        {% for p in ['auto', 'ollama', 'lmstudio', 'openai'] %}
+                        <option value="{{ p }}" {% if inst.provider == p %}selected{% endif %}>{{ p }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">API Key</label>
+                    <input type="password" name="api_key"
+                           value="{{ inst.api_key if inst.api_key != 'not-needed' else '' }}"
+                           class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
+                           placeholder="not-needed for Ollama">
+                </div>
             </div>
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">API Key</label>
-                <input type="password" name="api_key"
-                       value="{{ inst.api_key if inst.api_key != 'not-needed' else '' }}"
-                       class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
-                       placeholder="not-needed for Ollama">
+            <div x-show="provider === 'openai'"
+                 x-transition
+                 class="mt-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+                <strong>External provider.</strong>
+                Calls to OpenAI send case content (parties, claim text, document excerpts) outside this machine.
+                Use only with non-sensitive test data, or configure an Ollama instance to keep everything local.
             </div>
         </div>
 
