@@ -836,66 +836,6 @@ async def batch_assign(
 
 
 # -----------------------------------------------------------------------------
-# Document actions (reingest, summarize, approve-summary)
-# -----------------------------------------------------------------------------
-
-
-@router.post("/document/{doc_id}/reingest")
-async def reingest_document(
-    request: Request,
-    doc_id: int,
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
-    from app.tasks.dispatch import dispatch_task
-    from app.tasks.document_processing import process_document_task
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
-    try:
-        retry_on_db_locked(lambda: reset_all_stages(doc.id, db), db)
-    except OperationalError as exc:
-        raise HTTPException(
-            status_code=409, detail="Worker busy — try again in a moment"
-        ) from exc
-    dispatch_task(process_document_task, doc.id)
-    db.refresh(doc)
-    return _render_document_hud(request, doc, db, triage_service)
-
-
-@router.post("/document/{doc_id}/summarize")
-async def summarize_document(
-    request: Request,
-    doc_id: int,
-    db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
-):
-    from app.services.ai_summary import _summarize_document_sync
-    from app.tasks.enrich_document import enrich_document_task
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
-    try:
-        # Phase 1: metadata extraction (sender, date, originator, internal_id)
-        _summarize_document_sync(doc_id, db)
-        # Phase 4: management summary bullets + key passages
-        from app.tasks.dispatch import dispatch_task
-
-        dispatch_task(enrich_document_task, doc_id)
-    except Exception as exc:
-        doc.ai_summary = {"error": str(exc)}
-        db.commit()
-
-    db.refresh(doc)
-    return _render_document_hud(request, doc, db, triage_service)
-
-
-# -----------------------------------------------------------------------------
 # Bundle-level retry
 # -----------------------------------------------------------------------------
 
@@ -1641,23 +1581,3 @@ def bundle_pipeline_status(
         )
 
     return response
-
-
-@router.post("/triage/batch/{batch_id}/retry-analysis")
-def retry_batch_analysis(batch_id: int, db: Session = Depends(get_db)):
-    """Manually retry batch analysis for a stuck or failed batch."""
-    from app.models.database import IngestBatch
-    from app.tasks.analyze_batch import analyze_batch_task
-
-    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-    if not batch:
-        raise HTTPException(status_code=404, detail="Batch not found")
-
-    # Clear the claim to allow re-analysis
-    batch.analysis_queued_at = None
-    db.commit()
-
-    # Trigger analysis
-    analyze_batch_task.delay(batch_id)
-
-    return {"status": "retry_scheduled", "batch_id": batch_id}
