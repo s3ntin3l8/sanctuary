@@ -80,7 +80,7 @@ def test_retry_all_resets_stages_and_dispatches(db_session):
         db_session,
         extract={"status": StageStatus.FAILED.value, "error": "boom"},
     )
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
         response = client.post(f"/document/{doc.id}/pipeline/retry-all")
 
     assert response.status_code == 200
@@ -100,7 +100,7 @@ def test_retry_all_preserves_skipped(db_session):
         db_session,
         batch_analysis={"status": StageStatus.SKIPPED.value, "reason": "manual upload"},
     )
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.api.documents.dispatch_pipeline_retry"):
         response = client.post(f"/document/{doc.id}/pipeline/retry-all")
 
     assert response.status_code == 200
@@ -111,7 +111,7 @@ def test_retry_all_preserves_skipped(db_session):
 @pytest.mark.integration
 def test_retry_all_409_when_running(db_session):
     doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RUNNING.value})
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
         response = client.post(f"/document/{doc.id}/pipeline/retry-all")
 
     assert response.status_code == 409

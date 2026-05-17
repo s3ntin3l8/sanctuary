@@ -77,7 +77,7 @@ def test_full_retry_resets_extract_and_dispatches_it(
     doc = _make_doc(db_session, batch)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
         response = app_client.post(
             "/triage/bundle/retry", data={"batch_id": batch.id, "full": "true"}
         )
@@ -104,7 +104,7 @@ def test_full_retry_preserves_confirmed_case(app_client, db_session):
     doc = _make_doc(db_session, batch)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
         app_client.post(
             "/triage/bundle/retry", data={"batch_id": batch.id, "full": "true"}
         )
@@ -120,7 +120,7 @@ def test_full_retry_resets_draft_case(app_client, db_session):
     doc = _make_doc(db_session, batch)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
         app_client.post(
             "/triage/bundle/retry", data={"batch_id": batch.id, "full": "true"}
         )
@@ -137,7 +137,7 @@ def test_full_retry_preserves_confirmed_proceeding(app_client, db_session):
     doc = _make_doc(db_session, batch, case_id=c.id, proceeding_id=p.id)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
         app_client.post(
             "/triage/bundle/retry", data={"batch_id": batch.id, "full": "true"}
         )
@@ -154,7 +154,7 @@ def test_full_retry_resets_draft_proceeding(app_client, db_session):
     doc = _make_doc(db_session, batch, case_id=c.id, proceeding_id=p.id)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
         app_client.post(
             "/triage/bundle/retry", data={"batch_id": batch.id, "full": "true"}
         )
@@ -169,7 +169,7 @@ def test_standard_retry_still_skips_extract(app_client, db_session, sample_case)
     doc = _make_doc(db_session, batch)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
         # full=false is default
         app_client.post("/triage/bundle/retry", data={"batch_id": batch.id})
 

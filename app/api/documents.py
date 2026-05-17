@@ -23,6 +23,7 @@ from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
 )
+from app.services.triage_retry import dispatch_pipeline_retry
 from app.tasks.document_processing import process_document_task
 
 logger = logging.getLogger(__name__)
@@ -638,7 +639,7 @@ async def retry_pipeline_stage(
     reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
-    _dispatch_retry_task(doc.id, doc.ingest_batch_id, pipeline_stage)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage)
 
     return templates.TemplateResponse(
         request,
@@ -724,25 +725,11 @@ async def retry_pipeline_all(
     # Kick off the pipeline from EXTRACT — process_document_task chains forward
     # to METADATA → PROCEEDING_ANALYSIS → ENRICH → … and dispatches EMBEDDINGS
     # in parallel, so a single dispatch covers every non-skipped stage.
-    _dispatch_retry_task(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT)
 
     return templates.TemplateResponse(
         request, "partials/_pipeline_stepper.html", {"doc": doc}
     )
-
-
-def _dispatch_retry_task(doc_id: int, batch_id: int | None, stage) -> None:
-    from app.services.pipeline_status import STAGE_REGISTRY
-    from app.tasks.dispatch import dispatch_task
-
-    spec = STAGE_REGISTRY[stage]
-    arg = batch_id if spec.dispatch_arg == "batch_id" else doc_id
-    if arg is None:
-        logger.warning(
-            "Cannot dispatch retry for %s — no %s available", stage, spec.dispatch_arg
-        )
-        return
-    dispatch_task(spec.retry_task, arg)
 
 
 def _lock_row_for_retry(doc_id: int, db: Session) -> None:

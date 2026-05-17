@@ -84,7 +84,7 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
     doc = _make_doc(db_session, batch, _pending_stages())
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
         response = _post(app_client, batch.id)
 
     assert response.status_code == 200
@@ -135,7 +135,7 @@ def test_retry_bundle_hx_trigger_payload(app_client, db_session, sample_case):
     _make_doc(db_session, batch, _pending_stages())
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task"):
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
         response = _post(app_client, batch.id)
 
     assert response.status_code == 200
@@ -161,7 +161,7 @@ def test_retry_bundle_skips_skipped_stages(app_client, db_session, sample_case):
     doc = _make_doc(db_session, batch, stages)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
         response = _post(app_client, batch.id)
 
     assert response.status_code == 200
@@ -187,7 +187,7 @@ def test_retry_bundle_preserves_extract_when_skipped_in_dispatch(
     _make_doc(db_session, batch, stages)
     db_session.commit()
 
-    with patch("app.api.documents._dispatch_retry_task") as mock_dispatch:
+    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
         response = _post(app_client, batch.id)
 
     assert response.status_code == 200
