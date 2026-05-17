@@ -177,29 +177,6 @@
         </div>
     </div>
 
-    {# ── User Context ─────────────────────────────────────────────────── #}
-    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-5">
-        <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">User Context</p>
-        <p class="text-xs text-on-surface-variant leading-relaxed">Prepended to every AI system prompt. Describe yourself, your role, and your case situation so the AI always has background context.</p>
-        <p class="text-[10px] text-on-surface-variant/50 italic">Example: "I am a party to a civil divorce proceeding at AG Musterstadt. My goals are to document all assets accurately and respond promptly to all court deadlines."</p>
-        <p class="text-[10px] text-on-surface-variant/50 italic">Settable as <code>AI_USER_CONTEXT</code> in <code>.env</code>; the UI value below overrides env when non-empty.</p>
-
-        <form hx-post="/api/settings/ai/user-context"
-              hx-target="#context-save-result"
-              hx-swap="innerHTML"
-              class="space-y-4">
-            <textarea name="user_context" rows="8"
-                      class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors resize-y"
-                      placeholder="Describe yourself and your legal situation...">{{ user_context }}</textarea>
-            <div class="flex items-center gap-3">
-                <button type="submit"
-                        class="px-4 py-2 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary/90 transition-colors">
-                    Save Context
-                </button>
-                <span id="context-save-result"></span>
-            </div>
-        </form>
-    </div>
 </section>
 
 {% endblock %}

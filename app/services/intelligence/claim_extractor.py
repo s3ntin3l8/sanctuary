@@ -15,11 +15,11 @@ Wave 2B pipeline:
 
 import asyncio
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
+from app.core.timezone import naive_utc_now
 from app.models.database import (
     Claim,
     ClaimEvidenceProposal,
@@ -66,8 +66,9 @@ def _format_existing_claims(claims: list[Claim]) -> str:
 
 
 def _call_claim_extractor_sync(
-    doc: Document, existing_claims: list[Claim], model: str = "", db=None
+    doc: Document, existing_claims: list[Claim], model: str = ""
 ) -> dict:
+    """AI call only — no DB session held."""
     content_preview = get_content_preview(doc, 60000)
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
@@ -89,7 +90,6 @@ def _call_claim_extractor_sync(
         debug_label=f"doc_{doc.id}_claims",
         schema=ClaimExtraction,
         model=model or None,
-        db=db,
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
@@ -109,7 +109,11 @@ def _apply_claims(
         " ".join(c.claim_text.lower().split())[:80] for c in existing_claims
     }
 
-    # Create new claims
+    # Pass 1: create all claims + evidence rows (each create_claim flushes
+    # immediately, which starts a write transaction). Collect IDs so we can
+    # reload claims after committing — the commit releases the write lock
+    # before any embedding HTTP calls, preventing SQLITE_BUSY contention.
+    new_claim_ids: list[int] = []
     for item in result.get("new_claims") or []:
         claim_text = (item.get("claim_text") or "").strip()
         if not claim_text:
@@ -164,23 +168,7 @@ def _apply_claims(
             role=ClaimEvidenceRole.ASSERTS,
             excerpt=(item.get("excerpt") or "")[:500],
         )
-
-        # Wave 2B: embed the claim so future dedup-judge lookups can find
-        # it as a neighbor, then run the judge against the global top-K
-        # to surface possible merges into existing claims.
-        try:
-            asyncio.run(upsert_claim_embedding(claim.id, db))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Doc %s: failed to embed new claim %s: %s", doc.id, claim.id, exc
-            )
-
-        try:
-            propose_merges_for_new_claim(claim, db)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "Doc %s: dedup judge failed for claim %s: %s", doc.id, claim.id, exc
-            )
+        new_claim_ids.append(claim.id)
 
     # Wave 2B: evidence_links no longer auto-apply. Each one becomes a
     # ClaimEvidenceProposal awaiting user confirmation. The user-confirmation
@@ -229,10 +217,37 @@ def _apply_claims(
                 rationale=None,
                 confidence=confidence_default,
                 status=ProposalStatus.PENDING,
-                proposed_at=datetime.now(UTC).replace(tzinfo=None),
+                proposed_at=naive_utc_now(),
             )
         )
     db.flush()
+
+    # Commit claims + evidence + proposals before embedding. Each
+    # create_claim calls flush() which starts a write transaction; holding
+    # that open during an embedding HTTP call (up to 60 s) blocks every
+    # other concurrent writer past busy_timeout. Committing here releases
+    # the write lock; embedding and dedup calls each manage their own
+    # short-lived write transactions.
+    db.commit()
+
+    # Pass 2: embed + dedup for each newly created claim. Reload each claim
+    # after the commit (SQLAlchemy expires objects on commit).
+    for claim_id in new_claim_ids:
+        claim = db.get(Claim, claim_id)
+        if not claim:
+            continue
+        try:
+            asyncio.run(upsert_claim_embedding(claim_id, db))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Doc %s: failed to embed new claim %s: %s", doc.id, claim_id, exc
+            )
+        try:
+            propose_merges_for_new_claim(claim, db)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Doc %s: dedup judge failed for claim %s: %s", doc.id, claim_id, exc
+            )
 
 
 def extract(doc_id: int) -> str | None:
@@ -240,6 +255,7 @@ def extract(doc_id: int) -> str | None:
 
     Returns a non-empty skip reason if skipped, or None if it ran.
     """
+    # Phase 1: read + stale-claim cleanup (brief write, commits before AI call)
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
@@ -292,26 +308,32 @@ def extract(doc_id: int) -> str | None:
             )
             for c in stale:
                 db.delete(c)
-            db.flush()
+            db.commit()
 
         claim_repo = ClaimRepository(db)
         existing_claims = list(
             claim_repo.get_open_in_case(doc.case_id, limit=MAX_EXISTING_CLAIMS)
         )
+        model = cfg.summary_model
+        # doc and existing_claims remain accessible after session closes
+    finally:
+        db.close()
 
-        try:
-            result = _call_claim_extractor_sync(
-                doc, existing_claims, model=cfg.summary_model, db=db
-            )
-            _apply_claims(doc, result, existing_claims, db)
-            db.commit()
-            new_count = len(result.get("new_claims") or [])
-            link_count = len(result.get("evidence_links") or [])
-            logger.info(
-                f"Doc {doc_id}: claim extraction done — {new_count} new, {link_count} evidence links"
-            )
-        except Exception:
-            db.rollback()
-            raise
+    # Phase 2: AI call — no DB session held
+    result = _call_claim_extractor_sync(doc, existing_claims, model=model)
+
+    # Phase 3: write
+    db = SessionLocal()
+    try:
+        _apply_claims(doc, result, existing_claims, db)
+        db.commit()
+        new_count = len(result.get("new_claims") or [])
+        link_count = len(result.get("evidence_links") or [])
+        logger.info(
+            f"Doc {doc_id}: claim extraction done — {new_count} new, {link_count} evidence links"
+        )
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

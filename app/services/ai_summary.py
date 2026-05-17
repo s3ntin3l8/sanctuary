@@ -14,6 +14,7 @@ from app.services.ingestion.extractors import (
     normalize_az_court,
 )
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
 from app.services.intelligence.schemas import Phase1Metadata
@@ -293,20 +294,6 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     if parsed_ot is not None:
         doc.originator_type = parsed_ot
 
-    # Fix 1A: court relay detection — court letterhead sender + non-court originator means
-    # the court is merely forwarding a party submission.
-    from app.models.enums import OriginatorType as _OT
-
-    effective_sender = summary_data.get("sender") or doc.sender
-    effective_ot = doc.originator_type
-    if (
-        effective_sender
-        and infer_court_level(effective_sender) is not None
-        and effective_ot is not None
-        and effective_ot != _OT.COURT
-    ):
-        doc.court_relay = True
-
     if summary_data.get("issued_date"):
         raw_date = str(summary_data["issued_date"]).strip()
         parsed_date = None
@@ -551,18 +538,34 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         "az_court": az_hint,
         "internal_id": internal_id_hint,
         "sender": sender_clean,
-        # issued_date intentionally omitted: it comes from a prior AI extraction
-        # and feeding it back creates a feedback loop that amplifies earlier errors.
-        "originator": (
-            doc.originator_type.value
-            if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN
-            else None
-        ),
+        # issued_date intentionally omitted: feeding it back amplifies earlier errors.
+        # originator intentionally omitted: prior value biases the AI toward confirming
+        # an incorrect classification instead of reading the document afresh.
         "email_subject": batch_subject if batch_sender_email else None,
     }
     hints = {k: v for k, v in hints.items() if v is not None}
 
     prompt = ""
+
+    # Inject known-party identity context so the AI can resolve originator_type
+    # correctly even when the email sender domain doesn't match the document author.
+    from app.services.case_service import get_case_opposing_parties
+    from app.services.user_settings_service import get_party_identity
+
+    party_identity = get_party_identity(db) if db is not None else {}
+    case_opposing = (
+        get_case_opposing_parties(doc.case_id, db)
+        if db is not None and doc.case_id
+        else []
+    )
+    party_block = format_party_context(
+        own_self=party_identity.get("own_self", ""),
+        own_parties=party_identity.get("own_parties", []),
+        opposing_parties=case_opposing,
+    )
+    if party_block:
+        prompt += party_block + "\n\n"
+
     if hints:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
     prompt += f"### Document Content Preview:\n{content_preview}"

@@ -34,6 +34,7 @@ from app.core.validators import normalize_case_id
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    AuditEventType,
     CaseStatus,
     CaseType,
     ClaimEvidenceRole,
@@ -156,7 +157,12 @@ class Document(Base):
     page_count = Column(Integer, nullable=False, default=0)
 
     # Self-referential relationship for 'Russian Doll' nesting
-    parent_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
+    parent_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     sub_group_id = Column(
         Integer,
         ForeignKey("batch_sub_groups.id", ondelete="SET NULL"),
@@ -167,10 +173,16 @@ class Document(Base):
 
     # Phase 1: bundle / proceeding grouping
     ingest_batch_id = Column(
-        Integer, ForeignKey("ingest_batches.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("ingest_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     proceeding_id = Column(
-        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("proceedings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Phase 1: structural and intelligence fields
@@ -325,6 +337,7 @@ class Case(Base):
     ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case
     ai_brief_updated_at = Column(DateTime, nullable=True)
     parties = Column(JSON, nullable=True)  # known actors and their roles
+    opposing_parties = Column(JSON, nullable=True)  # per-case opposing party names
     total_cost_exposure = Column(
         Integer, default=0, nullable=False
     )  # running total in cents
@@ -399,7 +412,10 @@ class IngestBatch(Base):
         index=True,
     )
     proceeding_id = Column(
-        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("proceedings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status = Column(
         SAEnum(IngestBatchStatus),
@@ -491,10 +507,16 @@ class DocumentRelationship(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     from_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     to_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     relationship_type = Column(SAEnum(RelationshipType), nullable=False)
     confidence = Column(
@@ -534,10 +556,16 @@ class ActionItem(Base):
         index=True,
     )
     proceeding_id = Column(
-        Integer, ForeignKey("proceedings.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("proceedings.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     source_document_id = Column(
-        Integer, ForeignKey("documents.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     title = Column(String, nullable=False)
@@ -792,6 +820,18 @@ class UserSettings(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    actor = Column(String, default="single_user", nullable=False)
+    event_type = Column(SAEnum(AuditEventType), nullable=False, index=True)
+    target_type = Column(String, nullable=True)
+    target_id = Column(String, nullable=True)
+    payload = Column(JSON, nullable=True)
+
+
 class LegalCost(Base):
     """
     A single cost position in the German legal cost system.
@@ -854,10 +894,17 @@ class LegalCost(Base):
     due_at = Column(DateTime, nullable=True, index=True)  # Fälligkeitsdatum
     paid_at = Column(DateTime, nullable=True, index=True)  # Bezahlt am
 
-    source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    source_document_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Vorschuss row points to the final-invoice row it offsets (null until reconciled)
     offsets_cost_id = Column(
-        Integer, ForeignKey("legal_costs.id"), nullable=True, index=True
+        Integer,
+        ForeignKey("legal_costs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     # True when this row was auto-materialized from a cost_delta signal
     auto_created = Column(Boolean, default=False, nullable=False)
@@ -911,7 +958,10 @@ class ConversationMessage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(
-        Integer, ForeignKey("conversations.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
@@ -944,7 +994,11 @@ class Entity(Base):
     name = Column(String, nullable=False, index=True)
 
     # Source tracking
-    source_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    source_document_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Additional metadata (confidence, positions, extracted context)
     extra_data = Column(JSON, nullable=True)

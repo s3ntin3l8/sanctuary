@@ -25,6 +25,7 @@ from starlette.datastructures import MutableHeaders
 from app.api import api_router
 from app.config import (
     CORS_ORIGINS,
+    DEBUG,
     SCAN_FAILED_DIR,
     SCAN_INCOMING_DIR,
     SCAN_PROCESSED_DIR,
@@ -231,6 +232,13 @@ async def lifespan(app: FastAPI):
         yield
         return
 
+    if not DEBUG and _session_secret() == b"dev-session-key":
+        raise RuntimeError(
+            "SESSION_SECRET is unset and DEBUG=False. "
+            "Set SESSION_SECRET in .env "
+            "(generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))')."
+        )
+
     # Run migrations so the schema exists even on a fresh/deleted DB.
     from alembic import command
     from alembic.config import Config as AlembicConfig
@@ -279,7 +287,6 @@ async def lifespan(app: FastAPI):
     #   (b) stored dim was explicitly set but differs from schema → user changed embed
     #       model without rebuilding; log a warning so they know to rebuild.
     from app.services.ai_config import (
-        _ensure_migrated,
         _get_ai_section,
         get_instance,
         save_instance,
@@ -287,7 +294,6 @@ async def lifespan(app: FastAPI):
     from app.services.embeddings import verify_vec0_dim
 
     with SessionLocal() as vec_db:
-        _ensure_migrated(vec_db)
         ai = _get_ai_section(vec_db)
         active_id = ai.get("active_embed_id")
         inst = get_instance(vec_db, active_id) if active_id else None
@@ -764,6 +770,7 @@ from app.api.settings_ai_config import router as settings_ai_router
 from app.api.settings_appearance import router as settings_appearance_router
 from app.api.settings_maintenance import router as settings_maintenance_router
 from app.api.settings_page import router as settings_page_router
+from app.api.settings_parties import router as settings_parties_router
 from app.api.slicing import router as slicing_router
 from app.api.user_settings import router as user_settings_router
 
@@ -783,6 +790,7 @@ app.include_router(settings_page_router)
 app.include_router(settings_ai_router)
 app.include_router(settings_appearance_router)
 app.include_router(settings_maintenance_router)
+app.include_router(settings_parties_router)
 
 from app.api.worker_queue import router as worker_queue_router
 

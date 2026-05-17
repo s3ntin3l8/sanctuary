@@ -653,3 +653,284 @@ def test_recover_stuck_pending_skips_running_stage(db_session, monkeypatch):
 
     assert result["docs_redispatched"] == 0
     assert captured == []
+
+
+# ---------------------------------------------------------------------------
+# recover_unclaimed_ready_batches — closes the gap where per-stage retries
+# leave an IngestBatch with analysis_queued_at IS NULL but every doc ready.
+# ---------------------------------------------------------------------------
+
+
+def _seed_batch_with_docs(db_session, *, case_id: str, doc_stages: list[dict]):
+    """Create an IngestBatch + Documents whose pipeline_stages match `doc_stages`.
+
+    Each entry in `doc_stages` is a dict mapping PipelineStage.value → status string.
+    Stages not listed default to PENDING via initialize().
+    """
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchSourceType, OriginatorType
+    from app.services.pipeline_status import initialize
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.MANUAL,
+        case_id=None,
+        analysis_queued_at=None,
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    docs = []
+    for i, stage_overrides in enumerate(doc_stages):
+        doc = Document(
+            title=f"d{i}.pdf",
+            content="x",
+            case_id=case_id,
+            originator_type=OriginatorType.UNKNOWN,
+            ingest_batch_id=batch.id,
+        )
+        initialize(doc, batched=True)
+        stages = dict(doc.pipeline_stages)
+        for stage_key, status in stage_overrides.items():
+            stages[stage_key] = {"status": status}
+        doc.pipeline_stages = stages
+        db_session.add(doc)
+        docs.append(doc)
+    db_session.commit()
+    db_session.refresh(batch)
+    for d in docs:
+        db_session.refresh(d)
+    return batch, docs
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_batches_claims_and_dispatches(db_session, monkeypatch):
+    """Batch where every doc has extract+metadata completed and batch_analysis
+    still pending must be claimed (analysis_queued_at set) and analyze_batch_task
+    dispatched."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401  — used inside _seed helper
+        recover_unclaimed_ready_batches,
+    )
+
+    case = Case(
+        id="_RU1", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    ready = {
+        PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value,
+        PipelineStage.METADATA.value: StageStatus.COMPLETED.value,
+    }
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_RU1", doc_stages=[ready, ready]
+    )
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, batch_id):
+            captured.append(batch_id)
+
+    monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_batches(db_session)
+
+    assert result["batches_dispatched"] == 1
+    assert result["batch_ids"] == [batch.id]
+    assert captured == [batch.id]
+
+    db_session.refresh(batch)
+    assert batch.analysis_queued_at is not None
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_batches_skips_when_metadata_pending(
+    db_session, monkeypatch
+):
+    """Readiness must be honoured: if any doc still has metadata pending, the
+    claim's NOT EXISTS guard rejects, no dispatch happens, analysis_queued_at
+    stays NULL. Proves we delegate readiness to claim_batch_for_analysis()."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401
+        recover_unclaimed_ready_batches,
+    )
+
+    case = Case(
+        id="_RU2", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    ready = {
+        PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value,
+        PipelineStage.METADATA.value: StageStatus.COMPLETED.value,
+    }
+    not_ready = {
+        PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value,
+        # METADATA still pending — batch should NOT be claimed
+    }
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_RU2", doc_stages=[ready, not_ready]
+    )
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, batch_id):
+            captured.append(batch_id)
+
+    monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_batches(db_session)
+
+    assert result["batches_dispatched"] == 0
+    assert result["batch_ids"] == []
+    assert captured == []
+
+    db_session.refresh(batch)
+    assert batch.analysis_queued_at is None
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_batches_ignores_already_claimed(
+    db_session, monkeypatch
+):
+    """A batch with analysis_queued_at already set must be ignored — the
+    inline trigger or a prior tick already handled it. Idempotency guard."""
+    from datetime import UTC, datetime
+
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401
+        recover_unclaimed_ready_batches,
+    )
+
+    case = Case(
+        id="_RU3", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    ready = {
+        PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value,
+        PipelineStage.METADATA.value: StageStatus.COMPLETED.value,
+    }
+    batch, _docs = _seed_batch_with_docs(db_session, case_id="_RU3", doc_stages=[ready])
+    claimed_at = datetime.now(UTC).replace(tzinfo=None)
+    batch.analysis_queued_at = claimed_at
+    db_session.commit()
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, batch_id):
+            captured.append(batch_id)
+
+    monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_batches(db_session)
+
+    assert result["batches_dispatched"] == 0
+    assert captured == []
+
+    db_session.refresh(batch)
+    # Claim timestamp unchanged.
+    assert batch.analysis_queued_at == claimed_at
+
+
+# ---------------------------------------------------------------------------
+# retry_on_db_locked
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_retry_on_db_locked_succeeds_on_first_try(db_session):
+    """fn that succeeds immediately: returns value, rollback never called."""
+    from unittest.mock import Mock
+
+    from app.services.pipeline_status import retry_on_db_locked
+
+    fn = Mock(return_value="ok")
+    db_session.rollback = Mock()
+
+    result = retry_on_db_locked(fn, db_session)
+
+    assert result == "ok"
+    fn.assert_called_once()
+    db_session.rollback.assert_not_called()
+
+
+@pytest.mark.unit
+def test_retry_on_db_locked_retries_then_succeeds(db_session, monkeypatch):
+    """fn raises 'database is locked' once then succeeds: retries, rolls back once."""
+    from unittest.mock import Mock
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.pipeline_status import retry_on_db_locked
+
+    locked_exc = OperationalError("stmt", {}, Exception("database is locked"))
+    fn = Mock(side_effect=[locked_exc, "ok"])
+    db_session.rollback = Mock()
+    sleep_mock = Mock()
+    monkeypatch.setattr("app.services.pipeline_status.time.sleep", sleep_mock)
+
+    result = retry_on_db_locked(fn, db_session)
+
+    assert result == "ok"
+    assert fn.call_count == 2
+    db_session.rollback.assert_called_once()
+    sleep_mock.assert_called_once()
+    sleep_args, _ = sleep_mock.call_args
+    assert sleep_args[0] > 0
+
+
+@pytest.mark.unit
+def test_retry_on_db_locked_reraises_non_locked_error(db_session):
+    """Non-locked OperationalError is re-raised immediately, before rollback."""
+    from unittest.mock import Mock
+
+    import pytest as _pytest
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.pipeline_status import retry_on_db_locked
+
+    fn = Mock(
+        side_effect=OperationalError("stmt", {}, Exception("UNIQUE constraint failed"))
+    )
+    db_session.rollback = Mock()
+
+    with _pytest.raises(OperationalError):
+        retry_on_db_locked(fn, db_session)
+
+    fn.assert_called_once()
+    db_session.rollback.assert_not_called()
+
+
+@pytest.mark.unit
+def test_retry_on_db_locked_exhausts_and_reraises(db_session, monkeypatch):
+    """fn always raises 'database is locked': exhausts attempts and re-raises."""
+    from unittest.mock import Mock
+
+    import pytest as _pytest
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.pipeline_status import retry_on_db_locked
+
+    locked_exc = OperationalError("stmt", {}, Exception("database is locked"))
+    fn = Mock(side_effect=locked_exc)
+    db_session.rollback = Mock()
+    sleep_mock = Mock()
+    monkeypatch.setattr("app.services.pipeline_status.time.sleep", sleep_mock)
+
+    with _pytest.raises(OperationalError):
+        retry_on_db_locked(fn, db_session, attempts=2)
+
+    assert fn.call_count == 2
+    assert db_session.rollback.call_count == 2

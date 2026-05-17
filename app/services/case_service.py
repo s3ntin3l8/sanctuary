@@ -6,10 +6,12 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.timezone import to_naive
 from app.models.database import ActionItem, Case, Document, LegalCost, Proceeding
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    AuditEventType,
     CaseStatus,
     CaseType,
     CostStatus,
@@ -23,6 +25,7 @@ from app.repositories.case import CaseRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.entity import EntityRepository
 from app.repositories.legal_cost import LegalCostRepository
+from app.services import audit_service
 from app.services.fees.calculator import (
     allocation_from_ruling,
     court_fees,
@@ -31,6 +34,29 @@ from app.services.fees.calculator import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TRIAGE = "_TRIAGE"
+
+
+def get_case_opposing_parties(case_id: str, db: Session) -> list[str]:
+    """Return the per-case opposing party list, or [] for _TRIAGE / missing case."""
+    if not case_id or case_id == _TRIAGE:
+        return []
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case or not case.opposing_parties:
+        return []
+    return [p for p in case.opposing_parties if p and str(p).strip()]
+
+
+def set_case_opposing_parties(case_id: str, parties: list[str], db: Session) -> None:
+    """Persist the per-case opposing party list. Caller must commit."""
+    if not case_id or case_id == _TRIAGE:
+        return
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return
+    case.opposing_parties = [p.strip() for p in parties if p and str(p).strip()]
+    db.flush()
 
 
 def seed_triage_case(db: Session) -> None:
@@ -327,7 +353,7 @@ def get_or_create_case_from_reference(
 def _safe_dt(doc: Document) -> datetime:
     """Return a tz-naive datetime for sorting documents chronologically."""
     dt = doc.issued_date or doc.ingest_date or datetime.min
-    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+    return to_naive(dt)
 
 
 def _latest_streitwert(docs: list[Document]) -> float | None:
@@ -909,6 +935,12 @@ class CaseService:
 
         # Case → Proceedings cascade is wired via ORM relationship.
         self.db.delete(case)
+        audit_service.record(
+            self.db,
+            AuditEventType.CASE_DELETED,
+            target_type="case",
+            target_id=case_id,
+        )
         self.db.commit()
 
         if docs:

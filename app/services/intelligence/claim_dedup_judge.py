@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone import naive_utc_now
 from app.models.database import Claim, ClaimEvidence, ClaimMergeProposal
 from app.models.enums import ClaimEvidenceRole, ProposalConfidence, ProposalStatus
 from app.services.ai_config import get_chat_config
@@ -154,7 +154,7 @@ def propose_merges_for_new_claim(
                 ),
                 rationale=f"intra-doc auto-merge: {verdict.rationale}",
                 status=ProposalStatus.PENDING,
-                proposed_at=datetime.now(UTC).replace(tzinfo=None),
+                proposed_at=naive_utc_now(),
             )
             db.add(auto_prop)
             db.flush()
@@ -174,7 +174,7 @@ def propose_merges_for_new_claim(
             confidence=confidence_map.get(verdict.confidence, ProposalConfidence.LOW),
             rationale=verdict.rationale,
             status=ProposalStatus.PENDING,
-            proposed_at=datetime.now(UTC).replace(tzinfo=None),
+            proposed_at=naive_utc_now(),
         )
         db.add(prop)
         db.commit()  # release the write lock before the next judge call
@@ -344,7 +344,7 @@ async def find_duplicates_for_case(
                     confidence=confidence_map.get(j.confidence, ProposalConfidence.LOW),
                     rationale=j.rationale,
                     status=ProposalStatus.PENDING,
-                    proposed_at=datetime.now(UTC).replace(tzinfo=None),
+                    proposed_at=naive_utc_now(),
                 )
             )
             db.commit()

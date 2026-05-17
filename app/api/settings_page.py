@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.helpers import render_page
-from app.services.ai_config import _ensure_migrated, _get_ai_section, get_embed_config
+from app.services.ai_config import _get_ai_section, get_embed_config
 from app.services.ai_provider import chat_provider, embed_provider
 from app.services.timezone_service import get_timezone_choices
-from app.services.user_settings_service import _get_or_create
+from app.services.user_settings_service import _get_or_create, get_party_identity
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +50,28 @@ async def settings_gmail(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/settings/parties", response_class=HTMLResponse)
+async def settings_parties(request: Request, db: Session = Depends(get_db)):
+    party_identity = get_party_identity(db)
+    ai = _get_ai_section(db)
+    user_context = ai.get("user_context", "")
+    return render_page(
+        request,
+        "pages/settings/parties.html",
+        db=db,
+        party_identity=party_identity,
+        user_context=user_context,
+    )
+
+
 @router.get("/settings/ai", response_class=HTMLResponse)
 async def settings_ai(request: Request, db: Session = Depends(get_db)):
     from app.services.ai_config import list_instances
 
-    _ensure_migrated(db)
     ai = _get_ai_section(db)
     instances = list_instances(db)
     active_chat_id = ai.get("active_chat_id", "")
     active_embed_id = ai.get("active_embed_id", "")
-    user_context = ai.get("user_context", "")
     embed_cfg = get_embed_config(db)
 
     chat_provider.reload_from_db(db)
@@ -82,7 +94,6 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         instance_health=instance_health,
         active_chat_id=active_chat_id,
         active_embed_id=active_embed_id,
-        user_context=user_context,
         embed_cfg=embed_cfg,
     )
 

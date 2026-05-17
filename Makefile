@@ -67,10 +67,6 @@ run-debug: ## Start server with DEBUG logging (+ Redis + both workers)
 server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
-# Note: `-Q ai` on the AI worker is a temporary cutover bridge so any
-# tasks still sitting on the legacy `celery` queue from before the two-queue
-# split get drained. After `redis-cli LLEN celery` reads 0 and stays 0 across
-# a restart, drop `,celery` from the AI worker's `-Q` list.
 worker: ## Start both Celery workers (ingest + ai) and beat scheduler
 	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \

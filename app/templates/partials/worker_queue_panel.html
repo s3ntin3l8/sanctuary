@@ -18,16 +18,32 @@
         <span class="bg-tertiary/10 text-tertiary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ sidebar_counts.pipeline_active_count }} Active</span>
     </div>
 
-    {# Body — loaded immediately and polls itself #}
+    {# Body — loaded immediately and polls itself. The `refresh-worker-queue`
+       event lets the error-state Retry button re-fire the request without
+       rebuilding any DOM. Response errors swap the placeholder for a busy
+       state so a contended endpoint doesn't leave the user staring at
+       "Loading…" forever. #}
     <div hx-get="/api/worker/queue/panel"
-         hx-trigger="load"
+         hx-trigger="load, refresh-worker-queue from:body"
          hx-swap="outerHTML"
+         hx-on::response-error="this.innerHTML = document.getElementById('worker-queue-busy-tpl').innerHTML"
          class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30">
         <div class="p-8 text-center">
             <span class="material-symbols-outlined text-outline/30 text-3xl mb-2 block">hourglass_empty</span>
             <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">Loading…</p>
         </div>
     </div>
+
+    <template id="worker-queue-busy-tpl">
+        <div class="p-8 text-center">
+            <span class="material-symbols-outlined text-error/60 text-3xl mb-2 block">error_outline</span>
+            <p class="text-[10px] text-error font-bold uppercase tracking-widest">Worker busy</p>
+            <p class="text-[9px] text-on-surface-variant mt-1">Database is locked — retry in a moment.</p>
+            <button type="button"
+                    onclick="htmx.trigger(document.body, 'refresh-worker-queue')"
+                    class="mt-3 text-[9px] font-black uppercase tracking-widest text-primary hover:underline">Reload</button>
+        </div>
+    </template>
 
     <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 flex items-center justify-between">
         <a href="/triage" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage</a>

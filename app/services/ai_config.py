@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from dataclasses import dataclass
 
@@ -14,6 +15,8 @@ from app.config import (
     AI_SUMMARY_MODEL,
     AI_USER_CONTEXT,
 )
+from app.models.enums import AuditEventType
+from app.services import audit_service
 
 
 @dataclass(frozen=True)
@@ -68,49 +71,7 @@ def _get_ai_section(db) -> dict:
     return {}
 
 
-def _ensure_migrated(db) -> None:
-    """One-time migration: convert legacy flat-key ai section to multi-instance shape."""
-    if db is None:
-        return
-    try:
-        from app.models.database import UserSettings
-
-        settings = db.query(UserSettings).first()
-        if not settings or not isinstance(settings.settings_json, dict):
-            return
-        ai = settings.settings_json.get("ai", {})
-        if "instances" in ai:
-            return
-
-        env = _env_defaults()
-        inst_id = _make_id()
-        instance = {
-            "id": inst_id,
-            "label": "Default",
-            "base_url": (ai.get("base_url") or env["base_url"]).strip().rstrip("/"),
-            "provider": (ai.get("provider") or env["provider"]).strip(),
-            "api_key": (ai.get("api_key") or env["api_key"]).strip(),
-            "summary_model": (ai.get("summary_model") or env["summary_model"]).strip(),
-            "embed_model": (ai.get("embed_model") or env["embed_model"]).strip(),
-            "embed_dim": int(ai.get("embed_dim") or env["embed_dim"]),
-        }
-        user_context = ai.get("user_context") or env["user_context"]
-        new_ai = {
-            "instances": [instance],
-            "active_chat_id": inst_id,
-            "active_embed_id": inst_id,
-            "user_context": user_context,
-        }
-        data = dict(settings.settings_json)
-        data["ai"] = new_ai
-        settings.settings_json = data
-        db.commit()
-    except Exception:
-        pass
-
-
 def list_instances(db) -> list[dict]:
-    _ensure_migrated(db)
     return list(_get_ai_section(db).get("instances", []))
 
 
@@ -122,7 +83,6 @@ def get_instance(db, instance_id: str) -> dict | None:
 
 
 def _resolve_active(db, role: str) -> dict:
-    _ensure_migrated(db)
     ai = _get_ai_section(db)
     instances = ai.get("instances", [])
     key = "active_chat_id" if role == "chat" else "active_embed_id"
@@ -178,6 +138,11 @@ def set_active(db, role: str, instance_id: str) -> None:
     ai[key] = instance_id
     data["ai"] = ai
     settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.AI_ACTIVE_CHANGED,
+        payload={"role": role, "instance_id": instance_id},
+    )
     db.commit()
 
 
@@ -185,6 +150,7 @@ def save_instance(db, instance: dict) -> None:
     """Create or update an instance (matched by id)."""
     from app.services.user_settings_service import _get_or_create
 
+    existing = get_instance(db, instance.get("id"))
     settings = _get_or_create(db)
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))
@@ -198,6 +164,14 @@ def save_instance(db, instance: dict) -> None:
     ai["instances"] = instances
     data["ai"] = ai
     settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.AI_INSTANCE_UPDATED
+        if existing is not None
+        else AuditEventType.AI_INSTANCE_CREATED,
+        target_type="ai_instance",
+        target_id=instance.get("id"),
+    )
     db.commit()
 
 
@@ -211,6 +185,12 @@ def delete_instance(db, instance_id: str) -> None:
     ai["instances"] = [i for i in ai.get("instances", []) if i.get("id") != instance_id]
     data["ai"] = ai
     settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.AI_INSTANCE_DELETED,
+        target_type="ai_instance",
+        target_id=instance_id,
+    )
     db.commit()
 
 
@@ -223,4 +203,11 @@ def set_user_context(db, text: str) -> None:
     ai["user_context"] = text
     data["ai"] = ai
     settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.AI_USER_CONTEXT_CHANGED,
+        payload={
+            "context_hash": hashlib.sha256((text or "").encode()).hexdigest()[:16]
+        },
+    )
     db.commit()

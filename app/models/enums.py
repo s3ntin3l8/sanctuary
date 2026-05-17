@@ -268,3 +268,22 @@ class CaseType(enum.StrEnum):
     FAMILY = "family"
     ADMINISTRATIVE = "administrative"
     CRIMINAL = "criminal"
+
+
+class AuditEventType(enum.StrEnum):
+    CASE_DELETED = "case_deleted"
+    DOCUMENT_DELETED = "document_deleted"
+    AI_INSTANCE_CREATED = "ai_instance_created"
+    AI_INSTANCE_UPDATED = "ai_instance_updated"
+    AI_INSTANCE_DELETED = "ai_instance_deleted"
+    AI_ACTIVE_CHANGED = "ai_active_changed"
+    AI_USER_CONTEXT_CHANGED = "ai_user_context_changed"
+    SETTINGS_THEME_CHANGED = "settings_theme_changed"
+    SETTINGS_DASHBOARD_CARDS_CHANGED = "settings_dashboard_cards_changed"
+    SETTINGS_TIMEZONE_CHANGED = "settings_timezone_changed"
+    SETTINGS_PARTIES_CHANGED = "settings_parties_changed"
+    SETTINGS_INGESTION_CHANGED = "settings_ingestion_changed"
+    MAINTENANCE_RESET_AI_ENRICHMENT = "maintenance_reset_ai_enrichment"
+    MAINTENANCE_CLEAR_ALL_DATA = "maintenance_clear_all_data"
+    MAINTENANCE_REBUILD_INDEX = "maintenance_rebuild_index"
+    MAINTENANCE_REINDEX_DOCUMENTS = "maintenance_reindex_documents"

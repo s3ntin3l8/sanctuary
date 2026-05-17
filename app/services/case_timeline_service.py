@@ -14,6 +14,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timezone import naive_utc_now
 from app.models.database import (
     ActionItem,
     ClaimEvidence,
@@ -116,7 +117,7 @@ class CaseTimelineService:
           total_count   — int
           quiet_gaps    — dict[event_id, int] gap in days before this event in same month
         """
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = naive_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
         events: list[TimelineEvent] = []
 
         self._add_document_events(case_id, today, events)

@@ -1565,7 +1565,10 @@ def bundle_pipeline_status(
     from types import SimpleNamespace
 
     from app.repositories.document import DocumentRepository
-    from app.services.pipeline_status import aggregate_pipeline_summary
+    from app.services.pipeline_status import (
+        aggregate_pipeline_summary,
+        retry_on_db_locked,
+    )
 
     stages_per_doc = DocumentRepository(db).get_pipeline_stages_for_batch(batch_id)
     if not stages_per_doc:
@@ -1626,21 +1629,12 @@ def bundle_pipeline_status(
                 # SQLite's single-writer lock can transiently lock us out.
                 # The latch is idempotent — next poll retries — so brief
                 # retry + skip-on-busy avoids 500s without losing correctness.
-                for _attempt in range(3):
-                    try:
-                        db.commit()
-                        break
-                    except OperationalError as exc:
-                        db.rollback()
-                        if (
-                            "database is locked" not in str(exc).lower()
-                            or _attempt == 2
-                        ):
-                            logger.debug(
-                                "pipeline latch commit busy, deferring: %s", exc
-                            )
-                            break
-                        time.sleep(0.05 * (_attempt + 1))
+                try:
+                    retry_on_db_locked(lambda: db.commit(), db)
+                except OperationalError:
+                    logger.debug(
+                        "Final commit after triage operation still locked — continuing"
+                    )
 
     if fire_reload:
         response.headers["HX-Trigger"] = json.dumps(

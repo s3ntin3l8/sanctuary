@@ -26,6 +26,7 @@ from app.models.enums import (
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import BATCH_ANALYZER_SYSTEM
 from app.services.intelligence.schemas import BatchAnalysis
@@ -91,6 +92,7 @@ def _call_batch_analyzer_sync(
     db=None,
     suppress_thinking: bool = False,
     debug_label: str | None = None,
+    party_context: str = "",
 ) -> dict:
     """Synchronous AI call for batch analysis.
 
@@ -115,7 +117,8 @@ def _call_batch_analyzer_sync(
         else ""
     )
 
-    prompt = temporal_block + "\n\n".join(sections)
+    party_block = (party_context + "\n\n") if party_context else ""
+    prompt = party_block + temporal_block + "\n\n".join(sections)
 
     result = call_json_ai(
         system_prompt=BATCH_ANALYZER_SYSTEM,
@@ -220,16 +223,20 @@ def _apply_batch_results(
                 # Don't overwrite from enclosure types — direct court rulings with
                 # court enclosures are not relays.
 
-                # Set attribution from first enclosure
-                first_enclosure = next(
-                    (
-                        e.get("attributed_originator")
-                        for e in enclosed
-                        if e.get("attributed_originator")
-                    ),
-                    None,
-                )
-                cover_doc.attributed_originator = first_enclosure
+                # Fill attribution from first enclosure only when the cover letter
+                # does not already have its own attributed_originator (e.g. set by
+                # Phase-1 metadata from the letterhead). An unconditional overwrite
+                # would replace the cover's true sender with the enclosed party name.
+                if not cover_doc.attributed_originator:
+                    first_enclosure = next(
+                        (
+                            e.get("attributed_originator")
+                            for e in enclosed
+                            if e.get("attributed_originator")
+                        ),
+                        None,
+                    )
+                    cover_doc.attributed_originator = first_enclosure
                 if first_cover is None:
                     first_cover = cover_doc
 
@@ -303,15 +310,16 @@ def _apply_batch_results(
         if cover_letter_doc and is_cover_letter:
             cover_letter_doc.role = DocumentRole.COVER_LETTER
             cover_letter_doc.parent_id = None
-            # court_relay is owned by METADATA — don't overwrite here.
-            cover_letter_doc.attributed_originator = next(
-                (
-                    d.get("attributed_originator")
-                    for d in enclosed_descriptions
-                    if d.get("attributed_originator")
-                ),
-                None,
-            )
+            # Fill attribution only when not already set by Phase-1 metadata.
+            if not cover_letter_doc.attributed_originator:
+                cover_letter_doc.attributed_originator = next(
+                    (
+                        d.get("attributed_originator")
+                        for d in enclosed_descriptions
+                        if d.get("attributed_originator")
+                    ),
+                    None,
+                )
             cover_ids.add(cover_letter_doc.id)
             first_cover = cover_letter_doc
 
@@ -562,6 +570,17 @@ def analyze(batch_id: int) -> bool:
             return False
 
         model = cfg.summary_model
+        from app.services.case_service import get_case_opposing_parties
+        from app.services.user_settings_service import get_party_identity
+
+        party_identity = get_party_identity(db)
+        batch_case_id = docs[0].case_id if docs else None
+        case_opposing = get_case_opposing_parties(batch_case_id, db)
+        party_context = format_party_context(
+            own_self=party_identity.get("own_self", ""),
+            own_parties=party_identity.get("own_parties", []),
+            opposing_parties=case_opposing,
+        )
         # docs objects detach from the session on close but column-level data
         # (content, title, id, …) stays accessible in memory for the AI call.
     finally:
@@ -573,6 +592,7 @@ def analyze(batch_id: int) -> bool:
             healthy_docs,
             batch_id,
             model=model,
+            party_context=party_context,
         )
     except ValueError as first_err:
         # AI returned empty/unparseable. Retry once with /no_think — same
@@ -592,6 +612,7 @@ def analyze(batch_id: int) -> bool:
                 model=model,
                 suppress_thinking=True,
                 debug_label=f"batch_{batch_id}_analyzerretry",
+                party_context=party_context,
             )
         except ValueError as retry_err:
             logger.warning(

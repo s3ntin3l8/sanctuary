@@ -17,7 +17,11 @@ from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
-from app.services.intelligence.prompts import PASS1_USER_SUFFIX, PASS2_USER_SUFFIX
+from app.services.intelligence.prompts import (
+    PASS1_USER_SUFFIX,
+    PASS2_USER_SUFFIX,
+    PROMPT_VERSION,
+)
 from app.services.timezone_service import get_user_tz
 
 logger = logging.getLogger(__name__)
@@ -120,7 +124,7 @@ def _write_block(
     case_id = scope_id if kind == "case" else None
 
     header = f"{_SEPARATOR}\n"
-    header += f"# call: {debug_label} | stage={stage} | ts={started_at}\n\n"
+    header += f"# call: {debug_label} | stage={stage} | ts={started_at} | prompt_v={PROMPT_VERSION}\n\n"
 
     ttfb_str = f"{ttfb_ms}" if ttfb_ms is not None else "n/a"
     meta = [
@@ -248,6 +252,7 @@ def _append_index(
 
     entry = {
         "ts": started_at,
+        "prompt_version": PROMPT_VERSION,
         "kind": kind,
         "scope_id": scope_id,
         "stage": stage,
@@ -514,11 +519,6 @@ def _build_params(
         "stop": _LOOP_STOP_SEQS,
     }
     if suppress_thinking:
-        # Provider-level thinking control. Qwen3.5 honours
-        # chat_template_kwargs.enable_thinking=False on OpenAI-compat servers,
-        # and Ollama's native top-level "think": false. The legacy /no_think
-        # prefix was a Qwen3 trick — Qwen3.5 ignores it. ai_provider.py
-        # translates this meta-flag into the right per-provider field.
         effective_options["_enable_thinking"] = False
     if schema is not None:
         effective_options["_response_schema"] = schema.model_json_schema()

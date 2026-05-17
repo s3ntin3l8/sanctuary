@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy.exc import OperationalError
 
+from app.core.timezone import naive_utc_now
 from app.models.database import UserSettings
+from app.models.enums import AuditEventType
+from app.services import audit_service
+from app.services.pipeline_status import is_db_locked
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +35,7 @@ def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
     the case-page render. The user can always view the case again.
     """
     if now is None:
-        now = datetime.now(UTC).replace(
-            tzinfo=None
-        )  # naive UTC, consistent with Document.ingest_date
+        now = naive_utc_now()  # naive UTC, consistent with Document.ingest_date
     try:
         settings = db.query(UserSettings).first()
         if not settings:
@@ -46,7 +48,7 @@ def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
         settings.settings_json = current
         db.flush()
     except OperationalError as exc:
-        if "database is locked" in str(exc).lower():
+        if is_db_locked(exc):
             logger.warning(
                 "mark_viewed(%s): db locked, skipping last-viewed update", case_id
             )
@@ -125,7 +127,7 @@ def mark_home_visit(db, *, now: datetime | None = None) -> None:
     """Record that the user just visited the home page. Best-effort —
     swallows SQLite write-lock contention rather than 500 the home page."""
     if now is None:
-        now = datetime.now()
+        now = naive_utc_now()
     try:
         settings = _get_or_create(db)
         # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
@@ -134,11 +136,44 @@ def mark_home_visit(db, *, now: datetime | None = None) -> None:
         settings.settings_json = current
         db.flush()
     except OperationalError as exc:
-        if "database is locked" in str(exc).lower():
+        if is_db_locked(exc):
             logger.warning("mark_home_visit: db locked, skipping update")
             db.rollback()
             return
         raise
+
+
+def get_party_identity(db) -> dict:
+    """Return global party identity: {own_self, own_parties}.
+
+    opposing_parties is per-case (on Case.opposing_parties) — not returned here.
+    """
+    defaults: dict = {"own_self": "", "own_parties": []}
+    settings = db.query(UserSettings).first()
+    if not settings or not settings.settings_json:
+        return defaults
+    stored = settings.settings_json.get("party_identity", {})
+    return {
+        "own_self": stored.get("own_self", ""),
+        "own_parties": stored.get("own_parties", []),
+    }
+
+
+def set_party_identity(identity: dict, db) -> None:
+    """Persist global party identity (own_self, own_parties only — opposing is per-case)."""
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json)
+    data["party_identity"] = {
+        "own_self": (identity.get("own_self") or "").strip(),
+        "own_parties": [
+            p.strip()
+            for p in (identity.get("own_parties") or [])
+            if p and str(p).strip()
+        ],
+    }
+    settings.settings_json = data
+    audit_service.record(db, AuditEventType.SETTINGS_PARTIES_CHANGED)
+    db.flush()
 
 
 def get_theme(db) -> str:
@@ -153,6 +188,9 @@ def set_theme(theme: str, db) -> None:
     data = dict(settings.settings_json)
     data["theme"] = theme
     settings.settings_json = data
+    audit_service.record(
+        db, AuditEventType.SETTINGS_THEME_CHANGED, payload={"theme": theme}
+    )
     db.flush()
 
 
@@ -169,6 +207,7 @@ def set_dashboard_cards(cards: dict, db) -> None:
     data = dict(settings.settings_json)
     data["dashboard_cards"] = cards
     settings.settings_json = data
+    audit_service.record(db, AuditEventType.SETTINGS_DASHBOARD_CARDS_CHANGED)
     db.flush()
 
 

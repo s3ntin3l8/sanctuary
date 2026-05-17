@@ -49,15 +49,53 @@ def _normalize_originator(name: str, canonical_names: set[str]) -> str:
     return name
 
 
-def _compute_parties(docs: list) -> list[dict]:
+def _canonical_name(
+    name: str,
+    own_self: str,
+    own_parties: list[str],
+    opposing_parties: list[str],
+) -> str:
+    """Return the canonical form of name if it matches a known party, else name itself.
+
+    Handles both "Vorname Nachname" and "Nachname Vorname" orderings so that
+    "Liu Yingying" and "Yingying Liu" both resolve to the canonical form stored
+    in settings (whichever ordering the user used).
+    """
+    all_known: list[str] = [n for n in [own_self] + own_parties + opposing_parties if n]
+
+    name_cf = name.casefold()
+    for canonical in all_known:
+        if canonical.casefold() == name_cf:
+            return canonical
+        parts = canonical.split()
+        if len(parts) == 2:
+            reversed_form = f"{parts[1]} {parts[0]}"
+            if reversed_form.casefold() == name_cf:
+                return canonical
+    return name
+
+
+def _compute_parties(
+    docs: list,
+    own_self: str = "",
+    own_parties: list[str] | None = None,
+    opposing_parties: list[str] | None = None,
+) -> list[dict]:
     """Aggregate attributed originators from documents into sorted party list.
 
     Groups by name only — a party has one stable role within a case.
     When a name appears with multiple roles (e.g. COURT on a cover letter
     and OPPOSING on its enclosures), the most frequent non-COURT role wins.
 
+    own_self / own_parties / opposing_parties canonicalise name variants and
+    ensure the user's own name appears even when no document has originator_type=OWN.
+
     Pure function — never calls db.commit().
     """
+    own_self = (own_self or "").strip()
+    own_parties = own_parties or []
+    opposing_parties = opposing_parties or []
+
     # First pass: collect raw names to enable sub-unit collapse in normalization.
     raw_names = {doc.attributed_originator for doc in docs if doc.attributed_originator}
 
@@ -67,6 +105,7 @@ def _compute_parties(docs: list) -> list[dict]:
         if doc.attributed_originator is None:
             continue
         name = _normalize_originator(doc.attributed_originator, raw_names)
+        name = _canonical_name(name, own_self, own_parties, opposing_parties)
         role_counts[name][str(doc.originator_type)] += 1
 
     result = []
@@ -80,6 +119,18 @@ def _compute_parties(docs: list) -> list[dict]:
                 "name": name,
                 "role": canonical_role,
                 "document_count": total,
+            }
+        )
+
+    # Ensure the user's own self appears in the party list even when no document
+    # carries them as attributed_originator (common when all correspondence arrives
+    # through their lawyer).
+    if own_self and not any(p["name"] == own_self for p in result):
+        result.append(
+            {
+                "name": own_self,
+                "role": str(OriginatorType.OWN),
+                "document_count": 0,
             }
         )
 
@@ -243,6 +294,13 @@ def generate(case_id: str) -> None:
         )
 
         reactions_context = format_reactions_for_case(db, case_id)
+        from app.services.user_settings_service import get_party_identity
+
+        party_identity = get_party_identity(db)
+        own_self: str = party_identity.get("own_self", "")
+        own_parties: list[str] = party_identity.get("own_parties", [])
+        # Load per-case opposing parties (may be empty before first brief)
+        case_opposing: list[str] = case.opposing_parties or []
 
         try:
             result = _call_brief_sync(
@@ -255,8 +313,22 @@ def generate(case_id: str) -> None:
             )
             _apply_brief(case, result, db)
 
-            parties = _compute_parties(docs)
+            parties = _compute_parties(
+                docs,
+                own_self=own_self,
+                own_parties=own_parties,
+                opposing_parties=case_opposing,
+            )
             case.parties = parties
+
+            # Auto-bootstrap opposing_parties from AI-derived parties when user
+            # has not yet confirmed them. Never overwrites a user-edited value.
+            if not case.opposing_parties:
+                case.opposing_parties = [
+                    p["name"]
+                    for p in parties
+                    if p.get("role") == str(OriginatorType.OPPOSING)
+                ]
 
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:

@@ -41,6 +41,11 @@ def to_naive(dt: datetime) -> datetime:
     return dt
 
 
+def naive_utc_now() -> datetime:
+    """Current UTC time as a tz-naive datetime, matching how DateTime columns are stored."""
+    return to_naive(now_utc())
+
+
 def to_iso(dt: datetime) -> str | None:
     """Convert datetime to ISO string, handling naive datetimes."""
     if dt is None:

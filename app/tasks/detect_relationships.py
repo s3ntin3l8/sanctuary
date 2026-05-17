@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage, StageStatus
+from app.services.pipeline_status import is_db_locked
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ def detect_relationships_task(self, doc_id: int):
     try:
         skipped = detect(doc_id)
     except SA_OperationalError as e:
-        if "database is locked" in str(e) and self.request.retries < self.max_retries:
+        if is_db_locked(e) and self.request.retries < self.max_retries:
             countdown = 30 * (self.request.retries + 1)
             logger.warning(
                 "Doc #%d: db locked — retry %d in %ds",

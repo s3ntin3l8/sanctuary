@@ -25,7 +25,8 @@ ELIGIBLE_TIERS = {
 VALID_ENTITY_TYPES = {e.name for e in EntityType}  # SAEnum stores .name (uppercase)
 
 
-def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict:
+def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
+    """AI call only — no DB session held."""
     content_preview = get_content_preview(doc, 60000)
 
     mgmt = doc.ai_summary or {}
@@ -51,7 +52,6 @@ def _call_entity_extractor_sync(doc: Document, model: str = "", db=None) -> dict
         debug_label=f"doc_{doc.id}_entities",
         schema=EntityList,
         model=model or None,
-        db=db,
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
@@ -135,7 +135,9 @@ def extract(doc_id: int) -> str | None:
     """Extract named entities from doc_id.
 
     Returns a non-empty skip reason if skipped, or None if it ran.
+    Three-phase: read → close DB → AI call → write.
     """
+    # Phase 1: read + skip checks
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
@@ -158,11 +160,19 @@ def extract(doc_id: int) -> str | None:
         if not doc.content or doc.content.startswith("Conversion failed:"):
             return "no usable content"
 
-        result = _call_entity_extractor_sync(doc, model=cfg.summary_model, db=db)
+        model = cfg.summary_model
+        # doc attributes remain accessible after session closes (NullPool detach)
+    finally:
+        db.close()
+
+    # Phase 2: AI call — no DB session held
+    result = _call_entity_extractor_sync(doc, model=model)
+
+    # Phase 3: write
+    db = SessionLocal()
+    try:
         count = _save_entities(doc, result, db)
         logger.info(f"Doc {doc_id}: extracted {count} entities")
-
         return None
     finally:
-        db.rollback()
         db.close()

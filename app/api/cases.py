@@ -45,9 +45,8 @@ async def case_directory(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    from datetime import datetime
-
     from app.constants import CASE_STATUS_META
+    from app.core.timezone import naive_utc_now
 
     case_service = CaseService(db)
 
@@ -59,7 +58,7 @@ async def case_directory(
         data = case_service.get_all_cases_directory()
 
     case_titles = {c["id"]: c["title"] for c in data["cases"]}
-    now = datetime.now()
+    now = naive_utc_now()
 
     return render_page(
         request,
@@ -660,3 +659,56 @@ async def create_case(
 
     # Redirect to the new case dashboard
     return RedirectResponse(url=f"/cases/{case_id}", status_code=303)
+
+
+@router.post("/{case_id}/opposing-parties")
+async def save_opposing_parties(
+    request: Request,
+    case_id: str,
+    opposing_parties: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Save the per-case opposing party list."""
+    from app.services.case_service import set_case_opposing_parties
+
+    parties = [p.strip() for p in opposing_parties.split(",") if p.strip()]
+    set_case_opposing_parties(case_id, parties, db)
+    db.commit()
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return Response(status_code=404)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/case_parties_panel.html",
+        {
+            "request": request,
+            "parties": case.parties or [],
+            "case": case,
+            "opposing_parties_raw": ", ".join(case.opposing_parties or []),
+            "saved": True,
+        },
+    )
+
+
+@router.post("/{case_id}/reenrich")
+async def reenrich_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Queue all documents in a case for re-enrichment using the current party identity."""
+    from app.services.triage_service import _reset_and_reenrich
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return Response(status_code=404)
+
+    docs = db.query(Document).filter(Document.case_id == case_id).all()
+    if docs:
+        _reset_and_reenrich(db, docs)
+
+    return Response(
+        content=f'<span class="text-xs text-primary font-bold">{len(docs)} documents queued for re-enrichment</span>',
+        media_type="text/html",
+    )

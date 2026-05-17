@@ -192,6 +192,7 @@ def recover_pipeline_task():
         recover_orphaned_running_stages,
         recover_stuck_batches,
         recover_stuck_pending_dispatches,
+        recover_unclaimed_ready_batches,
     )
 
     db = SessionLocal()
@@ -199,6 +200,7 @@ def recover_pipeline_task():
         orphaned = recover_orphaned_running_stages(db)
         dispatches = recover_stuck_pending_dispatches(db)
         batches = recover_stuck_batches(db)
+        unclaimed = recover_unclaimed_ready_batches(db)
 
         result = {
             "status": "success",
@@ -206,6 +208,7 @@ def recover_pipeline_task():
             "orphaned_stages": orphaned.get("stages_reset", 0),
             "stuck_dispatches": dispatches.get("docs_redispatched", 0),
             "stuck_batches": batches.get("batches_recovered", 0),
+            "unclaimed_batches": unclaimed.get("batches_dispatched", 0),
         }
         logger.info("recover_pipeline: %s", result)
         return result

@@ -3,7 +3,9 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.models.database import Document
+from app.models.enums import AuditEventType
 from app.repositories.document import DocumentRepository
+from app.services import audit_service
 
 
 class DocumentService:
@@ -135,6 +137,12 @@ class DocumentService:
                     self.db.query(IngestBatch).filter(
                         IngestBatch.id == ingest_batch_id
                     ).delete(synchronize_session=False)
+            audit_service.record(
+                self.db,
+                AuditEventType.DOCUMENT_DELETED,
+                target_type="document",
+                target_id=str(doc_id),
+            )
             self.db.commit()
             return True
         return False

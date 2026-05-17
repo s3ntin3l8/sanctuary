@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.core.timezone import naive_utc_now
 from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
@@ -622,6 +623,50 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
     return {"batches_recovered": len(recovered_ids), "batch_ids": recovered_ids}
 
 
+def recover_unclaimed_ready_batches(db: Session) -> dict:
+    """Claim and dispatch batches whose docs are ready for batch_analysis but
+    were never queued.
+
+    Closes the gap left by per-stage doc retries: those paths don't run
+    process_document_task, so they never call claim_batch_for_analysis().
+    The result is a batch with analysis_queued_at IS NULL even though every
+    doc has completed extract + metadata. This sweep finds candidates and
+    delegates to claim_batch_for_analysis() — its atomic UPDATE re-checks
+    readiness, so we get the same race-safety as the inline trigger and a
+    no-op when upstream isn't actually done.
+
+    Returns {"batches_dispatched": N, "batch_ids": [...]}.
+    """
+    from app.services.intelligence.orchestrator import claim_batch_for_analysis
+    from app.tasks.analyze_batch import analyze_batch_task
+
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT b.id
+            FROM ingest_batches b
+            JOIN documents d ON d.ingest_batch_id = b.id
+            WHERE b.analysis_queued_at IS NULL
+              AND json_extract(d.pipeline_stages, '$.batch_analysis.status') = 'pending'
+            """
+        )
+    ).fetchall()
+
+    dispatched: list[int] = []
+    for (batch_id,) in rows:
+        if claim_batch_for_analysis(batch_id, db):
+            analyze_batch_task.delay(batch_id)
+            dispatched.append(batch_id)
+
+    if dispatched:
+        logger.info(
+            "recover_unclaimed_ready_batches: dispatched %d batch(es): %s",
+            len(dispatched),
+            dispatched,
+        )
+    return {"batches_dispatched": len(dispatched), "batch_ids": dispatched}
+
+
 def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:
     """Re-dispatch docs whose pipeline got stalled mid-cascade.
 
@@ -649,7 +694,7 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
 
     from app.models.database import Document
 
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=max_age_seconds)
+    cutoff = naive_utc_now() - timedelta(seconds=max_age_seconds)
 
     candidates = (
         db.query(Document)
@@ -662,8 +707,8 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
         .all()
     )
 
-    # BATCH_ANALYSIS is batch-level (dispatch_arg="batch_id") and re-driven by
-    # the bundle retry endpoint, not per-doc. Skip it here.
+    # BATCH_ANALYSIS is batch-level (dispatch_arg="batch_id"); its claim +
+    # dispatch is handled by recover_unclaimed_ready_batches above, not here.
     skip_stages = {PipelineStage.BATCH_ANALYSIS}
 
     redispatched: list[int] = []
@@ -781,6 +826,11 @@ def _update_stage(
         db.commit()
 
 
+def is_db_locked(exc: Exception) -> bool:
+    """True when an OperationalError represents a SQLITE_BUSY / locked-database error."""
+    return "database is locked" in str(exc).lower()
+
+
 def retry_on_db_locked(fn, db, *, attempts: int = 3, base_backoff: float = 0.05):
     """Run `fn()` with rollback+retry on SQLITE_BUSY_SNAPSHOT.
 
@@ -796,7 +846,7 @@ def retry_on_db_locked(fn, db, *, attempts: int = 3, base_backoff: float = 0.05)
         try:
             return fn()
         except OperationalError as exc:
-            if "database is locked" not in str(exc).lower():
+            if not is_db_locked(exc):
                 raise
             db.rollback()
             last_exc = exc

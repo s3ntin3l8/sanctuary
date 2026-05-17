@@ -178,6 +178,14 @@ class DocumentEnrichment(BaseModel):
     cost_delta: _CostDelta | None = None
     management_summary: _ManagementSummary = Field(default_factory=_ManagementSummary)
     action_items: list[_ActionItem] = Field(default_factory=list)
+    court_relay: bool = Field(
+        False,
+        description=(
+            "True when this document has a court as letterhead sender but its "
+            "substantive content (Schriftsatz, motion, statement) was authored by "
+            "a party, not the court itself."
+        ),
+    )
 
 
 class _Enclosure(BaseModel):

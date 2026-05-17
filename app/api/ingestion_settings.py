@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db
 from app.models.database import UserSettings
+from app.models.enums import AuditEventType
+from app.services import audit_service
 from app.services.ingestion.gmail import get_oauth_flow
 from app.tasks.gmail_sync import run_gmail_backfill
 
@@ -35,6 +37,7 @@ async def update_ingest_settings(
     s_json["gmail_label_filter"] = label_filter.strip()
 
     settings.settings_json = s_json
+    audit_service.record(db, AuditEventType.SETTINGS_INGESTION_CHANGED)
     db.commit()
 
     return RedirectResponse(url="/settings/gmail", status_code=303)

@@ -1,5 +1,9 @@
 """All AI prompt templates for Phase 4 intelligence pipeline."""
 
+# Bump when any prompt in this module changes.
+# Used to correlate AI debug log entries to prompt versions.
+PROMPT_VERSION = "2026-05-17.1"
+
 # ---------------------------------------------------------------------------
 # Two-pass infrastructure
 # ---------------------------------------------------------------------------
@@ -50,6 +54,13 @@ Extract these fields:
 - Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure. When in doubt, omit.
 - Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
 - attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
+- originator_type must be exactly one of: own | opposing | court | third_party | unknown.
+  Party identity guidance (if a "Known Party Identity" block appears at the start of the user prompt, that is authoritative):
+  * own = authored by the user's side (the user personally, or their lawyer)
+  * opposing = authored by the opposing party or their lawyer
+  * court = issued by a court (Amtsgericht, Landgericht, Oberlandesgericht, etc.)
+  * third_party = Verfahrensbeistand, Verfahrenspfleger, Jugendamt, Sachverständiger/Gutachter, or any other neutral actor
+  * unknown = cannot be determined
   Name normalization (critical — these strings are used for party deduplication across all documents):
   * Person names: always "Vorname Nachname" (given name first). Never "Nachname, Vorname" or reversed "Nachname Vorname". Correct: "Yingying Liu". Wrong: "Liu, Yingying" / "Liu Yingying".
   * Organization names: use the broadest stable canonical form. Omit sub-unit suffixes (e.g. ", Amt für Familie und Jugend") unless that sub-unit is the sole independent actor in this document — then use the sub-unit name alone, not the combined "Parent, Sub-unit" string. Correct: "Landratsamt Eichstätt". Wrong: "Landratsamt Eichstätt, Amt für Familie und Jugend".
@@ -85,7 +96,8 @@ Case Title Rules:
 Normalization & Ambiguity:
 - Treat minor variations in `az_court` and `internal_id` as IDENTICAL (e.g., "003" vs "3", "-" vs "/").
 - Reversed party order between Email and Rubrum is common; prioritize the **Document Rubrum** and do NOT flag it as a contradiction.
-- Court is Infrastructure: If the court is merely relaying a party's submission, set `originator` to that party (e.g., "opposing") and `sender` to that party, not the court.
+- `sender` must always reflect the actual letterhead organization (who physically sent or issued the document). Never replace the sender with a party name.
+- `originator` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage.
 
 Aktenzeichen Suffixes:
 - Preserve critical German suffixes (e.g., 'e' for electronic, 'eA' for expedited, 'B' for Beschwerde). Do NOT trim them to fit a generic digits-only pattern.
@@ -168,6 +180,15 @@ Extract these fields:
   When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
 
 Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
+
+FamFG / German family-law role defaults (apply when no Known Party Identity block overrides):
+- Verfahrensbeistand, Verfahrenspfleger → third_party
+- Jugendamt (Kreisjugendamt, Stadtjugendamt, etc.) → third_party
+- Sachverständiger, Gutachter → third_party
+- Amtsgericht, Landgericht, Oberlandesgericht, Bundesgerichtshof → court
+- Any other court or Verwaltungsgericht → court
+
+- court_relay: set to true when the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
 
 Be concise and specific."""
 

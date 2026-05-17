@@ -19,11 +19,12 @@ analytics; not deleted.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.timezone import naive_utc_now
 from app.models.database import (
     Claim,
     ClaimEvidence,
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return naive_utc_now()
 
 
 # ---------------------------------------------------------------------------

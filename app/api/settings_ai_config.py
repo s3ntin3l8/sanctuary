@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.dependencies import get_db
+from app.models.enums import AuditEventType
+from app.services import audit_service
 from app.services.ai_config import (
     delete_instance,
     get_embed_config,
@@ -254,10 +256,9 @@ async def save_instance_route(
     embed_provider.reload_from_db(db)
 
     # Warn if this is the active embed instance and dim no longer matches vec0
-    from app.services.ai_config import _ensure_migrated, _get_ai_section
+    from app.services.ai_config import _get_ai_section
     from app.services.embeddings import verify_vec0_dim
 
-    _ensure_migrated(db)
     ai = _get_ai_section(db)
     dim_warning = ""
     if ai.get("active_embed_id") == instance_id and instance.get("embed_dim"):
@@ -289,9 +290,8 @@ async def delete_instance_route(
     instance_id: str,
     db: Session = Depends(get_db),
 ):
-    from app.services.ai_config import _ensure_migrated, _get_ai_section
+    from app.services.ai_config import _get_ai_section
 
-    _ensure_migrated(db)
     ai = _get_ai_section(db)
     if (
         ai.get("active_chat_id") == instance_id
@@ -464,6 +464,8 @@ async def reindex_documents(db: Session = Depends(get_db)):
     """Quick reindex using current settings (no DDL change)."""
     embed_provider.reload_from_db(db)
     result = await reindex_all_docs(db)
+    audit_service.record(db, AuditEventType.MAINTENANCE_REINDEX_DOCUMENTS)
+    db.commit()
     fail_note = f" ({result['failed']} failed)" if result["failed"] else ""
     return HTMLResponse(
         f'<span class="text-xs" style="color:var(--color-on-surface-variant)">'
@@ -495,6 +497,7 @@ async def rebuild_index(
                 f"document_id INTEGER PRIMARY KEY, embedding float[{embed_dim}])",
             ),
         )
+        audit_service.record(db, AuditEventType.MAINTENANCE_REBUILD_INDEX)
         db.commit()
     except Exception as e:
         logger.error(f"Failed to recreate document_vectors: {e}")

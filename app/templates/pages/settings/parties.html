@@ -1,0 +1,98 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block settings_body %}
+
+{# ── Party Identity ────────────────────────────────────────────────── #}
+<section class="space-y-6">
+    <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-[24px]">groups</span>
+        <div>
+            <h2 class="text-xl font-extrabold text-on-surface tracking-tight">Party Identity</h2>
+            <p class="text-xs text-on-surface-variant mt-0.5">Tells the AI which documents come from your side. Without this, the AI has to guess from document content alone.</p>
+        </div>
+    </div>
+
+    <form hx-post="/api/settings/parties"
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful) { document.getElementById('parties-saved').classList.remove('hidden'); setTimeout(() => document.getElementById('parties-saved').classList.add('hidden'), 2500) }"
+          class="space-y-6 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
+
+        {# Own self #}
+        <div class="space-y-2">
+            <label for="own_self" class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Your Name</label>
+            <input type="text" name="own_self" id="own_self"
+                   value="{{ party_identity.own_self or '' }}"
+                   class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors"
+                   placeholder="e.g. Maria Schmidt">
+            <p class="text-[10px] text-on-surface-variant/60 leading-relaxed italic">Your full name as it appears in documents. Used to ensure you always appear in the parties list.</p>
+        </div>
+
+        {# Own parties (lawyers, firm) #}
+        <div class="space-y-2">
+            <label for="own_parties" class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Your Lawyers / Own-Side Parties</label>
+            <textarea name="own_parties" id="own_parties" rows="3"
+                      class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors"
+                      placeholder="e.g. Kanzlei Muster & Partner, Muster Rechtsanwälte">{{ party_identity.own_parties | join(', ') if party_identity.own_parties else '' }}</textarea>
+            <p class="text-[10px] text-on-surface-variant/60 leading-relaxed italic">Comma-separated. Include your lawyer's firm and any name variants that appear in documents. Applies across all cases.</p>
+        </div>
+
+        <div class="pt-4 flex items-center justify-between">
+            <span id="parties-saved" class="hidden text-xs font-bold text-primary flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                Saved
+            </span>
+            <div class="ml-auto">
+                <button type="submit" class="px-6 py-2 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-xl hover:opacity-90 transition-all shadow-xl shadow-primary/20">
+                    Save
+                </button>
+            </div>
+        </div>
+    </form>
+</section>
+
+{# ── User Context ──────────────────────────────────────────────────── #}
+<section class="space-y-6">
+    <div class="flex items-center gap-3">
+        <span class="material-symbols-outlined text-primary text-[24px]">person</span>
+        <div>
+            <h2 class="text-xl font-extrabold text-on-surface tracking-tight">User Context</h2>
+            <p class="text-xs text-on-surface-variant mt-0.5">Prepended to every AI system prompt. Describe your role and goals — not your name or lawyers (those are handled by Party Identity above).</p>
+        </div>
+    </div>
+
+    <form hx-post="/api/settings/ai/user-context"
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful) { document.getElementById('context-saved').classList.remove('hidden'); setTimeout(() => document.getElementById('context-saved').classList.add('hidden'), 2500) }"
+          class="space-y-4 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
+        <p class="text-[10px] text-on-surface-variant/60 italic">Example: "I am the respondent in a family court custody dispute (Sorgerechtsverfahren). I am seeking joint custody and regular contact with my children. My main concerns are countering unfounded allegations, demonstrating stable living conditions, and not missing any procedural deadlines. I prefer fact-based, measured responses over aggressive tactics."</p>
+        <p class="text-[10px] text-on-surface-variant/50 italic">Settable as <code>AI_USER_CONTEXT</code> in <code>.env</code>; the value below overrides env when non-empty.</p>
+        <textarea name="user_context" rows="6"
+                  class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors resize-y"
+                  placeholder="Describe your role and goals in this case…">{{ user_context }}</textarea>
+        <div class="pt-4 flex items-center justify-between">
+            <span id="context-saved" class="hidden text-xs font-bold text-primary flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                Saved
+            </span>
+            <div class="ml-auto">
+                <button type="submit" class="px-6 py-2 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-xl hover:opacity-90 transition-all shadow-xl shadow-primary/20">
+                    Save
+                </button>
+            </div>
+        </div>
+    </form>
+</section>
+
+{# ── Hint ─────────────────────────────────────────────────────────── #}
+<section class="space-y-2 p-4 bg-surface-container-low/50 border border-outline-variant/10 rounded-xl">
+    <p class="text-xs font-bold text-on-surface-variant">How this works</p>
+    <ul class="text-xs text-on-surface-variant/80 leading-relaxed space-y-1 list-disc list-inside">
+        <li>Your name and lawyers are injected into every AI extraction call as authoritative ground truth for document classification.</li>
+        <li>Courts, Verfahrensbeistand, Jugendamt, and experts are automatically classified — you don't need to list them.</li>
+        <li><strong>Opposing parties are per-case</strong> — manage them from the case dashboard parties panel. The AI auto-suggests opposing parties after the first case brief runs.</li>
+        <li><strong>User Context</strong> is different from Party Identity: it frames your role and goals, not who you are by name. It shapes how the AI interprets facts and writes briefs.</li>
+        <li>After saving Party Identity, re-run the case brief to update parties. To fix existing document origins, use "Re-enrich" on the case dashboard.</li>
+    </ul>
+</section>
+
+{% endblock %}

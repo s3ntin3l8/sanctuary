@@ -17,6 +17,7 @@ from app.models.schemas import (
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.content_gate import is_content_ai_ready
 from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
@@ -51,6 +52,7 @@ def _call_enricher_sync(
     model: str = "",
     reactions_block: str = "",
     batch_detected_actions: list[dict] | None = None,
+    party_context: str = "",
 ) -> dict:
     """Synchronous AI call to enrich a single document. No DB session held."""
     import json
@@ -82,13 +84,20 @@ def _call_enricher_sync(
             "\n\nBatch-detected actions (from cross-document analysis of all documents "
             "in this email/delivery):\n"
             + json.dumps(batch_detected_actions, ensure_ascii=False, indent=2)
-            + "\nInclude any of these in your action_items ONLY if THIS document "
-            "directly establishes or orders the action (e.g. a Verfügung, Ladung, or "
-            "court order — not a relay cover letter). Set supersedes_date as indicated."
+            + "\nFor each batch-detected action with confidence: high and a due_date, "
+            "include it in your action_items if THIS document is the most-direct source "
+            "— defined as: (1) a Verfügung/Ladung/court order setting the date, OR "
+            "(2) when no order document exists in the batch, the cover letter announcing it. "
+            "Do NOT include the action if another document in the batch is a more-direct "
+            "source (the dedup constraint on (case_id, due_date, action_type) prevents "
+            "double-creation). For confidence: low actions, apply the strict "
+            "'directly establishes' filter. Set supersedes_date as indicated."
         )
 
+    party_block = (party_context + "\n\n") if party_context else ""
+
     prompt = (
-        f"{batch_context}{dates_context}{reactions_block}"
+        f"{party_block}{batch_context}{dates_context}{reactions_block}"
         f"{batch_actions_context}\n\n{content_preview}"
     ).lstrip("\n")
 
@@ -248,6 +257,11 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
     doc.meta = new_meta
 
+    # court_relay — set when AI signals the court is a postal relay for a party filing
+    court_relay_raw = result.get("court_relay")
+    if isinstance(court_relay_raw, bool):
+        doc.court_relay = court_relay_raw
+
     doc.ai_summary_created_at = datetime.now(UTC)
 
 
@@ -293,6 +307,18 @@ def enrich(doc_id: int) -> None:
             )
             if batch and batch.detected_actions:
                 batch_detected_actions = batch.detected_actions
+        # Load party identity so the enricher can resolve originator roles and
+        # determine court_relay without a hint-feedback loop.
+        from app.services.case_service import get_case_opposing_parties
+        from app.services.user_settings_service import get_party_identity
+
+        party_identity = get_party_identity(db)
+        case_opposing = get_case_opposing_parties(doc.case_id, db)
+        party_context = format_party_context(
+            own_self=party_identity.get("own_self", ""),
+            own_parties=party_identity.get("own_parties", []),
+            opposing_parties=case_opposing,
+        )
     finally:
         db.close()
 
@@ -302,6 +328,7 @@ def enrich(doc_id: int) -> None:
         model=model,
         reactions_block=reactions_block,
         batch_detected_actions=batch_detected_actions or None,
+        party_context=party_context,
     )
 
     # --- Phase 3: write ---

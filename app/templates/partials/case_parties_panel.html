@@ -1,6 +1,7 @@
 {# Party rows double as lane filters: clicking a party toggles the graph
    party filter on the parent caseDashboard Alpine scope.
-   Party dicts: { name, role, document_count }. role = OriginatorType value. #}
+   Party dicts: { name, role, document_count }. role = OriginatorType value.
+   Context vars: parties, case, opposing_parties_raw (optional), saved (optional) #}
 {% set role_labels = {
   "court":       "Court",
   "opposing":    "Opposing",
@@ -21,7 +22,7 @@
 <h3 class="text-[10.5px] font-bold uppercase tracking-[0.14em] text-on-surface-variant mb-3">Parties</h3>
 
 {% if parties %}
-<ul class="space-y-0.5 -mx-2">
+<ul class="space-y-0.5 -mx-2 mb-4">
   {% for party in parties %}
   {% set lane_key = party.color | default(party.role) | default('own') %}
   {% set display_name = party.name | default(party.label) %}
@@ -43,5 +44,39 @@
   {% endfor %}
 </ul>
 {% else %}
-<p class="text-sm italic text-on-surface-variant">No parties detected yet.</p>
+<p class="text-sm italic text-on-surface-variant mb-4">No parties detected yet.</p>
+{% endif %}
+
+{# ── Opposing parties editor ─────────────────────────────────────── #}
+{% if case %}
+<div class="border-t border-outline-variant/10 pt-3 mt-1">
+  <p class="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant mb-1.5">Opposing parties</p>
+  <form hx-post="/cases/{{ case.id }}/opposing-parties"
+        hx-target="#case-parties-panel"
+        hx-swap="innerHTML"
+        class="space-y-1.5">
+    <textarea name="opposing_parties" rows="2"
+              class="w-full bg-surface-container-high/40 border border-outline-variant/20 rounded-lg px-2.5 py-1.5 text-[11.5px] text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 resize-none transition-colors"
+              placeholder="Comma-separated names…">{{ opposing_parties_raw | default(case.opposing_parties | join(', ') if case.opposing_parties else '') }}</textarea>
+    <div class="flex items-center gap-2">
+      <button type="submit"
+              class="px-3 py-1 bg-primary/90 text-on-primary text-[10px] font-bold uppercase tracking-wider rounded-lg hover:opacity-90 transition-all">
+        Save
+      </button>
+      <button type="button"
+              hx-post="/cases/{{ case.id }}/reenrich"
+              hx-swap="none"
+              hx-on::after-request="if(event.detail.successful){document.getElementById('reenrich-msg-{{ case.id }}').innerHTML=event.detail.xhr.responseText;setTimeout(()=>document.getElementById('reenrich-msg-{{ case.id }}').innerHTML='',4000)}"
+              class="px-3 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-surface-container-high/80 transition-all">
+        Re-enrich
+      </button>
+      {% if saved %}
+      <span class="text-[10px] font-bold text-primary flex items-center gap-1">
+        <span class="material-symbols-outlined text-[13px]">check_circle</span> Saved
+      </span>
+      {% endif %}
+    </div>
+    <div id="reenrich-msg-{{ case.id }}" class="text-[10px] text-primary font-bold min-h-[1rem]"></div>
+  </form>
+</div>
 {% endif %}

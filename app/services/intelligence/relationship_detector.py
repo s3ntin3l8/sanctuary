@@ -81,8 +81,8 @@ def _call_relationship_detector_sync(
     doc: Document,
     candidates: list[Document],
     model: str = "",
-    db=None,
 ) -> dict:
+    """AI call only — no DB session held."""
     mgmt = doc.ai_summary or {}
     first_passage = _get_first_passage(doc)
 
@@ -104,7 +104,6 @@ def _call_relationship_detector_sync(
         debug_label=f"doc_{doc.id}_relationships",
         schema=RelationshipDetection,
         model=model or None,
-        db=db,
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
@@ -118,6 +117,7 @@ def detect(doc_id: int) -> str | None:
     Returns a non-empty skip reason if the stage was intentionally skipped,
     None if it ran successfully, or an error string if an exception occurred.
     """
+    # Phase 1: read
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
@@ -143,8 +143,6 @@ def detect(doc_id: int) -> str | None:
             return reason
 
         valid_candidate_ids = {c.id for c in candidates}
-
-        # Fetch existing relationships to avoid N+1 queries in the loop
         existing_rels = (
             db.query(
                 DocumentRelationship.to_document_id,
@@ -154,13 +152,23 @@ def detect(doc_id: int) -> str | None:
             .all()
         )
         existing_set = {(r.to_document_id, r.relationship_type) for r in existing_rels}
-
-        result = _call_relationship_detector_sync(
-            doc, candidates, model=cfg.summary_model, db=db
-        )
-        relationships = result.get("relationships") or []
         candidate_date_map = {c.id: c.issued_date for c in candidates}
+        model = cfg.summary_model
+        # doc and candidates remain accessible after session closes
+    finally:
+        db.close()
 
+    # Phase 2: AI call — no DB session held
+    try:
+        result = _call_relationship_detector_sync(doc, candidates, model=model)
+    except Exception as e:
+        logger.exception(f"Doc {doc_id}: failed relationship detection: {e}")
+        return f"error: {str(e)}"
+
+    # Phase 3: write
+    relationships = result.get("relationships") or []
+    db = SessionLocal()
+    try:
         new_count = 0
         for rel in relationships:
             to_id = rel.get("to_document_id")
@@ -182,8 +190,6 @@ def detect(doc_id: int) -> str | None:
             if (to_id, rel_type_enum) in existing_set:
                 continue
 
-            # Temporal guard: a document cannot supersede or reply to something
-            # dated later than itself. Skip when either date is unknown.
             if rel_type_enum in (
                 RelationshipType.SUPERSEDES,
                 RelationshipType.REPLIES_TO,

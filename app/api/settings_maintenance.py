@@ -13,6 +13,8 @@ from app import config as cfg
 from app.core.cache import cache
 from app.dependencies import get_db
 from app.models.database import Base
+from app.models.enums import AuditEventType
+from app.services import audit_service
 from app.services.case_service import seed_triage_case
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ def reset_ai_enrichment(db: Session = Depends(get_db)):
         )
     )
     docs_reset = result.rowcount
+    audit_service.record(db, AuditEventType.MAINTENANCE_RESET_AI_ENRICHMENT)
     db.commit()
 
     return HTMLResponse(
@@ -52,13 +55,15 @@ def clear_all_data(db: Session = Depends(get_db)):
     except Exception as exc:
         logger.warning("Could not purge Celery queue: %s", exc)
 
-    # Wipe all domain tables; skip user_settings and the sqlite-vec virtual table.
+    # Wipe all domain tables; skip user_settings, audit_logs (preserve audit
+    # trail across clears), and the sqlite-vec virtual table.
     db.execute(text("DELETE FROM document_vectors"))
     rows_deleted = 0
     for table in reversed(Base.metadata.sorted_tables):
-        if table.name == "user_settings":
+        if table.name in ("user_settings", "audit_logs"):
             continue
         rows_deleted += db.execute(table.delete()).rowcount
+    audit_service.record(db, AuditEventType.MAINTENANCE_CLEAR_ALL_DATA)
     db.commit()
 
     # Restore the _TRIAGE singleton — many ingest paths require this FK target.
