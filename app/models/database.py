@@ -50,7 +50,6 @@ from app.models.enums import (
     IngestBatchStatus,
     Jurisdiction,
     OriginatorType,
-    PipelineStage,
     PipelineState,
     ProceedingCourtLevel,
     ProceedingStatus,
@@ -59,7 +58,6 @@ from app.models.enums import (
     RelationshipConfidence,
     RelationshipType,
     SignificanceTier,
-    StageStatus,
     UserReactionType,
 )
 
@@ -238,15 +236,8 @@ class DocumentPipelineStage(Base):
         primary_key=True,
         nullable=False,
     )
-    stage = Column(
-        SAEnum(PipelineStage, values_callable=lambda obj: [e.value for e in obj]),
-        primary_key=True,
-        nullable=False,
-    )
-    status = Column(
-        SAEnum(StageStatus, values_callable=lambda obj: [e.value for e in obj]),
-        nullable=False,
-    )
+    stage = Column(String, primary_key=True, nullable=False)
+    status = Column(String, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)
