@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -1139,32 +1139,6 @@ async def retry_all_bundles(
 
 
 # -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-
-
-def _render_document_hud(
-    request: Request,
-    doc: Document,
-    db: Session,
-    triage_service: TriageService,
-) -> HTMLResponse:
-    """Render the triage doc HUD — reused by reingest/summarize/approve-summary.
-
-    `triage_service` is passed in (not constructed) so callers go through the
-    same `Depends(get_triage_service)` DI as their routes — keeps the service's
-    dependency lifetime under the framework's control.
-    """
-    cases = CaseRepository(db).list_for_picker()
-    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
-    response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
-    # Update the card via targeted OOB (reingest/summarize/approve may change pipeline status)
-    targeted_oob = render_row_targeted_oob(request, doc, triage_service, db)
-    response.body += targeted_oob.encode("utf-8")
-    return response
-
-
-# -----------------------------------------------------------------------------
 # Relationship suggestions (confirm / reject)
 # -----------------------------------------------------------------------------
 
@@ -1293,7 +1267,10 @@ def triage_set_cover_letter(
     triage_service: TriageService = Depends(get_triage_service),
 ):
     """Mark a document as cover letter of its sub-group."""
-    triage_service.set_cover_letter(doc_id=doc_id, batch_id=batch_id)
+    try:
+        triage_service.set_cover_letter(doc_id=doc_id, batch_id=batch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
@@ -1306,8 +1283,12 @@ def triage_create_sub_group(
     triage_service: TriageService = Depends(get_triage_service),
 ):
     """Create a new empty sub-group at the end of this batch's group list."""
-    triage_service.create_sub_group(batch_id=batch_id)
-    db.commit()
+    try:
+        triage_service.create_sub_group(batch_id=batch_id)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Batch not found") from exc
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
 
@@ -1328,12 +1309,15 @@ def triage_rename_sub_group(
     """
     sub_group_id_int = int(sub_group_id) if sub_group_id.strip() else None
     lead_doc_id_int = int(lead_doc_id) if lead_doc_id.strip() else None
-    triage_service.rename_sub_group(
-        sub_group_id=sub_group_id_int,
-        batch_id=batch_id,
-        label=label,
-        lead_doc_id=lead_doc_id_int,
-    )
+    try:
+        triage_service.rename_sub_group(
+            sub_group_id=sub_group_id_int,
+            batch_id=batch_id,
+            label=label,
+            lead_doc_id=lead_doc_id_int,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 
@@ -1355,11 +1339,14 @@ def triage_delete_sub_group(
     """
     sub_group_id_int = int(sub_group_id) if sub_group_id.strip() else None
     lead_doc_id_int = int(lead_doc_id) if lead_doc_id.strip() else None
-    triage_service.delete_sub_group(
-        sub_group_id=sub_group_id_int,
-        batch_id=batch_id,
-        lead_doc_id=lead_doc_id_int,
-    )
+    try:
+        triage_service.delete_sub_group(
+            sub_group_id=sub_group_id_int,
+            batch_id=batch_id,
+            lead_doc_id=lead_doc_id_int,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     db.commit()
     return HTMLResponse(content=_render_picker(request, batch_id, triage_service))
 

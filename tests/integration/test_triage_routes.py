@@ -116,20 +116,18 @@ def test_set_cover_letter_returns_200_with_tree_html(app_client, db_session):
 
 @pytest.mark.integration
 def test_set_cover_letter_wrong_batch_raises_server_error(app_client, db_session):
-    """set-cover with a doc that does not belong to batch raises ValueError (server error)."""
+    """set-cover with a doc that does not belong to batch returns 422."""
     batch = _make_batch(db_session)
     doc = _make_doc(db_session, batch)
     other_batch = _make_batch(db_session, subject="Other batch")
     db_session.commit()
 
-    # The service raises ValueError (not HTTPException) so TestClient re-raises it.
-    import pytest as _pytest
-
-    with _pytest.raises(ValueError, match="not in batch"):
-        app_client.post(
-            f"/triage/bundle/{other_batch.id}/set-cover",
-            data={"doc_id": str(doc.id)},
-        )
+    response = app_client.post(
+        f"/triage/bundle/{other_batch.id}/set-cover",
+        data={"doc_id": str(doc.id)},
+    )
+    assert response.status_code == 422
+    assert "not in batch" in response.text
 
 
 # ---------------------------------------------------------------------------
@@ -151,12 +149,9 @@ def test_create_sub_group_returns_200_with_tree_html(app_client, db_session):
 
 @pytest.mark.integration
 def test_create_sub_group_missing_batch_raises_integrity_error(app_client, db_session):
-    """create_sub_group with a non-existent batch_id fails on FK constraint → server error."""
-    import pytest as _pytest
-    from sqlalchemy.exc import IntegrityError
-
-    with _pytest.raises((IntegrityError, Exception)):
-        app_client.post("/triage/bundle/999998/new-group")
+    """create_sub_group with a non-existent batch_id returns 422 (FK constraint)."""
+    response = app_client.post("/triage/bundle/999998/new-group")
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -183,18 +178,17 @@ def test_rename_sub_group_returns_200_with_tree_html(app_client, db_session):
 def test_rename_sub_group_nonexistent_sub_group_id_raises_server_error(
     app_client, db_session
 ):
-    """Explicit sub_group_id that does not exist causes service ValueError (server error)."""
+    """Explicit sub_group_id that does not exist returns 422."""
     batch = _make_batch(db_session)
     _make_doc(db_session, batch)
     db_session.commit()
 
-    import pytest as _pytest
-
-    with _pytest.raises(ValueError, match="not found in batch"):
-        app_client.post(
-            f"/triage/bundle/{batch.id}/rename-group",
-            data={"sub_group_id": "999999", "lead_doc_id": "", "label": "X"},
-        )
+    response = app_client.post(
+        f"/triage/bundle/{batch.id}/rename-group",
+        data={"sub_group_id": "999999", "lead_doc_id": "", "label": "X"},
+    )
+    assert response.status_code == 422
+    assert "not found in batch" in response.text
 
 
 # ---------------------------------------------------------------------------
@@ -221,18 +215,17 @@ def test_delete_sub_group_returns_200_with_tree_html(app_client, db_session):
 def test_delete_sub_group_nonexistent_sub_group_id_raises_server_error(
     app_client, db_session
 ):
-    """Explicit sub_group_id that does not exist causes service ValueError (server error)."""
+    """Explicit sub_group_id that does not exist returns 422."""
     batch = _make_batch(db_session)
     _make_doc(db_session, batch)
     db_session.commit()
 
-    import pytest as _pytest
-
-    with _pytest.raises(ValueError):
-        app_client.post(
-            f"/triage/bundle/{batch.id}/delete-group",
-            data={"sub_group_id": "999999", "lead_doc_id": ""},
-        )
+    response = app_client.post(
+        f"/triage/bundle/{batch.id}/delete-group",
+        data={"sub_group_id": "999999", "lead_doc_id": ""},
+    )
+    assert response.status_code == 422
+    assert "not" in response.text
 
 
 # ---------------------------------------------------------------------------
@@ -315,8 +308,8 @@ def test_triage_doc_body_returns_200_with_body_html(app_client, db_session):
 
     response = app_client.get(f"/triage/doc/{doc.id}/body")
     assert response.status_code == 200
-    # The _body.html wraps everything in a relative div
-    assert "<div" in response.text
+    # _body.html always renders the SVG leader-lines overlay with doc.id
+    assert f'id="hud-leader-lines-{doc.id}"' in response.text
 
 
 @pytest.mark.integration
