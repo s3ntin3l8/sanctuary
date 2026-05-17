@@ -282,10 +282,7 @@ def test_normalize_caps_at_120_chars_preserving_eA():
 @pytest.mark.unit
 def test_is_better_title_indifferent_to_format_only_changes():
     """When new and current normalize to the same canonical form (legacy paren
-    vs dash style with same content), `_is_better_title` returns False. The
-    format upgrade is applied via the no-op-looking refresh path in
-    get_or_create_case_from_reference (test_existing_paren_draft_refreshed_to_dash
-    covers the end-to-end behavior)."""
+    vs dash style with same content), `_is_better_title` returns False."""
     assert not _is_better_title(
         "Hansen ./. Liu - Sorgerecht",
         "Hansen ./. Liu (Sorgerecht)",
@@ -343,29 +340,6 @@ def test_create_normalizes_eA_variants_at_creation(db_session):
 
 
 @pytest.mark.unit
-def test_existing_paren_draft_refreshed_to_dash(db_session):
-    """Draft case with old paren-style title gets normalized when fresh AI hits."""
-    existing = Case(
-        id="9988-99",
-        title="Hansen ./. Liu (Sorgerecht)",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-        is_draft=True,
-    )
-    db_session.add(existing)
-    db_session.commit()
-
-    case, _, _ = get_or_create_case_from_reference(
-        db_session,
-        internal_id="9988-99",
-        ai_case_title="Hansen ./. Liu - Sorgerecht",
-    )
-    db_session.commit()
-    db_session.refresh(case)
-    assert case.title == "Hansen ./. Liu - Sorgerecht"
-
-
-@pytest.mark.unit
 def test_existing_draft_gets_eA_marker_added(db_session):
     """Draft case with no eA marker gets refreshed when AI now identifies it as eA."""
     existing = Case(
@@ -386,3 +360,45 @@ def test_existing_draft_gets_eA_marker_added(db_session):
     db_session.commit()
     db_session.refresh(case)
     assert case.title == "Hansen ./. Liu - Umgangsrecht (eA)"
+
+
+# ---------------------------------------------------------------------------
+# Migration: _normalize_case_title_mig produces canonical form
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_normalize_case_title_mig_matches_canonical_form():
+    """The frozen normalization logic in the data migration produces the same
+    canonical form as the live _normalize_case_title function."""
+    import importlib.util
+    import pathlib
+
+    _mig_path = (
+        pathlib.Path(__file__).parent.parent.parent
+        / "alembic"
+        / "versions"
+        / "a4bef00d_normalize_existing_case_titles.py"
+    )
+    _spec = importlib.util.spec_from_file_location("a4bef00d_mig", _mig_path)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    _normalize_case_title_mig = _mod._normalize_case_title_mig
+
+    # Paren-matter → dash-matter
+    assert (
+        _normalize_case_title_mig("Hansen ./. Liu (Sorgerecht)")
+        == "Hansen ./. Liu - Sorgerecht"
+    )
+
+    # Leading internal_id echo + comma-eA suffix → canonical form
+    assert (
+        _normalize_case_title_mig("8372/25 - Mueller ./. Schmidt, eA")
+        == "Mueller ./. Schmidt (eA)"
+    )
+
+    # Idempotency: canonical titles pass through unchanged
+    assert (
+        _normalize_case_title_mig("Hansen ./. Liu - Sorgerecht")
+        == "Hansen ./. Liu - Sorgerecht"
+    )

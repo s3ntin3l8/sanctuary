@@ -263,25 +263,12 @@ def get_or_create_case_from_reference(
     az_court = normalize_az_court(az_court)
     existing = db.query(Case).filter(Case.id == internal_id).first()
     if existing:
-        if existing.is_draft:
-            # Two distinct refreshes for draft cases:
-            #   (a) if the AI provided a richer title, apply it (normalized);
-            #   (b) otherwise, if the current stored title is non-canonical
-            #       (legacy paren-matter, comma-eA, leading id-echo, etc.),
-            #       rewrite to canonical form. Style consistency is worth a
-            #       no-op-looking write because every other retry of any doc
-            #       in the case bundles will hit this path.
-            normalized_current = _normalize_case_title(existing.title)
-            new_candidate = (
-                _normalize_case_title(ai_case_title) if ai_case_title else None
-            )
+        if existing.is_draft and ai_case_title:
+            new_candidate = _normalize_case_title(ai_case_title)
             if new_candidate and _is_better_title(
                 ai_case_title, existing.title, internal_id
             ):
                 existing.title = new_candidate
-                db.flush()
-            elif normalized_current and normalized_current != existing.title:
-                existing.title = normalized_current
                 db.flush()
         matched_proc = None
         if az_court:
