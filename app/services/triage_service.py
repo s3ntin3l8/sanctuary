@@ -340,24 +340,21 @@ class TriageService:
         return _impl(self.db, batch_id)
 
     def get_reactions(self, document_id: int) -> Sequence[UserReaction]:
-        return self.reaction_repo.get_by_document(document_id)
+        from app.services.triage_reactions import get_reactions as _impl
+
+        return _impl(self.db, document_id)
 
     def get_reactions_by_doc_ids(
         self, document_ids: list[int]
     ) -> dict[int, set[UserReactionType]]:
-        """Bulk variant of get_reactions for triage feed/bundle render.
+        from app.services.triage_reactions import get_reactions_by_doc_ids as _impl
 
-        Returns ``{doc_id: {reaction, ...}}``. Docs with no reactions are absent
-        from the dict — callers should default to ``set()``.
-        """
-        reactions = self.reaction_repo.get_by_document_ids(document_ids)
-        out: dict[int, set[UserReactionType]] = {}
-        for r in reactions:
-            out.setdefault(r.document_id, set()).add(r.reaction)
-        return out
+        return _impl(self.db, document_ids)
 
     def get_action_items(self, document_id: int) -> list:
-        return list(self.action_repo.get_by_source_document(document_id))
+        from app.services.triage_reactions import get_action_items as _impl
+
+        return _impl(self.db, document_id)
 
     # --- writes ---------------------------------------------------------------
 
@@ -402,24 +399,14 @@ class TriageService:
         reaction: UserReactionType,
         notes: str | None = None,
     ) -> UserReaction | None:
-        """Idempotent: create if absent (returns new row), delete if present
-        and notes is None (returns None), update notes if present and notes is
-        provided (returns updated row)."""
-        existing = self.reaction_repo.find(document_id, reaction)
-        if existing and notes is None:
-            self.reaction_repo.clear_reaction(document_id, reaction)
-            self.db.commit()
-            return None
+        from app.services.triage_reactions import toggle_reaction as _impl
 
-        result = self.reaction_repo.set_reaction(document_id, reaction, notes)
-        self.db.commit()
-        return result
+        return _impl(self.db, document_id, reaction, notes=notes)
 
     def clear_reaction(self, document_id: int, reaction: UserReactionType) -> bool:
-        cleared = self.reaction_repo.clear_reaction(document_id, reaction)
-        if cleared:
-            self.db.commit()
-        return cleared
+        from app.services.triage_reactions import clear_reaction as _impl
+
+        return _impl(self.db, document_id, reaction)
 
     def dismiss_bundle(
         self, batch_id: int | None = None, doc_id: int | None = None
