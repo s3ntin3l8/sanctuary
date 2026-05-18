@@ -96,6 +96,15 @@ class CostStatus(enum.StrEnum):
     STRITTIG = "strittig"  # Disputed
 
 
+class CostSignalType(enum.StrEnum):
+    """Cost-regime metadata events derived from documents (not costs themselves)."""
+
+    STREITWERT = "streitwert"  # Value-in-dispute marker (Streitwertbeschluss)
+    COST_RULING = "cost_ruling"  # §91 ZPO allocation rule (Kostenentscheidung)
+    PKH_GRANT = "pkh_grant"  # Prozesskostenhilfe granted
+    PKH_DENIED = "pkh_denied"  # Prozesskostenhilfe denied
+
+
 class EntityType(enum.StrEnum):
     """Types of entities extracted from documents."""
 

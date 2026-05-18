@@ -41,6 +41,7 @@ from app.models.enums import (
     ClaimStatus,
     ClaimType,
     CostCategory,
+    CostSignalType,
     CostStatus,
     DocumentRole,
     DocumentStatus,
@@ -214,6 +215,11 @@ class Document(Base):
     stage_rows = relationship(
         "DocumentPipelineStage",
         back_populates="document",
+        cascade="all, delete-orphan",
+    )
+    cost_signals = relationship(
+        "CostSignal",
+        back_populates="source_document",
         cascade="all, delete-orphan",
     )
 
@@ -411,6 +417,9 @@ class Proceeding(Base):
 
     case = relationship("Case", back_populates="proceedings")
     documents = relationship("Document", back_populates="proceeding")
+    cost_signals = relationship(
+        "CostSignal", back_populates="proceeding", cascade="all, delete-orphan"
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -948,6 +957,59 @@ class LegalCost(Base):
         foreign_keys="[LegalCost.offsets_cost_id]",
         uselist=False,
     )
+
+    @validates("case_id")
+    def validate_case_id(self, key, case_id):
+        return normalize_case_id(case_id)
+
+
+class CostSignal(Base):
+    """Cost-regime metadata event derived from a source document.
+
+    Sibling to LegalCost. LegalCost holds money items (invoices, Vorschuss) with
+    OFFEN→BEZAHLT workflow. CostSignal holds informational facts (Streitwert,
+    Kostenentscheidung, PKH-Beschluss) extracted from rulings — they describe
+    HOW costs are calculated but are not costs themselves.
+    """
+
+    __tablename__ = "cost_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_document_id", "signal_type", name="uq_cost_signal_doc_type"
+        ),
+        Index("ix_cost_signals_proc_type", "proceeding_id", "signal_type"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(
+        String,
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    proceeding_id = Column(
+        Integer,
+        ForeignKey("proceedings.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    source_document_id = Column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    signal_type = Column(SAEnum(CostSignalType), nullable=False, index=True)
+
+    amount = Column(Float, nullable=True)  # Streitwert value or PKH monthly rate
+    allocation = Column(JSON, nullable=True)  # cost_ruling: {"loser": 1.0} etc.
+    description = Column(Text, nullable=True)
+
+    issued_at = Column(DateTime, nullable=True, index=True)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+
+    case = relationship("Case")
+    proceeding = relationship("Proceeding", back_populates="cost_signals")
+    source_document = relationship("Document", back_populates="cost_signals")
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
