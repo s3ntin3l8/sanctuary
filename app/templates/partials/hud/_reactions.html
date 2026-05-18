@@ -19,7 +19,7 @@
     ] %}
     {% for rval, emoji, label, tone in reaction_opts %}
     {% set is_active = rval in active_reactions %}
-    <button hx-post="/document/{{ doc.id }}/reaction"
+    <button hx-post="{{ request.app.url_path_for('hud_toggle_reaction', doc_id=doc.id) }}"
             hx-vals='{"reaction": "{{ rval }}"}'
             hx-target="#hud-reaction-bar-{{ doc.id }}"
             hx-swap="outerHTML"
@@ -44,7 +44,7 @@
   </div>
   {% endif %}
   <form class="mt-2 flex flex-col gap-1"
-        hx-post="/document/{{ doc.id }}/reaction"
+        hx-post="{{ request.app.url_path_for('hud_toggle_reaction', doc_id=doc.id) }}"
         hx-target="#hud-reaction-bar-{{ doc.id }}"
         hx-swap="outerHTML"
         x-data="{ noteOpen: false, noteText: '' }">

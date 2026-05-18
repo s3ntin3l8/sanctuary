@@ -67,7 +67,7 @@
 
 <div id="pipeline-stepper-{{ doc.id }}"
      {% if state in ('pending', 'running') %}
-     hx-get="/document/{{ doc.id }}/pipeline?view=stepper"
+     hx-get="{{ request.app.url_path_for('get_pipeline_status', doc_id=doc.id) }}?view=stepper"
      hx-trigger="every 4s"
      hx-swap="outerHTML"
      {% endif %}
@@ -143,7 +143,7 @@
     <button type="button"
             title="{{ tooltip }}"
             aria-label="{{ tooltip }}"
-            hx-post="/document/{{ doc.id }}/pipeline/{{ stage_key }}/retry"
+            hx-post="{{ request.app.url_path_for('retry_pipeline_stage', doc_id=doc.id, stage=stage_key) }}"
             hx-target="#pipeline-stepper-{{ doc.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"

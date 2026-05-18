@@ -29,7 +29,7 @@
 
     {# Prev / Next #}
     {% if prev_doc_id %}
-    <button hx-get="/cases/{{ case_id }}/document/{{ prev_doc_id }}/hud"
+    <button hx-get="{{ request.app.url_path_for('case_document_hud', case_id=case_id, doc_id=prev_doc_id) }}"
             hx-target="#case-dashboard-hud"
             hx-swap="innerHTML"
             class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
@@ -37,7 +37,7 @@
             title="Previous document (←)">←</button>
     {% endif %}
     {% if next_doc_id %}
-    <button hx-get="/cases/{{ case_id }}/document/{{ next_doc_id }}/hud"
+    <button hx-get="{{ request.app.url_path_for('case_document_hud', case_id=case_id, doc_id=next_doc_id) }}"
             hx-target="#case-dashboard-hud"
             hx-swap="innerHTML"
             class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"

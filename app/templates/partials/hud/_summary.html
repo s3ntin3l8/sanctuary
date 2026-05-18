@@ -21,13 +21,13 @@
     {% endif %}
     {% if has_summary and not is_approved %}
     <div class="ml-auto flex items-center gap-1.5">
-      <button hx-post="/document/{{ doc.id }}/hud/approve-summary?action=approve"
+      <button hx-post="{{ request.app.url_path_for('hud_approve_summary', doc_id=doc.id) }}?action=approve"
               hx-target="#hud-summary-{{ doc.id }}"
               hx-swap="outerHTML"
               class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-originator-own/10 text-originator-own hover:bg-originator-own/20 transition-colors cursor-pointer">
         approve
       </button>
-      <button hx-post="/document/{{ doc.id }}/hud/approve-summary?action=reject"
+      <button hx-post="{{ request.app.url_path_for('hud_approve_summary', doc_id=doc.id) }}?action=reject"
               hx-target="#hud-summary-{{ doc.id }}"
               hx-swap="outerHTML"
               class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer">

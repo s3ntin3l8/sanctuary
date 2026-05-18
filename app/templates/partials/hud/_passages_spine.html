@@ -89,7 +89,7 @@
           {% endif %}
           <button type="button"
                   onclick="event.stopPropagation()"
-                  hx-post="/document/{{ doc.id }}/pin"
+                  hx-post="{{ request.app.url_path_for('create_pin', doc_id=doc.id) }}"
                   hx-vals='{"passage_id": "{{ p_id }}"}'
                   hx-target="#hud-pin-gutter-{{ doc.id }}"
                   hx-swap="beforeend"

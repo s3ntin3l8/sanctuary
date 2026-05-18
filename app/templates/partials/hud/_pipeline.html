@@ -24,7 +24,7 @@
                    [&.htmx-request>span]:animate-spin"
             title="Re-run every stage from extract"
             aria-label="Retry all pipeline stages"
-            hx-post="/document/{{ doc.id }}/pipeline/retry-all"
+            hx-post="{{ request.app.url_path_for('retry_pipeline_all', doc_id=doc.id) }}"
             hx-target="#pipeline-stepper-{{ doc.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this">

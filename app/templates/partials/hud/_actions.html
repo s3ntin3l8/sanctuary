@@ -34,14 +34,14 @@
         </div>
         {% if status_val == 'open' %}
         <div class="flex gap-1.5 mt-1" x-show="!closed">
-          <button hx-patch="/action-item/{{ item.id }}/status"
+          <button hx-patch="{{ request.app.url_path_for('update_action_item_status', item_id=item.id) }}"
                   hx-vals='{"status": "completed"}'
                   hx-swap="none"
                   @htmx:after-request="closed = true"
                   class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/30 text-originator-own hover:bg-originator-own/10 transition-colors">
             ✓ done
           </button>
-          <button hx-patch="/action-item/{{ item.id }}/status"
+          <button hx-patch="{{ request.app.url_path_for('update_action_item_status', item_id=item.id) }}"
                   hx-vals='{"status": "dismissed"}'
                   hx-swap="none"
                   @htmx:after-request="closed = true"

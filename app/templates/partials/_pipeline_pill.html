@@ -5,7 +5,7 @@
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 <div id="pipeline-pill-{{ doc.id }}"
      {% if state in ('pending', 'running') %}
-     hx-get="/document/{{ doc.id }}/pipeline?view=pill"
+     hx-get="{{ request.app.url_path_for('get_pipeline_status', doc_id=doc.id) }}?view=pill"
      hx-trigger="every 4s"
      hx-swap="outerHTML"
      {% endif %}>

@@ -30,7 +30,7 @@
       <span class="material-symbols-outlined text-[12px] shrink-0 mt-0.5 text-amber hidden xl:inline-block">push_pin</span>
       <div class="flex-1 min-w-0">
         <textarea name="note" rows="2"
-                  hx-patch="/pin/{{ pin.id }}"
+                  hx-patch="{{ request.app.url_path_for('update_pin', pin_id=pin.id) }}"
                   hx-include="this"
                   hx-trigger="blur changed delay:300ms"
                   hx-swap="none"
@@ -38,7 +38,7 @@
                   placeholder="Add note…">{{ pin.note or '' }}</textarea>
         <p class="text-[9px] mt-1 text-outline">— {{ pin.updated_at | format_relative_time }}</p>
       </div>
-      <button hx-delete="/pin/{{ pin.id }}"
+      <button hx-delete="{{ request.app.url_path_for('delete_pin', pin_id=pin.id) }}"
               hx-target="#pin-{{ pin.id }}"
               hx-swap="outerHTML"
               class="shrink-0 opacity-50 hover:opacity-100 transition-opacity text-outline"

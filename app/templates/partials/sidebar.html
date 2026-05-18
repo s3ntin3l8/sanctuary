@@ -58,7 +58,7 @@
         </button>
 
         <!-- Upload -->
-        <button hx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
+        <button hx-get="{{ request.app.url_path_for('upload_page') }}" hx-target="#upload-modal-root" hx-swap="innerHTML" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">upload_file</span>
             <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
                 Upload Document
