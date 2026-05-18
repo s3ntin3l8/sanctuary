@@ -25,7 +25,7 @@
       <div x-show="open" x-cloak
            class="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-outline-variant/50 bg-surface-container-high shadow-xl text-xs divide-y divide-outline-variant/20">
         {% if c.status.value != 'established' %}
-        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+        <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=case.id, claim_id=c.id) }}"
                 hx-vals='{"status": "established"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
@@ -35,7 +35,7 @@
         </button>
         {% endif %}
         {% if c.status.value != 'contested' %}
-        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+        <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=case.id, claim_id=c.id) }}"
                 hx-vals='{"status": "contested"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
@@ -45,7 +45,7 @@
         </button>
         {% endif %}
         {% if c.status.value != 'needs_proof' %}
-        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+        <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=case.id, claim_id=c.id) }}"
                 hx-vals='{"status": "needs_proof"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
@@ -55,7 +55,7 @@
         </button>
         {% endif %}
         {% if c.status.value not in ('asserted', 'contested', 'needs_proof') %}
-        <button hx-post="/cases/{{ case.id }}/claims/{{ c.id }}/status"
+        <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=case.id, claim_id=c.id) }}"
                 hx-vals='{"status": "asserted"}'
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
@@ -64,14 +64,14 @@
           ↺ Reopen as Asserted
         </button>
         {% endif %}
-        <button hx-post="/claims/{{ c.id }}/precedent/toggle"
+        <button hx-post="{{ request.app.url_path_for('toggle_claim_precedent', claim_id=c.id) }}"
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="outerHTML"
                 @click="open = false"
                 class="w-full text-left px-3 py-2 hover:bg-surface-container-highest transition-colors {% if c.is_precedent %}text-amber-600 dark:text-amber-400{% else %}text-on-surface{% endif %}">
           ⚖ {% if c.is_precedent %}Unmark Precedent{% else %}Mark as Precedent{% endif %}
         </button>
-        <button hx-post="/claims/{{ c.id }}/dismiss"
+        <button hx-post="{{ request.app.url_path_for('dismiss_claim', claim_id=c.id) }}"
                 hx-target="#claim-card-{{ c.id }}"
                 hx-swap="delete"
                 hx-confirm="Dismiss this claim? It will be hidden from the Truth Map."
@@ -107,7 +107,7 @@
       {# Doc title + date — clickable when the doc lives in a real case #}
       {% if doc.case_id and doc.case_id != '_TRIAGE' %}
       <button type="button"
-              hx-get="/cases/{{ doc.case_id }}/document/{{ doc.id }}/hud"
+              hx-get="{{ request.app.url_path_for('case_document_hud', case_id=doc.case_id, doc_id=doc.id) }}"
               hx-target="#case-dashboard-hud"
               hx-swap="innerHTML"
               class="text-on-surface-variant flex-1 truncate text-left hover:text-primary hover:underline cursor-pointer"

@@ -3,7 +3,7 @@
   {# Filter chips + Wave 2C find-duplicates trigger #}
   <div class="flex gap-2 flex-wrap items-center">
     {% for f, label in [('open','Open'),('established','Established'),('refuted','Refuted'),('all','All')] %}
-    <button hx-get="/cases/{{ case.id }}/truthmap?filter={{ f }}"
+    <button hx-get="{{ request.app.url_path_for('get_truthmap', case_id=case.id) }}?filter={{ f }}"
             hx-target="#truthmap-panel"
             hx-swap="outerHTML"
             class="text-xs px-2.5 py-1 rounded-full border transition-colors
@@ -19,7 +19,7 @@
       {% if dedup_job and dedup_job.status == 'running' %}
         {% include "partials/find_duplicates_running.html" %}
       {% else %}
-      <button hx-post="/cases/{{ case.id }}/claims/find-duplicates"
+      <button hx-post="{{ request.app.url_path_for('find_duplicates_in_case', case_id=case.id) }}"
               hx-target="#find-duplicates-slot"
               hx-swap="innerHTML"
               hx-disabled-elt="this"
@@ -39,7 +39,7 @@
       <span class="material-symbols-outlined text-sm">merge</span>
       Pending Merges ({{ truth_map.pending_merges | length }})
       <span class="ml-auto flex gap-1">
-        <button hx-post="/cases/{{ case.id }}/claims/proposals/merge/batch"
+        <button hx-post="{{ request.app.url_path_for('batch_merge_proposals', case_id=case.id) }}"
                 hx-vals='{"action": "confirm"}'
                 hx-target="#truthmap-panel"
                 hx-swap="outerHTML"
@@ -47,7 +47,7 @@
                 class="text-[9px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer normal-case tracking-normal">
           Merge All
         </button>
-        <button hx-post="/cases/{{ case.id }}/claims/proposals/merge/batch"
+        <button hx-post="{{ request.app.url_path_for('batch_merge_proposals', case_id=case.id) }}"
                 hx-vals='{"action": "dismiss"}'
                 hx-target="#truthmap-panel"
                 hx-swap="outerHTML"
@@ -77,13 +77,13 @@
       <div class="mt-1 text-[10px] italic text-on-surface-variant/70 line-clamp-2">{{ m.rationale }}</div>
       {% endif %}
       <div class="flex gap-1 mt-1.5">
-        <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/confirm"
+        <button hx-post="{{ request.app.url_path_for('confirm_merge_proposal', proposal_id=m.proposal_id) }}"
                 hx-target="#merge-pill-{{ m.proposal_id }}"
                 hx-swap="delete"
                 class="text-[10px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
           ✓ Merge
         </button>
-        <button hx-post="/claims/proposals/merge/{{ m.proposal_id }}/dismiss"
+        <button hx-post="{{ request.app.url_path_for('dismiss_merge_proposal', proposal_id=m.proposal_id) }}"
                 hx-target="#merge-pill-{{ m.proposal_id }}"
                 hx-swap="delete"
                 class="text-[10px] font-bold px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
@@ -135,7 +135,7 @@
             <span class="text-outline">from</span>
             {% if p.source_document_case_id and p.source_document_case_id != '_TRIAGE' %}
             <button type="button"
-                    hx-get="/cases/{{ p.source_document_case_id }}/document/{{ p.source_document_id }}/hud"
+                    hx-get="{{ request.app.url_path_for('case_document_hud', case_id=p.source_document_case_id, doc_id=p.source_document_id) }}"
                     hx-target="#case-dashboard-hud"
                     hx-swap="innerHTML"
                     class="hover:text-primary hover:underline cursor-pointer"
@@ -148,13 +148,13 @@
           <div class="mt-0.5 text-[10px] italic text-on-surface-variant/60 line-clamp-2">excerpt: {{ p.excerpt }}</div>
           {% endif %}
           <div class="flex gap-1 mt-1.5">
-            <button hx-post="/claims/proposals/evidence/{{ p.proposal_id }}/confirm"
+            <button hx-post="{{ request.app.url_path_for('confirm_evidence_proposal', proposal_id=p.proposal_id) }}"
                     hx-target="#evidence-pill-{{ p.proposal_id }}"
                     hx-swap="delete"
                     class="text-[10px] font-bold px-2 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
               ✓ Confirm
             </button>
-            <button hx-post="/claims/proposals/evidence/{{ p.proposal_id }}/dismiss"
+            <button hx-post="{{ request.app.url_path_for('dismiss_evidence_proposal', proposal_id=p.proposal_id) }}"
                     hx-target="#evidence-pill-{{ p.proposal_id }}"
                     hx-swap="delete"
                     class="text-[10px] font-bold px-2 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">

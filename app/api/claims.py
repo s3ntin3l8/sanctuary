@@ -123,6 +123,7 @@ async def toggle_claim_precedent(
         return HTMLResponse(
             templates.get_template("components/claim_card.html").render(
                 {
+                    "request": request,
                     "row": ClaimRow(claim=claim),
                     "case": None,
                     "originator_colors": ORIGINATOR_COLORS,
@@ -147,6 +148,7 @@ async def toggle_claim_precedent(
     return HTMLResponse(
         templates.get_template("components/claim_card.html").render(
             {
+                "request": request,
                 "row": updated_row,
                 "case": case,
                 "originator_colors": ORIGINATOR_COLORS,
@@ -385,6 +387,7 @@ async def update_claim_status(
     # Render the claim card
     card_html = templates.get_template("components/claim_card.html").render(
         {
+            "request": request,
             "row": updated_row,
             "case": case,
             "originator_colors": ORIGINATOR_COLORS,
