@@ -218,25 +218,33 @@ def _batch_analysis_started_at(doc_id: int, db: Session) -> str | None:
     """Return the BATCH_ANALYSIS started_at ISO string for doc_id, or None."""
     row = db.execute(
         text(
-            "SELECT json_extract(pipeline_stages, '$.batch_analysis.started_at')"
-            " FROM documents WHERE id = :doc_id"
+            "SELECT started_at FROM document_pipeline_stages "
+            "WHERE document_id = :doc_id AND stage = 'batch_analysis'"
         ),
         {"doc_id": doc_id},
     ).fetchone()
-    return row[0] if row else None
+    val = row[0] if row else None
+    if val is None:
+        return None
+    return val.isoformat() if hasattr(val, "isoformat") else val
 
 
 def _enrich_completed_before(doc_id: int, cutoff_iso: str, db: Session) -> bool:
     """Return True if this doc's ENRICH completed before cutoff_iso."""
     row = db.execute(
         text(
-            "SELECT json_extract(pipeline_stages, '$.enrich.completed_at')"
-            " FROM documents WHERE id = :doc_id"
+            "SELECT completed_at FROM document_pipeline_stages "
+            "WHERE document_id = :doc_id AND stage = 'enrich'"
         ),
         {"doc_id": doc_id},
     ).fetchone()
-    completed_at = row[0] if row else None
-    return bool(completed_at and completed_at < cutoff_iso)
+    val = row[0] if row else None
+    if val is None:
+        return False
+    completed_str = val.isoformat() if hasattr(val, "isoformat") else val
+    cutoff_norm = cutoff_iso.replace(" ", "T")
+    completed_norm = completed_str.replace(" ", "T") if completed_str else ""
+    return bool(completed_norm and completed_norm < cutoff_norm)
 
 
 def _enrich_if_pending(doc_id: int) -> None:

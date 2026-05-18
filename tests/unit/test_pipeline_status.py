@@ -50,7 +50,7 @@ def test_mark_completed_respects_commit_false(db_session):
     """mark_completed(commit=False) stages the change but does not flush to DB.
 
     Rolling back the session after calling mark_completed(commit=False) leaves
-    the pipeline_stages row unchanged — the stage is still RUNNING, not COMPLETED.
+    the document_pipeline_stages row unchanged — the stage is still RUNNING.
     """
     from sqlalchemy import text
 
@@ -70,28 +70,26 @@ def test_mark_completed_respects_commit_false(db_session):
         case_id="_T3",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
     db_session.refresh(doc)
 
     mark_started(doc.id, PipelineStage.EMBEDDINGS, db_session)
 
-    # Call mark_completed without committing
     mark_completed(doc.id, PipelineStage.EMBEDDINGS, db_session, commit=False)
 
-    # Rolling back undoes the pending stage update
     db_session.rollback()
 
-    # The row in the DB should still show RUNNING (from mark_started which committed)
     row = db_session.execute(
-        text("SELECT pipeline_stages FROM documents WHERE id = :id"),
-        {"id": doc.id},
+        text(
+            "SELECT status FROM document_pipeline_stages "
+            "WHERE document_id = :id AND stage = :stage"
+        ),
+        {"id": doc.id, "stage": PipelineStage.EMBEDDINGS.value},
     ).fetchone()
-    import json
-
-    stages = json.loads(row[0])
-    assert stages[PipelineStage.EMBEDDINGS.value]["status"] == StageStatus.RUNNING.value
+    assert row[0] == StageStatus.RUNNING.value
 
 
 @pytest.mark.unit
@@ -118,8 +116,9 @@ def test_sequential_stage_updates_both_survive(db_session):
         case_id="_T4",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
 
     mark_started(doc.id, PipelineStage.CLAIMS, db_session)
@@ -166,8 +165,9 @@ def test_mark_failed_with_cascade_propagates(db_session):
         case_id="_T5",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=True)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=True, db=db_session)
     db_session.commit()
     db_session.refresh(doc)
 
@@ -268,9 +268,14 @@ def test_mark_retrying_writes_record_shape(db_session):
         case_id="_TR_R1",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
+
+    from datetime import datetime
+
+    next_at_dt = datetime(2026, 5, 6, 18, 32, 11)
 
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
     mark_retrying(
@@ -280,7 +285,7 @@ def test_mark_retrying_writes_record_shape(db_session):
         error="boom",
         attempt=2,
         max_attempts=3,
-        next_at="2026-05-06T18:32:11+00:00",
+        next_at=next_at_dt,
     )
 
     db_session.refresh(doc)
@@ -289,7 +294,7 @@ def test_mark_retrying_writes_record_shape(db_session):
     assert rec["error"] == "boom"
     assert rec["attempt"] == 2
     assert rec["max_attempts"] == 3
-    assert rec["next_at"] == "2026-05-06T18:32:11+00:00"
+    assert rec["next_at"] == next_at_dt.isoformat()
     # Aggregate state is RUNNING — polling must keep firing.
     assert doc.pipeline_state.value == PipelineState.RUNNING.value
 
@@ -319,9 +324,12 @@ def test_mark_started_clears_retry_bookkeeping(db_session):
         case_id="_TR_R2",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
+
+    from datetime import datetime
 
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
     mark_retrying(
@@ -331,7 +339,7 @@ def test_mark_started_clears_retry_bookkeeping(db_session):
         error="boom",
         attempt=1,
         max_attempts=3,
-        next_at="2026-05-06T18:32:11+00:00",
+        next_at=datetime(2026, 5, 6, 18, 32, 11),
     )
     # Next attempt actually starts.
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
@@ -370,12 +378,13 @@ def test_schedule_retry_computes_next_at_from_countdown(db_session):
         case_id="_TR_R3",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
 
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
-    before = datetime.now(UTC)
+    before = datetime.now(UTC).replace(tzinfo=None)
     schedule_retry(
         doc.id,
         PipelineStage.EXTRACT,
@@ -385,7 +394,7 @@ def test_schedule_retry_computes_next_at_from_countdown(db_session):
         max_attempts=3,
         countdown=60,
     )
-    after = datetime.now(UTC)
+    after = datetime.now(UTC).replace(tzinfo=None)
 
     db_session.refresh(doc)
     rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
@@ -423,18 +432,31 @@ def test_recover_orphaned_running_stages_resets_retrying(db_session):
         case_id="_TR_R4",
         originator_type=OriginatorType.UNKNOWN,
     )
-    initialize(doc, batched=False)
-    stages = dict(doc.pipeline_stages)
-    stages[PipelineStage.EXTRACT.value] = {
-        "status": StageStatus.RETRYING.value,
-        "error": "boom",
-        "attempt": 2,
-        "max_attempts": 3,
-        "next_at": "2026-05-06T18:32:11+00:00",
-    }
-    doc.pipeline_stages = stages
-    doc.pipeline_state = "running"  # retrying rolls up to running
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    from datetime import datetime as _dt
+
+    from sqlalchemy import text as _text
+
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, error=:err, "
+            "attempt=:att, max_attempts=:max, next_at=:nxt "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RETRYING.value,
+            "err": "boom",
+            "att": 2,
+            "max": 3,
+            "nxt": _dt(2026, 5, 6, 18, 32, 11),
+            "id": doc.id,
+            "stage": PipelineStage.EXTRACT.value,
+        },
+    )
+    doc.pipeline_state = "running"  # retrying rolls up to running
+    db_session.expire(doc, ["stage_rows"])
     db_session.commit()
 
     result = recover_orphaned_running_stages(db_session)
@@ -483,8 +505,9 @@ def test_recover_stuck_pending_redispatches_old_pending_doc(db_session, monkeypa
         originator_type=OriginatorType.UNKNOWN,
         ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
     db_session.refresh(doc)
 
@@ -529,8 +552,9 @@ def test_recover_stuck_pending_skips_recent_pending_doc(db_session, monkeypatch)
         originator_type=OriginatorType.UNKNOWN,
         ingest_date=datetime.now(UTC).replace(tzinfo=None),  # just now
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
 
     captured: list[int] = []
@@ -577,13 +601,24 @@ def test_recover_stuck_pending_resumes_partial_pipeline(db_session, monkeypatch)
         originator_type=OriginatorType.UNKNOWN,
         ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
     )
-    initialize(doc, batched=False)
-    stages = dict(doc.pipeline_stages)
-    stages[PipelineStage.EXTRACT.value] = {"status": StageStatus.COMPLETED.value}
-    # METADATA + downstream remain pending.
-    doc.pipeline_stages = stages
-    doc.pipeline_state = "partial"  # extract done, downstream pending
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    from sqlalchemy import text as _text
+
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "id": doc.id,
+            "stage": PipelineStage.EXTRACT.value,
+        },
+    )
+    doc.pipeline_state = "partial"  # extract done, downstream pending
+    db_session.expire(doc, ["stage_rows"])
     db_session.commit()
 
     captured: list[tuple] = []
@@ -634,12 +669,24 @@ def test_recover_stuck_pending_skips_running_stage(db_session, monkeypatch):
         originator_type=OriginatorType.UNKNOWN,
         ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
     )
-    initialize(doc, batched=False)
-    stages = dict(doc.pipeline_stages)
-    stages[PipelineStage.METADATA.value] = {"status": StageStatus.RUNNING.value}
-    doc.pipeline_stages = stages
-    doc.pipeline_state = "running"
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    from sqlalchemy import text as _text
+
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "id": doc.id,
+            "stage": PipelineStage.METADATA.value,
+        },
+    )
+    doc.pipeline_state = "running"
+    db_session.expire(doc, ["stage_rows"])
     db_session.commit()
 
     captured: list[int] = []
@@ -667,6 +714,8 @@ def _seed_batch_with_docs(db_session, *, case_id: str, doc_stages: list[dict]):
     Each entry in `doc_stages` is a dict mapping PipelineStage.value → status string.
     Stages not listed default to PENDING via initialize().
     """
+    from sqlalchemy import text as _text
+
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchSourceType, OriginatorType
     from app.services.pipeline_status import initialize
@@ -688,12 +737,18 @@ def _seed_batch_with_docs(db_session, *, case_id: str, doc_stages: list[dict]):
             originator_type=OriginatorType.UNKNOWN,
             ingest_batch_id=batch.id,
         )
-        initialize(doc, batched=True)
-        stages = dict(doc.pipeline_stages)
-        for stage_key, status in stage_overrides.items():
-            stages[stage_key] = {"status": status}
-        doc.pipeline_stages = stages
         db_session.add(doc)
+        db_session.flush()
+        initialize(doc, batched=True, db=db_session)
+        for stage_key, status in stage_overrides.items():
+            db_session.execute(
+                _text(
+                    "UPDATE document_pipeline_stages SET status=:status "
+                    "WHERE document_id=:id AND stage=:stage"
+                ),
+                {"status": status, "id": doc.id, "stage": stage_key},
+            )
+        db_session.expire(doc, ["stage_rows"])
         docs.append(doc)
     db_session.commit()
     db_session.refresh(batch)

@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Document
+from app.models.database import Document, DocumentPipelineStage
 from app.models.enums import PipelineStage, StageStatus
 
 client = TestClient(app)
@@ -67,8 +67,19 @@ def _doc_with_stages(db, **overrides) -> Document:
     """Create a doc whose pipeline_stages start out completed/failed."""
     stages = {s.value: {"status": StageStatus.COMPLETED.value} for s in PipelineStage}
     stages.update(overrides)
-    doc = Document(title="Pipeline Doc", pipeline_stages=stages)
+    doc = Document(title="Pipeline Doc")
     db.add(doc)
+    db.flush()
+    for stage_key, stage_data in stages.items():
+        db.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage_key,
+                status=stage_data["status"],
+                error=stage_data.get("error"),
+                reason=stage_data.get("reason"),
+            )
+        )
     db.commit()
     db.refresh(doc)
     return doc

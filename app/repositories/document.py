@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document
@@ -210,18 +210,42 @@ class DocumentRepository(BaseRepository[Document]):
         return docs, total
 
     def get_pipeline_stages_for_batch(self, batch_id: int) -> list[dict]:
-        """Return parsed `pipeline_stages` JSON for every doc in the batch.
+        """Return pipeline_stages dicts for every doc in the batch (for polling endpoint)."""
+        rows = self.db.execute(
+            text(
+                """
+                SELECT d.id, dps.stage, dps.status, dps.started_at, dps.completed_at,
+                       dps.error, dps.reason, dps.attempt, dps.max_attempts, dps.next_at
+                FROM documents d
+                LEFT JOIN document_pipeline_stages dps ON dps.document_id = d.id
+                WHERE d.ingest_batch_id = :batch_id
+                ORDER BY d.id
+                """
+            ),
+            {"batch_id": batch_id},
+        ).fetchall()
 
-        Used by the bundle pipeline-status polling endpoint. Only the JSON
-        column is selected (no need to hydrate full Document objects).
-        """
-        import json
+        def _iso(v):
+            return v.isoformat() if v is not None and hasattr(v, "isoformat") else v
 
-        rows = (
-            self.db.query(Document.pipeline_stages)
-            .filter(Document.ingest_batch_id == batch_id)
-            .all()
-        )
-        return [
-            (json.loads(r[0]) if isinstance(r[0], str) else (r[0] or {})) for r in rows
-        ]
+        doc_stages: dict[int, dict] = {}
+        for row in rows:
+            doc_id = row[0]
+            if doc_id not in doc_stages:
+                doc_stages[doc_id] = {}
+            if row[1] is not None:
+                doc_stages[doc_id][row[1]] = {
+                    k: v
+                    for k, v in {
+                        "status": row[2],
+                        "started_at": _iso(row[3]),
+                        "completed_at": _iso(row[4]),
+                        "error": row[5],
+                        "reason": row[6],
+                        "attempt": row[7],
+                        "max_attempts": row[8],
+                        "next_at": _iso(row[9]),
+                    }.items()
+                    if v is not None
+                }
+        return list(doc_stages.values())

@@ -156,9 +156,9 @@ async def slicing_confirm(
             )
             from app.services.pipeline_status import initialize as _pipeline_init
 
-            _pipeline_init(doc, batched=True)
             db.add(doc)
             db.flush()
+            _pipeline_init(doc, batched=True, db=db)
             docs_to_process.append(doc)
 
             if slice_idx == 0:

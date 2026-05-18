@@ -1,6 +1,6 @@
 """Atomic per-stage pipeline-status tracker.
 
-Each mutation issues a single SQL UPDATE using SQLite's json_set so that
+Each mutation writes a single row in document_pipeline_stages so that
 concurrent Celery workers writing different stages of the same document
 never race each other via Python read-modify-write.
 
@@ -9,7 +9,6 @@ downstream cascades, and retry-task dispatch. _STAGE_ORDER and _DOWNSTREAM
 are derived from it so they stay in sync automatically.
 """
 
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -20,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import naive_utc_now, to_naive
 from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
@@ -140,27 +139,31 @@ _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
 # ---------------------------------------------------------------------------
 
 
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+def initialize(doc, batched: bool, db: Session) -> None:
+    """Set all stages to pending. Call after db.add(doc) + db.flush() so doc.id exists."""
+    from app.models.database import DocumentPipelineStage
 
-
-def initialize(doc, batched: bool) -> None:
-    """Set all stages to pending on a newly created Document (before first commit).
-
-    Call this right before the session commit that creates the doc row so that
-    pipeline_stages / pipeline_state are persisted together with the new row.
-    No SQL UPDATE is needed — we're within the same SQLAlchemy session.
-    """
-    stages: dict[str, dict] = {}
+    stage_rows = []
     for stage in PipelineStage:
         if stage == PipelineStage.BATCH_ANALYSIS and not batched:
-            stages[stage.value] = {
-                "status": StageStatus.SKIPPED.value,
-                "reason": "no batch (manual upload)",
-            }
+            stage_rows.append(
+                DocumentPipelineStage(
+                    document_id=doc.id,
+                    stage=stage.value,
+                    status=StageStatus.SKIPPED.value,
+                    reason="no batch (manual upload)",
+                )
+            )
         else:
-            stages[stage.value] = {"status": StageStatus.PENDING.value}
-    doc.pipeline_stages = stages
+            stage_rows.append(
+                DocumentPipelineStage(
+                    document_id=doc.id,
+                    stage=stage.value,
+                    status=StageStatus.PENDING.value,
+                )
+            )
+    db.add_all(stage_rows)
+    db.flush()
     doc.pipeline_state = PipelineState.PENDING
 
 
@@ -173,7 +176,7 @@ def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
         db,
         status=StageStatus.RUNNING,
         extra_sets={
-            "started_at": _now_iso(),
+            "started_at": naive_utc_now(),
             "attempt": None,
             "max_attempts": None,
             "next_at": None,
@@ -197,13 +200,12 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
     assert sk.isidentifier(), f"pipeline_status: invalid stage key {sk!r}"
     result = db.execute(
         text(
-            f"UPDATE documents "
-            f"SET pipeline_stages = json_set(COALESCE(pipeline_stages, '{{}}'), '$.{sk}.status', :running) "
-            f"WHERE id = :doc_id "
-            f"AND json_extract(COALESCE(pipeline_stages, '{{}}'), '$.{sk}.status') = :pending"
+            "UPDATE document_pipeline_stages SET status = :running "
+            "WHERE document_id = :doc_id AND stage = :stage AND status = :pending"
         ),
         {
             "doc_id": doc_id,
+            "stage": sk,
             "running": StageStatus.RUNNING.value,
             "pending": StageStatus.PENDING.value,
         },
@@ -212,13 +214,20 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
         db.commit()
         return False
 
-    # Recompute pipeline_state so the UI transitions to RUNNING immediately.
-    row = db.execute(
-        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+    from app.models.database import Document
+
+    doc_instance = db.get(Document, doc_id)
+    if doc_instance is not None:
+        db.expire(doc_instance, ["stage_rows"])
+
+    rows = db.execute(
+        text(
+            "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :doc_id"
+        ),
         {"doc_id": doc_id},
-    ).fetchone()
-    stages: dict = json.loads(row[0]) if (row and row[0]) else {}
-    overall = compute_overall_state(stages)
+    ).fetchall()
+    stages_dict = {row[0]: {"status": row[1]} for row in rows}
+    overall = compute_overall_state(stages_dict)
     db.execute(
         text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
         {"state": overall.value, "doc_id": doc_id},
@@ -235,7 +244,7 @@ def mark_completed(
         stage,
         db,
         status=StageStatus.COMPLETED,
-        extra_sets={"completed_at": _now_iso(), "error": None},
+        extra_sets={"completed_at": naive_utc_now(), "error": None},
         commit=commit,
     )
 
@@ -254,7 +263,7 @@ def mark_failed(
         db,
         status=StageStatus.FAILED,
         extra_sets={
-            "completed_at": _now_iso(),
+            "completed_at": naive_utc_now(),
             "error": error,
             "attempt": None,
             "max_attempts": None,
@@ -272,7 +281,7 @@ def mark_retrying(
     error: str,
     attempt: int,
     max_attempts: int,
-    next_at: str,
+    next_at,
     commit: bool = True,
 ) -> None:
     """Mark a stage as awaiting retry — its last attempt failed and another is scheduled.
@@ -311,9 +320,7 @@ def schedule_retry(
     Used at every Celery `self.retry(...)` site — keeps the call shape uniform
     so the UI sees a consistent "Retrying STAGE (attempt/max) in Ns" record.
     """
-    from datetime import timedelta
-
-    next_at = (datetime.now(UTC) + timedelta(seconds=countdown)).isoformat()
+    next_at = to_naive(datetime.now(UTC) + timedelta(seconds=countdown))
     mark_retrying(
         doc_id,
         stage,
@@ -346,7 +353,7 @@ def mark_failed_with_cascade(
             db,
             status=StageStatus.FAILED,
             extra_sets={
-                "completed_at": _now_iso(),
+                "completed_at": naive_utc_now(),
                 "error": f"upstream {stage.value} failed",
             },
             commit=False,
@@ -402,23 +409,21 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
     (e.g. BATCH_ANALYSIS on manually-uploaded docs); everything else is cleared
     of error/timestamps so the pipeline can run again from EXTRACT.
     """
-    row = db.execute(
-        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
+    rows = db.execute(
+        text(
+            "SELECT stage, status, reason FROM document_pipeline_stages WHERE document_id = :doc_id"
+        ),
         {"doc_id": doc_id},
-    ).fetchone()
-    if row is None:
+    ).fetchall()
+    if not rows:
         return
-    stages: dict = json.loads(row[0]) if row[0] else {}
-    for stage_key, record in stages.items():
+    for stage_key, status_val, reason_val in rows:
         try:
             stage_enum = PipelineStage(stage_key)
         except ValueError:
             continue
 
-        # Preserve "permanent" skips that shouldn't be re-evaluated
-        if record.get("status") == StageStatus.SKIPPED.value and record.get(
-            "reason"
-        ) in (
+        if status_val == StageStatus.SKIPPED.value and reason_val in (
             "manual upload",
             "no batch (manual upload)",
         ):
@@ -436,6 +441,7 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
                 "attempt": None,
                 "max_attempts": None,
                 "next_at": None,
+                "reason": None,
             },
             commit=False,
         )
@@ -659,8 +665,10 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
             SELECT DISTINCT b.id
             FROM ingest_batches b
             JOIN documents d ON d.ingest_batch_id = b.id
+            JOIN document_pipeline_stages dps ON dps.document_id = d.id
             WHERE b.analysis_queued_at IS NULL
-              AND json_extract(d.pipeline_stages, '$.batch_analysis.status') = 'pending'
+              AND dps.stage = 'batch_analysis'
+              AND dps.status = 'pending'
             """
         )
     ).fetchall()
@@ -791,52 +799,59 @@ def _update_stage(
     *,
     commit: bool = True,
 ) -> None:
-    """Update a single stage key inside pipeline_stages and recompute pipeline_state.
-
-    Uses json_set / json_remove so each UPDATE touches only the named keys,
-    never overwriting sibling stages written by concurrent threads (SQLite
-    serialises writes so the RHS json_set reads the last committed state).
-    """
-    sk = stage.value  # e.g. "enrich"
+    """Update a single stage row in document_pipeline_stages and recompute pipeline_state."""
+    sk = stage.value
     assert sk.isidentifier(), f"pipeline_status: invalid stage key {sk!r}"
 
-    # SQL injection hardening: validate extra_sets keys against whitelist
     for key in extra_sets:
         if key not in _ALLOWED_EXTRA_KEYS:
             raise ValueError(f"_update_stage: disallowed extra_sets key {key!r}")
 
-    # Build json_set argument list: path, value, path, value, ...
-    set_pairs: list[str] = [f"'$.{sk}.status'", ":_status_val"]
-    params: dict = {"_status_val": status.value, "doc_id": doc_id}
-
-    remove_paths: list[str] = []
+    set_parts = ["status = :_status"]
+    params: dict = {"_status": status.value, "_doc_id": doc_id, "_stage": sk}
     for key, val in extra_sets.items():
         if val is None:
-            remove_paths.append(f"'$.{sk}.{key}'")
+            set_parts.append(f"{key} = NULL")
         else:
-            pname = f"_extra_{key}"
-            set_pairs.extend([f"'$.{sk}.{key}'", f":{pname}"])
+            pname = f"_x_{key}"
+            set_parts.append(f"{key} = :{pname}")
             params[pname] = val
 
-    json_expr = f"json_set(COALESCE(pipeline_stages, '{{}}'), {', '.join(set_pairs)})"
-    if remove_paths:
-        json_expr = f"json_remove({json_expr}, {', '.join(remove_paths)})"
-
     result = db.execute(
-        text(f"UPDATE documents SET pipeline_stages = {json_expr} WHERE id = :doc_id"),
+        text(
+            f"UPDATE document_pipeline_stages SET {', '.join(set_parts)} "
+            f"WHERE document_id = :_doc_id AND stage = :_stage"
+        ),
         params,
     )
     if result.rowcount == 0:
-        logger.warning("pipeline_status: doc %d not found", doc_id)
-        return
+        ins: dict = {"_doc_id": doc_id, "_stage": sk, "_status": status.value}
+        for k in _ALLOWED_EXTRA_KEYS:
+            ins[f"_k_{k}"] = extra_sets.get(k)
+        db.execute(
+            text(
+                "INSERT INTO document_pipeline_stages "
+                "(document_id, stage, status, started_at, completed_at, error, reason, attempt, max_attempts, next_at) "
+                "VALUES (:_doc_id, :_stage, :_status, :_k_started_at, :_k_completed_at, "
+                ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at)"
+            ),
+            ins,
+        )
 
-    # Recompute pipeline_state from the freshly-written stages.
-    row = db.execute(
-        text("SELECT pipeline_stages FROM documents WHERE id = :doc_id"),
-        {"doc_id": doc_id},
-    ).fetchone()
-    stages: dict = json.loads(row[0]) if (row and row[0]) else {}
-    overall = compute_overall_state(stages)
+    from app.models.database import Document
+
+    doc_instance = db.get(Document, doc_id)
+    if doc_instance is not None:
+        db.expire(doc_instance, ["stage_rows"])
+
+    rows = db.execute(
+        text(
+            "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :_doc_id"
+        ),
+        {"_doc_id": doc_id},
+    ).fetchall()
+    stages_dict = {row[0]: {"status": row[1]} for row in rows}
+    overall = compute_overall_state(stages_dict)
     db.execute(
         text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
         {"state": overall.value, "doc_id": doc_id},

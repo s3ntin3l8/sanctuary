@@ -8,7 +8,7 @@ before interpolating into the response HTML.
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Document
+from app.models.database import Document, DocumentPipelineStage
 from app.models.enums import PipelineState
 
 client = TestClient(app)
@@ -31,11 +31,17 @@ def test_upload_status_escapes_title_in_failed_row(db_session):
     doc = Document(
         title=PAYLOAD,
         pipeline_state=PipelineState.FAILED,
-        pipeline_stages={
-            "ingest": {"status": "failed", "error": "<img src=x onerror=alert(1)>"}
-        },
     )
     db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id,
+            stage="extract",
+            status="failed",
+            error="<img src=x onerror=alert(1)>",
+        )
+    )
     db_session.commit()
 
     body = client.get(f"/upload/status/{doc.id}").text

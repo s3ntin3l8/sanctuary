@@ -211,8 +211,9 @@ def ingest_raw_email(
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
-        _pipeline_init(doc, batched=True)
         db.add(doc)
+        db.flush()
+        _pipeline_init(doc, batched=True, db=db)
         docs_to_process.append(doc)
         logger.info("Batch #%d: email body queued as document", batch.id)
 
@@ -265,8 +266,9 @@ def ingest_raw_email(
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
-        _pipeline_init(doc, batched=True)
         db.add(doc)
+        db.flush()
+        _pipeline_init(doc, batched=True, db=db)
         docs_to_process.append(doc)
         logger.info("Batch #%d: attachment %r queued", batch.id, att["filename"])
 
@@ -336,8 +338,9 @@ def ingest_scanned_file(
         )
         from app.services.pipeline_status import initialize as _pipeline_init
 
-        _pipeline_init(doc, batched=False)
         db.add(doc)
+        db.flush()
+        _pipeline_init(doc, batched=False, db=db)
         batch.status = IngestBatchStatus.PROCESSING
         db.commit()
         logger.info("Scan batch #%d: single-page PDF, dispatching extraction", batch.id)

@@ -31,11 +31,19 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
                 SELECT 1 FROM documents
                 WHERE ingest_batch_id = :batch_id
                   AND (
-                    COALESCE(json_extract(pipeline_stages, '$.extract.status'), 'pending')
-                        NOT IN ('completed', 'failed', 'skipped')
+                    NOT EXISTS (
+                        SELECT 1 FROM document_pipeline_stages dps
+                        WHERE dps.document_id = documents.id
+                          AND dps.stage = 'extract'
+                          AND dps.status IN ('completed', 'failed', 'skipped')
+                    )
                     OR
-                    COALESCE(json_extract(pipeline_stages, '$.metadata.status'), 'pending')
-                        NOT IN ('completed', 'failed', 'skipped')
+                    NOT EXISTS (
+                        SELECT 1 FROM document_pipeline_stages dps
+                        WHERE dps.document_id = documents.id
+                          AND dps.stage = 'metadata'
+                          AND dps.status IN ('completed', 'failed', 'skipped')
+                    )
                   )
               )
             """

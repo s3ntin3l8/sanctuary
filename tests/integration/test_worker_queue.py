@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, DocumentPipelineStage, IngestBatch
 from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
@@ -32,17 +32,24 @@ def _make_failed_doc(db_session, sample_case) -> Document:
     db_session.add(batch)
     db_session.flush()
 
-    stages = {s.value: {"status": StageStatus.FAILED.value} for s in PipelineStage}
     doc = Document(
         title="Failed Doc",
         content="Some content",
         case_id=sample_case.id,
         originator_type=OriginatorType.COURT,
         ingest_batch_id=batch.id,
-        pipeline_stages=stages,
         pipeline_state=PipelineState.FAILED,
     )
     db_session.add(doc)
+    db_session.flush()
+    for s in PipelineStage:
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=s.value,
+                status=StageStatus.FAILED.value,
+            )
+        )
     db_session.commit()
     return doc
 

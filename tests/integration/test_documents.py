@@ -2,9 +2,38 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Case, CaseStatus, Document
+from app.models.database import Case, CaseStatus, Document, DocumentPipelineStage
 
 client = TestClient(app)
+
+
+def _set_stages(db, doc, stages: dict):
+    """Insert DocumentPipelineStage rows for a doc that has already been flushed."""
+    from datetime import datetime
+
+    def _dt(v):
+        if isinstance(v, str):
+            return datetime.fromisoformat(v.replace("Z", "+00:00")).replace(tzinfo=None)
+        return v
+
+    for stage_key, stage_data in stages.items():
+        if not isinstance(stage_data, dict):
+            continue
+        db.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage_key,
+                status=stage_data.get("status", "pending"),
+                started_at=_dt(stage_data.get("started_at")),
+                completed_at=_dt(stage_data.get("completed_at")),
+                error=stage_data.get("error"),
+                reason=stage_data.get("reason"),
+                attempt=stage_data.get("attempt"),
+                max_attempts=stage_data.get("max_attempts"),
+                next_at=_dt(stage_data.get("next_at")),
+            )
+        )
+    db.flush()
 
 
 @pytest.mark.integration
@@ -57,12 +86,17 @@ def test_upload_status_returns_inflight_row_with_polling(db_session):
     doc = Document(
         title="In-flight",
         pipeline_state=PipelineState.RUNNING,
-        pipeline_stages={
+    )
+    db_session.add(doc)
+    db_session.flush()
+    _set_stages(
+        db_session,
+        doc,
+        {
             "extract": {"status": StageStatus.RUNNING.value},
             "metadata": {"status": StageStatus.PENDING.value},
         },
     )
-    db_session.add(doc)
     db_session.commit()
 
     response = client.get(f"/upload/status/{doc.id}")
@@ -82,7 +116,6 @@ def test_upload_status_terminal_drops_polling(db_session):
     doc = Document(
         title="Done",
         pipeline_state=PipelineState.COMPLETED,
-        pipeline_stages={},
     )
     db_session.add(doc)
     db_session.commit()
@@ -107,7 +140,13 @@ def test_upload_status_retrying_keeps_polling_and_shows_attempt(db_session):
     doc = Document(
         title="Retrying",
         pipeline_state=PipelineState.RUNNING,
-        pipeline_stages={
+    )
+    db_session.add(doc)
+    db_session.flush()
+    _set_stages(
+        db_session,
+        doc,
+        {
             "extract": {
                 "status": StageStatus.RETRYING.value,
                 "error": "boom",
@@ -118,7 +157,6 @@ def test_upload_status_retrying_keeps_polling_and_shows_attempt(db_session):
             "metadata": {"status": StageStatus.PENDING.value},
         },
     )
-    db_session.add(doc)
     db_session.commit()
 
     response = client.get(f"/upload/status/{doc.id}")
@@ -139,14 +177,19 @@ def test_upload_status_failed_shows_error(db_session):
     doc = Document(
         title="Borked",
         pipeline_state=PipelineState.FAILED,
-        pipeline_stages={
+    )
+    db_session.add(doc)
+    db_session.flush()
+    _set_stages(
+        db_session,
+        doc,
+        {
             "extract": {
                 "status": StageStatus.FAILED.value,
                 "error": "Docling crashed mid-page",
             },
         },
     )
-    db_session.add(doc)
     db_session.commit()
 
     response = client.get(f"/upload/status/{doc.id}")

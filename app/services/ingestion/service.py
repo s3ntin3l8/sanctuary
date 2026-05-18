@@ -392,7 +392,9 @@ def _create_document(
         ingest_batch_id=ingest_batch_id,
     )
 
-    _pipeline_init(new_doc, batched=ingest_batch_id is not None)
+    db.add(new_doc)
+    db.flush()
+    _pipeline_init(new_doc, batched=ingest_batch_id is not None, db=db)
 
     reasons = compute_review_reasons(new_doc, confirmed=False)
     new_doc.review_reasons = reasons

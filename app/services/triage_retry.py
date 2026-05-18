@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -67,14 +66,13 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     dispatch_items: list = []
 
     for doc in batch.documents:
-        stages = doc.pipeline_stages or {}
-        # Reset all non-EXTRACT stages to PENDING. We reset SKIPPED stages too
-        # to ensure the cascade flows correctly (Fix for 'enrichment pending' bug).
+        stages_current = doc.pipeline_stages or {}
+
+        new_stages = dict(stages_current)
         for stage in PipelineStage:
             if stage == PipelineStage.EXTRACT and not full:
                 continue
-
-            record = stages.get(stage.value, {})
+            record = stages_current.get(stage.value, {})
             if record.get("status") == StageStatus.SKIPPED.value and record.get(
                 "reason"
             ) in (
@@ -82,31 +80,42 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
                 "no batch (manual upload)",
             ):
                 continue
+            new_stages[stage.value] = {"status": StageStatus.PENDING.value}
 
-            stages[stage.value] = {"status": StageStatus.PENDING.value}
-
-        new_state = compute_overall_state(stages)
-        doc.pipeline_stages = stages
+        new_state = compute_overall_state(new_stages)
         doc.pipeline_state = new_state
 
-        # Reset analyzer-owned fields so the re-run converges instead of
-        # layering on stale role/parent_id/originator data from the prior pass.
-        # Manual case assignments (case_id) are preserved; proceeding_id/az_court
-        # are owned by METADATA + PROCEEDING_ANALYSIS and self-heal on re-run.
+        for stage in PipelineStage:
+            if stage == PipelineStage.EXTRACT and not full:
+                continue
+            record = stages_current.get(stage.value, {})
+            if record.get("status") == StageStatus.SKIPPED.value and record.get(
+                "reason"
+            ) in (
+                "manual upload",
+                "no batch (manual upload)",
+            ):
+                continue
+            db.execute(
+                _text(
+                    "UPDATE document_pipeline_stages SET status='pending', started_at=NULL, "
+                    "completed_at=NULL, error=NULL, reason=NULL, attempt=NULL, "
+                    "max_attempts=NULL, next_at=NULL "
+                    "WHERE document_id = :doc_id AND stage = :stage"
+                ),
+                {"doc_id": doc.id, "stage": stage.value},
+            )
+
         doc.role = DocumentRole.STANDALONE
         doc.parent_id = None
         doc.court_relay = False
         doc.attributed_originator = None
 
-        # Full retry preservation logic: clear draft assignments so extraction
-        # can re-run fresh, but keep manually confirmed ones.
         if full:
-            # Case preservation
             if doc.case_id and doc.case_id != "_TRIAGE":
                 c = db.query(Case).filter(Case.id == doc.case_id).first()
                 if not c or c.is_draft:
                     doc.case_id = "_TRIAGE"
-            # Proceeding preservation
             if doc.proceeding_id:
                 p = (
                     db.query(Proceeding)
@@ -118,12 +127,10 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
 
         db.execute(
             _text(
-                "UPDATE documents SET pipeline_stages = :stages, pipeline_state = :state, "
-                "case_id = :case_id, proceeding_id = :proc_id "
-                "WHERE id = :doc_id"
+                "UPDATE documents SET pipeline_state = :state, case_id = :case_id, "
+                "proceeding_id = :proc_id WHERE id = :doc_id"
             ),
             {
-                "stages": json.dumps(stages),
                 "state": new_state.value,
                 "case_id": doc.case_id,
                 "proc_id": doc.proceeding_id,
@@ -131,7 +138,6 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
             },
         )
 
-        # Build dispatch plan from the stages we just wrote.
         head: PipelineStage | None = None
         if full:
             head = PipelineStage.EXTRACT
@@ -139,7 +145,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
             for spec in _STAGE_ORDER:
                 if spec.stage in (PipelineStage.EXTRACT, PipelineStage.EMBEDDINGS):
                     continue
-                status = stages.get(spec.stage.value, {}).get("status")
+                status = new_stages.get(spec.stage.value, {}).get("status")
                 if status not in (
                     StageStatus.COMPLETED.value,
                     StageStatus.SKIPPED.value,
@@ -147,7 +153,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
                     head = spec.stage
                     break
 
-        emb_status = stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
+        emb_status = new_stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
         needs_emb = emb_status not in (
             StageStatus.COMPLETED.value,
             StageStatus.SKIPPED.value,

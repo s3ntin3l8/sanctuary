@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, DocumentPipelineStage, IngestBatch
 from app.models.enums import (
     CaseStatus,
     DocumentRole,
@@ -18,6 +18,21 @@ from app.models.enums import (
     StageStatus,
 )
 from app.services.pipeline_status import initialize
+
+
+def _set_stages(db, doc, stages: dict):
+    for stage_key, stage_data in stages.items():
+        if not isinstance(stage_data, dict):
+            continue
+        db.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage_key,
+                status=stage_data.get("status", "pending"),
+            )
+        )
+    db.flush()
+
 
 client = TestClient(app)
 
@@ -58,8 +73,9 @@ def test_bundle_pipeline_endpoint_returns_200_for_existing_batch(db_session):
         role=DocumentRole.ENCLOSURE,
         ingest_date=datetime.now(UTC),
     )
-    initialize(doc, batched=True)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=True, db=db_session)
     db_session.commit()
 
     resp = client.get(f"/triage/bundle/{batch.id}/pipeline")
@@ -103,10 +119,11 @@ def test_bundle_pipeline_endpoint_shows_running_chip(db_session):
         ingest_batch_id=batch.id,
         role=DocumentRole.ENCLOSURE,
         ingest_date=datetime.now(UTC),
-        pipeline_stages=running_stages,
         pipeline_state=PipelineState.RUNNING,
     )
     db_session.add(doc)
+    db_session.flush()
+    _set_stages(db_session, doc, running_stages)
     db_session.commit()
 
     resp = client.get(f"/triage/bundle/{batch.id}/pipeline")
@@ -148,10 +165,11 @@ def test_bundle_pipeline_endpoint_triggers_reload_when_all_done(db_session):
         ingest_batch_id=batch.id,
         role=DocumentRole.ENCLOSURE,
         ingest_date=datetime.now(UTC),
-        pipeline_stages=done_stages,
         pipeline_state=PipelineState.COMPLETED,
     )
     db_session.add(doc)
+    db_session.flush()
+    _set_stages(db_session, doc, done_stages)
     db_session.commit()
 
     resp = client.get(f"/triage/bundle/{batch.id}/pipeline")

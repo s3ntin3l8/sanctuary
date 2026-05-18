@@ -26,7 +26,7 @@ from app.models.enums import (
     PipelineState,
     StageStatus,
 )
-from app.services.pipeline_status import mark_completed, mark_started
+from app.services.pipeline_status import initialize, mark_completed, mark_started
 
 
 @pytest.fixture
@@ -70,16 +70,16 @@ def staged_doc(concurrent_session_factory):
         db.add(case)
         db.flush()
 
-        stages = {s.value: {"status": StageStatus.PENDING.value} for s in PipelineStage}
         doc = Document(
             title="Concurrent doc",
             content="test",
             case_id=case.id,
             originator_type=OriginatorType.COURT,
-            pipeline_stages=stages,
             pipeline_state=PipelineState.PENDING,
         )
         db.add(doc)
+        db.flush()
+        initialize(doc, batched=True, db=db)
         db.commit()
         db.refresh(doc)
         return doc.id
@@ -108,9 +108,11 @@ def test_concurrent_stage_writes_do_not_stomp(staged_doc, concurrent_session_fac
             # Read stages once before the barrier so all threads read the same
             # initial state — this is the worst case for the old RMW code.
             db.execute(
-                text("SELECT pipeline_stages FROM documents WHERE id = :id"),
+                text(
+                    "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :id"
+                ),
                 {"id": doc_id},
-            ).fetchone()
+            ).fetchall()
             barrier.wait()  # all threads have read; now write concurrently
             mark_completed(doc_id, stage, db)
         except Exception as exc:
@@ -130,15 +132,16 @@ def test_concurrent_stage_writes_do_not_stomp(staged_doc, concurrent_session_fac
 
     db = Session()
     try:
-        row = db.execute(
-            text("SELECT pipeline_stages FROM documents WHERE id = :id"), {"id": doc_id}
-        ).fetchone()
+        rows = db.execute(
+            text(
+                "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :id"
+            ),
+            {"id": doc_id},
+        ).fetchall()
     finally:
         db.close()
 
-    import json
-
-    stages = json.loads(row[0])
+    stages = {row[0]: {"status": row[1]} for row in rows}
     for stage in target_stages:
         assert stages[stage.value]["status"] == StageStatus.COMPLETED.value, (
             f"Stage {stage.value} was stomped — expected completed, got "
@@ -183,16 +186,17 @@ def test_concurrent_started_then_completed(staged_doc, concurrent_session_factor
 
     assert not any(r.startswith("ERROR:") for r in results), f"Errors: {results}"
 
-    import json
-
     db = Session()
     try:
-        row = db.execute(
-            text("SELECT pipeline_stages FROM documents WHERE id = :id"), {"id": doc_id}
-        ).fetchone()
+        rows = db.execute(
+            text(
+                "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :id"
+            ),
+            {"id": doc_id},
+        ).fetchall()
     finally:
         db.close()
 
-    stages = json.loads(row[0])
+    stages = {row[0]: {"status": row[1]} for row in rows}
     assert stages[PipelineStage.CLAIMS.value]["status"] == StageStatus.COMPLETED.value
     assert stages[PipelineStage.ENTITIES.value]["status"] == StageStatus.COMPLETED.value

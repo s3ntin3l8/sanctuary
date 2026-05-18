@@ -24,8 +24,9 @@ def test_extract_already_completed_is_skipped_by_task(db_session, monkeypatch):
         case_id="_IP1",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
     db_session.refresh(doc)
 
@@ -80,8 +81,9 @@ def test_mark_started_then_completed_idempotent_state(db_session):
         case_id="_IP2",
         originator_type=OriginatorType.COURT,
     )
-    initialize(doc, batched=False)
     db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
     db_session.commit()
     db_session.refresh(doc)
 

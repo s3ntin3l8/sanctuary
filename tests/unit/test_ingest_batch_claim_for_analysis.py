@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, DocumentPipelineStage, IngestBatch
 from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
@@ -33,10 +33,13 @@ def ready_batch(db_session, sample_case):
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
         originator_type=OriginatorType.COURT,
-        pipeline_stages={"metadata": {"status": "completed"}},
         pipeline_state=PipelineState.COMPLETED,
     )
     db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(document_id=doc.id, stage="metadata", status="completed")
+    )
     db_session.commit()
     db_session.refresh(batch)
     return batch

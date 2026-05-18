@@ -5,7 +5,13 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models.database import Case, Document, IngestBatch, Proceeding
+from app.models.database import (
+    Case,
+    Document,
+    DocumentPipelineStage,
+    IngestBatch,
+    Proceeding,
+)
 from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
@@ -38,12 +44,18 @@ def _make_doc(
         proceeding_id=proceeding_id,
         originator_type=OriginatorType.COURT,
         ingest_batch_id=batch.id,
-        pipeline_stages={
-            s.value: {"status": StageStatus.COMPLETED.value} for s in PipelineStage
-        },
         pipeline_state=PipelineState.COMPLETED,
     )
     db_session.add(doc)
+    db_session.flush()
+    for s in PipelineStage:
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=s.value,
+                status=StageStatus.COMPLETED.value,
+            )
+        )
     db_session.flush()
     return doc
 

@@ -128,10 +128,6 @@ class Document(Base):
         default=PipelineState.PENDING,
         nullable=False,
     )
-    pipeline_stages = Column(
-        JSON, default=dict
-    )  # per-stage records keyed by stage name
-
     # AI Management Summary fields
     ai_summary = Column(
         JSON, nullable=True
@@ -220,6 +216,31 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def pipeline_stages(self) -> dict:
+        """Compatibility view from stage_rows. Removed after column drop in Phase 8.3."""
+
+        def _iso(dt):
+            return dt.isoformat() if dt is not None else None
+
+        return {
+            row.stage: {
+                k: v
+                for k, v in {
+                    "status": row.status,
+                    "started_at": _iso(row.started_at),
+                    "completed_at": _iso(row.completed_at),
+                    "error": row.error,
+                    "reason": row.reason,
+                    "attempt": row.attempt,
+                    "max_attempts": row.max_attempts,
+                    "next_at": _iso(row.next_at),
+                }.items()
+                if v is not None
+            }
+            for row in self.stage_rows
+        }
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):

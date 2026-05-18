@@ -2,6 +2,7 @@ from datetime import UTC
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import text as _sa_text
 
 from app.tasks.detect_relationships import detect_relationships_task
 from app.tasks.document_processing import (
@@ -10,6 +11,27 @@ from app.tasks.document_processing import (
 )
 from app.tasks.enrich_document import enrich_document_task
 from app.tasks.extract_claims import extract_claims_task
+
+
+def _set_doc_stages(db, doc, stages: dict) -> None:
+    """Replace a doc's pipeline stages by upserting document_pipeline_stages rows."""
+    db.execute(
+        _sa_text("DELETE FROM document_pipeline_stages WHERE document_id = :id"),
+        {"id": doc.id},
+    )
+    for stage_key, stage_data in stages.items():
+        db.execute(
+            _sa_text(
+                "INSERT INTO document_pipeline_stages (document_id, stage, status) "
+                "VALUES (:id, :stage, :status)"
+            ),
+            {
+                "id": doc.id,
+                "stage": stage_key,
+                "status": stage_data.get("status", "pending"),
+            },
+        )
+    db.expire(doc, ["stage_rows"])
 
 
 @pytest.mark.unit
@@ -101,9 +123,11 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
     """detect_relationships_task skips itself and dispatches extract_claims_task when enrichment is not completed."""
     from app.models.enums import PipelineStage, StageStatus
 
-    sample_document.pipeline_stages = {
-        PipelineStage.ENRICH.value: {"status": StageStatus.FAILED.value}
-    }
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.FAILED.value}},
+    )
     db_session.commit()
 
     with (
@@ -132,9 +156,11 @@ def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missin
     """detect_relationships_task skips when ENRICH completed but produced no ai_summary."""
     from app.models.enums import PipelineStage, StageStatus
 
-    sample_document.pipeline_stages = {
-        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
-    }
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
     # ai_summary_created_at is None — ENRICH ran but didn't produce a summary
     sample_document.ai_summary_created_at = None
     db_session.commit()
@@ -174,9 +200,11 @@ def test_detect_relationships_refreshes_review_reasons_on_success(
         StageStatus,
     )
 
-    sample_document.pipeline_stages = {
-        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
-    }
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
     sample_document.ai_summary_created_at = datetime.now(UTC)
     sample_document.review_reasons = []
     sample_document.needs_review = False
@@ -244,9 +272,11 @@ def test_extract_claims_refreshes_review_reasons_on_success(
         StageStatus,
     )
 
-    sample_document.pipeline_stages = {
-        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
-    }
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
     sample_document.ai_summary_created_at = datetime.now(UTC)
     sample_document.review_reasons = []
     sample_document.needs_review = False
@@ -307,9 +337,11 @@ def test_extract_claims_failure_triggers_case_brief(db_session, sample_document)
 
     from app.models.enums import PipelineStage, StageStatus
 
-    sample_document.pipeline_stages = {
-        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}
-    }
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
     sample_document.ai_summary_created_at = datetime.now(UTC)
     db_session.commit()
 

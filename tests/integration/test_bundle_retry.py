@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models.database import Document, IngestBatch
+from app.models.database import Document, DocumentPipelineStage, IngestBatch
 from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
@@ -40,10 +40,24 @@ def _make_doc(
         case_id=batch.case_id,
         originator_type=OriginatorType.COURT,
         ingest_batch_id=batch.id,
-        pipeline_stages=pipeline_stages or {},
         pipeline_state=PipelineState.PENDING,
     )
     db_session.add(doc)
+    db_session.flush()
+    for stage_key, stage_data in (pipeline_stages or {}).items():
+        if not isinstance(stage_data, dict):
+            continue
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=stage_key,
+                status=stage_data.get("status", "pending"),
+                error=stage_data.get("error"),
+                reason=stage_data.get("reason"),
+                attempt=stage_data.get("attempt"),
+                max_attempts=stage_data.get("max_attempts"),
+            )
+        )
     db_session.flush()
     return doc
 

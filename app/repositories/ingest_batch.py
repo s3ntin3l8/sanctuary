@@ -110,10 +110,12 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
                   AND NOT EXISTS (
                     SELECT 1 FROM documents
                     WHERE ingest_batch_id = :batch_id
-                      AND COALESCE(
-                            json_extract(pipeline_stages, '$.metadata.status'),
-                            'pending'
-                          ) NOT IN ('completed', 'failed')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM document_pipeline_stages dps2
+                        WHERE dps2.document_id = documents.id
+                          AND dps2.stage = 'metadata'
+                          AND dps2.status IN ('completed', 'failed')
+                      )
                   )
                 """
             ),
