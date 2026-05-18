@@ -9,7 +9,7 @@
 {% set header_back_title = "Home" %}
 {% set header_actions %}
 <button
-    hx-get="/costs/new"
+    hx-get="{{ request.app.url_path_for('new_cost_page') }}"
     hx-target="#cost-form-container"
     hx-swap="innerHTML"
     class="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded transition-colors cursor-pointer">

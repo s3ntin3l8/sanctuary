@@ -6,7 +6,7 @@
         <button @click="showForm = false" class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors cursor-pointer text-sm">close</button>
     </div>
 
-    <form hx-post="/costs" hx-target="#cost-form-container" hx-swap="outerHTML" class="space-y-4">
+    <form hx-post="{{ request.app.url_path_for('create_cost') }}" hx-target="#cost-form-container" hx-swap="outerHTML" class="space-y-4">
         {% if preselected_case_id %}
         <input type="hidden" name="case_id" value="{{ preselected_case_id }}">
         <div>

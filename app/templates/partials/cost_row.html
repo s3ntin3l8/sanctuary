@@ -10,7 +10,7 @@
     </template>
     <template x-if="editing">
         <form
-            hx-post="/costs/{{ cost.id }}/update-field"
+            hx-post="{{ request.app.url_path_for('update_cost_field', cost_id=cost.id) }}"
             hx-vars='{"field": "{{ field }}"}'
             hx-target="#cost-row-{{ cost.id }}"
             hx-swap="outerHTML"
@@ -129,7 +129,7 @@
         <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             {% if cost.status == 'offen' or cost.status == 'teilweise' %}
             <button
-                hx-post="/costs/{{ cost.id }}/pay"
+                hx-post="{{ request.app.url_path_for('mark_cost_paid', cost_id=cost.id) }}"
                 hx-target="#cost-row-{{ cost.id }}"
                 hx-swap="outerHTML"
                 class="text-[10px] font-bold text-originator-own bg-originator-own/10 hover:bg-originator-own/20 px-2 py-1 rounded transition-colors">
@@ -138,7 +138,7 @@
             {% endif %}
             {% if cost.is_reimbursable and cost.status not in ('erstattet',) %}
             <button
-                hx-post="/costs/{{ cost.id }}/reimburse"
+                hx-post="{{ request.app.url_path_for('mark_cost_reimbursed', cost_id=cost.id) }}"
                 hx-target="#cost-row-{{ cost.id }}"
                 hx-swap="outerHTML"
                 class="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors">
