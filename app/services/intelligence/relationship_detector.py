@@ -50,7 +50,6 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
         db.query(Document)
         .options(
             defer(Document.content),
-            defer(Document.cost_delta),
         )
         .filter(
             Document.case_id == case_id,

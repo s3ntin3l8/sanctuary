@@ -844,25 +844,51 @@ async def promote_cost_delta(
     doc_id: int,
     category_override: str | None = Form(None),
     vat_rate_override: float | None = Form(None),
+    amount_override: float | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Promote doc.cost_delta into a LegalCost row and redirect to cost form."""
-    from app.models.database import LegalCost
+    """Promote a doc's CostSignal into a LegalCost ledger row.
+
+    Reads the most recent CostSignal for the doc as the basis (amount,
+    description), then creates a LegalCost with optional user overrides for
+    category, VAT rate, and amount. Invoice/vorschuss kinds already
+    auto-materialise to LegalCost during enrichment — those should be edited
+    via /costs/{id} rather than promoted here.
+    """
+    from app.models.database import CostSignal, LegalCost
     from app.models.enums import CostCategory
     from app.services.case_service import recompute_total_cost_exposure
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not doc.cost_delta or not doc.case_id:
-        raise HTTPException(status_code=422, detail="No cost delta or case to promote")
+    if not doc.case_id:
+        raise HTTPException(status_code=422, detail="Document has no case")
 
-    cd = doc.cost_delta if isinstance(doc.cost_delta, dict) else {}
-    amount = float(cd.get("amount") or 0)
-    direction = cd.get("direction") or "none"
-    description = cd.get("description") or doc.title or "Cost from document"
+    signal = (
+        db.query(CostSignal)
+        .filter(CostSignal.source_document_id == doc.id)
+        .order_by(
+            CostSignal.issued_at.desc().nullslast(),
+            CostSignal.ingest_date.desc(),
+        )
+        .first()
+    )
+    if signal is None and amount_override is None:
+        raise HTTPException(
+            status_code=422,
+            detail="No cost signal found for this document and no amount override given",
+        )
 
-    # Statutary defaults: lawyer (outgoing) has VAT, court (incoming/ruling) does not
+    amount = (
+        float(amount_override)
+        if amount_override is not None
+        else float(signal.amount or 0)
+    )
+    description = (
+        (signal.description if signal else None) or doc.title or "Cost from document"
+    )
+
     category = CostCategory.SONSTIGES
     if category_override:
         try:
@@ -870,12 +896,7 @@ async def promote_cost_delta(
         except ValueError:
             pass
 
-    vat_rate = 0.0
-    if vat_rate_override is not None:
-        vat_rate = vat_rate_override
-    elif direction == "outgoing":
-        vat_rate = 0.19
-
+    vat_rate = vat_rate_override if vat_rate_override is not None else 0.0
     amount_gross = amount * (1 + vat_rate)
 
     cost = LegalCost(

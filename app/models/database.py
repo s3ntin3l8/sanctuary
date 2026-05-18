@@ -222,6 +222,11 @@ class Document(Base):
         back_populates="source_document",
         cascade="all, delete-orphan",
     )
+    legal_costs = relationship(
+        "LegalCost",
+        back_populates="source_document",
+        foreign_keys="[LegalCost.source_document_id]",
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -943,14 +948,16 @@ class LegalCost(Base):
         nullable=True,
         index=True,
     )
-    # True when this row was auto-materialized from a cost_delta signal
+    # True when this row was auto-materialized by cost_service.materialize_cost_signal
     auto_created = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")
-    source_document = relationship("Document")
+    source_document = relationship(
+        "Document", back_populates="legal_costs", foreign_keys=[source_document_id]
+    )
     offsets_cost = relationship(
         "LegalCost",
         primaryjoin="LegalCost.offsets_cost_id == LegalCost.id",

@@ -6,14 +6,21 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.timezone import to_naive
-from app.models.database import ActionItem, Case, Document, LegalCost, Proceeding
+from app.models.database import (
+    ActionItem,
+    Case,
+    CostSignal,
+    Document,
+    LegalCost,
+    Proceeding,
+)
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     AuditEventType,
     CaseStatus,
     CaseType,
+    CostSignalType,
     CostStatus,
     Jurisdiction,
     ProceedingCourtLevel,
@@ -337,37 +344,42 @@ def get_or_create_case_from_reference(
     return new_case, new_proc, True
 
 
-def _safe_dt(doc: Document) -> datetime:
-    """Return a tz-naive datetime for sorting documents chronologically."""
-    dt = doc.issued_date or doc.ingest_date or datetime.min
-    return to_naive(dt)
-
-
-def _latest_streitwert(docs: list[Document]) -> float | None:
+def _latest_streitwert(proceeding_id: int, db: Session) -> float | None:
     """Return the EUR amount from the most recent streitwert signal, or None."""
-    candidates = [
-        d
-        for d in docs
-        if isinstance(d.cost_delta, dict) and d.cost_delta.get("kind") == "streitwert"
-    ]
-    if not candidates:
+    row = (
+        db.query(CostSignal)
+        .filter(
+            CostSignal.proceeding_id == proceeding_id,
+            CostSignal.signal_type == CostSignalType.STREITWERT,
+        )
+        .order_by(
+            CostSignal.issued_at.desc().nullslast(),
+            CostSignal.ingest_date.desc(),
+        )
+        .first()
+    )
+    if row is None or row.amount is None:
         return None
-    doc = max(candidates, key=_safe_dt)
-    amount = doc.cost_delta.get("amount")
-    return float(amount) if amount is not None else None
+    return float(row.amount)
 
 
-def _latest_ruling_allocation(docs: list[Document]) -> dict | None:
+def _latest_ruling_allocation(proceeding_id: int, db: Session) -> dict | None:
     """Return the resolved allocation from the most recent cost_ruling signal, or None."""
-    candidates = [
-        d
-        for d in docs
-        if isinstance(d.cost_delta, dict) and d.cost_delta.get("kind") == "cost_ruling"
-    ]
-    if not candidates:
+    row = (
+        db.query(CostSignal)
+        .filter(
+            CostSignal.proceeding_id == proceeding_id,
+            CostSignal.signal_type == CostSignalType.COST_RULING,
+        )
+        .order_by(
+            CostSignal.issued_at.desc().nullslast(),
+            CostSignal.ingest_date.desc(),
+        )
+        .first()
+    )
+    if row is None:
         return None
-    doc = max(candidates, key=_safe_dt)
-    return allocation_from_ruling(doc.cost_delta.get("allocation") or {})
+    return allocation_from_ruling(row.allocation or {})
 
 
 def _ledger_net_exposure(case_id: str, db: Session) -> float:
@@ -431,20 +443,11 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
     propagated_allocation: dict | None = None
 
     for proc in proceedings:
-        docs = (
-            db.query(Document)
-            .filter(
-                Document.proceeding_id == proc.id,
-                Document.cost_delta.isnot(None),
-            )
-            .all()
-        )
-
-        streitwert = _latest_streitwert(docs)
+        streitwert = _latest_streitwert(proc.id, db)
         if not streitwert or streitwert <= 0:
             continue  # no basis for fee projection; skip this proceeding
 
-        ruling_alloc = _latest_ruling_allocation(docs)
+        ruling_alloc = _latest_ruling_allocation(proc.id, db)
         if ruling_alloc:
             alloc = ruling_alloc
             propagated_allocation = ruling_alloc
@@ -511,20 +514,11 @@ def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
     propagated_allocation: dict | None = None
 
     for proc in proceedings:
-        docs = (
-            db.query(Document)
-            .filter(
-                Document.proceeding_id == proc.id,
-                Document.cost_delta.isnot(None),
-            )
-            .all()
-        )
-
-        streitwert = _latest_streitwert(docs)
+        streitwert = _latest_streitwert(proc.id, db)
         if not streitwert or streitwert <= 0:
             continue
 
-        ruling_alloc = _latest_ruling_allocation(docs)
+        ruling_alloc = _latest_ruling_allocation(proc.id, db)
         if ruling_alloc:
             alloc = ruling_alloc
             propagated_allocation = ruling_alloc

@@ -219,21 +219,17 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                 vat_included=cost_delta.get("vat_included"),
                 offsets_signal_id=cost_delta.get("offsets_signal_id"),
             )
-            doc.cost_delta = validated_delta.model_dump()
-            # Auto-materialise invoice/vorschuss signals into the ledger
-            if db is not None and kind in {
-                "invoice_lawyer",
-                "invoice_court",
-                "vorschuss_lawyer",
-                "vorschuss_court",
-            }:
+            # Route the validated signal to its destination: LegalCost for
+            # invoice/vorschuss kinds, CostSignal for streitwert/cost_ruling/pkh.
+            # No persistent JSON column — the signal is materialised once.
+            if db is not None:
                 try:
-                    from app.services.cost_service import ensure_ledger_row_for_signal
+                    from app.services.cost_service import materialize_cost_signal
 
-                    ensure_ledger_row_for_signal(doc, doc.cost_delta, db)
+                    materialize_cost_signal(doc, validated_delta.model_dump(), db)
                 except Exception as mat_err:
                     logger.warning(
-                        f"Doc {doc.id}: ledger materialisation failed: {mat_err}"
+                        f"Doc {doc.id}: cost signal materialisation failed: {mat_err}"
                     )
         except Exception as e:
             logger.warning(f"Doc {doc.id}: invalid cost_delta skipped: {e}")

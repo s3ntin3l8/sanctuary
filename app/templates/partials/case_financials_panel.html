@@ -27,31 +27,29 @@
     </div>
   </div>
 
-  {% if financials.cost_delta_docs %}
-  {% set last_doc = financials.cost_delta_docs[0] %}
-  {% set cd = last_doc.cost_delta %}
-  {% set cd_kind = cd.get('kind', '') if cd is mapping else '' %}
+  {% if financials.cost_signal_docs %}
+  {% set last_doc = financials.cost_signal_docs[0] %}
+  {% set signal = (last_doc.cost_signals|list)[0] if last_doc.cost_signals else none %}
+  {% set ledger = (last_doc.legal_costs|list)[0] if last_doc.legal_costs else none %}
+  {% set sig_kind = signal.signal_type.value if signal and signal.signal_type else '' %}
+  {% set ledger_cat = ledger.category.value if ledger and ledger.category else '' %}
   <div class="pt-1">
     <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Last Signal</p>
     <button @click="openDoc({{ last_doc.id }})"
             class="w-full text-left p-2 rounded bg-surface-container-low hover:bg-surface-container-high transition-colors group">
       <div class="flex items-center justify-between mb-1">
-        {% if cd_kind == 'streitwert' %}
-        <span class="text-[11px] font-bold text-primary">{{ format_eur((cd.get('amount') if cd is mapping else none)) }} <span class="font-normal text-on-surface-variant text-[9px]">Streitwert</span></span>
-        {% elif cd_kind == 'cost_ruling' %}
+        {% if sig_kind == 'streitwert' %}
+        <span class="text-[11px] font-bold text-primary">{{ format_eur(signal.amount) if signal.amount else '—' }} <span class="font-normal text-on-surface-variant text-[9px]">Streitwert</span></span>
+        {% elif sig_kind == 'cost_ruling' %}
         <span class="text-[11px] font-bold text-amber-500">Kostenentscheidung</span>
-        {% elif cd_kind in ('invoice_lawyer', 'invoice_court') %}
-        <span class="text-[11px] font-bold text-originator-opposing">&minus;{{ format_eur(cd.get('amount') if cd is mapping else none) }}</span>
-        {% elif cd_kind in ('vorschuss_lawyer', 'vorschuss_court') %}
-        <span class="text-[11px] font-bold text-orange-400">&minus;{{ format_eur(cd.get('amount') if cd is mapping else none) }} <span class="font-normal text-[9px]">Vorschuss</span></span>
-        {% elif cd_kind in ('pkh_grant', 'pkh_denied') %}
-        <span class="text-[11px] font-bold {% if cd_kind == 'pkh_grant' %}text-originator-own{% else %}text-outline{% endif %}">PKH {{ 'bewilligt' if cd_kind == 'pkh_grant' else 'abgelehnt' }}</span>
+        {% elif sig_kind in ('pkh_grant', 'pkh_denied') %}
+        <span class="text-[11px] font-bold {% if sig_kind == 'pkh_grant' %}text-originator-own{% else %}text-outline{% endif %}">PKH {{ 'bewilligt' if sig_kind == 'pkh_grant' else 'abgelehnt' }}</span>
+        {% elif ledger_cat in ('anwaltskosten', 'gerichtskosten') %}
+        <span class="text-[11px] font-bold text-originator-opposing">&minus;{{ format_eur(ledger.amount_net) if ledger.amount_net else '—' }}</span>
+        {% elif ledger_cat == 'vorschuss' %}
+        <span class="text-[11px] font-bold text-orange-400">&minus;{{ format_eur(ledger.amount_net) if ledger.amount_net else '—' }} <span class="font-normal text-[9px]">Vorschuss</span></span>
         {% else %}
-        {% set amount = cd.get('amount') if cd is mapping else none %}
-        {% set direction = (cd.get('direction', 'none') if cd is mapping else 'none') or 'none' %}
-        <span class="text-[11px] font-bold {% if direction == 'outgoing' %}text-error{% elif direction == 'incoming' %}text-originator-own{% else %}text-on-surface{% endif %}">
-          {% if direction == 'incoming' %}&plus;{% elif direction == 'outgoing' %}&minus;{% endif %}{{ format_eur(amount) if amount else '—' }}
-        </span>
+        <span class="text-[11px] font-bold text-on-surface">—</span>
         {% endif %}
         <span class="text-[9px] font-mono text-outline">{{ last_doc.issued_date | local_strftime('%d.%m.%y') if last_doc.issued_date else '' }}</span>
       </div>

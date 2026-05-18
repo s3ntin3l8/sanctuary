@@ -2,11 +2,12 @@
 
 import pytest
 
-from app.models.database import Case, Document, LegalCost, Proceeding
+from app.models.database import Case, CostSignal, Document, LegalCost, Proceeding
 from app.models.enums import (
     CaseStatus,
     CaseType,
     CostCategory,
+    CostSignalType,
     CostStatus,
     Jurisdiction,
     OriginatorType,
@@ -48,19 +49,24 @@ def _make_proceeding(db, case_id, level=ProceedingCourtLevel.AG):
 
 
 def _add_signal(db, case_id, proc_id, kind, amount=None, allocation=None):
-    cd = {"kind": kind, "direction": "outgoing"}
-    if amount is not None:
-        cd["amount"] = amount
-    if allocation is not None:
-        cd["allocation"] = allocation
+    """Create a source Document + linked CostSignal for the given kind."""
     doc = Document(
         title=f"Signal {kind}",
         case_id=case_id,
         proceeding_id=proc_id,
         originator_type=OriginatorType.COURT,
-        cost_delta=cd,
     )
     db.add(doc)
+    db.flush()
+    signal = CostSignal(
+        case_id=case_id,
+        proceeding_id=proc_id,
+        source_document_id=doc.id,
+        signal_type=CostSignalType(kind),
+        amount=amount,
+        allocation=allocation,
+    )
+    db.add(signal)
     db.flush()
     return doc
 

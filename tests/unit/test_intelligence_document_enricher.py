@@ -75,7 +75,9 @@ def test_apply_enrichment_invalid_kind_falls_back_to_neutral(doc_with_content):
 
 
 @pytest.mark.unit
-def test_apply_enrichment_populates_fields(doc_with_content):
+def test_apply_enrichment_populates_fields(db_session, doc_with_content):
+    from app.models.database import LegalCost
+
     result = {
         "significance_tier": "critical",
         "document_type": "ruling",
@@ -95,13 +97,19 @@ def test_apply_enrichment_populates_fields(doc_with_content):
         },
     }
 
-    _apply_enrichment(doc_with_content, result)
+    _apply_enrichment(doc_with_content, result, db=db_session)
 
     assert doc_with_content.significance_tier == SignificanceTier.CRITICAL
     assert doc_with_content.document_type == DocumentType.RULING
     assert doc_with_content.key_passages[0]["text"] == "Das Gericht ordnet an"
-    assert doc_with_content.cost_delta["amount"] == 450.50
-    assert doc_with_content.cost_delta["direction"] == "incoming"
+    # invoice_court routes to LegalCost (auto-materialised via cost_service)
+    cost = (
+        db_session.query(LegalCost)
+        .filter(LegalCost.source_document_id == doc_with_content.id)
+        .first()
+    )
+    assert cost is not None
+    assert cost.amount_net == pytest.approx(450.50)
     assert (
         doc_with_content.ai_summary["legal_significance"] == "Court dismissed the case."
     )
@@ -174,8 +182,10 @@ def test_thread_open_false_for_ruling(doc_with_content):
 
 
 @pytest.mark.unit
-def test_invalid_cost_delta_direction_normalized(doc_with_content):
-    """Invalid direction must be normalized to 'none', not crash."""
+def test_invalid_cost_delta_direction_normalized(db_session, doc_with_content):
+    """Invalid direction must be normalized to 'none', not crash the enricher."""
+    from app.models.database import LegalCost
+
     result = {
         "significance_tier": "informational",
         "document_type": "correspondence",
@@ -193,10 +203,17 @@ def test_invalid_cost_delta_direction_normalized(doc_with_content):
         },
     }
 
-    _apply_enrichment(doc_with_content, result)
+    # Must not raise — invalid direction is normalised by CostDeltaSchema.
+    _apply_enrichment(doc_with_content, result, db=db_session)
 
-    assert doc_with_content.cost_delta["direction"] == "none"
-    assert doc_with_content.cost_delta["amount"] == 100.0
+    # The materialised LegalCost reflects the validated signal.
+    cost = (
+        db_session.query(LegalCost)
+        .filter(LegalCost.source_document_id == doc_with_content.id)
+        .first()
+    )
+    assert cost is not None
+    assert cost.amount_net == pytest.approx(100.0)
 
 
 @pytest.mark.unit

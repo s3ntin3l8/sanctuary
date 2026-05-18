@@ -70,24 +70,34 @@ def test_create_cost_persists_vat_rate(app_client, db_session, sample_case):
 
 @pytest.mark.integration
 def test_promote_cost_delta(app_client, db_session, sample_case):
-    # Setup doc with cost_delta
-    doc = Document(
-        case_id=sample_case.id,
-        title="Cost Doc",
-        cost_delta={"amount": 450.0, "direction": "incoming", "description": "Refund"},
-        ingest_date=None,  # datetime handled by model? wait, conftest says ingest_date is not null
-    )
+    """Promote a CostSignal (e.g. streitwert) into a LegalCost ledger row."""
     from datetime import datetime
 
-    doc.ingest_date = datetime.now()
+    from app.models.database import CostSignal
+    from app.models.enums import CostSignalType
+
+    doc = Document(
+        case_id=sample_case.id,
+        title="Streitwertbeschluss",
+        ingest_date=datetime.now(),
+    )
     db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        CostSignal(
+            case_id=sample_case.id,
+            source_document_id=doc.id,
+            signal_type=CostSignalType.STREITWERT,
+            amount=450.0,
+            description="Streitwert für Klage",
+        )
+    )
     db_session.commit()
 
     resp = app_client.post(f"/document/{doc.id}/cost-from-delta")
     assert resp.status_code == 200
     assert "promoted" in resp.text
 
-    # Verify LegalCost was created correctly
     cost = (
         db_session.query(LegalCost)
         .filter(LegalCost.source_document_id == doc.id)
@@ -95,4 +105,4 @@ def test_promote_cost_delta(app_client, db_session, sample_case):
     )
     assert cost is not None
     assert cost.amount_net == 450.0
-    assert cost.amount_gross == 450.0  # incoming -> 0 VAT
+    assert cost.amount_gross == 450.0  # no VAT override → 0%

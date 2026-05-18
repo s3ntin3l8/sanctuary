@@ -1,13 +1,18 @@
+import logging
 from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.database import Document, LegalCost
-from app.models.enums import CostCategory, CostStatus
+from app.core.timezone import to_naive
+from app.models.database import CostSignal, Document, LegalCost
+from app.models.enums import CostCategory, CostSignalType, CostStatus
 from app.repositories.legal_cost import LegalCostRepository
 
-# Maps cost_delta kind to (CostCategory, vat_rate)
+logger = logging.getLogger(__name__)
+
+# Maps cost_delta kind to (CostCategory, vat_rate) — invoice/vorschuss signals
+# promote to LegalCost rows.
 _KIND_TO_CATEGORY: dict[str, tuple[CostCategory, float]] = {
     "invoice_lawyer": (CostCategory.ANWALTSKOSTEN, 0.19),
     "invoice_court": (CostCategory.GERICHTSKOSTEN, 0.0),
@@ -15,15 +20,38 @@ _KIND_TO_CATEGORY: dict[str, tuple[CostCategory, float]] = {
     "vorschuss_court": (CostCategory.VORSCHUSS, 0.0),
 }
 
+# Non-cost metadata signals — promote to CostSignal rows (sibling table).
+_KIND_TO_SIGNAL_TYPE: dict[str, CostSignalType] = {
+    "streitwert": CostSignalType.STREITWERT,
+    "cost_ruling": CostSignalType.COST_RULING,
+    "pkh_grant": CostSignalType.PKH_GRANT,
+    "pkh_denied": CostSignalType.PKH_DENIED,
+}
 
-def ensure_ledger_row_for_signal(
+
+def materialize_cost_signal(
+    doc: Document, cost_delta: dict, db: Session
+) -> LegalCost | CostSignal | None:
+    """Dispatch a cost_delta dict to LegalCost (invoice/vorschuss) or CostSignal (others).
+
+    The single materialisation entry point. Returns the created/updated row, or
+    None for unknown kinds. Idempotent per (source_document_id, kind).
+    """
+    kind = cost_delta.get("kind", "")
+    if kind in _KIND_TO_CATEGORY:
+        return _ensure_ledger_row(doc, cost_delta, db)
+    if kind in _KIND_TO_SIGNAL_TYPE:
+        return _ensure_cost_signal(doc, cost_delta, db)
+    return None
+
+
+def _ensure_ledger_row(
     doc: Document, cost_delta: dict, db: Session
 ) -> LegalCost | None:
     """Idempotently materialise a LegalCost row from an invoice/vorschuss signal.
 
     Keyed on source_document_id — re-enrichment updates the row in place rather
-    than creating a duplicate. Returns the created/updated row, or None for
-    signal kinds that should not be promoted (streitwert, cost_ruling, pkh_*).
+    than creating a duplicate.
     """
     kind = cost_delta.get("kind", "")
     if kind not in _KIND_TO_CATEGORY:
@@ -97,6 +125,60 @@ def ensure_ledger_row_for_signal(
             prior.offsets_cost_id = row.id
             db.flush()
 
+    return row
+
+
+def _ensure_cost_signal(
+    doc: Document, cost_delta: dict, db: Session
+) -> CostSignal | None:
+    """Idempotently materialise a CostSignal row from a non-cost signal.
+
+    Keyed on (source_document_id, signal_type) — re-enrichment updates in place.
+    Handles the four orphan kinds: streitwert, cost_ruling, pkh_grant, pkh_denied.
+    """
+    kind = cost_delta.get("kind", "")
+    signal_type = _KIND_TO_SIGNAL_TYPE.get(kind)
+    if signal_type is None or not doc.case_id:
+        return None
+
+    issued_at = doc.issued_date or doc.ingest_date
+    if issued_at is not None:
+        issued_at = to_naive(issued_at)
+
+    amount = cost_delta.get("amount")
+    if amount is not None:
+        amount = float(amount)
+
+    existing = (
+        db.query(CostSignal)
+        .filter(
+            CostSignal.source_document_id == doc.id,
+            CostSignal.signal_type == signal_type,
+        )
+        .first()
+    )
+    if existing:
+        existing.case_id = doc.case_id
+        existing.proceeding_id = doc.proceeding_id
+        existing.amount = amount
+        existing.allocation = cost_delta.get("allocation")
+        existing.description = cost_delta.get("description") or doc.title
+        existing.issued_at = issued_at
+        db.flush()
+        return existing
+
+    row = CostSignal(
+        case_id=doc.case_id,
+        proceeding_id=doc.proceeding_id,
+        source_document_id=doc.id,
+        signal_type=signal_type,
+        amount=amount,
+        allocation=cost_delta.get("allocation"),
+        description=cost_delta.get("description") or doc.title,
+        issued_at=issued_at,
+    )
+    db.add(row)
+    db.flush()
     return row
 
 

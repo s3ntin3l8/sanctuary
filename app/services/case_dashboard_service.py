@@ -26,6 +26,7 @@ from app.constants import (
 from app.helpers import build_cost_summary
 from app.models.database import (
     ActionItem,
+    CostSignal,
     CostStatus,
     Document,
     IngestBatch,
@@ -191,15 +192,39 @@ class CaseDashboardService:
         dormancy_alert = _compute_dormancy_alert(case, self.db)
 
         # --- Financials (factual: total exposure in cents) --------------
-        cost_delta_docs = (
+        # Documents that carry any cost signal — either an informational
+        # CostSignal (streitwert/cost_ruling/pkh) or a materialised LegalCost
+        # (invoice/vorschuss). Distinct so a doc with multiple signal types
+        # appears once.
+        signal_doc_ids = {
+            row[0]
+            for row in self.db.query(CostSignal.source_document_id)
+            .filter(CostSignal.case_id == case_id)
+            .all()
+        }
+        signal_doc_ids.update(
+            row[0]
+            for row in self.db.query(LegalCost.source_document_id)
+            .filter(
+                LegalCost.case_id == case_id,
+                LegalCost.source_document_id.isnot(None),
+            )
+            .all()
+        )
+        cost_signal_docs = (
             self.db.query(Document)
-            .filter(Document.case_id == case_id, Document.cost_delta.isnot(None))
+            .filter(
+                Document.case_id == case_id,
+                Document.id.in_(signal_doc_ids),
+            )
             .order_by(Document.issued_date.desc().nullslast(), Document.id.desc())
             .all()
+            if signal_doc_ids
+            else []
         )
         financials = {
             "total_cost_exposure": case.total_cost_exposure or 0,
-            "cost_delta_docs": cost_delta_docs,
+            "cost_signal_docs": cost_signal_docs,
             "grouped_costs": grouped_costs,
             "proceeding_exposure": build_proceeding_exposure(case_id, self.db),
         }
