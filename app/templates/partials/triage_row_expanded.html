@@ -35,7 +35,7 @@
         {# RIGHT: active-doc HUD payload (HTMX-loaded) #}
         <div id="triage-row-expanded-body-{{ bundle.key }}"
              {% if lead_doc_id %}
-             hx-get="/triage/doc/{{ lead_doc_id }}/hud"
+             hx-get="{{ request.app.url_path_for('triage_doc_hud', doc_id=lead_doc_id) }}"
              hx-trigger="intersect once"
              hx-swap="innerHTML"
              {% endif %}
@@ -62,7 +62,7 @@
         </div>
         <div class="flex items-center gap-1.5">
             <button type="button"
-                    hx-post="/triage/dismiss"
+                    hx-post="{{ request.app.url_path_for('dismiss_bundle') }}"
                     hx-vals='{"batch_id": "{{ bundle.batch_id or "" }}", "doc_id": "{{ bundle.documents[0].id if bundle.documents else "" }}"}'
                     hx-confirm="Dismiss this bundle? It will be archived and hidden from triage."
                     hx-swap="none"

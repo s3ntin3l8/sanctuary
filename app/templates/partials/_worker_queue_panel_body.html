@@ -3,7 +3,7 @@
 #}
 <div id="worker-queue-panel-body"
      {% if n_active > 0 %}
-     hx-get="/api/worker/queue/panel"
+     hx-get="{{ request.app.url_path_for('worker_queue_panel_body') }}"
      hx-trigger="every 5s"
      hx-target="this"
      hx-swap="outerHTML"

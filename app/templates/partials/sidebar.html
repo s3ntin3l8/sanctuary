@@ -70,7 +70,7 @@
             <span class="material-symbols-outlined text-[20px]">sync</span>
             <div id="worker-queue-badge-slot"
                  {% if sidebar_counts.pipeline_active_count > 0 %}
-                 hx-get="/api/worker/queue/badge"
+                 hx-get="{{ request.app.url_path_for('worker_queue_badge') }}"
                  hx-trigger="every 5s"
                  hx-swap="outerHTML"
                  hx-sync="this:drop"

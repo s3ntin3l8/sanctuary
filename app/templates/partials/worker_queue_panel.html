@@ -23,7 +23,7 @@
        rebuilding any DOM. Response errors swap the placeholder for a busy
        state so a contended endpoint doesn't leave the user staring at
        "Loading…" forever. #}
-    <div hx-get="/api/worker/queue/panel"
+    <div hx-get="{{ request.app.url_path_for('worker_queue_panel_body') }}"
          hx-trigger="load, refresh-worker-queue from:body"
          hx-swap="outerHTML"
          hx-on::response-error="this.innerHTML = document.getElementById('worker-queue-busy-tpl').innerHTML"
@@ -47,7 +47,7 @@
 
     <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 flex items-center justify-between">
         <a href="/triage" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage</a>
-        <button hx-post="/api/worker/queue/retry-failed"
+        <button hx-post="{{ request.app.url_path_for('retry_failed_docs') }}"
                 hx-target="#worker-queue-panel-body"
                 hx-swap="outerHTML"
                 class="text-[8px] font-black text-error/60 hover:text-error uppercase tracking-widest transition-colors">

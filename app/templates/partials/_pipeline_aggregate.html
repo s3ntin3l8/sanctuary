@@ -13,7 +13,7 @@
 
 <span id="pipeline-agg-{{ bundle.key }}"
       {% if n_active > 0 and bundle.batch_id %}
-      hx-get="/triage/bundle/{{ bundle.batch_id }}/pipeline"
+      hx-get="{{ request.app.url_path_for('bundle_pipeline_status', batch_id=bundle.batch_id) }}"
       hx-trigger="every 4s"
       hx-target="this"
       hx-swap="outerHTML"

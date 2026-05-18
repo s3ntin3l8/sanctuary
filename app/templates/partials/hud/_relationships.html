@@ -42,10 +42,10 @@
       </div>
       {% if is_ai and mode == 'review' and rel.rel_obj %}
       <div class="flex gap-1 shrink-0">
-        <button hx-post="/triage/relationship/{{ rel.rel_obj.id }}/confirm"
+        <button hx-post="{{ request.app.url_path_for('confirm_relationship', rel_id=rel.rel_obj.id) }}"
                 hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
                 class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer">✓</button>
-        <button hx-delete="/triage/relationship/{{ rel.rel_obj.id }}"
+        <button hx-delete="{{ request.app.url_path_for('reject_relationship', rel_id=rel.rel_obj.id) }}"
                 hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
                 class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer">✕</button>
       </div>
@@ -79,10 +79,10 @@
       </div>
       {% if is_ai and mode == 'review' and rel.rel_obj %}
       <div class="flex gap-1 shrink-0">
-        <button hx-post="/triage/relationship/{{ rel.rel_obj.id }}/confirm"
+        <button hx-post="{{ request.app.url_path_for('confirm_relationship', rel_id=rel.rel_obj.id) }}"
                 hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
                 class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer">✓</button>
-        <button hx-delete="/triage/relationship/{{ rel.rel_obj.id }}"
+        <button hx-delete="{{ request.app.url_path_for('reject_relationship', rel_id=rel.rel_obj.id) }}"
                 hx-target="#hud-rel-{{ rel_id }}" hx-swap="outerHTML"
                 class="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-error/10 text-error hover:bg-error/20 transition-colors cursor-pointer">✕</button>
       </div>

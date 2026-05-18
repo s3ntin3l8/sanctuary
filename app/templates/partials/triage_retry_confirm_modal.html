@@ -65,7 +65,7 @@
 
         {# Actions — static hx-post mirrors triage_bundle_confirm_modal.html so htmx
            registers the form once on page load and OOB swaps are processed correctly. #}
-        <form hx-post="/triage/bundle/retry"
+        <form hx-post="{{ request.app.url_path_for('retry_bundle_pipeline') }}"
               hx-target="this"
               hx-swap="none"
               @submit="retryConfirm.submitting = true"

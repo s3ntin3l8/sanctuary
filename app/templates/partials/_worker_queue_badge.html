@@ -3,7 +3,7 @@
 #}
 <div id="worker-queue-badge-slot"
      {% if n_active > 0 %}
-     hx-get="/api/worker/queue/badge"
+     hx-get="{{ request.app.url_path_for('worker_queue_badge') }}"
      hx-trigger="every 5s"
      hx-swap="outerHTML"
      {% endif %}>
