@@ -190,11 +190,8 @@ class Document(Base):
     significance_tier = Column(SAEnum(SignificanceTier), nullable=True, index=True)
     thread_open = Column(Boolean, default=False, nullable=False)
 
-    # Phase 1-B: AI-annotated reading & cost delta
+    # Phase 1-B: AI-annotated reading
     key_passages = Column(JSON, nullable=True)  # list of {text, rationale, span}
-    cost_delta = Column(
-        JSON, nullable=True
-    )  # {amount, direction, description} single delta this doc introduces
 
     children = relationship(
         "Document", back_populates="parent", cascade="all, delete-orphan"
