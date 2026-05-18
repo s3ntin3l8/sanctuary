@@ -21,7 +21,6 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.datastructures import MutableHeaders
 
-from app.api import api_router
 from app.config import (
     CORS_ORIGINS,
     DEBUG,
@@ -748,8 +747,6 @@ app.add_exception_handler(404, not_found_handler)
 app.add_exception_handler(500, server_error_handler)
 app.add_exception_handler(422, validation_error_handler)
 
-app.include_router(api_router)
-
 from app.api import (
     cases,
     contacts,
@@ -757,6 +754,7 @@ from app.api import (
     documents_router,
     home_router,
     ingestion_settings,
+    proceedings_router,
     search,
     triage_router,
 )
@@ -781,6 +779,7 @@ app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)
 app.include_router(contacts.router)
+app.include_router(proceedings_router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)

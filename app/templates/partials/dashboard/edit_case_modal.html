@@ -53,7 +53,7 @@
 
                             <!-- Proceeding Edit Form -->
                             {% if active_proceeding %}
-                            <form hx-patch="/api/v1/proceedings/{{ active_proceeding.id }}" class="space-y-4">
+                            <form hx-patch="/proceedings/{{ active_proceeding.id }}" class="space-y-4">
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Proceeding Court Name</label>
                                     <input type="text" name="court_name" value="{{ active_proceeding.court_name }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">

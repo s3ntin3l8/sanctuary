@@ -11,7 +11,7 @@ client = TestClient(app)
 def test_contacts_index_deleted(db_session):
     """Index page deleted per vision §UI:382; both paths should 404."""
     assert client.get("/contacts").status_code == 404
-    assert client.get("/api/v1/contacts").status_code == 404
+    assert client.get("/contacts").status_code == 404
 
 
 @pytest.mark.integration

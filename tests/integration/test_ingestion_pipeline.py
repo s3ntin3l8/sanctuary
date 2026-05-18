@@ -58,7 +58,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         # 3. Upload Document
         file_content = b"PDF dummy content"
         response = client.post(
-            "/api/v1/upload",
+            "/upload",
             files=[("files", ("test.pdf", file_content, "application/pdf"))],
             data={"case_id": "ADV-123-K"},
             headers={"hx-request": "true"},

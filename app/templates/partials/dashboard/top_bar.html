@@ -75,7 +75,7 @@
         </a>
         {% if p.is_deletable %}
         <button type="button"
-                hx-delete="/api/v1/proceedings/{{ p.id }}"
+                hx-delete="/proceedings/{{ p.id }}"
                 hx-confirm="Delete proceeding {{ p.court_name }}{% if p.az_court %} · {{ p.az_court }}{% endif %}? This cannot be undone."
                 @click.stop
                 class="mr-2 p-1 text-on-surface-variant hover:text-error transition-colors rounded flex-shrink-0"
