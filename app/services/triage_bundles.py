@@ -29,7 +29,8 @@ from app.models.enums import (
     IngestBatchStatus,
     RelationshipType,
 )
-from app.services.triage_service import BundleView, _sanitize_case_title
+from app.services.triage_confirmation import _sanitize_case_title
+from app.services.triage_service import BundleView
 
 
 def _bundle_pipeline_label(bundle: BundleView) -> str:

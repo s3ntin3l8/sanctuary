@@ -10,13 +10,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.constants import SIG_ORDER as _SIG_ORDER
 from app.models.database import (
     BatchSubGroup,
-    Case,
     Document,
     IngestBatch,
     UserReaction,
@@ -34,23 +33,6 @@ from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services.pipeline_status import stages_dict
-
-
-def _sanitize_case_title(
-    title: str | None, case_id: str, bundle_subject: str | None
-) -> str | None:
-    """Return a display-worthy case title, or None when the raw title is useless.
-
-    Discards titles that are identical to the case_id (AI echo-back) and
-    re-derives from the bundle subject via the existing helper, falling back to
-    None so the modal field is left blank for the user to fill in.
-    """
-    from app.services.case_service import _derive_case_title_from_subject
-
-    if title and title.strip() != case_id:
-        return title
-    derived = _derive_case_title_from_subject(bundle_subject, case_id)
-    return derived or None
 
 
 @dataclass
@@ -318,23 +300,10 @@ def ensure_sub_groups_initialized(batch_id: int, db: Session) -> list[BatchSubGr
 
 
 def _reset_and_reenrich(db: Session, docs: list) -> None:
-    """Reset ENRICH (and its downstream) to pending, then dispatch enrichment.
+    """Deprecated shim — use triage_confirmation.reset_and_reenrich."""
+    from app.services.triage_confirmation import reset_and_reenrich
 
-    Called whenever docs transition from _TRIAGE to a real case so that
-    relationship/claims/entities stages run with the correct case context.
-    Only processes docs whose METADATA completed successfully (failed metadata
-    means no enrichment output would be meaningful).
-    """
-    from app.models.enums import PipelineStage
-    from app.services.pipeline_status import reset_stage
-    from app.tasks.enrich_document import enrich_document_task
-
-    for doc in docs:
-        metadata_status = stages_dict(doc).get("metadata", {}).get("status")
-        if metadata_status != "completed":
-            continue
-        reset_stage(doc.id, PipelineStage.ENRICH, db)
-        enrich_document_task.delay(doc.id)
+    return reset_and_reenrich(db, docs)
 
 
 class TriageService:
@@ -604,123 +573,17 @@ class TriageService:
     def get_action_items(self, document_id: int) -> list:
         return list(self.action_repo.get_by_source_document(document_id))
 
-    def find_next_review_doc(self, after_doc_id: int) -> Document | None:
-        """Find the next triage doc needing review after the given one.
-
-        Sibling-first: prefer another doc in the same bundle. Otherwise, the
-        first doc in the next bundle. Returns None when the queue is clear.
-        """
-        current = self.doc_repo.get(after_doc_id)
-        if not current:
-            return None
-
-        # Sibling-first: same batch, still needs review, not the current doc.
-        if current.ingest_batch_id:
-            sibling = (
-                self.db.query(Document)
-                .filter(
-                    Document.ingest_batch_id == current.ingest_batch_id,
-                    Document.id != after_doc_id,
-                    or_(Document.case_id == "_TRIAGE", Document.needs_review),
-                )
-                .order_by(Document.ingest_date.asc())
-                .first()
-            )
-            if sibling:
-                return sibling
-
-        # Fall back to the next doc in the next bundle in the feed.
-        bundles = self.get_triage_bundles()
-        seen_current_bundle = False
-        for bundle in bundles:
-            # Skip the bundle we just cleared.
-            if any(d.id == after_doc_id for d in bundle.documents):
-                seen_current_bundle = True
-                continue
-            # Once we're past the current bundle, any needs_review doc works.
-            if seen_current_bundle:
-                for d in bundle.documents:
-                    if d.needs_review or d.case_id == "_TRIAGE":
-                        return d
-
-        # If nothing after, fall back to the first needs_review doc anywhere
-        # (in case we skipped over earlier bundles — rare but possible if
-        # sort has changed).
-        for bundle in bundles:
-            for d in bundle.documents:
-                if d.id != after_doc_id and (d.needs_review or d.case_id == "_TRIAGE"):
-                    return d
-        return None
-
     # --- writes ---------------------------------------------------------------
 
-    def confirm_document(
-        self,
-        doc_id: int,
-        *,
-        title: str | None = None,
-        case_id: str | None = None,
-        originator_type=None,
-        sender: str | None = None,
-        internal_id: str | None = None,
-        issued_date: datetime | None = None,
-        received_date: datetime | None = None,
-        significance_tier=None,
-        document_type=None,
-        finalize: bool = False,
-    ) -> Document | None:
-        """Apply metadata patch; optionally remove from triage."""
-        doc = self.doc_repo.get(doc_id)
-        if not doc:
-            return None
+    def find_next_review_doc(self, after_doc_id: int) -> Document | None:
+        from app.services.triage_confirmation import find_next_review_doc as _impl
 
-        if title is not None:
-            doc.title = title
-        if case_id is not None:
-            doc.case_id = case_id
-        if originator_type is not None:
-            doc.originator_type = originator_type
-        if sender is not None:
-            doc.sender = sender
-        if internal_id is not None:
-            doc.internal_id = internal_id or None
-        if issued_date is not None:
-            doc.issued_date = issued_date
-        if received_date is not None:
-            doc.received_date = received_date
-        if significance_tier is not None:
-            doc.significance_tier = significance_tier
-        if document_type is not None:
-            doc.document_type = document_type
+        return _impl(self.db, after_doc_id)
 
-        if finalize:
-            conf = dict(doc.extraction_confidence or {})
-            field_map = {
-                "originator": originator_type,
-                "sender": sender,
-                "issued_date": issued_date,
-                "significance_tier": significance_tier,
-                "document_type": document_type,
-            }
-            for key, val in field_map.items():
-                if val is not None:
-                    conf[key] = "user_set"
-            doc.extraction_confidence = conf
+    def confirm_document(self, doc_id: int, **kwargs) -> Document | None:
+        from app.services.triage_confirmation import confirm_document as _impl
 
-        from app.services.ingestion.service import compute_review_reasons
-
-        reasons = compute_review_reasons(doc, confirmed=finalize)
-        doc.review_reasons = reasons
-        # Only clear needs_review if there are no reasons left (including pending_confirmation)
-        # except for missing_parent which is non-blocking for triage removal.
-        actionable = [r for r in reasons if r != "missing_parent"]
-        doc.needs_review = bool(actionable)
-
-        self.db.commit()
-        # Sweep drafts whose last doc just moved away.
-        self.cleanup_orphaned_drafts()
-        self.db.refresh(doc)
-        return doc
+        return _impl(self.db, doc_id, **kwargs)
 
     def confirm_bundle(
         self,
@@ -729,142 +592,23 @@ class TriageService:
         proceeding_id: int | None = None,
         finalize: bool = False,
     ) -> IngestBatch | None:
-        """Cascade case/proceeding assignment to every doc in the bundle.
+        from app.services.triage_confirmation import confirm_bundle as _impl
 
-        finalize=True marks the batch COMPLETED unconditionally (used by the
-        explicit "Confirm bundle" action). finalize=False (the default, used by
-        "Assign case") never touches batch status — the bundle stays in triage
-        for further per-doc review.
-        """
-        batch = self.batch_repo.get(batch_id)
-        if not batch:
-            return None
-
-        docs = (
-            self.db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
+        return _impl(
+            self.db, batch_id, case_id, proceeding_id=proceeding_id, finalize=finalize
         )
-        from app.models.database import ActionItem, Proceeding
-        from app.services.ingestion.service import compute_review_reasons
-
-        # If assigning to an AI-suggested draft case, promote it to a real case.
-        case = self.db.query(Case).filter(Case.id == case_id).first()
-        if case and case.is_draft:
-            case.is_draft = False
-
-        # Same for the chosen proceeding — once the user confirms it, it's no
-        # longer a draft.
-        if proceeding_id is not None:
-            proc = (
-                self.db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
-            )
-            if proc and proc.is_draft:
-                proc.is_draft = False
-
-        doc_ids = [doc.id for doc in docs]
-        for doc in docs:
-            doc.case_id = case_id
-            if proceeding_id is not None:
-                doc.proceeding_id = proceeding_id
-            reasons = compute_review_reasons(doc, confirmed=finalize)
-            doc.review_reasons = reasons
-            actionable = [r for r in reasons if r != "missing_parent"]
-            doc.needs_review = bool(actionable)
-
-        # Cascade case/proceeding to ActionItems created during ingestion (Phase 4)
-        # that are still parked under _TRIAGE pending bundle confirmation.
-        if doc_ids:
-            orphaned = self.db.query(ActionItem).filter(
-                ActionItem.source_document_id.in_(doc_ids),
-                ActionItem.case_id == "_TRIAGE",
-            )
-            for item in orphaned:
-                item.case_id = case_id
-                if proceeding_id is not None and item.proceeding_id is None:
-                    item.proceeding_id = proceeding_id
-
-        batch.case_id = case_id
-        if proceeding_id is not None:
-            batch.proceeding_id = proceeding_id
-
-        # Mark batch completed only when explicitly finalizing.
-        if finalize:
-            batch.status = IngestBatchStatus.COMPLETED
-
-        self.db.commit()
-        # Sweep drafts whose last doc just moved away.
-        self.cleanup_orphaned_drafts()
-        self.db.refresh(batch)
-        return batch
 
     def cleanup_orphaned_drafts(self) -> int:
-        """Delete draft Case rows whose last document has moved away.
+        from app.services.triage_confirmation import cleanup_orphaned_drafts as _impl
 
-        Drafts are created at the METADATA pipeline stage when an AI-extracted
-        internal_id can't be matched to an existing case. If the user later
-        assigns the bundle elsewhere, the draft is left orphaned — invisible
-        in the picker (filtered) but still cluttering the data. Cascades
-        through to any proceedings the AI created alongside the draft.
-
-        Returns the number of drafts deleted. Caller is responsible for the
-        commit *after* their own changes — this method commits its own deletes.
-        """
-        from app.models.database import Document
-
-        # SQL: find drafts with zero remaining documents.
-        orphaned = (
-            self.db.query(Case)
-            .outerjoin(Document, Document.case_id == Case.id)
-            .filter(Case.is_draft.is_(True))
-            .group_by(Case.id)
-            .having(func.count(Document.id) == 0)
-            .all()
-        )
-        for case in orphaned:
-            self.db.delete(case)
-        if orphaned:
-            self.db.commit()
-        return len(orphaned)
+        return _impl(self.db)
 
     def get_bundle_suggestion(
         self, batch_id: int | None = None, doc_id: int | None = None
     ) -> tuple[str | None, int | None]:
-        """Return (suggested_case_id, suggested_proceeding_id) for a bundle.
+        from app.services.triage_confirmation import get_bundle_suggestion as _impl
 
-        Used by batch confirm to obtain per-bundle suggestions without rebuilding
-        the full triage feed. Returns (None, None) when no suggestion exists.
-        """
-        from app.models.database import IngestBatch
-
-        if batch_id:
-            batch = self.db.get(IngestBatch, batch_id)
-            if not batch:
-                return None, None
-            # Suggested case: batch.case_id if it's a real (non-triage) case or a draft
-            case_id = (
-                batch.case_id if batch.case_id and batch.case_id != "_TRIAGE" else None
-            )
-            if not case_id:
-                # Fall back to doc-level extraction that hasn't cascaded to batch yet
-                doc = (
-                    self.db.query(Document)
-                    .filter(
-                        Document.ingest_batch_id == batch_id,
-                        Document.case_id.isnot(None),
-                        Document.case_id != "_TRIAGE",
-                    )
-                    .first()
-                )
-                case_id = doc.case_id if doc else None
-            proceeding_id = batch.proceeding_id if batch.proceeding_id else None
-            return case_id, proceeding_id
-        elif doc_id:
-            doc = self.db.get(Document, doc_id)
-            if not doc:
-                return None, None
-            case_id = doc.case_id if doc.case_id and doc.case_id != "_TRIAGE" else None
-            proceeding_id = doc.proceeding_id if doc.proceeding_id else None
-            return case_id, proceeding_id
-        return None, None
+        return _impl(self.db, batch_id=batch_id, doc_id=doc_id)
 
     def toggle_reaction(
         self,
