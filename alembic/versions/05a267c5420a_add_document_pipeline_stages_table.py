@@ -18,6 +18,21 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _coerce_dt(val: str | None) -> str | None:
+    """Normalise any ISO 8601 timestamp to SQLAlchemy-SQLite's space-sep format.
+
+    pipeline_status.py writes UTC ISO strings like "2026-05-17T12:34:56.789012+00:00".
+    SQLAlchemy's SQLite DateTime reads/writes "YYYY-MM-DD HH:MM:SS.ffffff" (no T, no tz).
+    """
+    if not val:
+        return None
+    import re
+
+    val = re.sub(r"T", " ", val, count=1)
+    val = re.sub(r"[+-]\d{2}:\d{2}$", "", val)
+    return val
+
+
 def upgrade() -> None:
     import json
 
@@ -73,13 +88,13 @@ def upgrade() -> None:
                     "doc": doc_id,
                     "stage": stage_key,
                     "status": stage_data.get("status"),
-                    "started": stage_data.get("started_at"),
-                    "completed": stage_data.get("completed_at"),
+                    "started": _coerce_dt(stage_data.get("started_at")),
+                    "completed": _coerce_dt(stage_data.get("completed_at")),
                     "error": stage_data.get("error"),
                     "reason": stage_data.get("reason"),
                     "attempt": stage_data.get("attempt"),
                     "max_attempts": stage_data.get("max_attempts"),
-                    "next_at": stage_data.get("next_at"),
+                    "next_at": _coerce_dt(stage_data.get("next_at")),
                 },
             )
 

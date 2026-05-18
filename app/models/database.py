@@ -219,7 +219,6 @@ class Document(Base):
         "DocumentPipelineStage",
         back_populates="document",
         cascade="all, delete-orphan",
-        lazy="dynamic",
     )
 
     @validates("case_id")
