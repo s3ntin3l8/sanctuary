@@ -22,6 +22,7 @@ def enrich_document_task(self, doc_id: int):
         mark_skipped,
         mark_started,
         schedule_retry,
+        stages_dict,
     )
 
     # Secondary gate: skip enrichment when METADATA failed.
@@ -31,9 +32,7 @@ def enrich_document_task(self, doc_id: int):
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if doc:
-            metadata_status = (
-                (doc.pipeline_stages or {}).get("metadata", {}).get("status")
-            )
+            metadata_status = stages_dict(doc).get("metadata", {}).get("status")
             if metadata_status == "failed":
                 mark_skipped(doc_id, PipelineStage.ENRICH, db, reason="metadata_failed")
                 logger.info("Doc #%d: skipping enrich — METADATA failed", doc_id)

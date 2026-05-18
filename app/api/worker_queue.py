@@ -9,6 +9,7 @@ from app.config import templates
 from app.dependencies import get_db
 from app.models.database import Document
 from app.models.enums import PipelineState
+from app.services.pipeline_status import stages_dict
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def _get_queue_docs(
 
 def _current_stage(doc: Document) -> str:
     """Return the stage name currently running/retrying, or first pending, or empty."""
-    stages = doc.pipeline_stages or {}
+    stages = stages_dict(doc)
     for stage_key, rec in stages.items():
         if isinstance(rec, dict) and rec.get("status") in ("running", "retrying"):
             return stage_key

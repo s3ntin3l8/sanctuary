@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.database import Document, DocumentPipelineStage
 from app.models.enums import PipelineStage, StageStatus
+from app.services.pipeline_status import stages_dict
 
 client = TestClient(app)
 
@@ -97,7 +98,7 @@ def test_retry_all_resets_stages_and_dispatches(db_session):
     assert response.status_code == 200
     db_session.refresh(doc)
     # Every non-skipped stage is now PENDING with cleared error/timestamps.
-    for record in doc.pipeline_stages.values():
+    for record in stages_dict(doc).values():
         assert record["status"] == StageStatus.PENDING.value
         assert record.get("error") is None
     mock_dispatch.assert_called_once()
@@ -116,7 +117,7 @@ def test_retry_all_preserves_skipped(db_session):
 
     assert response.status_code == 200
     db_session.refresh(doc)
-    assert doc.pipeline_stages["batch_analysis"]["status"] == StageStatus.SKIPPED.value
+    assert stages_dict(doc)["batch_analysis"]["status"] == StageStatus.SKIPPED.value
 
 
 @pytest.mark.integration
@@ -128,7 +129,7 @@ def test_retry_all_409_when_running(db_session):
     assert response.status_code == 409
     assert b"still running" in response.content
     db_session.refresh(doc)
-    assert doc.pipeline_stages["enrich"]["status"] == StageStatus.RUNNING.value
+    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RUNNING.value
     mock_dispatch.assert_not_called()
 
 

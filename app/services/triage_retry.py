@@ -40,14 +40,18 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         PipelineStage,
         StageStatus,
     )
-    from app.services.pipeline_status import _STAGE_ORDER, compute_overall_state
+    from app.services.pipeline_status import (
+        _STAGE_ORDER,
+        compute_overall_state,
+        stages_dict,
+    )
 
     # Re-read after any rollback so ORM state reflects DB reality.
     db.refresh(batch)
 
     # Bail out if any doc has a running stage
     for doc in batch.documents:
-        stages = doc.pipeline_stages or {}
+        stages = stages_dict(doc)
         if any(
             v.get("status") == StageStatus.RUNNING.value
             for v in stages.values()
@@ -66,7 +70,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     dispatch_items: list = []
 
     for doc in batch.documents:
-        stages_current = doc.pipeline_stages or {}
+        stages_current = stages_dict(doc)
 
         new_stages = dict(stages_current)
         for stage in PipelineStage:

@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage, StageStatus
-from app.services.pipeline_status import is_db_locked
+from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def detect_relationships_task(self, doc_id: int):
         from app.models.database import Document
 
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        stages = (doc.pipeline_stages or {}) if doc else {}
+        stages = stages_dict(doc) if doc else {}
         enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
         if enrich_status != StageStatus.COMPLETED.value:
             mark_skipped(

@@ -139,6 +139,36 @@ _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
 # ---------------------------------------------------------------------------
 
 
+def stages_dict(doc) -> dict:
+    """Return pipeline stages as a dict keyed by stage name.
+
+    Reads from doc.stage_rows (the document_pipeline_stages ORM relationship).
+    Shape: {stage_name: {"status": ..., "started_at": ..., ...}} — only keys
+    with non-None values are included, matching the old JSON column shape.
+    """
+
+    def _iso(dt):
+        return dt.isoformat() if dt is not None else None
+
+    return {
+        row.stage: {
+            k: v
+            for k, v in {
+                "status": row.status,
+                "started_at": _iso(row.started_at),
+                "completed_at": _iso(row.completed_at),
+                "error": row.error,
+                "reason": row.reason,
+                "attempt": row.attempt,
+                "max_attempts": row.max_attempts,
+                "next_at": _iso(row.next_at),
+            }.items()
+            if v is not None
+        }
+        for row in (doc.stage_rows if doc is not None else [])
+    }
+
+
 def initialize(doc, batched: bool, db: Session) -> None:
     """Set all stages to pending. Call after db.add(doc) + db.flush() so doc.id exists."""
     from app.models.database import DocumentPipelineStage
@@ -527,7 +557,7 @@ def recover_orphaned_running_stages(db: Session) -> dict:
 
     _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
-        stages: dict = doc.pipeline_stages or {}
+        stages: dict = stages_dict(doc)
         stuck = [
             key
             for key, val in stages.items()
@@ -566,7 +596,7 @@ def recover_orphaned_running_stages(db: Session) -> dict:
                 batch_analysis_reset_ids.add(doc.ingest_batch_id)
 
         db.refresh(doc)
-        doc.pipeline_state = compute_overall_state(doc.pipeline_stages or {})
+        doc.pipeline_state = compute_overall_state(stages_dict(doc))
 
         docs_reset += 1
         if doc.ingest_batch_id:
@@ -734,7 +764,7 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
 
     redispatched: list[int] = []
     for doc in candidates:
-        stages: dict = doc.pipeline_stages or {}
+        stages: dict = stages_dict(doc)
 
         # Skip if any stage is currently running — running-state recovery owns it.
         if any(

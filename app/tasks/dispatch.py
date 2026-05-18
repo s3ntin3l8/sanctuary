@@ -62,6 +62,7 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
             _STAGE_ORDER,
             STAGE_REGISTRY,
             mark_failed_with_cascade,
+            stages_dict,
         )
 
         # Only doc-keyed dispatches map cleanly to a doc's stage. Batch-keyed
@@ -85,7 +86,7 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
             doc = db.query(Document).filter(Document.id == doc_id).first()
             if doc is None:
                 return
-            stages = doc.pipeline_stages or {}
+            stages = stages_dict(doc)
             terminal = {
                 StageStatus.COMPLETED.value,
                 StageStatus.SKIPPED.value,

@@ -3,6 +3,7 @@
 import pytest
 
 from app.models.enums import PipelineStage, StageStatus
+from app.services.pipeline_status import stages_dict
 
 
 @pytest.mark.unit
@@ -94,5 +95,5 @@ def test_mark_started_then_completed_idempotent_state(db_session):
     mark_completed(doc.id, PipelineStage.EMBEDDINGS, db_session)
 
     db_session.refresh(doc)
-    status = doc.pipeline_stages[PipelineStage.EMBEDDINGS.value]["status"]
+    status = stages_dict(doc)[PipelineStage.EMBEDDINGS.value]["status"]
     assert status == StageStatus.COMPLETED.value

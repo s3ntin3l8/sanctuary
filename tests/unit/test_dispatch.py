@@ -14,7 +14,7 @@ def test_dispatch_failure_marks_metadata_stage_when_extract_completed():
     the first non-terminal stage of the doc. EXTRACT completed → METADATA."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
-    fake_doc.pipeline_stages = {
+    fake_stages = {
         "extract": {"status": "completed"},
         "metadata": {"status": "pending"},
     }
@@ -23,6 +23,7 @@ def test_dispatch_failure_marks_metadata_stage_when_extract_completed():
     with (
         patch("app.dependencies.get_db_session", return_value=fake_db),
         patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+        patch("app.services.pipeline_status.stages_dict", return_value=fake_stages),
     ):
         _record_dispatch_failure(
             "app.tasks.document_processing.process_document_task",
@@ -44,7 +45,7 @@ def test_dispatch_failure_marks_extract_stage_when_extract_pending():
     """When EXTRACT is the doc's first non-terminal stage, mark that failed."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
-    fake_doc.pipeline_stages = {
+    fake_stages = {
         "extract": {"status": "pending"},
         "metadata": {"status": "pending"},
     }
@@ -53,6 +54,7 @@ def test_dispatch_failure_marks_extract_stage_when_extract_pending():
     with (
         patch("app.dependencies.get_db_session", return_value=fake_db),
         patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+        patch("app.services.pipeline_status.stages_dict", return_value=fake_stages),
     ):
         _record_dispatch_failure(
             "app.tasks.document_processing.process_document_task",
@@ -69,12 +71,13 @@ def test_dispatch_failure_marks_embeddings_stage_failed():
     """generate_embedding_task failures map to EMBEDDINGS."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
-    fake_doc.pipeline_stages = {"embeddings": {"status": "pending"}}
+    fake_stages = {"embeddings": {"status": "pending"}}
     fake_db.query.return_value.filter.return_value.first.return_value = fake_doc
 
     with (
         patch("app.dependencies.get_db_session", return_value=fake_db),
         patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+        patch("app.services.pipeline_status.stages_dict", return_value=fake_stages),
     ):
         _record_dispatch_failure(
             "app.tasks.generate_embedding.generate_embedding_task",
@@ -92,7 +95,7 @@ def test_dispatch_failure_skips_when_stage_already_failed():
     must not stomp it with a generic 'dispatch error: ...'."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
-    fake_doc.pipeline_stages = {
+    fake_stages = {
         "embeddings": {"status": "failed", "error": "real specific cause"},
     }
     fake_db.query.return_value.filter.return_value.first.return_value = fake_doc
@@ -100,6 +103,7 @@ def test_dispatch_failure_skips_when_stage_already_failed():
     with (
         patch("app.dependencies.get_db_session", return_value=fake_db),
         patch("app.services.pipeline_status.mark_failed_with_cascade") as mock_mfc,
+        patch("app.services.pipeline_status.stages_dict", return_value=fake_stages),
     ):
         _record_dispatch_failure(
             "app.tasks.generate_embedding.generate_embedding_task",

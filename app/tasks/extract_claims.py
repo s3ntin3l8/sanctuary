@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage
-from app.services.pipeline_status import is_db_locked
+from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def extract_claims_task(self, doc_id: int):
     db = get_db_session()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        stages = (doc.pipeline_stages or {}) if doc else {}
+        stages = stages_dict(doc) if doc else {}
         enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
         if enrich_status != StageStatus.COMPLETED.value:
             mark_skipped(

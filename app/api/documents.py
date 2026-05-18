@@ -23,6 +23,7 @@ from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
 )
+from app.services.pipeline_status import stages_dict
 from app.services.triage_retry import dispatch_pipeline_retry
 from app.tasks.document_processing import process_document_task
 
@@ -269,7 +270,7 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
         # Find the first failed stage for the error message.
         failed_stage = ""
         failed_error = ""
-        for stage_key, stage_rec in (doc.pipeline_stages or {}).items():
+        for stage_key, stage_rec in stages_dict(doc).items():
             if isinstance(stage_rec, dict) and stage_rec.get("status") == "failed":
                 failed_stage = stage_key
                 failed_error = stage_rec.get("error") or ""
@@ -304,7 +305,7 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
     retrying_max = None
     retrying_next_at = ""
     running_stage = ""
-    for stage_key, stage_rec in (doc.pipeline_stages or {}).items():
+    for stage_key, stage_rec in stages_dict(doc).items():
         if not isinstance(stage_rec, dict):
             continue
         st = stage_rec.get("status")
@@ -610,7 +611,7 @@ async def retry_pipeline_stage(
     # worker can't mark_started between our guard check and reset_stage.
     _lock_row_for_retry(doc_id, db)
     db.refresh(doc)
-    stages = doc.pipeline_stages or {}
+    stages = stages_dict(doc)
 
     # Guard: reject if this stage itself is running
     current = stages.get(stage, {}).get("status")
@@ -672,7 +673,7 @@ async def retry_pipeline_all(
         # can't mark_started between the guard check and reset_all_stages.
         _lock_row_for_retry(doc_id, db)
         db.refresh(doc)
-        stages = doc.pipeline_stages or {}
+        stages = stages_dict(doc)
         running_stages = [
             key
             for key, val in stages.items()

@@ -24,6 +24,7 @@ from app.services.case_dashboard_service import (
     originator_color_for_doc,
     summary_bullets_from_ai_summary,
 )
+from app.services.pipeline_status import stages_dict
 
 
 def _passage_id(text: str, kind: str) -> str:
@@ -199,7 +200,7 @@ def build_hud_context(
             .all()
         }
 
-    _claims_stage = (doc.pipeline_stages or {}).get("claims", {})
+    _claims_stage = stages_dict(doc).get("claims", {})
     _claims_stage_status = _claims_stage.get("status", "pending")
     if _claims_stage_status == "skipped":
         claims_status = "skipped"

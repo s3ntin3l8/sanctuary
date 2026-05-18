@@ -20,6 +20,7 @@ from app.models.enums import (
     PipelineState,
     StageStatus,
 )
+from app.services.pipeline_status import stages_dict
 
 
 def _make_batch(db_session, case_id=None) -> IngestBatch:
@@ -99,7 +100,7 @@ def test_full_retry_resets_extract_and_dispatches_it(
 
     # EXTRACT must be PENDING
     assert (
-        doc.pipeline_stages[PipelineStage.EXTRACT.value]["status"]
+        stages_dict(doc)[PipelineStage.EXTRACT.value]["status"]
         == StageStatus.PENDING.value
     )
 
@@ -188,7 +189,7 @@ def test_standard_retry_still_skips_extract(app_client, db_session, sample_case)
     db_session.refresh(doc)
     # EXTRACT stays COMPLETED
     assert (
-        doc.pipeline_stages[PipelineStage.EXTRACT.value]["status"]
+        stages_dict(doc)[PipelineStage.EXTRACT.value]["status"]
         == StageStatus.COMPLETED.value
     )
 

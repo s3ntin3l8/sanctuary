@@ -15,6 +15,7 @@ from app.models.enums import (
     PipelineState,
     StageStatus,
 )
+from app.services.pipeline_status import stages_dict
 
 
 def _make_batch(
@@ -111,7 +112,7 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
     assert batch.status == IngestBatchStatus.PENDING
 
     # All non-EXTRACT stages flipped to PENDING
-    stages = doc.pipeline_stages or {}
+    stages = stages_dict(doc)
     for stage in PipelineStage:
         if stage == PipelineStage.EXTRACT:
             continue
@@ -180,7 +181,7 @@ def test_retry_bundle_skips_skipped_stages(app_client, db_session, sample_case):
 
     assert response.status_code == 200
     db_session.refresh(doc)
-    stages_after = doc.pipeline_stages or {}
+    stages_after = stages_dict(doc)
     assert (
         stages_after[PipelineStage.BATCH_ANALYSIS.value]["status"]
         == StageStatus.SKIPPED.value

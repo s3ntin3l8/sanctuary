@@ -7,7 +7,7 @@ from sqlalchemy.exc import OperationalError as SA_OperationalError
 from app.dependencies import get_db_session
 from app.models.database import Document
 from app.models.enums import PipelineStage
-from app.services.pipeline_status import is_db_locked
+from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def process_document_task(self, doc_id: int):
             return {"status": "not_found", "doc_id": doc_id}
 
         # Skip EXTRACT when retrying a later stage (EXTRACT already completed).
-        stages = doc.pipeline_stages or {}
+        stages = stages_dict(doc)
         extract_done = (
             stages.get(PipelineStage.EXTRACT.value, {}).get("status") == "completed"
         )
@@ -118,7 +118,7 @@ def process_document_task(self, doc_id: int):
         # Sibling docs still proceed via the batch analyzer (see below).
         db.refresh(doc)
         metadata_status = (
-            (doc.pipeline_stages or {})
+            stages_dict(doc)
             .get(PipelineStage.METADATA.value, {})
             .get("status", "pending")
         )

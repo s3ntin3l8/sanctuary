@@ -3,6 +3,7 @@
 import pytest
 
 from app.models.enums import PipelineStage, PipelineState, StageStatus
+from app.services.pipeline_status import stages_dict
 
 # ---------------------------------------------------------------------------
 # Registry completeness
@@ -127,7 +128,7 @@ def test_sequential_stage_updates_both_survive(db_session):
     mark_completed(doc.id, PipelineStage.ENTITIES, db_session)
 
     db_session.refresh(doc)
-    stages = doc.pipeline_stages or {}
+    stages = stages_dict(doc)
     assert (
         stages.get(PipelineStage.CLAIMS.value, {}).get("status")
         == StageStatus.COMPLETED.value
@@ -174,7 +175,7 @@ def test_mark_failed_with_cascade_propagates(db_session):
     mark_failed_with_cascade(doc.id, PipelineStage.EXTRACT, db_session, error="boom")
 
     db_session.refresh(doc)
-    stages = doc.pipeline_stages
+    stages = stages_dict(doc)
 
     assert stages[PipelineStage.EXTRACT.value]["status"] == StageStatus.FAILED.value
     assert stages[PipelineStage.METADATA.value]["status"] == StageStatus.FAILED.value
@@ -289,7 +290,7 @@ def test_mark_retrying_writes_record_shape(db_session):
     )
 
     db_session.refresh(doc)
-    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    rec = stages_dict(doc)[PipelineStage.EXTRACT.value]
     assert rec["status"] == StageStatus.RETRYING.value
     assert rec["error"] == "boom"
     assert rec["attempt"] == 2
@@ -345,7 +346,7 @@ def test_mark_started_clears_retry_bookkeeping(db_session):
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
 
     db_session.refresh(doc)
-    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    rec = stages_dict(doc)[PipelineStage.EXTRACT.value]
     assert rec["status"] == StageStatus.RUNNING.value
     assert "attempt" not in rec
     assert "max_attempts" not in rec
@@ -397,7 +398,7 @@ def test_schedule_retry_computes_next_at_from_countdown(db_session):
     after = datetime.now(UTC).replace(tzinfo=None)
 
     db_session.refresh(doc)
-    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    rec = stages_dict(doc)[PipelineStage.EXTRACT.value]
     assert rec["status"] == StageStatus.RETRYING.value
     next_at = datetime.fromisoformat(rec["next_at"])
     # next_at should be ~60s from now, between before+60 and after+60
@@ -465,7 +466,7 @@ def test_recover_orphaned_running_stages_resets_retrying(db_session):
     assert result["stages_reset"] == 1
 
     db_session.refresh(doc)
-    rec = doc.pipeline_stages[PipelineStage.EXTRACT.value]
+    rec = stages_dict(doc)[PipelineStage.EXTRACT.value]
     assert rec["status"] == StageStatus.PENDING.value
     # Retry bookkeeping should be wiped on reset.
     assert "attempt" not in rec

@@ -35,6 +35,7 @@ from app.repositories.action_item import ActionItemRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.repositories.user_reaction import UserReactionRepository
+from app.services.pipeline_status import stages_dict
 
 
 def _sanitize_case_title(
@@ -148,7 +149,7 @@ class BundleView:
         running: list[str] = []
         pending: list[str] = []
         for doc in self.documents:
-            for stage_name, info in (doc.pipeline_stages or {}).items():
+            for stage_name, info in stages_dict(doc).items():
                 status = (info or {}).get("status")
                 if status in {"running", "retrying"}:
                     running.append(stage_name)
@@ -331,7 +332,7 @@ def _reset_and_reenrich(db: Session, docs: list) -> None:
     from app.tasks.enrich_document import enrich_document_task
 
     for doc in docs:
-        metadata_status = (doc.pipeline_stages or {}).get("metadata", {}).get("status")
+        metadata_status = stages_dict(doc).get("metadata", {}).get("status")
         if metadata_status != "completed":
             continue
         reset_stage(doc.id, PipelineStage.ENRICH, db)

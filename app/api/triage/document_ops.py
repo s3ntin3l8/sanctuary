@@ -15,6 +15,7 @@ from app.models.database import Case, Document
 from app.models.enums import OriginatorType
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
+from app.services.pipeline_status import stages_dict
 from app.services.triage_oob_render import (
     render_batch_oob,
     render_bundle_group_oob,
@@ -143,8 +144,7 @@ async def confirm_document(
     tier_requeue_prompt = (
         parsed_significance is not None
         and pre_confirm_tier != parsed_significance
-        and (doc.pipeline_stages or {}).get("enrich", {}).get("status")
-        in ("completed", "skipped")
+        and stages_dict(doc).get("enrich", {}).get("status") in ("completed", "skipped")
     )
 
     cases = CaseRepository(db).list_for_picker()
