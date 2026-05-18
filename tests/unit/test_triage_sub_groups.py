@@ -4,7 +4,8 @@ import pytest
 
 from app.models.database import BatchSubGroup, Document, IngestBatch
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
-from app.services.triage_service import TriageService, ensure_sub_groups_initialized
+from app.services.triage_service import TriageService
+from app.services.triage_subgroups import ensure_sub_groups_initialized
 
 
 def _make_batch(db_session) -> IngestBatch:
@@ -33,8 +34,8 @@ def _make_doc(db_session, batch_id: int, title="Doc", parent_id=None) -> Documen
 def test_ensure_sub_groups_initialized_idempotent(db_session):
     batch = _make_batch(db_session)
     _make_doc(db_session, batch.id)
-    first = ensure_sub_groups_initialized(batch.id, db_session)
-    second = ensure_sub_groups_initialized(batch.id, db_session)
+    first = ensure_sub_groups_initialized(db_session, batch.id)
+    second = ensure_sub_groups_initialized(db_session, batch.id)
     assert len(first) == len(second) == 1
 
 
@@ -44,7 +45,7 @@ def test_ensure_sub_groups_one_per_root(db_session):
     root1 = _make_doc(db_session, batch.id, "Root1")
     _make_doc(db_session, batch.id, "Root2")
     child = _make_doc(db_session, batch.id, "Child", parent_id=root1.id)
-    groups = ensure_sub_groups_initialized(batch.id, db_session)
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
     assert len(groups) == 2
     db_session.refresh(child)
     db_session.refresh(root1)
@@ -86,7 +87,7 @@ def test_rename_sub_group(db_session):
     batch = _make_batch(db_session)
     _make_doc(db_session, batch.id)
     svc = TriageService(db_session)
-    groups = ensure_sub_groups_initialized(batch.id, db_session)
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
     svc.rename_sub_group(groups[0].id, batch.id, "Custom Label")
     db_session.refresh(groups[0])
     assert groups[0].label == "Custom Label"
@@ -97,7 +98,7 @@ def test_rename_sub_group_empty_string_clears(db_session):
     batch = _make_batch(db_session)
     _make_doc(db_session, batch.id)
     svc = TriageService(db_session)
-    groups = ensure_sub_groups_initialized(batch.id, db_session)
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
     svc.rename_sub_group(groups[0].id, batch.id, "Custom")
     svc.rename_sub_group(groups[0].id, batch.id, "")
     db_session.refresh(groups[0])
@@ -110,7 +111,7 @@ def test_reorder_documents(db_session):
     doc_a = _make_doc(db_session, batch.id, "A")
     doc_b = _make_doc(db_session, batch.id, "B")
     svc = TriageService(db_session)
-    groups = ensure_sub_groups_initialized(batch.id, db_session)
+    groups = ensure_sub_groups_initialized(db_session, batch.id)
     sg_id = groups[0].id
     svc.reorder_documents(batch.id, [doc_b.id, doc_a.id], sg_id)
     db_session.refresh(doc_a)
@@ -133,5 +134,5 @@ def test_has_manual_groups_returns_true_after_init(db_session):
 
     batch = _make_batch(db_session)
     _make_doc(db_session, batch.id)
-    ensure_sub_groups_initialized(batch.id, db_session)
+    ensure_sub_groups_initialized(db_session, batch.id)
     assert _has_manual_groups(batch.id, db_session) is True

@@ -10,10 +10,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.constants import SIG_ORDER as _SIG_ORDER
 from app.models.database import (
     BatchSubGroup,
     Document,
@@ -22,7 +20,6 @@ from app.models.database import (
 )
 from app.models.enums import (
     ActionItemStatus,
-    DocumentRole,
     DocumentStatus,
     IngestBatchSourceType,
     IngestBatchStatus,
@@ -227,78 +224,6 @@ class BundleView:
         return groups
 
 
-def ensure_sub_groups_initialized(batch_id: int, db: Session) -> list[BatchSubGroup]:
-    """Materialize BatchSubGroup rows for a batch on first user mutation.
-
-    Idempotent: if rows already exist, returns them as-is. On first call,
-    mirrors the auto parent_groups hierarchy into explicit BatchSubGroup rows
-    and assigns each doc its sub_group_id + sub_group_sort_order.
-    """
-    existing = (
-        db.query(BatchSubGroup)
-        .filter(BatchSubGroup.batch_id == batch_id)
-        .order_by(BatchSubGroup.sort_order)
-        .all()
-    )
-    if existing:
-        return existing
-
-    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
-    if not batch:
-        return []
-
-    docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
-    docs_by_id = {d.id: d for d in docs}
-    children_of: dict[int, list] = {}
-    roots: list[Document] = []
-    for d in docs:
-        if not d.parent_id or d.parent_id not in docs_by_id:
-            roots.append(d)
-        else:
-            children_of.setdefault(d.parent_id, []).append(d)
-
-    roots.sort(key=lambda d: (_SIG_ORDER.get(d.significance_tier, 99), d.id or 0))
-
-    if not roots:
-        roots = list(docs)
-
-    # Flat bundle: all docs are roots with no children → collapse into one group.
-    # Creating one group per doc produces a confusing N-group UI with no useful structure.
-    if len(roots) == len(docs):
-        sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=0)
-        db.add(sg)
-        db.flush()
-        for order, doc in enumerate(roots):
-            doc.sub_group_id = sg.id
-            doc.sub_group_sort_order = order
-        db.flush()
-        return [sg]
-
-    sub_groups: list[BatchSubGroup] = []
-    for group_idx, root in enumerate(roots):
-        sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=group_idx)
-        db.add(sg)
-        db.flush()
-
-        sort_order = 0
-        queue = [root]
-        visited: set[int] = set()
-        while queue:
-            node = queue.pop(0)
-            if node.id in visited:
-                continue
-            visited.add(node.id)
-            node.sub_group_id = sg.id
-            node.sub_group_sort_order = sort_order
-            sort_order += 1
-            queue.extend(children_of.get(node.id, []))
-
-        sub_groups.append(sg)
-
-    db.flush()
-    return sub_groups
-
-
 def _reset_and_reenrich(db: Session, docs: list) -> None:
     """Deprecated shim — use triage_confirmation.reset_and_reenrich."""
     from app.services.triage_confirmation import reset_and_reenrich
@@ -349,48 +274,17 @@ class TriageService:
 
         return _impl(self.db, bundle)
 
+    # --- sub-groups -----------------------------------------------------------
+
     def set_cover_letter(self, doc_id: int, batch_id: int) -> Document:
-        """Mark doc_id as COVER_LETTER in its sub-group; clear previous cover in the same group."""
-        ensure_sub_groups_initialized(batch_id, self.db)
+        from app.services.triage_subgroups import set_cover_letter as _impl
 
-        doc = (
-            self.db.query(Document)
-            .filter(Document.id == doc_id, Document.ingest_batch_id == batch_id)
-            .first()
-        )
-        if not doc:
-            raise ValueError(f"Document {doc_id} not in batch {batch_id}")
-
-        if doc.sub_group_id is not None:
-            self.db.query(Document).filter(
-                Document.sub_group_id == doc.sub_group_id,
-                Document.role == DocumentRole.COVER_LETTER,
-            ).update({"role": DocumentRole.ENCLOSURE})
-        else:
-            self.db.query(Document).filter(
-                Document.ingest_batch_id == batch_id,
-                Document.sub_group_id.is_(None),
-                Document.role == DocumentRole.COVER_LETTER,
-            ).update({"role": DocumentRole.ENCLOSURE})
-
-        doc.role = DocumentRole.COVER_LETTER
-        self.db.flush()
-        return doc
+        return _impl(self.db, doc_id, batch_id)
 
     def create_sub_group(self, batch_id: int) -> BatchSubGroup:
-        """Create a new empty sub-group at the end of the batch's group list."""
-        ensure_sub_groups_initialized(batch_id, self.db)
+        from app.services.triage_subgroups import create_sub_group as _impl
 
-        max_order = (
-            self.db.query(func.max(BatchSubGroup.sort_order))
-            .filter(BatchSubGroup.batch_id == batch_id)
-            .scalar()
-        ) or 0
-
-        sg = BatchSubGroup(batch_id=batch_id, label=None, sort_order=max_order + 1)
-        self.db.add(sg)
-        self.db.flush()
-        return sg
+        return _impl(self.db, batch_id)
 
     def rename_sub_group(
         self,
@@ -399,42 +293,9 @@ class TriageService:
         label: str,
         lead_doc_id: int | None = None,
     ) -> BatchSubGroup:
-        """Set explicit label on a sub-group. Empty string clears to auto-derived.
+        from app.services.triage_subgroups import rename_sub_group as _impl
 
-        When sub_group_id is None (auto mode), lazy-initializes BatchSubGroup rows
-        and identifies the target group via lead_doc_id.
-        """
-        if sub_group_id is not None:
-            sg = (
-                self.db.query(BatchSubGroup)
-                .filter(
-                    BatchSubGroup.id == sub_group_id, BatchSubGroup.batch_id == batch_id
-                )
-                .first()
-            )
-            if not sg:
-                raise ValueError(
-                    f"SubGroup {sub_group_id} not found in batch {batch_id}"
-                )
-        else:
-            ensure_sub_groups_initialized(batch_id, self.db)
-            sg = None
-            if lead_doc_id is not None:
-                doc = self.db.get(Document, lead_doc_id)
-                if doc and doc.sub_group_id:
-                    sg = (
-                        self.db.query(BatchSubGroup)
-                        .filter(
-                            BatchSubGroup.id == doc.sub_group_id,
-                            BatchSubGroup.batch_id == batch_id,
-                        )
-                        .first()
-                    )
-            if not sg:
-                raise ValueError(f"Cannot identify sub-group in batch {batch_id}")
-        sg.label = label.strip() or None
-        self.db.flush()
-        return sg
+        return _impl(self.db, sub_group_id, batch_id, label, lead_doc_id=lead_doc_id)
 
     def reorder_documents(
         self,
@@ -443,40 +304,15 @@ class TriageService:
         target_sub_group_id: int | None,
         lead_doc_id: int | None = None,
     ) -> None:
-        """Assign docs to target_sub_group_id with sequential sub_group_sort_order.
+        from app.services.triage_subgroups import reorder_documents as _impl
 
-        Called once per sub-group after drag-drop completes. The frontend sends
-        each sub-group's current doc order as a separate POST.
-        When target_sub_group_id is None (auto mode), lazy-initializes BatchSubGroup
-        rows and identifies the target via lead_doc_id.
-        """
-        groups = ensure_sub_groups_initialized(batch_id, self.db)
-
-        if target_sub_group_id is not None:
-            sg = next((g for g in groups if g.id == target_sub_group_id), None)
-            if not sg:
-                raise ValueError(
-                    f"SubGroup {target_sub_group_id} not in batch {batch_id}"
-                )
-        else:
-            if lead_doc_id is not None:
-                doc = self.db.get(Document, lead_doc_id)
-                if doc and doc.sub_group_id:
-                    target_sub_group_id = doc.sub_group_id
-            if target_sub_group_id is None:
-                target_sub_group_id = groups[0].id if groups else None
-            if not target_sub_group_id:
-                raise ValueError(f"No sub-groups in batch {batch_id}")
-
-        for order, doc_id in enumerate(ordered_doc_ids):
-            self.db.query(Document).filter(
-                Document.id == doc_id,
-                Document.ingest_batch_id == batch_id,
-            ).update(
-                {"sub_group_id": target_sub_group_id, "sub_group_sort_order": order}
-            )
-
-        self.db.flush()
+        return _impl(
+            self.db,
+            batch_id,
+            ordered_doc_ids,
+            target_sub_group_id,
+            lead_doc_id=lead_doc_id,
+        )
 
     def delete_sub_group(
         self,
@@ -484,64 +320,14 @@ class TriageService:
         batch_id: int,
         lead_doc_id: int | None = None,
     ) -> None:
-        """Delete a sub-group; reassign its docs to the next remaining sub-group.
+        from app.services.triage_subgroups import delete_sub_group as _impl
 
-        When sub_group_id is None (auto mode), lazy-initializes BatchSubGroup rows
-        and identifies the target group via lead_doc_id. If no other sub-groups
-        remain, docs' sub_group_id falls back to NULL via the SET NULL cascade
-        and the batch reverts to auto mode.
-        """
-        groups = ensure_sub_groups_initialized(batch_id, self.db)
-
-        if sub_group_id is not None:
-            sg = next((g for g in groups if g.id == sub_group_id), None)
-        else:
-            sg = None
-            if lead_doc_id is not None:
-                doc = self.db.get(Document, lead_doc_id)
-                if doc and doc.sub_group_id:
-                    sg = next((g for g in groups if g.id == doc.sub_group_id), None)
-        if not sg:
-            raise ValueError(f"Cannot identify sub-group to delete in batch {batch_id}")
-
-        remaining = sorted(
-            (g for g in groups if g.id != sg.id), key=lambda g: g.sort_order
-        )
-        target = remaining[0] if remaining else None
-        if target is not None:
-            max_row = (
-                self.db.query(Document.sub_group_sort_order)
-                .filter(Document.sub_group_id == target.id)
-                .order_by(Document.sub_group_sort_order.desc())
-                .first()
-            )
-            next_order = (max_row[0] + 1) if max_row and max_row[0] is not None else 0
-            moved = (
-                self.db.query(Document)
-                .filter(Document.sub_group_id == sg.id)
-                .order_by(Document.sub_group_sort_order)
-                .all()
-            )
-            for offset, doc in enumerate(moved):
-                doc.sub_group_id = target.id
-                doc.sub_group_sort_order = next_order + offset
-            self.db.flush()
-
-        self.db.delete(sg)
-        self.db.flush()
+        return _impl(self.db, sub_group_id, batch_id, lead_doc_id=lead_doc_id)
 
     def reset_sub_groups(self, batch_id: int) -> None:
-        """Remove all BatchSubGroup rows for this batch, reverting to auto mode.
+        from app.services.triage_subgroups import reset_sub_groups as _impl
 
-        Clears sub_group_id and sub_group_sort_order from all docs in the batch.
-        The batch_sub_groups rows are cascade-deleted when the BatchSubGroup ORM
-        objects are deleted.
-        """
-        self.db.query(Document).filter(Document.ingest_batch_id == batch_id).update(
-            {"sub_group_id": None, "sub_group_sort_order": None}
-        )
-        self.db.query(BatchSubGroup).filter(BatchSubGroup.batch_id == batch_id).delete()
-        self.db.flush()
+        return _impl(self.db, batch_id)
 
     def get_slicing_queue(self) -> list:
         from app.services.triage_bundles import get_slicing_queue as _impl
