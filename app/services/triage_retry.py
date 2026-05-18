@@ -105,6 +105,7 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
                 ),
                 {"doc_id": doc.id, "stage": stage.value},
             )
+        db.expire(doc, ["stage_rows"])
 
         doc.role = DocumentRole.STANDALONE
         doc.parent_id = None
