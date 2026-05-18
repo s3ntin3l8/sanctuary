@@ -256,8 +256,8 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
         ),
         {"doc_id": doc_id},
     ).fetchall()
-    stages_dict = {row[0]: {"status": row[1]} for row in rows}
-    overall = compute_overall_state(stages_dict)
+    current = {row[0]: {"status": row[1]} for row in rows}
+    overall = compute_overall_state(current)
     db.execute(
         text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
         {"state": overall.value, "doc_id": doc_id},
@@ -880,8 +880,8 @@ def _update_stage(
         ),
         {"_doc_id": doc_id},
     ).fetchall()
-    stages_dict = {row[0]: {"status": row[1]} for row in rows}
-    overall = compute_overall_state(stages_dict)
+    current = {row[0]: {"status": row[1]} for row in rows}
+    overall = compute_overall_state(current)
     db.execute(
         text("UPDATE documents SET pipeline_state = :state WHERE id = :doc_id"),
         {"state": overall.value, "doc_id": doc_id},
