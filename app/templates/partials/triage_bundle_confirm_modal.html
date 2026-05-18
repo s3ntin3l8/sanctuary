@@ -36,7 +36,7 @@
         {# Batch assign form — shown only in batch mode #}
         <form id="bundle-batch-assign-form"
               x-show="bundleConfirm.isBatch"
-              hx-post="/triage/batch/assign"
+              hx-post="{{ request.app.url_path_for('batch_assign') }}"
               hx-target="this"
               hx-swap="none"
               class="px-6 py-4 space-y-4">
@@ -114,7 +114,7 @@
                       showProceedingPicker = false;
                   }
               })"
-              hx-post="/triage/confirm"
+              hx-post="{{ request.app.url_path_for('confirm') }}"
               hx-target="this"
               hx-swap="none"
               class="px-6 py-4 space-y-4">

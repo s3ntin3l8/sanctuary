@@ -39,14 +39,14 @@
             </div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-            <button hx-get="/upload"
+            <button hx-get="{{ request.app.url_path_for('upload_page') }}"
                     hx-target="#upload-modal-root"
                     hx-swap="innerHTML"
                     class="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded border border-outline-variant text-on-surface-variant hover:border-primary/40 hover:text-primary hover:bg-surface-container bg-surface-container-lowest transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                 <span class="material-symbols-outlined text-[14px]">upload</span>
                 Add document
             </button>
-            <button hx-post="/triage/retry-all"
+            <button hx-post="{{ request.app.url_path_for('retry_all_bundles') }}"
                     hx-swap="none"
                     hx-disabled-elt="this"
                     title="Re-Analyze all bundles in triage"

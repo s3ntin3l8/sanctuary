@@ -73,7 +73,7 @@
     </div>
     {% endif %}
 
-    <form hx-post="/triage/document/{{ doc.id }}/confirm"
+    <form hx-post="{{ request.app.url_path_for('confirm_document', doc_id=doc.id) }}"
           hx-target="closest .triage-hud-body"
           hx-swap="innerHTML"
           class="grid grid-cols-1 @[480px]:grid-cols-2 gap-1.5"

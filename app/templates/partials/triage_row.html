@@ -346,7 +346,7 @@
                         </button>
                         <button type="button"
                                 role="menuitem"
-                                hx-post="/triage/dismiss?batch_id={{ bundle.batch_id }}"
+                                hx-post="{{ request.app.url_path_for('dismiss_bundle') }}?batch_id={{ bundle.batch_id }}"
                                 hx-swap="none"
                                 hx-confirm="Archive this bundle? It will be hidden from triage."
                                 @click="open = false"
@@ -356,7 +356,7 @@
                         </button>
                         <button type="button"
                                 role="menuitem"
-                                hx-post="/triage/delete?batch_id={{ bundle.batch_id }}"
+                                hx-post="{{ request.app.url_path_for('delete_bundle') }}?batch_id={{ bundle.batch_id }}"
                                 hx-swap="none"
                                 hx-confirm="Permanently delete this bundle? All {{ bundle.doc_count }} document(s), files, and embeddings will be removed. This cannot be undone."
                                 @click="open = false"
@@ -373,7 +373,7 @@
     {# One-shot reload listener: fires when batch analysis completes and the
        server emits HX-Trigger: reload-bundle-{batch_id}. #}
     {% if polling_doc %}
-    <div hx-get="/triage/card/{{ polling_doc.id }}/live"
+    <div hx-get="{{ request.app.url_path_for('triage_card_live', doc_id=polling_doc.id) }}"
          hx-trigger="reload-bundle-{{ bundle.batch_id }} from:body"
          hx-swap="none"
          class="hidden"></div>

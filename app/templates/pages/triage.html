@@ -162,7 +162,7 @@
         </button>
         <span class="text-outline-variant">·</span>
         {# Batch confirm: generates hidden inputs from selection, posts to batch endpoint #}
-        <form hx-post="/triage/batch/confirm" hx-swap="none" class="contents">
+        <form hx-post="{{ request.app.url_path_for('batch_confirm') }}" hx-swap="none" class="contents">
             <template x-for="key in Object.keys($store.triage.selected)" :key="key">
                 <input type="hidden" name="bundle_keys" :value="key">
             </template>

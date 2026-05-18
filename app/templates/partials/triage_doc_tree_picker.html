@@ -18,7 +18,7 @@
         <span class="flex-1">Manually organized · AI re-analyze won't override</span>
         <button type="button"
                 class="text-[9px] text-on-surface-variant/60 hover:text-on-surface-variant underline underline-offset-2 cursor-pointer transition-colors"
-                hx-post="/triage/bundle/{{ bundle.batch_id }}/reset-groups"
+                hx-post="{{ request.app.url_path_for('triage_reset_sub_groups', batch_id=bundle.batch_id) }}"
                 hx-target="#triage-tree-{{ bundle.key }}"
                 hx-swap="outerHTML"
                 hx-confirm="Reset to auto grouping? Your manual group names, order, and cover letter pins will be lost.">
@@ -136,7 +136,7 @@
                 <button type="button"
                         title="{{ 'Cover letter' if is_cover else 'Set as cover letter' }}"
                         class="flex-shrink-0 p-0 leading-none -mr-1 {{ 'text-primary' if is_cover else 'text-on-surface-variant/30 invisible group-hover/docrow:visible' }} hover:text-primary transition-colors"
-                        hx-post="/triage/bundle/{{ bundle.batch_id }}/set-cover"
+                        hx-post="{{ request.app.url_path_for('triage_set_cover_letter', batch_id=bundle.batch_id) }}"
                         hx-vals='{"doc_id": "{{ d.id }}"}'
                         hx-target="#triage-tree-{{ bundle.key }}"
                         hx-swap="outerHTML"
@@ -180,7 +180,7 @@
     <div class="mt-1 px-1">
         <button type="button"
                 class="w-full flex items-center gap-1.5 text-[10px] text-on-surface-variant/60 hover:text-on-surface-variant py-1 px-2 rounded hover:bg-surface-container-low/50 transition-colors border border-dashed border-outline-variant/30 cursor-pointer"
-                hx-post="/triage/bundle/{{ bundle.batch_id }}/new-group"
+                hx-post="{{ request.app.url_path_for('triage_create_sub_group', batch_id=bundle.batch_id) }}"
                 hx-target="#triage-tree-{{ bundle.key }}"
                 hx-swap="outerHTML">
             <span class="material-symbols-outlined text-[11px]">add</span>

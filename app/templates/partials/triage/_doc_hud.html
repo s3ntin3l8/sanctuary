@@ -58,7 +58,7 @@
                    x-model="currentTitle"
                    placeholder="Untitled doc"
                    aria-label="Document title"
-                   hx-post="/triage/document/{{ doc.id }}/title"
+                   hx-post="{{ request.app.url_path_for('update_doc_title', doc_id=doc.id) }}"
                    hx-trigger="change"
                    hx-swap="none"
                    @blur="
@@ -140,7 +140,7 @@
             Significance tier changed — re-run enrichment and downstream stages?
         </span>
         <div class="flex items-center gap-1 flex-shrink-0">
-            <button hx-post="/document/{{ doc.id }}/pipeline/retry/enrich"
+            <button hx-post="{{ request.app.url_path_for('retry_pipeline_stage', doc_id=doc.id, stage='enrich') }}"
                     hx-swap="none"
                     @click="show = false"
                     class="btn btn-xs"
