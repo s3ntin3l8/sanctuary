@@ -8,13 +8,18 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db, get_triage_service
+from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, Document
 from app.models.enums import OriginatorType, UserReactionType
 from app.repositories.case import CaseRepository
+from app.services.triage_bundles import (
+    get_slicing_queue,
+    get_triage_bundles,
+    get_triage_filter_options,
+)
 from app.services.triage_oob_render import render_row_targeted_oob
-from app.services.triage_service import TriageService
+from app.services.triage_reactions import get_reactions_by_doc_ids
 from app.services.triage_view import failed_doc_summary
 
 router = APIRouter()
@@ -31,13 +36,13 @@ def triage_page(
     proceeding_id: list[str] = Query(default=[]),
     pipeline_filter: list[str] = Query(default=[]),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.models.database import Proceeding
 
-    filter_options = triage_service.get_triage_filter_options()
+    filter_options = get_triage_filter_options(db)
 
-    bundles = triage_service.get_triage_bundles(
+    bundles = get_triage_bundles(
+        db,
         limit=limit,
         offset=offset,
         sort=sort,
@@ -46,12 +51,12 @@ def triage_page(
         proceeding_ids=proceeding_id,
         pipeline_filters=pipeline_filter,
     )
-    slicing_queue = triage_service.get_slicing_queue()
+    slicing_queue = get_slicing_queue(db)
     all_cases = CaseRepository(db).list_for_picker()
     total_docs = sum(b.doc_count for b in bundles)
 
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
-    reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
+    reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
 
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
@@ -122,11 +127,11 @@ def triage_feed_partial(
     proceeding_id: list[str] = Query(default=[]),
     pipeline_filter: list[str] = Query(default=[]),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.services.triage_view import stats_for_chips
 
-    bundles = triage_service.get_triage_bundles(
+    bundles = get_triage_bundles(
+        db,
         limit=limit,
         offset=offset,
         sort=sort,
@@ -136,7 +141,7 @@ def triage_feed_partial(
         pipeline_filters=pipeline_filter,
     )
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
-    reactions_by_doc = triage_service.get_reactions_by_doc_ids(all_doc_ids)
+    reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
     header_stats = stats_for_chips(bundles)
     sub_bundles_by_key = {b.key: b.sub_bundles for b in bundles}
     mock_status_by_key = {b.key: b.mock_status for b in bundles}
@@ -174,7 +179,6 @@ def triage_card_live(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Return OOB row swap for a single doc (polling refresh).
 
@@ -186,6 +190,4 @@ def triage_card_live(
     if not doc:
         return HTMLResponse("", status_code=404)
 
-    return HTMLResponse(
-        render_row_targeted_oob(request, doc, triage_service, db, allow_delete=False)
-    )
+    return HTMLResponse(render_row_targeted_oob(request, doc, db, allow_delete=False))

@@ -15,7 +15,7 @@ from app.models.enums import (
     IngestBatchStatus,
     UserReactionType,
 )
-from app.services.triage_service import TriageService
+from app.services.triage_dismissal import delete_bundle
 
 
 def _make_batch_with_docs(db_session, doc_count=2, *, raw_source_path=None):
@@ -40,7 +40,6 @@ def _make_batch_with_docs(db_session, doc_count=2, *, raw_source_path=None):
 
 @pytest.mark.unit
 def test_delete_batch_removes_all_rows(db_session):
-    service = TriageService(db_session)
     batch, docs = _make_batch_with_docs(db_session, doc_count=2)
     doc_ids = [d.id for d in docs]
     batch_id = batch.id
@@ -69,7 +68,7 @@ def test_delete_batch_removes_all_rows(db_session):
     )
     db_session.commit()
 
-    assert service.delete_bundle(batch_id=batch_id) is True
+    assert delete_bundle(db_session, batch_id=batch_id) is True
 
     assert db_session.get(IngestBatch, batch_id) is None
     for did in doc_ids:
@@ -106,83 +105,75 @@ def test_delete_batch_removes_raw_source_file(db_session, tmp_path):
     raw_file = tmp_path / "source.eml"
     raw_file.write_text("From: someone")
 
-    service = TriageService(db_session)
     batch, _ = _make_batch_with_docs(
         db_session, doc_count=1, raw_source_path=str(raw_file)
     )
 
-    assert service.delete_bundle(batch_id=batch.id) is True
+    assert delete_bundle(db_session, batch_id=batch.id) is True
     assert not raw_file.exists()
 
 
 @pytest.mark.unit
 def test_delete_batch_with_missing_raw_source_file(db_session, tmp_path):
     missing = tmp_path / "never_existed.eml"
-    service = TriageService(db_session)
     batch, _ = _make_batch_with_docs(
         db_session, doc_count=1, raw_source_path=str(missing)
     )
     # Should not raise even though the file doesn't exist
-    assert service.delete_bundle(batch_id=batch.id) is True
+    assert delete_bundle(db_session, batch_id=batch.id) is True
 
 
 @pytest.mark.unit
 def test_delete_batch_in_processing_state_rejected(db_session):
-    service = TriageService(db_session)
     batch, _ = _make_batch_with_docs(db_session, doc_count=1)
     batch.status = IngestBatchStatus.PROCESSING
     db_session.commit()
 
     with pytest.raises(ValueError, match="processing"):
-        service.delete_bundle(batch_id=batch.id)
+        delete_bundle(db_session, batch_id=batch.id)
     # Batch is still there
     assert db_session.get(IngestBatch, batch.id) is not None
 
 
 @pytest.mark.unit
 def test_delete_batch_in_awaiting_slicing_state_rejected(db_session):
-    service = TriageService(db_session)
     batch, _ = _make_batch_with_docs(db_session, doc_count=1)
     batch.status = IngestBatchStatus.AWAITING_SLICING
     db_session.commit()
 
     with pytest.raises(ValueError, match="awaiting_slicing"):
-        service.delete_bundle(batch_id=batch.id)
+        delete_bundle(db_session, batch_id=batch.id)
 
 
 @pytest.mark.unit
 def test_delete_empty_batch_drops_row(db_session):
-    service = TriageService(db_session)
     batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="Empty bundle")
     db_session.add(batch)
     db_session.commit()
     db_session.refresh(batch)
     batch_id = batch.id
 
-    assert service.delete_bundle(batch_id=batch_id) is True
+    assert delete_bundle(db_session, batch_id=batch_id) is True
     assert db_session.get(IngestBatch, batch_id) is None
 
 
 @pytest.mark.unit
 def test_delete_loose_doc_via_doc_id(db_session):
-    service = TriageService(db_session)
     doc = Document(title="Synthetic", case_id="_TRIAGE")
     db_session.add(doc)
     db_session.commit()
     db_session.refresh(doc)
     doc_id = doc.id
 
-    assert service.delete_bundle(doc_id=doc_id) is True
+    assert delete_bundle(db_session, doc_id=doc_id) is True
     assert db_session.get(Document, doc_id) is None
 
 
 @pytest.mark.unit
 def test_delete_unknown_batch_returns_false(db_session):
-    service = TriageService(db_session)
-    assert service.delete_bundle(batch_id=999_999) is False
+    assert delete_bundle(db_session, batch_id=999_999) is False
 
 
 @pytest.mark.unit
 def test_delete_unknown_doc_returns_false(db_session):
-    service = TriageService(db_session)
-    assert service.delete_bundle(doc_id=999_999) is False
+    assert delete_bundle(db_session, doc_id=999_999) is False

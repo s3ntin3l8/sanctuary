@@ -41,9 +41,3 @@ def get_action_item_repo(db: Session = Depends(get_db)):
     from app.repositories.action_item import ActionItemRepository
 
     return ActionItemRepository(db)
-
-
-def get_triage_service(db: Session = Depends(get_db)):
-    from app.services.triage_service import TriageService
-
-    return TriageService(db)

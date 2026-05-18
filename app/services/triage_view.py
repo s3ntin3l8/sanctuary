@@ -2,7 +2,7 @@
 
 Consumes `BundleView` and produces UI-shaped objects: sub-bundles for the
 inline expand and drawer spine, mock_status for the filter chips, header stats,
-and date label formatting. Keeps `TriageService` and `BundleView` storage logic
+and date label formatting. Keeps `BundleView` storage logic
 untouched.
 """
 

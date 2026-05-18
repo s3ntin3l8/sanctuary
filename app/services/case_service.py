@@ -925,9 +925,9 @@ class CaseService:
         self.db.commit()
 
         if docs:
-            from app.services.triage_service import _reset_and_reenrich
+            from app.services.triage_confirmation import reset_and_reenrich
 
-            _reset_and_reenrich(self.db, docs)
+            reset_and_reenrich(self.db, docs)
 
         return {"docs": docs, "doc_count": len(docs)}
 

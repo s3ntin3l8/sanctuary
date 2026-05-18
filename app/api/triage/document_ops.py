@@ -10,12 +10,23 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.config import templates
-from app.dependencies import get_db, get_triage_service
+from app.dependencies import get_db
 from app.models.database import Case, Document
 from app.models.enums import OriginatorType
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
 from app.services.pipeline_status import stages_dict
+from app.services.triage_bundles import get_triage_bundles
+from app.services.triage_confirmation import (
+    confirm_bundle as _confirm_bundle,
+)
+from app.services.triage_confirmation import (
+    confirm_document as _confirm_document,
+)
+from app.services.triage_confirmation import (
+    find_next_review_doc,
+    get_bundle_suggestion,
+)
 from app.services.triage_oob_render import (
     render_batch_oob,
     render_bundle_group_oob,
@@ -23,7 +34,6 @@ from app.services.triage_oob_render import (
     render_sidebar_badges_oob,
     render_triage_header_stats_oob,
 )
-from app.services.triage_service import TriageService
 
 router = APIRouter()
 
@@ -57,7 +67,6 @@ async def confirm_document(
     significance_tier: str | None = Form(None),
     document_type: str | None = Form(None),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     from app.models.enums import DocumentType, SignificanceTier
 
@@ -113,7 +122,8 @@ async def confirm_document(
                 status_code=422, detail=f"Invalid date: {received_date}"
             ) from exc
 
-    doc = triage_service.confirm_document(
+    doc = _confirm_document(
+        db,
         doc_id,
         title=title,
         case_id=resolved_case_id,
@@ -135,9 +145,9 @@ async def confirm_document(
         and doc.case_id
         and doc.case_id != "_TRIAGE"
     ):
-        from app.services.triage_service import _reset_and_reenrich
+        from app.services.triage_confirmation import reset_and_reenrich
 
-        _reset_and_reenrich(db, [doc])
+        reset_and_reenrich(db, [doc])
 
     # Offer to re-run pipeline from enrich when significance tier was changed and
     # enrichment has already completed (no point prompting if pipeline is still running).
@@ -152,10 +162,10 @@ async def confirm_document(
     ctx["tier_requeue_prompt"] = tier_requeue_prompt
     response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
-    targeted_oob = render_row_targeted_oob(request, doc, triage_service, db)
+    targeted_oob = render_row_targeted_oob(request, doc, db)
     # Global OOB: sidebar badges + status bar
     global_oob = render_sidebar_badges_oob(db)
-    global_oob += render_triage_header_stats_oob(request, triage_service)
+    global_oob += render_triage_header_stats_oob(request, db)
 
     response.body += (targeted_oob + global_oob).encode("utf-8")
 
@@ -164,7 +174,7 @@ async def confirm_document(
     # header and shifts focus.
     if not doc.needs_review and doc.case_id and doc.case_id != "_TRIAGE":
         trigger: dict = {}
-        next_doc = triage_service.find_next_review_doc(doc.id)
+        next_doc = find_next_review_doc(db, doc.id)
         if next_doc:
             trigger["triage:advance"] = {"next_doc_id": next_doc.id}
         else:
@@ -195,7 +205,6 @@ async def confirm(
     new_case_title: str | None = Form(None),
     proceeding_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Single POST target for the bundle-confirm modal.
 
@@ -236,15 +245,13 @@ async def confirm(
     finalize = action == "confirm_bundle"
 
     # ---- perform the DB update ----
-    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_confirmation import reset_and_reenrich
 
     if is_synthetic == "true" and doc_id:
         _doc_id = int(doc_id)
         bundle_key = f"loose-{_doc_id}"
         pre_case = db.query(Document.case_id).filter(Document.id == _doc_id).scalar()
-        updated_doc = triage_service.confirm_document(
-            _doc_id, case_id=case_id, finalize=finalize
-        )
+        updated_doc = _confirm_document(db, _doc_id, case_id=case_id, finalize=finalize)
         if not updated_doc:
             raise HTTPException(status_code=404, detail=f"Document {_doc_id} not found")
         if parsed_proceeding_id is not None:
@@ -262,7 +269,7 @@ async def confirm(
             db.commit()
             db.refresh(updated_doc)
         if (not pre_case or pre_case == "_TRIAGE") and case_id and case_id != "_TRIAGE":
-            _reset_and_reenrich(db, [updated_doc])
+            reset_and_reenrich(db, [updated_doc])
     else:
         if not batch_id:
             raise HTTPException(
@@ -279,7 +286,8 @@ async def confirm(
             )
             .all()
         )
-        batch = triage_service.confirm_bundle(
+        batch = _confirm_bundle(
+            db,
             _batch_id,
             case_id=case_id,
             proceeding_id=parsed_proceeding_id,
@@ -290,10 +298,10 @@ async def confirm(
         if case_id and case_id != "_TRIAGE" and pre_triage_docs:
             for d in pre_triage_docs:
                 db.refresh(d)
-            _reset_and_reenrich(db, pre_triage_docs)
+            reset_and_reenrich(db, pre_triage_docs)
 
     # ---- build targeted OOB response (no full feed replacement) ----
-    bundles = triage_service.get_triage_bundles()
+    bundles = get_triage_bundles(db)
     updated_bundle = next((b for b in bundles if b.key == bundle_key), None)
 
     oob_parts: list[str] = []
@@ -302,9 +310,7 @@ async def confirm(
     if updated_bundle:
         # Bundle still in triage — OOB-swap the whole bundle group (updates
         # case chip in header, all cards, footer, badge in one shot).
-        oob_parts.append(
-            render_bundle_group_oob(request, updated_bundle, triage_service)
-        )
+        oob_parts.append(render_bundle_group_oob(request, updated_bundle, db))
         # Advance to the first doc in the bundle. triage:advance calls card.click()
         # which sets activeDoc (ring) and fires hx-get to reload the HUD — that
         # GET sees the committed case_id, so the metadata form is up-to-date.
@@ -339,7 +345,7 @@ async def confirm(
 
     # Global OOB: sidebar badges + status bar
     oob_parts.append(render_sidebar_badges_oob(db))
-    oob_parts.append(render_triage_header_stats_oob(request, triage_service))
+    oob_parts.append(render_triage_header_stats_oob(request, db))
 
     # Surface destination so the page can show a clickable toast.
     if case_id and case_id != "_TRIAGE":
@@ -377,14 +383,13 @@ async def batch_confirm(
     request: Request,
     bundle_keys: list[str] = Form(...),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Silently confirm each selected bundle to its own AI-suggested case+proceeding.
 
     Bundles without a suggestion are skipped. Returns OOB swaps for all affected
     rows and fires `triage:batch-confirmed` with confirmed/skipped counts.
     """
-    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_confirmation import reset_and_reenrich
 
     confirmed_count = 0
     skipped_count = 0
@@ -396,8 +401,8 @@ async def batch_confirm(
             skipped_count += 1
             continue
 
-        case_id, proceeding_id = triage_service.get_bundle_suggestion(
-            batch_id=batch_id, doc_id=doc_id
+        case_id, proceeding_id = get_bundle_suggestion(
+            db, batch_id=batch_id, doc_id=doc_id
         )
         if not case_id:
             skipped_count += 1
@@ -412,7 +417,8 @@ async def batch_confirm(
                 )
                 .all()
             )
-            batch = triage_service.confirm_bundle(
+            batch = _confirm_bundle(
+                db,
                 batch_id,
                 case_id=case_id,
                 proceeding_id=proceeding_id,
@@ -421,12 +427,10 @@ async def batch_confirm(
             if batch and case_id != "_TRIAGE" and pre_triage_docs:
                 for d in pre_triage_docs:
                     db.refresh(d)
-                _reset_and_reenrich(db, pre_triage_docs)
+                reset_and_reenrich(db, pre_triage_docs)
         else:
             pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
-            updated_doc = triage_service.confirm_document(
-                doc_id, case_id=case_id, finalize=True
-            )
+            updated_doc = _confirm_document(db, doc_id, case_id=case_id, finalize=True)
             if updated_doc and proceeding_id:
                 updated_doc.proceeding_id = proceeding_id
                 db.commit()
@@ -436,12 +440,12 @@ async def batch_confirm(
                 and (not pre_case or pre_case == "_TRIAGE")
                 and case_id != "_TRIAGE"
             ):
-                _reset_and_reenrich(db, [updated_doc])
+                reset_and_reenrich(db, [updated_doc])
 
         confirmed_keys.append(key)
         confirmed_count += 1
 
-    oob_html = render_batch_oob(request, bundle_keys, triage_service, db)
+    oob_html = render_batch_oob(request, bundle_keys, db)
     trigger = {
         "triage:batch-confirmed": {
             "confirmed": confirmed_count,
@@ -462,7 +466,6 @@ async def batch_assign(
     new_case_title: str | None = Form(None),
     proceeding_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Assign all selected bundles to a single case and optional proceeding.
 
@@ -470,7 +473,7 @@ async def batch_assign(
     keys at once. Returns OOB swaps for all affected rows.
     """
     from app.services.case_service import get_or_create_case_from_reference
-    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_confirmation import reset_and_reenrich
 
     if new_case_id:
         new_case_obj, _, _ = get_or_create_case_from_reference(
@@ -510,7 +513,8 @@ async def batch_assign(
                 )
                 .all()
             )
-            batch = triage_service.confirm_bundle(
+            batch = _confirm_bundle(
+                db,
                 batch_id,
                 case_id=case_id,
                 proceeding_id=parsed_proceeding_id,
@@ -519,12 +523,10 @@ async def batch_assign(
             if batch and case_id != "_TRIAGE" and pre_triage_docs:
                 for d in pre_triage_docs:
                     db.refresh(d)
-                _reset_and_reenrich(db, pre_triage_docs)
+                reset_and_reenrich(db, pre_triage_docs)
         else:
             pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
-            updated_doc = triage_service.confirm_document(
-                doc_id, case_id=case_id, finalize=False
-            )
+            updated_doc = _confirm_document(db, doc_id, case_id=case_id, finalize=False)
             if updated_doc and parsed_proceeding_id:
                 from app.models.database import Proceeding
 
@@ -543,12 +545,12 @@ async def batch_assign(
                 and (not pre_case or pre_case == "_TRIAGE")
                 and case_id != "_TRIAGE"
             ):
-                _reset_and_reenrich(db, [updated_doc])
+                reset_and_reenrich(db, [updated_doc])
 
         assigned_count += 1
 
     case_obj = db.query(Case).filter(Case.id == case_id).first()
-    oob_html = render_batch_oob(request, bundle_keys, triage_service, db)
+    oob_html = render_batch_oob(request, bundle_keys, db)
     trigger = {
         "triage:batch-assigned": {
             "count": assigned_count,

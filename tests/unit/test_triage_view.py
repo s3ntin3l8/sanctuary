@@ -13,7 +13,7 @@ from app.models.enums import (
     PipelineState,
     SignificanceTier,
 )
-from app.services.triage_service import BundleView
+from app.services.triage_bundles import BundleView
 from app.services.triage_view import (
     STATUS_NEEDS_CLASSIFICATION,
     STATUS_NEEDS_REVIEW,

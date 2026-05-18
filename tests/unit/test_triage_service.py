@@ -1,4 +1,4 @@
-"""Unit tests for TriageService confirm_bundle / BundleView correctness."""
+"""Unit tests for triage confirmation flow / BundleView correctness."""
 
 from datetime import UTC, datetime
 
@@ -216,10 +216,9 @@ def test_confirm_bundle_clears_doc_with_only_missing_case_id(db_session):
         ],
     )
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_confirmation import confirm_bundle
 
-    svc = TriageService(db_session)
-    svc.confirm_bundle(batch.id, target_case.id, finalize=True)
+    confirm_bundle(db_session, batch.id, target_case.id, finalize=True)
 
     db_session.refresh(docs[0])
     assert docs[0].needs_review is False
@@ -257,10 +256,9 @@ def test_confirm_bundle_keeps_doc_in_triage_when_sender_missing(db_session):
         ],
     )
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_confirmation import confirm_bundle
 
-    svc = TriageService(db_session)
-    svc.confirm_bundle(batch.id, target_case.id)
+    confirm_bundle(db_session, batch.id, target_case.id)
 
     db_session.refresh(docs[0])
     assert docs[0].needs_review is True
@@ -310,10 +308,9 @@ def test_confirm_bundle_cascades_case_to_action_items(db_session):
     db_session.commit()
     db_session.refresh(action_item)
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_confirmation import confirm_bundle
 
-    svc = TriageService(db_session)
-    svc.confirm_bundle(batch.id, target_case.id)
+    confirm_bundle(db_session, batch.id, target_case.id)
 
     db_session.refresh(action_item)
     assert action_item.case_id == target_case.id
@@ -360,10 +357,9 @@ def test_bundle_view_proof_doc_ids_populated(db_session):
     db_session.add(rel)
     db_session.commit()
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
 
-    svc = TriageService(db_session)
-    bundles = svc.get_triage_bundles()
+    bundles = get_triage_bundles(db_session)
 
     assert bundles, "expected at least one bundle"
     bundle = next((b for b in bundles if b.batch_id == batch.id), None)
@@ -427,10 +423,9 @@ def test_bundle_view_proceeding_populated(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
 
-    svc = TriageService(db_session)
-    bundles = svc.get_triage_bundles()
+    bundles = get_triage_bundles(db_session)
 
     bundle = next((b for b in bundles if b.batch_id == batch.id), None)
     assert bundle is not None
@@ -480,10 +475,10 @@ def test_confirm_document_clears_needs_review_when_all_fields_present(db_session
     db_session.commit()
     db_session.refresh(doc)
 
-    from app.services.triage_service import TriageService
+    from app.services.triage_confirmation import confirm_document
 
-    svc = TriageService(db_session)
-    updated = svc.confirm_document(
+    updated = confirm_document(
+        db_session,
         doc.id,
         title="Test Document",
         case_id=target_case.id,
@@ -519,7 +514,8 @@ def test_confirm_bundle_removes_bundle_from_triage_feed_even_with_review_flags(
     stayed visible in the triage UI.
     """
     from app.models.database import Case
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
+    from app.services.triage_confirmation import confirm_bundle
 
     triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
@@ -559,16 +555,14 @@ def test_confirm_bundle_removes_bundle_from_triage_feed_even_with_review_flags(
         d.extraction_confidence = {"sender": "low"}
     db_session.commit()
 
-    svc = TriageService(db_session)
-
     # Sanity: bundle is in the feed before confirm.
-    pre = svc.get_triage_bundles()
+    pre = get_triage_bundles(db_session)
     assert any(b.batch_id == batch.id for b in pre), (
         "bundle must be visible in triage before confirm"
     )
 
     # Act: confirm the bundle with finalize=True.
-    svc.confirm_bundle(batch.id, target_case.id, finalize=True)
+    confirm_bundle(db_session, batch.id, target_case.id, finalize=True)
 
     # Refresh and verify: docs still carry needs_review (low_confidence
     # survives), but the bundle no longer appears in the triage feed.
@@ -578,7 +572,7 @@ def test_confirm_bundle_removes_bundle_from_triage_feed_even_with_review_flags(
             "low_confidence must keep needs_review=True for case-view consumers"
         )
 
-    post = svc.get_triage_bundles()
+    post = get_triage_bundles(db_session)
     assert not any(b.batch_id == batch.id for b in post), (
         "confirmed bundle must NOT appear in triage feed even with needs_review docs"
     )
@@ -590,7 +584,7 @@ def test_open_batch_with_needs_review_still_appears_in_feed(db_session):
     needs_review in a bundle whose batch is still PENDING must remain
     visible in the triage feed."""
     from app.models.database import Case
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
 
     triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
@@ -620,8 +614,7 @@ def test_open_batch_with_needs_review_still_appears_in_feed(db_session):
 
     assert batch.status == IngestBatchStatus.PENDING
 
-    svc = TriageService(db_session)
-    bundles = svc.get_triage_bundles()
+    bundles = get_triage_bundles(db_session)
     assert any(b.batch_id == batch.id for b in bundles)
 
 
@@ -630,7 +623,7 @@ def test_get_triage_bundles_proceeding_filter_mixed(db_session):
     """proceeding_ids=["unassigned", "<id>"] returns both unassigned bundles AND
     proceeding-id bundles (OR semantics)."""
     from app.models.database import Case, Proceeding
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
 
     triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
@@ -699,22 +692,22 @@ def test_get_triage_bundles_proceeding_filter_mixed(db_session):
     db_session.add(doc_no_proc)
     db_session.commit()
 
-    svc = TriageService(db_session)
-
     # Filter: only "unassigned" — should return only the no-proceeding bundle
-    unassigned_only = svc.get_triage_bundles(proceeding_ids=["unassigned"])
+    unassigned_only = get_triage_bundles(db_session, proceeding_ids=["unassigned"])
     unassigned_batch_ids = {b.batch_id for b in unassigned_only}
     assert batch_no_proc.id in unassigned_batch_ids
     assert batch_with_proc.id not in unassigned_batch_ids
 
     # Filter: only the specific proceeding — should return only the proceeding bundle
-    proc_only = svc.get_triage_bundles(proceeding_ids=[str(proceeding.id)])
+    proc_only = get_triage_bundles(db_session, proceeding_ids=[str(proceeding.id)])
     proc_batch_ids = {b.batch_id for b in proc_only}
     assert batch_with_proc.id in proc_batch_ids
     assert batch_no_proc.id not in proc_batch_ids
 
     # Filter: BOTH "unassigned" AND specific proceeding — OR semantics, returns both
-    mixed = svc.get_triage_bundles(proceeding_ids=["unassigned", str(proceeding.id)])
+    mixed = get_triage_bundles(
+        db_session, proceeding_ids=["unassigned", str(proceeding.id)]
+    )
     mixed_batch_ids = {b.batch_id for b in mixed}
     assert batch_with_proc.id in mixed_batch_ids, (
         "bundle with proceeding must appear in mixed filter"
@@ -729,7 +722,7 @@ def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
     """Loose docs (no batch) with needs_review must still surface in triage —
     they have no batch.status to gate on, so needs_review is the only signal."""
     from app.models.database import Case, Document
-    from app.services.triage_service import TriageService
+    from app.services.triage_bundles import get_triage_bundles
 
     triage_case = db_session.query(Case).filter_by(id="_TRIAGE").one()
     target_case = Case(
@@ -754,8 +747,7 @@ def test_loose_doc_with_needs_review_still_appears_in_feed(db_session):
     db_session.commit()
     db_session.refresh(loose)
 
-    svc = TriageService(db_session)
-    bundles = svc.get_triage_bundles()
+    bundles = get_triage_bundles(db_session)
     assert any(
         b.batch_id is None and any(d.id == loose.id for d in b.documents)
         for b in bundles

@@ -13,16 +13,19 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db, get_triage_service
+from app.dependencies import get_db
 from app.models.enums import OriginatorType, UserReactionType
+from app.services.triage_bundles import get_bundle_by_batch_id, get_triage_bundles
+from app.services.triage_dismissal import delete_bundle as _delete_bundle
+from app.services.triage_dismissal import dismiss_bundle as _dismiss_bundle
 from app.services.triage_oob_render import (
     render_bundle_group_oob,
     render_sidebar_badges_oob,
     render_triage_feed_oob,
     render_triage_header_stats_oob,
 )
+from app.services.triage_reactions import get_reactions_by_doc_ids
 from app.services.triage_retry import dispatch_batch_retry, reset_batch_for_retry
-from app.services.triage_service import TriageService
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +37,8 @@ async def dismiss_bundle(
     batch_id: int | None = None,
     doc_id: int | None = None,
     db: Session = Depends(get_db),
-    service: TriageService = Depends(get_triage_service),
 ):
-    success = service.dismiss_bundle(batch_id=batch_id, doc_id=doc_id)
+    success = _dismiss_bundle(db, batch_id=batch_id, doc_id=doc_id)
     if not success:
         raise HTTPException(status_code=404, detail="Bundle or document not found")
 
@@ -47,11 +49,7 @@ async def dismiss_bundle(
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
     # If triage is now empty, OOB-replace the entire feed with its empty state.
-    # The feed partial's outer #triage-feed div carries hx-swap-oob="true"
-    # (via as_oob=True), so HTMX outerHTML-swaps it regardless of the
-    # client's hx-swap setting — without this, the deleted row's polling
-    # children stay in the DOM and 404 the server every 4s.
-    bundles = service.get_triage_bundles(limit=1)
+    bundles = get_triage_bundles(db, limit=1)
     if not bundles:
         empty_feed = templates.get_template("partials/triage_feed.html").render(
             bundles=[], as_oob=True
@@ -66,10 +64,9 @@ async def delete_bundle(
     batch_id: int | None = None,
     doc_id: int | None = None,
     db: Session = Depends(get_db),
-    service: TriageService = Depends(get_triage_service),
 ):
     try:
-        success = service.delete_bundle(batch_id=batch_id, doc_id=doc_id)
+        success = _delete_bundle(db, batch_id=batch_id, doc_id=doc_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not success:
@@ -80,9 +77,7 @@ async def delete_bundle(
     )
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
-    # If triage is now empty, OOB-replace the entire feed with its empty state.
-    # See dismiss_bundle for why this beats relying on response retarget headers.
-    bundles = service.get_triage_bundles(limit=1)
+    bundles = get_triage_bundles(db, limit=1)
     if not bundles:
         empty_feed = templates.get_template("partials/triage_feed.html").render(
             bundles=[], as_oob=True
@@ -98,7 +93,6 @@ async def retry_bundle_pipeline(
     batch_id: int = Form(...),
     full: str = Form("false"),
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Re-run every AI stage for every doc in the bundle.
 
@@ -140,17 +134,15 @@ async def retry_bundle_pipeline(
     dispatch_batch_retry(items, batch_fallback=batch_fallback, batch_id=batch_id, db=db)
 
     # OOB row update + global badges
-    bundles = triage_service.get_triage_bundles()
+    bundles = get_triage_bundles(db)
     bundle_key = f"batch-{batch_id}"
     updated_bundle = next((b for b in bundles if b.key == bundle_key), None)
 
     oob_parts: list[str] = []
     if updated_bundle:
-        oob_parts.append(
-            render_bundle_group_oob(request, updated_bundle, triage_service)
-        )
+        oob_parts.append(render_bundle_group_oob(request, updated_bundle, db))
     oob_parts.append(render_sidebar_badges_oob(db))
-    oob_parts.append(render_triage_header_stats_oob(request, triage_service))
+    oob_parts.append(render_triage_header_stats_oob(request, db))
 
     trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
 
@@ -163,7 +155,6 @@ async def retry_bundle_pipeline(
 async def retry_all_bundles(
     request: Request,
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Retry the AI pipeline for every bundle currently in triage.
 
@@ -173,7 +164,7 @@ async def retry_all_bundles(
     from app.models.database import IngestBatch
     from app.services.pipeline_status import retry_on_db_locked
 
-    bundles = triage_service.get_triage_bundles(limit=500)
+    bundles = get_triage_bundles(db, limit=500)
     batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}
 
     batches = db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all()
@@ -205,9 +196,9 @@ async def retry_all_bundles(
         retried += 1
 
     oob_parts = [
-        render_triage_feed_oob(request, triage_service, db),
+        render_triage_feed_oob(request, db),
         render_sidebar_badges_oob(db),
-        render_triage_header_stats_oob(request, triage_service),
+        render_triage_header_stats_oob(request, db),
     ]
 
     bundle_word = "bundle" if retried == 1 else "bundles"
@@ -228,15 +219,14 @@ def get_bundle(
     request: Request,
     batch_id: int,
     db: Session = Depends(get_db),
-    triage_service: TriageService = Depends(get_triage_service),
 ):
     """Return the rendered HTML for a single bundle group (no OOB)."""
-    bundle = triage_service.get_bundle_by_batch_id(batch_id)
+    bundle = get_bundle_by_batch_id(db, batch_id)
     if not bundle:
         raise HTTPException(status_code=404, detail=f"Batch {batch_id} not found")
 
-    reactions_by_doc = triage_service.get_reactions_by_doc_ids(
-        [doc.id for doc in bundle.documents]
+    reactions_by_doc = get_reactions_by_doc_ids(
+        db, [doc.id for doc in bundle.documents]
     )
 
     return templates.TemplateResponse(

@@ -434,9 +434,9 @@ async def create_case_from_triage(
     db.commit()
 
     if reassigned_docs:
-        from app.services.triage_service import _reset_and_reenrich
+        from app.services.triage_confirmation import reset_and_reenrich
 
-        _reset_and_reenrich(db, reassigned_docs)
+        reset_and_reenrich(db, reassigned_docs)
 
     first_doc = None
     if batch and batch.documents:
@@ -460,12 +460,9 @@ async def create_case_from_triage(
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
-    from app.services.triage_service import TriageService
 
-    triage_service = TriageService(db)
     response.body += (
-        render_sidebar_badges_oob(db)
-        + render_triage_header_stats_oob(request, triage_service)
+        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
     ).encode("utf-8")
 
     response.headers["HX-Trigger"] = json.dumps(
@@ -528,11 +525,9 @@ async def confirm_draft_case(
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
-    from app.services.triage_service import TriageService
 
     response.body += (
-        render_sidebar_badges_oob(db)
-        + render_triage_header_stats_oob(request, TriageService(db))
+        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
     ).encode("utf-8")
 
     case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
@@ -609,11 +604,9 @@ async def reject_draft_case(
         render_sidebar_badges_oob,
         render_triage_header_stats_oob,
     )
-    from app.services.triage_service import TriageService
 
     response.body += (
-        render_sidebar_badges_oob(db)
-        + render_triage_header_stats_oob(request, TriageService(db))
+        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
     ).encode("utf-8")
     response.headers["HX-Trigger"] = json.dumps(
         {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
@@ -728,7 +721,7 @@ async def reenrich_case(
     db: Session = Depends(get_db),
 ):
     """Queue all documents in a case for re-enrichment using the current party identity."""
-    from app.services.triage_service import _reset_and_reenrich
+    from app.services.triage_confirmation import reset_and_reenrich
 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
@@ -736,7 +729,7 @@ async def reenrich_case(
 
     docs = db.query(Document).filter(Document.case_id == case_id).all()
     if docs:
-        _reset_and_reenrich(db, docs)
+        reset_and_reenrich(db, docs)
 
     return Response(
         content=f'<span class="text-xs text-primary font-bold">{len(docs)} documents queued for re-enrichment</span>',

@@ -9,12 +9,12 @@ from app.models.enums import (
     IngestBatchSourceType,
     IngestBatchStatus,
 )
-from app.services.triage_service import TriageService
+from app.services.triage_bundles import get_triage_bundles
+from app.services.triage_dismissal import dismiss_bundle
 
 
 @pytest.mark.unit
 def test_dismiss_batch_updates_statuses(db_session):
-    service = TriageService(db_session)
     batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="Test Batch")
     db_session.add(batch)
     db_session.commit()
@@ -43,7 +43,7 @@ def test_dismiss_batch_updates_statuses(db_session):
     db_session.add_all([ai1, ai2])
     db_session.commit()
 
-    success = service.dismiss_bundle(batch_id=batch.id)
+    success = dismiss_bundle(db_session, batch_id=batch.id)
     assert success is True
 
     db_session.refresh(batch)
@@ -61,7 +61,6 @@ def test_dismiss_batch_updates_statuses(db_session):
 
 @pytest.mark.unit
 def test_dismiss_document_updates_status(db_session):
-    service = TriageService(db_session)
     doc = Document(title="Synthetic Doc", case_id="_TRIAGE")
     db_session.add(doc)
     db_session.commit()
@@ -77,7 +76,7 @@ def test_dismiss_document_updates_status(db_session):
     db_session.add(ai)
     db_session.commit()
 
-    success = service.dismiss_bundle(doc_id=doc.id)
+    success = dismiss_bundle(db_session, doc_id=doc.id)
     assert success is True
 
     db_session.refresh(doc)
@@ -88,8 +87,6 @@ def test_dismiss_document_updates_status(db_session):
 
 @pytest.mark.unit
 def test_get_triage_bundles_filters_dismissed(db_session):
-    service = TriageService(db_session)
-
     # Active bundle
     batch1 = IngestBatch(source_type=IngestBatchSourceType.EMAIL, subject="Active")
     db_session.add(batch1)
@@ -123,7 +120,7 @@ def test_get_triage_bundles_filters_dismissed(db_session):
 
     db_session.commit()
 
-    bundles = service.get_triage_bundles()
+    bundles = get_triage_bundles(db_session)
     # Should only contain batch1
     batch_ids = [b.batch_id for b in bundles]
     assert batch1.id in batch_ids

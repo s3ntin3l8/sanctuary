@@ -361,10 +361,9 @@ async def delete_document(
     # Identify the next document to advance to before we delete the current one.
     next_doc_id = None
     if context == "triage":
-        from app.services.triage_service import TriageService
+        from app.services.triage_confirmation import find_next_review_doc
 
-        triage_service = TriageService(db)
-        next_doc = triage_service.find_next_review_doc(doc_id)
+        next_doc = find_next_review_doc(db, doc_id)
         if next_doc:
             next_doc_id = next_doc.id
 
@@ -375,13 +374,14 @@ async def delete_document(
     # Deleting a doc may orphan its draft case (the last doc on the draft just
     # left). Sweep here so the picker / status counts stay honest.
     if context == "triage":
-        from app.services.triage_service import TriageService as _TS
+        from app.services.triage_confirmation import cleanup_orphaned_drafts
 
-        _TS(db).cleanup_orphaned_drafts()
+        cleanup_orphaned_drafts(db)
 
     if context == "triage" and bundle_key:
         import json
 
+        from app.services.triage_bundles import get_triage_bundles
         from app.services.triage_oob_render import (
             render_bundle_group_oob,
             render_sidebar_badges_oob,
@@ -389,8 +389,7 @@ async def delete_document(
             render_triage_header_stats_oob,
         )
 
-        triage_service = TriageService(db)
-        bundles = triage_service.get_triage_bundles()
+        bundles = get_triage_bundles(db)
 
         trigger = {}
         if next_doc_id:
@@ -400,18 +399,18 @@ async def delete_document(
 
         # Global synchronization: Sidebar badges and Triage status bar
         global_oob = render_sidebar_badges_oob(db)
-        global_oob += render_triage_header_stats_oob(request, triage_service)
+        global_oob += render_triage_header_stats_oob(request, db)
 
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
-            res_content = render_triage_feed_oob(request, triage_service, db)
+            res_content = render_triage_feed_oob(request, db)
             res_content += global_oob
             response = HTMLResponse(res_content)
         else:
             bundle = next((b for b in bundles if b.key == bundle_key), None)
             if bundle:
                 # Bundle still has documents — return the updated bundle group OOB.
-                res_content = render_bundle_group_oob(request, bundle, triage_service)
+                res_content = render_bundle_group_oob(request, bundle, db)
                 res_content += global_oob
                 response = HTMLResponse(res_content)
             else:
@@ -519,10 +518,8 @@ async def hud_toggle_reaction(
 
     # OOB row refresh for triage (selector misses gracefully outside triage)
     from app.services.triage_oob_render import render_row_targeted_oob
-    from app.services.triage_service import TriageService
 
-    triage_service = TriageService(db)
-    response.body += render_row_targeted_oob(request, doc, triage_service, db).encode()
+    response.body += render_row_targeted_oob(request, doc, db).encode()
 
     if notes is not None and notes.strip():
         response.headers["HX-Trigger"] = _json.dumps(

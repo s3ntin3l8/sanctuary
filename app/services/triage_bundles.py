@@ -1,14 +1,16 @@
-"""Triage feed reads + bundle hydration.
+"""Triage feed reads + BundleView dataclass.
 
-Free-function module (no class). Owns the queue-reading half of the former
-TriageService: building BundleView lists from the live document queue and
-hydrating them with action items, proof edges, and case-metadata resolution.
+Free-function module. Defines `BundleView` (the per-row view-model used
+across the triage feed) and the read functions that build BundleView lists
+from the live document queue and hydrate them with action items, proof
+edges, and case-metadata resolution.
 
 See triage_confirmation.py for the confirmation flow, triage_subgroups.py for
 sub-group CRUD, triage_reactions.py for reactions, and triage_dismissal.py
 for dismiss/delete.
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import and_, or_
@@ -29,8 +31,174 @@ from app.models.enums import (
     IngestBatchStatus,
     RelationshipType,
 )
+from app.services.pipeline_status import stages_dict
 from app.services.triage_confirmation import _sanitize_case_title
-from app.services.triage_service import BundleView
+
+
+@dataclass
+class BundleView:
+    """One row in the triage feed — either a real IngestBatch or a synthetic
+    single-doc bundle for pre-batch-wiring documents."""
+
+    key: str  # stable id for the bundle (e.g. "batch-7" or "loose-42")
+    batch_id: int | None  # None for synthetic single-doc bundles
+    source_type: IngestBatchSourceType
+    subject: str | None
+    sender_email: str | None
+    received_at: datetime
+    # Case chip state (§5a display rules)
+    confirmed_case_id: str | None = None
+    suggested_case_id: str | None = None
+    suggested_case_title: str | None = None
+    suggested_case_is_draft: bool = False
+    suggested_case_exists: bool = False
+    proceeding: object | None = None
+    proof_doc_ids: set = field(default_factory=set)
+    documents: list[Document] = field(default_factory=list)
+    action_items: list = field(default_factory=list)
+    sub_groups: list = field(default_factory=list)
+
+    @property
+    def doc_count(self) -> int:
+        return len(self.documents)
+
+    @property
+    def total_pages(self) -> int:
+        return sum(d.page_count or 0 for d in self.documents)
+
+    @property
+    def unresolved_review_count(self) -> int:
+        """Docs with real review issues (low confidence, missing fields, etc.).
+
+        Excludes docs whose only outstanding reason is `pending_confirmation`
+        — those just need a human ratification click, not metadata fixes.
+        """
+        ignorable = {"pending_confirmation", "missing_parent"}
+        return sum(
+            1
+            for d in self.documents
+            if d.review_reasons and (set(d.review_reasons) - ignorable)
+        )
+
+    @property
+    def to_confirm_count(self) -> int:
+        """Docs whose only outstanding flag is `pending_confirmation`."""
+        ignorable = {"pending_confirmation", "missing_parent"}
+        return sum(
+            1
+            for d in self.documents
+            if d.review_reasons
+            and "pending_confirmation" in d.review_reasons
+            and not (set(d.review_reasons) - ignorable)
+        )
+
+    @property
+    def is_synthetic(self) -> bool:
+        return self.batch_id is None
+
+    @property
+    def pipeline_summary(self) -> dict:
+        """Aggregate pipeline_state counts for bundle header display."""
+        from collections import Counter
+
+        counts = Counter(
+            (d.pipeline_state.value if d.pipeline_state else "pending")
+            for d in self.documents
+        )
+        return {"total": len(self.documents), **counts}
+
+    @property
+    def pipeline_active_label(self) -> str | None:
+        """Human label for current pipeline activity, or None if nothing in flight."""
+        from app.services.pipeline_status import STAGE_REGISTRY
+
+        order_map = {spec.stage.value: spec.order for spec in STAGE_REGISTRY.values()}
+        running: list[str] = []
+        pending: list[str] = []
+        for doc in self.documents:
+            for stage_name, info in stages_dict(doc).items():
+                status = (info or {}).get("status")
+                if status in {"running", "retrying"}:
+                    running.append(stage_name)
+                elif status == "pending":
+                    pending.append(stage_name)
+
+        if running:
+            first = sorted(running, key=lambda n: order_map.get(n, 999))[0]
+            return f"Processing: {first.replace('_', ' ')}"
+        if pending:
+            return "Queued"
+        return None
+
+    @property
+    def has_unconfirmed_metadata(self) -> bool:
+        """True if any doc has an explicitly low/medium confidence on a tracked field."""
+        tracked = (
+            "originator",
+            "sender",
+            "issued_date",
+            "significance_tier",
+            "document_type",
+        )
+        for doc in self.documents:
+            conf = doc.extraction_confidence or {}
+            for key in tracked:
+                if conf.get(key) in ("low", "medium"):
+                    return True
+        return False
+
+    @property
+    def mock_status(self) -> str:
+        """Filter-chip taxonomy for the redesigned triage page. Cached lazily."""
+        if not hasattr(self, "_mock_status_cache"):
+            from app.services.triage_view import mock_status
+
+            self._mock_status_cache = mock_status(self)
+        return self._mock_status_cache
+
+    @property
+    def sub_bundles(self) -> list:
+        """Per parent-root subtree views for the inline expand + drawer spine.
+
+        See `app.services.triage_view.build_sub_bundles`. Cached lazily.
+        """
+        if not hasattr(self, "_sub_bundles_cache"):
+            from app.services.triage_view import build_sub_bundles
+
+            self._sub_bundles_cache = build_sub_bundles(self)
+        return self._sub_bundles_cache
+
+    @property
+    def parent_groups(self) -> list[list[tuple[int, Document]]]:
+        """Group the bundle's documents by their parent-root subtree.
+
+        Returns one list per parent-root, each entry a `(depth, doc)` tuple in
+        BFS order so the template can indent enclosures consistently.
+
+        A doc is a parent-root if its `parent_id` is None OR points to a
+        document outside this bundle (orphaned child).
+        """
+        docs_by_id = {d.id: d for d in self.documents}
+        children_of: dict[int, list[Document]] = {}
+        roots: list[Document] = []
+        for d in self.documents:
+            if not d.parent_id or d.parent_id not in docs_by_id:
+                roots.append(d)
+            else:
+                children_of.setdefault(d.parent_id, []).append(d)
+
+        groups: list[list[tuple[int, Document]]] = []
+        for root in roots:
+            group: list[tuple[int, Document]] = [(0, root)]
+            queue: list[tuple[int, Document]] = [
+                (1, c) for c in children_of.get(root.id, [])
+            ]
+            while queue:
+                depth, node = queue.pop(0)
+                group.append((depth, node))
+                queue.extend((depth + 1, c) for c in children_of.get(node.id, []))
+            groups.append(group)
+        return groups
 
 
 def _bundle_pipeline_label(bundle: BundleView) -> str:

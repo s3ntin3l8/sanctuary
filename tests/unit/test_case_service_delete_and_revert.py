@@ -104,8 +104,11 @@ def test_delete_and_revert_full_cascade(
 
     # No-op the re-enrich step in unit context — it dispatches Celery tasks.
     from app.services import case_service as cs
+    from app.services import triage_confirmation
 
-    monkeypatch.setattr(cs, "_reset_and_reenrich", lambda db, docs: None, raising=False)
+    monkeypatch.setattr(
+        triage_confirmation, "reset_and_reenrich", lambda db, docs: None
+    )
 
     service = cs.CaseService(db_session)
     result = service.delete_and_revert(case.id)
