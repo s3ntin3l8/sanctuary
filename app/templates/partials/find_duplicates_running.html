@@ -1,7 +1,7 @@
 <span id="find-duplicates-running"
       class="text-xs px-2.5 py-1 rounded-full inline-flex items-center gap-1.5
              border border-primary/40 bg-primary/8 text-primary"
-      hx-get="/cases/{{ case.id }}/claims/find-duplicates/status"
+      hx-get="{{ request.app.url_path_for('find_duplicates_status', case_id=case.id) }}"
       hx-trigger="load delay:4s, every 4s"
       hx-target="#find-duplicates-slot"
       hx-swap="innerHTML">

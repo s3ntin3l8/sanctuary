@@ -111,7 +111,7 @@
                 <div class="px-6 py-4 border-b border-outline-variant/10 bg-surface-container-low flex flex-wrap items-center justify-between gap-4">
                     <div class="flex items-center gap-3">
                         <div>
-                            <a href="/cases/{{ case.id|urlencode }}" class="text-sm font-black text-on-surface hover:text-primary transition-colors">{{ case.title }}</a>
+                            <a href="{{ request.app.url_path_for('case_detail', case_id=case.id) }}"|urlencode }}" class="text-sm font-black text-on-surface hover:text-primary transition-colors">{{ case.title }}</a>
                             <p class="text-[10px] font-mono text-on-surface-variant">{{ case.id }}</p>
                         </div>
                         <span class="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ meta.color }}">{{ meta.label }}</span>

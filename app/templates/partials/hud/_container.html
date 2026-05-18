@@ -46,7 +46,7 @@
     {% endif %}
 
     {# Expand to full-screen #}
-    <a href="/cases/{{ case_id }}/document/{{ doc.id }}"
+    <a href="{{ request.app.url_path_for('case_document_fullscreen', case_id=case_id, doc_id=doc.id) }}"
        class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
        style="color:var(--color-on-surface-variant);"
        title="Open full text (⇱)">⇱</a>

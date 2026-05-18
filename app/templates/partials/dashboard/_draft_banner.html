@@ -11,13 +11,13 @@
         </div>
     </div>
     <div class="flex gap-2 shrink-0">
-        <button hx-post="/cases/{{ case.id }}/confirm-draft"
+        <button hx-post="{{ request.app.url_path_for('confirm_draft_case', case_id=case.id) }}"
                 hx-swap="none"
-                hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/cases/{{ case.id }}'; }"
+                hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='{{ request.app.url_path_for('case_detail', case_id=case.id) }}'; }"
                 class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-originator-own text-white hover:opacity-90 transition-colors cursor-pointer whitespace-nowrap">
             Confirm Case
         </button>
-        <button hx-post="/cases/{{ case.id }}/reject-draft"
+        <button hx-post="{{ request.app.url_path_for('reject_draft_case', case_id=case.id) }}"
                 hx-swap="none"
                 hx-confirm="Delete case {{ case.id }} and return all documents to triage?"
                 hx-on:htmx:after-request="if(event.detail.successful){ window.location.href='/triage'; }"

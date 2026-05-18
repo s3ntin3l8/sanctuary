@@ -27,7 +27,7 @@
             <button @click="open = false" class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors cursor-pointer text-sm">close</button>
         </div>
 
-        <form method="post" action="/cases" class="p-6 space-y-4">
+        <form method="post" action="{{ request.app.url_path_for('create_case') }}" class="p-6 space-y-4">
 
             <div class="space-y-1">
                 <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Case ID</label>

@@ -33,7 +33,7 @@
         <button {% if context != 'overlay' %}
                 onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
                 {% else %}
-                hx-get="/cases/{{ doc.case_id }}/document/{{ rel.id }}/hud"
+                hx-get="{{ request.app.url_path_for('case_document_hud', case_id=doc.case_id, doc_id=rel.id) }}"
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
                 {% endif %}
@@ -70,7 +70,7 @@
         <button {% if context != 'overlay' %}
                 onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
                 {% else %}
-                hx-get="/cases/{{ doc.case_id }}/document/{{ rel.id }}/hud"
+                hx-get="{{ request.app.url_path_for('case_document_hud', case_id=doc.case_id, doc_id=rel.id) }}"
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
                 {% endif %}

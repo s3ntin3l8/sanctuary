@@ -51,7 +51,7 @@
 {% if case %}
 <div class="border-t border-outline-variant/10 pt-3 mt-1">
   <p class="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant mb-1.5">Opposing parties</p>
-  <form hx-post="/cases/{{ case.id }}/opposing-parties"
+  <form hx-post="{{ request.app.url_path_for('save_opposing_parties', case_id=case.id) }}"
         hx-target="#case-parties-panel"
         hx-swap="innerHTML"
         class="space-y-1.5">
@@ -64,7 +64,7 @@
         Save
       </button>
       <button type="button"
-              hx-post="/cases/{{ case.id }}/reenrich"
+              hx-post="{{ request.app.url_path_for('reenrich_case', case_id=case.id) }}"
               hx-swap="none"
               hx-on::after-request="if(event.detail.successful){document.getElementById('reenrich-msg-{{ case.id }}').innerHTML=event.detail.xhr.responseText;setTimeout(()=>document.getElementById('reenrich-msg-{{ case.id }}').innerHTML='',4000)}"
               class="px-3 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-surface-container-high/80 transition-all">

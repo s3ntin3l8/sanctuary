@@ -15,7 +15,7 @@
 
     <div class="space-y-0">
         {% for item in today_items %}
-        <a href="/cases/{{ item.case_id }}"
+        <a href="{{ request.app.url_path_for('case_detail', case_id=item.case_id) }}"
            class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group"
            data-panel-item="today" data-index="{{ loop.index0 }}"
            @mouseenter="focusedPanel = 'today'; focusedIdx = {{ loop.index0 }}"

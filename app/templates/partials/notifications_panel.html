@@ -46,7 +46,7 @@
         <div class="divide-y divide-outline-variant/5">
             {# 1. Overdue Deadlines #}
             {% for d in overdue_deadlines %}
-            <a href="/cases/{{ d.case_id }}" class="block p-3 hover:bg-error/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
+            <a href="{{ request.app.url_path_for('case_detail', case_id=d.case_id) }}" class="block p-3 hover:bg-error/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
                 <div class="flex gap-3">
                     <div class="shrink-0 w-8 h-8 rounded-lg bg-error/10 flex items-center justify-center">
                         <span class="material-symbols-outlined text-error text-sm">priority_high</span>
@@ -62,7 +62,7 @@
 
             {# 2. Upcoming Hearings #}
             {% for h in upcoming_hearings_notif %}
-            <a href="/cases/{{ h.case_id }}" class="block p-3 hover:bg-primary/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
+            <a href="{{ request.app.url_path_for('case_detail', case_id=h.case_id) }}" class="block p-3 hover:bg-primary/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
                 <div class="flex gap-3">
                     <div class="shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                         <span class="material-symbols-outlined text-primary text-sm">gavel</span>
@@ -78,7 +78,7 @@
 
             {# 3. Pending Documents #}
             {% for doc in pending_docs %}
-            <a href="/triage" class="block p-3 hover:bg-amber-500/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'docs'">
+            <a href="{{ request.app.url_path_for('triage_page') }}" class="block p-3 hover:bg-amber-500/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'docs'">
                 <div class="flex gap-3">
                     <div class="shrink-0 w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
                         <span class="material-symbols-outlined text-amber-600 text-sm">pending_actions</span>
@@ -94,7 +94,7 @@
 
             {# 4. Upcoming Deadlines #}
             {% for d in upcoming_deadlines_notif %}
-            <a href="/cases/{{ d.case_id }}" class="block p-3 hover:bg-primary/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
+            <a href="{{ request.app.url_path_for('case_detail', case_id=d.case_id) }}" class="block p-3 hover:bg-primary/5 transition-colors group" x-show="activeTab === 'all' || activeTab === 'events'">
                 <div class="flex gap-3">
                     <div class="shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                         <span class="material-symbols-outlined text-primary text-sm">event</span>
@@ -113,6 +113,6 @@
 
     {# Footer #}
     <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 text-center">
-        <a href="/triage" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage Center</a>
+        <a href="{{ request.app.url_path_for('triage_page') }}" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage Center</a>
     </div>
 </div>

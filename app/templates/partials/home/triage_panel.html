@@ -11,14 +11,14 @@
             </h2>
             <span class="text-[11px] text-on-surface-variant">{{ triage_bundles|length }} bundle{{ 's' if triage_bundles|length > 1 else '' }}</span>
         </div>
-        <a href="/triage" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+        <a href="{{ request.app.url_path_for('triage_page') }}" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
             open triage <span class="material-symbols-outlined text-[12px]">arrow_right_alt</span>
         </a>
     </div>
 
     <div class="space-y-0">
         {% for bundle in triage_bundles %}
-        <a href="/triage" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group no-underline"
+        <a href="{{ request.app.url_path_for('triage_page') }}" class="flex items-center gap-3 py-2 px-2 -mx-2 rounded transition-colors cursor-pointer group no-underline"
              data-panel-item="triage" data-index="{{ loop.index0 }}"
              @mouseenter="focusedPanel = 'triage'; focusedIdx = {{ loop.index0 }}"
              :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === 'triage' && focusedIdx === {{ loop.index0 }} }">

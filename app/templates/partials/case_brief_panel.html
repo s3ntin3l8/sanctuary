@@ -1,6 +1,6 @@
 <div id="case-brief-panel"
   {% if brief and brief.get('status') == 'processing' %}
-    hx-get="/cases/{{ case.id }}/brief"
+    hx-get="{{ request.app.url_path_for('case_brief_partial', case_id=case.id) }}"
     hx-trigger="every 4s"
     hx-swap="outerHTML"
   {% endif %}
@@ -10,7 +10,7 @@
     <h3 class="text-sm font-semibold text-on-surface">Case Brief</h3>
     <button
       id="refresh-brief-btn"
-      hx-post="/cases/{{ case.id }}/brief/refresh"
+      hx-post="{{ request.app.url_path_for('case_brief_refresh', case_id=case.id) }}"
       hx-swap="outerHTML"
       hx-target="#case-brief-panel"
       class="text-xs text-primary hover:underline transition-colors">

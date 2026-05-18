@@ -10,7 +10,7 @@
                             <h3 class="text-base font-semibold leading-6 text-on-surface" id="modal-title">Edit Case & Proceeding</h3>
 
                             <!-- Case Edit Form -->
-                            <form hx-patch="/cases/{{ case.id }}" class="mt-4 space-y-4">
+                            <form hx-patch="{{ request.app.url_path_for('update_case', case_id=case.id) }}" class="mt-4 space-y-4">
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Case Title</label>
                                     <input type="text" name="title" value="{{ case.title }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
@@ -53,7 +53,7 @@
 
                             <!-- Proceeding Edit Form -->
                             {% if active_proceeding %}
-                            <form hx-patch="/proceedings/{{ active_proceeding.id }}" class="space-y-4">
+                            <form hx-patch="{{ request.app.url_path_for('update_proceeding', proceeding_id=active_proceeding.id) }}" class="space-y-4">
                                 <div>
                                     <label class="block text-xs font-medium text-on-surface-variant">Proceeding Court Name</label>
                                     <input type="text" name="court_name" value="{{ active_proceeding.court_name }}" class="mt-1 w-full bg-surface border border-outline-variant rounded px-3 py-2 text-sm text-on-surface">
@@ -103,10 +103,10 @@
                                         <button :disabled="confirmed !== 'purge {{ case.id }}'"
                                                 :class="confirmed === 'purge {{ case.id }}' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-surface-container-high text-on-surface-variant cursor-not-allowed'"
                                                 class="px-4 py-1.5 text-sm rounded-md transition-colors"
-                                                hx-delete="/cases/{{ case.id }}/purge"
+                                                hx-delete="{{ request.app.url_path_for('purge_case', case_id=case.id) }}"
                                                 hx-vals='{"confirm": "purge {{ case.id }}"}'
                                                 hx-encoding="application/json"
-                                                @htmx:after-request="if ($event.detail.successful) { window.location.href = '/cases'; }">
+                                                @htmx:after-request="if ($event.detail.successful) { window.location.href = '{{ request.app.url_path_for('case_directory') }}'; }">
                                             Erase permanently
                                         </button>
                                     </div>

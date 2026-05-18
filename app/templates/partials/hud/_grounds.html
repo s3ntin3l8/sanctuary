@@ -61,13 +61,13 @@
             </div>
             {% if prop.rationale %}<div class="text-on-surface-variant/70 italic line-clamp-2">{{ prop.rationale }}</div>{% endif %}
             <div class="flex gap-1 mt-1">
-              <button hx-post="/claims/proposals/merge/{{ prop.id }}/confirm"
+              <button hx-post="{{ request.app.url_path_for('confirm_merge_proposal', proposal_id=prop.id) }}"
                       hx-target="#merge-pill-{{ prop.id }}"
                       hx-swap="outerHTML"
                       class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
                 ✓ Merge
               </button>
-              <button hx-post="/claims/proposals/merge/{{ prop.id }}/dismiss"
+              <button hx-post="{{ request.app.url_path_for('dismiss_merge_proposal', proposal_id=prop.id) }}"
                       hx-target="#merge-pill-{{ prop.id }}"
                       hx-swap="outerHTML"
                       class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
@@ -88,7 +88,7 @@
                Court findings are authoritative — the user doesn't dispute them; they just exist. #}
             {% if not is_court_doc and claim.status and claim.status.value != 'refuted' %}
               {% if claim.status.value != 'established' %}
-              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+              <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=doc.case_id, claim_id=claim.id) }}"
                       hx-vals='{"status": "established"}'
                       hx-swap="none"
                       @htmx:after-request="done = true; doneMsg = '✓ confirmed'"
@@ -97,7 +97,7 @@
               </button>
               {% endif %}
               {% if claim.status.value != 'contested' %}
-              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+              <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=doc.case_id, claim_id=claim.id) }}"
                       hx-vals='{"status": "contested"}'
                       hx-swap="none"
                       @htmx:after-request="done = true; doneMsg = '🚩 disputed'"
@@ -106,7 +106,7 @@
               </button>
               {% endif %}
               {% if claim.status.value != 'needs_proof' %}
-              <button hx-post="/cases/{{ doc.case_id }}/claims/{{ claim.id }}/status"
+              <button hx-post="{{ request.app.url_path_for('update_claim_status', case_id=doc.case_id, claim_id=claim.id) }}"
                       hx-vals='{"status": "needs_proof"}'
                       hx-swap="none"
                       @htmx:after-request="done = true; doneMsg = '🔍 flagged'"
@@ -117,7 +117,7 @@
             {% endif %}
             {# ⚖️ Precedent toggle: independent of status, available on all claims regardless of originator. #}
             <span x-data="{ precedent: {{ 'true' if claim.is_precedent else 'false' }} }">
-              <button hx-post="/claims/{{ claim.id }}/precedent/toggle"
+              <button hx-post="{{ request.app.url_path_for('toggle_claim_precedent', claim_id=claim.id) }}"
                       hx-swap="none"
                       @htmx:after-request="precedent = !precedent"
                       class="text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors cursor-pointer"
@@ -173,13 +173,13 @@
           {% if target %}<div class="text-on-surface-variant/80 line-clamp-2">"{{ target.claim_text }}"</div>{% endif %}
           {% if prop.excerpt %}<div class="text-on-surface-variant/60 italic line-clamp-2">excerpt: {{ prop.excerpt }}</div>{% endif %}
           <div class="flex gap-1 mt-1">
-            <button hx-post="/claims/proposals/evidence/{{ prop.id }}/confirm"
+            <button hx-post="{{ request.app.url_path_for('confirm_evidence_proposal', proposal_id=prop.id) }}"
                     hx-target="#evidence-pill-{{ prop.id }}"
                     hx-swap="outerHTML"
                     class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-originator-own/40 text-originator-own hover:bg-originator-own/10 cursor-pointer">
               ✓ Confirm
             </button>
-            <button hx-post="/claims/proposals/evidence/{{ prop.id }}/dismiss"
+            <button hx-post="{{ request.app.url_path_for('dismiss_evidence_proposal', proposal_id=prop.id) }}"
                     hx-target="#evidence-pill-{{ prop.id }}"
                     hx-swap="outerHTML"
                     class="text-[9px] font-bold px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant hover:bg-surface-container-highest cursor-pointer">
@@ -193,7 +193,7 @@
   </div>
   {% endif %}
   {% if doc.case_id and mode != 'review' and not is_draft_case %}
-  <a href="/cases/{{ doc.case_id }}?view=truth{% if grounds %}#claim-{{ grounds[0].id }}{% endif %}"
+  <a href="{{ request.app.url_path_for('case_detail', case_id=doc.case_id) }}?view=truth{% if grounds %}#claim-{{ grounds[0].id }}{% endif %}"
      @click="view = 'truth'; {% if grounds %}$nextTick(() => { document.getElementById('claim-card-{{ grounds[0].id }}')?.scrollIntoView({behavior:'smooth', block:'center'}) }){% endif %}"
      class="mt-3 inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
     View in Truth Map →

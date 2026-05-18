@@ -9,7 +9,7 @@
 
     {# Header #}
     <div class="flex items-center gap-3 px-6 py-3 border-b border-outline-variant/10 bg-surface-container-low/60 flex-shrink-0">
-        <a href="/triage" class="text-on-surface-variant hover:text-primary transition-colors">
+        <a href="{{ request.app.url_path_for('triage_page') }}" class="text-on-surface-variant hover:text-primary transition-colors">
             <span class="material-symbols-outlined text-lg">arrow_back</span>
         </a>
         <span class="material-symbols-outlined text-amber-400 text-lg">content_cut</span>
@@ -50,7 +50,7 @@
     {# Loading / error states #}
     <template x-if="status === 'preparing'">
         <div class="flex-1 flex items-center justify-center flex-col gap-3 text-on-surface-variant"
-             hx-get="/ingest/slice/{{ batch.id }}/status"
+             hx-get="{{ request.app.url_path_for('slicing_status', batch_id=batch.id) }}"
              hx-trigger="every 3s"
              hx-swap="none"
              hx-on::after-request="refreshIfReady($event)">
@@ -64,7 +64,7 @@
         <div class="flex-1 flex items-center justify-center flex-col gap-3 text-on-surface-variant">
             <span class="material-symbols-outlined text-4xl text-red-400">error</span>
             <p class="text-[11px] text-red-400" x-text="errorMessage || 'Preparation failed.'"></p>
-            <form method="post" action="/ingest/slice/{{ batch.id }}/retry">
+            <form method="post" action="{{ request.app.url_path_for('slicing_retry', batch_id=batch.id) }}">
                 <button type="submit"
                         class="px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-container-highest transition-colors">
                     Retry preparation

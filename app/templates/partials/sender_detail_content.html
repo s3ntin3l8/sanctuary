@@ -52,7 +52,7 @@
         {% if documents %}
         <div class="space-y-3">
             {% for doc in documents %}
-            <a href="/document/{{ doc.id }}" class="group block bg-surface-container-lowest rounded-xl border border-outline-variant/10 p-4 hover:border-primary/20 hover:bg-surface-container transition-all">
+            <a href="{{ request.app.url_path_for('document_detail', doc_id=doc.id) }}" class="group block bg-surface-container-lowest rounded-xl border border-outline-variant/10 p-4 hover:border-primary/20 hover:bg-surface-container transition-all">
                 <div class="flex items-start justify-between gap-4">
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">

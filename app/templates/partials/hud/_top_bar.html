@@ -14,7 +14,7 @@
   <div class="flex items-center gap-3 px-5 py-2.5">
 
     {# Back / breadcrumb #}
-    <a href="/cases/{{ doc.case_id }}"
+    <a href="{{ request.app.url_path_for('case_detail', case_id=doc.case_id) }}"
        class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest shrink-0 hover:text-primary transition-colors"
        style="color:var(--color-on-surface-variant);"
        title="Back to case dashboard">
@@ -71,7 +71,7 @@
     {# n/N proceeding counter + prev/next navigation #}
     <div class="flex items-center gap-1 shrink-0">
       {% if prev_doc_id %}
-      <a href="/cases/{{ doc.case_id }}/document/{{ prev_doc_id }}"
+      <a href="{{ request.app.url_path_for('case_document_fullscreen', case_id=doc.case_id, doc_id=prev_doc_id) }}"
          class="p-1.5 rounded hover:bg-surface-container-high transition-colors"
          style="color:var(--color-on-surface-variant);"
          title="Previous document (←)">
@@ -86,7 +86,7 @@
       <span class="text-[9px] font-mono tabular-nums px-1" style="color:var(--color-outline);">{{ doc_position }}/{{ proceeding_total }}</span>
       {% endif %}
       {% if next_doc_id %}
-      <a href="/cases/{{ doc.case_id }}/document/{{ next_doc_id }}"
+      <a href="{{ request.app.url_path_for('case_document_fullscreen', case_id=doc.case_id, doc_id=next_doc_id) }}"
          class="p-1.5 rounded hover:bg-surface-container-high transition-colors"
          style="color:var(--color-on-surface-variant);"
          title="Next document (→)">
@@ -100,7 +100,7 @@
     </div>
 
     {# Open original file #}
-    <a href="/document/{{ doc.id }}/original"
+    <a href="{{ request.app.url_path_for('document_original', doc_id=doc.id) }}"
        target="_blank"
        rel="noopener"
        class="p-1.5 rounded hover:bg-surface-container-high transition-colors shrink-0"
@@ -118,7 +118,7 @@
     </button>
 
     {# Close — back to dashboard #}
-    <a href="/cases/{{ doc.case_id }}"
+    <a href="{{ request.app.url_path_for('case_detail', case_id=doc.case_id) }}"
        class="p-1.5 rounded hover:bg-surface-container-high transition-colors shrink-0"
        style="color:var(--color-on-surface-variant);"
        title="Back to dashboard (Esc)">

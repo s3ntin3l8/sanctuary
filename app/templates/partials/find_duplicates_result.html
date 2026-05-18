@@ -2,7 +2,7 @@
    Replaces the find-duplicates button with a status line + a refresh
    trigger that reloads the Truth Map so the new merge proposals show. #}
 <div id="find-duplicates-result" class="text-xs px-2.5 py-1 rounded-full inline-flex items-center gap-2 border border-primary/30 bg-primary/5 text-primary"
-     hx-get="/cases/{{ case.id }}/truthmap?filter=all"
+     hx-get="{{ request.app.url_path_for('get_truthmap', case_id=case.id) }}?filter=all"
      hx-trigger="load delay:200ms"
      hx-target="#truthmap-panel"
      hx-swap="outerHTML">

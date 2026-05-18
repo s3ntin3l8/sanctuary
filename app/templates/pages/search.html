@@ -56,7 +56,7 @@
                     </h3>
                     <div class="space-y-2">
                         {% for doc in documents %}
-                        <a href="/document/{{ doc.id }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
+                        <a href="{{ request.app.url_path_for('document_detail', doc_id=doc.id) }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
                             <p class="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{{ doc.title }}</p>
                             <p class="text-xs text-on-surface-variant mt-1">
                                 {% if doc.case_id %}<span class="font-mono">{{ doc.case_id }}</span> • {% endif %}
@@ -76,7 +76,7 @@
                     </h3>
                     <div class="space-y-2">
                         {% for case in cases %}
-                        <a href="/cases/{{ case.id|urlencode }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
+                        <a href="{{ request.app.url_path_for('case_detail', case_id=case.id) }}"|urlencode }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
                             <div class="flex items-center justify-between">
                                 <div>
                                     <p class="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{{ case.title }}</p>
@@ -103,7 +103,7 @@
                     </h3>
                     <div class="space-y-2">
                         {% for contact in contacts %}
-                        <a href="/contacts/{{ contact }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
+                        <a href="{{ request.app.url_path_for('sender_detail', sender_name=contact) }}" class="block p-4 bg-surface-container rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-colors group">
                             <p class="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{{ contact }}</p>
                         </a>
                         {% endfor %}

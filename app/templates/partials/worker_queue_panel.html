@@ -46,7 +46,7 @@
     </template>
 
     <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 flex items-center justify-between">
-        <a href="/triage" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage</a>
+        <a href="{{ request.app.url_path_for('triage_page') }}" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage</a>
         <button hx-post="{{ request.app.url_path_for('retry_failed_docs') }}"
                 hx-target="#worker-queue-panel-body"
                 hx-swap="outerHTML"

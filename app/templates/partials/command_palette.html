@@ -51,11 +51,11 @@ x-cloak x-show="searchOpen" class="fixed inset-0 z-[9999] flex items-start justi
             <!-- Default State (Empty Search) -->
             <div x-show="searchQuery.length < 2">
                 <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Navigate</p>
-                <a href="/" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                <a href="{{ request.app.url_path_for('home') }}" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
                     <span class="material-symbols-outlined text-sm text-primary">home</span>
                     <span class="text-sm text-on-surface">Home</span>
                 </a>
-                <a href="/triage" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                <a href="{{ request.app.url_path_for('triage_page') }}" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
                     <span class="material-symbols-outlined text-sm text-primary">inbox</span>
                     <span class="text-sm text-on-surface">Triage Center</span>
                 </a>

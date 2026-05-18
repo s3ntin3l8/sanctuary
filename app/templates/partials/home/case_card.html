@@ -1,5 +1,5 @@
 {% from "components/significance_indicator.html" import significance_indicator %}
-<a href="/cases/{{ case.id }}" class="flex flex-col h-full rounded-lg p-4 bg-surface-lowest border border-outline-variant transition-all duration-200 group no-underline
+<a href="{{ request.app.url_path_for('case_detail', case_id=case.id) }}" }}" class="flex flex-col h-full rounded-lg p-4 bg-surface-lowest border border-outline-variant transition-all duration-200 group no-underline
    {% if case.status.value == 'closed' %}opacity-70 hover:opacity-100{% endif %}"
    data-panel-item="{{ panel_name or 'cases' }}" data-index="{{ loop_index0 }}"
    @mouseenter="focusedPanel = '{{ panel_name or 'cases' }}'; focusedIdx = {{ loop_index0 }}"

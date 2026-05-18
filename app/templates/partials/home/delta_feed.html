@@ -13,7 +13,7 @@
                 ({{ last_home_visit | local_strftime('%b %d, %H:%M') if last_home_visit else 'first visit' }})
             </span>
         </div>
-        <button hx-post="/home/review-all" hx-swap="none" @click="$el.closest('section').remove()" class="text-[11px] flex items-center gap-1 text-primary hover:underline transition-colors">
+        <button hx-post="{{ request.app.url_path_for('review_all_delta') }}" hx-swap="none" @click="$el.closest('section').remove()" class="text-[11px] flex items-center gap-1 text-primary hover:underline transition-colors">
             review all <span class="kbd ml-2">R</span>
         </button>
     </div>
@@ -25,7 +25,7 @@
              @mouseenter="focusedPanel = 'delta'; focusedIdx = {{ loop.index0 }}"
              :class="{ 'bg-primary/5 ring-1 ring-inset ring-primary/40': focusedPanel === 'delta' && focusedIdx === {{ loop.index0 }} }">
 
-            <a href="/cases/{{ delta.case_id }}" class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-outline-variant text-on-surface bg-surface-lowest hover:bg-surface-container-low transition-colors shrink-0 no-underline">
+            <a href="{{ request.app.url_path_for('case_detail', case_id=delta.case_id) }}" class="font-mono text-[11px] px-1.5 py-0.5 rounded border border-outline-variant text-on-surface bg-surface-lowest hover:bg-surface-container-low transition-colors shrink-0 no-underline">
                 {{ delta.case_id }}
             </a>
 
@@ -51,7 +51,7 @@
                 </span>
             </div>
 
-            <a href="/cases/{{ delta.case_id }}" class="flex items-center gap-1 text-[11px] text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2 no-underline">
+            <a href="{{ request.app.url_path_for('case_detail', case_id=delta.case_id) }}" class="flex items-center gap-1 text-[11px] text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2 no-underline">
                 open case <span class="material-symbols-outlined text-[11px]">arrow_right_alt</span>
             </a>
         </div>

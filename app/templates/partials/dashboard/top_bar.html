@@ -54,7 +54,7 @@
            style="color:var(--color-on-surface-variant);">Switch proceeding</div>
       {% for p in proceedings %}
       <div class="flex items-center border-t" style="border-color:var(--color-outline-variant);">
-        <a hx-get="/cases/{{ case.id }}?proceeding={{ p.id }}&amp;view={{ active_view }}"
+        <a hx-get="{{ request.app.url_path_for('case_detail', case_id=case.id) }}?proceeding={{ p.id }}&amp;view={{ active_view }}"
            hx-target="#case-dashboard-main"
            hx-swap="outerHTML"
            hx-select="#case-dashboard-main"
@@ -75,7 +75,7 @@
         </a>
         {% if p.is_deletable %}
         <button type="button"
-                hx-delete="/proceedings/{{ p.id }}"
+                hx-delete="{{ request.app.url_path_for('delete_proceeding', proceeding_id=p.id) }}"
                 hx-confirm="Delete proceeding {{ p.court_name }}{% if p.az_court %} · {{ p.az_court }}{% endif %}? This cannot be undone."
                 @click.stop
                 class="mr-2 p-1 text-on-surface-variant hover:text-error transition-colors rounded flex-shrink-0"
@@ -116,7 +116,7 @@
 
   {# Upload & Ask AI — stays right #}
   <div class="flex items-center gap-1.5 ml-auto">
-    <button hx-get="/upload?case_id={{ case.id }}"
+    <button hx-get="{{ request.app.url_path_for('upload_page') }}?case_id={{ case.id }}"
             hx-target="#upload-modal-root"
             hx-swap="innerHTML"
             class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0 hover:bg-surface-container-high transition-colors"

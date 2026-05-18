@@ -1,6 +1,6 @@
 {% from "components/significance_indicator.html" import significance_indicator %}
 {% set meta = status_meta[case.status] %}
-<a href="/cases/{{ case.id }}"
+<a href="{{ request.app.url_path_for('case_detail', case_id=case.id) }}" }}"
    class="flex items-center gap-4 px-4 py-2.5 rounded-lg bg-surface-container border border-outline-variant/20 hover:bg-surface-container-low hover:border-primary/30 transition-all duration-200 group no-underline
           {% if case.status.value == 'closed' %}opacity-60 hover:opacity-90{% endif %}"
    data-panel-item="{{ panel_name or 'cases' }}" data-index="{{ loop_index0 }}"
