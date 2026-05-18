@@ -49,16 +49,16 @@ def _seed_case_with_two_docs(api_client, db_seed) -> tuple[str, list[int]]:
     cur.execute(
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state, pipeline_stages)
-           VALUES (?, ?, ?, 'court', 'standalone', ?, 0, 0, 0, 1, 'completed', '{}')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state)
+           VALUES (?, ?, ?, 'court', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
         (f"Graph Doc A {suffix}", case_id, proceeding_id, now),
     )
     doc_a = cur.lastrowid
     cur.execute(
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state, pipeline_stages)
-           VALUES (?, ?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed', '{}')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state)
+           VALUES (?, ?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
         (f"Graph Doc B {suffix}", case_id, proceeding_id, now),
     )
     doc_b = cur.lastrowid

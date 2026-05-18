@@ -37,8 +37,8 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
     cur.execute(
         """INSERT INTO documents
            (title, case_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state, pipeline_stages)
-           VALUES (?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed', '{}')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state)
+           VALUES (?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
         (f"Claim Source {suffix}", case_id, now),
     )
     source_doc_id = cur.lastrowid
