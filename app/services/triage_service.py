@@ -19,10 +19,7 @@ from app.models.database import (
     UserReaction,
 )
 from app.models.enums import (
-    ActionItemStatus,
-    DocumentStatus,
     IngestBatchSourceType,
-    IngestBatchStatus,
     UserReactionType,
 )
 from app.repositories.action_item import ActionItemRepository
@@ -408,130 +405,18 @@ class TriageService:
 
         return _impl(self.db, document_id, reaction)
 
+    # --- dismissal ------------------------------------------------------------
+
     def dismiss_bundle(
         self, batch_id: int | None = None, doc_id: int | None = None
     ) -> bool:
-        """Mark a batch or loose document (and children) as DISMISSED."""
-        from app.models.database import ActionItem, Document, IngestBatch
-        from app.models.enums import IngestBatchStatus
+        from app.services.triage_dismissal import dismiss_bundle as _impl
 
-        if batch_id:
-            batch = self.db.get(IngestBatch, batch_id)
-            if batch:
-                batch.status = IngestBatchStatus.DISMISSED
-                # Dismiss associated docs
-                self.db.query(Document).filter(
-                    Document.ingest_batch_id == batch_id
-                ).update(
-                    {"status": DocumentStatus.DISMISSED}, synchronize_session=False
-                )
-                # Dismiss associated ActionItems
-                doc_ids = (
-                    self.db.query(Document.id)
-                    .filter(Document.ingest_batch_id == batch_id)
-                    .all()
-                )
-                doc_id_list = [d[0] for d in doc_ids]
-                if doc_id_list:
-                    self.db.query(ActionItem).filter(
-                        ActionItem.source_document_id.in_(doc_id_list)
-                    ).update(
-                        {"status": ActionItemStatus.DISMISSED},
-                        synchronize_session=False,
-                    )
-                self.db.commit()
-                return True
-        elif doc_id:
-            doc = self.db.get(Document, doc_id)
-            if doc:
-                doc.status = DocumentStatus.DISMISSED
-                # Dismiss associated ActionItems
-                self.db.query(ActionItem).filter(
-                    ActionItem.source_document_id == doc_id
-                ).update(
-                    {"status": ActionItemStatus.DISMISSED}, synchronize_session=False
-                )
-                self.db.commit()
-                return True
-        return False
+        return _impl(self.db, batch_id=batch_id, doc_id=doc_id)
 
     def delete_bundle(
         self, batch_id: int | None = None, doc_id: int | None = None
     ) -> bool:
-        """Hard-delete a batch (and all children + files) or a loose document.
+        from app.services.triage_dismissal import delete_bundle as _impl
 
-        Raises ValueError when the batch is mid-flight (PROCESSING or
-        AWAITING_SLICING). Caller maps to HTTP 409.
-        """
-        import logging
-        import os
-
-        from app.models.database import ActionItem, IngestBatch
-        from app.services.document_service import DocumentService
-
-        logger = logging.getLogger(__name__)
-
-        if batch_id:
-            batch = self.db.get(IngestBatch, batch_id)
-            if not batch:
-                return False
-            if batch.status in (
-                IngestBatchStatus.PROCESSING,
-                IngestBatchStatus.AWAITING_SLICING,
-            ):
-                raise ValueError(
-                    f"Cannot delete batch {batch_id} in {batch.status.value} state. "
-                    "Wait for processing to finish, or retry the bundle first."
-                )
-
-            # Snapshot before per-doc loop: delete_document auto-removes the
-            # batch row when it deletes the last document, so batch.* lookups
-            # would fail on the final iteration.
-            raw_source_path = batch.raw_source_path
-            # Children-first order. Document.children carries
-            # cascade="all, delete-orphan", so deleting a parent first triggers
-            # an ORM cascade DELETE on its children before our manual
-            # UserReaction / DocumentPin / DocumentRelationship cleanup runs
-            # for them — tripping the FK guard with `FOREIGN KEY constraint
-            # failed` on documents.id IN (...). Processing children before
-            # their parent makes each delete_document call self-contained:
-            # by the time the parent is deleted, no live children remain in
-            # the session for the cascade to act on.
-            sorted_docs = sorted(
-                batch.documents, key=lambda d: (d.parent_id is None, d.id)
-            )
-            doc_id_list = [d.id for d in sorted_docs]
-
-            # Hard-delete ActionItems sourced from this batch's docs while we
-            # can still find them — delete_document nulls source_document_id.
-            if doc_id_list:
-                self.db.query(ActionItem).filter(
-                    ActionItem.source_document_id.in_(doc_id_list)
-                ).delete(synchronize_session=False)
-                self.db.commit()
-
-            doc_service = DocumentService(self.db)
-            for did in doc_id_list:
-                doc_service.delete_document(did)
-
-            # Defensive: if the batch had zero docs, the per-doc loop never ran
-            # and the batch row is still present. Drop it explicitly.
-            if not doc_id_list:
-                self.db.query(IngestBatch).filter(IngestBatch.id == batch_id).delete(
-                    synchronize_session=False
-                )
-                self.db.commit()
-
-            if raw_source_path and os.path.exists(raw_source_path):
-                try:
-                    os.remove(raw_source_path)
-                except OSError as e:
-                    logger.warning(
-                        f"Failed to delete batch raw source {raw_source_path}: {e}"
-                    )
-            return True
-
-        elif doc_id:
-            return DocumentService(self.db).delete_document(doc_id)
-
-        return False
+        return _impl(self.db, batch_id=batch_id, doc_id=doc_id)
