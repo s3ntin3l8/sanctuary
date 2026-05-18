@@ -45,7 +45,7 @@
         <h2 class="text-xl font-extrabold text-on-surface tracking-tight">Filters & Allowlist</h2>
     </div>
 
-    <form action="/api/ingest/settings/update" method="POST" class="space-y-6 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
+    <form action="{{ request.app.url_path_for('update_ingest_settings') }}" method="POST" class="space-y-6 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
         <div class="space-y-2">
             <label for="allowlist" class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Sender Allowlist</label>
             <textarea name="allowlist" id="allowlist" rows="3" class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary/50 transition-colors" placeholder="advokat@beispiel.de, gericht@safe.de">{% if settings.gmail_allowlist %}{{ settings.gmail_allowlist | join(', ') }}{% endif %}</textarea>
@@ -75,7 +75,7 @@
             <p class="text-sm font-bold text-on-surface">Import Historical Mail</p>
             <p class="text-xs text-on-surface-variant leading-relaxed max-w-md italic">Pull past legal documents matching your filters into the triage inbox.</p>
         </div>
-        <form hx-post="/api/ingest/gmail/backfill" hx-swap="none" class="flex items-center gap-2">
+        <form hx-post="{{ request.app.url_path_for('gmail_backfill') }}" hx-swap="none" class="flex items-center gap-2">
             <select name="days" class="bg-surface-container-high border border-outline-variant/20 rounded-xl px-3 py-2 text-xs text-on-surface-variant font-bold focus:outline-none">
                 <option value="90">Past 90 days</option>
                 <option value="365">Past year</option>

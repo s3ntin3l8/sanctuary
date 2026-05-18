@@ -48,7 +48,7 @@
         <div x-show="confirmDelete" class="flex items-center gap-1.5">
             <span class="text-xs" style="color:var(--color-error)">Delete?</span>
             <button type="button"
-                    hx-delete="/api/settings/ai/instances/{{ iid }}"
+                    hx-delete="{{ request.app.url_path_for('delete_instance_route', instance_id=iid) }}"
                     hx-target="#instance-{{ iid }}"
                     hx-swap="outerHTML"
                     class="px-2 py-0.5 text-xs font-bold rounded text-on-primary hover:opacity-85 transition-colors"
@@ -63,7 +63,7 @@
 
     {# ── Edit form (expanded) ─────────────────────────────────────────── #}
     <form x-show="expanded"
-          hx-post="/api/settings/ai/instances/{{ iid }}"
+          hx-post="{{ request.app.url_path_for('save_instance_route', instance_id=iid) }}"
           hx-target="#instance-{{ iid }}"
           hx-swap="outerHTML"
           hx-disabled-elt="[type=submit]"
@@ -165,7 +165,7 @@
                 Save
             </button>
             <button type="button"
-                    hx-get="/api/settings/ai/instances/{{ iid }}/models"
+                    hx-get="{{ request.app.url_path_for('instance_models', instance_id=iid) }}"
                     hx-trigger="click, refresh-models-{{ iid }} from:body"
                     hx-swap="none"
                     class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg border border-outline-variant/20 transition-all flex items-center gap-1">
@@ -173,7 +173,7 @@
                 Discover
             </button>
             <button type="button"
-                    hx-post="/api/settings/ai/instances/{{ iid }}/test"
+                    hx-post="{{ request.app.url_path_for('test_instance', instance_id=iid) }}"
                     hx-target="#status-{{ iid }}"
                     hx-swap="innerHTML"
                     class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg border border-outline-variant/20 transition-all flex items-center gap-1">

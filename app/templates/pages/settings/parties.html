@@ -12,7 +12,7 @@
         </div>
     </div>
 
-    <form hx-post="/api/settings/parties"
+    <form hx-post="{{ request.app.url_path_for('save_parties') }}"
           hx-swap="none"
           hx-on::after-request="if(event.detail.successful) { document.getElementById('parties-saved').classList.remove('hidden'); setTimeout(() => document.getElementById('parties-saved').classList.add('hidden'), 2500) }"
           class="space-y-6 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
@@ -60,7 +60,7 @@
         </div>
     </div>
 
-    <form hx-post="/api/settings/ai/user-context"
+    <form hx-post="{{ request.app.url_path_for('save_user_context') }}"
           hx-swap="none"
           hx-on::after-request="if(event.detail.successful) { document.getElementById('context-saved').classList.remove('hidden'); setTimeout(() => document.getElementById('context-saved').classList.add('hidden'), 2500) }"
           class="space-y-4 p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">

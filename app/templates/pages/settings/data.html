@@ -52,7 +52,7 @@
                     </button>
                     <div x-show="confirm" class="flex items-center gap-2">
                         <span class="text-xs text-on-surface-variant">Sure?</span>
-                        <button hx-post="/api/settings/maintenance/reset-enrichment"
+                        <button hx-post="{{ request.app.url_path_for('reset_ai_enrichment') }}"
                                 hx-target="#enrichment-result"
                                 hx-swap="innerHTML"
                                 @click="confirm = false"
@@ -81,7 +81,7 @@
                     </button>
                     <div x-show="confirm" class="flex items-center gap-2">
                         <span class="text-xs text-on-surface-variant">Sure?</span>
-                        <button hx-post="/api/settings/maintenance/clear-all-data"
+                        <button hx-post="{{ request.app.url_path_for('clear_all_data') }}"
                                 hx-target="#clear-all-result"
                                 hx-swap="innerHTML"
                                 @click="confirm = false"

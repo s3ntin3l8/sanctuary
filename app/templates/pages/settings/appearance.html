@@ -46,7 +46,7 @@
         {% set cards = settings.get('dashboard_cards', {'action_items': true, 'costs': true, 'documents': true}) %}
         <div class="space-y-3">
             <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Dashboard Panels</label>
-            <form hx-post="/api/settings/dashboard-cards" hx-swap="none" class="space-y-2">
+            <form hx-post="{{ request.app.url_path_for('save_dashboard_cards') }}" hx-swap="none" class="space-y-2">
                 <label class="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" name="action_items" value="on" {% if cards.get('action_items', true) %}checked{% endif %}
                            onchange="this.form.requestSubmit()"
@@ -72,7 +72,7 @@
         <!-- Timezone -->
         <div class="space-y-3">
             <label class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Timezone</label>
-            <form hx-post="/api/settings/timezone" hx-swap="none">
+            <form hx-post="{{ request.app.url_path_for('save_timezone') }}" hx-swap="none">
                 <select name="tz" onchange="this.form.requestSubmit()"
                         class="w-full max-w-xs bg-surface-container-high border border-outline-variant/20 text-on-surface text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40">
                     {% for tz in timezone_choices %}

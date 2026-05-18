@@ -19,7 +19,7 @@
                 <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Chat / Generation</label>
                 <div class="flex items-center gap-2">
                     <select id="active-chat-select"
-                            hx-post="/api/settings/ai/active"
+                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
                             hx-vals='{"role": "chat"}'
                             hx-include="#active-chat-select"
                             hx-target="#chat-status-result"
@@ -57,7 +57,7 @@
                 <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Embeddings / Vector Search</label>
                 <div class="flex items-center gap-2">
                     <select id="active-embed-select"
-                            hx-post="/api/settings/ai/active"
+                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
                             hx-vals='{"role": "embed"}'
                             hx-include="#active-embed-select"
                             hx-target="#embed-status-result"
@@ -97,7 +97,7 @@
         <div class="flex items-center justify-between">
             <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Registered Instances</p>
             <button type="button"
-                    hx-post="/api/settings/ai/instances"
+                    hx-post="{{ request.app.url_path_for('create_instance') }}"
                     hx-target="#ai-instances"
                     hx-swap="beforeend"
                     class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest transition-colors text-on-surface text-xs font-bold rounded-xl border border-outline-variant/20 flex items-center gap-1.5">
@@ -124,7 +124,7 @@
                 <div class="text-sm font-medium text-on-surface">Redact PII in AI debug logs</div>
                 <div class="text-xs text-on-surface-variant mt-0.5">When enabled, message bodies (case content, document text) are replaced with [REDACTED N chars] in data/ai_debug/ files.</div>
             </div>
-            <form hx-post="/api/settings/ai/debug-redact" hx-swap="none">
+            <form hx-post="{{ request.app.url_path_for('set_debug_redact') }}" hx-swap="none">
                 <input type="hidden" name="enabled"
                        x-data x-init="$el.value = {{ 'true' if ai_debug_redact else 'false' }}">
                 <button type="submit"
@@ -145,7 +145,7 @@
         <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Embedding Index</p>
         <p class="text-[10px] text-on-surface-variant/60 italic">Rebuild when switching to an embedding model with a different output dimension. This drops all existing vectors.</p>
 
-        <form hx-post="/api/settings/ai/rebuild-index"
+        <form hx-post="{{ request.app.url_path_for('rebuild_index') }}"
               hx-target="#rebuild-result"
               hx-swap="innerHTML"
               class="space-y-3">
@@ -186,7 +186,7 @@
         </form>
 
         <div class="border-t border-outline-variant/10 pt-3">
-            <form hx-post="/api/settings/ai/reindex"
+            <form hx-post="{{ request.app.url_path_for('reindex_documents') }}"
                   hx-target="#reindex-result"
                   hx-swap="innerHTML"
                   class="flex items-center gap-3">
