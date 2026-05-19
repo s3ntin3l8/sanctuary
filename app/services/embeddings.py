@@ -103,8 +103,17 @@ async def generate_embedding(doc_id: int):
         db.close()
 
 
+_REINDEX_BATCH_SIZE = 50
+
+
 async def reindex_all_docs(db) -> dict:
-    """Regenerate embeddings for all documents. Returns {total, reindexed, failed}."""
+    """Regenerate embeddings for all documents. Returns {total, reindexed, failed}.
+
+    Paginated in batches of _REINDEX_BATCH_SIZE so a corpus of N thousand
+    documents doesn't all sit in Python memory at once. Each doc still
+    commits independently (vec0 requires DELETE+INSERT for idempotency).
+    Progress is logged at INFO every batch so the user can tail the log.
+    """
     from sqlalchemy import text
 
     # The user typically triggers reindex right after changing the embedding
@@ -113,62 +122,82 @@ async def reindex_all_docs(db) -> dict:
     embed_provider.reload_from_db(db)
 
     cfg = get_embed_config(db)
-    docs = db.query(Document).filter(Document.content.isnot(None)).all()
-    total = len(docs)
+
+    base_query = db.query(Document).filter(Document.content.isnot(None))
+    total = base_query.count()
     reindexed = 0
     failed = 0
 
-    for doc in docs:
-        try:
-            if not doc.content or doc.content.startswith("Conversion failed:"):
-                continue
-            content_snippet = ""
-            chunks = doc.meta.get("chunks", []) if doc.meta else []
-            if chunks:
-                current_len = 0
-                for chunk in chunks:
-                    chunk_text = chunk.get("text", "")
-                    if current_len + len(chunk_text) > _EMBED_MAX_CHARS:
-                        break
-                    content_snippet += chunk_text + "\n\n"
-                    current_len += len(chunk_text)
+    offset = 0
+    while offset < total:
+        batch = (
+            base_query.order_by(Document.id)
+            .limit(_REINDEX_BATCH_SIZE)
+            .offset(offset)
+            .all()
+        )
+        if not batch:
+            break
+        for doc in batch:
+            try:
+                if not doc.content or doc.content.startswith("Conversion failed:"):
+                    continue
+                content_snippet = ""
+                chunks = doc.meta.get("chunks", []) if doc.meta else []
+                if chunks:
+                    current_len = 0
+                    for chunk in chunks:
+                        chunk_text = chunk.get("text", "")
+                        if current_len + len(chunk_text) > _EMBED_MAX_CHARS:
+                            break
+                        content_snippet += chunk_text + "\n\n"
+                        current_len += len(chunk_text)
+                    if not content_snippet:
+                        content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
                 if not content_snippet:
-                    content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
-            if not content_snippet:
-                content_snippet = doc.content[:_EMBED_MAX_CHARS]
-            params = await embed_provider.get_embedding_params(
-                cfg.embed_model, content_snippet
-            )
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    params["url"], json=params["json"], headers=params["headers"]
+                    content_snippet = doc.content[:_EMBED_MAX_CHARS]
+                params = await embed_provider.get_embedding_params(
+                    cfg.embed_model, content_snippet
                 )
-                response.raise_for_status()
-                data = response.json()
-            embedding = data.get("embedding") or (
-                data.get("data", [{}])[0].get("embedding") if data.get("data") else None
-            )
-            if embedding and len(embedding) == cfg.embed_dim:
-                blob = _serialize(embedding)
-                # See generate_embedding() above: vec0 doesn't honor INSERT OR
-                # REPLACE; DELETE + INSERT keeps reindex idempotent.
-                db.execute(
-                    text("DELETE FROM document_vectors WHERE document_id = :doc_id"),
-                    {"doc_id": doc.id},
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        params["url"], json=params["json"], headers=params["headers"]
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                embedding = data.get("embedding") or (
+                    data.get("data", [{}])[0].get("embedding")
+                    if data.get("data")
+                    else None
                 )
-                db.execute(
-                    text(
-                        "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
-                    ),
-                    {"doc_id": doc.id, "embedding": blob},
-                )
-                db.commit()
-                reindexed += 1
-            else:
+                if embedding and len(embedding) == cfg.embed_dim:
+                    blob = _serialize(embedding)
+                    # See generate_embedding() above: vec0 doesn't honor INSERT OR
+                    # REPLACE; DELETE + INSERT keeps reindex idempotent.
+                    db.execute(
+                        text(
+                            "DELETE FROM document_vectors WHERE document_id = :doc_id"
+                        ),
+                        {"doc_id": doc.id},
+                    )
+                    db.execute(
+                        text(
+                            "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
+                        ),
+                        {"doc_id": doc.id, "embedding": blob},
+                    )
+                    db.commit()
+                    reindexed += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning(f"Reindex failed for doc {doc.id}: {e}")
                 failed += 1
-        except Exception as e:
-            logger.warning(f"Reindex failed for doc {doc.id}: {e}")
-            failed += 1
+        offset += _REINDEX_BATCH_SIZE
+        logger.info(
+            f"reindex_all_docs: {min(offset, total)}/{total} processed "
+            f"({reindexed} ok, {failed} failed)"
+        )
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
 
