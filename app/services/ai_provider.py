@@ -10,6 +10,54 @@ from app.config import AI_API_KEY, AI_BASE_URL, AI_PROVIDER
 logger = logging.getLogger(__name__)
 
 
+def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
+    """Translate provider-side exceptions into actionable user-facing messages.
+
+    Examples:
+        ConnectError on :11434 → "Ollama is not running on localhost:11434…"
+        HTTPStatusError(401)  → "Authentication failed — check the API key."
+        TimeoutException      → "Provider is taking too long to respond…"
+
+    Falls through to `Unexpected error: <ExcClass>` so unknown failures still
+    surface a non-leaky message; the raw traceback stays in the server log
+    (callers should log before calling this).
+    """
+    if isinstance(exc, ConnectionRefusedError | httpx.ConnectError):
+        if "11434" in provider_url:
+            return (
+                "Ollama is not running on localhost:11434. "
+                "Start it with `ollama serve`."
+            )
+        if "1234" in provider_url:
+            return (
+                "LM Studio's local server isn't reachable. "
+                "Start the server in LM Studio's Developer tab."
+            )
+        target = provider_url or "the configured URL"
+        return f"Cannot reach provider at {target}."
+    if isinstance(exc, httpx.TimeoutException):
+        return (
+            "Provider is taking too long to respond. "
+            "The model may be loading or overloaded."
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        s = exc.response.status_code
+        if s == 401:
+            return "Authentication failed — check the API key."
+        if s == 403:
+            return "Provider denied access — check key permissions."
+        if s == 404:
+            return "Model not found on the provider."
+        if s == 429:
+            return "Rate limited by the provider — wait and retry."
+        if s >= 500:
+            return f"Provider returned HTTP {s}. May be transient."
+        return f"Provider returned HTTP {s}."
+    if isinstance(exc, json.JSONDecodeError):
+        return "Provider returned non-JSON response — the URL is likely wrong."
+    return f"Unexpected error: {type(exc).__name__}"
+
+
 def _make_openai_strict(schema: dict) -> dict:
     """Rewrite a Pydantic-emitted JSON schema to satisfy OpenAI strict mode.
 
@@ -304,8 +352,13 @@ class AIProvider:
                     if provider != "auto"
                     else await detect_provider(base_url, api_key)
                 )
-            except (RuntimeError, Exception):
-                return {"ok": False, "provider": "unknown", "detail": "Unreachable"}
+            except Exception as e:
+                logger.debug(f"probe_health: detect_provider failed at {base_url}: {e}")
+                return {
+                    "ok": False,
+                    "provider": "unknown",
+                    "detail": sanitize_provider_error(e, base_url),
+                }
         else:
             base_url = self.base_url
             api_key = self.api_key
@@ -342,7 +395,12 @@ class AIProvider:
                 "detail": f"HTTP {resp.status_code}",
             }
         except Exception as e:
-            return {"ok": False, "provider": str(ptype), "detail": str(e)}
+            logger.debug(f"probe_health: {base_url} {ptype} failed: {e}")
+            return {
+                "ok": False,
+                "provider": str(ptype),
+                "detail": sanitize_provider_error(e, base_url),
+            }
 
     def parse_stream_line(self, line: str, ptype: ProviderType) -> dict | None:
         """Parse a single line from a streaming response."""
