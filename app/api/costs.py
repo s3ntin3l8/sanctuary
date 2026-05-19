@@ -12,7 +12,7 @@ from app.constants import (
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Case, LegalCost
-from app.models.enums import CostCategory, CostStatus
+from app.models.enums import CaseStatus, CostCategory, CostStatus
 from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService
 
@@ -48,7 +48,14 @@ async def costs_page(request: Request, db: Session = Depends(get_db)):
     cost_service = CostService(db)
     data = cost_service.get_costs_for_page()
 
-    case_titles = {c.id: c.title for c in db.query(Case.id, Case.title).all()}
+    # Dropdown only needs cases the user is likely to assign new costs to.
+    # Closed cases still render their existing rows (joined elsewhere by case_id).
+    case_titles = {
+        c.id: c.title
+        for c in db.query(Case.id, Case.title)
+        .filter(Case.status != CaseStatus.CLOSED)
+        .all()
+    }
 
     # Compute overdue and upcoming costs for the alerts
     now = datetime.now()
