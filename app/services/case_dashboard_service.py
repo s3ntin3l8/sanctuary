@@ -299,23 +299,39 @@ class CaseDashboardService:
         graph only needs a single glyph per node, so we collapse multiple
         reactions down to the latest.
         """
-        rows = (
-            self.db.query(UserReaction, Document.id)
+        from sqlalchemy import and_, func
+
+        # Subquery: latest reaction ingest_date per doc, scoped to the
+        # proceeding's documents. SQLite has no DISTINCT ON, so we GROUP BY
+        # doc_id and pick the row whose ingest_date matches the max — cheaper
+        # than fetching every reaction and discarding 80% in Python.
+        latest = (
+            self.db.query(
+                UserReaction.document_id.label("doc_id"),
+                func.max(UserReaction.ingest_date).label("ts"),
+            )
             .join(Document, UserReaction.document_id == Document.id)
             .filter(Document.proceeding_id == proceeding_id)
-            .order_by(UserReaction.ingest_date.desc())
+            .group_by(UserReaction.document_id)
+            .subquery()
+        )
+
+        rows = (
+            self.db.query(UserReaction)
+            .join(
+                latest,
+                and_(
+                    UserReaction.document_id == latest.c.doc_id,
+                    UserReaction.ingest_date == latest.c.ts,
+                ),
+            )
             .all()
         )
+
         out: dict[int, str] = {}
-        for reaction, doc_id in rows:
-            if doc_id in out:
-                continue
-            # Store the raw string value (e.g. 'lies') for template emoji mapping
-            val = reaction.reaction
-            if hasattr(val, "value"):
-                out[doc_id] = val.value
-            else:
-                out[doc_id] = str(val)
+        for r in rows:
+            val = r.reaction
+            out[r.document_id] = val.value if hasattr(val, "value") else str(val)
         return out
 
 
