@@ -89,6 +89,7 @@ async def delete_bundle(
 
 
 @router.post("/triage/bundle/retry")
+@limiter.limit("20/minute")
 async def retry_bundle_pipeline(
     request: Request,
     batch_id: int = Form(...),

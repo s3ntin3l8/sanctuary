@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import (
     Case,
@@ -161,6 +162,7 @@ async def toggle_claim_precedent(
 
 
 @router.post("/cases/{case_id}/claims/find-duplicates")
+@limiter.limit("5/minute")
 async def find_duplicates_in_case(
     request: Request,
     case_id: str,

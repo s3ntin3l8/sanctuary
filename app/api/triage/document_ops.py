@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.config import templates
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import Case, Document
 from app.models.enums import OriginatorType
@@ -54,6 +55,7 @@ def _parse_bundle_key(key: str) -> tuple[int | None, int | None]:
 
 
 @router.post("/triage/document/{doc_id}/confirm")
+@limiter.limit("30/minute")
 async def confirm_document(
     request: Request,
     doc_id: int,
@@ -193,6 +195,7 @@ async def confirm_document(
 
 
 @router.post("/triage/confirm")
+@limiter.limit("30/minute")
 async def confirm(
     request: Request,
     batch_id: str | None = Form(None),
@@ -379,6 +382,7 @@ async def confirm(
 
 
 @router.post("/triage/batch/confirm")
+@limiter.limit("30/minute")
 async def batch_confirm(
     request: Request,
     bundle_keys: list[str] = Form(...),
@@ -458,6 +462,7 @@ async def batch_confirm(
 
 
 @router.post("/triage/batch/assign")
+@limiter.limit("30/minute")
 async def batch_assign(
     request: Request,
     bundle_keys: list[str] = Form(...),

@@ -99,6 +99,7 @@ async def case_brief_partial(
 
 
 @router.post("/{case_id}/brief/refresh")
+@limiter.limit("10/minute")
 async def case_brief_refresh(
     request: Request, case_id: str, db: Session = Depends(get_db)
 ):

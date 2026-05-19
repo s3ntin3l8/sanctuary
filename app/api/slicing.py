@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.models.database import Document, IngestBatch
@@ -188,7 +189,8 @@ async def slicing_confirm(
 
 
 @router.post("/{batch_id}/retry")
-async def slicing_retry(batch_id: int, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def slicing_retry(request: Request, batch_id: int, db: Session = Depends(get_db)):
     """Re-enqueue prepare_slicing_task for a failed batch."""
     batch = _get_batch(batch_id, db)
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
