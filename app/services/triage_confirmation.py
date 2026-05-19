@@ -54,6 +54,7 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
     """
     from app.models.enums import PipelineStage
     from app.services.pipeline_status import reset_stage
+    from app.tasks.dispatch import dispatch_task
     from app.tasks.enrich_document import enrich_document_task
 
     for doc in docs:
@@ -61,7 +62,7 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
         if metadata_status != "completed":
             continue
         reset_stage(doc.id, PipelineStage.ENRICH, db)
-        enrich_document_task.delay(doc.id)
+        dispatch_task(enrich_document_task, doc.id)
 
 
 def find_next_review_doc(db: Session, after_doc_id: int) -> Document | None:

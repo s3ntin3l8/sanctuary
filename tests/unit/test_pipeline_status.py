@@ -787,8 +787,13 @@ def test_recover_unclaimed_ready_batches_claims_and_dispatches(db_session, monke
     captured: list[int] = []
 
     class _FakeDelay:
+        # recover_unclaimed_ready_batches now goes through dispatch_task,
+        # which calls apply_async; keep delay for any direct callers.
         def delay(self, batch_id):
             captured.append(batch_id)
+
+        def apply_async(self, args=(), kwargs=None):
+            captured.append(args[0])
 
     monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
 
@@ -837,8 +842,13 @@ def test_recover_unclaimed_ready_batches_skips_when_metadata_pending(
     captured: list[int] = []
 
     class _FakeDelay:
+        # recover_unclaimed_ready_batches now goes through dispatch_task,
+        # which calls apply_async; keep delay for any direct callers.
         def delay(self, batch_id):
             captured.append(batch_id)
+
+        def apply_async(self, args=(), kwargs=None):
+            captured.append(args[0])
 
     monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
 
@@ -885,8 +895,13 @@ def test_recover_unclaimed_ready_batches_ignores_already_claimed(
     captured: list[int] = []
 
     class _FakeDelay:
+        # recover_unclaimed_ready_batches now goes through dispatch_task,
+        # which calls apply_async; keep delay for any direct callers.
         def delay(self, batch_id):
             captured.append(batch_id)
+
+        def apply_async(self, args=(), kwargs=None):
+            captured.append(args[0])
 
     monkeypatch.setattr("app.tasks.analyze_batch.analyze_batch_task", _FakeDelay())
 

@@ -688,6 +688,7 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
     """
     from app.services.intelligence.orchestrator import claim_batch_for_analysis
     from app.tasks.analyze_batch import analyze_batch_task
+    from app.tasks.dispatch import dispatch_task
 
     rows = db.execute(
         text(
@@ -706,7 +707,7 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
     dispatched: list[int] = []
     for (batch_id,) in rows:
         if claim_batch_for_analysis(batch_id, db):
-            analyze_batch_task.delay(batch_id)
+            dispatch_task(analyze_batch_task, batch_id)
             dispatched.append(batch_id)
 
     if dispatched:

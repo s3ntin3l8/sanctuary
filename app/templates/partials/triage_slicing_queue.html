@@ -22,7 +22,7 @@
                     {% endif %}
                 </p>
             </div>
-            <a href="/ingest/slice/{{ batch.id }}"
+            <a href="{{ request.app.url_path_for('slicing_review', batch_id=batch.id) }}"
                class="flex items-center gap-1 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg
                       bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors whitespace-nowrap">
                 <span class="material-symbols-outlined text-xs">content_cut</span>

@@ -59,7 +59,7 @@ x-cloak x-show="searchOpen" class="fixed inset-0 z-[9999] flex items-start justi
                     <span class="material-symbols-outlined text-sm text-primary">inbox</span>
                     <span class="text-sm text-on-surface">Triage Center</span>
                 </a>
-                <a href="/cases" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                <a href="{{ request.app.url_path_for('case_directory') }}" @click="searchOpen = false" class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
                     <span class="material-symbols-outlined text-sm text-primary">folder_open</span>
                     <span class="text-sm text-on-surface">Case Files</span>
                 </a>

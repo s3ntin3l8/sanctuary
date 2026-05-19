@@ -70,7 +70,7 @@
                         </h2>
                         <span class="text-[11px] text-on-surface-variant">{{ draft_cases|length }}</span>
                     </div>
-                    <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+                    <a href="{{ request.app.url_path_for('case_directory') }}" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
                         see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
                     </a>
                 </div>
@@ -95,7 +95,7 @@
                         </h2>
                         <span class="text-[11px] text-on-surface-variant">{{ active_cases|length }}</span>
                     </div>
-                    <a href="/cases" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
+                    <a href="{{ request.app.url_path_for('case_directory') }}" class="text-[11px] flex items-center gap-1 text-primary hover:underline">
                         see all <span class="material-symbols-outlined text-[14px]">arrow_right_alt</span>
                     </a>
                 </div>

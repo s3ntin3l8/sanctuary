@@ -20,7 +20,7 @@
         </a>
 
         <!-- 2. Triage Center -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/triage">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="{{ request.app.url_path_for('triage_page') }}">
             {% if request.url.path == '/triage' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
@@ -36,7 +36,7 @@
         </a>
 
         <!-- 3. Case Files -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/cases">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/cases') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="{{ request.app.url_path_for('case_directory') }}">
             {% if request.url.path.startswith('/cases') %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}
@@ -107,7 +107,7 @@
         </button>
 
         <!-- Settings -->
-        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/settings') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="/settings">
+        <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path.startswith('/settings') else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="{{ request.app.url_path_for('settings_root') }}">
             {% if request.url.path.startswith('/settings') %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
             {% endif %}

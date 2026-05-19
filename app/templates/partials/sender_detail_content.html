@@ -14,7 +14,7 @@
                 </div>
             </div>
             <div class="shrink-0 flex gap-2">
-                <a href="/search?q={{ sender|urlencode }}" class="p-2 rounded-lg bg-surface-container hover:bg-surface-container-highest text-on-surface-variant transition-colors" title="Search all references">
+                <a href="{{ request.app.url_path_for('search_page') }}?q={{ sender|urlencode }}" class="p-2 rounded-lg bg-surface-container hover:bg-surface-container-highest text-on-surface-variant transition-colors" title="Search all references">
                     <span class="material-symbols-outlined text-sm">search</span>
                 </a>
             </div>

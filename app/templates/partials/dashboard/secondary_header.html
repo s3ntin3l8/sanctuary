@@ -4,7 +4,7 @@
 
   {# Breadcrumbs #}
   <nav class="flex items-center gap-2" style="color:var(--color-on-surface-variant);">
-    <a href="/cases" style="color:var(--color-on-surface-variant); text-decoration:none;">Cases</a>
+    <a href="{{ request.app.url_path_for('case_directory') }}" style="color:var(--color-on-surface-variant); text-decoration:none;">Cases</a>
     <span style="color:var(--color-outline);">›</span>
     <span class="font-mono font-semibold" style="color:var(--color-on-surface);">{{ case.id }}</span>
     <span style="color:var(--color-outline);">·</span>

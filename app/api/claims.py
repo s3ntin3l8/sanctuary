@@ -175,6 +175,7 @@ async def find_duplicates_in_case(
     from app.repositories.claim import ClaimRepository
     from app.services import user_settings_service as uss
     from app.tasks.claim_dedup import claim_dedup_task
+    from app.tasks.dispatch import dispatch_task
 
     # Pre-count claims so the running fragment can render "N of M scanned".
     # ClaimRepository.claims_for_case returns a list; len() is the dedup
@@ -182,7 +183,7 @@ async def find_duplicates_in_case(
     total = len(ClaimRepository(db).claims_for_case(case_id))
     uss.set_dedup_running(case_id, db, total=total)
     db.commit()
-    claim_dedup_task.delay(case_id)
+    dispatch_task(claim_dedup_task, case_id)
 
     return templates.TemplateResponse(
         request,

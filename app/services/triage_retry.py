@@ -193,5 +193,6 @@ def dispatch_batch_retry(
 
         if claim_batch_for_analysis(batch_id, db):
             from app.tasks.analyze_batch import analyze_batch_task
+            from app.tasks.dispatch import dispatch_task
 
-            analyze_batch_task.delay(batch_id)
+            dispatch_task(analyze_batch_task, batch_id)

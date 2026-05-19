@@ -25,7 +25,7 @@
         </div>
 
         <div class="pt-2 border-t border-outline-variant/10">
-            <a href="/api/export"
+            <a href="{{ request.app.url_path_for('export_data') }}"
                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl text-on-primary transition-colors hover:opacity-90"
                style="background:var(--color-primary);">
                 <span class="material-symbols-outlined text-[18px]">download</span>
