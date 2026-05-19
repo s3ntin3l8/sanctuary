@@ -142,18 +142,39 @@ def _norm_filename(s: str) -> str:
     return re.sub(r"[-_.\s]+", " ", s).lower().strip()
 
 
-def _ensure_encloses_edge(db: Session, cover_id: int, enclosure_id: int) -> None:
-    """Idempotently write a cover→enclosure ENCLOSES edge."""
-    existing = (
-        db.query(DocumentRelationship)
+def _load_existing_encloses_edges(
+    db: Session, doc_ids: list[int]
+) -> set[tuple[int, int]]:
+    """Return ``{(from_id, to_id), ...}`` for all existing ENCLOSES edges among
+    the given doc set. Used to dedupe edge writes in `_apply_batch_results`
+    without a per-enclosure SELECT."""
+    if not doc_ids:
+        return set()
+    rows = (
+        db.query(
+            DocumentRelationship.from_document_id,
+            DocumentRelationship.to_document_id,
+        )
         .filter(
-            DocumentRelationship.from_document_id == cover_id,
-            DocumentRelationship.to_document_id == enclosure_id,
+            DocumentRelationship.from_document_id.in_(doc_ids),
+            DocumentRelationship.to_document_id.in_(doc_ids),
             DocumentRelationship.relationship_type == RelationshipType.ENCLOSES,
         )
-        .first()
+        .all()
     )
-    if existing:
+    return {(r[0], r[1]) for r in rows}
+
+
+def _add_encloses_edge(
+    db: Session,
+    existing: set[tuple[int, int]],
+    cover_id: int,
+    enclosure_id: int,
+) -> None:
+    """Idempotently write a cover→enclosure ENCLOSES edge, tracking writes in
+    the supplied ``existing`` set so callers can batch-dedupe across a loop."""
+    key = (cover_id, enclosure_id)
+    if key in existing:
         return
     db.add(
         DocumentRelationship(
@@ -165,6 +186,7 @@ def _ensure_encloses_edge(db: Session, cover_id: int, enclosure_id: int) -> None
             ingest_date=datetime.now(UTC),
         )
     )
+    existing.add(key)
 
 
 def _apply_batch_results(
@@ -190,6 +212,10 @@ def _apply_batch_results(
     claimed_ids: set[int] = set()
     cover_ids: set[int] = set()
     first_cover: Document | None = None
+
+    # Pre-load existing ENCLOSES edges among this batch's docs once so the
+    # enclosure-wiring loops below don't fire one SELECT per enclosure.
+    existing_edges = _load_existing_encloses_edges(db, [d.id for d in docs])
 
     # Check if we have the new multi-bundle format
     if bundles and isinstance(bundles, list):
@@ -280,7 +306,7 @@ def _apply_batch_results(
                     claimed_ids.add(child.id)
                     child.role = DocumentRole.ENCLOSURE
                     child.parent_id = cover_id
-                    _ensure_encloses_edge(db, cover_id, child.id)
+                    _add_encloses_edge(db, existing_edges, cover_id, child.id)
                     # Only fill originator_type when metadata had no opinion;
                     # full-text metadata beats batch's title-only context.
                     if child.originator_type in (None, OriginatorType.UNKNOWN):
@@ -356,7 +382,7 @@ def _apply_batch_results(
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                _ensure_encloses_edge(db, cover_letter_doc_id, child.id)
+                _add_encloses_edge(db, existing_edges, cover_letter_doc_id, child.id)
                 if child.originator_type in (None, OriginatorType.UNKNOWN):
                     child.originator_type = (
                         parse_originator_type(encl.get("originator_type"))

@@ -727,34 +727,59 @@ class CaseService:
         for a in actions:
             next_action_by_case.setdefault(a.case_id, a)
 
-        # 1 query: most-recent document per case.
-        last_docs = (
-            self.db.query(Document)
-            .filter(Document.case_id.in_(case_ids))
-            .order_by(Document.ingest_date.desc())
-            .all()
-        )
-        for d in last_docs:
-            last_doc_by_case.setdefault(d.case_id, d)
-
-        # 1 query: top-significance among the last 20 docs per case.
-        # SQLite has no per-group LIMIT; rank in Python (20-cap per case_id).
-        sig_rows = (
-            self.db.query(
-                Document.case_id, Document.significance_tier, Document.ingest_date
+        # 2 queries: window-function filter to 1 most-recent document per case,
+        # then fetch those Document rows. Avoids pulling every Document for the
+        # case set just to keep the first row per case_id in Python.
+        rn = (
+            func.row_number()
+            .over(
+                partition_by=Document.case_id,
+                order_by=Document.ingest_date.desc(),
             )
+            .label("rn")
+        )
+        last_doc_subq = (
+            self.db.query(Document.id, rn)
+            .filter(Document.case_id.in_(case_ids))
+            .subquery()
+        )
+        last_doc_ids = [
+            r.id
+            for r in self.db.query(last_doc_subq.c.id)
+            .filter(last_doc_subq.c.rn == 1)
+            .all()
+        ]
+        if last_doc_ids:
+            for d in (
+                self.db.query(Document).filter(Document.id.in_(last_doc_ids)).all()
+            ):
+                last_doc_by_case[d.case_id] = d
+
+        # 1 query: top-significance among the last 20 docs per case via
+        # ROW_NUMBER() partition — SQLite has no per-group LIMIT but window
+        # functions are supported since 3.25.
+        sig_rn = (
+            func.row_number()
+            .over(
+                partition_by=Document.case_id,
+                order_by=Document.ingest_date.desc(),
+            )
+            .label("rn")
+        )
+        sig_subq = (
+            self.db.query(Document.case_id, Document.significance_tier, sig_rn)
             .filter(
                 Document.case_id.in_(case_ids),
                 Document.significance_tier.isnot(None),
             )
-            .order_by(Document.case_id, Document.ingest_date.desc())
+            .subquery()
+        )
+        sig_rows = (
+            self.db.query(sig_subq.c.case_id, sig_subq.c.significance_tier)
+            .filter(sig_subq.c.rn <= 20)
             .all()
         )
-        counts: dict[str, int] = {}
-        for cid, tier, _ in sig_rows:
-            if counts.get(cid, 0) >= 20:
-                continue
-            counts[cid] = counts.get(cid, 0) + 1
+        for cid, tier in sig_rows:
             cur = max_sig_by_case.get(cid)
             if cur is None or self._SIG_RANK.get(tier, 0) > self._SIG_RANK.get(cur, 0):
                 max_sig_by_case[cid] = tier
@@ -1048,13 +1073,14 @@ class CaseService:
             doc.needs_review = True
 
         # Revert any IngestBatches whose case_id pointed at this case.
-        for batch_id in batch_ids:
-            batch = (
-                self.db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+        if batch_ids:
+            batches = (
+                self.db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all()
             )
-            if batch and batch.case_id == case_id:
-                batch.case_id = None
-                batch.proceeding_id = None
+            for batch in batches:
+                if batch.case_id == case_id:
+                    batch.case_id = None
+                    batch.proceeding_id = None
 
         # Hard delete dependent rows scoped to this case.
         self.db.query(Entity).filter(Entity.case_id == case_id).delete(
