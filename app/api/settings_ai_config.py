@@ -24,7 +24,6 @@ from app.services.ai_config import (
     set_user_context,
 )
 from app.services.ai_provider import chat_provider, embed_provider
-from app.services.embeddings import reindex_all_docs
 
 logger = logging.getLogger(__name__)
 
@@ -466,16 +465,36 @@ async def save_user_context(
 @router.post("/reindex", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 async def reindex_documents(request: Request, db: Session = Depends(get_db)):
-    """Quick reindex using current settings (no DDL change)."""
+    """Quick reindex using current settings (no DDL change).
+
+    Same async-Celery flow as rebuild_index — just skips the DDL step.
+    Both buttons land their state in the singleton reindex_job slot.
+    """
+    from app.models.database import Document
+    from app.services.user_settings_service import (
+        get_reindex_job,
+        set_reindex_running,
+    )
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.generate_embedding import reindex_all_embeddings_task
+
+    existing = get_reindex_job(db)
+    if existing and existing.get("status") == "running":
+        return HTMLResponse(_toast(False, "A reindex is already in flight."))
+
     embed_provider.reload_from_db(db)
-    result = await reindex_all_docs(db)
+    cfg = get_embed_config(db)
+    total = db.query(Document).filter(Document.content.isnot(None)).count()
+    set_reindex_running(db, total=total, embed_dim=cfg.embed_dim)
     audit_service.record(db, AuditEventType.MAINTENANCE_REINDEX_DOCUMENTS)
     db.commit()
-    fail_note = f" ({result['failed']} failed)" if result["failed"] else ""
-    return HTMLResponse(
-        f'<span class="text-xs" style="color:var(--color-on-surface-variant)">'
-        f"Reindexed {result['reindexed']}/{result['total']} documents{fail_note}"
-        f"</span>",
+
+    dispatch_task(reindex_all_embeddings_task)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/settings/_reindex_running.html",
+        {"job": get_reindex_job(db)},
     )
 
 

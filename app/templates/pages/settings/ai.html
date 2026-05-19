@@ -154,7 +154,7 @@
         <p class="text-[10px] text-on-surface-variant/60 italic">Rebuild when switching to an embedding model with a different output dimension. This drops all existing vectors.</p>
 
         <form hx-post="{{ request.app.url_path_for('rebuild_index') }}"
-              hx-target="#rebuild-result"
+              hx-target="#reindex-status"
               hx-swap="innerHTML"
               class="space-y-3">
             <div class="flex items-start gap-4">
@@ -189,13 +189,12 @@
                         Cancel
                     </button>
                 </div>
-                <span id="rebuild-result"></span>
             </div>
         </form>
 
         <div class="border-t border-outline-variant/10 pt-3">
             <form hx-post="{{ request.app.url_path_for('reindex_documents') }}"
-                  hx-target="#reindex-result"
+                  hx-target="#reindex-status"
                   hx-swap="innerHTML"
                   class="flex items-center gap-3">
                 <button type="submit"
@@ -203,8 +202,19 @@
                     Quick Reindex
                 </button>
                 <span class="text-[10px] text-on-surface-variant/60">Regenerates all vectors using current settings, no DDL change.</span>
-                <span id="reindex-result"></span>
             </form>
+        </div>
+
+        {# Shared status slot for both Rebuild and Quick Reindex. Page-load
+           hx-get rehydrates from UserSettings.reindex_job so opening this
+           tab mid-reindex (e.g. from another window) immediately shows the
+           live progress bar. The running fragment self-polls every 4s. #}
+        <div id="reindex-status"
+             class="border-t border-outline-variant/10 pt-3"
+             hx-get="{{ request.app.url_path_for('rebuild_index_status') }}"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <p class="text-[11px] italic text-outline">Loading reindex state…</p>
         </div>
     </div>
 
