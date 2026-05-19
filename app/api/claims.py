@@ -172,17 +172,22 @@ async def find_duplicates_in_case(
     if case is None:
         return HTMLResponse("<p>Case not found</p>", status_code=404)
 
+    from app.repositories.claim import ClaimRepository
     from app.services import user_settings_service as uss
     from app.tasks.claim_dedup import claim_dedup_task
 
-    uss.set_dedup_running(case_id, db)
+    # Pre-count claims so the running fragment can render "N of M scanned".
+    # ClaimRepository.claims_for_case returns a list; len() is the dedup
+    # candidate population.
+    total = len(ClaimRepository(db).claims_for_case(case_id))
+    uss.set_dedup_running(case_id, db, total=total)
     db.commit()
     claim_dedup_task.delay(case_id)
 
     return templates.TemplateResponse(
         request,
         "partials/find_duplicates_running.html",
-        {"case": case},
+        {"case": case, "job": uss.get_dedup_job(case_id, db)},
     )
 
 
@@ -204,7 +209,7 @@ async def find_duplicates_status(
 
     if job is None or job["status"] == "running":
         return templates.TemplateResponse(
-            request, "partials/find_duplicates_running.html", {"case": case}
+            request, "partials/find_duplicates_running.html", {"case": case, "job": job}
         )
 
     if job["status"] == "done":

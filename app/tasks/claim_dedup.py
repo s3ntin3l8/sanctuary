@@ -13,7 +13,16 @@ logger = logging.getLogger(__name__)
 def claim_dedup_task(case_id: str) -> dict:
     db = SessionLocal()
     try:
-        stats = asyncio.run(find_duplicates_for_case(case_id, db))
+        # Progress callback writes to UserSettings so find_duplicates_running.html
+        # can render "Scanning N of M claims…" instead of an opaque spinner.
+        def _on_progress(*, processed: int) -> None:
+            user_settings_service.update_dedup_progress(
+                case_id, db, processed=processed
+            )
+
+        stats = asyncio.run(
+            find_duplicates_for_case(case_id, db, progress_cb=_on_progress)
+        )
         db.commit()
         user_settings_service.set_dedup_result(case_id, stats, db)
         db.commit()

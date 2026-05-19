@@ -91,12 +91,37 @@ def get_dedup_job(case_id: str, db) -> dict | None:
     return settings.settings_json.get("dedup_jobs", {}).get(case_id)
 
 
-def set_dedup_running(case_id: str, db) -> None:
+def set_dedup_running(case_id: str, db, *, total: int = 0) -> None:
     settings = _get_or_create(db)
     jobs = dict(settings.settings_json.get("dedup_jobs", {}))
-    jobs[case_id] = {"status": "running"}
+    jobs[case_id] = {"status": "running", "total": total, "processed": 0}
     settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
     db.flush()
+
+
+def update_dedup_progress(case_id: str, db, *, processed: int) -> None:
+    """Update processed-count on the in-flight dedup job for this case.
+
+    Best-effort: swallows OperationalError on db-lock contention so a busy
+    SQLite writer doesn't kill the background task.
+    """
+    try:
+        settings = _get_or_create(db)
+        jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+        job = dict(jobs.get(case_id) or {})
+        if job.get("status") != "running":
+            return
+        job["processed"] = processed
+        jobs[case_id] = job
+        settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+        db.flush()
+    except OperationalError as exc:
+        if is_db_locked(exc):
+            logger.debug(
+                "update_dedup_progress: db locked for case %s; skipping", case_id
+            )
+            return
+        raise
 
 
 def set_dedup_result(

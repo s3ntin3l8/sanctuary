@@ -243,6 +243,7 @@ async def find_duplicates_for_case(
     *,
     k: int = 3,
     skip_pair_if_proposal_exists: bool = True,
+    progress_cb=None,
 ) -> dict[str, int]:
     """Wave 2C: retroactive duplicate-finder.
 
@@ -283,7 +284,7 @@ async def find_duplicates_for_case(
     candidate_pairs: list[tuple[int, str, int, str]] = []
     seen_pairs_this_run: set[tuple[int, int]] = set()
 
-    for claim in claims:
+    for idx, claim in enumerate(claims, start=1):
         nearest = await nearest_claims(
             claim.claim_text,
             db,
@@ -314,6 +315,14 @@ async def find_duplicates_for_case(
                     existing_claim_obj.claim_text,
                 )
             )
+
+        # Report Phase-1 progress every 10 claims (and at the end). Cheap
+        # enough — the bottleneck is the embedding KNN above, not the cb.
+        if progress_cb is not None and (idx % 10 == 0 or idx == len(claims)):
+            try:
+                progress_cb(processed=idx)
+            except Exception as cb_err:
+                logger.debug(f"dedup progress_cb failed (continuing): {cb_err}")
 
     if not candidate_pairs:
         return {"scanned": len(claims), "proposals_created": 0, "judge_calls": 0}

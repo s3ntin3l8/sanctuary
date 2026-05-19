@@ -6,5 +6,11 @@
       hx-target="#find-duplicates-slot"
       hx-swap="innerHTML">
   <span class="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-  {% if failed %}Scan failed · retrying…{% else %}Scanning claims…{% endif %}
+  {% if failed %}
+    Scan failed · retrying…
+  {% elif job and job.total %}
+    Scanning {{ job.processed or 0 }} of {{ job.total }} claims…
+  {% else %}
+    Scanning claims…
+  {% endif %}
 </span>
