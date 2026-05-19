@@ -34,11 +34,15 @@ def format_reactions_for_case(db: Session, case_id: str) -> str:
     if not reactions:
         return ""
 
-    doc_titles: dict[int, str] = {}
-    for r in reactions:
-        if r.document_id not in doc_titles:
-            doc = db.get(Document, r.document_id)
-            doc_titles[r.document_id] = doc.title if doc else f"doc #{r.document_id}"
+    doc_ids = {r.document_id for r in reactions}
+    title_rows = (
+        db.query(Document.id, Document.title).filter(Document.id.in_(doc_ids)).all()
+    )
+    doc_titles: dict[int, str] = {
+        did: (title or f"doc #{did}") for did, title in title_rows
+    }
+    for did in doc_ids:
+        doc_titles.setdefault(did, f"doc #{did}")
 
     lines = [
         f"- Doc #{r.document_id} ({doc_titles[r.document_id]}): "

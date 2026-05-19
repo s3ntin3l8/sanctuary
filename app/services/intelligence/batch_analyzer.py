@@ -399,7 +399,9 @@ def _apply_batch_results(
                 if first_cover.proceeding_id and not d.proceeding_id:
                     d.proceeding_id = first_cover.proceeding_id
 
-    batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+    # analyze() already loaded the IngestBatch on this session, so db.get
+    # returns it from the identity map without a re-query.
+    batch = db.get(IngestBatch, batch_id)
     if (
         batch
         and first_cover

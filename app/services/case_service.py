@@ -1350,17 +1350,22 @@ def _compute_dormancy_alert(case, db) -> str | None:
     if not active_procs:
         return None
 
+    proc_ids = [p.id for p in active_procs]
+    last_by_proc: dict[int, datetime | None] = {pid: None for pid in proc_ids}
+    rows = (
+        db.query(Document.proceeding_id, func.max(Document.ingest_date))
+        .filter(Document.proceeding_id.in_(proc_ids))
+        .group_by(Document.proceeding_id)
+        .all()
+    )
+    for pid, last in rows:
+        last_by_proc[pid] = last
+
     oldest_silent_proc = None
     oldest_days = 0
 
     for proc in active_procs:
-        last_activity = (
-            db.query(func.max(Document.ingest_date))
-            .filter(Document.proceeding_id == proc.id)
-            .scalar()
-        )
-        if last_activity is None:
-            last_activity = proc.started_at or proc.ingest_date
+        last_activity = last_by_proc.get(proc.id) or proc.started_at or proc.ingest_date
         if last_activity is None:
             continue
         days = (now - last_activity).days
