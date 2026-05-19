@@ -223,32 +223,6 @@ async def upload_document(
     }
 
 
-@router.post("/documents/bulk-delete")
-async def bulk_delete_documents(request: Request, db: Session = Depends(get_db)):
-    """Delete multiple documents and their associated files."""
-    from app.services.document_service import DocumentService
-
-    form = await request.form()
-    doc_ids = form.getlist("doc_ids")
-
-    if not doc_ids:
-        return HTMLResponse("", status_code=200)
-
-    doc_service = DocumentService(db)
-    success_count = 0
-    for doc_id_str in doc_ids:
-        try:
-            if doc_service.delete_document(int(doc_id_str)):
-                success_count += 1
-        except Exception as e:
-            logger.error(f"Bulk delete failed for doc {doc_id_str}: {e}")
-
-    return HTMLResponse(
-        '<div hx-trigger="load" hx-get="/triage" hx-target="body"></div>',
-        status_code=200,
-    )
-
-
 @router.get("/upload/status/{doc_id}")
 async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
     """Self-replacing status row for the upload modal's per-file probe.

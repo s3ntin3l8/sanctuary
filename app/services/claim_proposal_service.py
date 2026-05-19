@@ -216,20 +216,6 @@ def pending_merge_proposals_for_claim(
     )
 
 
-def pending_evidence_proposals_for_claim(
-    claim_id: int, db: Session
-) -> list[ClaimEvidenceProposal]:
-    return (
-        db.query(ClaimEvidenceProposal)
-        .filter(
-            ClaimEvidenceProposal.target_claim_id == claim_id,
-            ClaimEvidenceProposal.status == ProposalStatus.PENDING,
-        )
-        .order_by(ClaimEvidenceProposal.proposed_at)
-        .all()
-    )
-
-
 def pending_evidence_proposals_for_document(
     document_id: int, db: Session
 ) -> list[ClaimEvidenceProposal]:

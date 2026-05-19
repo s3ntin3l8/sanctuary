@@ -205,17 +205,6 @@ def set_reindex_failed(db, error: str) -> None:
     db.flush()
 
 
-def get_last_home_visit(db) -> datetime | None:
-    """Return the datetime the user last visited the home page."""
-    settings = db.query(UserSettings).first()
-    if not settings or not settings.settings_json:
-        return None
-    raw = settings.settings_json.get("last_home_visit")
-    if raw is None:
-        return None
-    return datetime.fromisoformat(raw)
-
-
 def mark_home_visit(db, *, now: datetime | None = None) -> None:
     """Record that the user just visited the home page. Best-effort —
     swallows SQLite write-lock contention rather than 500 the home page."""
@@ -269,13 +258,6 @@ def set_party_identity(identity: dict, db) -> None:
     db.flush()
 
 
-def get_theme(db) -> str:
-    settings = db.query(UserSettings).first()
-    if not settings:
-        return "dark"
-    return settings.settings_json.get("theme", "dark")
-
-
 def set_theme(theme: str, db) -> None:
     settings = _get_or_create(db)
     data = dict(settings.settings_json)
@@ -285,14 +267,6 @@ def set_theme(theme: str, db) -> None:
         db, AuditEventType.SETTINGS_THEME_CHANGED, payload={"theme": theme}
     )
     db.flush()
-
-
-def get_dashboard_cards(db) -> dict:
-    defaults = {"action_items": True, "costs": True, "documents": True}
-    settings = db.query(UserSettings).first()
-    if not settings:
-        return defaults
-    return settings.settings_json.get("dashboard_cards", defaults)
 
 
 def set_dashboard_cards(cards: dict, db) -> None:

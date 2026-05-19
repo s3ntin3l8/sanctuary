@@ -39,7 +39,6 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * `LegalCost` — German RVG/GKG/JVEG cost tracking per proceeding; `CostCategory` + `CostStatus` enums
 * `Entity` — extracted named entities (`EntityType`: person, org, court, law_firm, …)
 * `UserSettings` — single-user preferences (model selection, UI flags)
-* `SavedSearch` — persisted search queries with optional alert thresholds
 * `Conversation` + `ConversationMessage` — chat sessions with case context
 
 ## Vector search
@@ -59,7 +58,7 @@ Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for n
 
 All routes follow REST conventions. See `app/api/` for the complete listing.
 
-**First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Entity browser (`/entities`), Contacts (`/contacts`), Timeline (`/timeline`), Costs (`/costs`), Settings (`/settings*`, `/api/settings/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
+**First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Contacts (`/contacts/{sender}`), Costs (`/costs`), Settings (`/settings*`, `/api/settings/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
 
 ## Navigation and ID conventions
 

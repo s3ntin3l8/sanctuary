@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
@@ -24,7 +23,6 @@ from app.models.enums import (
 )
 from app.repositories.case import CaseRepository
 from app.services.case_dashboard_service import CaseDashboardService
-from app.services.case_graph_service import CaseGraphService
 from app.services.case_service import CaseService
 from app.services.hud_context import build_hud_context
 from app.services.ingestion.extractors import infer_court_level
@@ -227,104 +225,6 @@ async def update_case(
 
 
 # ---------------------------------------------------------------------------
-# Graph partial (HTMX swap target for proceeding/filter changes)
-# ---------------------------------------------------------------------------
-
-
-@router.get("/{case_id}/graph")
-async def case_graph_partial(
-    request: Request,
-    case_id: str,
-    proceeding: int | None = None,
-    filter: FilterQuery = "significant+",
-    db: Session = Depends(get_db),
-):
-    """Return just the correspondence-graph partial for HTMX swaps."""
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return HTMLResponse(content="<p>Case not found</p>", status_code=404)
-
-    if proceeding is None:
-        proceeding = get_active_proceeding(case_id, db)
-
-    if proceeding is None:
-        # No proceeding to graph — return an empty placeholder fragment.
-        return templates.TemplateResponse(
-            request,
-            "partials/dashboard/correspondence_graph.html",
-            {
-                "graph": _empty_graph_dict(filter),
-                "case": case,
-                "active_proceeding": None,
-            },
-        )
-
-    # Fetch reaction_map to ensure titles are clipped correctly when reactions are present
-    dash_service = CaseDashboardService(db)
-    reaction_map = dash_service._reaction_map_for_proceeding(proceeding)
-
-    payload = CaseGraphService(db).build_payload(
-        proceeding, filter, reaction_map=reaction_map
-    )
-    graph_dict = dataclasses.asdict(payload)
-
-    return templates.TemplateResponse(
-        request,
-        "partials/dashboard/correspondence_graph.html",
-        {
-            "graph": graph_dict,
-            "case": case,
-            "active_proceeding": db.get(Proceeding, proceeding),
-        },
-    )
-
-
-@router.get("/{case_id}/timeline")
-async def case_timeline_partial(
-    request: Request,
-    case_id: str,
-    db: Session = Depends(get_db),
-):
-    """Return just the timeline panel partial for HTMX deep-link refresh."""
-    from app.services.case_timeline_service import CaseTimelineService
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return HTMLResponse(content="<p>Case not found</p>", status_code=404)
-
-    timeline = CaseTimelineService(db).build_payload(case_id)
-    return templates.TemplateResponse(
-        request,
-        "partials/case_timeline_panel.html",
-        {"case": case, "timeline": timeline},
-    )
-
-
-def _empty_graph_dict(filter_mode: str) -> dict:
-    from app.services.case_graph_service import LANE_W, LANES, LEFT, TOP
-
-    return {
-        "lanes": list(LANES),
-        "nodes": [],
-        "bundles": [],
-        "edges": [],
-        "proof_badges": {},
-        "svg_width": LEFT * 2 + len(LANES) * LANE_W,
-        "svg_height": TOP + 120,
-        "node_counts": {
-            "critical": 0,
-            "significant": 0,
-            "informational": 0,
-            "administrative_standalone": 0,
-            "administrative_relay": 0,
-        },
-        "filter": filter_mode,
-        "node_count": 0,
-        "edge_count": 0,
-    }
-
-
-# ---------------------------------------------------------------------------
 # HUD partial — document slide-in inside the dashboard
 # ---------------------------------------------------------------------------
 
@@ -375,108 +275,6 @@ async def case_document_fullscreen(
     ctx["context"] = "standalone"
     ctx["case_id"] = case_id
     return render_page(request, "pages/document.html", db=db, **ctx)
-
-
-@router.post("/create-from-triage")
-async def create_case_from_triage(
-    request: Request,
-    internal_id: str = Form(...),
-    ingest_batch_id: int = Form(...),
-    az_court: str | None = Form(None),
-    court_name: str | None = Form(None),
-    case_title: str | None = Form(None),
-    db: Session = Depends(get_db),
-):
-    """Create a new case from the triage metadata form and cascade to the full batch."""
-    import json
-
-    from app.models.database import IngestBatch
-    from app.services.case_service import get_or_create_case_from_reference
-    from app.services.ingestion.extractors import extract_az_court_from_subject
-
-    # Resolve az_court: use provided value or extract from batch subject
-    batch = db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).first()
-
-    if not az_court and batch and batch.subject:
-        az_court = extract_az_court_from_subject(batch.subject)
-
-    case, matched_proceeding, _ = get_or_create_case_from_reference(
-        db,
-        internal_id=internal_id,
-        az_court=az_court,
-        court_name=court_name,
-        batch_subject=case_title or (batch.subject if batch else None),
-        is_draft=False,
-    )
-    # If a title was explicitly provided, override with the supplied title.
-    if case_title:
-        case.title = case_title[:80]
-
-    # If the case was previously a draft, confirm it now since user clicked Anlegen.
-    if case.is_draft:
-        case.is_draft = False
-
-    proceeding_id = matched_proceeding.id if matched_proceeding else None
-
-    # Cascade to the batch and all its docs still in _TRIAGE
-    reassigned_docs = []
-    if batch:
-        batch.case_id = internal_id
-        if proceeding_id:
-            batch.proceeding_id = proceeding_id
-        for doc in batch.documents:
-            if not doc.case_id or doc.case_id == "_TRIAGE":
-                doc.case_id = internal_id
-                if proceeding_id:
-                    doc.proceeding_id = proceeding_id
-                reassigned_docs.append(doc)
-
-    db.commit()
-
-    if reassigned_docs:
-        from app.services.triage_confirmation import reset_and_reenrich
-
-        reset_and_reenrich(db, reassigned_docs)
-
-    first_doc = None
-    if batch and batch.documents:
-        first_doc = batch.documents[0]
-        db.refresh(first_doc)
-
-    if not first_doc:
-        from fastapi.responses import RedirectResponse as _Redirect
-
-        return _Redirect(url=f"/cases/{internal_id}", status_code=303)
-
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
-    ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=cases
-    )
-    from app.config import templates as _templates
-
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
-    from app.services.triage_oob_render import (
-        render_sidebar_badges_oob,
-        render_triage_header_stats_oob,
-    )
-
-    response.body += (
-        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
-    ).encode("utf-8")
-
-    response.headers["HX-Trigger"] = json.dumps(
-        {
-            "triage:advance": {"next_doc_id": first_doc.id},
-            "case:confirmed": {
-                "case_id": case.id,
-                "case_title": case.title,
-                "doc_count": len(reassigned_docs),
-                "action": "created",
-            },
-        }
-    )
-    return response
 
 
 @router.post("/{case_id}/confirm-draft")

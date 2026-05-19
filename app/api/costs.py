@@ -94,23 +94,6 @@ async def new_cost_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/cases/{case_id}/new")
-async def new_cost_for_case(
-    request: Request, case_id: str, db: Session = Depends(get_db)
-):
-    case = db.query(Case).filter(Case.id == case_id).first()
-    all_cases = db.query(Case).order_by(Case.title.asc()).all()
-    return render_page(
-        request,
-        "pages/cost_form.html",
-        db=db,
-        case=case,
-        all_cases=all_cases,
-        cost_category_meta=COST_CATEGORY_META,
-        cost_status_meta=COST_STATUS_META,
-    )
-
-
 @router.post("")
 async def create_cost(
     request: Request,

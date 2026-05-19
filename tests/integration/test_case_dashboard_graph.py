@@ -135,22 +135,6 @@ class TestCaseDashboardGraph:
         assert get_active_proceeding(graph_case.id, db_session) == graph_proceeding.id
 
     @pytest.mark.integration
-    def test_graph_partial_route(
-        self, db_session, graph_case, graph_proceeding, graph_document
-    ):
-        db_session.commit()
-        response = client.get(
-            f"/cases/{graph_case.id}/graph?proceeding={graph_proceeding.id}"
-        )
-        assert response.status_code == 200
-        assert "<svg" in response.text
-
-    @pytest.mark.integration
-    def test_graph_partial_route_unknown_case_404(self, db_session):
-        response = client.get("/cases/NOPE-999-Z/graph")
-        assert response.status_code == 404
-
-    @pytest.mark.integration
     def test_document_hud_route(
         self, db_session, graph_case, graph_proceeding, graph_document
     ):
