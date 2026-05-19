@@ -127,8 +127,8 @@ def test_unified_reaction_route_returns_hud_fragment(db_session):
 
 
 @pytest.mark.integration
-def test_unified_reaction_emits_note_saved_trigger(db_session):
-    """POST /document/:id/reaction with notes emits triage:note-saved trigger."""
+def test_unified_reaction_emits_note_saved_toast(db_session):
+    """POST /document/:id/reaction with notes emits a showToast trigger."""
     doc = Document(title="Note Saved Test", needs_review=True)
     db_session.add(doc)
     db_session.commit()
@@ -139,7 +139,8 @@ def test_unified_reaction_emits_note_saved_trigger(db_session):
     )
     assert response.status_code == 200
     hx_trigger = response.headers.get("hx-trigger", "")
-    assert "triage:note-saved" in hx_trigger
+    assert "showToast" in hx_trigger
+    assert "Note saved" in hx_trigger
 
 
 @pytest.mark.integration

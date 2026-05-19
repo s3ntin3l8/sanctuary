@@ -496,8 +496,10 @@ async def hud_toggle_reaction(
     response.body += render_row_targeted_oob(request, doc, db).encode()
 
     if notes is not None and notes.strip():
+        from app.helpers import toast_trigger
+
         response.headers["HX-Trigger"] = _json.dumps(
-            {"triage:note-saved": {"message": "Note saved"}}
+            toast_trigger("Note saved", "success")
         )
 
     return response

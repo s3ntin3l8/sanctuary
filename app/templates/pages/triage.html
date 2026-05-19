@@ -69,10 +69,6 @@
              if (!docId) return;
              setTimeout(() => { $store.triage.expandedActiveDocId = String(docId); }, 0);
          "
-         @triage:note-saved.document="
-             const msg = ($event.detail && ($event.detail.message || $event.detail[0]?.message)) || 'Note saved';
-             if (window.showToast) window.showToast(msg, 'success');
-         "
          @triage:clear.document="
              if (window.showToast) window.showToast('Triage queue clear ✓', 'success');
          "
