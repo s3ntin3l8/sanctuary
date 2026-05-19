@@ -1,0 +1,16 @@
+{# Single AI debug log view — rendered when the user clicks "View" in
+   _debug_log_list.html. Wraps the markdown body verbatim in a <pre> so
+   structured AI call output (headers + payload + response) is readable
+   without a markdown renderer dependency.
+#}
+<div class="mt-4 rounded-lg border border-outline-variant/20 bg-surface-container-lowest overflow-hidden">
+  <div class="px-3 py-2 bg-surface-container/50 border-b border-outline-variant/10 flex items-center justify-between">
+    <p class="text-[10px] font-mono text-on-surface-variant truncate" title="{{ path }}">{{ path }}</p>
+    <button type="button"
+            onclick="this.closest('#debug-log-view').innerHTML = ''"
+            class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant hover:text-on-surface">
+      Close
+    </button>
+  </div>
+  <pre class="px-3 py-2 text-[10.5px] font-mono whitespace-pre-wrap text-on-surface max-h-[480px] overflow-y-auto">{{ body }}</pre>
+</div>

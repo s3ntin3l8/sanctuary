@@ -1,15 +1,16 @@
 """AI configuration settings endpoints: instance CRUD, model discovery, index rebuild."""
 
+import json
 import logging
 from html import escape
 
 import httpx
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.config import templates
+from app.config import DATA_DIR, templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.enums import AuditEventType
@@ -540,3 +541,69 @@ async def set_debug_redact(
     from fastapi.responses import Response
 
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Debug log browser
+# ---------------------------------------------------------------------------
+
+_AI_DEBUG_ROOT = (DATA_DIR / "ai_debug").resolve()
+
+
+def _tail_jsonl(path, limit: int) -> list[dict]:
+    """Return the last `limit` parsed JSON lines from `path`, newest first.
+
+    Small enough to read fully for now (the index file is line-per-call and
+    grows slowly). Switching to a chunked reverse-read can wait until the
+    file is many MB.
+    """
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return list(reversed(rows[-limit:]))
+
+
+@router.get("/debug-logs", response_class=HTMLResponse)
+async def list_debug_logs(request: Request, limit: int = 50):
+    """Render the most recent AI calls from data/ai_debug/runs.jsonl."""
+    index_path = _AI_DEBUG_ROOT / "runs.jsonl"
+    rows = _tail_jsonl(index_path, limit)
+    return templates.TemplateResponse(
+        request,
+        "partials/settings/_debug_log_list.html",
+        {"rows": rows, "log_root": str(_AI_DEBUG_ROOT)},
+    )
+
+
+@router.get("/debug-logs/view", response_class=HTMLResponse)
+async def view_debug_log(request: Request, path: str):
+    """Stream a single .md file from data/ai_debug/ for in-UI inspection.
+
+    Path-safety: resolve the requested path under _AI_DEBUG_ROOT and refuse
+    anything that escapes the directory or isn't a .md file. Returns 422 on
+    any guard violation.
+    """
+    if "\0" in path or ".." in path.split("/"):
+        raise HTTPException(status_code=422, detail="Invalid path")
+    candidate = (_AI_DEBUG_ROOT / path).resolve()
+    try:
+        candidate.relative_to(_AI_DEBUG_ROOT)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Path escapes debug root") from exc
+    if candidate.suffix != ".md" or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Log file not found")
+    body = candidate.read_text(encoding="utf-8", errors="replace")
+    return templates.TemplateResponse(
+        request,
+        "partials/settings/_debug_log_view.html",
+        {"path": path, "body": body},
+    )

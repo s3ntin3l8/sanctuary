@@ -116,6 +116,14 @@
         </div>
     </div>
 
+    {# ── Recent AI calls ─────────────────────────────────────────────── #}
+    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm"
+         hx-get="{{ request.app.url_path_for('list_debug_logs') }}"
+         hx-trigger="revealed once"
+         hx-swap="innerHTML">
+        <p class="text-[11px] italic text-outline">Loading recent AI calls…</p>
+    </div>
+
     {# ── Debug Log Privacy ───────────────────────────────────────────── #}
     <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
         <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-4">Debug Log Privacy</p>
