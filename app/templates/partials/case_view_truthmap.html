@@ -190,12 +190,21 @@
     {% endfor %}
   {% else %}
   <div class="rounded-xl border border-dashed border-surface-container-high bg-surface-container/50 p-8 text-center">
+    {% if truth_map.pipeline_active_doc_count and truth_map.pipeline_active_doc_count > 0 %}
+    <span class="material-symbols-outlined text-on-surface-variant text-3xl mb-2 block animate-pulse">progress_activity</span>
+    <p class="text-sm text-on-surface-variant">
+      Claims will appear as documents are processed.
+      <span class="font-bold">{{ truth_map.pipeline_active_doc_count }}</span>
+      doc{{ '' if truth_map.pipeline_active_doc_count == 1 else 's' }} still in flight.
+    </p>
+    {% else %}
     <p class="text-sm text-on-surface-variant">
       {% if truth_map.filter == 'open' %}No open claims yet — they are extracted automatically from significant documents.
       {% elif truth_map.filter == 'established' %}No established claims yet.
       {% elif truth_map.filter == 'refuted' %}No refuted claims yet.
       {% else %}No claims found for this case.{% endif %}
     </p>
+    {% endif %}
   </div>
   {% endif %}
 

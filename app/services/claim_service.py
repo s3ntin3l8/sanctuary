@@ -14,6 +14,7 @@ from app.models.database import (
     ClaimEvidenceProposal,
     ClaimMergeProposal,
     Document,
+    DocumentPipelineStage,
     UserReaction,
 )
 from app.models.enums import (
@@ -135,6 +136,10 @@ class TruthMapView:
     open_claim_count: int = 0
     pending_merges: list[PendingMergeRow] = field(default_factory=list)
     pending_evidence: list[PendingEvidenceRow] = field(default_factory=list)
+    # Docs in this case that still have at least one pending/running pipeline
+    # stage. The empty-state branch uses this to distinguish "truly no claims"
+    # from "claims will appear once enrichment finishes."
+    pipeline_active_doc_count: int = 0
 
 
 class ClaimService:
@@ -210,6 +215,22 @@ class ClaimService:
         # land — they used to be reachable only via the per-document HUD.
         pending_evidence = self._load_pending_evidence_for_case(case_id)
 
+        # Count docs in this case that still have a pending/running stage —
+        # used by the empty-state UI to say "claims will appear once N docs
+        # finish processing" instead of the misleading "no claims found".
+        pipeline_active_doc_count = (
+            self._db.query(Document.id)
+            .join(
+                DocumentPipelineStage, DocumentPipelineStage.document_id == Document.id
+            )
+            .filter(
+                Document.case_id == case_id,
+                DocumentPipelineStage.status.in_(("pending", "running", "retrying")),
+            )
+            .distinct()
+            .count()
+        )
+
         return TruthMapView(
             case_id=case_id,
             filter=filter_,
@@ -217,6 +238,7 @@ class ClaimService:
             open_claim_count=open_count,
             pending_merges=pending_merges,
             pending_evidence=pending_evidence,
+            pipeline_active_doc_count=pipeline_active_doc_count,
         )
 
     def _load_pending_merges_for_case(self, case_id: str) -> list[PendingMergeRow]:
