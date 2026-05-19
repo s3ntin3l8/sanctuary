@@ -334,6 +334,29 @@ def build_cost_summary(costs: list, CostStatus) -> dict:
     }
 
 
+def toast_trigger(
+    message: str,
+    type: str = "info",
+    action: dict | None = None,
+) -> dict:
+    """Build the HX-Trigger payload for a server-pushed toast.
+
+    Routes that want to flash a success/info/warning toast set::
+
+        response.headers["HX-Trigger"] = json.dumps(toast_trigger("Saved", "success"))
+
+    HTMX dispatches `showToast` as a CustomEvent on the body when the header
+    arrives; the listener in base.html calls window.showToast(message, type, action).
+
+    `action`, when provided, is a `{"href": ..., "label": ...}` dict that
+    renders a small click-through link in the toast (destination feedback).
+    """
+    payload: dict = {"message": message, "type": type}
+    if action:
+        payload["action"] = action
+    return {"showToast": payload}
+
+
 def format_eur(value: float | None) -> str:
     """Formats a float as EUR with German-style punctuation: € 1.234,56"""
     if value is None:

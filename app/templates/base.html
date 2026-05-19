@@ -444,6 +444,13 @@
                 window.showToast('Network error. Please check your connection.', 'error');
             });
 
+            // Server-pushed toasts via HX-Trigger: {"showToast": {"message": ..., "type": ..., "action": {...}?}}.
+            // Routes opt in by calling `helpers.toast_trigger(...)` and setting the response header.
+            document.body.addEventListener('showToast', (e) => {
+                const d = e.detail || {};
+                if (d.message) window.showToast(d.message, d.type || 'info', d.action || null);
+            });
+
             // Global Toast helper. Accepts an optional `action` of shape
             // {href, label} which renders as a safe text-only link suffix —
             // used by destination-feedback toasts that want a click-through.
