@@ -63,16 +63,20 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
 
 
 def _build_candidate_summary(candidate: Document) -> str:
+    from app.services.intelligence.prompts import sanitize_oneline
+
     first_passage = _get_first_passage(candidate)
 
     mgmt = candidate.ai_summary or {}
     sig = mgmt.get("legal_significance", "")[:150]
 
     return (
-        f"ID={candidate.id} | {candidate.title} | "
+        f"ID={candidate.id} | "
+        f"{sanitize_oneline(candidate.title, 200)} | "
         f"Date={candidate.issued_date.date() if candidate.issued_date else 'unknown'} | "
-        f"Author={candidate.attributed_originator or candidate.sender or 'unknown'} | "
-        f"Summary={sig} | Key passage: {first_passage}"
+        f"Author={sanitize_oneline(candidate.attributed_originator or candidate.sender, 100) or 'unknown'} | "
+        f"Summary={sanitize_oneline(sig, 200)} | "
+        f"Key passage: {sanitize_oneline(first_passage, 200)}"
     )
 
 
@@ -85,14 +89,16 @@ def _call_relationship_detector_sync(
     mgmt = doc.ai_summary or {}
     first_passage = _get_first_passage(doc)
 
+    from app.services.intelligence.prompts import sanitize_oneline
+
     candidate_text = "\n".join(
         f"{i + 1}. {_build_candidate_summary(c)}" for i, c in enumerate(candidates)
     )
     prompt = (
         f"NEW DOCUMENT:\n"
-        f"Title: {doc.title}\n"
-        f"Summary: {mgmt.get('legal_significance', '')}\n"
-        f"Key passage: {first_passage}\n\n"
+        f"Title: {sanitize_oneline(doc.title, 200)}\n"
+        f"Summary: {sanitize_oneline(mgmt.get('legal_significance', ''), 400)}\n"
+        f"Key passage: {sanitize_oneline(first_passage, 400)}\n\n"
         f"CANDIDATE PRIOR DOCUMENTS (use only these IDs):\n{candidate_text}"
     )
 

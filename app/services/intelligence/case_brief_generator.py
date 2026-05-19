@@ -216,27 +216,37 @@ def _call_brief_sync(
         for p in proceedings
     ] or ["None"]
 
-    prompt = f"""Case: {case.title} ({case.id}) — current_status: {case.status}
+    from app.services.intelligence.prompts import sanitize_oneline
+
+    doc_lines = chr(10).join(
+        f"- [{d.significance_tier}/{d.document_type}] "
+        f"{sanitize_oneline(d.title, 120) or 'Untitled'} "
+        f"({d.issued_date}) — by "
+        f"{sanitize_oneline(d.attributed_originator, 100) or 'unknown'} "
+        f"({d.originator_type})\n"
+        f"  Summary: {sanitize_oneline((d.ai_summary or {}).get('legal_significance', 'N/A'), 400)}"
+        for d in docs
+    )
+
+    action_lines = (
+        chr(10).join(
+            f"- {sanitize_oneline(a.title, 200)} ({a.action_type}) due {a.due_date}"
+            for a in action_items
+        )
+        or "None"
+    )
+
+    prompt = f"""Case: {sanitize_oneline(case.title, 200)} ({case.id}) — current_status: {case.status}
 Cost exposure: {case.total_cost_exposure or 0} cents
 
 Proceedings:
 {chr(10).join(proc_lines)}
 
 Documents ({len(docs)}):
-{
-        chr(10).join(
-            f"- [{d.significance_tier}/{d.document_type}] {d.title or 'Untitled'} ({d.issued_date}) — by {d.attributed_originator or 'unknown'} ({d.originator_type})\n  Summary: {(d.ai_summary or {}).get('legal_significance', 'N/A')}"
-            for d in docs
-        )
-    }
+{doc_lines}
 
 Open action items:
-{
-        chr(10).join(
-            f"- {a.title} ({a.action_type}) due {a.due_date}" for a in action_items
-        )
-        or "None"
-    }
+{action_lines}
 {("\n" + reactions_context) if reactions_context else ""}"""
 
     result = call_json_ai(

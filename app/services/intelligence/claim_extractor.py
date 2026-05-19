@@ -73,13 +73,15 @@ def _call_claim_extractor_sync(
     mgmt = doc.ai_summary or {}
     legal_sig = mgmt.get("legal_significance", "")
 
+    from app.services.intelligence.prompts import fence, sanitize_oneline
+
     existing_text = _format_existing_claims(existing_claims)
     originator_value = doc.originator_type.value if doc.originator_type else "unknown"
     prompt = (
-        f"DOCUMENT TITLE: {doc.title}\n"
+        f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
         f"DOCUMENT ORIGINATOR: {originator_value}\n"
-        f"LEGAL SUMMARY: {legal_sig}\n\n"
-        f"CONTENT:\n{content_preview}\n\n"
+        f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n\n"
+        f"CONTENT:\n{fence(content_preview, 'document')}\n\n"
         f"EXISTING OPEN CLAIMS IN THIS CASE:\n{existing_text}"
     )
 

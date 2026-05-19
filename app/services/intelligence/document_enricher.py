@@ -96,9 +96,11 @@ def _call_enricher_sync(
 
     party_block = (party_context + "\n\n") if party_context else ""
 
+    from app.services.intelligence.prompts import fence
+
     prompt = (
         f"{party_block}{batch_context}{dates_context}{reactions_block}"
-        f"{batch_actions_context}\n\n{content_preview}"
+        f"{batch_actions_context}\n\n{fence(content_preview, 'document')}"
     ).lstrip("\n")
 
     result = call_json_ai(

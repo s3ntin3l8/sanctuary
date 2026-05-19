@@ -16,7 +16,7 @@ from app.services.ingestion.extractors import (
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
-from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
+from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM, fence
 from app.services.intelligence.schemas import Phase1Metadata
 
 logger = logging.getLogger(__name__)
@@ -568,7 +568,7 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
 
     if hints:
         prompt += f"### Heuristic Hints (found by regex, please verify):\n{json.dumps(hints, indent=2)}\n\n"
-    prompt += f"### Document Content Preview:\n{content_preview}"
+    prompt += f"### Document Content Preview:\n{fence(content_preview, 'document')}"
 
     try:
         result = call_json_ai(

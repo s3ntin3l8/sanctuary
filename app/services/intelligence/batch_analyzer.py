@@ -28,7 +28,11 @@ from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence._party_context import format_party_context
 from app.services.intelligence.ai_options import STAGE_OPTIONS
-from app.services.intelligence.prompts import BATCH_ANALYZER_SYSTEM
+from app.services.intelligence.prompts import (
+    BATCH_ANALYZER_SYSTEM,
+    fence,
+    sanitize_oneline,
+)
 from app.services.intelligence.schemas import BatchAnalysis
 
 logger = logging.getLogger(__name__)
@@ -107,7 +111,10 @@ def _call_batch_analyzer_sync(
     temporal_map = []
     for d in docs:
         preview = get_content_preview(d, per_doc)
-        sections.append(f"=== (doc_id={d.id}) {d.title} ===\n{preview}")
+        safe_title = sanitize_oneline(d.title, max_len=120)
+        sections.append(
+            f"=== (doc_id={d.id}) {safe_title} ===\n{fence(preview, 'batch_doc')}"
+        )
         if d.issued_date:
             temporal_map.append(f"doc_{d.id}: {d.issued_date.strftime('%Y-%m-%d')}")
 

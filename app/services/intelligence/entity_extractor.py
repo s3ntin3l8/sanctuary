@@ -40,10 +40,15 @@ def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
         if excerpts:
             key_passages_text = "\n".join(f"- {e}" for e in excerpts)
 
-    prompt = f"DOCUMENT TITLE: {doc.title}\nLEGAL SUMMARY: {legal_sig}\n"
+    from app.services.intelligence.prompts import fence, sanitize_oneline
+
+    prompt = (
+        f"DOCUMENT TITLE: {sanitize_oneline(doc.title, 200)}\n"
+        f"LEGAL SUMMARY: {fence(legal_sig, 'ai_extracted')}\n"
+    )
     if key_passages_text:
-        prompt += f"KEY PASSAGES:\n{key_passages_text}\n"
-    prompt += f"\nCONTENT:\n{content_preview}"
+        prompt += f"KEY PASSAGES:\n{fence(key_passages_text, 'ai_extracted')}\n"
+    prompt += f"\nCONTENT:\n{fence(content_preview, 'document')}"
 
     result = call_json_ai(
         system_prompt=ENTITY_EXTRACTOR_SYSTEM,
