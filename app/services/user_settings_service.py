@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.exc import OperationalError
 
@@ -12,6 +12,12 @@ from app.services import audit_service
 from app.services.pipeline_status import is_db_locked
 
 logger = logging.getLogger(__name__)
+
+# A reindex or dedup job stuck in "running" past this threshold is assumed to
+# have orphaned (worker crash, killed dev process). The hourly maintenance
+# task flips it to "failed" so the user can retry. 60 min is well above any
+# realistic AI-bound run on the local Ollama corpus.
+STALE_JOB_THRESHOLD_SECONDS = 3600
 
 
 def get_last_viewed(case_id: str, db) -> datetime | None:
@@ -94,7 +100,13 @@ def get_dedup_job(case_id: str, db) -> dict | None:
 def set_dedup_running(case_id: str, db, *, total: int = 0) -> None:
     settings = _get_or_create(db)
     jobs = dict(settings.settings_json.get("dedup_jobs", {}))
-    jobs[case_id] = {"status": "running", "total": total, "processed": 0}
+    jobs[case_id] = {
+        "status": "running",
+        "total": total,
+        "processed": 0,
+        "started_at": naive_utc_now().isoformat(),
+        "ended_at": None,
+    }
     settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
     db.flush()
 
@@ -129,9 +141,14 @@ def set_dedup_result(
 ) -> None:
     settings = _get_or_create(db)
     jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+    prior = jobs.get(case_id) or {}
     jobs[case_id] = {
         "status": "failed" if failed else "done",
         "stats": stats or {},
+        # Preserve started_at when the prior job carried one; ended_at is
+        # always set fresh on transition.
+        "started_at": prior.get("started_at"),
+        "ended_at": naive_utc_now().isoformat(),
     }
     settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
     db.flush()
@@ -203,6 +220,61 @@ def set_reindex_failed(db, error: str) -> None:
     job["error"] = error[:500]
     settings.settings_json = {**settings.settings_json, "reindex_job": job}
     db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Stale-job recovery — called from the hourly maintenance task
+# ---------------------------------------------------------------------------
+
+
+def _is_stale(started_at_iso: str | None) -> bool:
+    """True when started_at + STALE_JOB_THRESHOLD_SECONDS is in the past.
+    Returns False when started_at is missing/unparseable (defensive: pre-existing
+    jobs written before this field existed shouldn't be auto-failed)."""
+    if not started_at_iso:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at_iso)
+    except (TypeError, ValueError):
+        return False
+    return naive_utc_now() - started > timedelta(seconds=STALE_JOB_THRESHOLD_SECONDS)
+
+
+def recover_stale_reindex_job(db) -> bool:
+    """Flip a stuck reindex_job from 'running' to 'failed'.
+
+    Returns True when the job was flipped, False otherwise. No-op when the
+    job is missing, not running, or fresh.
+    """
+    job = get_reindex_job(db)
+    if not job or job.get("status") != "running":
+        return False
+    if not _is_stale(job.get("started_at")):
+        return False
+    set_reindex_failed(db, "stale: no progress for >60min")
+    return True
+
+
+def recover_stale_dedup_jobs(db) -> list[str]:
+    """Flip every stuck dedup job (per case) from 'running' to 'failed'.
+
+    Returns the list of case_ids that were flipped, for logging.
+    """
+    settings = db.query(UserSettings).first()
+    if not settings or not settings.settings_json:
+        return []
+    jobs = settings.settings_json.get("dedup_jobs", {}) or {}
+    flipped: list[str] = []
+    for case_id, job in jobs.items():
+        if not isinstance(job, dict) or job.get("status") != "running":
+            continue
+        if not _is_stale(job.get("started_at")):
+            continue
+        set_dedup_result(
+            case_id, {"error": "stale: no progress for >60min"}, db, failed=True
+        )
+        flipped.append(case_id)
+    return flipped
 
 
 def mark_home_visit(db, *, now: datetime | None = None) -> None:

@@ -177,6 +177,17 @@ async def find_duplicates_in_case(
     from app.tasks.claim_dedup import claim_dedup_task
     from app.tasks.dispatch import dispatch_task
 
+    # Concurrent-click guard: a second click while a job is in flight used to
+    # silently reset processed=0 and re-dispatch. Render the running fragment
+    # against the existing job's state so the user sees real progress instead.
+    existing = uss.get_dedup_job(case_id, db)
+    if existing and existing.get("status") == "running":
+        return templates.TemplateResponse(
+            request,
+            "partials/find_duplicates_running.html",
+            {"case": case, "job": existing},
+        )
+
     # Pre-count claims so the running fragment can render "N of M scanned".
     # ClaimRepository.claims_for_case returns a list; len() is the dedup
     # candidate population.

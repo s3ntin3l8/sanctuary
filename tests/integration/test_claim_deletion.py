@@ -114,3 +114,36 @@ def test_delete_document_preserves_cross_doc_claim(db_session):
     )
     assert len(remaining) == 1
     assert remaining[0].document_id == doc_b.id
+
+
+@pytest.mark.integration
+def test_find_duplicates_guard_blocks_concurrent(db_session):
+    """A second find-duplicates click while a job is running must not reset
+    progress — it should render the running fragment against the existing job.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.services import user_settings_service as uss
+
+    case = Case(id="DEDUP-GUARD-001", title="Dedup Guard Test")
+    db_session.add(case)
+    db_session.commit()
+
+    # Seed a running job with non-trivial progress.
+    uss.set_dedup_running(case.id, db_session, total=50)
+    db_session.commit()
+    # Set processed > 0 so we can detect a reset.
+    uss.update_dedup_progress(case.id, db_session, processed=12)
+    db_session.commit()
+
+    client = TestClient(app)
+    response = client.post(f"/cases/{case.id}/claims/find-duplicates")
+
+    assert response.status_code == 200
+    # Guard should NOT have reset processed back to 0.
+    db_session.expire_all()
+    job = uss.get_dedup_job(case.id, db_session)
+    assert job is not None
+    assert job["status"] == "running"
+    assert job["processed"] == 12, "concurrent click reset processed; guard didn't fire"

@@ -197,3 +197,156 @@ def test_count_new_since_zero_when_no_new_docs(db_session, case_a):
 
     result = count_new_since(case_a.id, since, db_session)
     assert result == 0
+
+
+# ── Stale-job recovery ────────────────────────────────────────────────────────
+
+
+def _stale_iso(minutes_ago: int) -> str:
+    """ISO timestamp `minutes_ago` minutes before now (naive UTC)."""
+    from datetime import timedelta
+
+    from app.core.timezone import naive_utc_now
+
+    return (naive_utc_now() - timedelta(minutes=minutes_ago)).isoformat()
+
+
+def test_recover_stale_reindex_job_flips_old_running(settings_row, db_session):
+    """A reindex_job stuck >60min should flip to failed with a 'stale' error."""
+    from app.services.user_settings_service import recover_stale_reindex_job
+
+    settings_row.settings_json = {
+        "reindex_job": {
+            "status": "running",
+            "total": 100,
+            "reindexed": 5,
+            "failed": 0,
+            "started_at": _stale_iso(90),
+            "ended_at": None,
+            "embed_dim": 768,
+            "error": None,
+        }
+    }
+    db_session.commit()
+
+    flipped = recover_stale_reindex_job(db_session)
+    db_session.commit()
+
+    assert flipped is True
+    db_session.refresh(settings_row)
+    job = settings_row.settings_json["reindex_job"]
+    assert job["status"] == "failed"
+    assert "stale" in (job.get("error") or "")
+    assert job["ended_at"] is not None
+
+
+def test_recover_stale_reindex_job_skips_fresh_running(settings_row, db_session):
+    """A reindex_job running for only 5min should stay running."""
+    from app.services.user_settings_service import recover_stale_reindex_job
+
+    settings_row.settings_json = {
+        "reindex_job": {
+            "status": "running",
+            "started_at": _stale_iso(5),
+            "ended_at": None,
+        }
+    }
+    db_session.commit()
+
+    flipped = recover_stale_reindex_job(db_session)
+
+    assert flipped is False
+    db_session.refresh(settings_row)
+    assert settings_row.settings_json["reindex_job"]["status"] == "running"
+
+
+def test_recover_stale_reindex_job_skips_done(settings_row, db_session):
+    """A completed reindex_job is not re-flipped, even if old."""
+    from app.services.user_settings_service import recover_stale_reindex_job
+
+    settings_row.settings_json = {
+        "reindex_job": {
+            "status": "done",
+            "started_at": _stale_iso(120),
+            "ended_at": _stale_iso(110),
+        }
+    }
+    db_session.commit()
+
+    flipped = recover_stale_reindex_job(db_session)
+
+    assert flipped is False
+    db_session.refresh(settings_row)
+    assert settings_row.settings_json["reindex_job"]["status"] == "done"
+
+
+def test_recover_stale_reindex_job_handles_missing_started_at(settings_row, db_session):
+    """A running job without started_at (pre-migration data) is left alone."""
+    from app.services.user_settings_service import recover_stale_reindex_job
+
+    settings_row.settings_json = {
+        "reindex_job": {"status": "running"}  # no started_at
+    }
+    db_session.commit()
+
+    flipped = recover_stale_reindex_job(db_session)
+
+    assert flipped is False
+    db_session.refresh(settings_row)
+    assert settings_row.settings_json["reindex_job"]["status"] == "running"
+
+
+def test_recover_stale_dedup_jobs_flips_multiple_cases(settings_row, db_session):
+    """Multiple stuck dedup_jobs all flip; the case_id list is returned."""
+    from app.services.user_settings_service import recover_stale_dedup_jobs
+
+    settings_row.settings_json = {
+        "dedup_jobs": {
+            "CASE-A": {
+                "status": "running",
+                "total": 50,
+                "processed": 2,
+                "started_at": _stale_iso(90),
+                "ended_at": None,
+            },
+            "CASE-B": {
+                "status": "running",
+                "total": 30,
+                "processed": 0,
+                "started_at": _stale_iso(120),
+                "ended_at": None,
+            },
+            "CASE-C": {
+                "status": "running",
+                "total": 10,
+                "processed": 5,
+                "started_at": _stale_iso(5),  # fresh — should NOT flip
+                "ended_at": None,
+            },
+        }
+    }
+    db_session.commit()
+
+    flipped = recover_stale_dedup_jobs(db_session)
+    db_session.commit()
+
+    assert set(flipped) == {"CASE-A", "CASE-B"}
+    db_session.refresh(settings_row)
+    jobs = settings_row.settings_json["dedup_jobs"]
+    assert jobs["CASE-A"]["status"] == "failed"
+    assert jobs["CASE-B"]["status"] == "failed"
+    assert jobs["CASE-C"]["status"] == "running"
+
+
+def test_set_dedup_running_records_started_at(settings_row, db_session):
+    """set_dedup_running anchors a started_at timestamp for staleness checks."""
+    from app.services.user_settings_service import set_dedup_running
+
+    set_dedup_running("CASE-X", db_session, total=42)
+    db_session.commit()
+    db_session.refresh(settings_row)
+
+    job = settings_row.settings_json["dedup_jobs"]["CASE-X"]
+    assert job["status"] == "running"
+    assert job["started_at"] is not None
+    assert job["ended_at"] is None
