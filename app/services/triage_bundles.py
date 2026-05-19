@@ -325,8 +325,15 @@ def get_triage_bundles(
     case_ids: list[str] | None = None,
     proceeding_ids: list[str] | None = None,
     pipeline_filters: list[str] | None = None,
+    enrich: bool = True,
 ) -> list[BundleView]:
-    """All triage documents grouped into bundles."""
+    """All triage documents grouped into bundles.
+
+    When ``enrich`` is False, returns bundles without action items, proof
+    edges, or resolved suggested-case metadata — only fields populated by
+    `_build_bundles` (subject, documents, confirmed/suggested ids).
+    Useful for header-stat callers that only need pipeline counts.
+    """
     bundles = _build_bundles(db, include_sub_groups=True)
 
     _STATUS_ORDER = {
@@ -377,10 +384,10 @@ def get_triage_bundles(
     if pipeline_filters:
         ordered = [b for b in ordered if _bundle_pipeline_label(b) in pipeline_filters]
 
-    for bundle in ordered:
-        enrich_bundle(db, bundle)
-
-    return ordered[offset : offset + limit]
+    visible = ordered[offset : offset + limit]
+    if enrich:
+        enrich_bundles(db, visible)
+    return visible
 
 
 def get_triage_filter_options(db: Session) -> dict:
@@ -441,75 +448,128 @@ def get_triage_filter_options(db: Session) -> dict:
     }
 
 
-def enrich_bundle(db: Session, bundle: BundleView) -> None:
-    """Sort documents and resolve action items, proof edges, and case metadata in-place."""
+def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
+    """Sort documents and resolve action items, proof edges, and case metadata
+    in-place across many bundles in batched queries.
+
+    One query each for BatchSubGroup presence, ActionItem, DocumentRelationship
+    proof edges, and Case rows — regardless of bundle count.
+    """
+    if not bundles:
+        return
+
     from app.models.database import ActionItem
 
-    has_manual_groups = bundle.batch_id and (
-        db.query(BatchSubGroup)
-        .filter(BatchSubGroup.batch_id == bundle.batch_id)
-        .limit(1)
-        .count()
-        > 0
-    )
-    if not has_manual_groups:
-        # Significance-first within the bundle (§5b), cover-letter as in-tier
-        # tiebreaker so the user's eye lands on high-impact docs first.
-        bundle.documents.sort(
-            key=lambda d: (
-                _SIG_ORDER.get(d.significance_tier, 99),
-                0 if d.role == DocumentRole.COVER_LETTER else 1,
-                d.ingest_date or datetime.min,
-            )
-        )
-    doc_ids = [d.id for d in bundle.documents]
-    if doc_ids:
-        bundle.action_items = (
-            db.query(ActionItem)
-            .filter(ActionItem.source_document_id.in_(doc_ids))
-            .order_by(ActionItem.due_date.asc())
+    # --- Batch 1: BatchSubGroup presence by batch_id -----------------------
+    batch_ids = [b.batch_id for b in bundles if b.batch_id]
+    batches_with_groups: set[int] = set()
+    if batch_ids:
+        rows = (
+            db.query(BatchSubGroup.batch_id)
+            .filter(BatchSubGroup.batch_id.in_(batch_ids))
+            .distinct()
             .all()
         )
-        proof_rels = (
-            db.query(DocumentRelationship)
+        batches_with_groups = {r[0] for r in rows}
+
+    # --- Batch 2: Action items by source document --------------------------
+    all_doc_ids = [d.id for b in bundles for d in b.documents]
+    action_items_by_doc: dict[int, list] = {}
+    proof_doc_ids_set: set[int] = set()
+    if all_doc_ids:
+        items = (
+            db.query(ActionItem)
+            .filter(ActionItem.source_document_id.in_(all_doc_ids))
+            .order_by(ActionItem.due_date.asc().nullslast())
+            .all()
+        )
+        for item in items:
+            action_items_by_doc.setdefault(item.source_document_id, []).append(item)
+
+        # --- Batch 3: Proof-of relationships ------------------------------
+        proof_rows = (
+            db.query(DocumentRelationship.to_document_id)
             .filter(
-                DocumentRelationship.to_document_id.in_(doc_ids),
+                DocumentRelationship.to_document_id.in_(all_doc_ids),
                 DocumentRelationship.relationship_type
                 == RelationshipType.ATTACHES_AS_PROOF,
             )
             .all()
         )
-        bundle.proof_doc_ids = {r.to_document_id for r in proof_rels}
+        proof_doc_ids_set = {r[0] for r in proof_rows}
 
-    # Resolve suggested case metadata for the single-button confirm UX.
-    if bundle.suggested_case_id and not bundle.confirmed_case_id:
-        _case = db.query(Case).filter(Case.id == bundle.suggested_case_id).first()
-        if _case:
-            bundle.suggested_case_exists = True
-            bundle.suggested_case_title = _sanitize_case_title(
-                _case.title, bundle.suggested_case_id, bundle.subject
-            )
-            bundle.suggested_case_is_draft = bool(_case.is_draft)
+    # --- Batch 4: Cases (suggested + confirmed) ----------------------------
+    case_ids_to_resolve: set[str] = set()
+    for b in bundles:
+        if b.suggested_case_id:
+            case_ids_to_resolve.add(b.suggested_case_id)
+        if b.confirmed_case_id:
+            case_ids_to_resolve.add(b.confirmed_case_id)
+    cases_by_id: dict[str, Case] = {}
+    if case_ids_to_resolve:
+        for c in db.query(Case).filter(Case.id.in_(case_ids_to_resolve)).all():
+            cases_by_id[c.id] = c
 
-    # When AI auto-created a draft case and cascaded it to the batch,
-    # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
-    # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
-    # the modal opens pre-filled rather than as a blank create-new form.
-    if bundle.confirmed_case_id and not bundle.suggested_case_id:
-        _case = db.query(Case).filter(Case.id == bundle.confirmed_case_id).first()
-        if _case and _case.is_draft:
-            bundle.suggested_case_id = bundle.confirmed_case_id
-            bundle.suggested_case_title = _sanitize_case_title(
-                _case.title, bundle.confirmed_case_id, bundle.subject
+    # --- Apply per-bundle in Python ---------------------------------------
+    for bundle in bundles:
+        has_manual_groups = bool(
+            bundle.batch_id and bundle.batch_id in batches_with_groups
+        )
+        if not has_manual_groups:
+            # Significance-first within the bundle (§5b), cover-letter as in-tier
+            # tiebreaker so the user's eye lands on high-impact docs first.
+            bundle.documents.sort(
+                key=lambda d: (
+                    _SIG_ORDER.get(d.significance_tier, 99),
+                    0 if d.role == DocumentRole.COVER_LETTER else 1,
+                    d.ingest_date or datetime.min,
+                )
             )
-            bundle.suggested_case_is_draft = True
-            bundle.suggested_case_exists = True
-            bundle.confirmed_case_id = None
-        elif _case and not _case.is_draft:
-            bundle.suggested_case_exists = True
-            bundle.suggested_case_title = _sanitize_case_title(
-                _case.title, bundle.confirmed_case_id, bundle.subject
-            )
+        doc_ids = [d.id for d in bundle.documents]
+        if doc_ids:
+            bundle_items: list = []
+            for did in doc_ids:
+                bundle_items.extend(action_items_by_doc.get(did, []))
+            # Maintain global due-date order: items came pre-sorted; merging
+            # per-doc lists may interleave so resort.
+            bundle_items.sort(key=lambda x: (x.due_date is None, x.due_date))
+            bundle.action_items = bundle_items
+            bundle.proof_doc_ids = {did for did in doc_ids if did in proof_doc_ids_set}
+
+        # Resolve suggested case metadata for the single-button confirm UX.
+        if bundle.suggested_case_id and not bundle.confirmed_case_id:
+            _case = cases_by_id.get(bundle.suggested_case_id)
+            if _case:
+                bundle.suggested_case_exists = True
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.suggested_case_id, bundle.subject
+                )
+                bundle.suggested_case_is_draft = bool(_case.is_draft)
+
+        # When AI auto-created a draft case and cascaded it to the batch,
+        # confirmed_case_id is set but is_draft=True — it hasn't been ratified.
+        # Re-cast it as suggested so the footer shows "Confirm case <ID>" and
+        # the modal opens pre-filled rather than as a blank create-new form.
+        if bundle.confirmed_case_id and not bundle.suggested_case_id:
+            _case = cases_by_id.get(bundle.confirmed_case_id)
+            if _case and _case.is_draft:
+                bundle.suggested_case_id = bundle.confirmed_case_id
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.confirmed_case_id, bundle.subject
+                )
+                bundle.suggested_case_is_draft = True
+                bundle.suggested_case_exists = True
+                bundle.confirmed_case_id = None
+            elif _case and not _case.is_draft:
+                bundle.suggested_case_exists = True
+                bundle.suggested_case_title = _sanitize_case_title(
+                    _case.title, bundle.confirmed_case_id, bundle.subject
+                )
+
+
+def enrich_bundle(db: Session, bundle: BundleView) -> None:
+    """Single-bundle wrapper around `enrich_bundles`."""
+    enrich_bundles(db, [bundle])
 
 
 def get_slicing_queue(db: Session) -> list:

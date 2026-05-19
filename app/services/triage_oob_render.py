@@ -200,15 +200,18 @@ def render_sidebar_badges_oob(db: Session) -> str:
     return triage_oob + notif_oob
 
 
-def render_triage_header_stats_oob(request: Request, db: Session) -> str:
+def render_triage_header_stats_oob(request: Request, db: Session, bundles=None) -> str:
     """Render the redesigned triage header chip stats as an OOB swap.
 
     Targets `#triage-header-stats` in `partials/triage_filter_chips.html`.
+    When ``bundles`` is supplied, reuses that list instead of refetching.
+    Falls back to an enrich=False fetch (stats only need pipeline state).
     """
     from app.services.triage_bundles import get_triage_bundles
     from app.services.triage_view import stats_for_chips
 
-    bundles = get_triage_bundles(db)
+    if bundles is None:
+        bundles = get_triage_bundles(db, enrich=False)
     return templates.get_template("partials/triage_filter_chips.html").render(
         {
             "request": request,
@@ -227,7 +230,8 @@ def render_batch_oob(
 
     For each key, either swaps the updated row (if the bundle is still in triage)
     or deletes it from the DOM (if it left triage). Always appends badges and
-    header-stats OOB fragments.
+    header-stats OOB fragments. The bundle list is fetched once and reused
+    for both the row swaps and the header-stats render.
     """
     from app.services.triage_bundles import get_triage_bundles
 
@@ -245,5 +249,5 @@ def render_batch_oob(
             )
 
     parts.append(render_sidebar_badges_oob(db))
-    parts.append(render_triage_header_stats_oob(request, db))
+    parts.append(render_triage_header_stats_oob(request, db, bundles=remaining))
     return "".join(parts)

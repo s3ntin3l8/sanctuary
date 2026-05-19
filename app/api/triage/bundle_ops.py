@@ -142,7 +142,7 @@ async def retry_bundle_pipeline(
     if updated_bundle:
         oob_parts.append(render_bundle_group_oob(request, updated_bundle, db))
     oob_parts.append(render_sidebar_badges_oob(db))
-    oob_parts.append(render_triage_header_stats_oob(request, db))
+    oob_parts.append(render_triage_header_stats_oob(request, db, bundles=bundles))
 
     trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
 
@@ -164,7 +164,7 @@ async def retry_all_bundles(
     from app.models.database import IngestBatch
     from app.services.pipeline_status import retry_on_db_locked
 
-    bundles = get_triage_bundles(db, limit=500)
+    bundles = get_triage_bundles(db, limit=500, enrich=False)
     batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}
 
     batches = db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all()
