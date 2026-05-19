@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.config import templates
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import Document
 from app.models.enums import PipelineState
@@ -98,6 +99,7 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
 
 
 @router.post("/retry-failed")
+@limiter.limit("5/minute")
 async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
     from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
     from app.tasks.dispatch import dispatch_task

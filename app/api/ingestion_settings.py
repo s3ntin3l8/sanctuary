@@ -95,7 +95,8 @@ async def gmail_oauth_callback(
 
 
 @router.post("/gmail/backfill")
-async def gmail_backfill(days: int = Form(90)):
+@limiter.limit("2/minute")
+async def gmail_backfill(request: Request, days: int = Form(90)):
     from app.tasks.dispatch import dispatch_task
 
     dispatch_task(run_gmail_backfill, "single_user", days=days)

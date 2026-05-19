@@ -514,7 +514,9 @@ async def save_opposing_parties(
 
 
 @router.post("/{case_id}/reenrich")
+@limiter.limit("5/minute")
 async def reenrich_case(
+    request: Request,
     case_id: str,
     db: Session = Depends(get_db),
 ):

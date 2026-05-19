@@ -58,6 +58,7 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/upload")
+@limiter.limit("60/minute")
 async def upload_document(
     request: Request,
     db: Session = Depends(get_db),

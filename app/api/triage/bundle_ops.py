@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
+from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.enums import OriginatorType, UserReactionType
 from app.services.triage_bundles import get_bundle_by_batch_id, get_triage_bundles
@@ -152,6 +153,7 @@ async def retry_bundle_pipeline(
 
 
 @router.post("/triage/retry-all")
+@limiter.limit("5/minute")
 async def retry_all_bundles(
     request: Request,
     db: Session = Depends(get_db),
