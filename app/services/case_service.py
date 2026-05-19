@@ -616,66 +616,150 @@ class CaseService:
             "new_docs_since_last_visit": new_docs,
         }
 
-    def enrich_case_for_card(
-        self, case: Case, now: datetime, last_home_visit: datetime | None = None
-    ) -> dict[str, Any]:
-        """Enrich a case with metadata needed for the dashboard/directory card."""
-        from app.services.user_settings_service import count_new_since
+    # Significance ranking used both by enrich_case_for_card and the batched
+    # max-significance precompute. CRITICAL beats everything.
+    _SIG_RANK: dict = {
+        SignificanceTier.CRITICAL: 4,
+        SignificanceTier.SIGNIFICANT: 3,
+        SignificanceTier.INFORMATIONAL: 2,
+        SignificanceTier.ADMINISTRATIVE: 1,
+    }
 
-        # Get closest action item
-        next_action = (
+    def _batch_card_context(self, case_ids: list[str]) -> tuple[dict, dict, dict]:
+        """Precompute the three per-case lookups enrich_case_for_card needs.
+
+        Hoists the per-case ActionItem / last Document / max-significance
+        queries to one apiece, partitioned by case_id. Callers iterate the
+        precomputed dicts inside the loop.
+
+        Returns:
+            next_action_by_case: case_id -> ActionItem (next OPEN, soonest due)
+            last_doc_by_case:    case_id -> Document  (most recent by ingest_date)
+            max_sig_by_case:     case_id -> SignificanceTier (top of last-20 docs)
+        """
+        next_action_by_case: dict[str, ActionItem] = {}
+        last_doc_by_case: dict[str, Document] = {}
+        max_sig_by_case: dict[str, SignificanceTier | None] = {}
+
+        if not case_ids:
+            return next_action_by_case, last_doc_by_case, max_sig_by_case
+
+        # 1 query: next open action item per case (earliest due).
+        actions = (
             self.db.query(ActionItem)
             .filter(
-                ActionItem.case_id == case.id,
+                ActionItem.case_id.in_(case_ids),
                 ActionItem.status == ActionItemStatus.OPEN,
             )
             .order_by(ActionItem.due_date.asc())
-            .first()
+            .all()
         )
+        for a in actions:
+            next_action_by_case.setdefault(a.case_id, a)
+
+        # 1 query: most-recent document per case.
+        last_docs = (
+            self.db.query(Document)
+            .filter(Document.case_id.in_(case_ids))
+            .order_by(Document.ingest_date.desc())
+            .all()
+        )
+        for d in last_docs:
+            last_doc_by_case.setdefault(d.case_id, d)
+
+        # 1 query: top-significance among the last 20 docs per case.
+        # SQLite has no per-group LIMIT; rank in Python (20-cap per case_id).
+        sig_rows = (
+            self.db.query(
+                Document.case_id, Document.significance_tier, Document.ingest_date
+            )
+            .filter(
+                Document.case_id.in_(case_ids),
+                Document.significance_tier.isnot(None),
+            )
+            .order_by(Document.case_id, Document.ingest_date.desc())
+            .all()
+        )
+        counts: dict[str, int] = {}
+        for cid, tier, _ in sig_rows:
+            if counts.get(cid, 0) >= 20:
+                continue
+            counts[cid] = counts.get(cid, 0) + 1
+            cur = max_sig_by_case.get(cid)
+            if cur is None or self._SIG_RANK.get(tier, 0) > self._SIG_RANK.get(cur, 0):
+                max_sig_by_case[cid] = tier
+
+        return next_action_by_case, last_doc_by_case, max_sig_by_case
+
+    def enrich_case_for_card(
+        self,
+        case: Case,
+        now: datetime,
+        last_home_visit: datetime | None = None,
+        *,
+        _batched: tuple[dict, dict, dict] | None = None,
+    ) -> dict[str, Any]:
+        """Enrich a case with metadata needed for the dashboard/directory card.
+
+        Pass `_batched` (the tuple returned by `_batch_card_context`) to skip
+        the three per-case queries when rendering many cards. Falls back to
+        per-case queries when omitted so single-card callers still work.
+        """
+        from app.services.user_settings_service import count_new_since
+
+        if _batched is not None:
+            next_action_by_case, last_doc_by_case, max_sig_by_case = _batched
+            next_action = next_action_by_case.get(case.id)
+            last_doc = last_doc_by_case.get(case.id)
+            max_sig = max_sig_by_case.get(case.id)
+        else:
+            next_action = (
+                self.db.query(ActionItem)
+                .filter(
+                    ActionItem.case_id == case.id,
+                    ActionItem.status == ActionItemStatus.OPEN,
+                )
+                .order_by(ActionItem.due_date.asc())
+                .first()
+            )
+            last_doc = (
+                self.db.query(Document)
+                .filter(Document.case_id == case.id)
+                .order_by(Document.ingest_date.desc())
+                .first()
+            )
+            recent_docs = (
+                self.db.query(Document.significance_tier)
+                .filter(
+                    Document.case_id == case.id,
+                    Document.significance_tier.isnot(None),
+                )
+                .order_by(Document.ingest_date.desc())
+                .limit(20)
+                .all()
+            )
+            max_sig = max(
+                (row[0] for row in recent_docs),
+                key=lambda t: self._SIG_RANK.get(t, 0),
+                default=None,
+            )
 
         new_docs_count = (
             count_new_since(case.id, last_home_visit, self.db) if last_home_visit else 0
         )
 
-        # Days since last activity
-        last_doc = (
-            self.db.query(Document)
-            .filter(Document.case_id == case.id)
-            .order_by(Document.ingest_date.desc())
-            .first()
-        )
         days_since = (
             (now - last_doc.ingest_date).days
             if last_doc
             else (now - case.ingest_date).days
         )
 
-        # Get active proceeding name
+        # Get active proceeding name (uses joinedload from caller's query).
         active_proc = next((p for p in case.proceedings if p.status == "active"), None)
         if not active_proc and case.proceedings:
             active_proc = case.proceedings[0]
 
         proceeding_name = active_proc.court_name if active_proc else "General"
-
-        # Max significance tier across most recent 20 documents
-        _sig_rank = {
-            SignificanceTier.CRITICAL: 4,
-            SignificanceTier.SIGNIFICANT: 3,
-            SignificanceTier.INFORMATIONAL: 2,
-            SignificanceTier.ADMINISTRATIVE: 1,
-        }
-        recent_docs = (
-            self.db.query(Document.significance_tier)
-            .filter(Document.case_id == case.id, Document.significance_tier.isnot(None))
-            .order_by(Document.ingest_date.desc())
-            .limit(20)
-            .all()
-        )
-        max_sig = max(
-            (row[0] for row in recent_docs),
-            key=lambda t: _sig_rank.get(t, 0),
-            default=None,
-        )
 
         # Extract client and opposing names from the parties list
         parties = case.parties or []
@@ -737,8 +821,10 @@ class CaseService:
             datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
         )
 
+        batched = self._batch_card_context([c.id for c in all_cases])
         enriched_cases = [
-            self.enrich_case_for_card(c, now, last_home_visit) for c in all_cases
+            self.enrich_case_for_card(c, now, last_home_visit, _batched=batched)
+            for c in all_cases
         ]
 
         draft_cases = [c for c in enriched_cases if c["is_draft"]]
@@ -793,8 +879,10 @@ class CaseService:
             datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
         )
 
+        batched = self._batch_card_context([c.id for c in cases])
         enriched_cases = [
-            self.enrich_case_for_card(c, now, last_home_visit) for c in cases
+            self.enrich_case_for_card(c, now, last_home_visit, _batched=batched)
+            for c in cases
         ]
 
         draft_cases = [c for c in enriched_cases if c["is_draft"]]

@@ -167,8 +167,9 @@ class HomeService:
         )
         active_cases = active_cases_query.order_by(Case.ingest_date.desc()).all()
 
+        batched = case_service._batch_card_context([c.id for c in active_cases])
         enriched_cases = [
-            case_service.enrich_case_for_card(c, now, last_home_visit)
+            case_service.enrich_case_for_card(c, now, last_home_visit, _batched=batched)
             for c in active_cases
         ]
         draft_cases = [c for c in enriched_cases if c["is_draft"]]
