@@ -345,7 +345,11 @@ def get_or_create_case_from_reference(
 
 
 def _latest_streitwert(proceeding_id: int, db: Session) -> float | None:
-    """Return the EUR amount from the most recent streitwert signal, or None."""
+    """Return the EUR amount from the most recent streitwert signal, or None.
+
+    Single-proceeding accessor — kept for callers that only need one
+    proceeding (e.g. ad-hoc lookups outside the cost-rollup hot path).
+    """
     row = (
         db.query(CostSignal)
         .filter(
@@ -364,7 +368,11 @@ def _latest_streitwert(proceeding_id: int, db: Session) -> float | None:
 
 
 def _latest_ruling_allocation(proceeding_id: int, db: Session) -> dict | None:
-    """Return the resolved allocation from the most recent cost_ruling signal, or None."""
+    """Single-proceeding accessor for the resolved cost-ruling allocation.
+
+    Kept for callers that only need one proceeding; the cost-rollup path
+    uses _signals_by_proceeding (one batched query for the whole case).
+    """
     row = (
         db.query(CostSignal)
         .filter(
@@ -380,6 +388,59 @@ def _latest_ruling_allocation(proceeding_id: int, db: Session) -> dict | None:
     if row is None:
         return None
     return allocation_from_ruling(row.allocation or {})
+
+
+def _signals_by_proceeding(case_id: str, db: Session) -> dict[int, dict]:
+    """Latest streitwert + cost-ruling signal per proceeding, in ONE query.
+
+    Returns ``{proc_id: {"streitwert": float|None, "ruling_allocation": dict|None}}``.
+
+    Rows are ordered so the latest per (proceeding_id, signal_type) comes
+    first; we then take only the first hit per slot. This mirrors the
+    "issued_at desc nullslast, ingest_date desc" ordering used by the
+    single-proceeding accessors, so the result is byte-identical to
+    calling those helpers per proceeding — just without the P×2 query
+    fan-out.
+    """
+    out: dict[int, dict] = {}
+    if not case_id:
+        return out
+
+    rows = (
+        db.query(CostSignal)
+        .filter(
+            CostSignal.case_id == case_id,
+            CostSignal.signal_type.in_(
+                (CostSignalType.STREITWERT, CostSignalType.COST_RULING)
+            ),
+            CostSignal.proceeding_id.isnot(None),
+        )
+        .order_by(
+            CostSignal.proceeding_id,
+            CostSignal.signal_type,
+            CostSignal.issued_at.desc().nullslast(),
+            CostSignal.ingest_date.desc(),
+        )
+        .all()
+    )
+
+    for row in rows:
+        slot = out.setdefault(
+            row.proceeding_id,
+            {"streitwert": None, "ruling_allocation": None},
+        )
+        if (
+            row.signal_type == CostSignalType.STREITWERT
+            and slot["streitwert"] is None
+            and row.amount is not None
+        ):
+            slot["streitwert"] = float(row.amount)
+        elif (
+            row.signal_type == CostSignalType.COST_RULING
+            and slot["ruling_allocation"] is None
+        ):
+            slot["ruling_allocation"] = allocation_from_ruling(row.allocation or {})
+    return out
 
 
 def _ledger_net_exposure(case_id: str, db: Session) -> float:
@@ -439,15 +500,20 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
         .all()
     )
 
+    # Batch: pull all streitwert + ruling signals for the case in ONE query
+    # instead of P × 2 per-proceeding round-trips.
+    signals_by_proc = _signals_by_proceeding(case_id, db)
+
     total_eur = 0.0
     propagated_allocation: dict | None = None
 
     for proc in proceedings:
-        streitwert = _latest_streitwert(proc.id, db)
+        signals = signals_by_proc.get(proc.id, {})
+        streitwert = signals.get("streitwert")
         if not streitwert or streitwert <= 0:
             continue  # no basis for fee projection; skip this proceeding
 
-        ruling_alloc = _latest_ruling_allocation(proc.id, db)
+        ruling_alloc = signals.get("ruling_allocation")
         if ruling_alloc:
             alloc = ruling_alloc
             propagated_allocation = ruling_alloc
@@ -510,15 +576,19 @@ def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
         .all()
     )
 
+    # Batch: same one-query lookup recompute_total_cost_exposure uses.
+    signals_by_proc = _signals_by_proceeding(case_id, db)
+
     result = []
     propagated_allocation: dict | None = None
 
     for proc in proceedings:
-        streitwert = _latest_streitwert(proc.id, db)
+        signals = signals_by_proc.get(proc.id, {})
+        streitwert = signals.get("streitwert")
         if not streitwert or streitwert <= 0:
             continue
 
-        ruling_alloc = _latest_ruling_allocation(proc.id, db)
+        ruling_alloc = signals.get("ruling_allocation")
         if ruling_alloc:
             alloc = ruling_alloc
             propagated_allocation = ruling_alloc
@@ -960,8 +1030,15 @@ class CaseService:
         if not case:
             return None
 
-        # Snapshot affected docs + batches before mutating.
-        docs = self.db.query(Document).filter(Document.case_id == case_id).all()
+        # Snapshot affected docs + batches before mutating. Eager-load
+        # stage_rows so reset_and_reenrich (called below) can read each
+        # doc's metadata-stage status without firing a per-doc query.
+        docs = (
+            self.db.query(Document)
+            .options(joinedload(Document.stage_rows))
+            .filter(Document.case_id == case_id)
+            .all()
+        )
         batch_ids = {d.ingest_batch_id for d in docs if d.ingest_batch_id}
 
         # Revert documents to the Triage Inbox so they re-enter review.
