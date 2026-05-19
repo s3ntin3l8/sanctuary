@@ -485,6 +485,18 @@ async def rebuild_index(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """Drop+recreate the vec0 table, then dispatch the embedding reindex
+    as a Celery task. The response is a polling fragment that the browser
+    refreshes against /rebuild-index/status every 4s.
+    """
+    from app.models.database import Document
+    from app.services.user_settings_service import (
+        get_reindex_job,
+        set_reindex_running,
+    )
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.generate_embedding import reindex_all_embeddings_task
+
     cfg = get_embed_config(db)
     embed_dim = cfg.embed_dim
 
@@ -493,6 +505,11 @@ async def rebuild_index(
             _toast(False, f"embed_dim={embed_dim} out of range 64–4096"),
             status_code=400,
         )
+
+    # Refuse concurrent reindex (singleton job).
+    existing = get_reindex_job(db)
+    if existing and existing.get("status") == "running":
+        return HTMLResponse(_toast(False, "A reindex is already in flight."))
 
     embed_provider.reload_from_db(db)
 
@@ -510,18 +527,33 @@ async def rebuild_index(
         logger.error(f"Failed to recreate document_vectors: {e}")
         return HTMLResponse(_toast(False, f"DDL failed: {e}"))
 
-    try:
-        result = await reindex_all_docs(db)
-        fail_note = f" ({result['failed']} failed)" if result["failed"] else ""
-        return HTMLResponse(
-            _toast(
-                True,
-                f"Rebuilt at dim={embed_dim}: {result['reindexed']}/{result['total']} documents indexed{fail_note}",
-            ),
-        )
-    except Exception as e:
-        logger.error(f"Reindex failed: {e}")
-        return HTMLResponse(_toast(False, f"Reindex failed: {e}"))
+    total = db.query(Document).filter(Document.content.isnot(None)).count()
+    set_reindex_running(db, total=total, embed_dim=embed_dim)
+    db.commit()
+
+    dispatch_task(reindex_all_embeddings_task)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/settings/_reindex_running.html",
+        {"job": get_reindex_job(db)},
+    )
+
+
+@router.get("/rebuild-index/status", response_class=HTMLResponse)
+async def rebuild_index_status(request: Request, db: Session = Depends(get_db)):
+    """Polling endpoint for the reindex progress UI. Returns the running
+    fragment while in flight, the result fragment when done or failed.
+    """
+    from app.services.user_settings_service import get_reindex_job
+
+    job = get_reindex_job(db)
+    template = (
+        "partials/settings/_reindex_running.html"
+        if job and job.get("status") == "running"
+        else "partials/settings/_reindex_result.html"
+    )
+    return templates.TemplateResponse(request, template, {"job": job})
 
 
 # ---------------------------------------------------------------------------

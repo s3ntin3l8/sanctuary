@@ -67,3 +67,42 @@ def generate_embedding_task(self, doc_id: int):
 
     logger.info("Doc #%d: embeddings complete", doc_id)
     return {"status": "success", "doc_id": doc_id}
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.generate_embedding.reindex_all_embeddings_task",
+)
+def reindex_all_embeddings_task(self):
+    """Regenerate embeddings for every doc with content. Writes progress to
+    UserSettings.reindex_job so the HTMX poller in Settings → AI can render
+    a live bar.
+
+    The HTTP route handles the vec0 DDL (drop + recreate) synchronously
+    before dispatching this task, so this task only loops over docs.
+    """
+    from app.dependencies import get_db_session
+    from app.services.embeddings import reindex_all_docs
+    from app.services.user_settings_service import (
+        set_reindex_done,
+        set_reindex_failed,
+        update_reindex_progress,
+    )
+
+    db = get_db_session()
+    try:
+
+        def _on_progress(*, reindexed: int, failed: int) -> None:
+            update_reindex_progress(db, reindexed=reindexed, failed=failed)
+
+        try:
+            result = run_async(reindex_all_docs(db, progress_cb=_on_progress))
+        except Exception as exc:
+            logger.exception("reindex_all_embeddings_task failed")
+            set_reindex_failed(db, str(exc))
+            raise
+
+        set_reindex_done(db)
+        return result
+    finally:
+        db.close()

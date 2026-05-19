@@ -112,6 +112,74 @@ def set_dedup_result(
     db.flush()
 
 
+# ---------------------------------------------------------------------------
+# Embedding reindex job state (singleton — at most one in flight globally)
+# ---------------------------------------------------------------------------
+
+
+def get_reindex_job(db) -> dict | None:
+    """Return the current reindex job state, or None if none has ever run."""
+    settings = db.query(UserSettings).first()
+    if not settings or not settings.settings_json:
+        return None
+    return settings.settings_json.get("reindex_job")
+
+
+def set_reindex_running(db, *, total: int, embed_dim: int) -> None:
+    settings = _get_or_create(db)
+    settings.settings_json = {
+        **settings.settings_json,
+        "reindex_job": {
+            "status": "running",
+            "total": total,
+            "reindexed": 0,
+            "failed": 0,
+            "started_at": naive_utc_now().isoformat(),
+            "ended_at": None,
+            "embed_dim": embed_dim,
+            "error": None,
+        },
+    }
+    db.flush()
+
+
+def update_reindex_progress(db, *, reindexed: int, failed: int) -> None:
+    """Update progress counters on the in-flight reindex job. Best-effort."""
+    try:
+        settings = _get_or_create(db)
+        job = dict(settings.settings_json.get("reindex_job") or {})
+        if job.get("status") != "running":
+            return
+        job["reindexed"] = reindexed
+        job["failed"] = failed
+        settings.settings_json = {**settings.settings_json, "reindex_job": job}
+        db.flush()
+    except OperationalError as exc:
+        if is_db_locked(exc):
+            logger.debug("update_reindex_progress: db locked, skipping update")
+            return
+        raise
+
+
+def set_reindex_done(db) -> None:
+    settings = _get_or_create(db)
+    job = dict(settings.settings_json.get("reindex_job") or {})
+    job["status"] = "done"
+    job["ended_at"] = naive_utc_now().isoformat()
+    settings.settings_json = {**settings.settings_json, "reindex_job": job}
+    db.flush()
+
+
+def set_reindex_failed(db, error: str) -> None:
+    settings = _get_or_create(db)
+    job = dict(settings.settings_json.get("reindex_job") or {})
+    job["status"] = "failed"
+    job["ended_at"] = naive_utc_now().isoformat()
+    job["error"] = error[:500]
+    settings.settings_json = {**settings.settings_json, "reindex_job": job}
+    db.flush()
+
+
 def get_last_home_visit(db) -> datetime | None:
     """Return the datetime the user last visited the home page."""
     settings = db.query(UserSettings).first()

@@ -1,0 +1,26 @@
+{# Terminal embedding-reindex fragment. No hx-trigger — polling stops here.
+
+   Context: `job` — dict with status in {"done", "failed", null}, plus
+   counts and timing fields. None means no reindex has ever run.
+#}
+{% if not job %}
+<div class="text-[11px] italic text-outline">No reindex has run yet.</div>
+{% elif job.status == "done" %}
+{% set fail_note = " (" ~ job.failed ~ " failed)" if job.failed else "" %}
+<div class="flex items-center gap-2 text-[11px] font-bold text-originator-own">
+  <span class="material-symbols-outlined text-[14px]">check_circle</span>
+  Rebuilt at dim={{ job.embed_dim }}: {{ job.reindexed }}/{{ job.total }} indexed{{ fail_note }}
+</div>
+{% elif job.status == "failed" %}
+<div class="space-y-1">
+  <div class="flex items-center gap-2 text-[11px] font-bold text-error">
+    <span class="material-symbols-outlined text-[14px]">error</span>
+    Reindex failed.
+  </div>
+  {% if job.error %}
+  <p class="text-[10px] font-mono text-on-surface-variant whitespace-pre-wrap">{{ job.error }}</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="text-[11px] italic text-outline">Reindex state: {{ job.status }}</div>
+{% endif %}

@@ -106,13 +106,18 @@ async def generate_embedding(doc_id: int):
 _REINDEX_BATCH_SIZE = 50
 
 
-async def reindex_all_docs(db) -> dict:
+async def reindex_all_docs(db, progress_cb=None) -> dict:
     """Regenerate embeddings for all documents. Returns {total, reindexed, failed}.
 
     Paginated in batches of _REINDEX_BATCH_SIZE so a corpus of N thousand
     documents doesn't all sit in Python memory at once. Each doc still
     commits independently (vec0 requires DELETE+INSERT for idempotency).
     Progress is logged at INFO every batch so the user can tail the log.
+
+    progress_cb(reindexed: int, failed: int) is called at each batch
+    boundary; the Celery wrapper uses this to update UserSettings so the
+    HTMX polling UI advances. Best-effort: callback exceptions are
+    swallowed so an SQLite write contention doesn't kill the reindex.
     """
     from sqlalchemy import text
 
@@ -198,6 +203,11 @@ async def reindex_all_docs(db) -> dict:
             f"reindex_all_docs: {min(offset, total)}/{total} processed "
             f"({reindexed} ok, {failed} failed)"
         )
+        if progress_cb is not None:
+            try:
+                progress_cb(reindexed=reindexed, failed=failed)
+            except Exception as cb_err:
+                logger.debug(f"reindex progress_cb failed (continuing): {cb_err}")
 
     return {"total": total, "reindexed": reindexed, "failed": failed}
 

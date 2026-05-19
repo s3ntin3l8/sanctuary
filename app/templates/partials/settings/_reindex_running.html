@@ -1,0 +1,36 @@
+{# In-flight embedding reindex fragment.
+
+   Polls /api/settings/ai/rebuild-index/status every 4s. When the server
+   returns _reindex_result.html, the hx-trigger is gone and polling stops.
+
+   Context: `job` — dict with status="running", total, reindexed, failed,
+   embed_dim, started_at. May be None if the page loaded fresh and no
+   reindex has ever run (template falls back to an idle hint).
+#}
+{% if not job or job.status != "running" %}
+<div class="text-[11px] italic text-outline">No reindex in progress.</div>
+{% else %}
+{% set processed = (job.reindexed or 0) + (job.failed or 0) %}
+{% set total = job.total or 0 %}
+{% set pct = (100 * processed / total) | int if total else 0 %}
+<div hx-get="{{ request.app.url_path_for('rebuild_index_status') }}"
+     hx-trigger="every 4s"
+     hx-swap="outerHTML"
+     hx-target="this"
+     class="space-y-2">
+  <div class="flex items-center justify-between text-[11px] font-bold">
+    <span class="flex items-center gap-2 text-primary">
+      <span class="material-symbols-outlined text-[14px] animate-pulse">progress_activity</span>
+      Reindexing embeddings… {{ job.reindexed or 0 }} of {{ total }}
+      {% if job.failed %}<span class="text-error font-normal">({{ job.failed }} failed)</span>{% endif %}
+    </span>
+    <span class="font-mono text-on-surface-variant">dim={{ job.embed_dim }}</span>
+  </div>
+  <div class="h-1.5 w-full rounded-full bg-surface-container-highest overflow-hidden">
+    <div class="h-full bg-primary transition-all duration-500" style="width: {{ pct }}%"></div>
+  </div>
+  <p class="text-[10px] italic text-outline">
+    Runs in the worker; safe to close this tab — progress persists.
+  </p>
+</div>
+{% endif %}
