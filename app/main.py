@@ -166,10 +166,17 @@ _SESSION_COOKIE = "session"
 
 def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
-    if not origin:
-        return True
-    expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
-    return origin == expected
+    if origin:
+        expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
+        return origin == expected
+
+    # No Origin header. Modern browsers send Origin on every cross-origin
+    # mutation, so this is usually a same-origin request. Tighten with the
+    # Sec-Fetch-Site fetch metadata when present — `cross-site` / `same-site`
+    # are explicit cross-origin signals; anything else (`same-origin`,
+    # `none`, missing) is treated as same-origin.
+    fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
+    return fetch_site not in {"cross-site", "same-site"}
 
 
 def _session_secret() -> bytes:
@@ -227,11 +234,34 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    if not DEBUG and _session_secret() == b"dev-session-key":
+    from app.config import HOST as _HOST
+
+    _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+    _is_loopback = _HOST in _LOOPBACK_HOSTS
+    _is_default_secret = _session_secret() == b"dev-session-key"
+
+    if not DEBUG and _is_default_secret:
         raise RuntimeError(
             "SESSION_SECRET is unset and DEBUG=False. "
             "Set SESSION_SECRET in .env "
             "(generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))')."
+        )
+
+    # The app has no auth — any non-loopback bind exposes every mutation
+    # endpoint to anyone on the network. Refuse to start with a default
+    # SESSION_SECRET on a non-loopback HOST, even in DEBUG mode.
+    if not _is_loopback and _is_default_secret:
+        raise RuntimeError(
+            f"HOST={_HOST!r} is not loopback and SESSION_SECRET is unset. "
+            "This app has no authentication — non-loopback binds expose every "
+            "endpoint. Either set HOST=127.0.0.1 or set SESSION_SECRET in .env."
+        )
+
+    if not _is_loopback:
+        logging.getLogger(__name__).warning(
+            "HOST=%s is not loopback. This app has no authentication; "
+            "anyone reachable at that address can read and mutate case data.",
+            _HOST,
         )
 
     # Run migrations so the schema exists even on a fresh/deleted DB.

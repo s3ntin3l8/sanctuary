@@ -53,6 +53,9 @@ def test_lifespan_runs_migrations_when_not_in_tests(monkeypatch):
     # Make sure the env var is unset for this test (we're inside pytest so
     # it's set on us, but the lifespan check should still fire).
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    # Satisfy the no-auth/non-loopback security guard (the user's .env sets
+    # HOST=0.0.0.0; production requires SESSION_SECRET to be set in that case).
+    monkeypatch.setenv("SESSION_SECRET", "test-secret-for-lifespan-fixture")
     # And neutralise the other startup side-effects so we can isolate alembic.
     monkeypatch.setattr("app.services.case_service.seed_triage_case", lambda db: None)
     monkeypatch.setattr(
