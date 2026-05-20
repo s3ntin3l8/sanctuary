@@ -253,7 +253,11 @@ def process_uploaded_document(doc: Document, db: Session):
     import os
 
     file_path = doc.file_path
-    if not file_path or not os.path.exists(file_path):
+    if not file_path:
+        raise IngestionError("Document has no file_path")
+    if not os.path.isabs(file_path):
+        file_path = str(DATA_DIR / file_path)
+    if not os.path.exists(file_path):
         raise IngestionError(f"File not found: {file_path}")
 
     ext = os.path.splitext(file_path)[1].lower()

@@ -26,8 +26,8 @@
             {% endif %}
             <span class="material-symbols-outlined text-[20px]">inbox</span>
             <div id="sidebar-triage-badge-container">
-                {% if sidebar_counts.triage_count > 0 %}
-                <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.triage_count }}</span>
+                {% if sidebar_counts.get('triage_count', 0) > 0 %}
+                <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.get('triage_count', 0) }}</span>
                 {% endif %}
             </div>
             <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
@@ -73,9 +73,9 @@
                  hx-trigger="every 5s"
                  hx-swap="outerHTML"
                  hx-sync="this:drop">
-                {% if sidebar_counts.ai_inflight_count > 0 %}
+                {% if sidebar_counts.get('ai_inflight_count', 0) > 0 %}
                 <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-tertiary text-on-tertiary text-[9px] font-bold rounded-full border-2 border-surface-container-low animate-pulse">
-                    {{ sidebar_counts.ai_inflight_count }}
+                    {{ sidebar_counts.get('ai_inflight_count', 0) }}
                 </span>
                 {% endif %}
             </div>
@@ -87,8 +87,8 @@
         <button type="button" onclick="document.getElementById('notifications-panel-root').dispatchEvent(new CustomEvent('toggle-notif', { bubbles: true }))" class="relative flex items-center justify-center w-10 h-10 rounded-xl text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50 transition-colors duration-300 group">
             <span class="material-symbols-outlined text-[20px]">notifications</span>
             <div id="sidebar-notifications-badge-container">
-                {% if sidebar_counts.notification_count > 0 %}
-                <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.notification_count }}</span>
+                {% if sidebar_counts.get('notification_count', 0) > 0 %}
+                <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">{{ sidebar_counts.get('notification_count', 0) }}</span>
                 {% endif %}
             </div>
             <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">

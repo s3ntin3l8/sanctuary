@@ -1002,7 +1002,11 @@ class CostSignal(Base):
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
     )
-    signal_type = Column(SAEnum(CostSignalType), nullable=False, index=True)
+    signal_type = Column(
+        SAEnum(CostSignalType, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+        index=True,
+    )
 
     amount = Column(Float, nullable=True)  # Streitwert value or PKH monthly rate
     allocation = Column(JSON, nullable=True)  # cost_ruling: {"loser": 1.0} etc.
