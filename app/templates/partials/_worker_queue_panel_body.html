@@ -43,30 +43,75 @@
         </div>
         {% endif %}
 
-        {# Document rows #}
-        {% if docs_with_stage %}
+        {# Running / pending queue items (grouped for batch-scoped stages) #}
+        {% if queue_items %}
         <div class="divide-y divide-outline-variant/5">
-            {% for doc, stage in docs_with_stage %}
-            {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
+            {% for item in queue_items %}
+            {% if item.type == "batch" %}
+            {# Batch group row: one header + indented member list #}
+            <div class="p-3">
+                <div class="flex gap-3 items-start">
+                    <div class="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-tertiary/10">
+                        <span class="material-symbols-outlined text-sm text-tertiary animate-pulse">settings</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] font-semibold text-on-surface line-clamp-1">
+                            Batch #{{ item.batch.id if item.batch else "?" }} — {{ (item.batch.subject or "Untitled")[:40] if item.batch else "Untitled" }}
+                        </p>
+                        <div class="flex items-center gap-2 mt-0.5">
+                            <span class="text-[9px] text-on-surface-variant font-mono uppercase tracking-wide">{{ item.stage | replace("_", " ") }}</span>
+                            <span class="text-[9px] text-on-surface-variant/60">· {{ item.docs | length }} docs</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="ml-10 mt-1.5 border-l border-outline-variant/20 pl-2 flex flex-col gap-0.5">
+                    {% for member in item.docs %}
+                    <p class="text-[9px] text-on-surface-variant/70 line-clamp-1">{{ member.title or member.filename or ("Doc #" ~ member.id) }}</p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            {# Individual doc row #}
+            {% set state = item.doc.pipeline_state.value if item.doc.pipeline_state else 'pending' %}
             <div class="flex gap-3 p-3 items-start">
                 <div class="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center
-                            {% if state == 'running' %}bg-tertiary/10{% elif state == 'failed' %}bg-error/10{% else %}bg-surface-container-high{% endif %}">
+                            {% if state == 'running' %}bg-tertiary/10{% else %}bg-surface-container-high{% endif %}">
                     <span class="material-symbols-outlined text-sm
-                                 {% if state == 'running' %}text-tertiary animate-pulse{% elif state == 'failed' %}text-error{% else %}text-on-surface-variant{% endif %}">
-                        {% if state == 'running' %}settings{% elif state == 'failed' %}error_outline{% else %}schedule{% endif %}
+                                 {% if state == 'running' %}text-tertiary animate-pulse{% else %}text-on-surface-variant{% endif %}">
+                        {% if state == 'running' %}settings{% else %}schedule{% endif %}
                     </span>
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ doc.title or doc.filename or ("Doc #" ~ doc.id) }}</p>
-                    {% if stage %}
-                    <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">{{ stage | replace("_", " ") }}</p>
+                    <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ item.doc.title or item.doc.filename or ("Doc #" ~ item.doc.id) }}</p>
+                    {% if item.stage %}
+                    <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">{{ item.stage | replace("_", " ") }}</p>
                     {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Failed docs — rendered flat; failures are individually actionable #}
+        {% if failed_docs %}
+        <div class="{% if queue_items %}border-t border-error/10 {% endif %}divide-y divide-outline-variant/5">
+            {% for doc in failed_docs %}
+            <div class="flex gap-3 p-3 items-start">
+                <div class="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center bg-error/10">
+                    <span class="material-symbols-outlined text-sm text-error">error_outline</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ doc.title or doc.filename or ("Doc #" ~ doc.id) }}</p>
+                    <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">failed</p>
                 </div>
             </div>
             {% endfor %}
         </div>
-        {% else %}
+        {% endif %}
+
         {# Idle state #}
+        {% if not queue_items and not failed_docs %}
         <div class="p-8 text-center">
             <span class="material-symbols-outlined text-outline/30 text-3xl mb-2 block">check_circle</span>
             <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">All doc pipelines idle</p>

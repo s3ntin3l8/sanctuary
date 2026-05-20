@@ -11,7 +11,7 @@ from app.dependencies import get_db
 from app.models.database import Document
 from app.models.enums import PipelineState
 from app.services.ai_inflight import count_inflight
-from app.services.pipeline_status import stages_dict
+from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,39 @@ def _current_stage(doc: Document) -> str:
     return ""
 
 
+def _build_queue_items(running: list[Document], pending: list[Document]) -> list[dict]:
+    """Group batch-scoped stages into one item per batch; leave others as individual doc items.
+
+    Preserves running-before-pending ordering; batch groups appear at the position
+    of their first member doc. Uses STAGE_REGISTRY.dispatch_arg == "batch_id" as the
+    canonical signal so future batch-scoped stages are grouped automatically.
+    """
+    items: list[dict] = []
+    batch_buckets: dict[tuple, int] = {}
+
+    for doc in running + pending:
+        stage = _current_stage(doc)
+        spec = STAGE_REGISTRY.get(stage) if stage else None
+        if spec and spec.dispatch_arg == "batch_id" and doc.ingest_batch_id is not None:
+            key = (stage, doc.ingest_batch_id)
+            if key in batch_buckets:
+                items[batch_buckets[key]]["docs"].append(doc)
+            else:
+                batch_buckets[key] = len(items)
+                items.append(
+                    {
+                        "type": "batch",
+                        "batch": doc.ingest_batch,
+                        "stage": stage,
+                        "docs": [doc],
+                    }
+                )
+        else:
+            items.append({"type": "doc", "doc": doc, "stage": stage})
+
+    return items
+
+
 @router.get("/badge")
 async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
     _fail_fast_reads(db)
@@ -80,16 +113,14 @@ async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
 async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db)):
     _fail_fast_reads(db)
     running, pending, failed = _get_queue_docs(db)
-    docs_with_stage = [(doc, _current_stage(doc)) for doc in running + pending + failed]
+    queue_items = _build_queue_items(running, pending)
     n_active = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
-            "running_docs": running,
-            "pending_docs": pending,
+            "queue_items": queue_items,
             "failed_docs": failed,
-            "docs_with_stage": docs_with_stage,
             "n_active": n_active,
             "n_running": len(running),
             "n_pending": len(pending),
@@ -120,16 +151,14 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
         dispatch_task(process_document_task, doc_id)
 
     running, pending, failed = _get_queue_docs(db)
-    docs_with_stage = [(doc, _current_stage(doc)) for doc in running + pending + failed]
+    queue_items = _build_queue_items(running, pending)
     n_active = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
-            "running_docs": running,
-            "pending_docs": pending,
+            "queue_items": queue_items,
             "failed_docs": failed,
-            "docs_with_stage": docs_with_stage,
             "n_active": n_active,
             "n_running": len(running),
             "n_pending": len(pending),
