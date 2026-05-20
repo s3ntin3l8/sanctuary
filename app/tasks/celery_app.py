@@ -14,7 +14,7 @@ def _suppress_httpx_noise(logger, **kwargs):
 after_setup_logger.connect(_suppress_httpx_noise)
 after_setup_task_logger.connect(_suppress_httpx_noise)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+from app.config import REDIS_URL, SCAN_POLL_INTERVAL_SECONDS
 
 celery_app = Celery(
     "sanctuary",
@@ -37,8 +37,6 @@ celery_app = Celery(
         "app.tasks.maintenance",
     ],
 )
-
-from app.config import SCAN_POLL_INTERVAL_SECONDS
 
 celery_app.conf.beat_schedule = {
     "sync-gmail-every-5-minutes": {

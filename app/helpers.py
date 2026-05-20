@@ -10,8 +10,8 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     IngestBatchStatus,
-    PipelineState,
 )
+from app.services.ai_inflight import count_inflight
 
 
 def build_sidebar_counts(db: Session) -> dict:
@@ -38,18 +38,11 @@ def build_sidebar_counts(db: Session) -> dict:
     triage_count = batch_count + loose_count
     total_docs = db.query(Document).count()
     case_count = db.query(Case).filter(Case.status != CaseStatus.CLOSED).count()
-    pipeline_active_count = (
-        db.query(Document)
-        .filter(
-            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PENDING])
-        )
-        .count()
-    )
     return {
         "triage_count": triage_count,
         "total_docs": total_docs,
         "case_count": case_count,
-        "pipeline_active_count": pipeline_active_count,
+        "ai_inflight_count": count_inflight(),
     }
 
 

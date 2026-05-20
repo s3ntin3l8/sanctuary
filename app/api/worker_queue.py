@@ -10,6 +10,7 @@ from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import Document
 from app.models.enums import PipelineState
+from app.services.ai_inflight import count_inflight
 from app.services.pipeline_status import stages_dict
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,7 @@ def _current_stage(doc: Document) -> str:
 @router.get("/badge")
 async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
     _fail_fast_reads(db)
-    running, pending, _ = _get_queue_docs(db)
-    n_active = len(running) + len(pending)
+    n_active = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_badge.html",
@@ -81,7 +81,7 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
     _fail_fast_reads(db)
     running, pending, failed = _get_queue_docs(db)
     docs_with_stage = [(doc, _current_stage(doc)) for doc in running + pending + failed]
-    n_active = len(running) + len(pending)
+    n_active = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
@@ -121,7 +121,7 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
 
     running, pending, failed = _get_queue_docs(db)
     docs_with_stage = [(doc, _current_stage(doc)) for doc in running + pending + failed]
-    n_active = len(running) + len(pending)
+    n_active = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",

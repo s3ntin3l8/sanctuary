@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import AI_READ_TIMEOUT, DATA_DIR
 from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
+from app.services.ai_inflight import track_ai_call
 from app.services.ai_provider import chat_provider
 from app.services.intelligence._json import parse_json_response
 from app.services.intelligence.prompts import (
@@ -327,98 +328,104 @@ def _stream_response(
     _drain_deadline: float | None = None
 
     try:
-        with httpx.Client(
-            timeout=httpx.Timeout(
-                connect=5.0, read=AI_READ_TIMEOUT, write=30.0, pool=10.0
-            )
-        ) as client:
-            with client.stream(
-                "POST", params["url"], json=params["json"], headers=params["headers"]
-            ) as response:
-                if not response.is_success:
-                    _body = response.read()
-                    _code = _parse_litellm_error_code(_body)
-                    if _code == "context_length_exceeded":
-                        logger.warning(
-                            "call %s: context length exceeded (HTTP %s) — "
-                            "prompt too large for model context window",
-                            debug_label,
-                            response.status_code,
+        with track_ai_call(debug_label):
+            with httpx.Client(
+                timeout=httpx.Timeout(
+                    connect=5.0, read=AI_READ_TIMEOUT, write=30.0, pool=10.0
+                )
+            ) as client:
+                with client.stream(
+                    "POST",
+                    params["url"],
+                    json=params["json"],
+                    headers=params["headers"],
+                ) as response:
+                    if not response.is_success:
+                        _body = response.read()
+                        _code = _parse_litellm_error_code(_body)
+                        if _code == "context_length_exceeded":
+                            logger.warning(
+                                "call %s: context length exceeded (HTTP %s) — "
+                                "prompt too large for model context window",
+                                debug_label,
+                                response.status_code,
+                            )
+                        raise httpx.HTTPStatusError(
+                            f"HTTP {response.status_code}"
+                            + (f" [{_code}]" if _code else ""),
+                            request=response.request,
+                            response=response,
                         )
-                    raise httpx.HTTPStatusError(
-                        f"HTTP {response.status_code}"
-                        + (f" [{_code}]" if _code else ""),
-                        request=response.request,
-                        response=response,
-                    )
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    chunk = chat_provider.parse_stream_line(line, ptype)
-                    if not chunk:
-                        continue
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        chunk = chat_provider.parse_stream_line(line, ptype)
+                        if not chunk:
+                            continue
 
-                    if chunk.get("usage"):
-                        final_usage = chunk["usage"]
+                        if chunk.get("usage"):
+                            final_usage = chunk["usage"]
 
-                    if chunk.get("done"):
-                        break
+                        if chunk.get("done"):
+                            break
 
-                    # After a watchdog fires we keep reading to reach the final
-                    # usage chunk (OpenAI sends it right before [DONE]) but
-                    # discard all content. Give up after 30 s if it never arrives.
-                    if _drain_mode:
+                        # After a watchdog fires we keep reading to reach the final
+                        # usage chunk (OpenAI sends it right before [DONE]) but
+                        # discard all content. Give up after 30 s if it never arrives.
+                        if _drain_mode:
+                            if (
+                                _drain_deadline is not None
+                                and time.perf_counter() > _drain_deadline
+                            ):
+                                logger.warning(
+                                    "call %s: drain timeout — giving up on usage chunk",
+                                    debug_label,
+                                )
+                                break
+                            continue
+
+                        if "thinking" in chunk:
+                            full_thinking += chunk["thinking"]
+                        if "response" in chunk:
+                            token = chunk["response"]
+                            if token:
+                                if ttfb_perf is None:
+                                    ttfb_perf = time.perf_counter()
+                                full_response += token
+
+                        # Abort content accumulation when thinking consumes budget
+                        # with zero response tokens; keep draining for usage chunk.
                         if (
-                            _drain_deadline is not None
-                            and time.perf_counter() > _drain_deadline
+                            not full_response
+                            and len(full_thinking) > _THINK_WATCHDOG_CHARS
+                            and (time.perf_counter() - start_perf)
+                            > _THINK_WATCHDOG_SECS
                         ):
                             logger.warning(
-                                "call %s: drain timeout — giving up on usage chunk",
+                                "call %s: thinking-loop watchdog triggered "
+                                "(%d thinking chars, %.0fs elapsed) — draining for usage",
                                 debug_label,
+                                len(full_thinking),
+                                time.perf_counter() - start_perf,
                             )
-                            break
-                        continue
+                            _drain_mode = True
+                            _drain_deadline = time.perf_counter() + 30.0
 
-                    if "thinking" in chunk:
-                        full_thinking += chunk["thinking"]
-                    if "response" in chunk:
-                        token = chunk["response"]
-                        if token:
-                            if ttfb_perf is None:
-                                ttfb_perf = time.perf_counter()
-                            full_response += token
-
-                    # Abort content accumulation when thinking consumes budget
-                    # with zero response tokens; keep draining for usage chunk.
-                    if (
-                        not full_response
-                        and len(full_thinking) > _THINK_WATCHDOG_CHARS
-                        and (time.perf_counter() - start_perf) > _THINK_WATCHDOG_SECS
-                    ):
-                        logger.warning(
-                            "call %s: thinking-loop watchdog triggered "
-                            "(%d thinking chars, %.0fs elapsed) — draining for usage",
-                            debug_label,
-                            len(full_thinking),
-                            time.perf_counter() - start_perf,
-                        )
-                        _drain_mode = True
-                        _drain_deadline = time.perf_counter() + 30.0
-
-                    # Abort content accumulation when response monologue consumes budget
-                    elif (
-                        len(full_response) > _RESPONSE_WATCHDOG_CHARS
-                        and (time.perf_counter() - start_perf) > _THINK_WATCHDOG_SECS
-                    ):
-                        logger.warning(
-                            "call %s: response-monologue watchdog triggered "
-                            "(%d response chars, %.0fs elapsed) — draining for usage",
-                            debug_label,
-                            len(full_response),
-                            time.perf_counter() - start_perf,
-                        )
-                        _drain_mode = True
-                        _drain_deadline = time.perf_counter() + 30.0
+                        # Abort content accumulation when response monologue consumes budget
+                        elif (
+                            len(full_response) > _RESPONSE_WATCHDOG_CHARS
+                            and (time.perf_counter() - start_perf)
+                            > _THINK_WATCHDOG_SECS
+                        ):
+                            logger.warning(
+                                "call %s: response-monologue watchdog triggered "
+                                "(%d response chars, %.0fs elapsed) — draining for usage",
+                                debug_label,
+                                len(full_response),
+                                time.perf_counter() - start_perf,
+                            )
+                            _drain_mode = True
+                            _drain_deadline = time.perf_counter() + 30.0
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)

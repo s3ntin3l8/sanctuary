@@ -5,6 +5,7 @@ import httpx
 from app.config import SessionLocal
 from app.models.database import Document
 from app.services.ai_config import get_embed_config
+from app.services.ai_inflight import track_ai_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +59,13 @@ async def generate_embedding(doc_id: int):
         )
         await embed_provider.get_type()
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                params["url"], json=params["json"], headers=params["headers"]
-            )
-            response.raise_for_status()
-            data = response.json()
+        async with track_ai_call_async(f"embed:doc:{doc_id}"):
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    params["url"], json=params["json"], headers=params["headers"]
+                )
+                response.raise_for_status()
+                data = response.json()
 
         embedding = None
         if "embedding" in data:
@@ -164,12 +166,15 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
                 params = await embed_provider.get_embedding_params(
                     cfg.embed_model, content_snippet
                 )
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        params["url"], json=params["json"], headers=params["headers"]
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+                async with track_ai_call_async(f"embed:doc:{doc.id}"):
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        response = await client.post(
+                            params["url"],
+                            json=params["json"],
+                            headers=params["headers"],
+                        )
+                        response.raise_for_status()
+                        data = response.json()
                 embedding = data.get("embedding") or (
                     data.get("data", [{}])[0].get("embedding")
                     if data.get("data")

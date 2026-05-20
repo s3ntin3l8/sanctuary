@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Case, Conversation, Document
 from app.repositories.chat import ChatRepository
 from app.services.ai_config import get_chat_config
+from app.services.ai_inflight import track_ai_call_async
 from app.services.ai_provider import chat_provider
 from app.services.chat.context_builder import (
     build_case_chat_prompt,
@@ -83,43 +84,44 @@ async def stream_answer(
     ptype = await chat_provider.get_type()
 
     full_response = ""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=90.0)) as client:
-        try:
-            async with client.stream(
-                "POST",
-                params["url"],
-                json=params["json"],
-                headers=params["headers"],
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    chunk = chat_provider.parse_stream_line(line, ptype)
-                    if not chunk:
-                        continue
-                    token = chunk.get("response", "")
-                    if token:
-                        full_response += token
-                        yield _sse({"type": "token", "t": token})
-                    if chunk.get("done"):
-                        break
-        except Exception as e:
-            err_str = str(e).lower()
-            if "context" in err_str and any(
-                w in err_str for w in ("size", "window", "exceeded", "length")
-            ):
-                logger.warning("Chat context too large for model: %s", e)
-                yield _sse(
-                    {
-                        "type": "token",
-                        "t": "\n\nThe conversation is too long for the model's context window. "
-                        "Start a new chat, or ask about a specific document rather than the full case.",
-                    }
-                )
-            else:
-                logger.error("Chat stream error: %s", e)
-                yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
+    async with track_ai_call_async(f"chat:{scope_type}:{scope_id}"):
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, read=90.0)) as client:
+            try:
+                async with client.stream(
+                    "POST",
+                    params["url"],
+                    json=params["json"],
+                    headers=params["headers"],
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        chunk = chat_provider.parse_stream_line(line, ptype)
+                        if not chunk:
+                            continue
+                        token = chunk.get("response", "")
+                        if token:
+                            full_response += token
+                            yield _sse({"type": "token", "t": token})
+                        if chunk.get("done"):
+                            break
+            except Exception as e:
+                err_str = str(e).lower()
+                if "context" in err_str and any(
+                    w in err_str for w in ("size", "window", "exceeded", "length")
+                ):
+                    logger.warning("Chat context too large for model: %s", e)
+                    yield _sse(
+                        {
+                            "type": "token",
+                            "t": "\n\nThe conversation is too long for the model's context window. "
+                            "Start a new chat, or ask about a specific document rather than the full case.",
+                        }
+                    )
+                else:
+                    logger.error("Chat stream error: %s", e)
+                    yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
 
     cited_ids, cited_refs = _extract_citations(full_response)
 

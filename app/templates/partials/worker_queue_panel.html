@@ -13,21 +13,13 @@
      x-cloak
      style="display: none;">
 
-    <div class="px-4 py-3 border-b border-outline-variant/10 bg-surface-container-high/50 flex items-center justify-between">
-        <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest">Processing Queue</h3>
-        <span class="bg-tertiary/10 text-tertiary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ sidebar_counts.pipeline_active_count }} Active</span>
-    </div>
-
-    {# Body — loaded immediately and polls itself. The `refresh-worker-queue`
-       event lets the error-state Retry button re-fire the request without
-       rebuilding any DOM. Response errors swap the placeholder for a busy
-       state so a contended endpoint doesn't leave the user staring at
-       "Loading…" forever. #}
+    {# Body — loaded immediately and polls itself. Header is part of the polled
+       body so the "X Active" count stays live. The `refresh-worker-queue` event
+       lets the Retry button re-fire without rebuilding DOM. #}
     <div hx-get="{{ request.app.url_path_for('worker_queue_panel_body') }}"
          hx-trigger="load, refresh-worker-queue from:body"
          hx-swap="outerHTML"
-         hx-on::response-error="this.innerHTML = document.getElementById('worker-queue-busy-tpl').innerHTML"
-         class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30">
+         class="flex-1 overflow-hidden flex flex-col">
         <div class="p-8 text-center">
             <span class="material-symbols-outlined text-outline/30 text-3xl mb-2 block">hourglass_empty</span>
             <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">Loading…</p>
@@ -45,7 +37,7 @@
         </div>
     </template>
 
-    <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 flex items-center justify-between">
+    <div class="p-2 bg-surface-container-high/30 border-t border-outline-variant/10 flex items-center justify-between shrink-0">
         <a href="{{ request.app.url_path_for('triage_page') }}" class="text-[8px] font-black text-on-surface-variant hover:text-primary uppercase tracking-widest transition-colors">Open Triage</a>
         <button hx-post="{{ request.app.url_path_for('retry_failed_docs') }}"
                 hx-target="#worker-queue-panel-body"

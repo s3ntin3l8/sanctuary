@@ -724,7 +724,7 @@ DEFAULT_SIDEBAR_COUNTS = {
     "pending_count": 0,
     "case_count": 0,
     "cost_count": 0,
-    "pipeline_active_count": 0,
+    "ai_inflight_count": 0,
 }
 
 
