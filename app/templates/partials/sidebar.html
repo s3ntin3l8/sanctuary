@@ -73,9 +73,14 @@
                  hx-trigger="every 5s"
                  hx-swap="outerHTML"
                  hx-sync="this:drop">
-                {% if sidebar_counts.get('ai_inflight_count', 0) > 0 %}
+                {% if sidebar_counts.get('queue_depth_count', 0) > 0 %}
                 <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-tertiary text-on-tertiary text-[9px] font-bold rounded-full border-2 border-surface-container-low animate-pulse">
-                    {{ sidebar_counts.get('ai_inflight_count', 0) }}
+                    {{ sidebar_counts.get('queue_depth_count', 0) }}
+                </span>
+                {% endif %}
+                {% if sidebar_counts.get('queue_failed_count', 0) > 0 %}
+                <span class="absolute -bottom-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-on-error text-[9px] font-bold rounded-full border-2 border-surface-container-low">
+                    {{ sidebar_counts.get('queue_failed_count', 0) }}
                 </span>
                 {% endif %}
             </div>

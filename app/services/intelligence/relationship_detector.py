@@ -126,6 +126,9 @@ def detect(doc_id: int) -> str | None:
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
+        from app.services.ai_provider import chat_provider
+
+        chat_provider.reload_from_db(db)
         doc = (
             db.query(Document)
             .options(defer(Document.content))

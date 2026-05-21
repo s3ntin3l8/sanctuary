@@ -60,6 +60,81 @@ def test_worker_queue_panel_endpoint_returns_200_when_quiet(app_client):
 
 
 @pytest.mark.unit
+def test_badge_reflects_db_queue_depth_not_redis(app_client, db_session, sample_case):
+    """Badge endpoint must count DB RUNNING+PENDING docs, not Redis sentinels.
+
+    Regression: previously the badge called count_inflight() (Redis), which
+    diverged from the modal's n_running (DB). Now both read from the same DB.
+    """
+    from app.models.enums import OriginatorType
+
+    doc = Document(
+        title="Test doc",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=PipelineState.RUNNING,
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    response = app_client.get("/api/worker/queue/badge")
+    assert response.status_code == 200
+    assert b"1" in response.content
+
+
+@pytest.mark.unit
+def test_badge_and_panel_header_agree(app_client, db_session, sample_case):
+    """Badge count must equal the panel header 'X Active' at the same DB snapshot."""
+    from app.models.enums import OriginatorType
+
+    for state in (PipelineState.RUNNING, PipelineState.PENDING):
+        db_session.add(
+            Document(
+                title=f"Doc {state}",
+                content="x",
+                case_id=sample_case.id,
+                originator_type=OriginatorType.COURT,
+                pipeline_state=state,
+            )
+        )
+    db_session.commit()
+
+    badge_resp = app_client.get("/api/worker/queue/badge")
+    panel_resp = app_client.get("/api/worker/queue/panel")
+    assert badge_resp.status_code == 200
+    assert panel_resp.status_code == 200
+    # Both should show 2 (1 running + 1 pending)
+    assert b"2" in badge_resp.content
+    assert b"2 Active" in panel_resp.content
+
+
+@pytest.mark.unit
+def test_ai_calls_chip_appears_when_inflight(app_client, monkeypatch):
+    """The 'X AI calls' chip appears in the panel body when count_inflight() > 0."""
+    import app.api.worker_queue as wq_module
+
+    monkeypatch.setattr(wq_module, "count_inflight", lambda: 3)
+
+    response = app_client.get("/api/worker/queue/panel")
+    assert response.status_code == 200
+    assert b"3" in response.content
+    assert b"AI calls" in response.content
+
+
+@pytest.mark.unit
+def test_ai_calls_chip_absent_when_idle(app_client, monkeypatch):
+    """The 'AI calls' chip must not appear when count_inflight() returns 0."""
+    import app.api.worker_queue as wq_module
+
+    monkeypatch.setattr(wq_module, "count_inflight", lambda: 0)
+
+    response = app_client.get("/api/worker/queue/panel")
+    assert response.status_code == 200
+    assert b"AI calls" not in response.content
+
+
+@pytest.mark.unit
 def test_build_queue_items_groups_batch_analysis_docs(db_session, sample_case):
     """Docs sharing BATCH_ANALYSIS + same batch_id collapse into one batch item."""
     from app.api.worker_queue import _build_queue_items

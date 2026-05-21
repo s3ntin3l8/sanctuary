@@ -81,7 +81,9 @@ def test_build_sub_bundles_single_root_returns_one(db_session):
     sub_bundles = build_sub_bundles(bundle)
 
     assert len(sub_bundles) == 1
-    assert sub_bundles[0].lead_doc.id == cover.id
+    assert (
+        sub_bundles[0].lead_doc.id == enc.id
+    )  # enclosure beats same-tier cover wrapper
     assert [d.id for _, d in sub_bundles[0].docs] == [cover.id, enc.id]
 
 
@@ -99,8 +101,8 @@ def test_build_sub_bundles_two_roots_returns_two(db_session):
 
 
 @pytest.mark.unit
-def test_lead_doc_picks_cover_letter_when_present(db_session):
-    """Cover-letter wins regardless of significance order."""
+def test_lead_doc_prefers_substantive_when_more_significant(db_session):
+    """CRITICAL substantive doc outranks INFORMATIONAL cover letter."""
     annex = _make_doc(
         db_session,
         title="Anlage",
@@ -120,7 +122,7 @@ def test_lead_doc_picks_cover_letter_when_present(db_session):
 
     sub_bundles = build_sub_bundles(bundle)
 
-    assert sub_bundles[0].lead_doc.id == cover.id
+    assert sub_bundles[0].lead_doc.id == annex.id
 
 
 @pytest.mark.unit
@@ -350,11 +352,52 @@ def test_pick_lead_doc_empty_returns_none():
 
 
 @pytest.mark.unit
-def test_pick_lead_doc_cover_letter_wins():
+def test_pick_lead_doc_demotes_cover_letter_on_tie():
+    """Same significance tier: substantive beats wrapper."""
     cover = _make_mock_doc(id=2, role=DocumentRole.COVER_LETTER)
     other = _make_mock_doc(id=1, role=DocumentRole.STANDALONE)
     result = _pick_lead_doc([(0, other), (0, cover)])
-    assert result.id == 2
+    assert result.id == 1
+
+
+@pytest.mark.unit
+def test_pick_lead_doc_substantive_wins_over_lower_significance_cover():
+    """Court routing scenario: CRITICAL substantive > ADMINISTRATIVE cover."""
+    cover = _make_mock_doc(
+        id=2,
+        role=DocumentRole.COVER_LETTER,
+        significance_tier=SignificanceTier.ADMINISTRATIVE,
+    )
+    beschluss = _make_mock_doc(
+        id=1, role=DocumentRole.STANDALONE, significance_tier=SignificanceTier.CRITICAL
+    )
+    result = _pick_lead_doc([(0, cover), (0, beschluss)])
+    assert result.id == 1
+
+
+@pytest.mark.unit
+def test_pick_lead_doc_high_significance_cover_still_wins():
+    """Lawyer scenario: CRITICAL cover (analysis letter) > INFORMATIONAL exhibit."""
+    cover = _make_mock_doc(
+        id=1,
+        role=DocumentRole.COVER_LETTER,
+        significance_tier=SignificanceTier.CRITICAL,
+    )
+    exhibit = _make_mock_doc(
+        id=2,
+        role=DocumentRole.ENCLOSURE,
+        significance_tier=SignificanceTier.INFORMATIONAL,
+    )
+    result = _pick_lead_doc([(0, cover), (0, exhibit)])
+    assert result.id == 1
+
+
+@pytest.mark.unit
+def test_pick_lead_doc_cover_letter_alone_still_leads():
+    """A cover letter is the lead when it's the only doc in the group."""
+    cover = _make_mock_doc(id=5, role=DocumentRole.COVER_LETTER)
+    result = _pick_lead_doc([(0, cover)])
+    assert result.id == 5
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +488,8 @@ def test_build_sub_bundles_manual_explicit_label_used():
 
 
 @pytest.mark.unit
-def test_build_sub_bundles_manual_cover_letter_is_lead():
+def test_build_sub_bundles_manual_substantive_beats_cover_on_tie():
+    """Same-tier docs: standalone beats cover-letter wrapper."""
     from app.services.triage_view import build_sub_bundles
 
     sg = make_sg(id=1, sort_order=0)
@@ -455,7 +499,7 @@ def test_build_sub_bundles_manual_cover_letter_is_lead():
     ]
     bundle = FakeBundle(batch_id=1, documents=docs)
     result = build_sub_bundles(bundle)
-    assert result[0].lead_doc.id == 11
+    assert result[0].lead_doc.id == 10
 
 
 @pytest.mark.unit

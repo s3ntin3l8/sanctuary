@@ -272,6 +272,9 @@ def generate(case_id: str) -> None:
     db: Session = SessionLocal()
     try:
         cfg = get_chat_config(db)
+        from app.services.ai_provider import chat_provider
+
+        chat_provider.reload_from_db(db)
         case = db.query(Case).filter(Case.id == case_id).first()
         if not case:
             raise ValueError(f"Case {case_id} not found")

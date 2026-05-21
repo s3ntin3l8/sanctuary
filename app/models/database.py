@@ -225,6 +225,19 @@ class Document(Base):
         foreign_keys="[LegalCost.source_document_id]",
     )
 
+    @property
+    def pipeline_stages(self) -> dict:
+        """Dict view of stage_rows — keyed by stage name, values match stages_dict() shape.
+
+        Templates use doc.pipeline_stages; the underlying data lives in
+        document_pipeline_stages rows (doc.stage_rows). This property bridges
+        the two so every template gets live data without touching SQL directly.
+        Lazy import avoids a circular dependency with pipeline_status.
+        """
+        from app.services.pipeline_status import stages_dict
+
+        return stages_dict(self)
+
     @validates("case_id")
     def validate_case_id(self, key, case_id):
         return normalize_case_id(case_id)

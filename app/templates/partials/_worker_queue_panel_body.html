@@ -14,12 +14,12 @@
     {# Panel header — lives here so it re-renders with every poll tick #}
     <div class="px-4 py-3 border-b border-outline-variant/10 bg-surface-container-high/50 flex items-center justify-between shrink-0">
         <h3 class="text-[10px] font-black text-on-surface uppercase tracking-widest">Processing Queue</h3>
-        <span class="bg-tertiary/10 text-tertiary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ n_running }} Active</span>
+        <span class="bg-tertiary/10 text-tertiary text-[9px] font-bold px-2 py-0.5 rounded-full">{{ n_running + n_pending }} Active</span>
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container-lowest/30">
         {# Doc-stage breakdown chips #}
-        {% if n_running > 0 or n_pending > 0 or n_failed > 0 %}
+        {% if n_running > 0 or n_pending > 0 or n_failed > 0 or n_active_ai > 0 %}
         <div class="px-3 py-2 flex flex-wrap gap-1 border-b border-outline-variant/10 bg-surface-container-low">
             <span class="text-[8px] font-black text-on-surface-variant uppercase tracking-widest self-center mr-1">Doc stages:</span>
             {% if n_running > 0 %}
@@ -38,6 +38,12 @@
             <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-error-container/20 text-error">
                 <span class="material-symbols-outlined text-[10px]">error_outline</span>
                 {{ n_failed }} failed
+            </span>
+            {% endif %}
+            {% if n_active_ai > 0 %}
+            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-secondary-container/40 text-on-secondary-container">
+                <span class="material-symbols-outlined text-[10px]">bolt</span>
+                {{ n_active_ai }} AI calls
             </span>
             {% endif %}
         </div>

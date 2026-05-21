@@ -101,11 +101,22 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
 @router.get("/badge")
 async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
     _fail_fast_reads(db)
-    n_active = count_inflight()
+    n_queue = (
+        db.query(Document)
+        .filter(
+            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PENDING])
+        )
+        .count()
+    )
+    n_failed = (
+        db.query(Document)
+        .filter(Document.pipeline_state == PipelineState.FAILED)
+        .count()
+    )
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_badge.html",
-        {"n_active": n_active},
+        {"n_queue": n_queue, "n_failed": n_failed},
     )
 
 
@@ -114,14 +125,14 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
     _fail_fast_reads(db)
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
-    n_active = count_inflight()
+    n_active_ai = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
             "queue_items": queue_items,
             "failed_docs": failed,
-            "n_active": n_active,
+            "n_active_ai": n_active_ai,
             "n_running": len(running),
             "n_pending": len(pending),
             "n_failed": len(failed),
@@ -152,14 +163,14 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
 
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
-    n_active = count_inflight()
+    n_active_ai = count_inflight()
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
             "queue_items": queue_items,
             "failed_docs": failed,
-            "n_active": n_active,
+            "n_active_ai": n_active_ai,
             "n_running": len(running),
             "n_pending": len(pending),
             "n_failed": len(failed),

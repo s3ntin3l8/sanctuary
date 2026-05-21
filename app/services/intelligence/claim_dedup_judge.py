@@ -83,6 +83,9 @@ def propose_merges_for_new_claim(
     Returns the proposals created (empty list if none).
     """
     cfg = get_chat_config(db)
+    from app.services.ai_provider import chat_provider
+
+    chat_provider.reload_from_db(db)
     nearest = asyncio.run(
         nearest_claims(
             new_claim.claim_text,
@@ -261,6 +264,9 @@ async def find_duplicates_for_case(
     from app.repositories.claim import ClaimRepository
 
     cfg = get_chat_config(db)
+    from app.services.ai_provider import chat_provider
+
+    chat_provider.reload_from_db(db)
     repo = ClaimRepository(db)
     claims = list(repo.claims_for_case(case_id))
     if not claims:

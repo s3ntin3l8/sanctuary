@@ -41,17 +41,25 @@ class SubBundleView:
 
 
 def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document | None:
-    """Cover-letter wins; else most-significant; else lowest id (stable). None for empty group."""
+    """Pick the substantive lead doc for a sub-group. None for empty group.
+
+    Cover letters are wrappers ('cover letters are relays; collapse the wrapper').
+    The enclosed substantive doc owns the group's identity for both the bolded
+    label and the default HUD focus.
+
+    Ranking key (lowest tuple wins):
+      1. significance_tier  — critical < significant < informational < administrative
+      2. is_cover_letter    — substantive beats wrapper within the same tier
+      3. id                 — stable tiebreak
+    """
     docs = [d for _, d in group]
     if not docs:
         return None
-    cover = next((d for d in docs if d.role == DocumentRole.COVER_LETTER), None)
-    if cover:
-        return cover
     return min(
         docs,
         key=lambda d: (
             _SIG_ORDER.get(d.significance_tier, 99),
+            1 if d.role == DocumentRole.COVER_LETTER else 0,
             d.id or 0,
         ),
     )

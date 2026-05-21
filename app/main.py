@@ -31,6 +31,7 @@ from app.config import (
     templates,
 )
 from app.constants import REVIEW_FIELD_LABELS
+from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
 from app.helpers import (
     format_days_ago,
@@ -82,16 +83,6 @@ class SuccessfulAccessFilter(logging.Filter):
         except (TypeError, ValueError):
             pass
         return True
-
-
-class LocalTimeFormatter(logging.Formatter):
-    """Formatter that renders asctime in the user-configured timezone."""
-
-    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
-        from app.services.timezone_service import get_user_tz
-
-        dt = datetime.fromtimestamp(record.created, tz=get_user_tz())
-        return dt.strftime(datefmt) if datefmt else dt.isoformat(timespec="seconds")
 
 
 def setup_logging():

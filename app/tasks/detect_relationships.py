@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage, StageStatus
@@ -126,6 +127,19 @@ def detect_relationships_task(self, doc_id: int):
         logger.error(
             f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
         )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))
+        finally:
+            db.close()
+        logger.info(
+            "Doc #%d: relationships failed — still dispatching claims",
+            doc_id,
+        )
+        _dispatch_claims_safely(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))

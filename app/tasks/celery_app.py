@@ -13,10 +13,18 @@ def _suppress_httpx_noise(logger, **kwargs):
         logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-def _setup_file_logging(logger, loglevel, **kwargs):
+def _setup_worker_logging(logger, loglevel, **kwargs):
+    from app.core.log_formatter import LocalTimeFormatter
+
+    fmt = LocalTimeFormatter("%(asctime)s | [%(levelname)s] %(name)s: %(message)s")
+    root = logging.getLogger()
+
+    # Re-format handlers Celery already installed (e.g. its hijacked StreamHandler).
+    for h in root.handlers:
+        h.setFormatter(fmt)
+
     if os.getenv("SANCTUARY_LOG_FILE", "1") == "0":
         return
-    root = logging.getLogger()
     # Guard against duplicate registration (beat scheduler fires this signal too).
     if any(
         isinstance(h, RotatingFileHandler)
@@ -32,14 +40,12 @@ def _setup_file_logging(logger, loglevel, **kwargs):
         backupCount=5,
     )
     fh.setLevel(loglevel)
-    fh.setFormatter(
-        logging.Formatter("%(asctime)s | [%(levelname)s] %(name)s: %(message)s")
-    )
+    fh.setFormatter(fmt)
     root.addHandler(fh)
 
 
 after_setup_logger.connect(_suppress_httpx_noise)
-after_setup_logger.connect(_setup_file_logging)
+after_setup_logger.connect(_setup_worker_logging)
 after_setup_task_logger.connect(_suppress_httpx_noise)
 
 from app.config import REDIS_URL, SCAN_POLL_INTERVAL_SECONDS

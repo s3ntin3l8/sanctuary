@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage
@@ -90,6 +91,14 @@ def extract_entities_task(self, doc_id: int):
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
         logger.error(f"Doc {doc_id} entity extraction task failed: {e}", exc_info=True)
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.ENTITIES, db, error=str(e))
+        finally:
+            db.close()
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.ENTITIES, db, error=str(e))

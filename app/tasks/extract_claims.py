@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage
@@ -106,6 +107,16 @@ def extract_claims_task(self, doc_id: int):
                 db.close()
             raise self.retry(exc=e, countdown=countdown) from e
         logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
+        finally:
+            db.close()
+        logger.info("Doc #%d: claims failed — still triggering case brief", doc_id)
+        _trigger_case_brief(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.CLAIMS, db, error=str(e))
