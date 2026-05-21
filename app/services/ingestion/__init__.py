@@ -13,6 +13,7 @@ from app.services.ingestion.extractors import (
     extract_issued_date,
     extract_originator,
     extract_sender,
+    infer_case_type_from_az,
     normalize_az_court,
 )
 from app.services.ingestion.service import (
@@ -38,6 +39,7 @@ __all__ = [
     "extract_internal_id",
     "extract_originator",
     "extract_sender",
+    "infer_case_type_from_az",
     "normalize_az_court",
     "IngestionError",
     "compute_review_reasons",

@@ -170,7 +170,8 @@ Court Document Detection:
 - court_name: full official name of the issuing court (e.g. "Amtsgericht Ingolstadt"). Null if not a court document.
 - subject_matter: legal matter from the AZ suffix or document heading (e.g. "§ 1671 BGB, Sorgerecht"). Null if not determinable.
 - appeal_deadline_days: formal appeal period in days only when this document is a ruling that states one (e.g. 14, 28). Null otherwise.
-- az_court (single AZ rule): if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (found on page 1 letterhead). Suffixes (e.g. 'e', 'eA', 'B') are critical — preserve them."""
+- az_court (single AZ rule): if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (found on page 1 letterhead). Suffixes (e.g. 'e', 'eA', 'B') are critical — preserve them.
+- case_type: classify the legal domain as "family" when you see Familiensache, Sorgerecht, Umgangsrecht, Unterhalt, Kindesunterhalt, Ehesache, Scheidung, § 1671/1684 BGB, or FamFG keywords; "administrative" for Verwaltungsgericht/VwGO; "criminal" for Strafkammer/StPO; "civil" for all other civil proceedings. Null when content is insufficient to classify."""
 
 
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.

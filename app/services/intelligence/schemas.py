@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import (
     CaseStatus,
+    CaseType,
     ClaimEvidenceRole,
     ClaimType,
     DocumentType,
@@ -300,4 +301,8 @@ class Phase1Metadata(BaseModel):
     subject_matter: str | None = None
     appeal_deadline_days: int | None = Field(
         None, description="Formal appeal deadline days if this is a ruling."
+    )
+    case_type: CaseType | None = Field(
+        None,
+        description="Legal domain of the case: civil, family, administrative, or criminal. Null when not determinable from document content alone.",
     )

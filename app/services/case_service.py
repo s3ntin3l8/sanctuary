@@ -240,6 +240,25 @@ def _derive_case_title_from_subject(
     return remainder.strip()[:80] or None
 
 
+def _maybe_set_case_type_from_az(case: "Case", az: str) -> None:
+    """Update case.case_type from a canonical AZ if still at the CIVIL default.
+
+    Only writes when case_type == CIVIL (the unset sentinel).  Also flips
+    assume_worst_case → False when transitioning to FAMILY, provided the flag
+    is still at its default True (§ 81 FamFG: each party bears own costs).
+    """
+    from app.services.ingestion.extractors import infer_case_type_from_az
+
+    if case.case_type != CaseType.CIVIL:
+        return
+    inferred = infer_case_type_from_az(az)
+    if not inferred or inferred == CaseType.CIVIL:
+        return
+    case.case_type = inferred
+    if inferred == CaseType.FAMILY and case.assume_worst_case is True:
+        case.assume_worst_case = False
+
+
 def get_or_create_case_from_reference(
     db: Session,
     internal_id: str,
@@ -341,6 +360,10 @@ def get_or_create_case_from_reference(
     )
     db.add(new_proc)
     db.flush()
+
+    # Infer case type from az_court letter code (e.g. "3 F 426/25" → FAMILY)
+    if az_court:
+        _maybe_set_case_type_from_az(new_case, az_court)
 
     return new_case, new_proc, True
 
@@ -1381,3 +1404,36 @@ def _compute_dormancy_alert(case, db) -> str | None:
     court = oldest_silent_proc.court_name or "Unknown court"
     az = oldest_silent_proc.az_court or "no docket"
     return f"{court} ({az}) has had no activity for {oldest_days} days."
+
+
+def backfill_case_types(db: Session) -> dict[str, int]:
+    """Scan all Proceedings with az_court and update parent Cases still at CIVIL.
+
+    Iterates by started_at ASC so the earliest AZ wins when a case has multiple
+    proceedings.  First non-CIVIL inference locks the case — subsequent calls
+    for the same case are no-ops (guard in _maybe_set_case_type_from_az).
+
+    Returns {"updated": N, "skipped": M, "errors": E}.
+    """
+    counts: dict[str, int] = {"updated": 0, "skipped": 0, "errors": 0}
+    proceedings = (
+        db.query(Proceeding)
+        .filter(Proceeding.az_court.isnot(None))
+        .order_by(Proceeding.started_at.asc().nullsfirst())
+        .all()
+    )
+    for proc in proceedings:
+        case = proc.case
+        if case is None:
+            counts["errors"] += 1
+            continue
+        if case.case_type != CaseType.CIVIL:
+            counts["skipped"] += 1
+            continue
+        before = case.case_type
+        _maybe_set_case_type_from_az(case, proc.az_court)
+        if case.case_type != before:
+            counts["updated"] += 1
+        else:
+            counts["skipped"] += 1
+    return counts

@@ -41,6 +41,16 @@ def parse_originator_type(value: str | None) -> "OriginatorType | None":
         return None
 
 
+def parse_case_type(value: str | None) -> "CaseType | None":
+    """Parse a raw string into a CaseType, returning None on invalid input."""
+    if not value:
+        return None
+    try:
+        return CaseType(value.lower().strip())
+    except ValueError:
+        return None
+
+
 class PipelineStage(enum.StrEnum):
     EXTRACT = "extract"
     METADATA = "metadata"

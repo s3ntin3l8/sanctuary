@@ -174,6 +174,38 @@ def test_normalize_az_court_canonicalizes():
 
 
 @pytest.mark.unit
+def test_infer_case_type_from_az():
+    from app.models.enums import CaseType
+    from app.services.ingestion.extractors import infer_case_type_from_az
+
+    # Family: any letter segment containing "F"
+    assert infer_case_type_from_az("3 F 426/25") == CaseType.FAMILY
+    assert infer_case_type_from_az("26 UF 288/26") == CaseType.FAMILY
+    assert infer_case_type_from_az("26 UF 288/26 E") == CaseType.FAMILY  # with suffix
+    assert infer_case_type_from_az("5 WF 100/24") == CaseType.FAMILY
+    assert infer_case_type_from_az("2 SF 50/25") == CaseType.FAMILY
+
+    # Civil
+    assert infer_case_type_from_az("12 O 345/25") == CaseType.CIVIL
+    assert infer_case_type_from_az("8 U 200/24") == CaseType.CIVIL
+
+    # Administrative
+    assert infer_case_type_from_az("3 VG 100/25") == CaseType.ADMINISTRATIVE
+
+    # Criminal (post-uppercase)
+    assert infer_case_type_from_az("5 CS 77/25") == CaseType.CRIMINAL
+    assert infer_case_type_from_az("2 KLS 10/24") == CaseType.CRIMINAL
+
+    # Unknown codes — no false positives
+    assert infer_case_type_from_az("22 T 342/26") is None
+    assert infer_case_type_from_az("4 S 100/25") is None
+
+    # Non-canonical input → None (function requires normalize_az_court output)
+    assert infer_case_type_from_az("003F426/25") is None
+    assert infer_case_type_from_az("") is None
+
+
+@pytest.mark.unit
 def test_extract_originator_court_score_uses_header_only():
     from app.services.ingestion.extractors import extract_originator
 

@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from app.models.enums import OriginatorType, ProceedingCourtLevel
+from app.models.enums import CaseType, OriginatorType, ProceedingCourtLevel
 
 CASE_ID_PATTERNS = [
     re.compile(r"(?:\||^|\s+)(ADV-\d{3,4}-[A-Z]{1,3})\b", re.IGNORECASE),
@@ -418,6 +418,38 @@ def normalize_az_court(value: str | None) -> str | None:
     if not _AZ_CANONICAL_RE.match(result):
         return None
     return result
+
+
+def infer_case_type_from_az(az: str) -> CaseType | None:
+    """Infer CaseType from a canonical court Aktenzeichen.
+
+    Requires canonical form as produced by normalize_az_court() — uppercased,
+    leading-zero-stripped, space-normalised.  Returns None when no mapping exists
+    (unknown letter codes), preventing false positives.
+
+    Family rule: any letter segment containing "F" maps to FAMILY.
+    This covers F, UF, WF, SF, VF, EF and OLG variants conservatively.
+
+    Examples:
+        "3 F 426/25"    → FAMILY
+        "26 UF 288/26"  → FAMILY
+        "12 O 345/25"   → CIVIL
+        "22 T 342/26"   → None  (unknown)
+    """
+    m = re.match(r"^\d+\s([A-Z]{1,3})\s\d+/\d+", az)
+    if not m:
+        return None
+    code = m.group(1)  # already uppercase from normalize_az_court
+
+    if "F" in code:
+        return CaseType.FAMILY
+    if code == "VG":
+        return CaseType.ADMINISTRATIVE
+    if code in ("CS", "KLS", "DS"):  # Cs/KLs/Ds after normalize_az_court .upper()
+        return CaseType.CRIMINAL
+    if code in ("O", "U"):
+        return CaseType.CIVIL
+    return None
 
 
 def extract_az_court_from_subject(subject: str) -> str | None:

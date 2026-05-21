@@ -195,6 +195,15 @@ def _apply_proceeding_extraction(
         if doc.ingest_batch and not doc.ingest_batch.proceeding_id:
             doc.ingest_batch.proceeding_id = doc.proceeding_id
 
+        # Infer case type from the AZ letter code (e.g. "3 F 426/25" → FAMILY)
+        if extracted_az and doc.case_id:
+            from app.models.database import Case
+            from app.services.case_service import _maybe_set_case_type_from_az
+
+            parent_case = db.query(Case).filter(Case.id == doc.case_id).first()
+            if parent_case:
+                _maybe_set_case_type_from_az(parent_case, extracted_az)
+
         return None
 
     current_proc = (
@@ -276,6 +285,15 @@ def _apply_proceeding_extraction(
             ProceedingCourtLevel.OTHER,
         ):
             current_proc.court_level = extracted_level
+
+    # Infer case type from the AZ letter code whenever we have one
+    if extracted_az and doc.case_id:
+        from app.models.database import Case
+        from app.services.case_service import _maybe_set_case_type_from_az
+
+        parent_case = db.query(Case).filter(Case.id == doc.case_id).first()
+        if parent_case:
+            _maybe_set_case_type_from_az(parent_case, extracted_az)
 
     return None
 
@@ -451,6 +469,27 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     skip_reason = _apply_proceeding_extraction(doc, summary_data, db)
     if skip_reason:
         logger.debug("Doc %d: proceeding extraction skipped: %s", doc.id, skip_reason)
+
+    # 6. AI case_type fallback — only fires when AZ inference (step 5) left the
+    #    case at the CIVIL default AND the AI extracted a non-CIVIL type from text.
+    ai_ct_raw = summary_data.get("case_type")
+    if ai_ct_raw and doc.case_id and doc.case_id != "_TRIAGE":
+        from app.models.database import Case
+        from app.models.enums import CaseType, parse_case_type
+
+        parsed_ct = parse_case_type(ai_ct_raw)
+        if parsed_ct and parsed_ct != CaseType.CIVIL:
+            ai_case = db.query(Case).filter(Case.id == doc.case_id).first()
+            if ai_case and ai_case.case_type == CaseType.CIVIL:
+                ai_case.case_type = parsed_ct
+                if parsed_ct == CaseType.FAMILY and ai_case.assume_worst_case is True:
+                    ai_case.assume_worst_case = False
+                logger.info(
+                    "Doc %d: AI inferred case_type=%s for case %s",
+                    doc.id,
+                    parsed_ct,
+                    doc.case_id,
+                )
 
 
 def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
