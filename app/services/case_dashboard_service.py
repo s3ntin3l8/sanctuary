@@ -48,6 +48,15 @@ from app.services.case_service import (
 from app.services.case_timeline_service import CaseTimelineService
 from app.services.claim_service import ClaimService
 
+# Display order for party roles in the sidebar: own first, unknown last.
+_PARTY_ROLE_ORDER: dict[str, int] = {
+    "own": 0,
+    "court": 1,
+    "opposing": 2,
+    "third_party": 3,
+    "unknown": 4,
+}
+
 
 class CaseDashboardService:
     """Gather every piece of data the case dashboard page needs."""
@@ -261,7 +270,10 @@ class CaseDashboardService:
             "timeline": timeline,
             "action_items": action_items,
             "new_docs": new_docs_for_template,
-            "parties": case.parties or [],
+            "parties": sorted(
+                case.parties or [],
+                key=lambda p: _PARTY_ROLE_ORDER.get(p.get("role", "unknown"), 99),
+            ),
             "brief": case.ai_brief,
             "financials": financials,
             "initial": initial,

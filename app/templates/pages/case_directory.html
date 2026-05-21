@@ -83,63 +83,88 @@
         </template>
 
         <template x-for="c in filteredCases" :key="c.id">
-            <a :href="'/cases/' + c.id"
-               class="grid items-center gap-4 px-8 py-3 row-hover cursor-pointer border-b border-outline-variant no-underline text-on-surface"
-               style="grid-template-columns: 14px 120px 2fr 1.3fr 1fr 110px 90px 70px 30px;">
+            <div>
+                <a :href="'/cases/' + c.id"
+                   class="grid items-center gap-4 px-8 py-3 row-hover cursor-pointer border-b border-outline-variant no-underline text-on-surface"
+                   :class="c.pending_close ? 'border-b-0' : ''"
+                   style="grid-template-columns: 14px 120px 2fr 1.3fr 1fr 110px 90px 70px 30px;">
 
-                {# Tier Dot #}
-                <span class="w-2 h-2 rounded-full flex-shrink-0"
-                      :class="c.dormant ? 'bg-outline-variant' : (c.urgency === 'critical' ? 'bg-critical' : (c.urgency === 'delta' ? 'bg-amber' : 'bg-originator-own'))"></span>
+                    {# Tier Dot #}
+                    <span class="w-2 h-2 rounded-full flex-shrink-0"
+                          :class="c.pending_close ? 'bg-amber' : (c.dormant ? 'bg-outline-variant' : (c.urgency === 'critical' ? 'bg-critical' : (c.urgency === 'delta' ? 'bg-amber' : 'bg-originator-own')))"></span>
 
-                {# ID #}
-                <span class="font-mono text-[11.5px] text-on-surface-variant" x-text="c.id"></span>
+                    {# ID #}
+                    <span class="font-mono text-[11.5px] text-on-surface-variant" x-text="c.id"></span>
 
-                {# Client / Opposing #}
-                <div class="min-w-0">
-                    <div class="text-[13px] font-medium truncate" x-text="c.title"></div>
-                    <div class="text-[11px] truncate text-on-surface-variant">
-                        <span x-text="c.client"></span> <span class="opacity-50">vs.</span> <span x-text="c.opposing"></span>
-                    </div>
-                </div>
-
-                {# Forum #}
-                <div class="min-w-0">
-                    <div class="text-[12px] truncate" x-text="c.proceeding_title || 'No proceeding'"></div>
-                    <div class="text-[11px] text-on-surface-variant truncate" x-text="c.matter_label"></div>
-                </div>
-
-                {# Status #}
-                <div class="min-w-0">
-                    <div class="text-[12px] truncate" x-text="c.status_label"></div>
-                    <div class="text-[11px] text-on-surface-variant" x-text="c.last_activity_label"></div>
-                </div>
-
-                {# Next Deadline #}
-                <div class="min-w-0">
-                    <template x-if="c.next_deadline">
-                        <div class="text-[11.5px] font-mono px-2 py-0.5 rounded inline-block border"
-                             :class="c.next_deadline_urgency === 'critical' ? 'bg-critical/10 text-critical border-critical' : 'bg-amber/10 text-amber border-amber'"
-                             x-text="c.next_deadline">
+                    {# Client / Opposing #}
+                    <div class="min-w-0">
+                        <div class="text-[13px] font-medium truncate" x-text="c.title"></div>
+                        <div class="text-[11px] truncate text-on-surface-variant">
+                            <span x-text="c.client"></span> <span class="opacity-50">vs.</span> <span x-text="c.opposing"></span>
                         </div>
-                    </template>
-                </div>
+                    </div>
 
-                {# Exposure #}
-                <div class="text-right font-mono text-[12px]" x-text="c.exposure"></div>
+                    {# Forum #}
+                    <div class="min-w-0">
+                        <div class="text-[12px] truncate" x-text="c.proceeding_title || 'No proceeding'"></div>
+                        <div class="text-[11px] text-on-surface-variant truncate" x-text="c.matter_label"></div>
+                    </div>
 
-                {# Docs #}
-                <div class="text-right flex items-center justify-end gap-1.5">
-                    <span class="text-[12px]" x-text="c.doc_count"></span>
-                    <template x-if="c.new_docs > 0">
-                        <span class="text-[10px] font-mono px-1 rounded bg-amber/20 text-amber border border-amber/30" x-text="'+' + c.new_docs"></span>
-                    </template>
-                </div>
+                    {# Status #}
+                    <div class="min-w-0">
+                        <div class="text-[12px] truncate" x-text="c.status_label"></div>
+                        <div class="text-[11px] text-on-surface-variant" x-text="c.last_activity_label"></div>
+                    </div>
 
-                {# Chevron #}
-                <div class="flex justify-end">
-                    <span class="material-symbols-outlined text-[14px] text-on-surface-variant">chevron_right</span>
-                </div>
-            </a>
+                    {# Next Deadline #}
+                    <div class="min-w-0">
+                        <template x-if="c.next_deadline">
+                            <div class="text-[11.5px] font-mono px-2 py-0.5 rounded inline-block border"
+                                 :class="c.next_deadline_urgency === 'critical' ? 'bg-critical/10 text-critical border-critical' : 'bg-amber/10 text-amber border-amber'"
+                                 x-text="c.next_deadline">
+                            </div>
+                        </template>
+                    </div>
+
+                    {# Exposure #}
+                    <div class="text-right font-mono text-[12px]" x-text="c.exposure"></div>
+
+                    {# Docs #}
+                    <div class="text-right flex items-center justify-end gap-1.5">
+                        <span class="text-[12px]" x-text="c.doc_count"></span>
+                        <template x-if="c.new_docs > 0">
+                            <span class="text-[10px] font-mono px-1 rounded bg-amber/20 text-amber border border-amber/30" x-text="'+' + c.new_docs"></span>
+                        </template>
+                    </div>
+
+                    {# Chevron #}
+                    <div class="flex justify-end">
+                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant">chevron_right</span>
+                    </div>
+                </a>
+
+                {# Pending-close inline banner #}
+                <template x-if="c.pending_close">
+                    <div class="px-8 py-2 bg-amber-500/5 border-b border-amber-500/30 flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-[13px] text-amber-600 dark:text-amber-400">pending_actions</span>
+                            <span class="text-[10px] text-amber-600 dark:text-amber-400 font-bold">AI suggests closing this case</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                @click.prevent="fetch('/cases/' + c.id + '/confirm-close', {method: 'POST'}).then(r => { if (r.ok || r.status === 204) window.location.reload(); })"
+                                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded bg-slate-600 text-white hover:opacity-90 transition-colors cursor-pointer whitespace-nowrap">
+                                Close Case
+                            </button>
+                            <button
+                                @click.prevent="fetch('/cases/' + c.id + '/dismiss-close', {method: 'POST'}).then(r => { if (r.ok || r.status === 204) window.location.reload(); })"
+                                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded bg-amber-500/10 text-amber-600 border border-amber-500/30 hover:bg-amber-500/20 transition-colors cursor-pointer whitespace-nowrap">
+                                Keep Open
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
         </template>
 
         {# Spacer #}
@@ -162,6 +187,7 @@ function casesPage() {
             status: "{{ c.status.value }}",
             status_label: "{{ c.status_line|escape }}",
             is_draft: {{ 'true' if c.is_draft else 'false' }},
+            pending_close: {{ 'true' if c.pending_close else 'false' }},
             dormant: {{ 'true' if c.is_dormant else 'false' }},
             proceeding_title: "{{ c.active_proceeding.title|escape if c.active_proceeding else 'General' }}",
             matter_label: "{{ c.active_proceeding.matter_type|escape if c.active_proceeding else '' }}",

@@ -36,8 +36,8 @@
                      : 'hover:bg-surface-container-high/60'"
             class="w-full flex items-center gap-2.5 px-2 py-1 rounded text-left transition-colors focus:outline-none">
       <span class="h-2 w-2 rounded-full flex-shrink-0 {{ dot_class }}"></span>
-      <span class="text-[12.5px] text-on-surface">{{ role_label }}</span>
-      <span class="text-[11.5px] text-on-surface-variant ml-auto truncate max-w-[120px]"
+      <span class="text-[12.5px] text-on-surface w-[78px] flex-shrink-0">{{ role_label }}</span>
+      <span class="text-[11.5px] text-on-surface-variant truncate min-w-0"
             title="{{ display_name }}">{{ display_name }}</span>
     </button>
   </li>
@@ -47,11 +47,43 @@
 <p class="text-sm italic text-on-surface-variant mb-4">No parties detected yet.</p>
 {% endif %}
 
-{# ── Opposing parties editor ─────────────────────────────────────── #}
+{# ── Opposing parties ─────────────────────────────────────────────── #}
 {% if case %}
-<div class="border-t border-outline-variant/10 pt-3 mt-1">
-  <p class="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant mb-1.5">Opposing parties</p>
-  <form hx-post="{{ request.app.url_path_for('save_opposing_parties', case_id=case.id) }}"
+<div class="border-t border-outline-variant/10 pt-3 mt-1"
+     x-data="{ editing: false }">
+
+  {# Header: label + edit toggle #}
+  <div class="flex items-center justify-between mb-1.5">
+    <p class="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant">
+      Opposing parties
+    </p>
+    <button type="button"
+            @click="editing = !editing"
+            :title="editing ? 'Cancel' : 'Edit'"
+            class="text-on-surface-variant/40 hover:text-on-surface-variant transition-colors focus:outline-none -mr-0.5">
+      <span class="material-symbols-outlined text-[14px]" x-text="editing ? 'close' : 'edit'">edit</span>
+    </button>
+  </div>
+
+  {# Read view #}
+  <div x-show="!editing">
+    {% if case.opposing_parties %}
+    <p class="text-[11.5px] text-on-surface-variant leading-relaxed">
+      {{ case.opposing_parties | join(', ') }}
+    </p>
+    {% else %}
+    <p class="text-[11px] italic text-on-surface-variant/40">None set</p>
+    {% endif %}
+    {% if saved %}
+    <span class="text-[10px] font-bold text-primary flex items-center gap-1 mt-1.5">
+      <span class="material-symbols-outlined text-[13px]">check_circle</span> Saved
+    </span>
+    {% endif %}
+  </div>
+
+  {# Edit view #}
+  <form x-show="editing"
+        hx-post="{{ request.app.url_path_for('save_opposing_parties', case_id=case.id) }}"
         hx-target="#case-parties-panel"
         hx-swap="innerHTML"
         class="space-y-1.5">
@@ -70,13 +102,9 @@
               class="px-3 py-1 bg-surface-container-high text-on-surface-variant text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-surface-container-high/80 transition-all">
         Re-enrich
       </button>
-      {% if saved %}
-      <span class="text-[10px] font-bold text-primary flex items-center gap-1">
-        <span class="material-symbols-outlined text-[13px]">check_circle</span> Saved
-      </span>
-      {% endif %}
     </div>
     <div id="reenrich-msg-{{ case.id }}" class="text-[10px] text-primary font-bold min-h-[1rem]"></div>
   </form>
+
 </div>
 {% endif %}

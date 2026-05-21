@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.models.enums import CaseStatus, ProceedingStatus
+from app.models.enums import CaseStatus
 from app.services.intelligence.case_brief_generator import (
     _apply_brief,
     _compute_parties,
@@ -118,8 +118,12 @@ def test_apply_brief_updates_case_status_when_detected_differs():
 
 
 @pytest.mark.unit
-def test_apply_brief_closed_cascades_to_proceedings():
-    """detected_status=closed updates case.status and cascade-closes proceedings."""
+def test_apply_brief_closed_sets_pending_not_status():
+    """detected_status=closed sets pending_close=True and does NOT immediately close the case.
+
+    The user must confirm via the banner; the AI suggestion is held in pending_close.
+    Proceedings are only cascade-closed after the user confirms (confirm_close_case endpoint).
+    """
     case = _make_case(status=CaseStatus.POST_TRIAL)
     db = MagicMock()
     result = {
@@ -132,9 +136,15 @@ def test_apply_brief_closed_cascades_to_proceedings():
 
     _apply_brief(case, result, db)
 
-    assert case.status == CaseStatus.CLOSED
-    db.query.return_value.filter.return_value.update.assert_called_once_with(
-        {"status": ProceedingStatus.CLOSED}
+    # Status must NOT have been changed — pending_close is raised instead
+    assert case.status == CaseStatus.POST_TRIAL
+    assert case.pending_close is True
+    # Proceedings cascade must NOT happen until the user confirms
+    db.query.return_value.filter.return_value.update.assert_not_called()
+    # The rationale is stored in the brief for the banner to display
+    assert (
+        case.ai_brief.get("close_suggestion_rationale")
+        == "All appeals exhausted; no open action items."
     )
 
 

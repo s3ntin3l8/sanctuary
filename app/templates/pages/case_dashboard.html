@@ -13,7 +13,7 @@
       <top_bar>             48px
       <secondary_header>    breadcrumbs + filter chips
       <grid>                flex-1
-        left  340px   AI Brief  / Parties / Financials  (+ privacy footer)
+        left  360px   AI Brief  / Parties / Financials  (+ privacy footer)
         right flex-1  flex-col
           view switcher (graph | truth | timeline | fin)  flex-1
           action_items  280px, under graph only
@@ -36,9 +36,14 @@
   {% include "partials/dashboard/_draft_banner.html" %}
   {% endif %}
 
+  {# ── Pending-close suggestion banner — shown when AI suggests closing the case #}
+  {% if case.pending_close %}
+  {% include "partials/dashboard/_pending_close_banner.html" %}
+  {% endif %}
+
   {# ── Main body grid ────────────────────────────────────────────── #}
   <div class="flex-1 grid gap-0 overflow-hidden"
-       style="grid-template-columns: 300px 1fr;">
+       style="grid-template-columns: 360px 1fr;">
 
     {# ── Left column: AI Brief / Parties / Financials + privacy footer ── #}
     <aside class="flex flex-col overflow-hidden border-r"

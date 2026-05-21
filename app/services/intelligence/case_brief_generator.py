@@ -7,12 +7,11 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session, defer
 
 from app.config import SessionLocal
-from app.models.database import ActionItem, Case, Document, Proceeding
+from app.models.database import ActionItem, Case, Document
 from app.models.enums import (
     ActionItemStatus,
     CaseStatus,
     OriginatorType,
-    ProceedingStatus,
 )
 from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
@@ -167,14 +166,17 @@ def _apply_brief(case: Case, result: dict, db: Session) -> None:
             )
 
     if new_status and new_status != case.status:
-        logger.info(
-            f"Case {case.id}: status {case.status} → {new_status} ({status_rationale})"
-        )
-        case.status = new_status
         if new_status == CaseStatus.CLOSED:
-            db.query(Proceeding).filter(Proceeding.case_id == case.id).update(
-                {"status": ProceedingStatus.CLOSED}
+            # Do NOT close silently — raise a pending suggestion for user confirmation.
+            logger.info(
+                f"Case {case.id}: AI suggests CLOSED ({status_rationale}) → pending_close=True"
             )
+            case.pending_close = True
+        else:
+            logger.info(
+                f"Case {case.id}: status {case.status} → {new_status} ({status_rationale})"
+            )
+            case.status = new_status
 
     case.ai_brief = {
         "posture": posture,
@@ -182,6 +184,7 @@ def _apply_brief(case: Case, result: dict, db: Session) -> None:
         "next_move": next_move,
         "detected_status": str(case.status),
         "status_rationale": status_rationale,
+        "close_suggestion_rationale": status_rationale if case.pending_close else "",
     }
     case.ai_brief_updated_at = datetime.now(UTC)
 

@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.constants import CASE_STATUS_META
 from app.models.database import (
     ActionItem,
     Case,
@@ -874,9 +875,10 @@ class CaseService:
             "title": case.title,
             "status": case.status,
             "is_draft": case.is_draft,
-            "status_line": case.ai_brief.get("status_line", "Active")
-            if case.ai_brief and isinstance(case.ai_brief, dict)
-            else "Active",
+            "pending_close": case.pending_close,
+            "status_line": CASE_STATUS_META.get(case.status, {}).get(
+                "label", case.status.value
+            ),
             "next_action": next_action,
             "exposure_eur": case.total_cost_exposure / 100.0
             if case.total_cost_exposure

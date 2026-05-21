@@ -514,6 +514,59 @@ async def save_opposing_parties(
     )
 
 
+@router.post("/{case_id}/confirm-close")
+async def confirm_close_case(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Confirm an AI-suggested case closure: set status to CLOSED and cascade proceedings."""
+    from datetime import UTC, datetime
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    case.status = CaseStatus.CLOSED
+    case.closed_at = datetime.now(UTC)
+    case.pending_close = False
+    db.query(Proceeding).filter(Proceeding.case_id == case_id).update(
+        {"status": ProceedingStatus.CLOSED}
+    )
+    db.commit()
+
+    response = Response(status_code=204)
+    response.headers["HX-Redirect"] = str(
+        request.app.url_path_for("case_detail", case_id=case_id)
+    )
+    return response
+
+
+@router.post("/{case_id}/dismiss-close")
+async def dismiss_close_case(
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+):
+    """Dismiss an AI-suggested case closure: clear the pending flag, keep status unchanged."""
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    case.pending_close = False
+    if case.ai_brief and isinstance(case.ai_brief, dict):
+        brief = dict(case.ai_brief)
+        brief.pop("close_suggestion_rationale", None)
+        case.ai_brief = brief
+    db.commit()
+
+    response = Response(status_code=204)
+    response.headers["HX-Redirect"] = str(
+        request.app.url_path_for("case_detail", case_id=case_id)
+    )
+    return response
+
+
 @router.post("/{case_id}/reenrich")
 @limiter.limit("5/minute")
 async def reenrich_case(

@@ -1,0 +1,33 @@
+{# Pending-close confirmation banner — rendered on the case dashboard when the AI
+   has suggested closing the case but user confirmation is still required.
+   Required context: case (Case ORM object), request.
+#}
+<div class="px-6 py-3 bg-amber-500/5 border-b border-amber-500/30 flex items-center justify-between gap-4 shrink-0">
+    <div class="min-w-0 flex items-center gap-3">
+        <span class="material-symbols-outlined text-base text-amber-600 dark:text-amber-400 shrink-0">pending_actions</span>
+        <div>
+            <p class="text-[10px] font-bold text-amber-600 dark:text-amber-400">AI suggests closing: {{ case.id }}</p>
+            <p class="text-[9px] text-on-surface-variant">
+                {% if case.ai_brief and case.ai_brief.get("close_suggestion_rationale") %}
+                    {{ case.ai_brief.get("close_suggestion_rationale") }}
+                {% else %}
+                    No open proceedings or action items detected.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="flex gap-2 shrink-0">
+        <button hx-post="{{ request.app.url_path_for('confirm_close_case', case_id=case.id) }}"
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful){ window.location.reload(); }"
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-slate-600 text-white hover:opacity-90 transition-colors cursor-pointer whitespace-nowrap">
+            Close Case
+        </button>
+        <button hx-post="{{ request.app.url_path_for('dismiss_close_case', case_id=case.id) }}"
+                hx-swap="none"
+                hx-on:htmx:after-request="if(event.detail.successful){ window.location.reload(); }"
+                class="text-[9px] font-bold uppercase tracking-wider px-3 py-1.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/30 hover:bg-amber-500/20 transition-colors cursor-pointer whitespace-nowrap">
+            Keep Open
+        </button>
+    </div>
+</div>

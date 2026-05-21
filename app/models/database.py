@@ -376,6 +376,7 @@ class Case(Base):
     ingest_date = Column(DateTime, default=_utcnow)
     closed_at = Column(DateTime, nullable=True)
     is_draft = Column(Boolean, default=False, nullable=False)
+    pending_close = Column(Boolean, default=False, nullable=False)
 
     case_type = Column(SAEnum(CaseType), default=CaseType.CIVIL, nullable=False)
     # Pre-ruling: assume we lose and must pay opposing counsel (worst case).
