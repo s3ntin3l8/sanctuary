@@ -18,12 +18,36 @@ def _trigger_case_brief(doc_id: int) -> None:
     db = SessionLocal()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        if doc and doc.case_id and doc.case_id != "_TRIAGE":
-            generate_case_brief_task.delay(doc.case_id)
+        if not doc or not doc.case_id or doc.case_id == "_TRIAGE":
+            return
+        case_id = doc.case_id
     except Exception as e:
-        logger.warning(f"Could not trigger case brief for doc {doc_id}: {e}")
+        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        return
     finally:
         db.close()
+
+    # Dedup: collapse all near-simultaneous dispatches (e.g. N docs in the same
+    # case all completing CLAIMS at once) into a single brief task.  The 30 s
+    # window is short enough that a second upload batch still gets its own brief.
+    # Falls back to always-dispatch when Redis is unavailable.
+    _DEDUP_TTL = 30
+    lock_key = f"sanctuary:case_brief_pending:{case_id}"
+    try:
+        from app.services.ai_inflight import _get_sync_client
+
+        if not _get_sync_client().set(lock_key, "1", nx=True, ex=_DEDUP_TTL):
+            logger.debug(
+                "Case %s brief already queued — skipping duplicate dispatch", case_id
+            )
+            return
+    except Exception:
+        pass  # Redis unavailable — fall through and always dispatch
+
+    try:
+        generate_case_brief_task.delay(case_id)
+    except Exception as e:
+        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
 
 
 @celery_app.task(
