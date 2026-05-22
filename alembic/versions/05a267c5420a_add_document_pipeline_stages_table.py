@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import inspect as sa_inspect
 
 # revision identifiers, used by Alembic.
 revision: str = "05a267c5420a"
@@ -36,32 +37,45 @@ def _coerce_dt(val: str | None) -> str | None:
 def upgrade() -> None:
     import json
 
-    op.create_table(
-        "document_pipeline_stages",
-        sa.Column(
-            "document_id",
-            sa.Integer(),
-            sa.ForeignKey("documents.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("stage", sa.String(), nullable=False),
-        sa.Column("status", sa.String(), nullable=False),
-        sa.Column("started_at", sa.DateTime(), nullable=True),
-        sa.Column("completed_at", sa.DateTime(), nullable=True),
-        sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("reason", sa.String(), nullable=True),
-        sa.Column("attempt", sa.Integer(), nullable=True),
-        sa.Column("max_attempts", sa.Integer(), nullable=True),
-        sa.Column("next_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("document_id", "stage"),
-    )
-    op.create_index("ix_dps_status", "document_pipeline_stages", ["status"])
-    op.create_index(
-        "ix_dps_stage_status", "document_pipeline_stages", ["stage", "status"]
-    )
-
-    # Backfill from JSON
     conn = op.get_bind()
+    inspector = sa_inspect(conn)
+
+    # Idempotency: the DDL below is auto-committed in SQLite, so a prior
+    # partial run may have left the table (and indexes) already created.
+    if "document_pipeline_stages" not in inspector.get_table_names():
+        op.create_table(
+            "document_pipeline_stages",
+            sa.Column(
+                "document_id",
+                sa.Integer(),
+                sa.ForeignKey("documents.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column("stage", sa.String(), nullable=False),
+            sa.Column("status", sa.String(), nullable=False),
+            sa.Column("started_at", sa.DateTime(), nullable=True),
+            sa.Column("completed_at", sa.DateTime(), nullable=True),
+            sa.Column("error", sa.Text(), nullable=True),
+            sa.Column("reason", sa.String(), nullable=True),
+            sa.Column("attempt", sa.Integer(), nullable=True),
+            sa.Column("max_attempts", sa.Integer(), nullable=True),
+            sa.Column("next_at", sa.DateTime(), nullable=True),
+            sa.PrimaryKeyConstraint("document_id", "stage"),
+        )
+        op.create_index("ix_dps_status", "document_pipeline_stages", ["status"])
+        op.create_index(
+            "ix_dps_stage_status", "document_pipeline_stages", ["stage", "status"]
+        )
+
+    # Backfill from old pipeline_stages JSON column — guard against absence.
+    # The column may have been removed by a prior migration or schema reset
+    # before this backfill point was reached; if so there is nothing to migrate.
+    doc_cols = {
+        r[1] for r in conn.execute(sa.text("PRAGMA table_info(documents)")).fetchall()
+    }
+    if "pipeline_stages" not in doc_cols:
+        return
+
     rows = conn.execute(
         sa.text(
             "SELECT id, pipeline_stages FROM documents WHERE pipeline_stages IS NOT NULL"

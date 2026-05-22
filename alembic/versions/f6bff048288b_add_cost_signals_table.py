@@ -29,57 +29,71 @@ _BACKFILL_KINDS = {"streitwert", "cost_ruling", "pkh_grant", "pkh_denied"}
 
 
 def upgrade() -> None:
-    op.create_table(
-        "cost_signals",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("case_id", sa.String(), nullable=False),
-        sa.Column("proceeding_id", sa.Integer(), nullable=True),
-        sa.Column("source_document_id", sa.Integer(), nullable=False),
-        sa.Column(
-            "signal_type",
-            sa.Enum(
-                "streitwert",
-                "cost_ruling",
-                "pkh_grant",
-                "pkh_denied",
-                name="costsignaltype",
+    from sqlalchemy import inspect as sa_inspect
+
+    conn = op.get_bind()
+    inspector = sa_inspect(conn)
+
+    # Idempotency: DDL auto-commits in SQLite, so a prior partial run may have
+    # created the table and indexes before the backfill failed.
+    if "cost_signals" not in inspector.get_table_names():
+        op.create_table(
+            "cost_signals",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("case_id", sa.String(), nullable=False),
+            sa.Column("proceeding_id", sa.Integer(), nullable=True),
+            sa.Column("source_document_id", sa.Integer(), nullable=False),
+            sa.Column(
+                "signal_type",
+                sa.Enum(
+                    "streitwert",
+                    "cost_ruling",
+                    "pkh_grant",
+                    "pkh_denied",
+                    name="costsignaltype",
+                ),
+                nullable=False,
             ),
-            nullable=False,
-        ),
-        sa.Column("amount", sa.Float(), nullable=True),
-        sa.Column("allocation", sa.JSON(), nullable=True),
-        sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("issued_at", sa.DateTime(), nullable=True),
-        sa.Column("ingest_date", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["case_id"], ["cases.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["proceeding_id"], ["proceedings.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["source_document_id"], ["documents.id"], ondelete="CASCADE"
-        ),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "source_document_id", "signal_type", name="uq_cost_signal_doc_type"
-        ),
-    )
-    # Column-level indexes (column has index=True in model)
-    op.create_index("ix_cost_signals_id", "cost_signals", ["id"])
-    op.create_index("ix_cost_signals_case_id", "cost_signals", ["case_id"])
-    op.create_index("ix_cost_signals_proceeding_id", "cost_signals", ["proceeding_id"])
-    op.create_index("ix_cost_signals_signal_type", "cost_signals", ["signal_type"])
-    op.create_index("ix_cost_signals_issued_at", "cost_signals", ["issued_at"])
-    # Composite index for "current signal of this type for proceeding" lookups
-    op.create_index(
-        "ix_cost_signals_proc_type",
-        "cost_signals",
-        ["proceeding_id", "signal_type"],
-    )
+            sa.Column("amount", sa.Float(), nullable=True),
+            sa.Column("allocation", sa.JSON(), nullable=True),
+            sa.Column("description", sa.Text(), nullable=True),
+            sa.Column("issued_at", sa.DateTime(), nullable=True),
+            sa.Column("ingest_date", sa.DateTime(), nullable=False),
+            sa.ForeignKeyConstraint(["case_id"], ["cases.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(
+                ["proceeding_id"], ["proceedings.id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["source_document_id"], ["documents.id"], ondelete="CASCADE"
+            ),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint(
+                "source_document_id", "signal_type", name="uq_cost_signal_doc_type"
+            ),
+        )
+        # Column-level indexes (column has index=True in model)
+        op.create_index("ix_cost_signals_id", "cost_signals", ["id"])
+        op.create_index("ix_cost_signals_case_id", "cost_signals", ["case_id"])
+        op.create_index(
+            "ix_cost_signals_proceeding_id", "cost_signals", ["proceeding_id"]
+        )
+        op.create_index("ix_cost_signals_signal_type", "cost_signals", ["signal_type"])
+        op.create_index("ix_cost_signals_issued_at", "cost_signals", ["issued_at"])
+        # Composite index for "current signal of this type for proceeding" lookups
+        op.create_index(
+            "ix_cost_signals_proc_type",
+            "cost_signals",
+            ["proceeding_id", "signal_type"],
+        )
 
     # Backfill from Document.cost_delta — only the four orphan kinds.
-    # Invoice/vorschuss kinds already live in legal_costs (via prior
-    # ensure_ledger_row_for_signal calls); we leave them alone.
-    conn = op.get_bind()
+    # Guard: column may be absent if removed by a prior migration or schema reset.
+    doc_cols = {
+        r[1] for r in conn.execute(sa.text("PRAGMA table_info(documents)")).fetchall()
+    }
+    if "cost_delta" not in doc_cols:
+        return
+
     rows = conn.execute(
         sa.text(
             "SELECT id, case_id, proceeding_id, cost_delta, issued_date, ingest_date "

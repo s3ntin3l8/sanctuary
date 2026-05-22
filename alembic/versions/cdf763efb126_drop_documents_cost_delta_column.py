@@ -14,6 +14,7 @@ Irreversible — Phase 1's backfill is the data migration path forward.
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -24,6 +25,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Guard: column may be absent if removed by a prior migration or schema reset.
+    conn = op.get_bind()
+    col_names = {
+        r[1] for r in conn.execute(sa.text("PRAGMA table_info(documents)")).fetchall()
+    }
+    if "cost_delta" not in col_names:
+        return
+
     with op.batch_alter_table("documents") as batch_op:
         batch_op.drop_column("cost_delta")
 

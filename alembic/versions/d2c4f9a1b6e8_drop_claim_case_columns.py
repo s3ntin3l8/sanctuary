@@ -28,6 +28,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa  # noqa: F401  (alembic helper imports it implicitly)
 from alembic import op
+from sqlalchemy import inspect as sa_inspect
 
 revision: str = "d2c4f9a1b6e8"
 down_revision: str | Sequence[str] | None = "c11a3e5d2b7f"
@@ -60,17 +61,27 @@ def upgrade() -> None:
             f"Re-run Wave 1's c11a3e5d2b7f backfill first."
         )
 
+    # Guard: only drop indexes that actually exist. Migration d4e5f6a7b8c1
+    # recreated the claims table from sqlite_master without preserving indexes
+    # (a since-fixed bug), so these indexes may be absent on databases that
+    # ran through that migration before the fix landed.
+    existing_idx = {idx["name"] for idx in sa_inspect(bind).get_indexes("claims")}
+
     # Drop indexes that reference the columns being dropped FIRST. Without
     # this, batch_alter_table reflects the live schema, recreates the same
     # indexes, and fails on CREATE INDEX … (proceeding_id) because the
     # column is gone.
     with op.batch_alter_table("claims") as batch:
-        batch.drop_index("ix_claims_case")
-        batch.drop_index("ix_claims_case_status")
-        batch.drop_index("ix_claims_proceeding")
-        batch.drop_index("ix_claims_case_id")
-        batch.drop_index("ix_claims_proceeding_id")
-        batch.drop_index("ix_claims_source_document_id")
+        for idx_name in (
+            "ix_claims_case",
+            "ix_claims_case_status",
+            "ix_claims_proceeding",
+            "ix_claims_case_id",
+            "ix_claims_proceeding_id",
+            "ix_claims_source_document_id",
+        ):
+            if idx_name in existing_idx:
+                batch.drop_index(idx_name)
         batch.drop_column("case_id")
         batch.drop_column("proceeding_id")
         batch.drop_column("source_document_id")

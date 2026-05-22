@@ -64,7 +64,16 @@ def detect_relationships_task(self, doc_id: int):
         from app.models.database import Document
 
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        stages = stages_dict(doc) if doc else {}
+        if doc is None:
+            logger.warning(
+                "Doc #%d: not found — skipping relationship detection", doc_id
+            )
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "document_not_found",
+            }
+        stages = stages_dict(doc)
         enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
         if enrich_status != StageStatus.COMPLETED.value:
             mark_skipped(

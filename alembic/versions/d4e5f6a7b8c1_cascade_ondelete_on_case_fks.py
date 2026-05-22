@@ -18,23 +18,23 @@ Choices per table:
 - ClaimEvidence.claim_id       NOT NULL  → CASCADE
 - ClaimEvidence.document_id    NOT NULL  → CASCADE
 
-Implementation: SQLite cannot ALTER an existing FK constraint, and Alembic's
-`batch_alter_table(copy_from=..., recreate="always")` does not propagate the
-new FK definitions from the model into the regenerated CREATE TABLE — it uses
-the autoloaded structure for constraints. So we use the SQLite-recommended
-"create new, copy, drop old, rename" pattern manually, sourcing the new
-table SQL from SQLAlchemy's `CreateTable` compiled against the model's
-metadata (which carries the new ondelete clauses).
+Implementation: SQLite cannot ALTER an existing FK constraint. We use the
+SQLite-recommended "create new, copy, drop old, rename" pattern. The new table
+SQL is derived from sqlite_master (the ACTUAL live schema, not the ORM model),
+with FK ON DELETE clauses patched via regex. This avoids the model-ahead bug
+where Base.metadata may already include columns added by later migrations,
+causing INSERT … SELECT to fail with "no such column".
+
+The DROP TABLE IF EXISTS at the start of each table's processing makes the
+migration idempotent: a leftover _alembic_batch_* zombie from a prior failed
+run is cleaned up automatically on retry.
 """
 
+import re
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import sqlite as sqlite_dialect
-from sqlalchemy.schema import CreateIndex, CreateTable
-
-from app.models.database import Base
 
 revision: str = "d4e5f6a7b8c1"
 down_revision: str | Sequence[str] | None = "c3d4e5f6a7b9"
@@ -42,56 +42,96 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-_TABLES = [
-    "proceedings",
-    "ingest_batches",
-    "action_items",
-    "claims",
-    "claim_evidence",
-    "legal_costs",
-    "entities",
-]
+# Maps each table to the FK column(s) that need an ON DELETE clause added.
+_FK_ONDELETE: dict[str, dict[str, str]] = {
+    "proceedings": {"case_id": "CASCADE"},
+    "ingest_batches": {"case_id": "SET NULL"},
+    "action_items": {"case_id": "CASCADE"},
+    "claims": {"case_id": "CASCADE"},
+    "claim_evidence": {"claim_id": "CASCADE", "document_id": "CASCADE"},
+    "legal_costs": {"case_id": "CASCADE"},
+    "entities": {"case_id": "CASCADE"},
+}
 
 
-def _column_names(table: sa.Table) -> list[str]:
-    return [c.name for c in table.columns]
+def _patch_ondelete(sql: str, col_ondelete: dict[str, str]) -> str:
+    """Add or replace ON DELETE clauses on specific FK columns in a CREATE TABLE SQL."""
+    for col, action in col_ondelete.items():
+        sql = re.sub(
+            rf"(FOREIGN KEY\s*\(\s*{re.escape(col)}\s*\)\s*REFERENCES\s+\w+\s*\(\s*\w+\s*\))"
+            r"(?:\s+ON DELETE \w+)?",
+            rf"\1 ON DELETE {action}",
+            sql,
+        )
+    return sql
 
 
-def _recreate_with_new_fks(table_name: str) -> None:
-    table = Base.metadata.tables[table_name]
-    cols = _column_names(table)
-    cols_csv = ", ".join(cols)
+def _recreate_with_new_fks(table_name: str, col_ondelete: dict[str, str]) -> None:
+    tmp = f"_alembic_batch_{table_name}"
+    conn = op.get_bind()
 
-    new_table_sql = str(
-        CreateTable(table).compile(dialect=sqlite_dialect.dialect())
-    ).strip()
-    # Rename the model's table to a temp name in the SQL so we can keep the
-    # original name for the live table during the copy.
-    tmp_table_name = f"_alembic_batch_{table_name}"
-    new_table_sql_renamed = new_table_sql.replace(
-        f"CREATE TABLE {table_name} (", f"CREATE TABLE {tmp_table_name} ("
+    # Idempotency: drop any zombie temp table left by a previous failed run.
+    op.execute(sa.text(f"DROP TABLE IF EXISTS {tmp}"))
+
+    # Source the ACTUAL current schema from sqlite_master, not from Base.metadata.
+    # Using the model here would include columns added by later migrations that are
+    # not yet in the live table, causing the INSERT … SELECT to fail.
+    row = conn.execute(
+        sa.text("SELECT sql FROM sqlite_master WHERE type='table' AND name=:n"),
+        {"n": table_name},
+    ).fetchone()
+    original_sql: str = row[0]
+
+    # Patch the FK ON DELETE clauses and rename for the temp table.
+    # sqlite_master may store the table name with or without double-quotes
+    # depending on how the table was originally created, so handle both.
+    new_sql = _patch_ondelete(original_sql, col_ondelete)
+    new_sql = re.sub(
+        rf'CREATE\s+TABLE\s+(?:"{re.escape(table_name)}"|{re.escape(table_name)})',
+        f"CREATE TABLE {tmp}",
+        new_sql,
+        count=1,
     )
 
-    op.execute(new_table_sql_renamed)
+    # Column list from PRAGMA — guaranteed to match the source table exactly.
+    # Read BEFORE the DROP below; PRAGMA returns nothing once the table is gone.
+    db_cols = [
+        r[1]
+        for r in conn.execute(sa.text(f"PRAGMA table_info({table_name})")).fetchall()
+    ]
+    cols_csv = ", ".join(db_cols)
+
+    # Collect index SQL BEFORE DROP TABLE — DROP TABLE wipes them from sqlite_master.
+    index_sqls = [
+        r[0]
+        for r in conn.execute(
+            sa.text(
+                "SELECT sql FROM sqlite_master"
+                " WHERE type='index' AND tbl_name=:n AND sql IS NOT NULL"
+            ),
+            {"n": table_name},
+        ).fetchall()
+    ]
+
+    op.execute(sa.text(new_sql))
     op.execute(
-        f"INSERT INTO {tmp_table_name} ({cols_csv}) SELECT {cols_csv} FROM {table_name}"
+        sa.text(f"INSERT INTO {tmp} ({cols_csv}) SELECT {cols_csv} FROM {table_name}")
     )
-    op.execute(f"DROP TABLE {table_name}")
-    op.execute(f"ALTER TABLE {tmp_table_name} RENAME TO {table_name}")
+    op.execute(sa.text(f"DROP TABLE {table_name}"))
+    op.execute(sa.text(f"ALTER TABLE {tmp} RENAME TO {table_name}"))
 
-    # Re-create indexes from the model. DROP TABLE wiped them along with
-    # the old table, so we need to emit them fresh.
-    for index in table.indexes:
-        op.execute(str(CreateIndex(index).compile(dialect=sqlite_dialect.dialect())))
+    # Re-create indexes on the newly renamed table.
+    for idx_sql in index_sqls:
+        op.execute(sa.text(idx_sql))
 
 
 def upgrade() -> None:
-    op.execute("PRAGMA foreign_keys=OFF")
+    op.execute(sa.text("PRAGMA foreign_keys=OFF"))
     try:
-        for table_name in _TABLES:
-            _recreate_with_new_fks(table_name)
+        for table_name, col_ondelete in _FK_ONDELETE.items():
+            _recreate_with_new_fks(table_name, col_ondelete)
     finally:
-        op.execute("PRAGMA foreign_keys=ON")
+        op.execute(sa.text("PRAGMA foreign_keys=ON"))
 
 
 def downgrade() -> None:

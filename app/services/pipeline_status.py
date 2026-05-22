@@ -918,6 +918,22 @@ def _update_stage(
         params,
     )
     if result.rowcount == 0:
+        # Guard: document may have been deleted between task dispatch and
+        # execution (stale Celery task). If it's gone, skip the INSERT
+        # rather than raising an IntegrityError on the FK constraint.
+        doc_exists = db.execute(
+            text("SELECT 1 FROM documents WHERE id = :id LIMIT 1"),
+            {"id": doc_id},
+        ).scalar()
+        if doc_exists is None:
+            logger.warning(
+                "pipeline_status: doc %d not found — skipping stage insert "
+                "(stage=%s status=%s)",
+                doc_id,
+                sk,
+                status.value,
+            )
+            return
         ins: dict = {"_doc_id": doc_id, "_stage": sk, "_status": status.value}
         for k in _ALLOWED_EXTRA_KEYS:
             ins[f"_k_{k}"] = extra_sets.get(k)
