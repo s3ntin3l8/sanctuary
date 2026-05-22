@@ -111,6 +111,7 @@ def test_migration_skips_missing_file(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "WARN" in captured.out
     db.commit.assert_called_once()  # still commits (nothing to commit, but no crash)
+    assert docs[0].file_path == str(missing_path)  # file_path unchanged
 
 
 @pytest.mark.asyncio

@@ -51,6 +51,8 @@ def run_migration(dry_run: bool = True) -> tuple[int, int]:
 
     Handles both absolute paths (e.g. /…/data/_TRIAGE/doc.pdf) and relative
     paths (e.g. _TRIAGE/doc.pdf) — batch_orchestrator stores absolute paths.
+    Migrated documents retain absolute-path format (consistent with batch_orchestrator);
+    the move_document_file_on_assignment event listener normalises to relative on confirmation.
 
     Returns (moved_count, skipped_count).
     """
