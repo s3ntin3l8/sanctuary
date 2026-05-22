@@ -99,26 +99,30 @@ def create_from_payload(
         except (ValueError, TypeError):
             supersedes_date = None
         if supersedes_date:
+            # Match by date alone — the AI may classify the same real-world
+            # event with different action_types across documents (a hearing
+            # showing up as "court_date" in the rescheduling notice but
+            # "deadline" in the original Ladung). The supersedes contract is
+            # "the old date is void," so any action on that date for this
+            # case is invalidated.
             deleted = (
                 db.query(ActionItem)
                 .filter(
                     ActionItem.case_id == case_id,
                     ActionItem.due_date == supersedes_date,
-                    ActionItem.action_type == ActionItemType(raw_type),
                 )
                 .delete(synchronize_session=False)
             )
             if deleted:
                 logger.info(
                     "ActionItem: removed %d superseded item(s) for case=%s "
-                    "date=%s type=%s (replaced by %s)",
+                    "date=%s (replaced by %s)",
                     deleted,
                     case_id,
                     supersedes_date.date(),
-                    raw_type,
                     due_date.date(),
                 )
-            existing_keys.discard((supersedes_date.date(), raw_type))
+            existing_keys = {k for k in existing_keys if k[0] != supersedes_date.date()}
 
         key = (due_date.date(), raw_type)
         if key in existing_keys:

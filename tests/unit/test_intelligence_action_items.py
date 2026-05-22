@@ -218,6 +218,73 @@ def test_cross_document_dedup_skips_duplicate(
 
 
 @pytest.mark.unit
+def test_supersedes_deletes_across_action_types(db_session, sample_case):
+    """IB-0033 regression: doc 97 emitted the original hearing as DEADLINE on
+    2025-09-15; doc 95 (Terminsverlegung) emitted COURT_DATE on 2025-09-22
+    with supersedes_date=2025-09-15. The old DEADLINE must be removed even
+    though the new item has a different action_type — the AI classifies the
+    same real-world hearing inconsistently across docs."""
+    from app.models.database import Document
+    from app.models.enums import OriginatorType
+
+    doc_old = Document(
+        title="Ladung Erörterungstermin",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+    )
+    doc_new = Document(
+        title="Terminsverlegung",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add_all([doc_old, doc_new])
+    db_session.flush()
+
+    create_from_payload(
+        case_id=sample_case.id,
+        source_doc_id=doc_old.id,
+        proceeding_id=None,
+        actions=[
+            {
+                "title": "Erörterungstermin",
+                "action_type": "deadline",
+                "due_date": "2025-09-15",
+                "description": "original",
+                "confidence": "high",
+            }
+        ],
+        db=db_session,
+    )
+    db_session.flush()
+
+    create_from_payload(
+        case_id=sample_case.id,
+        source_doc_id=doc_new.id,
+        proceeding_id=None,
+        actions=[
+            {
+                "title": "Erörterungstermin (verlegt)",
+                "action_type": "court_date",
+                "due_date": "2025-09-22",
+                "description": "rescheduled",
+                "confidence": "high",
+                "supersedes_date": "2025-09-15",
+            }
+        ],
+        db=db_session,
+    )
+    db_session.flush()
+
+    items = (
+        db_session.query(ActionItem).filter(ActionItem.case_id == sample_case.id).all()
+    )
+    assert len(items) == 1
+    assert items[0].due_date.date().isoformat() == "2025-09-22"
+
+
+@pytest.mark.unit
 def test_iso_datetime_due_date_is_parsed(db_session, sample_case):
     """Batch analyzer may return full ISO datetimes; truncation to YYYY-MM-DD
     must allow these to be parsed and stored correctly."""
