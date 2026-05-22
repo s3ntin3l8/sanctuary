@@ -275,6 +275,7 @@ def _append_index(
     prompt_tokens: int | None = None,
     completion_tokens: int | None = None,
     reasoning_tokens: int | None = None,
+    watchdog: str | None = None,
 ) -> None:
     # Each entry carries three IDs so jq filters / log greps work uniformly
     # regardless of scope kind:
@@ -319,6 +320,12 @@ def _append_index(
         "reasoning_tokens": reasoning_tokens,
         "status": status,
         "error": error,
+        # Watchdog signal: None when the stream completed normally, "think_drain"
+        # when the reasoning channel exceeded _THINK_WATCHDOG_CHARS within the
+        # time budget, "response_monologue" when the response channel ran away.
+        # The call may still report status=ok if the drained thinking channel
+        # held a usable schema-constrained answer (channel promotion).
+        "watchdog": watchdog,
     }
     line = json.dumps(entry, ensure_ascii=False) + "\n"
 
@@ -370,6 +377,11 @@ def _stream_response(
     stream_error: str | None = None
     _drain_mode = False
     _drain_deadline: float | None = None
+    # When the watchdog fires, this records WHICH watchdog ("think_drain" or
+    # "response_monologue"). Surfaced in runs.jsonl so log scans can find
+    # silently-degraded calls (status=ok but answer came from the drained
+    # thinking channel via promotion).
+    watchdog_event: str | None = None
 
     try:
         with track_ai_call(debug_label):
@@ -462,6 +474,7 @@ def _stream_response(
                             )
                             _drain_mode = True
                             _drain_deadline = time.perf_counter() + 30.0
+                            watchdog_event = "think_drain"
 
                         # Abort content accumulation when response monologue consumes budget
                         elif (
@@ -478,6 +491,7 @@ def _stream_response(
                             )
                             _drain_mode = True
                             _drain_deadline = time.perf_counter() + 30.0
+                            watchdog_event = "response_monologue"
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)
@@ -563,6 +577,7 @@ def _stream_response(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
+            watchdog=watchdog_event,
         )
 
     return full_response, full_thinking

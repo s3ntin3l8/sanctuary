@@ -620,20 +620,30 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
     return {"total": len(stages_per_doc), **counts}
 
 
-def recover_orphaned_running_stages(db: Session) -> dict:
-    """Reset any pipeline stages left in RUNNING/RETRYING state due to a prior crash.
+def recover_orphaned_running_stages(
+    db: Session, *, min_age_seconds: int = 1200
+) -> dict:
+    """Reset pipeline stages stuck in RUNNING/RETRYING state past their
+    expected runtime — presumed orphaned by a crashed worker.
 
-    Called once at app startup after migrations. Finds documents with
-    pipeline_state in (RUNNING, PARTIAL), resets every RUNNING or RETRYING stage
-    back to PENDING (without cascading to downstream stages), recomputes
-    pipeline_state, and unblocks affected IngestBatches. RETRYING stages are
-    stuck the same way as RUNNING ones — a worker that died between
-    `mark_retrying` and the next Celery attempt leaves them in flight forever.
+    Originally written as a startup-only one-shot (when any RUNNING stage
+    IS a crash artifact, since the worker has just rebooted). Now also
+    runs on a 5-min cron via recover_pipeline_task — at which point an
+    unbounded reset will kill legitimately-running long tasks (the
+    batch_analyzer routinely runs 4-5 minutes; the enricher 2-3 min).
+    The `min_age_seconds` guard keeps the cron-mode safe: only stages
+    whose started_at is older than the threshold count as orphaned.
+
+    20 min default covers the slowest legitimate stage (batch_analyzer
+    with retries) by ~3×; tighter recovery for genuinely-crashed stages
+    still happens within one extra cron tick after the threshold passes.
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchStatus
+
+    cutoff = naive_utc_now() - timedelta(seconds=min_age_seconds)
 
     docs = (
         db.query(Document)
@@ -649,11 +659,26 @@ def recover_orphaned_running_stages(db: Session) -> dict:
     _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
         stages: dict = stages_dict(doc)
-        stuck = [
-            key
-            for key, val in stages.items()
-            if isinstance(val, dict) and val.get("status") in _IN_FLIGHT
-        ]
+        stuck = []
+        for key, val in stages.items():
+            if not isinstance(val, dict):
+                continue
+            if val.get("status") not in _IN_FLIGHT:
+                continue
+            # Skip stages that started recently — they're presumed alive.
+            # started_at is stored as an ISO string by stages_dict.
+            started_at = val.get("started_at")
+            if started_at:
+                try:
+                    parsed = datetime.fromisoformat(started_at)
+                    # stages_dict emits naive UTC; compare on the same plane.
+                    if parsed.tzinfo is not None:
+                        parsed = parsed.replace(tzinfo=None)
+                    if parsed > cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    pass  # unparseable → treat as old, reset
+            stuck.append(key)
         if not stuck:
             continue
 

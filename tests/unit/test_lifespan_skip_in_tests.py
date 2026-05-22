@@ -60,7 +60,7 @@ def test_lifespan_runs_migrations_when_not_in_tests(monkeypatch):
     monkeypatch.setattr("app.services.case_service.seed_triage_case", lambda db: None)
     monkeypatch.setattr(
         "app.services.pipeline_status.recover_orphaned_running_stages",
-        lambda db: {},
+        lambda db, **kwargs: {},
     )
     monkeypatch.setattr(
         "app.services.embeddings.verify_vec0_dim", lambda db, dim: (True, dim)

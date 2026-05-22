@@ -567,7 +567,9 @@ def test_recover_orphaned_running_stages_resets_retrying(db_session):
     db_session.expire(doc, ["stage_rows"])
     db_session.commit()
 
-    result = recover_orphaned_running_stages(db_session)
+    # Test calls with min_age_seconds=0 (startup mode): no time threshold,
+    # reset everything. The cron path uses the default 1200s threshold.
+    result = recover_orphaned_running_stages(db_session, min_age_seconds=0)
 
     assert result["docs_reset"] == 1
     assert result["stages_reset"] == 1
@@ -579,6 +581,73 @@ def test_recover_orphaned_running_stages_resets_retrying(db_session):
     assert "attempt" not in rec
     assert "max_attempts" not in rec
     assert "next_at" not in rec
+
+
+@pytest.mark.unit
+def test_recover_orphaned_skips_recently_started_stages(db_session):
+    """A stage that started < min_age_seconds ago is presumed legitimately
+    running, not orphaned. The cron-mode recovery must NOT kill it.
+
+    Reproduces the batch_33-ran-twice bug: a 5-min cron tick fired
+    mid-batch_analysis (which routinely runs 4-5 min), reset the stage,
+    cleared analysis_queued_at, and let recover_unclaimed_ready_batches
+    dispatch a duplicate analyzer."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R5", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="legitimately-running.pdf",
+        content="x",
+        case_id="_TR_R5",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    # initialize() resets pipeline_state to PENDING; set it back to running
+    # AFTER initialize to simulate a doc whose batch_analysis is mid-flight.
+    doc.pipeline_state = "running"
+
+    # Stage started 30 seconds ago — well within the 1200s default threshold.
+    recent = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, started_at=:started "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "started": recent,
+            "id": doc.id,
+            "stage": PipelineStage.BATCH_ANALYSIS.value,
+        },
+    )
+    db_session.expire(doc, ["stage_rows"])
+    db_session.commit()
+
+    # Cron-mode call (default min_age_seconds=1200) must skip the recent stage.
+    result = recover_orphaned_running_stages(db_session)
+    assert result["docs_reset"] == 0
+    assert result["stages_reset"] == 0
+
+    # Same call with min_age_seconds=0 (startup mode) does reset it.
+    result_startup = recover_orphaned_running_stages(db_session, min_age_seconds=0)
+    assert result_startup["docs_reset"] == 1
+    assert result_startup["stages_reset"] == 1
 
 
 # ---------------------------------------------------------------------------

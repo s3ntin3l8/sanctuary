@@ -300,6 +300,167 @@ def test_two_pass_pass2_empty_triggers_retry(patched_provider):
 
 
 @pytest.mark.unit
+def test_runs_jsonl_records_watchdog_drain_event(
+    patched_provider, tmp_path, monkeypatch
+):
+    """When the thinking-loop watchdog drains a stream, the runs.jsonl entry
+    must carry `watchdog: "think_drain"` so log scans can find silently-
+    degraded calls (status=ok via channel promotion). Without this signal,
+    bursts of watchdog-drained completions look healthy in the index."""
+    import json
+
+    from app.services.intelligence import _ai_call as ai_call_mod
+
+    # Redirect ai_debug to a tmp dir so we can inspect the runs.jsonl entry.
+    monkeypatch.setattr(ai_call_mod, "DATA_DIR", tmp_path)
+
+    # Patch httpx to return a stream where thinking accumulates past the
+    # watchdog threshold without ever producing response tokens. The drain
+    # then fires; we want to see the resulting runs.jsonl entry.
+    import time
+
+    big_chunk = "x" * (ai_call_mod._THINK_WATCHDOG_CHARS // 4 + 100)
+
+    # The watchdog also requires elapsed time > _THINK_WATCHDOG_SECS — lower
+    # it to a value the test can actually exceed without sleeping.
+    monkeypatch.setattr(ai_call_mod, "_THINK_WATCHDOG_SECS", 0.0)
+
+    class _FakeResponse:
+        is_success = True
+        request = None
+
+        def iter_lines(self):
+            # Emit four thinking chunks that exceed the watchdog threshold.
+            for _ in range(5):
+                time.sleep(0.001)
+                yield "data: irrelevant"
+
+    class _FakeStream:
+        def __enter__(self_inner):
+            return _FakeResponse()
+
+        def __exit__(self_inner, *a):
+            return False
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def stream(self, *args, **kwargs):
+            return _FakeStream()
+
+    monkeypatch.setattr(ai_call_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(ai_call_mod.httpx, "Timeout", lambda **kwargs: None)
+
+    # parse_stream_line returns thinking-only chunks so full_response stays "".
+    def _fake_parse(line, _ptype):
+        return {"thinking": big_chunk}
+
+    monkeypatch.setattr(ai_call_mod.chat_provider, "parse_stream_line", _fake_parse)
+    monkeypatch.setattr(
+        ai_call_mod,
+        "track_ai_call",
+        lambda _: __import__("contextlib").nullcontext(),
+    )
+
+    ai_call_mod._stream_response(
+        params={"url": "http://x", "json": {}, "headers": {}},
+        ptype="openai",
+        debug_label="doc_99_enricher",
+        resolved_model="test-model",
+        ingest_batch_id=None,
+        doc_case_id=None,
+        redact=False,
+    )
+
+    runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
+    assert runs_jsonl.exists(), "runs.jsonl was not written"
+    entries = [json.loads(line) for line in runs_jsonl.read_text().splitlines()]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["watchdog"] == "think_drain", (
+        f"expected watchdog=think_drain, got {entry.get('watchdog')}"
+    )
+    # status remains ok because no exception fired — the watchdog is a soft
+    # signal, not an error. The combination (status=ok, watchdog=think_drain)
+    # is what makes this call "silently degraded".
+    assert entry["status"] == "ok"
+
+
+@pytest.mark.unit
+def test_runs_jsonl_watchdog_field_null_on_normal_completion(
+    patched_provider, tmp_path, monkeypatch
+):
+    """The watchdog field is null/None when no drain fired — distinguishes
+    healthy calls from ones that landed in the thinking channel via drain."""
+    import json
+
+    from app.services.intelligence import _ai_call as ai_call_mod
+
+    monkeypatch.setattr(ai_call_mod, "DATA_DIR", tmp_path)
+
+    class _FakeResponse:
+        is_success = True
+        request = None
+
+        def iter_lines(self):
+            yield "data: ok"
+
+    class _FakeStream:
+        def __enter__(self_inner):
+            return _FakeResponse()
+
+        def __exit__(self_inner, *a):
+            return False
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def stream(self, *args, **kwargs):
+            return _FakeStream()
+
+    monkeypatch.setattr(ai_call_mod.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(ai_call_mod.httpx, "Timeout", lambda **kwargs: None)
+
+    def _fake_parse(line, _ptype):
+        return {"response": "ok", "done": True}
+
+    monkeypatch.setattr(ai_call_mod.chat_provider, "parse_stream_line", _fake_parse)
+    monkeypatch.setattr(
+        ai_call_mod,
+        "track_ai_call",
+        lambda _: __import__("contextlib").nullcontext(),
+    )
+
+    ai_call_mod._stream_response(
+        params={"url": "http://x", "json": {}, "headers": {}},
+        ptype="openai",
+        debug_label="doc_99_enricher",
+        resolved_model="test-model",
+        ingest_batch_id=None,
+        doc_case_id=None,
+        redact=False,
+    )
+
+    runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
+    entries = [json.loads(line) for line in runs_jsonl.read_text().splitlines()]
+    assert entries[0]["watchdog"] is None
+
+
+@pytest.mark.unit
 def test_two_pass_watchdog_drain_short_circuits_retry(patched_provider):
     """When pass-2's thinking exceeds _THINK_WATCHDOG_CHARS with empty
     response, the model has spun in a reasoning loop. Retrying the same

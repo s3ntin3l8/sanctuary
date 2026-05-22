@@ -282,7 +282,11 @@ async def lifespan(app: FastAPI):
     )
 
     with SessionLocal() as recovery_db:
-        stats = recover_orphaned_running_stages(recovery_db)
+        # At startup every RUNNING stage IS an orphan (workers just restarted),
+        # so bypass the cron-mode age threshold by setting it to 0. The cron
+        # caller in maintenance.recover_pipeline_task uses the default (20 min)
+        # to avoid killing legitimately long-running tasks mid-flight.
+        stats = recover_orphaned_running_stages(recovery_db, min_age_seconds=0)
     if any(stats.values()):
         logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
 
