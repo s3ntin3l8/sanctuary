@@ -78,6 +78,13 @@ def patched_provider():
             lambda *_a, **_k: None,
             create=True,
         ),
+        # call_json_ai's no-db branch reads user_settings via
+        # get_ai_debug_redact. Without patching it the test hits the
+        # production DB (no user_settings table → OperationalError).
+        patch(
+            "app.services.user_settings_service.get_ai_debug_redact",
+            return_value=False,
+        ),
     ):
         yield
 

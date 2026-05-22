@@ -236,3 +236,82 @@ def recover_pipeline_task():
         return {"status": "error", "error": str(e)}
     finally:
         db.close()
+
+
+# How long to wait after a failure before re-attempting an embed. Shorter
+# than the schedule interval so a freshly-failed claim is eligible by the
+# next tick, but long enough to avoid retrying the same claim seconds after
+# the in-line attempt failed (which would just hit the same overloaded
+# backend).
+_RETRY_COOLDOWN_MINUTES = 5
+
+# Cap claims processed per tick. Embeddings are cheap (~100ms) but a burst
+# against a recovering LM Studio backend can re-trigger the load-failure
+# cycle. 50 keeps the wave bounded and lets the next tick pick up the rest.
+_RETRY_BATCH_SIZE = 50
+
+
+@celery_app.task(name="app.tasks.maintenance.retry_failed_claim_embeddings_task")
+def retry_failed_claim_embeddings_task():
+    """Periodically retry claim embeddings whose previous attempt failed.
+
+    Selects claims with `embedding_failed_at IS NOT NULL` older than the
+    cooldown, ordered oldest-first (longest-failed get the best chance).
+    Calls `upsert_claim_embedding` for each — that helper clears
+    `embedding_failed_at` on success or re-sets it on continued failure,
+    so this task is naturally idempotent and self-healing.
+
+    Scheduled by `retry-failed-claim-embeddings` in celery_app.beat_schedule.
+    """
+    import asyncio
+
+    from app.config import SessionLocal
+    from app.models.database import Claim
+    from app.services.claim_embedding import upsert_claim_embedding
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=_RETRY_COOLDOWN_MINUTES)
+    db = SessionLocal()
+    try:
+        claim_ids = [
+            row[0]
+            for row in db.query(Claim.id)
+            .filter(
+                Claim.embedding_failed_at.isnot(None),
+                Claim.embedding_failed_at < cutoff,
+            )
+            .order_by(Claim.embedding_failed_at.asc())
+            .limit(_RETRY_BATCH_SIZE)
+            .all()
+        ]
+    finally:
+        db.close()
+
+    if not claim_ids:
+        return {"status": "success", "attempted": 0, "recovered": 0}
+
+    logger.info("retry_failed_claim_embeddings: attempting %d claim(s)", len(claim_ids))
+    recovered = 0
+    for claim_id in claim_ids:
+        db = SessionLocal()
+        try:
+            ok = asyncio.run(upsert_claim_embedding(claim_id, db))
+            if ok:
+                recovered += 1
+        except Exception as e:
+            # upsert_claim_embedding already logs the body summary at ERROR
+            # via embed_claim_text — keep this fallback bare.
+            logger.warning(
+                "retry_failed_claim_embeddings: claim %d raised %s",
+                claim_id,
+                e,
+            )
+        finally:
+            db.close()
+
+    result = {
+        "status": "success",
+        "attempted": len(claim_ids),
+        "recovered": recovered,
+    }
+    logger.info("retry_failed_claim_embeddings: %s", result)
+    return result

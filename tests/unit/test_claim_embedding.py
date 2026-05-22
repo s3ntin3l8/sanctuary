@@ -56,6 +56,81 @@ def test_upsert_claim_embedding_marks_failure_on_endpoint_error(
 
 
 @pytest.mark.unit
+def test_retry_failed_claim_embeddings_recovers_eligible_claims(
+    db_session, claim_in_case
+):
+    """The maintenance task picks up claims with embedding_failed_at older
+    than the cooldown and re-attempts via upsert_claim_embedding. On success
+    the timestamp is cleared (idempotency + self-healing)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.tasks.maintenance import (
+        _RETRY_COOLDOWN_MINUTES,
+        retry_failed_claim_embeddings_task,
+    )
+
+    # Pre-mark the claim as failed, with a timestamp safely beyond cooldown.
+    claim_in_case.embedding_failed_at = datetime.now(UTC) - timedelta(
+        minutes=_RETRY_COOLDOWN_MINUTES + 1
+    )
+    db_session.commit()
+    claim_id = claim_in_case.id
+
+    fake_vec = [0.01] * 1024
+    with (
+        patch(
+            "app.services.claim_embedding.embed_claim_text",
+            new=AsyncMock(return_value=fake_vec),
+        ),
+        # The maintenance task opens fresh SessionLocal()'s — point them at
+        # the test's db_session so writes land in the same in-memory DB.
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        result = retry_failed_claim_embeddings_task()
+
+    assert result["attempted"] == 1
+    assert result["recovered"] == 1
+    db_session.refresh(claim_in_case)
+    assert claim_in_case.embedding_failed_at is None
+    # Sanity: claim_id is still the same row, nothing was deleted.
+    db_session.expire_all()
+    assert db_session.get(Claim, claim_id) is not None
+
+
+@pytest.mark.unit
+def test_retry_failed_claim_embeddings_respects_cooldown(db_session, claim_in_case):
+    """A claim that JUST failed (timestamp within cooldown) is not retried
+    yet — the in-line attempt that just failed would re-fire against the
+    same overloaded backend."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.tasks.maintenance import (
+        _RETRY_COOLDOWN_MINUTES,
+        retry_failed_claim_embeddings_task,
+    )
+
+    claim_in_case.embedding_failed_at = datetime.now(UTC) - timedelta(
+        minutes=_RETRY_COOLDOWN_MINUTES - 1
+    )
+    db_session.commit()
+
+    with (
+        patch(
+            "app.services.claim_embedding.embed_claim_text",
+            new=AsyncMock(return_value=[0.01] * 1024),
+        ) as mock_embed,
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        result = retry_failed_claim_embeddings_task()
+
+    assert result["attempted"] == 0
+    assert result["recovered"] == 0
+    mock_embed.assert_not_called()
+
+
+@pytest.mark.unit
 def test_upsert_claim_embedding_clears_failure_on_success(db_session, claim_in_case):
     """A recovered claim — previously marked failed — must have
     embedding_failed_at cleared back to NULL when the embed succeeds."""

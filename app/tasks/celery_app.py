@@ -93,6 +93,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.maintenance.recover_pipeline_task",
         "schedule": 300.0,  # every 5 minutes — orphaned RUNNING stages reset within 5 min max
     },
+    "retry-failed-claim-embeddings": {
+        "task": "app.tasks.maintenance.retry_failed_claim_embeddings_task",
+        "schedule": 1800.0,  # every 30 minutes — slow enough to spread load,
+        # fast enough that recovery from a 30-min embedding-backend outage
+        # completes within ~1 hour.
+    },
 }
 
 celery_app.conf.update(
