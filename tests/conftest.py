@@ -1,6 +1,25 @@
+import logging
 import os
 
 os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Register an atexit handler that silences logging during interpreter shutdown.
+
+    torch._subclasses.fake_tensor registers dump_cache_stats() via @atexit.register
+    at import time.  That atexit fires *after* pytest has already closed its log-capture
+    StreamHandler, causing "--- Logging error ---" noise.
+
+    We register our own atexit handler here (in pytest_sessionfinish, which runs after
+    all tests).  Python runs atexit in LIFO order, so ours fires BEFORE torch's.
+    We call logging.disable(logging.CRITICAL) — a global manager flag that pytest's
+    pytest_unconfigure does NOT restore, unlike per-logger setLevel() calls.
+    """
+    import atexit
+
+    atexit.register(lambda: logging.disable(logging.CRITICAL))
+
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
