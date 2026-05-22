@@ -32,17 +32,29 @@ def _fail_fast_reads(db: Session) -> None:
 def _get_queue_docs(
     db: Session,
 ) -> tuple[list[Document], list[Document], list[Document]]:
-    """Return (running_docs, pending_docs, failed_docs) ordered for display."""
+    """Return (running_docs, pending_docs, failed_docs) ordered for display.
+
+    PARTIAL docs (some stages done, some pending/running) are included in the
+    running bucket so their active stages are visible in the panel.  Without
+    this, a doc whose pipeline_state flips to PARTIAL mid-processing (e.g.
+    between stage transitions) disappears from the queue entirely.
+    """
     active = (
         db.query(Document)
         .filter(
-            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PENDING])
+            Document.pipeline_state.in_(
+                [PipelineState.RUNNING, PipelineState.PARTIAL, PipelineState.PENDING]
+            )
         )
         .order_by(Document.pipeline_state)
         .limit(50)
         .all()
     )
-    running = [d for d in active if d.pipeline_state == PipelineState.RUNNING]
+    running = [
+        d
+        for d in active
+        if d.pipeline_state in (PipelineState.RUNNING, PipelineState.PARTIAL)
+    ]
     pending = [d for d in active if d.pipeline_state == PipelineState.PENDING]
     failed = (
         db.query(Document)
@@ -157,7 +169,9 @@ async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
     n_queue = (
         db.query(Document)
         .filter(
-            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PENDING])
+            Document.pipeline_state.in_(
+                [PipelineState.RUNNING, PipelineState.PARTIAL, PipelineState.PENDING]
+            )
         )
         .count()
     )
@@ -181,9 +195,13 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
     n_active_ai = count_inflight()
     # Use COUNT(*) for accurate totals — _get_queue_docs caps at 50 docs so
     # len(running) would understate the real count when the queue is deep.
+    # PARTIAL docs count as running: they have completed some stages and are
+    # mid-pipeline (active stage may be PENDING or RUNNING within PARTIAL).
     n_running = (
         db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.RUNNING)
+        .filter(
+            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PARTIAL])
+        )
         .count()
     )
     n_pending = (
