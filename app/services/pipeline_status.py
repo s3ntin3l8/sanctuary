@@ -44,17 +44,47 @@ _ALLOWED_EXTRA_KEYS = frozenset(
 
 @dataclass(frozen=True)
 class StageSpec:
+    """Static metadata for a pipeline stage.
+
+    `order` is purely cosmetic — used only by the UI to sort stages left-to-
+    right in the queue panel and bundle status displays. It does NOT encode
+    dependency semantics; two stages can run in parallel and still have
+    different orders.
+
+    `depends_on` is the dependency DAG — the direct upstream stages that must
+    finish before this stage's task can run. Used by get_upstream_blocking to
+    compute "what's blocking a retry of this stage?". Transitively traversed.
+
+    `downstream` is the cascade-failure list — when this stage fails, every
+    stage listed here is marked failed too (because they can't proceed
+    without this stage's output). Used by mark_failed_with_cascade and
+    reset_stage. Typically the transitive closure of depends_on inverted,
+    though not enforced.
+    """
+
     stage: PipelineStage
-    order: int  # lower = earlier; used for upstream-blocking checks
+    order: int  # display position only — see class docstring
+    depends_on: tuple[PipelineStage, ...] = field(default_factory=tuple)
     downstream: tuple[PipelineStage, ...] = field(default_factory=tuple)
     retry_task: str = ""  # dotted Celery task name
     dispatch_arg: Literal["doc_id", "batch_id"] = "doc_id"
 
 
+# Real dispatch dependencies (from the per-task .delay() chains):
+#   process_document_task: EXTRACT → METADATA, then fans out to BATCH_ANALYSIS
+#     (gated on all batch siblings' METADATA done) AND EMBEDDINGS (parallel).
+#   analyze_batch_task: BATCH_ANALYSIS → ENRICH per doc.
+#   enrich_document_task: ENRICH → RELATIONSHIPS, ENTITIES (parallel siblings).
+#   detect_relationships_task: RELATIONSHIPS → CLAIMS.
+#
+# Display order (`order` field) reflects when each stage finishes in wallclock
+# time on the typical fast-path: EMBEDDINGS dispatches alongside BATCH_ANALYSIS
+# but finishes much earlier, so it sits right after METADATA in the display.
 STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.EXTRACT: StageSpec(
         stage=PipelineStage.EXTRACT,
         order=0,
+        depends_on=(),
         downstream=(
             PipelineStage.METADATA,
             PipelineStage.ENRICH,
@@ -67,6 +97,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.METADATA: StageSpec(
         stage=PipelineStage.METADATA,
         order=1,
+        depends_on=(PipelineStage.EXTRACT,),
         downstream=(
             PipelineStage.BATCH_ANALYSIS,
             PipelineStage.ENRICH,
@@ -76,9 +107,17 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         ),
         retry_task="app.tasks.document_processing.process_document_task",
     ),
+    PipelineStage.EMBEDDINGS: StageSpec(
+        stage=PipelineStage.EMBEDDINGS,
+        order=2,
+        depends_on=(PipelineStage.METADATA,),
+        downstream=(),
+        retry_task="app.tasks.generate_embedding.generate_embedding_task",
+    ),
     PipelineStage.BATCH_ANALYSIS: StageSpec(
         stage=PipelineStage.BATCH_ANALYSIS,
-        order=2,
+        order=3,
+        depends_on=(PipelineStage.METADATA,),
         downstream=(),
         retry_task="app.tasks.analyze_batch.analyze_batch_task",
         dispatch_arg="batch_id",
@@ -86,6 +125,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.ENRICH: StageSpec(
         stage=PipelineStage.ENRICH,
         order=4,
+        depends_on=(PipelineStage.BATCH_ANALYSIS,),
         downstream=(
             PipelineStage.RELATIONSHIPS,
             PipelineStage.CLAIMS,
@@ -96,26 +136,23 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.RELATIONSHIPS: StageSpec(
         stage=PipelineStage.RELATIONSHIPS,
         order=5,
+        depends_on=(PipelineStage.ENRICH,),
         downstream=(),
         retry_task="app.tasks.detect_relationships.detect_relationships_task",
     ),
     PipelineStage.CLAIMS: StageSpec(
         stage=PipelineStage.CLAIMS,
         order=6,
+        depends_on=(PipelineStage.RELATIONSHIPS,),
         downstream=(),
         retry_task="app.tasks.extract_claims.extract_claims_task",
     ),
     PipelineStage.ENTITIES: StageSpec(
         stage=PipelineStage.ENTITIES,
         order=7,
+        depends_on=(PipelineStage.ENRICH,),
         downstream=(),
         retry_task="app.tasks.extract_entities.extract_entities_task",
-    ),
-    PipelineStage.EMBEDDINGS: StageSpec(
-        stage=PipelineStage.EMBEDDINGS,
-        order=8,
-        downstream=(),
-        retry_task="app.tasks.generate_embedding.generate_embedding_task",
     ),
 }
 
@@ -131,6 +168,27 @@ if _missing:
 _STAGE_ORDER: list[StageSpec] = sorted(STAGE_REGISTRY.values(), key=lambda s: s.order)
 _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
     s.stage: list(s.downstream) for s in STAGE_REGISTRY.values()
+}
+
+
+def _compute_transitive_upstream(target: PipelineStage) -> frozenset[PipelineStage]:
+    """BFS through depends_on edges to collect every transitive ancestor of
+    `target`. Used by get_upstream_blocking."""
+    visited: set[PipelineStage] = set()
+    queue: list[PipelineStage] = list(STAGE_REGISTRY[target].depends_on)
+    while queue:
+        s = queue.pop()
+        if s in visited:
+            continue
+        visited.add(s)
+        queue.extend(STAGE_REGISTRY[s].depends_on)
+    return frozenset(visited)
+
+
+# Transitive upstream set per stage, computed once at module load.
+# get_upstream_blocking iterates this rather than re-traversing on every call.
+_UPSTREAM: dict[PipelineStage, frozenset[PipelineStage]] = {
+    s: _compute_transitive_upstream(s) for s in STAGE_REGISTRY
 }
 
 
@@ -502,15 +560,19 @@ def compute_overall_state(stages: dict) -> PipelineState:
 def get_upstream_blocking(stage: PipelineStage, stages: dict) -> list[str]:
     """Return stage names that are currently RUNNING upstream of `stage`.
 
-    Used by the retry endpoint to reject 409 when an upstream stage is active.
+    "Upstream" is computed from the dependency DAG (StageSpec.depends_on),
+    not from `order` — parallel sibling stages with a lower display order do
+    NOT count. Used by the retry endpoint to reject 409 when an actual
+    prerequisite is still in flight.
     """
-    spec = STAGE_REGISTRY[stage]
-    upstream = [s for s in _STAGE_ORDER if s.order < spec.order]
+    upstream = _UPSTREAM.get(stage, frozenset())
+    # Stable order for the error message: by ascending display order.
+    sorted_upstream = sorted(upstream, key=lambda s: STAGE_REGISTRY[s].order)
     blocking = []
-    for s in upstream:
-        record = stages.get(s.stage.value, {})
+    for upstream_stage in sorted_upstream:
+        record = stages.get(upstream_stage.value, {})
         if record.get("status") == StageStatus.RUNNING.value:
-            blocking.append(s.stage.value)
+            blocking.append(upstream_stage.value)
     return blocking
 
 

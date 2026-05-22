@@ -33,6 +33,75 @@ def test_stage_order_is_unique():
 
 
 @pytest.mark.unit
+def test_depends_on_forms_acyclic_dag():
+    """Every transitive upstream set must be acyclic and reachable via depends_on."""
+    from app.services.pipeline_status import _UPSTREAM, STAGE_REGISTRY
+
+    # No stage is its own ancestor
+    for stage, ancestors in _UPSTREAM.items():
+        assert stage not in ancestors, f"{stage} appears in its own upstream — cycle"
+
+    # Every depends_on edge points to a registered stage
+    for stage, spec in STAGE_REGISTRY.items():
+        for dep in spec.depends_on:
+            assert dep in STAGE_REGISTRY, f"{stage}.depends_on contains unknown {dep}"
+
+
+@pytest.mark.unit
+def test_upstream_blocking_uses_dependency_graph_not_order():
+    """Parallel sibling stages with lower display order are NOT considered
+    upstream — this is the regression EMBEDDINGS' order=2 would have caused
+    with the old `order < spec.order` logic."""
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import get_upstream_blocking
+
+    # EMBEDDINGS sits at order=2 (between METADATA=1 and BATCH_ANALYSIS=3)
+    # but its only real upstream is EXTRACT + METADATA. BATCH_ANALYSIS is a
+    # PARALLEL sibling, not an upstream — even though its order is higher,
+    # we're testing that the predicate looks at depends_on, not order.
+    stages = {
+        PipelineStage.EXTRACT.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.METADATA.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.BATCH_ANALYSIS.value: {"status": StageStatus.RUNNING.value},
+    }
+    assert get_upstream_blocking(PipelineStage.EMBEDDINGS, stages) == []
+
+
+@pytest.mark.unit
+def test_upstream_blocking_flags_actual_dependency_running():
+    """A real upstream stage in RUNNING is flagged."""
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import get_upstream_blocking
+
+    stages = {
+        PipelineStage.EXTRACT.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.METADATA.value: {"status": StageStatus.RUNNING.value},
+    }
+    blocking = get_upstream_blocking(PipelineStage.EMBEDDINGS, stages)
+    assert blocking == [PipelineStage.METADATA.value]
+
+
+@pytest.mark.unit
+def test_upstream_blocking_for_claims_excludes_parallel_entities():
+    """ENTITIES and CLAIMS are parallel sibling outputs of ENRICH. Neither
+    should be upstream of the other — even though ENTITIES has order=7 and
+    CLAIMS has order=6 (so CLAIMS would have been ENTITIES' upstream under
+    the old order-based logic)."""
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import get_upstream_blocking
+
+    stages = {
+        PipelineStage.EXTRACT.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.METADATA.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.BATCH_ANALYSIS.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value},
+        PipelineStage.CLAIMS.value: {"status": StageStatus.RUNNING.value},
+    }
+    # CLAIMS running must NOT block an ENTITIES retry
+    assert get_upstream_blocking(PipelineStage.ENTITIES, stages) == []
+
+
+@pytest.mark.unit
 def test_retry_tasks_are_non_empty():
     """Every stage spec has a non-empty retry_task dotted path."""
     from app.services.pipeline_status import STAGE_REGISTRY
