@@ -386,6 +386,12 @@ class Case(Base):
     # Phase 1: cumulative AI intelligence + parties + exposure
     ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case
     ai_brief_updated_at = Column(DateTime, nullable=True)
+    # Atomic CAS slot for "brief dispatch in flight". NULL = idle. Set to now()
+    # by claim_case_brief_for_dispatch() when readiness is satisfied; cleared
+    # to NULL by the brief task on terminal exit (success or final failure).
+    # Mirrors IngestBatch.analysis_queued_at — see app/services/intelligence/
+    # orchestrator.py for the claim mechanism.
+    brief_queued_at = Column(DateTime, nullable=True, index=True)
     parties = Column(JSON, nullable=True)  # known actors and their roles
     opposing_parties = Column(JSON, nullable=True)  # per-case opposing party names
     total_cost_exposure = Column(

@@ -67,6 +67,22 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
         meta.pop("reload_fired", None)
         batch.meta = meta
 
+    # Clear the case-brief claim slot too — without this, the readiness
+    # predicate in claim_case_brief_for_dispatch will eventually be re-
+    # satisfied (after all docs in the retry finish CLAIMS) but the WHERE
+    # brief_queued_at IS NULL guard would still fail, so no new brief would
+    # ever fire for this wave. Cases affected by this batch's docs get the
+    # reset; usually just one case per batch.
+    affected_case_ids = {
+        doc.case_id
+        for doc in batch.documents
+        if doc.case_id and doc.case_id != "_TRIAGE"
+    }
+    for case_id in affected_case_ids:
+        c = db.query(Case).filter(Case.id == case_id).first()
+        if c is not None:
+            c.brief_queued_at = None
+
     dispatch_items: list = []
 
     for doc in batch.documents:

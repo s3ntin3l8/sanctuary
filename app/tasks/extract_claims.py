@@ -11,8 +11,21 @@ logger = logging.getLogger(__name__)
 
 
 def _trigger_case_brief(doc_id: int) -> None:
+    """Fan-in trigger: dispatch the case brief if THIS doc is the last sibling
+    in its case to finish CLAIMS.
+
+    Called from every exit path of extract_claims_task. Uses an atomic SQL
+    CAS (claim_case_brief_for_dispatch) on cases.brief_queued_at — readiness
+    predicate is "every doc in the case has CLAIMS in completed/failed/
+    skipped." Only the winning caller dispatches. Race-free by construction;
+    no Redis lock, no DB-status-string guard. Mirrors the claim_batch_for_
+    analysis pattern in orchestrator.py.
+    """
     from app.config import SessionLocal
-    from app.models.database import Case, Document
+    from app.models.database import Document
+    from app.services.intelligence.orchestrator import (
+        claim_case_brief_for_dispatch,
+    )
     from app.tasks.generate_case_brief import generate_case_brief_task
 
     db = SessionLocal()
@@ -22,19 +35,14 @@ def _trigger_case_brief(doc_id: int) -> None:
             return
         case_id = doc.case_id
 
-        # DB guard: skip dispatch if a brief is already actively running.
-        # generate_case_brief_task calls _mark_processing() which sets
-        # ai_brief={"status":"processing"} and commits before the AI call
-        # starts — so this is the authoritative signal that covers the full
-        # task lifetime, unlike a short-TTL Redis key.
-        case = db.query(Case).filter(Case.id == case_id).first()
-        if (
-            case
-            and isinstance(case.ai_brief, dict)
-            and case.ai_brief.get("status") == "processing"
-        ):
+        if not claim_case_brief_for_dispatch(case_id, db):
+            # Either the readiness predicate isn't satisfied yet (a sibling
+            # is still PENDING/RUNNING/RETRYING) or another worker won the
+            # claim. Either way, this caller does not dispatch.
             logger.debug(
-                "Case %s brief already in progress — skipping dispatch", case_id
+                "Case %s brief not claimed by doc %d — siblings pending or already claimed",
+                case_id,
+                doc_id,
             )
             return
     except Exception as e:
@@ -43,32 +51,26 @@ def _trigger_case_brief(doc_id: int) -> None:
     finally:
         db.close()
 
-    # Redis NX lock: second guard that collapses near-simultaneous dispatches
-    # (e.g. N docs in the same case all completing CLAIMS at once) before the
-    # first task has had time to set ai_brief=processing.  The 30 s TTL covers
-    # the window between dispatch and _mark_processing().
-    # Falls back to always-dispatch when Redis is unavailable (logged, not silent).
-    _DEDUP_TTL = 30
-    lock_key = f"sanctuary:case_brief_pending:{case_id}"
-    try:
-        from app.services.ai_inflight import _get_sync_client
-
-        if not _get_sync_client().set(lock_key, "1", nx=True, ex=_DEDUP_TTL):
-            logger.debug(
-                "Case %s brief already queued — skipping duplicate dispatch", case_id
-            )
-            return
-    except Exception as exc:
-        logger.warning(
-            "Redis dedup check failed for case %s, dispatching anyway: %s",
-            case_id,
-            exc,
-        )
-
     try:
         generate_case_brief_task.delay(case_id)
+        logger.info(
+            "Case %s: all docs CLAIMS-terminal — dispatched brief (triggered by doc %d)",
+            case_id,
+            doc_id,
+        )
     except Exception as e:
+        # Dispatch failed after the claim succeeded — release the claim so
+        # a subsequent trigger (e.g. recovery, manual refresh) can re-fire.
         logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        db = SessionLocal()
+        try:
+            from app.services.intelligence.orchestrator import (
+                release_case_brief_claim,
+            )
+
+            release_case_brief_claim(case_id, db)
+        finally:
+            db.close()
 
 
 @celery_app.task(
