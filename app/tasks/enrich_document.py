@@ -9,12 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(
-    bind=True, max_retries=3, name="app.tasks.enrich_document.enrich_document_task"
+    bind=True, max_retries=1, name="app.tasks.enrich_document.enrich_document_task"
 )
 def enrich_document_task(self, doc_id: int):
     """Run per-document AI enrichment, then enqueue relationship detection and cost rollup."""
     from app.dependencies import get_db_session
     from app.models.database import Document
+    from app.models.enums import StageStatus
     from app.services.intelligence.document_enricher import enrich
     from app.services.pipeline_status import (
         mark_completed,
@@ -25,14 +26,56 @@ def enrich_document_task(self, doc_id: int):
         stages_dict,
     )
 
-    # Secondary gate: skip enrichment when METADATA failed.
-    # This prevents batch-dispatched enrichment from running against docs
-    # that have no sender/tier/summary (pipeline would fly blind).
+    _TERMINAL = {
+        StageStatus.COMPLETED.value,
+        StageStatus.FAILED.value,
+        StageStatus.SKIPPED.value,
+    }
+
     db = get_db_session()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if doc:
-            metadata_status = stages_dict(doc).get("metadata", {}).get("status")
+            stages = stages_dict(doc)
+            # Primary gate: BATCH_ANALYSIS must be terminal before ENRICH runs.
+            # The enricher uses doc.role / doc.attributed_originator set by
+            # batch analysis for cover-letter framing. An ENRICH that runs
+            # early with stale STANDALONE context produces wrong output and
+            # triggers the cascade-reset in analyze_batch.py:196 — which
+            # cascades to CLAIMS/RELATIONSHIPS/ENTITIES and creates the
+            # "clearing N stale claims" / "auto-merged duplicate" log storm.
+            #
+            # Skipping here is correct: when analyze_batch_task finishes it
+            # calls _enrich_if_pending(doc_id) for every doc, which re-fires
+            # this task with batch_analysis now terminal.
+            #
+            # Docs without a batch (manual uploads, ingest_batch_id IS NULL)
+            # bypass batch_analysis entirely — their batch_analysis stage row
+            # is SKIPPED at initialize-time, so this check passes immediately.
+            batch_analysis_status = stages.get("batch_analysis", {}).get("status")
+            if batch_analysis_status not in _TERMINAL:
+                mark_skipped(
+                    doc_id,
+                    PipelineStage.ENRICH,
+                    db,
+                    reason="batch_analysis_not_completed",
+                )
+                logger.info(
+                    "Doc #%d: skipping enrich — batch_analysis not yet terminal "
+                    "(status=%s); analyze_batch_task will redispatch",
+                    doc_id,
+                    batch_analysis_status,
+                )
+                return {
+                    "status": "skipped",
+                    "doc_id": doc_id,
+                    "reason": "batch_analysis_not_completed",
+                }
+
+            # Secondary gate: skip enrichment when METADATA failed.
+            # This prevents batch-dispatched enrichment from running against docs
+            # that have no sender/tier/summary (pipeline would fly blind).
+            metadata_status = stages.get("metadata", {}).get("status")
             if metadata_status == "failed":
                 mark_skipped(doc_id, PipelineStage.ENRICH, db, reason="metadata_failed")
                 logger.info("Doc #%d: skipping enrich — METADATA failed", doc_id)

@@ -293,6 +293,59 @@ def test_two_pass_pass2_empty_triggers_retry(patched_provider):
 
 
 @pytest.mark.unit
+def test_two_pass_watchdog_drain_short_circuits_retry(patched_provider):
+    """When pass-2's thinking exceeds _THINK_WATCHDOG_CHARS with empty
+    response, the model has spun in a reasoning loop. Retrying the same
+    prompt is denial — the next attempt almost always reproduces the loop.
+    The inner retry MUST be skipped; ValueError is raised so outer callers
+    handle fallback (e.g. batch_analyzer's own outer retry).
+
+    Regression for the IB-0033 enricher storm: doc 95 had 34 attempts and
+    doc 98 had 31, driven by this inner-retry compounding with Celery's
+    outer max_retries.
+    """
+    call_count = {"p1": 0, "p2": 0}
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        if debug_label.endswith("-p1"):
+            call_count["p1"] += 1
+            return ("Some analysis", "")
+        # Pass 2: empty response, but massive thinking — the watchdog-drain
+        # signature. Must NOT trigger the suppress_thinking retry.
+        call_count["p2"] += 1
+        # Long-thinking with NO json brace, so the channel-promotion at
+        # _ai_call.py:769-782 doesn't kick in either.
+        return ("", "x" * (_ai_call._THINK_WATCHDOG_CHARS + 1000))
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        with pytest.raises(ValueError, match="empty response"):
+            _ai_call.call_json_ai(
+                system_prompt="sys",
+                user_prompt="orig",
+                options={},
+                debug_label="doc_99_enricher",
+                schema=ProceedingExtraction,
+                two_pass=True,
+            )
+
+    assert call_count["p1"] == 1, (
+        f"watchdog-drain must not retry pass-1; got {call_count['p1']} calls"
+    )
+    assert call_count["p2"] == 1, (
+        f"watchdog-drain must not retry pass-2; got {call_count['p2']} calls"
+    )
+
+
+@pytest.mark.unit
 def test_single_pass_unchanged(patched_provider):
     """two_pass=False (default) must still produce exactly one stream call."""
     calls: list[str] = []

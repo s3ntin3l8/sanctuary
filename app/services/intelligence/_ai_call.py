@@ -782,12 +782,22 @@ def call_json_ai(
         full_thinking = ""
 
     if not full_response.strip():
+        # Watchdog-drain short-circuit: when pass-2's thinking channel passed
+        # _THINK_WATCHDOG_CHARS, the model spun in a reasoning loop and the
+        # stream was drained without ever producing a parsable answer.
+        # Retrying the same prompt is denial, not error-handling — the next
+        # attempt almost always reproduces the loop, multiplying wallclock
+        # and token cost (240s × N). Raise ValueError directly; outer
+        # callers like batch_analyzer.analyze() already have their own
+        # fallback path (e.g. a single retry with suppress_thinking from
+        # the service layer, batch_analyzer.py:632–659).
+        watchdog_drained = len(full_thinking) > _THINK_WATCHDOG_CHARS
         # Single-pass: retry once with suppress_thinking=True if we haven't yet.
         # Two-pass: pass 2 already runs with suppress_thinking, so the same
         # escalation isn't available. Re-run the whole two-pass once for
         # sampling-noise recovery (sometimes a redo just works).
         should_retry = not suppress_thinking if two_pass else not pass2_suppress
-        if should_retry:
+        if should_retry and not watchdog_drained:
             logger.info(
                 "call %s: empty response — retrying once with suppress_thinking",
                 pass2_label,
@@ -805,6 +815,14 @@ def call_json_ai(
                 two_pass=two_pass,
                 pass1_max_tokens=pass1_max_tokens,
                 case_id=case_id,
+            )
+        if watchdog_drained:
+            logger.warning(
+                "call %s: watchdog drained pass-2 (thinking=%d chars) — "
+                "skipping inner retry to avoid AI-call multiplier; outer "
+                "caller handles fallback",
+                pass2_label,
+                len(full_thinking),
             )
         refusal_hint = ""
         if full_thinking:

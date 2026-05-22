@@ -89,6 +89,13 @@ def test_reingest_all_documents_task(db_session, sample_document):
 @pytest.mark.unit
 def test_enrich_failure_dispatches_detect_relationships(db_session, sample_document):
     """When enrichment fails permanently (retries exhausted), detect_relationships_task is still dispatched."""
+    # The doc must have batch_analysis terminal for ENRICH's primary gate to
+    # let it through — see enrich_document.py's batch_analysis_not_completed
+    # check. Production docs reach ENRICH via analyze_batch_task, which only
+    # dispatches enrich once batch_analysis is done.
+    _set_doc_stages(
+        db_session, sample_document, {"batch_analysis": {"status": "completed"}}
+    )
     with (
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch(
@@ -114,6 +121,56 @@ def test_enrich_failure_dispatches_detect_relationships(db_session, sample_docum
 
     assert result["status"] == "failed"
     mock_detect_delay.assert_called_once_with(sample_document.id)
+
+
+@pytest.mark.unit
+def test_enrich_skipped_when_batch_analysis_pending(db_session, sample_document):
+    """Primary gate: ENRICH must skip with reason=batch_analysis_not_completed
+    when batch_analysis is not yet in a terminal state. This prevents the
+    early-ENRICH/cascade-reset loop that produced 30+ enricher attempts per
+    doc on the IB-0033 retry."""
+    _set_doc_stages(
+        db_session, sample_document, {"batch_analysis": {"status": "pending"}}
+    )
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch("app.services.intelligence.document_enricher.enrich") as mock_enrich,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        result = enrich_document_task.run(sample_document.id)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "batch_analysis_not_completed"
+    # Critical: the actual AI call must NOT have happened.
+    mock_enrich.assert_not_called()
+
+
+@pytest.mark.unit
+def test_enrich_runs_when_batch_analysis_skipped_manual_upload(
+    db_session, sample_document
+):
+    """Manual uploads have batch_analysis=SKIPPED (no batch). The gate must
+    treat SKIPPED as terminal and let enrichment proceed."""
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {"batch_analysis": {"status": "skipped"}, "metadata": {"status": "completed"}},
+    )
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch("app.services.intelligence.document_enricher.enrich") as mock_enrich,
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_completed"),
+        patch("app.tasks.enrich_document._dispatch_if_pending"),
+        patch("app.tasks.enrich_document._trigger_cost_rollup"),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        result = enrich_document_task.run(sample_document.id)
+
+    assert result["status"] == "success"
+    mock_enrich.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit
