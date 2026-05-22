@@ -53,42 +53,66 @@ def _get_queue_docs(
     return running, pending, failed
 
 
-def _current_stage(doc: Document) -> str:
-    """Return the most-advanced stage currently running/retrying, or earliest pending, or empty.
-
-    Stages are sorted by pipeline order so that a doc transitioning from
-    BATCH_ANALYSIS → ENRICH shows as ENRICH (higher order) rather than
-    BATCH_ANALYSIS when both are briefly in "running" state.
-    """
-    stages = stages_dict(doc)
-    # Sort descending by pipeline order; unknown keys sort last (-1)
-    ordered = sorted(
-        stages.items(),
+def _ordered_stages(doc: Document):
+    """Return stage items sorted descending by pipeline order (highest first)."""
+    return sorted(
+        stages_dict(doc).items(),
         key=lambda kv: STAGE_REGISTRY[kv[0]].order if kv[0] in STAGE_REGISTRY else -1,
         reverse=True,
     )
-    for stage_key, rec in ordered:
-        if isinstance(rec, dict) and rec.get("status") in ("running", "retrying"):
-            return stage_key
-    # Fall back to earliest pending stage (ascending order)
-    for stage_key, rec in reversed(ordered):
+
+
+def _active_stages(doc: Document) -> list[str]:
+    """Return every stage currently running or retrying, highest pipeline order first.
+
+    A doc can have multiple concurrent active stages — e.g. ENTITIES and CLAIMS
+    both run in parallel after ENRICH completes.
+    """
+    return [
+        key
+        for key, rec in _ordered_stages(doc)
+        if isinstance(rec, dict) and rec.get("status") in ("running", "retrying")
+    ]
+
+
+def _first_pending_stage(doc: Document) -> str:
+    """Return the earliest (lowest-order) pending stage, or empty string."""
+    for key, rec in reversed(_ordered_stages(doc)):
         if isinstance(rec, dict) and rec.get("status") == "pending":
-            return stage_key
+            return key
     return ""
 
 
-def _build_queue_items(running: list[Document], pending: list[Document]) -> list[dict]:
-    """Group batch-scoped stages into one item per batch; leave others as individual doc items.
+def _first_failed_stage_info(doc: Document) -> dict:
+    """Return the root-cause failed stage name and error text.
 
-    Preserves running-before-pending ordering; batch groups appear at the position
-    of their first member doc. Uses STAGE_REGISTRY.dispatch_arg == "batch_id" as the
-    canonical signal so future batch-scoped stages are grouped automatically.
+    Sorts ascending by pipeline order so the earliest (root-cause) failure
+    is found first, not a downstream cascade whose error reads
+    "upstream {stage} failed".
+    Returns {"stage": str, "error": str}; both empty if no failed stage found.
+    """
+    ordered = sorted(
+        stages_dict(doc).items(),
+        key=lambda kv: STAGE_REGISTRY[kv[0]].order if kv[0] in STAGE_REGISTRY else 99,
+    )
+    for key, rec in ordered:
+        if isinstance(rec, dict) and rec.get("status") == "failed":
+            return {"stage": key, "error": rec.get("error") or ""}
+    return {"stage": "", "error": ""}
+
+
+def _build_queue_items(running: list[Document], pending: list[Document]) -> list[dict]:
+    """Build display items for the queue panel.
+
+    Running docs: one item per active stage — a doc with ENTITIES + CLAIMS both
+    running produces two separate rows so every concurrent stage is visible.
+    Batch-scoped stages (BATCH_ANALYSIS) are grouped into one item per batch.
+    Pending docs: one item per doc showing the next stage to run.
     """
     items: list[dict] = []
     batch_buckets: dict[tuple, int] = {}
 
-    for doc in running + pending:
-        stage = _current_stage(doc)
+    def _add_stage(doc: Document, stage: str) -> None:
         spec = STAGE_REGISTRY.get(stage) if stage else None
         if spec and spec.dispatch_arg == "batch_id" and doc.ingest_batch_id is not None:
             key = (stage, doc.ingest_batch_id)
@@ -106,6 +130,23 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
                 )
         else:
             items.append({"type": "doc", "doc": doc, "stage": stage})
+
+    for doc in running:
+        active = _active_stages(doc)
+        if active:
+            for stage in active:
+                _add_stage(doc, stage)
+        else:
+            # Fallback: doc is RUNNING in DB but no stage has running status yet
+            # (transition window); show first pending stage instead.
+            stage = _first_pending_stage(doc)
+            if stage:
+                _add_stage(doc, stage)
+
+    for doc in pending:
+        stage = _first_pending_stage(doc)
+        if stage:
+            _add_stage(doc, stage)
 
     return items
 
@@ -150,12 +191,14 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
         .filter(Document.pipeline_state == PipelineState.PENDING)
         .count()
     )
+    failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
             "queue_items": queue_items,
             "failed_docs": failed,
+            "failed_doc_errors": failed_doc_errors,
             "n_active_ai": n_active_ai,
             "n_running": n_running,
             "n_pending": n_pending,
@@ -198,12 +241,14 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
         .filter(Document.pipeline_state == PipelineState.PENDING)
         .count()
     )
+    failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
             "queue_items": queue_items,
             "failed_docs": failed,
+            "failed_doc_errors": failed_doc_errors,
             "n_active_ai": n_active_ai,
             "n_running": n_running,
             "n_pending": n_pending,

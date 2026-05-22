@@ -8,7 +8,13 @@
 {% macro pipeline_status_icon(doc) %}
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 {% if state == 'failed' %}
-<span class="material-symbols-outlined text-base text-error shrink-0" title="Pipeline failed — retry available">error_outline</span>
+{% set _tip = namespace(text='Pipeline failed') %}
+{% for _sk, _sr in (doc.pipeline_stages or {}).items() %}
+  {% if _sr is mapping and _sr.get('status') == 'failed' and not (_sr.get('error') or '').startswith('upstream ') and _tip.text == 'Pipeline failed' %}
+    {% set _tip.text = 'Failed at ' ~ (_sk | replace('_', ' ')) %}{% if _sr.get('error') %}{% set _tip.text = _tip.text ~ ': ' ~ _sr['error'] %}{% endif %}
+  {% endif %}
+{% endfor %}
+<span class="material-symbols-outlined text-base text-error shrink-0" title="{{ _tip.text }}">error_outline</span>
 {% elif state == 'running' %}
 <span class="material-symbols-outlined text-base text-tertiary shrink-0" title="Pipeline running">settings</span>
 {% elif state == 'completed' %}
@@ -23,7 +29,13 @@
 {% macro pipeline_status_pill(doc) %}
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 {% if state == 'failed' %}
-<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-error-container/20 text-error whitespace-nowrap" title="Pipeline failed — retry available">
+{% set _tip = namespace(text='Pipeline failed') %}
+{% for _sk, _sr in (doc.pipeline_stages or {}).items() %}
+  {% if _sr is mapping and _sr.get('status') == 'failed' and not (_sr.get('error') or '').startswith('upstream ') and _tip.text == 'Pipeline failed' %}
+    {% set _tip.text = 'Failed at ' ~ (_sk | replace('_', ' ')) %}{% if _sr.get('error') %}{% set _tip.text = _tip.text ~ ': ' ~ _sr['error'] %}{% endif %}
+  {% endif %}
+{% endfor %}
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-error-container/20 text-error whitespace-nowrap" title="{{ _tip.text }}">
     <span class="material-symbols-outlined text-[10px]">error_outline</span> failed
 </span>
 {% elif state == 'running' %}

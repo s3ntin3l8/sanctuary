@@ -109,7 +109,15 @@
                 </div>
                 <div class="min-w-0 flex-1">
                     <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ doc.title or doc.filename or ("Doc #" ~ doc.id) }}</p>
-                    <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">failed</p>
+                    {% set err = failed_doc_errors.get(doc.id, {}) %}
+                    {% if err.stage %}
+                    <p class="text-[9px] text-error/80 mt-0.5 font-mono uppercase tracking-wide line-clamp-1"
+                       title="{{ err.error or 'No details available' }}">
+                        {{ err.stage | replace("_", " ") }}{% if err.error %}: {{ err.error[:60] }}{% if err.error | length > 60 %}…{% endif %}{% endif %}
+                    </p>
+                    {% else %}
+                    <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">pipeline failed</p>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
