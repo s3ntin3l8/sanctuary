@@ -1,0 +1,42 @@
+{# Editable cost-ruling cell — lets the user side a §91 ZPO ruling from the
+   client's perspective. Surfaced in the Document Cost Signals table. #}
+{% set alloc = signal.allocation if signal else None %}
+{% set role = alloc.get('client_role') if alloc else None %}
+{% set auto = alloc.get('auto_detected') if alloc else False %}
+<span id="ruling-cell-{{ signal.id }}" @click.stop class="inline-flex items-center gap-1">
+  {% if alloc and alloc.get('each_own') %}
+    <span class="text-amber-500 text-[9px]">jeder eigen</span>
+    {% if auto %}<span class="text-[8px] px-1 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wider">auto</span>{% endif %}
+  {% elif alloc and alloc.get('loser') is not none %}
+    <select
+      hx-post="{{ request.app.url_path_for('update_cost_signal_client_role', signal_id=signal.id) }}"
+      hx-trigger="change"
+      hx-target="#ruling-cell-{{ signal.id }}"
+      hx-swap="outerHTML"
+      name="role"
+      class="text-[9px] font-bold bg-surface-container-low border rounded px-1 py-0.5 cursor-pointer
+             {% if role == 'winner' %}border-originator-own/40 text-originator-own
+             {% elif role == 'loser' %}border-originator-opposing/40 text-originator-opposing
+             {% else %}border-amber-500/40 text-amber-500{% endif %}">
+      <option value="unset"   {% if not role %}selected{% endif %}>§91 ZPO (unklar)</option>
+      <option value="winner"  {% if role == 'winner' %}selected{% endif %}>wir gewinnen</option>
+      <option value="loser"   {% if role == 'loser'  %}selected{% endif %}>wir verlieren</option>
+    </select>
+    {% if auto %}
+    <span
+      class="text-[8px] px-1 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wider cursor-help"
+      title="{{ alloc.get('rationale') or 'Von der KI aus der Beschluss-Begründung erkannt.' }}"
+    >auto</span>
+    {% endif %}
+    <button
+      type="button"
+      hx-post="{{ request.app.url_path_for('auto_detect_cost_signal_role', signal_id=signal.id) }}"
+      hx-target="#ruling-cell-{{ signal.id }}"
+      hx-swap="outerHTML"
+      class="text-[9px] font-bold text-on-surface-variant hover:text-primary px-1 py-0.5 rounded transition-colors"
+      title="Aus dem Beschluss-Text per KI erkennen lassen"
+    >✨</button>
+  {% else %}
+    <span class="text-on-surface-variant text-[9px]">—</span>
+  {% endif %}
+</span>

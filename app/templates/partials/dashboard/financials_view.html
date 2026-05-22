@@ -7,160 +7,19 @@
   </div>
 
   {# ── Summary Grid ── #}
-  <div class="grid grid-cols-5 gap-3">
-    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
-      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Total exposure</div>
-      <div class="font-headline text-[20px] font-bold mt-1 text-on-surface">
-        {{ format_eur(cost_summary.total_gross) }}
-      </div>
-    </div>
-    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
-      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Paid</div>
-      <div class="font-headline text-[20px] font-bold mt-1 text-originator-own">
-        {{ format_eur(cost_summary.total_paid) }}
-      </div>
-    </div>
-    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
-      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Outstanding</div>
-      <div class="font-headline text-[20px] font-bold mt-1 {% if cost_summary.total_outstanding > 0 %}text-originator-opposing{% else %}text-originator-own{% endif %}">
-        {{ format_eur(cost_summary.total_outstanding) }}
-      </div>
-    </div>
-    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
-      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">§91 ZPO</div>
-      <div class="font-headline text-[20px] font-bold mt-1 text-primary">
-        {{ format_eur(cost_summary.total_reimbursable) }}
-      </div>
-    </div>
-    <div class="p-4 rounded-xl border border-dashed border-amber-500/30 bg-surface-container/60">
-      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Projected</div>
-      <div class="font-headline text-[20px] font-bold mt-1 text-amber-500">
-        {{ format_eur((financials.total_cost_exposure or 0) / 100.0) }}
-      </div>
-      <div class="text-[9px] mt-1" style="color:var(--color-on-surface-variant);">RVG/GKG + offene Rechnungen</div>
-    </div>
-  </div>
+  {% include "partials/dashboard/financials_kpi.html" %}
 
   {# ── Per-Proceeding Exposure ── #}
-  {% if financials.proceeding_exposure %}
-  <div class="space-y-3">
-    <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
-      <span class="material-symbols-outlined text-sm">calculate</span>
-      Instanzweise Kostenprognose
-    </h3>
-    {% for pe in financials.proceeding_exposure %}
-    {% set proc = pe.proceeding %}
-    <div class="bg-surface-container rounded-xl border border-outline-variant/10 overflow-hidden">
-      <div class="px-4 py-2 bg-surface-container-low/40 border-b border-outline-variant/10 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-[14px] text-primary">account_balance</span>
-          <span class="text-[11px] font-bold text-on-surface uppercase tracking-wider">{{ proc.court_level.value if proc.court_level else '?' }}</span>
-          {% if proc.court_name %}<span class="text-[10px] text-on-surface-variant">{{ proc.court_name }}</span>{% endif %}
-        </div>
-        <div class="flex items-center gap-3 text-[10px]">
-          <span class="text-on-surface-variant">Streitwert: <span class="font-mono font-bold text-primary">{{ format_eur(pe.streitwert) }}</span></span>
-          {% set src_label = {
-            'ruling': 'eigene Entscheidung',
-            'propagated': 'weitergeleitet',
-            'family_each_own': '§81 FamFG',
-            'worst_case': 'Worst Case',
-          }.get(pe.allocation_source, pe.allocation_source) %}
-          <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-surface-container-high text-on-surface-variant uppercase tracking-wider">{{ src_label }}</span>
-        </div>
-      </div>
-      <div class="px-4 py-3 space-y-1.5">
-        <div class="flex justify-between text-[11px]">
-          <span class="text-on-surface-variant">Eigene Anwaltskosten (brutto)</span>
-          <span class="font-mono font-bold text-on-surface">{{ format_eur(pe.own_lawyer_gross) }}</span>
-        </div>
-        <div class="flex justify-between text-[11px]">
-          <span class="text-on-surface-variant">Gerichtskosten (Anteil {{ (pe.court_fee_share * 100)|round|int }}%)</span>
-          <span class="font-mono font-bold text-on-surface">{{ format_eur(pe.court_fee_charged) }}</span>
-        </div>
-        {% if pe.opposing_gross > 0 %}
-        <div class="flex justify-between text-[11px]">
-          <span class="text-on-surface-variant">Gegnerische Anwaltskosten</span>
-          <span class="font-mono font-bold text-originator-opposing">{{ format_eur(pe.opposing_gross) }}</span>
-        </div>
-        {% endif %}
-        <div class="flex justify-between text-[11px] pt-1.5 border-t border-outline-variant/10 font-bold">
-          <span class="text-on-surface">Summe Instanz</span>
-          <span class="font-mono text-on-surface">{{ format_eur(pe.subtotal) }}</span>
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
+  {% include "partials/dashboard/financials_per_instance.html" %}
 
-  {# ── Cost Table ── #}
+  {# ── Document Cost Signals (meta-events: Streitwert, Kostenentscheidung, PKH) ── #}
   <div class="space-y-6">
-    {# financials.grouped_costs is pre-built in Python (dict keyed by
-       proceeding_id, which can be None for case-level costs). Avoid the
-       Jinja `groupby` filter — it sorts the keys, which fails with
-       `'<' not supported between instances of 'int' and 'NoneType'` when
-       case-level costs coexist with proceeding-scoped ones. #}
-    {% set costs_by_proc = financials.grouped_costs %}
-    {% set proc_keys_int = costs_by_proc.keys()|reject('none')|list|sort %}
-    {% set proc_keys_none = costs_by_proc.keys()|select('none')|list %}
-    {% for proc_id in (proc_keys_int + proc_keys_none) %}
-      {% set group_costs = costs_by_proc[proc_id] %}
-      {% set first_cost = group_costs[0] %}
-      {% set proc = first_cost.proceeding %}
-
-      <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
-        <div class="px-4 py-2 border-b border-outline-variant/10 bg-surface-container-low/30 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-[16px] text-primary">account_balance</span>
-            <h3 class="text-[11px] font-bold text-on-surface uppercase tracking-wider">
-              {% if proc %}
-                {{ proc.court_name }} <span class="ml-1 text-on-surface-variant font-mono normal-case">{{ proc.az_court }}</span>
-              {% else %}
-                Case-level (no proceeding)
-              {% endif %}
-            </h3>
-          </div>
-          {% set group_gross = group_costs|sum(attribute='amount_gross') %}
-          {% set group_paid = group_costs|sum(attribute='amount_paid') %}
-          <div class="flex gap-4 text-[10px] font-bold uppercase tracking-wider">
-            <span class="text-on-surface-variant">Subtotal: <span class="text-on-surface">{{ format_eur(group_gross) }}</span></span>
-            <span class="text-on-surface-variant">Paid: <span class="text-originator-own">{{ format_eur(group_paid) }}</span></span>
-          </div>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="border-b border-outline-variant/10 bg-surface-container-low/10">
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Category</th>
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Description / Position</th>
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Streitwert</th>
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
-                <th class="px-4 py-2 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
-                <th class="px-4 py-2 w-8"></th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-outline-variant/5">
-              {% for cost in group_costs %}
-                {% include "partials/cost_row.html" %}
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {% endfor %}
-
-    {# ── Document Cost Signals ── #}
     {% if financials.cost_signal_docs %}
     {% set kind_chip = {
         'streitwert': ('bg-primary/10 text-primary', 'Streitwert'),
-        'cost_ruling': ('bg-amber-500/10 text-amber-500', 'Kosten­entscheid.'),
-        'anwaltskosten': ('bg-red-500/15 text-red-400', 'Rechnung Anwalt'),
-        'gerichtskosten': ('bg-red-500/15 text-red-400', 'Rechnung Gericht'),
-        'vorschuss': ('bg-orange-500/15 text-orange-400', 'Vorschuss'),
-        'pkh_grant': ('bg-green-500/15 text-green-400', 'PKH bewilligt'),
-        'pkh_denied': ('bg-surface-container text-on-surface-variant', 'PKH abgelehnt'),
+        'cost_ruling': ('bg-amber-500/10 text-amber-500', 'Cost Ruling'),
+        'pkh_grant': ('bg-green-500/15 text-green-400', 'PKH Granted'),
+        'pkh_denied': ('bg-surface-container text-on-surface-variant', 'PKH Denied'),
     } %}
     <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden shadow-sm">
       <div class="px-4 py-2 border-b border-outline-variant/10 bg-surface-container-low/30 flex items-center gap-2">
@@ -179,17 +38,8 @@
         </thead>
         <tbody class="divide-y divide-outline-variant/5">
           {% for doc in financials.cost_signal_docs %}
-          {# Pick the doc's primary signal: prefer CostSignal (streitwert/ruling/pkh)
-             over LegalCost; pick the first row in each set. #}
           {% set signal = (doc.cost_signals|list)[0] if doc.cost_signals else none %}
-          {% set ledger = (doc.legal_costs|list)[0] if doc.legal_costs else none %}
-          {% if signal %}
-            {% set kind = signal.signal_type.value if signal.signal_type else '' %}
-          {% elif ledger %}
-            {% set kind = ledger.category.value if ledger.category else '' %}
-          {% else %}
-            {% set kind = '' %}
-          {% endif %}
+          {% set kind = signal.signal_type.value if signal and signal.signal_type else '' %}
           <tr class="hover:bg-surface-container-high/30 cursor-pointer" @click="openDoc({{ doc.id }})">
             <td class="px-4 py-2 text-[11px] text-on-surface">{{ doc.title or doc.filename }}</td>
             <td class="px-4 py-2 text-[11px] text-on-surface-variant font-mono">
@@ -203,16 +53,9 @@
               {% if kind == 'streitwert' %}
               <span class="text-primary">{{ format_eur(signal.amount) if signal and signal.amount else '—' }}</span>
               {% elif kind == 'cost_ruling' %}
-              <span class="text-amber-500 text-[9px]">
-                {% set alloc = signal.allocation if signal else none %}
-                {% if alloc and alloc.get('each_own') %}jeder eigen{% elif alloc and alloc.get('loser') %}§91 ZPO{% else %}—{% endif %}
-              </span>
-              {% elif kind in ('pkh_grant', 'pkh_denied') %}
-              <span class="text-on-surface-variant">—</span>
-              {% elif ledger %}
-              {{ format_eur(ledger.amount_net) if ledger.amount_net else '—' }}
+              {% include "partials/cost_ruling_cell.html" %}
               {% else %}
-              —
+              <span class="text-on-surface-variant">—</span>
               {% endif %}
             </td>
           </tr>
@@ -232,19 +75,19 @@
     <div class="grid grid-cols-4 gap-6">
       <div class="space-y-1">
         <p class="text-[10px] font-bold text-primary uppercase tracking-wider">RVG</p>
-        <p class="text-[11px] text-on-surface-variant leading-tight">Rechtsanwaltsvergütungsgesetz — Lawyer fees based on value in dispute and fee factor</p>
+        <p class="text-[11px] text-on-surface-variant leading-tight">Rechtsanwaltsvergütungsgesetz — counsel fees based on Streitwert and fee factor</p>
       </div>
       <div class="space-y-1">
         <p class="text-[10px] font-bold text-originator-court uppercase tracking-wider">GKG</p>
-        <p class="text-[11px] text-on-surface-variant leading-tight">Gerichtskostengesetz — Court fees including advance court costs (KV 1210)</p>
+        <p class="text-[11px] text-on-surface-variant leading-tight">Gerichtskostengesetz — court fees including advance payment (KV 1210)</p>
       </div>
       <div class="space-y-1">
         <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wider">JVEG</p>
-        <p class="text-[11px] text-on-surface-variant leading-tight">Justizvergütungs- und -entschädigungsgesetz — Expert witnesses and witness compensation</p>
+        <p class="text-[11px] text-on-surface-variant leading-tight">Justizvergütungs- und -entschädigungsgesetz — expert witness and witness compensation</p>
       </div>
       <div class="space-y-1">
         <p class="text-[10px] font-bold text-originator-own uppercase tracking-wider">§91 ZPO</p>
-        <p class="text-[11px] text-on-surface-variant leading-tight">Cost allocation — Prevailing party is entitled to cost recovery (loser pays)</p>
+        <p class="text-[11px] text-on-surface-variant leading-tight">Cost allocation — the losing party bears the costs of the prevailing party</p>
       </div>
     </div>
   </div>

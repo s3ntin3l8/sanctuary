@@ -126,23 +126,46 @@
 
     {# Actions #}
     <td class="px-4 py-3 align-top">
-        <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            {% if cost.status == 'offen' or cost.status == 'teilweise' %}
+        {% set _paid = cost.amount_paid or 0 %}
+        {% set _gross = cost.amount_gross or 0 %}
+        {% set _reimbursed = cost.amount_reimbursed or 0 %}
+        <div class="flex flex-wrap gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            {% if _paid < _gross and cost.status != 'erstattet' %}
             <button
                 hx-post="{{ request.app.url_path_for('mark_cost_paid', cost_id=cost.id) }}"
                 hx-target="#cost-row-{{ cost.id }}"
                 hx-swap="outerHTML"
                 class="text-[10px] font-bold text-originator-own bg-originator-own/10 hover:bg-originator-own/20 px-2 py-1 rounded transition-colors">
-                Mark Paid
+                Paid
             </button>
             {% endif %}
-            {% if cost.is_reimbursable and cost.status not in ('erstattet',) %}
+            {% if _paid > 0 %}
+            <button
+                hx-post="{{ request.app.url_path_for('mark_cost_unpaid', cost_id=cost.id) }}"
+                hx-target="#cost-row-{{ cost.id }}"
+                hx-swap="outerHTML"
+                title="Reset payment"
+                class="text-[10px] font-bold text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container-high px-2 py-1 rounded transition-colors">
+                ↺ Paid
+            </button>
+            {% endif %}
+            {% if cost.is_reimbursable and _reimbursed < _gross %}
             <button
                 hx-post="{{ request.app.url_path_for('mark_cost_reimbursed', cost_id=cost.id) }}"
                 hx-target="#cost-row-{{ cost.id }}"
                 hx-swap="outerHTML"
                 class="text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded transition-colors">
-                Mark Reimbursed
+                Reimbursed
+            </button>
+            {% endif %}
+            {% if _reimbursed > 0 %}
+            <button
+                hx-post="{{ request.app.url_path_for('mark_cost_unreimbursed', cost_id=cost.id) }}"
+                hx-target="#cost-row-{{ cost.id }}"
+                hx-swap="outerHTML"
+                title="Reset reimbursement"
+                class="text-[10px] font-bold text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container-high px-2 py-1 rounded transition-colors">
+                ↺ Reimbursed
             </button>
             {% endif %}
         </div>

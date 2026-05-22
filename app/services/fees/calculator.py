@@ -110,13 +110,15 @@ def default_allocation(case_type: CaseType, court_level: ProceedingCourtLevel) -
 def allocation_from_ruling(ruling: dict) -> dict:
     """Convert a cost_ruling signal's ``allocation`` dict to the canonical form.
 
-    Ruling shapes (from AI extraction):
-      {"loser": 1.0}      — loser pays all (court + opposing counsel)
-      {"each_own": true}  — each party bears its own costs
-      {"own": 0.5, "opposing": 0.5} — explicit split fractions
+    Ruling shapes (from AI extraction, written from the client's perspective):
+      {"loser": 1.0, "client_role": "winner"}  — opposing party bears the costs
+      {"loser": 1.0, "client_role": "loser"}   — we bear the costs
+      {"each_own": true}                        — each party bears own costs
+      {"own": 0.5, "opposing": 0.5, "client_role": "shared"} — explicit split
 
-    We assume we are the losing party when "loser" is present (worst-case),
-    and the winning party when "each_own" is true (cost-neutral outcome).
+    Backwards compatibility: a bare ``{"loser": 1.0}`` with no ``client_role``
+    is treated as ``"loser"`` (worst-case) so legacy data keeps working until
+    the user re-classifies it.
     """
     if not ruling:
         return {"own_court_share": 0.5, "own_opposing_share": 0.0, "source": "unknown"}
@@ -128,11 +130,19 @@ def allocation_from_ruling(ruling: dict) -> dict:
             "source": "ruling_each_own",
         }
 
+    role = ruling.get("client_role")
+
     if "loser" in ruling:
+        if role == "winner":
+            return {
+                "own_court_share": 0.0,
+                "own_opposing_share": 0.0,
+                "source": "ruling_we_won",
+            }
         return {
             "own_court_share": 1.0,
             "own_opposing_share": 1.0,
-            "source": "ruling_loser_pays",
+            "source": "ruling_we_lost",
         }
 
     own_share = float(ruling.get("own", 0.5))
@@ -140,5 +150,5 @@ def allocation_from_ruling(ruling: dict) -> dict:
     return {
         "own_court_share": own_share,
         "own_opposing_share": opposing_share,
-        "source": "ruling_split",
+        "source": "ruling_shared" if role == "shared" else "ruling_split",
     }

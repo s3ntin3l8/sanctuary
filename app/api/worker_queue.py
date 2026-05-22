@@ -54,12 +54,24 @@ def _get_queue_docs(
 
 
 def _current_stage(doc: Document) -> str:
-    """Return the stage name currently running/retrying, or first pending, or empty."""
+    """Return the most-advanced stage currently running/retrying, or earliest pending, or empty.
+
+    Stages are sorted by pipeline order so that a doc transitioning from
+    BATCH_ANALYSIS → ENRICH shows as ENRICH (higher order) rather than
+    BATCH_ANALYSIS when both are briefly in "running" state.
+    """
     stages = stages_dict(doc)
-    for stage_key, rec in stages.items():
+    # Sort descending by pipeline order; unknown keys sort last (-1)
+    ordered = sorted(
+        stages.items(),
+        key=lambda kv: STAGE_REGISTRY[kv[0]].order if kv[0] in STAGE_REGISTRY else -1,
+        reverse=True,
+    )
+    for stage_key, rec in ordered:
         if isinstance(rec, dict) and rec.get("status") in ("running", "retrying"):
             return stage_key
-    for stage_key, rec in stages.items():
+    # Fall back to earliest pending stage (ascending order)
+    for stage_key, rec in reversed(ordered):
         if isinstance(rec, dict) and rec.get("status") == "pending":
             return stage_key
     return ""
@@ -126,6 +138,18 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
+    # Use COUNT(*) for accurate totals — _get_queue_docs caps at 50 docs so
+    # len(running) would understate the real count when the queue is deep.
+    n_running = (
+        db.query(Document)
+        .filter(Document.pipeline_state == PipelineState.RUNNING)
+        .count()
+    )
+    n_pending = (
+        db.query(Document)
+        .filter(Document.pipeline_state == PipelineState.PENDING)
+        .count()
+    )
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
@@ -133,8 +157,8 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
             "queue_items": queue_items,
             "failed_docs": failed,
             "n_active_ai": n_active_ai,
-            "n_running": len(running),
-            "n_pending": len(pending),
+            "n_running": n_running,
+            "n_pending": n_pending,
             "n_failed": len(failed),
         },
     )
@@ -164,6 +188,16 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
+    n_running = (
+        db.query(Document)
+        .filter(Document.pipeline_state == PipelineState.RUNNING)
+        .count()
+    )
+    n_pending = (
+        db.query(Document)
+        .filter(Document.pipeline_state == PipelineState.PENDING)
+        .count()
+    )
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
@@ -171,8 +205,8 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
             "queue_items": queue_items,
             "failed_docs": failed,
             "n_active_ai": n_active_ai,
-            "n_running": len(running),
-            "n_pending": len(pending),
+            "n_running": n_running,
+            "n_pending": n_pending,
             "n_failed": len(failed),
         },
     )

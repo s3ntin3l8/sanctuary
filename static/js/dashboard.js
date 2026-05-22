@@ -197,6 +197,7 @@ function registerCaseDashboard() {
     reviewOpen: false,
     procOpen: false,
     partyFilter: null,
+    actionItemsCollapsed: false,
 
     renderer: null,
     contextMenu: { open: false, x: 0, y: 0, docId: null },
@@ -206,12 +207,22 @@ function registerCaseDashboard() {
       window._dashOpenDoc = (id) => this.openDoc(id);
       this.$el.addEventListener('set-filter', (e) => { this.filter = e.detail.filter; });
 
+      this.actionItemsCollapsed = localStorage.getItem('sanctuary:actionItemsCollapsed') === '1';
+
       // Handle deep-linking to specific views or claims via URL
       const urlParams = new URLSearchParams(window.location.search);
       const viewParam = urlParams.get('view');
       if (viewParam) {
         this.view = viewParam;
       }
+
+      // Re-sync the active view when the user navigates with the browser
+      // back/forward buttons. setView pushes new history entries; without
+      // this listener the URL would update but the Alpine state would not.
+      window.addEventListener('popstate', () => {
+        const v = new URLSearchParams(window.location.search).get('view') || 'graph';
+        if (v !== this.view) this.view = v;
+      });
 
       this.$nextTick(() => {
         if (this.view === 'graph') {
@@ -311,7 +322,14 @@ function registerCaseDashboard() {
     },
 
     setView(v) {
+      if (v === this.view) return;
       this.view = v;
+      // Persist the active view in the URL so a refresh keeps the user on
+      // the same tab. Default `/cases/<id>` (no query) still falls back to
+      // graph on the server side, which is the intended initial-visit UX.
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', v);
+      window.history.pushState({ view: v }, '', url);
     },
 
     openDoc(id) {
@@ -354,6 +372,11 @@ function registerCaseDashboard() {
     closeContextMenu() { this.contextMenu.open = false; },
 
     togglePartyFilter(key) { this.partyFilter = this.partyFilter === key ? null : key; },
+
+    toggleActionItems() {
+      this.actionItemsCollapsed = !this.actionItemsCollapsed;
+      localStorage.setItem('sanctuary:actionItemsCollapsed', this.actionItemsCollapsed ? '1' : '0');
+    },
 
     isNodeHidden(tier, role) {
       if (this.filter === 'critical') return tier !== 'critical';

@@ -9,7 +9,7 @@
   </div>
   <p class="text-xs text-on-surface-variant flex items-center gap-1.5">
     Projected exposure
-    <span class="material-symbols-outlined text-[14px] cursor-help" title="RVG/GKG fee projection from Streitwert signals, plus open ledger rows, minus expected refunds.">info</span>
+    <span class="material-symbols-outlined text-[14px] cursor-help" title="RVG/GKG estimate from Streitwert signals, plus open items, minus expected reimbursements.">info</span>
   </p>
 
   <div class="grid grid-cols-3 gap-2 pt-1 border-b border-outline-variant/10 pb-3">
@@ -30,9 +30,7 @@
   {% if financials.cost_signal_docs %}
   {% set last_doc = financials.cost_signal_docs[0] %}
   {% set signal = (last_doc.cost_signals|list)[0] if last_doc.cost_signals else none %}
-  {% set ledger = (last_doc.legal_costs|list)[0] if last_doc.legal_costs else none %}
   {% set sig_kind = signal.signal_type.value if signal and signal.signal_type else '' %}
-  {% set ledger_cat = ledger.category.value if ledger and ledger.category else '' %}
   <div class="pt-1">
     <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Last Signal</p>
     <button @click="openDoc({{ last_doc.id }})"
@@ -41,13 +39,9 @@
         {% if sig_kind == 'streitwert' %}
         <span class="text-[11px] font-bold text-primary">{{ format_eur(signal.amount) if signal.amount else '—' }} <span class="font-normal text-on-surface-variant text-[9px]">Streitwert</span></span>
         {% elif sig_kind == 'cost_ruling' %}
-        <span class="text-[11px] font-bold text-amber-500">Kostenentscheidung</span>
+        <span class="text-[11px] font-bold text-amber-500">Cost Ruling</span>
         {% elif sig_kind in ('pkh_grant', 'pkh_denied') %}
-        <span class="text-[11px] font-bold {% if sig_kind == 'pkh_grant' %}text-originator-own{% else %}text-outline{% endif %}">PKH {{ 'bewilligt' if sig_kind == 'pkh_grant' else 'abgelehnt' }}</span>
-        {% elif ledger_cat in ('anwaltskosten', 'gerichtskosten') %}
-        <span class="text-[11px] font-bold text-originator-opposing">&minus;{{ format_eur(ledger.amount_net) if ledger.amount_net else '—' }}</span>
-        {% elif ledger_cat == 'vorschuss' %}
-        <span class="text-[11px] font-bold text-orange-400">&minus;{{ format_eur(ledger.amount_net) if ledger.amount_net else '—' }} <span class="font-normal text-[9px]">Vorschuss</span></span>
+        <span class="text-[11px] font-bold {% if sig_kind == 'pkh_grant' %}text-originator-own{% else %}text-outline{% endif %}">PKH {{ 'Granted' if sig_kind == 'pkh_grant' else 'Denied' }}</span>
         {% else %}
         <span class="text-[11px] font-bold text-on-surface">—</span>
         {% endif %}

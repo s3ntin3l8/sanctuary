@@ -2,21 +2,93 @@ import math
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.config import templates
 from app.constants import (
     CASE_STATUS_META,
     COST_CATEGORY_META,
     COST_STATUS_META,
 )
 from app.dependencies import get_db
-from app.helpers import render_page
-from app.models.database import Case, LegalCost
+from app.helpers import build_cost_summary, render_page
+from app.models.database import Case, CostSignal, LegalCost
 from app.models.enums import CaseStatus, CostCategory, CostStatus
-from app.services.case_service import recompute_total_cost_exposure
+from app.services.case_service import (
+    build_case_level_costs,
+    build_proceeding_exposure,
+    recompute_total_cost_exposure,
+)
 from app.services.cost_service import CostService
 
 router = APIRouter(prefix="/costs", tags=["pages"])
+
+
+def _build_financials_oob_html(request: Request, case_id: str, db: Session) -> str:
+    """Render the financial KPI strip and per-instance projection as OOB swaps.
+
+    HTMX picks up the elements (marked `hx-swap-oob="true"`) and replaces
+    `#financials-kpi` and `#financials-per-instance` in the page, so the
+    headline numbers and the proceeding breakdown stay in lockstep with the
+    triggering mutation without a full reload.
+    """
+    case_costs = db.query(LegalCost).filter(LegalCost.case_id == case_id).all()
+    cost_summary = build_cost_summary(case_costs, CostStatus)
+    case = db.query(Case).filter(Case.id == case_id).first()
+    financials = {
+        "total_cost_exposure": case.total_cost_exposure if case else 0,
+        "proceeding_exposure": build_proceeding_exposure(case_id, db),
+        "case_level_costs": build_case_level_costs(case_id, db),
+    }
+    kpi_html = templates.get_template("partials/dashboard/financials_kpi.html").render(
+        request=request,
+        cost_summary=cost_summary,
+        financials=financials,
+        oob=True,
+    )
+    per_instance_html = templates.get_template(
+        "partials/dashboard/financials_per_instance.html"
+    ).render(
+        request=request,
+        financials=financials,
+        cost_status_meta=COST_STATUS_META,
+        cost_category_meta=COST_CATEGORY_META,
+        oob=True,
+    )
+    return kpi_html + per_instance_html
+
+
+def _render_cost_row_with_kpi_oob(
+    request: Request,
+    cost: LegalCost,
+    db: Session,
+    row_style: str = "standard",
+) -> HTMLResponse:
+    """Updated cost row + OOB financials refresh.
+
+    ``row_style`` decides which row template the main response carries:
+      * ``"standard"`` — the 7-col ``partials/cost_row.html`` used by the
+        global ``/costs`` page (with inline editors).
+      * ``"bucket"`` — the 6-col ``partials/dashboard/cost_bucket_row.html``
+        used inside the consolidated per-instance table on the case
+        Financials view.
+    The OOB tail (KPI strip + per-instance projection) is identical for
+    both — only the targeted row HTML differs so the swap fits the
+    surrounding table layout.
+    """
+    if row_style == "bucket":
+        row_template = "partials/dashboard/cost_bucket_row.html"
+    else:
+        row_template = "partials/cost_row.html"
+    row_html = templates.get_template(row_template).render(
+        request=request,
+        cost=cost,
+        cost_status_meta=COST_STATUS_META,
+        cost_category_meta=COST_CATEGORY_META,
+    )
+    oob_html = _build_financials_oob_html(request, cost.case_id, db)
+    return HTMLResponse(row_html + oob_html)
 
 
 def _parse_positive_float(value: str, field_name: str) -> float:
@@ -112,6 +184,7 @@ async def create_cost(
     gebuehren_faktor: float | None = Form(None),
     notes: str | None = Form(None),
     is_reimbursable: bool = Form(True),
+    row_style: str = Form("standard"),
     db: Session = Depends(get_db),
 ):
     if amount_gross is None:
@@ -141,18 +214,16 @@ async def create_cost(
 
     recompute_total_cost_exposure(case_id, db)
 
-    # Return the new row for HTMX swap
-    return render_page(
-        request,
-        "partials/cost_row.html",
-        cost=cost,
-        cost_status_meta=COST_STATUS_META,
-        cost_category_meta=COST_CATEGORY_META,
-    )
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
 
 
 @router.post("/{cost_id}/pay")
-async def mark_cost_paid(request: Request, cost_id: int, db: Session = Depends(get_db)):
+async def mark_cost_paid(
+    request: Request,
+    cost_id: int,
+    row_style: str = Form("standard"),
+    db: Session = Depends(get_db),
+):
     cost_service = CostService(db)
     cost = cost_service.mark_as_paid(cost_id)
     if not cost:
@@ -160,13 +231,7 @@ async def mark_cost_paid(request: Request, cost_id: int, db: Session = Depends(g
 
     recompute_total_cost_exposure(cost.case_id, db)
 
-    return render_page(
-        request,
-        "partials/cost_row.html",
-        cost=cost,
-        cost_status_meta=COST_STATUS_META,
-        cost_category_meta=COST_CATEGORY_META,
-    )
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
 
 
 @router.post("/{cost_id}/reimburse")
@@ -174,6 +239,7 @@ async def mark_cost_reimbursed(
     request: Request,
     cost_id: int,
     amount: float | None = Form(None),
+    row_style: str = Form("standard"),
     db: Session = Depends(get_db),
 ):
     cost_service = CostService(db)
@@ -186,13 +252,41 @@ async def mark_cost_reimbursed(
 
     recompute_total_cost_exposure(cost.case_id, db)
 
-    return render_page(
-        request,
-        "partials/cost_row.html",
-        cost=cost,
-        cost_status_meta=COST_STATUS_META,
-        cost_category_meta=COST_CATEGORY_META,
-    )
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
+
+
+@router.post("/{cost_id}/unpay")
+async def mark_cost_unpaid(
+    request: Request,
+    cost_id: int,
+    row_style: str = Form("standard"),
+    db: Session = Depends(get_db),
+):
+    cost_service = CostService(db)
+    cost = cost_service.mark_as_unpaid(cost_id)
+    if not cost:
+        raise HTTPException(status_code=404, detail="Cost not found")
+
+    recompute_total_cost_exposure(cost.case_id, db)
+
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
+
+
+@router.post("/{cost_id}/unreimburse")
+async def mark_cost_unreimbursed(
+    request: Request,
+    cost_id: int,
+    row_style: str = Form("standard"),
+    db: Session = Depends(get_db),
+):
+    cost_service = CostService(db)
+    cost = cost_service.mark_as_unreimbursed(cost_id)
+    if not cost:
+        raise HTTPException(status_code=404, detail="Cost not found")
+
+    recompute_total_cost_exposure(cost.case_id, db)
+
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
 
 
 @router.post("/{cost_id}/update-field")
@@ -201,6 +295,7 @@ async def update_cost_field(
     cost_id: int,
     field: str = Form(...),
     value: str = Form(...),
+    row_style: str = Form("standard"),
     db: Session = Depends(get_db),
 ):
     cost = db.get(LegalCost, cost_id)
@@ -251,10 +346,92 @@ async def update_cost_field(
 
     recompute_total_cost_exposure(cost.case_id, db)
 
-    return render_page(
-        request,
-        "partials/cost_row.html",
-        cost=cost,
-        cost_status_meta=COST_STATUS_META,
-        cost_category_meta=COST_CATEGORY_META,
+    return _render_cost_row_with_kpi_oob(request, cost, db, row_style=row_style)
+
+
+@router.post("/signals/{signal_id}/auto-detect-role")
+async def auto_detect_cost_signal_role(
+    request: Request, signal_id: int, db: Session = Depends(get_db)
+):
+    """Re-side a cost-ruling signal by reading its source document via LLM.
+
+    Wraps ``cost_ruling_sider.detect_cost_ruling_role``: when the model
+    returns a confident winner/loser/shared/each_own verdict we persist the
+    new allocation and refresh the page; on ``unknown`` or any internal
+    failure we leave the existing allocation alone and surface the cell
+    untouched (the user can still flip via the dropdown).
+    """
+    from app.services.intelligence.cost_ruling_sider import detect_cost_ruling_role
+
+    signal = db.get(CostSignal, signal_id)
+    if not signal:
+        raise HTTPException(status_code=404, detail="Cost signal not found")
+    if signal.signal_type.value != "cost_ruling":
+        raise HTTPException(status_code=422, detail="Signal is not a cost ruling")
+
+    new_alloc = detect_cost_ruling_role(signal_id, db)
+    if new_alloc is not None:
+        signal.allocation = new_alloc
+        db.commit()
+        db.refresh(signal)
+        if signal.case_id:
+            recompute_total_cost_exposure(signal.case_id, db)
+
+    cell_html = templates.get_template("partials/cost_ruling_cell.html").render(
+        request=request, signal=signal
     )
+    oob_html = (
+        _build_financials_oob_html(request, signal.case_id, db)
+        if signal.case_id
+        else ""
+    )
+    return HTMLResponse(cell_html + oob_html)
+
+
+@router.post("/signals/{signal_id}/client-role")
+async def update_cost_signal_client_role(
+    request: Request,
+    signal_id: int,
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Side a cost-ruling signal from the client's perspective.
+
+    Accepts ``winner`` / ``loser`` / ``unset`` and mutates the existing
+    ``CostSignal.allocation`` JSON in place. Triggers a recompute so the
+    headline projection and per-instance breakdown reflect who actually
+    bears the costs.
+    """
+    if role not in {"winner", "loser", "unset"}:
+        raise HTTPException(status_code=422, detail="Invalid client_role")
+
+    signal = db.get(CostSignal, signal_id)
+    if not signal:
+        raise HTTPException(status_code=404, detail="Cost signal not found")
+
+    allocation = dict(signal.allocation or {})
+    if role == "unset":
+        allocation.pop("client_role", None)
+    else:
+        allocation["client_role"] = role
+    # A manual choice supersedes any prior auto-detect, so drop the markers.
+    allocation.pop("auto_detected", None)
+    allocation.pop("rationale", None)
+    signal.allocation = allocation
+    # SQLAlchemy doesn't dirty-track in-place JSON mutations; force the column
+    # to be considered changed by reassigning the attribute.
+    db.commit()
+    db.refresh(signal)
+
+    if signal.case_id:
+        recompute_total_cost_exposure(signal.case_id, db)
+
+    cell_html = templates.get_template("partials/cost_ruling_cell.html").render(
+        request=request, signal=signal
+    )
+    oob_html = (
+        _build_financials_oob_html(request, signal.case_id, db)
+        if signal.case_id
+        else ""
+    )
+    return HTMLResponse(cell_html + oob_html)

@@ -1,0 +1,36 @@
+{# KPI strip for the financials view. Rendered standalone with `hx-swap-oob="true"`
+   from cost endpoints so PAID/OUTSTANDING/PROJECTED stay in sync after mark-paid /
+   mark-reimbursed without a full page reload. #}
+<div id="financials-kpi" class="grid grid-cols-5 gap-3" {% if oob %}hx-swap-oob="true"{% endif %}>
+    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
+      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Total Booked</div>
+      <div class="font-headline text-[20px] font-bold mt-1 text-on-surface">
+        {{ format_eur(cost_summary.total_gross) }}
+      </div>
+    </div>
+    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
+      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Paid</div>
+      <div class="font-headline text-[20px] font-bold mt-1 text-originator-own">
+        {{ format_eur(cost_summary.total_paid) }}
+      </div>
+    </div>
+    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
+      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Outstanding</div>
+      <div class="font-headline text-[20px] font-bold mt-1 {% if cost_summary.total_outstanding > 0 %}text-originator-opposing{% else %}text-originator-own{% endif %}">
+        {{ format_eur(cost_summary.total_outstanding) }}
+      </div>
+    </div>
+    <div class="p-4 rounded-xl border border-surface-container-high bg-surface-container">
+      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">§91 ZPO</div>
+      <div class="font-headline text-[20px] font-bold mt-1 text-primary">
+        {{ format_eur(cost_summary.total_reimbursable) }}
+      </div>
+    </div>
+    <div class="p-4 rounded-xl border border-dashed border-amber-500/30 bg-surface-container/60">
+      <div class="text-[10px] uppercase tracking-[0.1em]" style="color:var(--color-on-surface-variant);">Projected</div>
+      <div class="font-headline text-[20px] font-bold mt-1 text-amber-500">
+        {{ format_eur((financials.total_cost_exposure or 0) / 100.0) }}
+      </div>
+      <div class="text-[9px] mt-1" style="color:var(--color-on-surface-variant);">RVG/GKG · Invoices supersede estimate</div>
+    </div>
+</div>

@@ -21,6 +21,7 @@ from app.models.enums import (
     AuditEventType,
     CaseStatus,
     CaseType,
+    CostCategory,
     CostSignalType,
     CostStatus,
     Jurisdiction,
@@ -467,16 +468,23 @@ def _signals_by_proceeding(case_id: str, db: Session) -> dict[int, dict]:
     return out
 
 
-def _ledger_net_exposure(case_id: str, db: Session) -> float:
+def _ledger_net_exposure(
+    case_id: str, db: Session, exclude_ids: set[int] | None = None
+) -> float:
     """Net open financial exposure from LegalCost ledger rows in EUR.
 
     - ERSTATTET rows contribute 0 (fully reimbursed).
     - BEZAHLT rows reduce exposure by any overpayment (expected refund).
     - All other rows contribute (amount_gross - amount_paid - amount_reimbursed).
+    - Rows in ``exclude_ids`` are skipped — those already counted via the
+      per-proceeding projection (rolled up in ``_build_per_instance_exposure``).
     """
+    exclude = exclude_ids or set()
     costs = db.query(LegalCost).filter(LegalCost.case_id == case_id).all()
     total = 0.0
     for c in costs:
+        if c.id in exclude:
+            continue
         gross = c.amount_gross or 0.0
         paid = c.amount_paid or 0.0
         reimbursed = c.amount_reimbursed or 0.0
@@ -489,26 +497,53 @@ def _ledger_net_exposure(case_id: str, db: Session) -> float:
     return total
 
 
-def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
-    """Recompute and persist Case.total_cost_exposure using the RVG/GKG calculator.
+_PROJECTED_CATEGORIES = {
+    CostCategory.ANWALTSKOSTEN,
+    CostCategory.GERICHTSKOSTEN,
+    CostCategory.ANWALTSKOSTEN_GEGNER,
+}
 
-    Algorithm per proceeding:
-      1. Find the latest streitwert signal — skip if none (no projection basis).
-      2. Resolve allocation: own ruling > propagated ruling > family default >
-         assume_worst_case toggle > civil placeholder.
-      3. Add: own lawyer gross + court × own_court_share + opposing × own_opposing_share.
 
-    Also adds open LegalCost ledger rows (invoices, vorschüsse, manual entries)
-    and subtracts expected refunds from overpaid rows.
+def _costs_by_proceeding_and_category(
+    case_id: str, db: Session
+) -> dict[int | None, dict[CostCategory, list[LegalCost]]]:
+    """Group all of a case's LegalCost rows by (proceeding_id, category).
 
-    Returns the new total in cents and persists it on Case.total_cost_exposure.
+    Used by ``_build_per_instance_exposure`` to attach the actual invoice
+    rows alongside the theoretical projection numbers for each bucket, so
+    the consolidated UI table can render both.
+    """
+    out: dict[int | None, dict[CostCategory, list[LegalCost]]] = {}
+    rows = db.query(LegalCost).filter(LegalCost.case_id == case_id).all()
+    for c in rows:
+        per_proc = out.setdefault(c.proceeding_id, {})
+        per_proc.setdefault(c.category, []).append(c)
+    return out
+
+
+def _build_per_instance_exposure(
+    case_id: str, db: Session
+) -> tuple[list[dict], set[int]]:
+    """Compute the per-proceeding fee breakdown and the set of LegalCost
+    IDs whose gross is already represented in those rows.
+
+    Single source of truth for both ``build_proceeding_exposure`` (UI) and
+    ``recompute_total_cost_exposure`` (headline). Avoids the prior shape
+    where the two functions duplicated allocation/propagation logic.
+
+    The result dicts also carry the bucketed LegalCost rows
+    (``invoices_own / invoices_court / invoices_opposing / invoices_other``)
+    and the **theoretical** RVG/GKG values per bucket
+    (``own_theoretical / court_theoretical / opposing_theoretical``) so the
+    consolidated financials UI can show the RVG estimate dimmed alongside
+    the real invoice.
     """
     if not case_id or case_id == "_TRIAGE":
-        return 0
+        return [], set()
 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
-        return 0
+        return [], set()
 
     is_family = (
         hasattr(case, "case_type")
@@ -524,18 +559,66 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
         .all()
     )
 
-    # Batch: pull all streitwert + ruling signals for the case in ONE query
-    # instead of P × 2 per-proceeding round-trips.
     signals_by_proc = _signals_by_proceeding(case_id, db)
+    costs_by_proc = _costs_by_proceeding_and_category(case_id, db)
 
-    total_eur = 0.0
+    result: list[dict] = []
+    consumed_ids: set[int] = set()
     propagated_allocation: dict | None = None
 
     for proc in proceedings:
         signals = signals_by_proc.get(proc.id, {})
         streitwert = signals.get("streitwert")
+        proc_costs = costs_by_proc.get(proc.id, {})
+
+        # "Other" bucket — categories that aren't part of the RVG/GKG
+        # projection (Vorschuss, Auslagen, expert fees, enforcement,
+        # misc). Surfaced inline so the user can manage them here instead
+        # of digging into a separate cost table.
+        invoices_other: list[LegalCost] = []
+        for cat, rows in proc_costs.items():
+            if cat not in _PROJECTED_CATEGORIES:
+                invoices_other.extend(rows)
+        invoices_own = proc_costs.get(CostCategory.ANWALTSKOSTEN, [])
+        invoices_court = proc_costs.get(CostCategory.GERICHTSKOSTEN, [])
+        invoices_opposing = proc_costs.get(CostCategory.ANWALTSKOSTEN_GEGNER, [])
+
+        # Proceedings without a Streitwert signal still appear so the user
+        # can manage any booked rows attached to them — they just have no
+        # projection lines.
         if not streitwert or streitwert <= 0:
-            continue  # no basis for fee projection; skip this proceeding
+            if not any(
+                (invoices_own, invoices_court, invoices_opposing, invoices_other)
+            ):
+                continue
+            result.append(
+                {
+                    "proceeding": proc,
+                    "streitwert": None,
+                    "allocation_source": "no_projection",
+                    "own_lawyer_gross": 0.0,
+                    "own_lawyer_source": "rvg",
+                    "own_lawyer_breakdown": {},
+                    "court_fee": 0.0,
+                    "court_fee_share": 0.0,
+                    "court_fee_charged": 0.0,
+                    "court_fee_source": "gkg",
+                    "opposing_gross": 0.0,
+                    "opposing_source": "rvg",
+                    "subtotal": 0.0,
+                    "own_theoretical": 0.0,
+                    "court_theoretical": 0.0,
+                    "opposing_theoretical": 0.0,
+                    "invoices_own": invoices_own,
+                    "invoices_court": invoices_court,
+                    "invoices_opposing": invoices_opposing,
+                    "invoices_other": invoices_other,
+                }
+            )
+            for rows in proc_costs.values():
+                for c in rows:
+                    consumed_ids.add(c.id)
+            continue
 
         ruling_alloc = signals.get("ruling_allocation")
         if ruling_alloc:
@@ -554,16 +637,121 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
         else:
             alloc = default_allocation(case_type, proc.court_level)
 
-        own = lawyer_fees(streitwert, proc.court_level, is_family)
-        c_fee = court_fees(streitwert, proc.court_level, is_family)
+        theo_own = lawyer_fees(streitwert, proc.court_level, is_family)
+        theo_court_raw = court_fees(streitwert, proc.court_level, is_family)
 
-        total_eur += own["gross"]
-        total_eur += c_fee * alloc["own_court_share"]
-        if alloc["own_opposing_share"] > 0:
-            opp = lawyer_fees(streitwert, proc.court_level, is_family)
-            total_eur += opp["gross"] * alloc["own_opposing_share"]
+        own_theoretical = theo_own["gross"]
+        court_theoretical = theo_court_raw * alloc["own_court_share"]
+        opposing_theoretical = (
+            theo_own["gross"] * alloc["own_opposing_share"]
+            if alloc["own_opposing_share"] > 0
+            else 0.0
+        )
 
-    total_eur += _ledger_net_exposure(case_id, db)
+        # Own counsel — invoice supersedes the theoretical RVG line.
+        if invoices_own:
+            own_gross = sum((c.amount_gross or 0.0) for c in invoices_own)
+            own_source = "invoice"
+            consumed_ids.update(c.id for c in invoices_own)
+        else:
+            own_gross = own_theoretical
+            own_source = "rvg"
+
+        # Court fees — invoice supersedes the theoretical GKG line. The
+        # invoice represents what we were actually charged, so the
+        # allocation share no longer applies.
+        if invoices_court:
+            court_charged = sum((c.amount_gross or 0.0) for c in invoices_court)
+            court_source = "invoice"
+            consumed_ids.update(c.id for c in invoices_court)
+        else:
+            court_charged = court_theoretical
+            court_source = "gkg"
+
+        # Opposing counsel — invoice (e.g. opposing's bill we have to settle
+        # after losing) supersedes the theoretical. Theoretical applies only
+        # if a positive own_opposing_share remains.
+        if invoices_opposing:
+            opp_charged = sum((c.amount_gross or 0.0) for c in invoices_opposing)
+            opp_source = "invoice"
+            consumed_ids.update(c.id for c in invoices_opposing)
+        else:
+            opp_charged = opposing_theoretical
+            opp_source = "rvg"
+
+        # "Other" bucket flows into the subtotal but never into the
+        # theoretical projection.
+        other_gross = sum((c.amount_gross or 0.0) for c in invoices_other)
+        consumed_ids.update(c.id for c in invoices_other)
+
+        result.append(
+            {
+                "proceeding": proc,
+                "streitwert": streitwert,
+                "allocation_source": alloc.get("source", ""),
+                "own_lawyer_gross": own_gross,
+                "own_lawyer_source": own_source,
+                "own_lawyer_breakdown": theo_own.get("breakdown", {}),
+                "court_fee": theo_court_raw,
+                "court_fee_share": alloc["own_court_share"],
+                "court_fee_charged": court_charged,
+                "court_fee_source": court_source,
+                "opposing_gross": opp_charged,
+                "opposing_source": opp_source,
+                "subtotal": own_gross + court_charged + opp_charged + other_gross,
+                # Audit-trail extras for the consolidated UI.
+                "own_theoretical": own_theoretical,
+                "court_theoretical": court_theoretical,
+                "opposing_theoretical": opposing_theoretical,
+                "invoices_own": invoices_own,
+                "invoices_court": invoices_court,
+                "invoices_opposing": invoices_opposing,
+                "invoices_other": invoices_other,
+            }
+        )
+
+    return result, consumed_ids
+
+
+def build_case_level_costs(case_id: str, db: Session) -> list[LegalCost]:
+    """Return LegalCost rows attached to the case but not to any proceeding.
+
+    Surfaced in the financials UI as a separate "Sonstige (kein Verfahren
+    zugeordnet)" card so the user can manage retainers / general copies /
+    other non-instance costs alongside the per-proceeding view.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return []
+    return (
+        db.query(LegalCost)
+        .filter(
+            LegalCost.case_id == case_id,
+            LegalCost.proceeding_id.is_(None),
+        )
+        .order_by(LegalCost.issued_at.asc().nullslast(), LegalCost.id.asc())
+        .all()
+    )
+
+
+def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
+    """Recompute and persist Case.total_cost_exposure in cents.
+
+    Total = sum of per-proceeding subtotals (RVG/GKG theoretical, or actual
+    invoice gross when one exists) + ledger exposure from non-projection
+    costs (Vorschuss, Auslagen, sonstige). Invoice rows already counted via
+    the proceeding breakdown are skipped to avoid the historical double-
+    count between theoretical and actual.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return 0
+
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not case:
+        return 0
+
+    rows, consumed_ids = _build_per_instance_exposure(case_id, db)
+    total_eur = sum(r["subtotal"] for r in rows)
+    total_eur += _ledger_net_exposure(case_id, db, exclude_ids=consumed_ids)
 
     total_cents = int(round(total_eur * 100))
     case.total_cost_exposure = total_cents
@@ -574,87 +762,9 @@ def recompute_total_cost_exposure(case_id: str, db: Session) -> int:
 
 
 def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
-    """Return a per-proceeding fee breakdown for the financials UI.
-
-    Each entry contains proceeding object, streitwert, allocation source label,
-    and computed fee components (own lawyer, court share, opposing share, subtotal).
-    Proceedings with no streitwert signal are omitted.
-    """
-    if not case_id or case_id == "_TRIAGE":
-        return []
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return []
-
-    is_family = (
-        hasattr(case, "case_type")
-        and case.case_type is not None
-        and case.case_type == CaseType.FAMILY
-    )
-
-    proceedings = (
-        db.query(Proceeding)
-        .filter(Proceeding.case_id == case_id)
-        .order_by(Proceeding.started_at.asc().nullslast(), Proceeding.id.asc())
-        .all()
-    )
-
-    # Batch: same one-query lookup recompute_total_cost_exposure uses.
-    signals_by_proc = _signals_by_proceeding(case_id, db)
-
-    result = []
-    propagated_allocation: dict | None = None
-
-    for proc in proceedings:
-        signals = signals_by_proc.get(proc.id, {})
-        streitwert = signals.get("streitwert")
-        if not streitwert or streitwert <= 0:
-            continue
-
-        ruling_alloc = signals.get("ruling_allocation")
-        if ruling_alloc:
-            alloc = ruling_alloc
-            propagated_allocation = ruling_alloc
-        elif propagated_allocation:
-            alloc = {**propagated_allocation, "source": "propagated"}
-        elif is_family:
-            alloc = default_allocation(CaseType.FAMILY, proc.court_level)
-        elif getattr(case, "assume_worst_case", True):
-            alloc = {
-                "own_court_share": 1.0,
-                "own_opposing_share": 1.0,
-                "source": "worst_case",
-            }
-        else:
-            alloc = default_allocation(CaseType.CIVIL, proc.court_level)
-
-        own = lawyer_fees(streitwert, proc.court_level, is_family)
-        c_fee = court_fees(streitwert, proc.court_level, is_family)
-        opp_gross = (
-            lawyer_fees(streitwert, proc.court_level, is_family)["gross"]
-            if alloc["own_opposing_share"] > 0
-            else 0.0
-        )
-
-        result.append(
-            {
-                "proceeding": proc,
-                "streitwert": streitwert,
-                "allocation_source": alloc.get("source", ""),
-                "own_lawyer_gross": own["gross"],
-                "own_lawyer_breakdown": own.get("breakdown", {}),
-                "court_fee": c_fee,
-                "court_fee_share": alloc["own_court_share"],
-                "court_fee_charged": c_fee * alloc["own_court_share"],
-                "opposing_gross": opp_gross * alloc["own_opposing_share"],
-                "subtotal": own["gross"]
-                + c_fee * alloc["own_court_share"]
-                + opp_gross * alloc["own_opposing_share"],
-            }
-        )
-
-    return result
+    """Return the per-proceeding fee breakdown for the financials UI."""
+    rows, _ = _build_per_instance_exposure(case_id, db)
+    return rows
 
 
 class CaseService:

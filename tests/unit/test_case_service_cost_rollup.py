@@ -151,17 +151,43 @@ def test_civil_cost_ruling_each_own(db_session):
 
 
 @pytest.mark.unit
-def test_civil_cost_ruling_loser_pays(db_session):
-    """Cost ruling loser pays → own + full court + full opposing."""
+def test_civil_cost_ruling_we_lost(db_session):
+    """Cost ruling, client is the loser → own + full court + full opposing."""
     case = _make_case(db_session)
     proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
     _add_signal(db_session, case.id, proc.id, "streitwert", amount=10_000)
-    _add_signal(db_session, case.id, proc.id, "cost_ruling", allocation={"loser": 1.0})
+    _add_signal(
+        db_session,
+        case.id,
+        proc.id,
+        "cost_ruling",
+        allocation={"loser": 1.0, "client_role": "loser"},
+    )
     db_session.commit()
 
     result = recompute_total_cost_exposure(case.id, db_session)
     # 1850.45 + 1842.00 + 1850.45 = 5542.90 → 554290
     assert result == pytest.approx(554290, abs=1)
+
+
+@pytest.mark.unit
+def test_civil_cost_ruling_we_won(db_session):
+    """Cost ruling, opposing party is the loser → only own counsel projected."""
+    case = _make_case(db_session)
+    proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
+    _add_signal(db_session, case.id, proc.id, "streitwert", amount=10_000)
+    _add_signal(
+        db_session,
+        case.id,
+        proc.id,
+        "cost_ruling",
+        allocation={"loser": 1.0, "client_role": "winner"},
+    )
+    db_session.commit()
+
+    result = recompute_total_cost_exposure(case.id, db_session)
+    # own 1850.45, court×0 = 0, opposing×0 = 0 → 1850.45 → 185045
+    assert result == pytest.approx(185045, abs=1)
 
 
 # ---------------------------------------------------------------------------
@@ -296,3 +322,150 @@ def test_erstattet_row_not_counted(db_session):
     db_session.commit()
 
     assert recompute_total_cost_exposure(case.id, db_session) == 0
+
+
+@pytest.mark.unit
+def test_build_proceeding_exposure_attaches_invoices(db_session):
+    """The consolidated UI needs each LegalCost row to be reachable from
+    its proceeding-exposure entry, bucketed by category."""
+    from app.services.case_service import build_proceeding_exposure
+
+    case = _make_case(db_session, worst_case=False)
+    proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
+    _add_signal(db_session, case.id, proc.id, "streitwert", amount=10_000)
+    inv_own = LegalCost(
+        case_id=case.id,
+        proceeding_id=proc.id,
+        category=CostCategory.ANWALTSKOSTEN,
+        title="Rechnung Anwalt",
+        amount_net=840.34,
+        vat_rate=0.19,
+        amount_gross=1000.0,
+        status=CostStatus.OFFEN,
+    )
+    inv_vorschuss = LegalCost(
+        case_id=case.id,
+        proceeding_id=proc.id,
+        category=CostCategory.VORSCHUSS,
+        title="Gerichtskostenvorschuss",
+        amount_net=150.0,
+        vat_rate=0.0,
+        amount_gross=150.0,
+        status=CostStatus.OFFEN,
+    )
+    db_session.add_all([inv_own, inv_vorschuss])
+    db_session.commit()
+
+    rows = build_proceeding_exposure(case.id, db_session)
+    assert len(rows) == 1
+    row = rows[0]
+    assert [c.id for c in row["invoices_own"]] == [inv_own.id]
+    assert row["invoices_court"] == []
+    assert row["invoices_opposing"] == []
+    assert [c.id for c in row["invoices_other"]] == [inv_vorschuss.id]
+    # Theoretical kept for the strikethrough comparison even though invoice exists.
+    assert row["own_theoretical"] > 0
+    assert row["own_lawyer_source"] == "invoice"
+
+
+@pytest.mark.unit
+def test_proceeding_without_streitwert_still_surfaces_when_it_has_costs(db_session):
+    """A proceeding with no Streitwert signal but with a booked cost should
+    still appear in the exposure list so the UI can show / manage it."""
+    from app.services.case_service import build_proceeding_exposure
+
+    case = _make_case(db_session, worst_case=False)
+    proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
+    db_session.add(
+        LegalCost(
+            case_id=case.id,
+            proceeding_id=proc.id,
+            category=CostCategory.VORSCHUSS,
+            title="Vorschuss",
+            amount_net=300.0,
+            vat_rate=0.0,
+            amount_gross=300.0,
+            status=CostStatus.OFFEN,
+        )
+    )
+    db_session.commit()
+
+    rows = build_proceeding_exposure(case.id, db_session)
+    assert len(rows) == 1
+    assert rows[0]["streitwert"] is None
+    assert rows[0]["allocation_source"] == "no_projection"
+    assert len(rows[0]["invoices_other"]) == 1
+
+
+@pytest.mark.unit
+def test_build_case_level_costs(db_session):
+    """Case-level (proceeding_id IS NULL) costs are returned by the helper."""
+    from app.services.case_service import build_case_level_costs
+
+    case = _make_case(db_session)
+    proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
+    db_session.add_all(
+        [
+            LegalCost(
+                case_id=case.id,
+                proceeding_id=None,
+                category=CostCategory.AUSLAGEN,
+                title="Kopien",
+                amount_net=20.0,
+                vat_rate=0.0,
+                amount_gross=20.0,
+                status=CostStatus.OFFEN,
+            ),
+            LegalCost(
+                case_id=case.id,
+                proceeding_id=proc.id,
+                category=CostCategory.ANWALTSKOSTEN,
+                title="bound to proc",
+                amount_net=100.0,
+                vat_rate=0.19,
+                amount_gross=119.0,
+                status=CostStatus.OFFEN,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    rows = build_case_level_costs(case.id, db_session)
+    assert len(rows) == 1
+    assert rows[0].title == "Kopien"
+    assert rows[0].proceeding_id is None
+
+
+@pytest.mark.unit
+def test_invoice_supersedes_rvg_projection(db_session):
+    """A real ANWALTSKOSTEN invoice on a proceeding replaces the theoretical
+    RVG line — no double-count between projection and ledger."""
+    case = _make_case(db_session, worst_case=False)
+    proc = _make_proceeding(db_session, case.id, ProceedingCourtLevel.AG)
+    _add_signal(db_session, case.id, proc.id, "streitwert", amount=10_000)
+    _add_signal(
+        db_session,
+        case.id,
+        proc.id,
+        "cost_ruling",
+        allocation={"each_own": True},  # court 0.5, no opposing
+    )
+    # Real invoice for AG own counsel, gross €2000
+    db_session.add(
+        LegalCost(
+            case_id=case.id,
+            proceeding_id=proc.id,
+            category=CostCategory.ANWALTSKOSTEN,
+            title="Rechnung Anwalt AG",
+            amount_net=1680.67,
+            vat_rate=0.19,
+            amount_gross=2000.0,
+            status=CostStatus.OFFEN,
+        )
+    )
+    db_session.commit()
+
+    result = recompute_total_cost_exposure(case.id, db_session)
+    # Invoice €2000 (replaces theoretical 1850.45) + court 921.00 = 2921.00
+    # → 292100 cents. Crucially NOT 1850.45 + 921 + 2000 = 4771.45 (the bug).
+    assert result == pytest.approx(292100, abs=1)

@@ -31,12 +31,12 @@ def test_costs_crud_flow(app_client, sample_case):
     assert resp.status_code == 200
     assert "Updated Fee Title" in resp.text
 
-    # 3. Pay the cost
+    # 3. Pay the cost — German status label is "Bezahlt"
     resp = app_client.post(f"/costs/{cost_id}/pay")
     assert resp.status_code == 200
     assert "PAID" in resp.text.upper()
 
-    # 4. Reimburse
+    # 4. Reimburse — German status label is "Erstattet"
     resp = app_client.post(f"/costs/{cost_id}/reimburse", data={"amount": "100.0"})
     assert resp.status_code == 200
     assert "REIMBURSED" in resp.text.upper()

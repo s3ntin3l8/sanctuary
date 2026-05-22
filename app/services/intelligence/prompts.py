@@ -207,7 +207,12 @@ Extract these fields:
 
   kind must be exactly one of:
   - "streitwert"       — document states or sets a Verfahrenswert / Streitwert (e.g. Streitwertbeschluss, Streitwertfestsetzung). amount = the EUR value.
-  - "cost_ruling"      — document contains a Kostenentscheidung (§91 ZPO / §81 FamFG). amount = null. Include: allocation = one of {"loser": 1.0} (loser pays all), {"each_own": true} (each party bears own costs), or {"own": 0.5, "opposing": 0.5} (split). direction = "ruling".
+  - "cost_ruling"      — document contains a Kostenentscheidung (§91 ZPO / §81 FamFG). amount = null. direction = "ruling". Include allocation, written from the user's (Mandant's) perspective using the Party perspective rules below:
+      * {"loser": 1.0, "client_role": "winner"}  — opposing party is the loser and bears all costs
+      * {"loser": 1.0, "client_role": "loser"}   — our side is the loser and bears all costs
+      * {"each_own": true}                       — each party bears its own costs (typical §81 FamFG outcome)
+      * {"own": 0.5, "opposing": 0.5, "client_role": "shared"} — costs apportioned by explicit fractions
+    Always emit client_role when the ruling identifies a loser; resolve which side is the loser by matching the role labels in the tenor ("Die Antragstellerin trägt …", "die Beklagte hat … zu tragen", etc.) to the user's role.
   - "invoice_lawyer"   — lawyer Kostennote / RVG-Rechnung. amount = invoice total in EUR. direction = "outgoing". vat_included: true if amount is gross (incl. MwSt.), false if net.
   - "invoice_court"    — court Gerichtskostenrechnung. amount = invoice total in EUR. direction = "outgoing". No VAT on court fees.
   - "vorschuss_lawyer" — advance payment requested by lawyer. amount = EUR. direction = "outgoing".

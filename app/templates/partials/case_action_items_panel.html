@@ -30,23 +30,34 @@
 <div id="action-items-anchor"
      x-data="{ filter: 'open' }">
 
-  {# Header + filter tabs #}
+  {# Header + filter tabs + collapse toggle #}
   <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-outline-variant/30">
     <h3 class="text-[10.5px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">Action Items</h3>
-    <div class="flex items-center gap-1 text-[11px]">
-      {% for key, label in [('open','open'),('completed','completed'),('all','all')] %}
+    <div class="flex items-center gap-2 text-[11px]">
+      <div x-show="!actionItemsCollapsed" class="flex items-center gap-1">
+        {% for key, label in [('open','open'),('completed','completed'),('all','all')] %}
+        <button type="button"
+                @click="filter = '{{ key }}'"
+                :class="filter === '{{ key }}'
+                         ? 'bg-primary/20 text-primary'
+                         : 'text-on-surface-variant hover:bg-surface-container-high'"
+                class="px-2 py-0.5 rounded-full font-medium transition-colors">
+          {{ label }}
+        </button>
+        {% endfor %}
+      </div>
       <button type="button"
-              @click="filter = '{{ key }}'"
-              :class="filter === '{{ key }}'
-                       ? 'bg-primary/20 text-primary'
-                       : 'text-on-surface-variant hover:bg-surface-container-high'"
-              class="px-2 py-0.5 rounded-full font-medium transition-colors">
-        {{ label }}
+              @click="toggleActionItems()"
+              :aria-expanded="!actionItemsCollapsed"
+              :aria-label="actionItemsCollapsed ? 'Expand action items' : 'Collapse action items'"
+              class="p-1 rounded text-on-surface-variant hover:bg-surface-container-high transition-colors">
+        <span class="material-symbols-outlined text-[16px] block transition-transform duration-200"
+              :class="actionItemsCollapsed ? '' : 'rotate-180'">expand_more</span>
       </button>
-      {% endfor %}
     </div>
   </div>
 
+  <div x-show="!actionItemsCollapsed" x-cloak>
   {% if _items %}
   <div class="divide-y divide-outline-variant/20">
     {% for item in _items[:12] %}
@@ -121,11 +132,13 @@
   {% else %}
   <p class="text-sm italic text-on-surface-variant px-5 py-3">No open action items.</p>
   {% endif %}
+  </div>
 </div>
 
 {# ── Case Clock — next open deadline ────────────────────────────── #}
 {% if _next.item %}
-<div class="border-t border-outline-variant/30 px-5 py-2.5 flex items-center gap-3">
+<div x-show="!actionItemsCollapsed" x-cloak
+     class="border-t border-outline-variant/30 px-5 py-2.5 flex items-center gap-3">
   <span class="material-symbols-outlined text-amber-400 text-lg">timer</span>
   <div class="flex-1 min-w-0">
     <div class="text-[9.5px] uppercase tracking-widest font-semibold" style="color:var(--color-on-surface-variant);">Next Deadline</div>

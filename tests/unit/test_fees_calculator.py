@@ -146,11 +146,28 @@ def test_court_fees_family_ag():
 
 
 @pytest.mark.unit
-def test_allocation_from_ruling_loser():
+def test_allocation_from_ruling_loser_legacy_defaults_to_we_lost():
+    # Legacy data without client_role falls back to worst-case (we lost).
     alloc = allocation_from_ruling({"loser": 1.0})
     assert alloc["own_court_share"] == 1.0
     assert alloc["own_opposing_share"] == 1.0
-    assert alloc["source"] == "ruling_loser_pays"
+    assert alloc["source"] == "ruling_we_lost"
+
+
+@pytest.mark.unit
+def test_allocation_from_ruling_we_won():
+    alloc = allocation_from_ruling({"loser": 1.0, "client_role": "winner"})
+    assert alloc["own_court_share"] == 0.0
+    assert alloc["own_opposing_share"] == 0.0
+    assert alloc["source"] == "ruling_we_won"
+
+
+@pytest.mark.unit
+def test_allocation_from_ruling_we_lost():
+    alloc = allocation_from_ruling({"loser": 1.0, "client_role": "loser"})
+    assert alloc["own_court_share"] == 1.0
+    assert alloc["own_opposing_share"] == 1.0
+    assert alloc["source"] == "ruling_we_lost"
 
 
 @pytest.mark.unit
@@ -162,7 +179,17 @@ def test_allocation_from_ruling_each_own():
 
 
 @pytest.mark.unit
-def test_allocation_from_ruling_split():
+def test_allocation_from_ruling_shared():
+    alloc = allocation_from_ruling(
+        {"own": 0.75, "opposing": 0.25, "client_role": "shared"}
+    )
+    assert alloc["own_court_share"] == pytest.approx(0.75)
+    assert alloc["own_opposing_share"] == pytest.approx(0.25)
+    assert alloc["source"] == "ruling_shared"
+
+
+@pytest.mark.unit
+def test_allocation_from_ruling_split_legacy():
     alloc = allocation_from_ruling({"own": 0.75, "opposing": 0.25})
     assert alloc["own_court_share"] == pytest.approx(0.75)
     assert alloc["own_opposing_share"] == pytest.approx(0.25)

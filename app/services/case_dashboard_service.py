@@ -43,6 +43,7 @@ from app.services.case_graph_service import CaseGraphService
 from app.services.case_service import (
     CaseService,
     _compute_dormancy_alert,
+    build_case_level_costs,
     build_proceeding_exposure,
 )
 from app.services.case_timeline_service import CaseTimelineService
@@ -188,38 +189,22 @@ class CaseDashboardService:
         claim_svc = ClaimService(self.db)
         truth_map = claim_svc.get_truth_map(case.id, "open")
 
-        # Group costs by proceeding for the breakdown view
         costs = data["costs"]
-        grouped_costs = {}
-        for c in costs:
-            pid = c.proceeding_id
-            if pid not in grouped_costs:
-                grouped_costs[pid] = []
-            grouped_costs[pid].append(c)
-
         cost_summary = build_cost_summary(costs, CostStatus)
         dormancy_alert = _compute_dormancy_alert(case, self.db)
 
         # --- Financials (factual: total exposure in cents) --------------
-        # Documents that carry any cost signal — either an informational
-        # CostSignal (streitwert/cost_ruling/pkh) or a materialised LegalCost
-        # (invoice/vorschuss). Distinct so a doc with multiple signal types
-        # appears once.
+        # Documents that carry a *meta* cost signal — streitwert, cost ruling,
+        # or PKH decision. Invoice / Vorschuss-source documents are no longer
+        # included here because the actual LegalCost rows surface inside the
+        # per-proceeding consolidated table; listing them in two places was
+        # duplication.
         signal_doc_ids = {
             row[0]
             for row in self.db.query(CostSignal.source_document_id)
             .filter(CostSignal.case_id == case_id)
             .all()
         }
-        signal_doc_ids.update(
-            row[0]
-            for row in self.db.query(LegalCost.source_document_id)
-            .filter(
-                LegalCost.case_id == case_id,
-                LegalCost.source_document_id.isnot(None),
-            )
-            .all()
-        )
         cost_signal_docs = (
             self.db.query(Document)
             .filter(
@@ -234,8 +219,8 @@ class CaseDashboardService:
         financials = {
             "total_cost_exposure": case.total_cost_exposure or 0,
             "cost_signal_docs": cost_signal_docs,
-            "grouped_costs": grouped_costs,
             "proceeding_exposure": build_proceeding_exposure(case_id, self.db),
+            "case_level_costs": build_case_level_costs(case_id, self.db),
         }
 
         # --- Alpine bootstrap payload ----------------------------------

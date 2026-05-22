@@ -1,0 +1,223 @@
+{# Per-proceeding consolidated table.
+
+   One card per proceeding. Inside the card, a single table groups by bucket
+   (Eigene Anwaltskosten / Gerichtskosten / Gegnerische Anwaltskosten / Sonstige).
+   Each bucket shows BOTH the theoretical RVG/GKG line (dimmed + strikethrough
+   when superseded by an invoice) AND any booked LegalCost rows that fall into
+   that bucket. A separate "Sonstige (kein Verfahren zugeordnet)" card collects
+   case-level costs (proceeding_id IS NULL).
+
+   Wrapping <div id="financials-per-instance"> is preserved so the cost
+   endpoints' OOB swap replaces this entire block in lockstep with the KPI
+   strip after Mark Paid / Reimburse / Auto-detect / etc. #}
+{% set src_meta = {
+  'ruling_we_won':   ('§91 ZPO · Opposing Pays',  'bg-originator-own/10 text-originator-own'),
+  'ruling_we_lost':  ('§91 ZPO · We Pay',          'bg-originator-opposing/10 text-originator-opposing'),
+  'ruling_each_own': ('§81 FamFG · Each Own',      'bg-surface-container-high text-on-surface-variant'),
+  'ruling_shared':   ('Cost Split',                'bg-surface-container-high text-on-surface-variant'),
+  'ruling_split':    ('Cost Quota',                'bg-surface-container-high text-on-surface-variant'),
+  'propagated':      ('propagated',                'bg-surface-container-high text-on-surface-variant'),
+  'family_default':  ('§81 FamFG (assumed)',        'bg-surface-container-high text-on-surface-variant'),
+  'worst_case':      ('Worst Case (assumed)',       'bg-amber-500/10 text-amber-500'),
+  'placeholder':     ('assumed',                   'bg-surface-container-high text-on-surface-variant'),
+  'unknown':         ('unknown',                   'bg-surface-container-high text-on-surface-variant'),
+  'no_projection':   ('no projection',             'bg-surface-container-high text-on-surface-variant'),
+} %}
+<div id="financials-per-instance" {% if oob %}hx-swap-oob="true"{% endif %} class="space-y-6">
+
+  {% set has_projection_rows = financials.proceeding_exposure|selectattr('streitwert')|list %}
+  {% set instance_total = financials.proceeding_exposure|sum(attribute='subtotal') %}
+  {% set projected_total = (financials.total_cost_exposure or 0) / 100.0 %}
+  {% set other_open = projected_total - instance_total %}
+
+  {% if financials.proceeding_exposure %}
+  <h3 class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+    <span class="material-symbols-outlined text-sm">calculate</span>
+    Per-Instance Costs · Projection + Invoices
+  </h3>
+
+  {% for pe in financials.proceeding_exposure %}
+  {% set proc = pe.proceeding %}
+  {% set sm = src_meta.get(pe.allocation_source, (pe.allocation_source, 'bg-surface-container-high text-on-surface-variant')) %}
+  <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden">
+
+    {# ── Card header ── #}
+    <div class="px-4 py-2 bg-surface-container-low/40 border-b border-outline-variant/10 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[14px] text-primary">account_balance</span>
+        <span class="text-[11px] font-bold text-on-surface uppercase tracking-wider">{{ proc.court_level.value if proc.court_level else '?' }}</span>
+        {% if proc.court_name %}<span class="text-[10px] text-on-surface-variant">{{ proc.court_name }}</span>{% endif %}
+        {% if proc.az_court %}<span class="text-[10px] text-on-surface-variant font-mono">· {{ proc.az_court }}</span>{% endif %}
+      </div>
+      <div class="flex items-center gap-3 text-[10px]">
+        {% if pe.streitwert %}
+        <span class="text-on-surface-variant">Streitwert: <span class="font-mono font-bold text-primary">{{ format_eur(pe.streitwert) }}</span></span>
+        {% endif %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider {{ sm[1] }}">{{ sm[0] }}</span>
+      </div>
+    </div>
+
+    {# ── Bucket table ── #}
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="border-b border-outline-variant/10 bg-surface-container-low/20">
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Position</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Source</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
+          <th class="px-4 py-1.5 w-32"></th>
+        </tr>
+      </thead>
+      <tbody>
+
+        {# ── Bucket: Own Counsel Fees ── #}
+        {% if pe.streitwert or pe.invoices_own %}
+        <tr class="bg-surface-container-low/10">
+          <td colspan="6" class="px-4 pt-2 pb-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Own Counsel Fees</td>
+        </tr>
+        {% if pe.streitwert %}
+        {% set theoretical_dim = pe.invoices_own|length > 0 %}
+        <tr class="border-b border-outline-variant/5 {% if theoretical_dim %}opacity-50{% endif %}">
+          <td class="px-4 py-1.5 text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-on-surface-variant{% endif %}">RVG Estimate</td>
+          <td class="px-4 py-1.5"><span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">auto · RVG</span></td>
+          <td class="px-4 py-1.5 text-right font-mono text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-on-surface{% endif %}">{{ format_eur(pe.own_theoretical) }}</td>
+          <td class="px-4 py-1.5 text-right text-[11px] text-on-surface-variant">—</td>
+          <td class="px-4 py-1.5 text-center text-[11px] text-on-surface-variant">—</td>
+          <td></td>
+        </tr>
+        {% endif %}
+        {% for cost in pe.invoices_own %}
+          {% include "partials/dashboard/cost_bucket_row.html" %}
+        {% endfor %}
+        {% endif %}
+
+        {# ── Bucket: Court Fees ── #}
+        {% if pe.streitwert or pe.invoices_court %}
+        <tr class="bg-surface-container-low/10">
+          <td colspan="6" class="px-4 pt-2 pb-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+            Court Fees{% if pe.streitwert %} ({{ (pe.court_fee_share * 100)|round|int }}%, GKG){% endif %}
+          </td>
+        </tr>
+        {% if pe.streitwert and pe.court_fee_share > 0 %}
+        {% set theoretical_dim = pe.invoices_court|length > 0 %}
+        <tr class="border-b border-outline-variant/5 {% if theoretical_dim %}opacity-50{% endif %}">
+          <td class="px-4 py-1.5 text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-on-surface-variant{% endif %}">GKG Estimate</td>
+          <td class="px-4 py-1.5"><span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">auto · GKG</span></td>
+          <td class="px-4 py-1.5 text-right font-mono text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-on-surface{% endif %}">{{ format_eur(pe.court_theoretical) }}</td>
+          <td class="px-4 py-1.5 text-right text-[11px] text-on-surface-variant">—</td>
+          <td class="px-4 py-1.5 text-center text-[11px] text-on-surface-variant">—</td>
+          <td></td>
+        </tr>
+        {% endif %}
+        {% for cost in pe.invoices_court %}
+          {% include "partials/dashboard/cost_bucket_row.html" %}
+        {% endfor %}
+        {% endif %}
+
+        {# ── Bucket: Opposing Counsel Fees ── #}
+        {% if (pe.streitwert and pe.opposing_theoretical > 0) or pe.invoices_opposing %}
+        <tr class="bg-surface-container-low/10">
+          <td colspan="6" class="px-4 pt-2 pb-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Opposing Counsel Fees</td>
+        </tr>
+        {% if pe.streitwert and pe.opposing_theoretical > 0 %}
+        {% set theoretical_dim = pe.invoices_opposing|length > 0 %}
+        <tr class="border-b border-outline-variant/5 {% if theoretical_dim %}opacity-50{% endif %}">
+          <td class="px-4 py-1.5 text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-on-surface-variant{% endif %}">RVG Estimate</td>
+          <td class="px-4 py-1.5"><span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">auto · RVG</span></td>
+          <td class="px-4 py-1.5 text-right font-mono text-[11px] {% if theoretical_dim %}line-through text-on-surface-variant{% else %}text-originator-opposing{% endif %}">{{ format_eur(pe.opposing_theoretical) }}</td>
+          <td class="px-4 py-1.5 text-right text-[11px] text-on-surface-variant">—</td>
+          <td class="px-4 py-1.5 text-center text-[11px] text-on-surface-variant">—</td>
+          <td></td>
+        </tr>
+        {% endif %}
+        {% for cost in pe.invoices_opposing %}
+          {% include "partials/dashboard/cost_bucket_row.html" %}
+        {% endfor %}
+        {% endif %}
+
+        {# ── Bucket: Other (Advance Payments, Expenses, …) ── #}
+        {% if pe.invoices_other %}
+        <tr class="bg-surface-container-low/10">
+          <td colspan="6" class="px-4 pt-2 pb-1 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Other (Advance Payments, Expenses, …)</td>
+        </tr>
+        {% for cost in pe.invoices_other %}
+          {% include "partials/dashboard/cost_bucket_row.html" %}
+        {% endfor %}
+        {% endif %}
+
+      </tbody>
+      <tfoot>
+        <tr class="border-t border-outline-variant/20 bg-surface-container-low/30">
+          <td colspan="2" class="px-4 py-2 text-[11px] font-bold text-on-surface">Instance Total</td>
+          <td colspan="4" class="px-4 py-2 text-right font-mono text-[11px] font-bold text-on-surface">{{ format_eur(pe.subtotal) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {% if pe.allocation_source == 'ruling_we_won' %}
+    <div class="px-4 py-2 bg-originator-own/5 border-t border-originator-own/10">
+      <p class="text-[10px] text-originator-own italic">Own counsel fees are reimbursable under §91 ZPO.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {# ── Reconciliation ── #}
+  <div class="bg-surface-container-low/40 rounded-xl border border-outline-variant/10 px-4 py-3">
+    <div class="flex justify-between items-center text-[11px] mb-1">
+      <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Reconciliation</span>
+      <span class="font-mono font-bold text-amber-500">{{ format_eur(projected_total) }}</span>
+    </div>
+    <div class="text-[10px] text-on-surface-variant space-y-0.5">
+      {% for pe in financials.proceeding_exposure %}
+      <div class="flex justify-between">
+        <span>{{ pe.proceeding.court_level.value if pe.proceeding.court_level else '?' }} · {{ pe.proceeding.court_name or '—' }}</span>
+        <span class="font-mono">{{ format_eur(pe.subtotal) }}</span>
+      </div>
+      {% endfor %}
+      {% if other_open > 0.005 or other_open < -0.005 %}
+      <div class="flex justify-between">
+        <span>Other open items (no proceeding)</span>
+        <span class="font-mono {% if other_open < 0 %}text-originator-own{% endif %}">{{ format_eur(other_open) }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Case-level (no proceeding) card ── #}
+  {% if financials.case_level_costs %}
+  {% set case_gross = financials.case_level_costs|sum(attribute='amount_gross') %}
+  {% set case_paid = financials.case_level_costs|sum(attribute='amount_paid') %}
+  <div class="bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden">
+    <div class="px-4 py-2 bg-surface-container-low/40 border-b border-outline-variant/10 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[14px] text-on-surface-variant">folder_open</span>
+        <span class="text-[11px] font-bold text-on-surface uppercase tracking-wider">Case-Level · No Proceeding</span>
+      </div>
+      <div class="text-[10px] text-on-surface-variant">
+        Total: <span class="font-mono font-bold text-on-surface">{{ format_eur(case_gross) }}</span>
+        · Paid: <span class="font-mono font-bold text-originator-own">{{ format_eur(case_paid) }}</span>
+      </div>
+    </div>
+    <table class="w-full text-left border-collapse">
+      <thead>
+        <tr class="border-b border-outline-variant/10 bg-surface-container-low/20">
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Position</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Source</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Amount</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-right">Paid</th>
+          <th class="px-4 py-1.5 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider text-center">Status</th>
+          <th class="px-4 py-1.5 w-32"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cost in financials.case_level_costs %}
+          {% include "partials/dashboard/cost_bucket_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>

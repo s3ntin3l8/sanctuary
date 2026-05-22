@@ -321,8 +321,21 @@ class CostService:
         return self.cost_repo.update_status(cost_id, status, paid_at)
 
     def mark_as_paid(self, cost_id: int) -> LegalCost | None:
-        """Mark cost as paid."""
-        return self.update_cost_status(cost_id, CostStatus.BEZAHLT, datetime.now())
+        """Mark cost as paid in full and stamp the paid amount on the row.
+
+        Updating the status alone leaves ``amount_paid`` at zero, which
+        causes the PAID / OUTSTANDING KPIs to disagree with the row's BEZAHLT
+        badge. Setting both fields keeps the headline numbers in sync.
+        """
+        cost = self.cost_repo.get(cost_id)
+        if not cost:
+            return None
+        cost.amount_paid = cost.amount_gross or 0.0
+        cost.status = CostStatus.BEZAHLT
+        cost.paid_at = datetime.now()
+        self.db.flush()
+        self.db.refresh(cost)
+        return cost
 
     def mark_as_reimbursed(self, cost_id: int, amount: float) -> LegalCost | None:
         """Mark cost as reimbursed."""
@@ -332,6 +345,33 @@ class CostService:
             cost.status = CostStatus.ERSTATTET
             self.db.flush()
             self.db.refresh(cost)
+        return cost
+
+    def mark_as_unpaid(self, cost_id: int) -> LegalCost | None:
+        """Reverse a mark-paid: clear amount_paid + paid_at and re-derive status
+        from the remaining amounts. If the row was partially reimbursed before
+        being paid, status falls back to TEILWEISE / ERSTATTET accordingly."""
+        cost = self.cost_repo.get(cost_id)
+        if not cost:
+            return None
+        cost.amount_paid = 0.0
+        cost.paid_at = None
+        _derive_status(cost)
+        self.db.flush()
+        self.db.refresh(cost)
+        return cost
+
+    def mark_as_unreimbursed(self, cost_id: int) -> LegalCost | None:
+        """Reverse a mark-reimbursed: clear amount_reimbursed and re-derive
+        status. If the row was also paid, it falls back to BEZAHLT; otherwise
+        OFFEN / TEILWEISE as appropriate."""
+        cost = self.cost_repo.get(cost_id)
+        if not cost:
+            return None
+        cost.amount_reimbursed = 0.0
+        _derive_status(cost)
+        self.db.flush()
+        self.db.refresh(cost)
         return cost
 
     def update_amounts_and_derive_status(

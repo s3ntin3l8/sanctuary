@@ -1,0 +1,92 @@
+{# Compact 6-column cost row used inside the consolidated per-instance table.
+   Distinct from the standard partials/cost_row.html (7 columns) used on the
+   global /costs page — those tables have different layouts on purpose.
+
+   Action buttons use the standard HTMX swap pattern (target the row,
+   outerHTML), and pass `row_style=bucket` in hx-vals so the endpoint knows
+   to render *this* template (not the 7-col one) for the main response. The
+   OOB swap of the KPI strip + per-instance container follows automatically.
+
+   The entire row is clickable to open the source document HUD when one is
+   linked. The Aktionen cell uses `@click.stop` so the action buttons don't
+   ALSO fire the HUD open. #}
+{% set st_meta = cost_status_meta[cost.status] %}
+{% set _paid = cost.amount_paid or 0 %}
+{% set _gross = cost.amount_gross or 0 %}
+{% set _reimbursed = cost.amount_reimbursed or 0 %}
+{% set _bucket_vals = '{"row_style": "bucket"}' %}
+{% set _has_doc = cost.source_document_id is not none %}
+<tr id="cost-row-{{ cost.id }}"
+    class="border-b border-outline-variant/5 hover:bg-surface-container-low/40 transition-colors group {% if _has_doc %}cursor-pointer{% endif %}"
+    {% if _has_doc %}@click="openDoc({{ cost.source_document_id }})" title="View document"{% endif %}>
+  <td class="px-4 py-2 align-top">
+    <p class="text-[11px] font-bold text-on-surface">{{ cost.title }}</p>
+    {% if cost.rvg_position %}
+    <p class="text-[9px] font-mono text-on-surface-variant">{{ cost.rvg_position }}</p>
+    {% endif %}
+    {% if cost.notes %}
+    <p class="text-[9px] text-on-surface-variant italic mt-0.5 max-w-xs">{{ cost.notes }}</p>
+    {% endif %}
+  </td>
+  <td class="px-4 py-2 align-top">
+    <span class="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+      <span class="material-symbols-outlined text-[12px]">attach_file</span>
+      Invoice #{{ cost.id }}
+    </span>
+  </td>
+  <td class="px-4 py-2 align-top text-right font-mono text-[11px] text-on-surface">
+    {{ format_eur(_gross) }}
+  </td>
+  <td class="px-4 py-2 align-top text-right font-mono text-[11px] {% if _paid > 0 %}text-originator-own{% else %}text-on-surface-variant{% endif %}">
+    {% if _paid > 0 %}{{ format_eur(_paid) }}{% else %}—{% endif %}
+  </td>
+  <td class="px-4 py-2 align-top text-center">
+    <span class="inline-block text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded {{ st_meta.color }}">{{ st_meta.label }}</span>
+  </td>
+  <td class="px-4 py-2 align-top" @click.stop>
+    <div class="flex flex-wrap justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {% if _paid < _gross and cost.status.value != 'erstattet' %}
+      <button type="button"
+        hx-post="{{ request.app.url_path_for('mark_cost_paid', cost_id=cost.id) }}"
+        hx-vals='{{ _bucket_vals }}'
+        hx-target="#cost-row-{{ cost.id }}"
+        hx-swap="outerHTML"
+        class="text-[9px] font-bold text-originator-own bg-originator-own/10 hover:bg-originator-own/20 px-1.5 py-0.5 rounded transition-colors">
+        Paid
+      </button>
+      {% endif %}
+      {% if _paid > 0 %}
+      <button type="button"
+        hx-post="{{ request.app.url_path_for('mark_cost_unpaid', cost_id=cost.id) }}"
+        hx-vals='{{ _bucket_vals }}'
+        hx-target="#cost-row-{{ cost.id }}"
+        hx-swap="outerHTML"
+        class="text-[9px] font-bold text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container-high px-1.5 py-0.5 rounded transition-colors"
+        title="Reset payment">
+        ↺ Paid
+      </button>
+      {% endif %}
+      {% if cost.is_reimbursable and _reimbursed < _gross %}
+      <button type="button"
+        hx-post="{{ request.app.url_path_for('mark_cost_reimbursed', cost_id=cost.id) }}"
+        hx-vals='{{ _bucket_vals }}'
+        hx-target="#cost-row-{{ cost.id }}"
+        hx-swap="outerHTML"
+        class="text-[9px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded transition-colors">
+        Reimbursed
+      </button>
+      {% endif %}
+      {% if _reimbursed > 0 %}
+      <button type="button"
+        hx-post="{{ request.app.url_path_for('mark_cost_unreimbursed', cost_id=cost.id) }}"
+        hx-vals='{{ _bucket_vals }}'
+        hx-target="#cost-row-{{ cost.id }}"
+        hx-swap="outerHTML"
+        class="text-[9px] font-bold text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container-high px-1.5 py-0.5 rounded transition-colors"
+        title="Reset reimbursement">
+        ↺ Reimbursed
+      </button>
+      {% endif %}
+    </div>
+  </td>
+</tr>
