@@ -85,3 +85,23 @@ def test_parse_json_response_truncated():
     raw_text = '{"legal_significance": "something"'
     result = parse_json_response(raw_text)
     assert result == {"legal_significance": "something"}
+
+
+@pytest.mark.unit
+def test_parse_json_response_truncated_mid_string():
+    """Regression: LLM hits max_tokens inside a string value — the unterminated
+    string must be closed so parse succeeds and prior complete fields are kept."""
+    # Simulate a response cut off mid-string-value (the Doc 96 failure pattern)
+    raw_text = '{"title": "Ladung", "summary": "Das Gericht hat'
+    result = parse_json_response(raw_text)
+    assert result["title"] == "Ladung"
+    # summary gets the truncated prefix — partial data beats a hard failure
+    assert result["summary"].startswith("Das Gericht hat")
+
+
+@pytest.mark.unit
+def test_parse_json_response_truncated_mid_string_nested():
+    """Truncation inside a string value inside a nested object."""
+    raw_text = '{"outer": {"inner": "partial val'
+    result = parse_json_response(raw_text)
+    assert result["outer"]["inner"].startswith("partial val")

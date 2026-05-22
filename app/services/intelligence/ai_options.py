@@ -40,8 +40,12 @@ STAGE_OPTIONS: dict[str, dict] = {
     "enrich": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 8000,
-        "max_tokens": 8000,
+        # Bumped 8000 → 12000: complex German legal docs with many key_passages
+        # and long management_summary fields fill the JSON output alone.
+        # Doc 96 (Ladung zum Erörterungstermin) produced a 29 634-char response
+        # (~8 000 tokens) that truncated mid-string-value and failed to parse.
+        "num_predict": 12000,
+        "max_tokens": 12000,
     },
     "relationships": {
         "num_ctx": 32768,

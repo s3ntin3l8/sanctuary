@@ -62,13 +62,16 @@ def parse_json_response(raw_text: str) -> dict:
 
 
 def _close_truncated_json(text: str) -> str:
-    """Append the closers needed to balance unmatched `{` and `[` brackets.
+    """Append the closers needed to balance unmatched `{`, `[`, and `"` tokens.
 
     Walks the text and tracks unmatched openers, ignoring brackets inside
     string literals (handles escaped quotes). On truncation, emits the closers
     in the reverse order they were opened. AI responses that truncate mid-
-    object — common when `num_predict` is hit — round-trip through this and
-    parse cleanly.
+    object or mid-string-value — common when `num_predict` is hit — round-trip
+    through this and parse cleanly.
+
+    If the walk ends inside a string literal (`in_string=True`), a closing `"`
+    is prepended to the bracket closers so the resulting text is valid JSON.
     """
     stack: list[str] = []
     in_string = False
@@ -93,4 +96,7 @@ def _close_truncated_json(text: str) -> str:
         elif ch in ("}", "]") and stack and stack[-1] == ch:
             stack.pop()
 
-    return text + "".join(reversed(stack))
+    # Close an open string literal before closing any bracket openers so the
+    # result is always syntactically valid JSON.
+    prefix = '"' if in_string else ""
+    return text + prefix + "".join(reversed(stack))
