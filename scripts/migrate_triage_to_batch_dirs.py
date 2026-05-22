@@ -59,8 +59,9 @@ def run_migration(dry_run: bool = True) -> tuple[int, int]:
 
     db = get_db_session()
     try:
-        # Use .contains() to match both absolute and relative path formats,
-        # and to avoid the SQL LIKE '_' wildcard issue (underscore = any char).
+        # Use .contains() to match both absolute paths (e.g. /…/data/_TRIAGE/doc.pdf)
+        # and relative paths (e.g. _TRIAGE/doc.pdf) — batch_orchestrator stores absolute.
+        # The Python-level parts[0] check below provides a second guard against false matches.
         docs = (
             db.query(Document)
             .filter(
