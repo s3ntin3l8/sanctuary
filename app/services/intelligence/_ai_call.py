@@ -648,16 +648,29 @@ def call_json_ai(
             doesn't match — caller may catch this and fall back.
         httpx.HTTPStatusError: On non-2xx HTTP responses.
     """
-    if db is not None:
-        chat_provider.reload_from_db(db)
-
-    cfg = get_chat_config(db)
-    resolved_model = model or cfg.summary_model
-    ptype = run_async(chat_provider.get_type())
-
+    # Always load provider config from DB — critical for Celery workers whose
+    # service-layer callers don't carry a db session.  Without this reload the
+    # singleton falls back to ENV defaults (Ollama localhost:11434) on every
+    # first AI call after worker startup, silently routing to the wrong backend.
     from app.services.user_settings_service import get_ai_debug_redact
 
-    redact = get_ai_debug_redact(db) if db is not None else False
+    if db is not None:
+        chat_provider.reload_from_db(db)
+        cfg = get_chat_config(db)
+        redact = get_ai_debug_redact(db)
+    else:
+        from app.dependencies import get_db_session
+
+        _cfg_db = get_db_session()
+        try:
+            chat_provider.reload_from_db(_cfg_db)
+            cfg = get_chat_config(_cfg_db)
+            redact = get_ai_debug_redact(_cfg_db)
+        finally:
+            _cfg_db.close()
+
+    resolved_model = model or cfg.summary_model
+    ptype = run_async(chat_provider.get_type())
 
     debug_dir = DATA_DIR / "ai_debug"
     scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
