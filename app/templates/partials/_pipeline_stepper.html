@@ -6,20 +6,17 @@
 #}
 {% set state = doc.pipeline_state.value if doc.pipeline_state else 'pending' %}
 {% set stages_data = doc.pipeline_stages or {} %}
-{% set stage_defs = [
-  ('extract',             'file_upload',          'Extract'),
-  ('metadata',            'description',          'Metadata'),
-  ('batch_analysis',      'batch_prediction',     'Batch Analysis'),
-  ('enrich',              'auto_fix_high',        'Enrich'),
-  ('relationships',       'account_tree',         'Relationships'),
-  ('claims',              'format_list_bulleted', 'Claims'),
-  ('entities',            'workspaces_outline',   'Entities'),
-  ('embeddings',          'workspaces',           'Embeddings'),
-] %}
+{# Display order + labels come from STAGE_REGISTRY via the pipeline_stages
+   Jinja global (registered in app.main). Each item is a dict with the
+   keys: 'key', 'icon', 'label'. Single source of truth — reordering
+   STAGE_REGISTRY.order updates this list automatically. #}
+{% set stage_defs = pipeline_stages() %}
 
 {# Resolve the detail line — precedence: failed > retrying > running > completed > pending. #}
 {% set detail = namespace(kind='pending', stage=None, ts=None, error=None, attempt=None, max_attempts=None, next_at=None) %}
-{% for stage_key, _icon, stage_label in stage_defs %}
+{% for stage_def in stage_defs %}
+  {% set stage_key = stage_def.key %}
+  {% set stage_label = stage_def.label %}
   {% set s = stages_data.get(stage_key, {}) %}
   {% if s.get('status') == 'failed' and detail.kind != 'failed' %}
     {% set detail.kind = 'failed' %}
@@ -28,7 +25,9 @@
   {% endif %}
 {% endfor %}
 {% if detail.kind != 'failed' %}
-  {% for stage_key, _icon, stage_label in stage_defs %}
+  {% for stage_def in stage_defs %}
+    {% set stage_key = stage_def.key %}
+    {% set stage_label = stage_def.label %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% if s.get('status') == 'retrying' and detail.kind != 'retrying' %}
       {% set detail.kind = 'retrying' %}
@@ -41,7 +40,9 @@
   {% endfor %}
 {% endif %}
 {% if detail.kind not in ('failed', 'retrying') %}
-  {% for stage_key, _icon, stage_label in stage_defs %}
+  {% for stage_def in stage_defs %}
+    {% set stage_key = stage_def.key %}
+    {% set stage_label = stage_def.label %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% if s.get('status') == 'running' and detail.kind != 'running' %}
       {% set detail.kind = 'running' %}
@@ -51,7 +52,9 @@
 {% endif %}
 {% if detail.kind == 'pending' %}
   {% set last_completed = namespace(stage=None, ts=None) %}
-  {% for stage_key, _icon, stage_label in stage_defs %}
+  {% for stage_def in stage_defs %}
+    {% set stage_key = stage_def.key %}
+    {% set stage_label = stage_def.label %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% if s.get('status') == 'completed' %}
       {% set last_completed.stage = stage_label %}
@@ -82,7 +85,10 @@
 
   {# Horizontal flow #}
   <div class="flex items-center gap-0 px-1 py-1">
-    {% for stage_key, stage_icon, stage_label in stage_defs %}
+    {% for stage_def in stage_defs %}
+    {% set stage_key = stage_def.key %}
+    {% set stage_icon = stage_def.icon %}
+    {% set stage_label = stage_def.label %}
     {% set s = stages_data.get(stage_key, {}) %}
     {% set s_status = s.get('status', 'pending') %}
     {% set retryable = s_status not in ('running', 'retrying', 'skipped') %}
@@ -190,7 +196,7 @@
 
     {# Connector to next dot — color reflects "both adjacent stages completed". #}
     {% if not loop.last %}
-    {% set next_key = stage_defs[loop.index][0] %}
+    {% set next_key = stage_defs[loop.index].key %}
     {% set next_status = stages_data.get(next_key, {}).get('status', 'pending') %}
     {% set both_done = s_status == 'completed' and next_status == 'completed' %}
     <span class="shrink-0 h-px flex-1 min-w-[6px] {{ 'bg-originator-own/40' if both_done else 'bg-outline-variant/30' }}"></span>

@@ -496,6 +496,12 @@ templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
 templates.env.filters["hm"] = normalize_hm
 templates.env.filters["hash"] = _hash_id
 templates.env.globals["format_eur"] = format_eur
+# Pipeline stage list (key/icon/label, ordered by STAGE_REGISTRY.order) —
+# consumed by _pipeline_stepper.html so the registry is the single source
+# of truth for display order + labels rather than a hardcoded Jinja list.
+from app.services.pipeline_status import stage_display_list as _stage_display_list
+
+templates.env.globals["pipeline_stages"] = _stage_display_list
 templates.env.filters["format_relative_time"] = format_relative_time
 templates.env.filters["format_days_ago"] = format_days_ago
 templates.env.filters["format_due_relative"] = format_due_relative

@@ -33,6 +33,44 @@ def test_stage_order_is_unique():
 
 
 @pytest.mark.unit
+def test_stage_display_list_reflects_wallclock_order():
+    """The pipeline stepper renders this list left-to-right. EMBEDDINGS
+    dispatches alongside BATCH_ANALYSIS but finishes much earlier (it's
+    parallel from METADATA-done), so it sits at index 2 — right after
+    Metadata, before Batch Analysis. ENTITIES is the rightmost stage on
+    the brief-relevant fast-path."""
+    from app.services.pipeline_status import stage_display_list
+
+    rows = stage_display_list()
+    keys = [r["key"] for r in rows]
+    assert keys == [
+        "extract",
+        "metadata",
+        "embeddings",
+        "batch_analysis",
+        "enrich",
+        "relationships",
+        "claims",
+        "entities",
+    ]
+    # Each row carries the display fields the stepper template consumes.
+    for r in rows:
+        assert {"key", "icon", "label"} <= r.keys()
+        assert r["icon"] and r["label"]
+
+
+@pytest.mark.unit
+def test_stage_specs_have_label_and_icon():
+    """Every registered stage must carry the label + icon fields so the
+    stepper template can render it without falling back to bare keys."""
+    from app.services.pipeline_status import STAGE_REGISTRY
+
+    for stage, spec in STAGE_REGISTRY.items():
+        assert spec.label, f"STAGE_REGISTRY[{stage}].label is empty"
+        assert spec.icon, f"STAGE_REGISTRY[{stage}].icon is empty"
+
+
+@pytest.mark.unit
 def test_depends_on_forms_acyclic_dag():
     """Every transitive upstream set must be acyclic and reachable via depends_on."""
     from app.services.pipeline_status import _UPSTREAM, STAGE_REGISTRY

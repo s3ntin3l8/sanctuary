@@ -64,6 +64,8 @@ class StageSpec:
 
     stage: PipelineStage
     order: int  # display position only — see class docstring
+    label: str = ""  # human-readable label for UI (e.g. "Batch Analysis")
+    icon: str = ""  # Material Symbols icon name for the stepper dot
     depends_on: tuple[PipelineStage, ...] = field(default_factory=tuple)
     downstream: tuple[PipelineStage, ...] = field(default_factory=tuple)
     retry_task: str = ""  # dotted Celery task name
@@ -84,6 +86,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.EXTRACT: StageSpec(
         stage=PipelineStage.EXTRACT,
         order=0,
+        label="Extract",
+        icon="file_upload",
         depends_on=(),
         downstream=(
             PipelineStage.METADATA,
@@ -97,6 +101,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.METADATA: StageSpec(
         stage=PipelineStage.METADATA,
         order=1,
+        label="Metadata",
+        icon="description",
         depends_on=(PipelineStage.EXTRACT,),
         downstream=(
             PipelineStage.BATCH_ANALYSIS,
@@ -110,6 +116,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.EMBEDDINGS: StageSpec(
         stage=PipelineStage.EMBEDDINGS,
         order=2,
+        label="Embeddings",
+        icon="workspaces",
         depends_on=(PipelineStage.METADATA,),
         downstream=(),
         retry_task="app.tasks.generate_embedding.generate_embedding_task",
@@ -117,6 +125,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.BATCH_ANALYSIS: StageSpec(
         stage=PipelineStage.BATCH_ANALYSIS,
         order=3,
+        label="Batch Analysis",
+        icon="batch_prediction",
         depends_on=(PipelineStage.METADATA,),
         downstream=(),
         retry_task="app.tasks.analyze_batch.analyze_batch_task",
@@ -125,6 +135,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.ENRICH: StageSpec(
         stage=PipelineStage.ENRICH,
         order=4,
+        label="Enrich",
+        icon="auto_fix_high",
         depends_on=(PipelineStage.BATCH_ANALYSIS,),
         downstream=(
             PipelineStage.RELATIONSHIPS,
@@ -136,6 +148,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.RELATIONSHIPS: StageSpec(
         stage=PipelineStage.RELATIONSHIPS,
         order=5,
+        label="Relationships",
+        icon="account_tree",
         depends_on=(PipelineStage.ENRICH,),
         downstream=(),
         retry_task="app.tasks.detect_relationships.detect_relationships_task",
@@ -143,6 +157,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.CLAIMS: StageSpec(
         stage=PipelineStage.CLAIMS,
         order=6,
+        label="Claims",
+        icon="format_list_bulleted",
         depends_on=(PipelineStage.RELATIONSHIPS,),
         downstream=(),
         retry_task="app.tasks.extract_claims.extract_claims_task",
@@ -150,6 +166,8 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
     PipelineStage.ENTITIES: StageSpec(
         stage=PipelineStage.ENTITIES,
         order=7,
+        label="Entities",
+        icon="workspaces_outline",
         depends_on=(PipelineStage.ENRICH,),
         downstream=(),
         retry_task="app.tasks.extract_entities.extract_entities_task",
@@ -169,6 +187,17 @@ _STAGE_ORDER: list[StageSpec] = sorted(STAGE_REGISTRY.values(), key=lambda s: s.
 _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
     s.stage: list(s.downstream) for s in STAGE_REGISTRY.values()
 }
+
+
+def stage_display_list() -> list[dict]:
+    """Return all stages sorted by display order as dicts with the keys
+    templates use — `key`, `icon`, `label`. The horizontal pipeline-stepper
+    template reads this via the `pipeline_stages` Jinja global so the
+    registry is the single source of truth for both order and labels."""
+    return [
+        {"key": spec.stage.value, "icon": spec.icon, "label": spec.label}
+        for spec in _STAGE_ORDER
+    ]
 
 
 def _compute_transitive_upstream(target: PipelineStage) -> frozenset[PipelineStage]:
