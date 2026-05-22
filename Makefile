@@ -89,7 +89,12 @@ test-unit: ## Run unit tests
 test-integration: ## Run integration tests
 	$(PYTEST) --ignore=tests/e2e -m integration
 
-seed: ## Reset database and seed with advanced triage combinations
+seed: ## Reset database and seed with advanced triage combinations (backs up real DB first)
+	@if [ -f data/sanctuary.db ]; then \
+		BACKUP="data/sanctuary.db.bak.$$(date +%Y%m%d_%H%M%S)"; \
+		cp data/sanctuary.db "$$BACKUP"; \
+		echo "✓ Backup: $$BACKUP"; \
+	fi
 	rm -f data/sanctuary.db
 	$(PYTHON) scripts/seed_dummy_data.py
 
@@ -107,13 +112,19 @@ reset: ## Delete all data (database, files, vectors) and start fresh
 	$(MAKE) migrate
 	@echo "Reset complete."
 
-migrate: ## Run database migrations
+migrate: ## Run database migrations (auto-backs up data/sanctuary.db first)
+	@if [ -f data/sanctuary.db ]; then \
+		BACKUP="data/sanctuary.db.bak.$$(date +%Y%m%d_%H%M%S)"; \
+		cp data/sanctuary.db "$$BACKUP"; \
+		echo "✓ Backup: $$BACKUP"; \
+	fi
 	$(ALEMBIC) upgrade head
 
 lint: ## Run pre-commit hooks on all files
 	$(PRECOMMIT) run --all-files
 
-clean: ## Clean up temporary files
+clean: ## Clean up temporary files (keeps only the 5 most recent DB backups)
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -f test_sanctuary.db
+	@ls -t data/sanctuary.db.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true

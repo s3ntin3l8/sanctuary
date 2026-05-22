@@ -251,7 +251,7 @@ def make_doc(
         key_passages=key_passages,
         cost_candidates=cost_candidates,
         extraction_confidence=extraction_confidence,
-        created_at=now - timedelta(days=days_ago),
+        ingest_date=now - timedelta(days=days_ago),
     )
     db.add(doc)
     db.flush()
@@ -1087,6 +1087,9 @@ def _p8_doc(**kwargs):
         },
     }
     defaults.update(kwargs)
+    # cost_delta was dropped from Document in Phase 3 migration (→ LegalCost/CostSignal).
+    # Strip it here so the factory stays forward-compatible without blocking Phase 8 seeding.
+    defaults.pop("cost_delta", None)
     # Render canned content from title + originator if caller didn't supply it
     if "content" not in defaults:
         defaults["content"] = _content(
@@ -1108,7 +1111,7 @@ p8_klage = _p8_doc(
     attributed_originator=None,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2025, 11, 15),
-    created_at=datetime(2025, 11, 15),
+    ingest_date=datetime(2025, 11, 15),
     significance_tier=SignificanceTier.CRITICAL,
     ai_summary=[
         {
@@ -1144,7 +1147,7 @@ p8_eingang = _p8_doc(
     attributed_originator=None,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2025, 11, 20),
-    created_at=datetime(2025, 11, 20),
+    ingest_date=datetime(2025, 11, 20),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -1164,7 +1167,7 @@ p8_kostenvorschuss = _p8_doc(
     attributed_originator=None,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2025, 11, 25),
-    created_at=datetime(2025, 11, 25),
+    ingest_date=datetime(2025, 11, 25),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1191,7 +1194,7 @@ p8_einzahlung = _p8_doc(
     attributed_originator=None,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2025, 12, 5),
-    created_at=datetime(2025, 12, 5),
+    ingest_date=datetime(2025, 12, 5),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -1215,7 +1218,7 @@ p8_zustellung = _p8_doc(
     attributed_originator=None,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2025, 12, 20),
-    created_at=datetime(2025, 12, 20),
+    ingest_date=datetime(2025, 12, 20),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1242,7 +1245,7 @@ p8_beglaubigung = _p8_doc(
     attributed_originator=None,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 1, 20),
-    created_at=datetime(2026, 1, 20),
+    ingest_date=datetime(2026, 1, 20),
     significance_tier=SignificanceTier.SIGNIFICANT,
     court_relay=True,
     role=DocumentRole.COVER_LETTER,
@@ -1264,7 +1267,7 @@ p8_klageerwiderung = _p8_doc(
     attributed_originator="opposing",  # true sender
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 1, 20),
-    created_at=datetime(2026, 1, 20),
+    ingest_date=datetime(2026, 1, 20),
     significance_tier=SignificanceTier.SIGNIFICANT,
     role=DocumentRole.ENCLOSURE,
     ai_summary=[
@@ -1308,7 +1311,7 @@ p8_jugendamt = _p8_doc(
     attributed_originator="third_party",
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 1, 20),
-    created_at=datetime(2026, 1, 20),
+    ingest_date=datetime(2026, 1, 20),
     significance_tier=SignificanceTier.SIGNIFICANT,
     role=DocumentRole.ENCLOSURE,
     thread_open=True,  # amber glow
@@ -1345,7 +1348,7 @@ p8_pkh = _p8_doc(
     attributed_originator=None,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 2, 4),
-    created_at=datetime(2026, 2, 4),
+    ingest_date=datetime(2026, 2, 4),
     significance_tier=SignificanceTier.CRITICAL,
     ai_summary=[
         {
@@ -1388,7 +1391,7 @@ p8_stellungnahme = _p8_doc(
     attributed_originator=None,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=None,  # ghost — not yet filed
-    created_at=datetime(2026, 4, 19),
+    ingest_date=datetime(2026, 4, 19),
     significance_tier=SignificanceTier.CRITICAL,
     thread_open=True,
     ai_summary=[
@@ -1523,37 +1526,10 @@ case_a.parties = [
 ]
 case_a.total_cost_exposure = 16900000  # cents — 169.000 €
 
-# ── ActionItems ────────────────────────────────────────────────────────────
-db.add_all(
-    [
-        ActionItem(
-            case_id="ADV-024-A",
-            proceeding_id=proc_a.id,
-            source_document_id=p8_pkh.id,
-            title="Stellungnahme zur Klageerwiderung einreichen",
-            description=(
-                "Fristsetzung durch Gericht: 30.04.2026. PKH-Beschluss vom 04.02.2026."
-            ),
-            due_date=datetime(2026, 4, 30),
-            action_type=ActionItemType.DEADLINE,
-            status=ActionItemStatus.OPEN,
-        ),
-        ActionItem(
-            case_id="ADV-024-A",
-            proceeding_id=proc_a.id,
-            source_document_id=None,
-            title="Verhandlungstermin (voraussichtlich)",
-            description=(
-                "Typisches Tempo AG Hamburg: ca. 6 Monate nach Klageerwiderung."
-            ),
-            due_date=datetime(2026, 6, 15),
-            action_type=ActionItemType.COURT_DATE,
-            status=ActionItemStatus.OPEN,
-        ),
-    ]
-)
-
 # ── UserReactions (3) on existing docs ────────────────────────────────────
+# NOTE: ActionItems for ADV-024-A are seeded in the Phase 8 block below with
+# richer data (source_document_id, proper titles). Removed duplicate entries
+# that caused (case_id, due_date, action_type) UNIQUE constraint violations.
 db.add_all(
     [
         UserReaction(
@@ -1588,7 +1564,7 @@ p8_antrag_sv = _p8_doc(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 1, 28),
-    created_at=datetime(2026, 1, 28),
+    ingest_date=datetime(2026, 1, 28),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1625,7 +1601,7 @@ p8_bestellung_vb = _p8_doc(
     originator_type=OriginatorType.COURT,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 1, 30),
-    created_at=datetime(2026, 1, 30),
+    ingest_date=datetime(2026, 1, 30),
     significance_tier=SignificanceTier.INFORMATIONAL,
     ai_summary=[
         {
@@ -1654,7 +1630,7 @@ p8_beweisangebot = _p8_doc(
     originator_type=OriginatorType.OPPOSING,
     sender="mueller@kanzlei-gegenseite.de",
     received_date=datetime(2026, 2, 10),
-    created_at=datetime(2026, 2, 10),
+    ingest_date=datetime(2026, 2, 10),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1685,7 +1661,7 @@ p8_kontoauszuege = _p8_doc(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 2, 20),
-    created_at=datetime(2026, 2, 20),
+    ingest_date=datetime(2026, 2, 20),
     significance_tier=SignificanceTier.INFORMATIONAL,
     role=DocumentRole.ENCLOSURE,
     ai_summary=[
@@ -1715,7 +1691,7 @@ p8_beweisbeschluss = _p8_doc(
     originator_type=OriginatorType.COURT,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 3, 1),
-    created_at=datetime(2026, 3, 1),
+    ingest_date=datetime(2026, 3, 1),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1749,7 +1725,7 @@ p8_kindergarten = _p8_doc(
     originator_type=OriginatorType.THIRD_PARTY,
     sender="leitung@kita-sternchen-hamburg.de",
     received_date=datetime(2026, 3, 3),
-    created_at=datetime(2026, 3, 3),
+    ingest_date=datetime(2026, 3, 3),
     significance_tier=SignificanceTier.INFORMATIONAL,
     ai_summary=[
         {
@@ -1778,7 +1754,7 @@ p8_gehaltsabrechnung = _p8_doc(
     originator_type=OriginatorType.OPPOSING,
     sender="mueller@kanzlei-gegenseite.de",
     received_date=datetime(2026, 3, 5),
-    created_at=datetime(2026, 3, 5),
+    ingest_date=datetime(2026, 3, 5),
     significance_tier=SignificanceTier.SIGNIFICANT,
     role=DocumentRole.ENCLOSURE,
     ai_summary=[
@@ -1808,7 +1784,7 @@ p8_sv_gutachten = _p8_doc(
     originator_type=OriginatorType.THIRD_PARTY,
     sender="bauer@sv-wirtschaft-hh.de",
     received_date=datetime(2026, 4, 5),
-    created_at=datetime(2026, 4, 5),
+    ingest_date=datetime(2026, 4, 5),
     significance_tier=SignificanceTier.CRITICAL,
     ai_summary=[
         {
@@ -1855,7 +1831,7 @@ p8_vb_bericht = _p8_doc(
     originator_type=OriginatorType.THIRD_PARTY,
     sender="sommer@rechtsanwalt-sommer.de",
     received_date=datetime(2026, 4, 8),
-    created_at=datetime(2026, 4, 8),
+    ingest_date=datetime(2026, 4, 8),
     significance_tier=SignificanceTier.SIGNIFICANT,
     thread_open=True,
     ai_summary=[
@@ -1890,7 +1866,7 @@ p8_ladung = _p8_doc(
     originator_type=OriginatorType.COURT,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 4, 10),
-    created_at=datetime(2026, 4, 10),
+    ingest_date=datetime(2026, 4, 10),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1924,7 +1900,7 @@ p8_sv_kostenrechnung = _p8_doc(
     originator_type=OriginatorType.COURT,
     sender="geschaeftsstelle@ag-hamburg.de",
     received_date=datetime(2026, 4, 12),
-    created_at=datetime(2026, 4, 12),
+    ingest_date=datetime(2026, 4, 12),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -1954,7 +1930,7 @@ p8_duplik = _p8_doc(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 4, 15),
-    created_at=datetime(2026, 4, 15),
+    ingest_date=datetime(2026, 4, 15),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -1992,7 +1968,7 @@ p8_kanzleinotiz = _p8_doc(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 4, 18),
-    created_at=datetime(2026, 4, 18),
+    ingest_date=datetime(2026, 4, 18),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -2108,6 +2084,8 @@ def _p8_olg(**kwargs):
         },
     }
     defaults.update(kwargs)
+    # cost_delta was dropped from Document in Phase 3 migration (→ LegalCost/CostSignal).
+    defaults.pop("cost_delta", None)
     if "content" not in defaults:
         defaults["content"] = _content(
             defaults["title"],
@@ -2126,7 +2104,7 @@ p8_olg_beschwerde = _p8_olg(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 5, 10),
-    created_at=datetime(2026, 5, 10),
+    ingest_date=datetime(2026, 5, 10),
     significance_tier=SignificanceTier.CRITICAL,
     ai_summary=[
         {
@@ -2163,7 +2141,7 @@ p8_olg_eingang = _p8_olg(
     originator_type=OriginatorType.COURT,
     sender="poststelle@olg-hamburg.de",
     received_date=datetime(2026, 5, 15),
-    created_at=datetime(2026, 5, 15),
+    ingest_date=datetime(2026, 5, 15),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -2181,7 +2159,7 @@ p8_olg_rvg_anforderung = _p8_olg(
     originator_type=OriginatorType.COURT,
     sender="poststelle@olg-hamburg.de",
     received_date=datetime(2026, 5, 20),
-    created_at=datetime(2026, 5, 20),
+    ingest_date=datetime(2026, 5, 20),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {"kind": "finance", "text": "GKG-Vorschuss OLG: 1.128 € bis 10.06.2026."},
@@ -2210,7 +2188,7 @@ p8_olg_einzahlung = _p8_olg(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 6, 1),
-    created_at=datetime(2026, 6, 1),
+    ingest_date=datetime(2026, 6, 1),
     significance_tier=SignificanceTier.ADMINISTRATIVE,
     ai_summary=[
         {
@@ -2232,7 +2210,7 @@ p8_olg_begruendung = _p8_olg(
     originator_type=OriginatorType.OWN,
     sender="kanzlei@sanctuary-counsel.de",
     received_date=datetime(2026, 6, 15),
-    created_at=datetime(2026, 6, 15),
+    ingest_date=datetime(2026, 6, 15),
     significance_tier=SignificanceTier.SIGNIFICANT,
     ai_summary=[
         {
@@ -2263,7 +2241,7 @@ p8_olg_relay = _p8_olg(
     originator_type=OriginatorType.COURT,
     sender="poststelle@olg-hamburg.de",
     received_date=datetime(2026, 7, 5),
-    created_at=datetime(2026, 7, 5),
+    ingest_date=datetime(2026, 7, 5),
     significance_tier=SignificanceTier.SIGNIFICANT,
     court_relay=True,
     role=DocumentRole.COVER_LETTER,
@@ -2284,7 +2262,7 @@ p8_olg_erwiderung = _p8_olg(
     attributed_originator="opposing",
     sender="poststelle@olg-hamburg.de",
     received_date=datetime(2026, 7, 5),
-    created_at=datetime(2026, 7, 5),
+    ingest_date=datetime(2026, 7, 5),
     significance_tier=SignificanceTier.SIGNIFICANT,
     role=DocumentRole.ENCLOSURE,
     ai_summary=[
@@ -2323,7 +2301,7 @@ p8_olg_jugendamt = _p8_olg(
     attributed_originator="third_party",
     sender="poststelle@olg-hamburg.de",
     received_date=datetime(2026, 7, 5),
-    created_at=datetime(2026, 7, 5),
+    ingest_date=datetime(2026, 7, 5),
     significance_tier=SignificanceTier.SIGNIFICANT,
     role=DocumentRole.ENCLOSURE,
     thread_open=True,
@@ -2357,7 +2335,7 @@ p8_olg_beschluss = _p8_olg(
     originator_type=OriginatorType.COURT,
     sender="poststelle@olg-hamburg.de",
     received_date=None,  # ghost — not yet received
-    created_at=datetime(2026, 8, 20),
+    ingest_date=datetime(2026, 8, 20),
     significance_tier=SignificanceTier.CRITICAL,
     ai_summary=[
         {
