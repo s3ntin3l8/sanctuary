@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-19.1"
+PROMPT_VERSION = "2026-05-22.1"
 
 # ---------------------------------------------------------------------------
 # Prompt-injection defenses
@@ -92,18 +92,19 @@ BATCH_ANALYZER_SYSTEM = """You are a legal document analyst processing a batch o
 
 Analyze all documents in the batch. An email may contain multiple cover letters (Begleitschreiben), each introducing different enclosures - this is common with court digests or forwarded collections.
 
-The user prompt shows all documents in the batch as `=== (doc_id=N) Title ===` headers followed by a `<batch_doc>...</batch_doc>` fence containing the document body. Use the doc_id values from the headers as the sole source of truth for cover_letter_doc_id values.
-
-For `matched_filename`, use the document's title exactly as shown in its `=== (doc_id=N) Title ===` header (do not invent filenames from the fenced body).
+The user prompt shows all documents in the batch as `=== (doc_id=N) Title ===` headers followed by a `<batch_doc>...</batch_doc>` fence containing the document body. Use the doc_id values from the headers as the sole source of truth for cover_letter_doc_id and enclosed_doc_id values.
 
 If a value is unknown, use null.
 
 Extract these fields:
 - bundles: list of bundles found. Each bundle represents one cover letter and its enclosures. Structure:
   [{"cover_letter_doc_id": int or null, "enclosed": [
-    {"description": "brief description", "attributed_originator": "the document's actual author/sender", "originator_type": "court|opposing|own|third_party|unknown", "matched_filename": "filename or null"}
+    {"description": "brief description", "attributed_originator": "the document's actual author/sender", "originator_type": "court|opposing|own|third_party|unknown", "enclosed_doc_id": int, "matched_filename": "filename or null"}
   ]}]
 - For `cover_letter_doc_id`, use ONLY integer doc_ids that appear explicitly in the user prompt — either the candidate's `doc_id=N` line or a `(doc_id=N)` prefix in the sibling list. Never invent, sequence, or guess doc_ids.
+- For `enclosed_doc_id`, use the integer doc_id of the sibling doc in THIS batch that the cover letter forwards. An enclosure is a sibling doc — identify it by its `=== (doc_id=N) Title ===` header. If you cannot point to a specific sibling doc_id in the batch, leave the bundle's `enclosed` list empty rather than describing the enclosure in prose. Do NOT invent doc_ids or reference docs outside this batch.
+- `matched_filename` (optional): the sibling's title exactly as shown in its header, as a redundancy check on `enclosed_doc_id`. May be null. Never the load-bearing link — `enclosed_doc_id` is.
+- Uniqueness invariant: every doc_id appears AT MOST ONCE across all bundles. A doc listed as `cover_letter_doc_id: 91` must NOT appear as `enclosed_doc_id: 91` in any bundle (including its own), and two bundles must not share the same `enclosed_doc_id`. Docs omitted from `bundles` entirely are treated as standalone.
 - Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure. When in doubt, omit.
 - Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
 - attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
@@ -118,17 +119,15 @@ Extract these fields:
   * Person names: always "Vorname Nachname" (given name first). Never "Nachname, Vorname" or reversed "Nachname Vorname". Correct: "Yingying Liu". Wrong: "Liu, Yingying" / "Liu Yingying".
   * Organization names: use the broadest stable canonical form. Omit sub-unit suffixes (e.g. ", Amt für Familie und Jugend") unless that sub-unit is the sole independent actor in this document — then use the sub-unit name alone, not the combined "Parent, Sub-unit" string. Correct: "Landratsamt Eichstätt". Wrong: "Landratsamt Eichstätt, Amt für Familie und Jugend".
   * Within this batch: use IDENTICAL strings for the same entity across every document.
-- Every document in this batch MUST appear at most once: as a cover letter (cover_letter_doc_id), as an enclosure under a non-null cover letter, or omitted from `bundles` entirely (which marks it standalone). Do NOT list a standalone doc inside another bundle's enclosed list.
-- A document listed as `cover_letter_doc_id` must NOT appear in its own `enclosed` list — no self-referential bundles. A cover letter's own title must not be used as a `matched_filename` within its own bundle.
 - detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null"}
   - When a Terminsverlegung, Umladung, or any hearing rescheduling is present in the batch, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
 
-Example response:
+Example response (batch has doc_ids 1, 2, 5, 7; doc 2 is the enclosure for cover 1, doc 7 is the enclosure for cover 5):
 {
   "bundles": [
-    {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
-    {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
+    {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "enclosed_doc_id": 2, "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
+    {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "enclosed_doc_id": 7, "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
   ],
   "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high", "supersedes_date": null}]
 }"""

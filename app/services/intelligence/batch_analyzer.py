@@ -172,6 +172,63 @@ def _load_existing_encloses_edges(
     return {(r[0], r[1]) for r in rows}
 
 
+def _resolve_enclosure(
+    encl: dict,
+    docs: list[Document],
+    doc_map: dict[int, Document],
+    cover_id: int | None,
+    cover_ids: set[int],
+    claimed_ids: set[int],
+    batch_id: int,
+) -> Document | None:
+    """Resolve an AI-emitted enclosure entry to a sibling Document.
+
+    Primary link: integer ``enclosed_doc_id`` from the new schema.
+    Fallback: fuzzy ``matched_filename`` for older AI outputs that pre-date
+    the schema change. Returns None when the link is self-referential,
+    points outside the batch, hits a cover letter, or is already claimed."""
+    enclosed_id = encl.get("enclosed_doc_id")
+    if isinstance(enclosed_id, int):
+        if (
+            enclosed_id == cover_id
+            or enclosed_id in cover_ids
+            or enclosed_id in claimed_ids
+            or enclosed_id not in doc_map
+        ):
+            logger.warning(
+                "Batch #%d: AI returned enclosed_doc_id=%s for cover=%s — "
+                "skipping (self-ref, cross-bundle dup, or out-of-batch).",
+                batch_id,
+                enclosed_id,
+                cover_id,
+            )
+            return None
+        return doc_map[enclosed_id]
+
+    matched = encl.get("matched_filename")
+    if not matched:
+        return None
+    matched_norm = _norm_filename(matched)
+    candidates = [
+        d
+        for d in docs
+        if d.id != cover_id and d.id not in claimed_ids and d.id not in cover_ids
+    ]
+    child = next(
+        (d for d in candidates if _norm_filename(d.title or "") == matched_norm),
+        None,
+    )
+    if child:
+        return child
+    subs = [
+        d
+        for d in candidates
+        if matched_norm in _norm_filename(d.title or "")
+        or _norm_filename(d.title or "") in matched_norm
+    ]
+    return subs[0] if len(subs) == 1 else None
+
+
 def _add_encloses_edge(
     db: Session,
     existing: set[tuple[int, int]],
@@ -279,36 +336,19 @@ def _apply_batch_results(
             if cover_id is None or cover_doc is None:
                 continue
 
-            # Wire enclosures to this cover letter
+            # Wire enclosures to this cover letter. Prefer enclosed_doc_id
+            # (load-bearing); fall back to matched_filename for older AI
+            # outputs / one-off replays.
             for encl in enclosed:
-                matched = encl.get("matched_filename")
-                child = None
-                if matched:
-                    matched_norm = _norm_filename(matched)
-                    candidates = [
-                        d
-                        for d in docs
-                        if d.id != cover_id
-                        and d.id not in claimed_ids
-                        and d.id not in cover_ids
-                    ]
-                    child = next(
-                        (
-                            d
-                            for d in candidates
-                            if _norm_filename(d.title or "") == matched_norm
-                        ),
-                        None,
-                    )
-                    if not child:
-                        subs = [
-                            d
-                            for d in candidates
-                            if matched_norm in _norm_filename(d.title or "")
-                            or _norm_filename(d.title or "") in matched_norm
-                        ]
-                        if len(subs) == 1:
-                            child = subs[0]
+                child = _resolve_enclosure(
+                    encl,
+                    docs,
+                    doc_map,
+                    cover_id,
+                    cover_ids,
+                    claimed_ids,
+                    batch_id,
+                )
                 if child:
                     claimed_ids.add(child.id)
                     child.role = DocumentRole.ENCLOSURE
@@ -357,34 +397,15 @@ def _apply_batch_results(
             first_cover = cover_letter_doc
 
         for encl in enclosed_descriptions:
-            matched = encl.get("matched_filename")
-            child = None
-            if matched:
-                matched_norm = _norm_filename(matched)
-                candidates = [
-                    d
-                    for d in docs
-                    if d.id != cover_letter_doc_id
-                    and d.id not in claimed_ids
-                    and d.id not in cover_ids
-                ]
-                child = next(
-                    (
-                        d
-                        for d in candidates
-                        if _norm_filename(d.title or "") == matched_norm
-                    ),
-                    None,
-                )
-                if not child:
-                    subs = [
-                        d
-                        for d in candidates
-                        if matched_norm in _norm_filename(d.title or "")
-                        or _norm_filename(d.title or "") in matched_norm
-                    ]
-                    if len(subs) == 1:
-                        child = subs[0]
+            child = _resolve_enclosure(
+                encl,
+                docs,
+                doc_map,
+                cover_letter_doc_id,
+                cover_ids,
+                claimed_ids,
+                batch_id,
+            )
             if child:
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE

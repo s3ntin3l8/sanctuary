@@ -34,8 +34,12 @@ STAGE_OPTIONS: dict[str, dict] = {
     "batch_analysis": {
         "num_ctx": 65536,
         **_QWEN_SAMPLING,
-        "num_predict": 10000,
-        "max_tokens": 10000,
+        # Bumped 10000 → 12000: pass-1 reasoning on batches of 8+ docs hit the
+        # 10000 cap (completion_tokens=10000, reasoning_tokens=9999) in two of
+        # four batch_33 runs. Secondary fix — the primary cause of bad bundling
+        # was the missing enclosed_doc_id schema field, not budget.
+        "num_predict": 12000,
+        "max_tokens": 12000,
     },
     "enrich": {
         "num_ctx": 32768,

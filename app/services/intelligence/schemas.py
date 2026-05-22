@@ -195,6 +195,7 @@ class _Enclosure(BaseModel):
     description: str
     attributed_originator: str | None = None
     originator_type: OriginatorType
+    enclosed_doc_id: int | None = None
     matched_filename: str | None = None
 
 

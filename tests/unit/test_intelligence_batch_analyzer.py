@@ -87,6 +87,74 @@ def test_cover_letter_detected(db_session, batch_with_two_docs):
 
 
 @pytest.mark.unit
+def test_enclosed_doc_id_wires_enclosure_with_null_matched_filename(
+    db_session, batch_with_two_docs
+):
+    """The new primary linkage: enclosed_doc_id wires the enclosure even when
+    matched_filename is null. This is the IB-0033 failure mode — pre-fix, the
+    AI returned null filenames and every doc was downgraded to STANDALONE."""
+    batch, cover, enclosure = batch_with_two_docs
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "Klageerwiderung",
+                        "attributed_originator": "Opposing counsel",
+                        "originator_type": "opposing",
+                        "enclosed_doc_id": enclosure.id,
+                        "matched_filename": None,
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+    db_session.expire_all()
+    cover = db_session.get(Document, cover.id)
+    enclosure = db_session.get(Document, enclosure.id)
+
+    assert cover.role == DocumentRole.COVER_LETTER
+    assert enclosure.role == DocumentRole.ENCLOSURE
+    assert enclosure.parent_id == cover.id
+
+
+@pytest.mark.unit
+def test_enclosed_doc_id_rejects_self_reference(db_session, batch_with_two_docs):
+    """A bundle where enclosed_doc_id == cover_letter_doc_id is malformed AI
+    output; the cover gets no enclosures wired and is downgraded to STANDALONE."""
+    batch, cover, enclosure = batch_with_two_docs
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "description": "self-ref",
+                        "originator_type": "court",
+                        "enclosed_doc_id": cover.id,
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
+    db_session.expire_all()
+    cover = db_session.get(Document, cover.id)
+    enclosure = db_session.get(Document, enclosure.id)
+
+    assert cover.role == DocumentRole.STANDALONE
+    assert enclosure.parent_id is None
+
+
+@pytest.mark.unit
 def test_apply_batch_results_persists_encloses_relationship(
     db_session, batch_with_two_docs
 ):
