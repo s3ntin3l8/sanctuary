@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _trigger_case_brief(doc_id: int) -> None:
     from app.config import SessionLocal
-    from app.models.database import Document
+    from app.models.database import Case, Document
     from app.tasks.generate_case_brief import generate_case_brief_task
 
     db = SessionLocal()
@@ -21,16 +21,33 @@ def _trigger_case_brief(doc_id: int) -> None:
         if not doc or not doc.case_id or doc.case_id == "_TRIAGE":
             return
         case_id = doc.case_id
+
+        # DB guard: skip dispatch if a brief is already actively running.
+        # generate_case_brief_task calls _mark_processing() which sets
+        # ai_brief={"status":"processing"} and commits before the AI call
+        # starts — so this is the authoritative signal that covers the full
+        # task lifetime, unlike a short-TTL Redis key.
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if (
+            case
+            and isinstance(case.ai_brief, dict)
+            and case.ai_brief.get("status") == "processing"
+        ):
+            logger.debug(
+                "Case %s brief already in progress — skipping dispatch", case_id
+            )
+            return
     except Exception as e:
         logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
         return
     finally:
         db.close()
 
-    # Dedup: collapse all near-simultaneous dispatches (e.g. N docs in the same
-    # case all completing CLAIMS at once) into a single brief task.  The 30 s
-    # window is short enough that a second upload batch still gets its own brief.
-    # Falls back to always-dispatch when Redis is unavailable.
+    # Redis NX lock: second guard that collapses near-simultaneous dispatches
+    # (e.g. N docs in the same case all completing CLAIMS at once) before the
+    # first task has had time to set ai_brief=processing.  The 30 s TTL covers
+    # the window between dispatch and _mark_processing().
+    # Falls back to always-dispatch when Redis is unavailable (logged, not silent).
     _DEDUP_TTL = 30
     lock_key = f"sanctuary:case_brief_pending:{case_id}"
     try:
@@ -41,8 +58,12 @@ def _trigger_case_brief(doc_id: int) -> None:
                 "Case %s brief already queued — skipping duplicate dispatch", case_id
             )
             return
-    except Exception:
-        pass  # Redis unavailable — fall through and always dispatch
+    except Exception as exc:
+        logger.warning(
+            "Redis dedup check failed for case %s, dispatching anyway: %s",
+            case_id,
+            exc,
+        )
 
     try:
         generate_case_brief_task.delay(case_id)
