@@ -149,10 +149,4 @@ async def test_ingest_file_uses_batch_subfolder_in_triage(tmp_path):
     # The directory _TRIAGE/ib-5 must have been created on disk
     assert (tmp_path / "_TRIAGE" / "ib-5").is_dir()
     # _create_document was called with a file_path inside ib-5
-    call_kwargs = mock_create.call_args
-    # file_path may be a positional or keyword arg — check both
-    all_args = list(call_kwargs.args) + list(call_kwargs.kwargs.values())
-    saved_paths = [str(a) for a in all_args]
-    assert any("ib-5" in p for p in saved_paths), (
-        f"Expected ib-5 in call args, got: {saved_paths}"
-    )
+    assert "ib-5" in str(mock_create.call_args.kwargs["file_path"])
