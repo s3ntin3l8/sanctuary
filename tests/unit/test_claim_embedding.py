@@ -1,0 +1,80 @@
+"""Tests for app/services/claim_embedding.py — specifically that embedding
+failures now record `Claim.embedding_failed_at` so the system has signal."""
+
+import asyncio
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from sqlalchemy import text
+
+from app.models.database import Case, Claim
+from app.models.enums import CaseStatus, ClaimStatus, ClaimType
+from app.services.claim_embedding import upsert_claim_embedding
+
+
+@pytest.fixture
+def claim_in_case(db_session):
+    # claim_vectors is a vec0 virtual table created at runtime by migrations,
+    # not by Base.metadata.create_all(). Ensure it exists for these tests.
+    db_session.execute(
+        text(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS claim_vectors "
+            "USING vec0(claim_id INTEGER PRIMARY KEY, embedding float[1024])"
+        )
+    )
+    db_session.commit()
+    case = Case(id="EMB-001", title="Embed test", status=CaseStatus.INTAKE)
+    db_session.add(case)
+    db_session.commit()
+    c = Claim(
+        claim_text="The opposing party did not appear at the hearing on 2025-09-15.",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+    )
+    db_session.add(c)
+    db_session.commit()
+    db_session.refresh(c)
+    return c
+
+
+@pytest.mark.unit
+def test_upsert_claim_embedding_marks_failure_on_endpoint_error(
+    db_session, claim_in_case
+):
+    """When embed_claim_text returns None (endpoint failure / model unloaded),
+    upsert_claim_embedding must set Claim.embedding_failed_at so the system
+    has persistent signal that dedup is degraded for this claim."""
+    with patch(
+        "app.services.claim_embedding.embed_claim_text",
+        new=AsyncMock(return_value=None),
+    ):
+        ok = asyncio.run(upsert_claim_embedding(claim_in_case.id, db_session))
+
+    assert ok is False
+    db_session.refresh(claim_in_case)
+    assert claim_in_case.embedding_failed_at is not None
+
+
+@pytest.mark.unit
+def test_upsert_claim_embedding_clears_failure_on_success(db_session, claim_in_case):
+    """A recovered claim — previously marked failed — must have
+    embedding_failed_at cleared back to NULL when the embed succeeds."""
+    from datetime import UTC, datetime
+
+    # Pre-set the failure timestamp to simulate a prior failed attempt.
+    claim_in_case.embedding_failed_at = datetime(2026, 5, 22, 18, 0, tzinfo=UTC)
+    db_session.commit()
+
+    # 1024-dim vector matches the embed_dim of the claim_vectors test table
+    # created in the fixture (vec0 enforces dim on insert).
+    fake_vec = [0.01] * 1024
+
+    with patch(
+        "app.services.claim_embedding.embed_claim_text",
+        new=AsyncMock(return_value=fake_vec),
+    ):
+        ok = asyncio.run(upsert_claim_embedding(claim_in_case.id, db_session))
+
+    assert ok is True
+    db_session.refresh(claim_in_case)
+    assert claim_in_case.embedding_failed_at is None

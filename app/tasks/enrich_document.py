@@ -168,8 +168,16 @@ def enrich_document_task(self, doc_id: int):
     except httpx.HTTPStatusError as e:
         # 4xx = client-side error — the exact same request will always fail.
         # Fail immediately without burning retries; 5xx may be transient so
-        # fall through to the generic handler below.
-        if 400 <= e.response.status_code < 500:
+        # we retry with backoff.
+        #
+        # Exception: when the 4xx body matches an LM-Studio-via-litellm
+        # transient marker (model loading/unloading mid-stream, cold-start),
+        # treat as transient — those clear within seconds and a retry will
+        # succeed. _ai_call.is_transient_backend_error inspects the body
+        # summary that _stream_response splices into the exception text.
+        from app.services.intelligence._ai_call import is_transient_backend_error
+
+        if 400 <= e.response.status_code < 500 and not is_transient_backend_error(e):
             logger.error(
                 "Doc #%d: AI returned HTTP %d — failing immediately (no retry): %s",
                 doc_id,
@@ -187,14 +195,60 @@ def enrich_document_task(self, doc_id: int):
             finally:
                 db.close()
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
-        # 5xx — may be transient; let the generic handler below decide on retry.
+        # 5xx OR transient 4xx — retry with backoff. Call self.retry()
+        # directly here rather than re-raising; a sibling `except Exception`
+        # in this try-block can't catch an exception raised from inside
+        # another except clause.
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)
+            logger.warning(
+                "Doc #%d: AI returned HTTP %d (transient) — retry %d in %ds: %s",
+                doc_id,
+                e.response.status_code,
+                self.request.retries + 1,
+                countdown,
+                e,
+            )
+            db = get_db_session()
+            try:
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.ENRICH,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        # Retries exhausted on transient error — terminal failure.
         logger.error(
-            "Doc #%d: AI returned HTTP %d — treating as transient: %s",
+            "Doc #%d: AI returned HTTP %d after %d retries — marking failed: %s",
             doc_id,
             e.response.status_code,
+            self.max_retries,
             e,
         )
-        raise RuntimeError(str(e)) from e
+        db = get_db_session()
+        try:
+            mark_failed(
+                doc_id,
+                PipelineStage.ENRICH,
+                db,
+                error=f"HTTP {e.response.status_code}: {e}",
+            )
+        finally:
+            db.close()
+        logger.info(
+            "Doc #%d: enrich failed permanently — still dispatching relationships",
+            doc_id,
+        )
+        _dispatch_safely(doc_id, PipelineStage.RELATIONSHIPS)
+        _dispatch_safely(doc_id, PipelineStage.ENTITIES)
+        _trigger_cost_rollup(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
         if self.request.retries < self.max_retries:

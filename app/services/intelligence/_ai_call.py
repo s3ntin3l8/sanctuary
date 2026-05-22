@@ -70,6 +70,50 @@ def _parse_litellm_error_code(body: bytes) -> str | None:
         return None
 
 
+def _parse_litellm_error_summary(body: bytes) -> str | None:
+    """Extract a one-line human summary from a LiteLLM error response body.
+
+    Returns a string like "MidStreamFallbackError: ... Model unloaded" suitable
+    for splicing into our exception message and `runs.jsonl` error field. None
+    when the body isn't a parseable litellm error envelope."""
+    try:
+        err = json.loads(body).get("error") or {}
+    except Exception:
+        return None
+    msg = (err.get("message") or "").strip()
+    typ = (err.get("type") or "").strip()
+    if not msg and not typ:
+        return None
+    if typ and msg:
+        return f"{typ}: {msg}"
+    return msg or typ
+
+
+# LM Studio behind the litellm proxy returns 4xx for several operational-warmup
+# conditions that are actually transient: model loading, unloading mid-stream,
+# or cold-start. The proxy normalizes the bodies to BadRequestError /
+# MidStreamFallbackError; we look for the human-readable markers in the body
+# summary captured by _parse_litellm_error_summary above.
+_TRANSIENT_BACKEND_MARKERS = (
+    "Failed to load model",
+    "Model has not started loading",
+    "Model unloaded",
+    "MidStreamFallbackError",
+    "Lm_studioException",
+)
+
+
+def is_transient_backend_error(exc: Exception) -> bool:
+    """True when the exception message carries a marker indicating the backend
+    model is in a transient operational state (loading/unloading/restart).
+
+    Callers should treat these like 5xx — retry with backoff — rather than
+    like genuine 4xx client errors which would warrant immediate-fail.
+    """
+    msg = str(exc)
+    return any(m in msg for m in _TRANSIENT_BACKEND_MARKERS)
+
+
 def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None):
     """Derive the per-scope log file path from a debug_label."""
     m = _LABEL_RE.match(debug_label)
@@ -343,6 +387,7 @@ def _stream_response(
                     if not response.is_success:
                         _body = response.read()
                         _code = _parse_litellm_error_code(_body)
+                        _summary = _parse_litellm_error_summary(_body)
                         if _code == "context_length_exceeded":
                             logger.warning(
                                 "call %s: context length exceeded (HTTP %s) — "
@@ -350,9 +395,16 @@ def _stream_response(
                                 debug_label,
                                 response.status_code,
                             )
+                        # Splice body summary into the exception text so it
+                        # propagates into runs.jsonl (truncated to 200 chars
+                        # at _append_index) and the per-scope debug log. Lets
+                        # us diagnose Lm_studioException / MidStreamFallback /
+                        # context_length_exceeded etc. without re-pulling the
+                        # litellm /spend/logs/v2 endpoint after the fact.
                         raise httpx.HTTPStatusError(
                             f"HTTP {response.status_code}"
-                            + (f" [{_code}]" if _code else ""),
+                            + (f" [{_code}]" if _code else "")
+                            + (f" {_summary[:200]}" if _summary else ""),
                             request=response.request,
                             response=response,
                         )

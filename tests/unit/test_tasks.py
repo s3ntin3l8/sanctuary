@@ -147,6 +147,101 @@ def test_enrich_skipped_when_batch_analysis_pending(db_session, sample_document)
 
 
 @pytest.mark.unit
+def test_enrich_retries_on_transient_4xx_from_lm_studio(db_session, sample_document):
+    """A 4xx body containing an LM-Studio transient marker (Failed to load
+    model / Model unloaded / etc.) must NOT immediate-fail like a genuine
+    client error. Instead the task should call self.retry() and NOT mark the
+    stage as failed on this attempt."""
+    import httpx
+    from celery.exceptions import Retry
+
+    _set_doc_stages(
+        db_session, sample_document, {"batch_analysis": {"status": "completed"}}
+    )
+
+    # Construct an HTTPStatusError whose str() carries the transient marker —
+    # this is the shape _ai_call._stream_response now produces after the
+    # body-capture change.
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    transient_err = httpx.HTTPStatusError(
+        'HTTP 400 [400] BadRequestError: Lm_studioException - Failed to load model "qwen/qwen3.5-9b"',
+        request=request,
+        response=response,
+    )
+
+    # Stand-in Retry instance that the patched self.retry will raise.
+    retry_sentinel = Retry(exc=transient_err)
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.document_enricher.enrich",
+            side_effect=transient_err,
+        ),
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch("app.services.pipeline_status.schedule_retry") as mock_schedule_retry,
+        patch.object(
+            enrich_document_task, "retry", side_effect=retry_sentinel
+        ) as mock_task_retry,
+        patch("app.tasks.enrich_document._trigger_cost_rollup"),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        enrich_document_task.request.update({"retries": 0})
+        try:
+            with pytest.raises(Retry):
+                enrich_document_task.run(sample_document.id)
+        finally:
+            enrich_document_task.request.clear()
+
+    # The retry path was taken — schedule_retry recorded the attempt and
+    # self.retry() was invoked.
+    mock_schedule_retry.assert_called_once()
+    mock_task_retry.assert_called_once()
+    # Critical: must NOT have called mark_failed on the 4xx path.
+    mock_mark_failed.assert_not_called()
+
+
+@pytest.mark.unit
+def test_enrich_immediate_fails_on_genuine_4xx(db_session, sample_document):
+    """A 4xx body WITHOUT a transient marker (e.g. bare HTTP 400) must still
+    immediate-fail — that's the existing client-side-error contract."""
+    import httpx
+
+    _set_doc_stages(
+        db_session, sample_document, {"batch_analysis": {"status": "completed"}}
+    )
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    client_err = httpx.HTTPStatusError(
+        "HTTP 400 [400]", request=request, response=response
+    )
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.document_enricher.enrich",
+            side_effect=client_err,
+        ),
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch("app.tasks.enrich_document._trigger_cost_rollup"),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        enrich_document_task.request.update({"retries": 0})
+        try:
+            result = enrich_document_task.run(sample_document.id)
+        finally:
+            enrich_document_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_mark_failed.assert_called_once()
+
+
+@pytest.mark.unit
 def test_enrich_runs_when_batch_analysis_skipped_manual_upload(
     db_session, sample_document
 ):

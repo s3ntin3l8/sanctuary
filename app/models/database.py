@@ -675,6 +675,13 @@ class Claim(Base):
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
     dismissed_at = Column(DateTime, nullable=True, index=True)
+    # Last time embed_claim_text failed for this claim. NULL = embedding is
+    # current. Set by upsert_claim_embedding when the embedding endpoint
+    # returns a failure (LM Studio model not loaded, dim mismatch, etc.).
+    # Cleared on successful re-embed. Provides persistent signal that
+    # dedup is degraded for this claim — a future maintenance task can
+    # query WHERE embedding_failed_at IS NOT NULL to retry.
+    embedding_failed_at = Column(DateTime, nullable=True, index=True)
 
     evidence = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"

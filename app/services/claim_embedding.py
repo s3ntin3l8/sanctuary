@@ -10,6 +10,7 @@ pre-extraction context.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import text
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Claim
 from app.services.ai_config import get_embed_config
 from app.services.ai_provider import embed_provider
+from app.services.intelligence._ai_call import _parse_litellm_error_summary
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,9 @@ def _serialize(vec: list[float]) -> bytes:
 
 async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
     """Compute the embedding for a claim's text. Returns None on any failure
-    (logged at WARNING). Caller decides whether to retry / skip."""
+    (logged at ERROR with the litellm body summary when available). Caller
+    decides whether to retry / skip — upsert_claim_embedding additionally
+    records the failure on the Claim row via embedding_failed_at."""
     embed_provider.reload_from_db(db)
     cfg = get_embed_config(db)
     try:
@@ -40,13 +44,24 @@ async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
             response = await client.post(
                 params["url"], json=params["json"], headers=params["headers"]
             )
-            response.raise_for_status()
+            if not response.is_success:
+                # Surface the litellm body — embedding failures were previously
+                # swallowed at WARNING level, leaving 60+ silent failures/day
+                # invisible in normal log monitoring. Log at ERROR with the
+                # parsed body summary so they're discoverable in celery.log.
+                summary = _parse_litellm_error_summary(response.content) or ""
+                logger.error(
+                    "claim embedding HTTP %s: %s",
+                    response.status_code,
+                    summary[:200] or response.text[:200],
+                )
+                return None
             data = response.json()
         embedding = data.get("embedding") or (
             data.get("data", [{}])[0].get("embedding") if data.get("data") else None
         )
         if not embedding or len(embedding) != cfg.embed_dim:
-            logger.warning(
+            logger.error(
                 "claim embedding rejected: returned %s dims, expected %s",
                 len(embedding) if embedding else 0,
                 cfg.embed_dim,
@@ -54,18 +69,25 @@ async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
             return None
         return embedding
     except Exception as exc:  # noqa: BLE001
-        logger.warning("claim embedding failed: %s", exc)
+        logger.error("claim embedding failed: %s", exc)
         return None
 
 
 async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
     """Embed `claim_id`'s text and write to claim_vectors. Idempotent
-    (DELETE + INSERT — vec0 doesn't honor ON CONFLICT)."""
+    (DELETE + INSERT — vec0 doesn't honor ON CONFLICT).
+
+    Records failure on the Claim via embedding_failed_at so the system has
+    persistent signal — a periodic maintenance task can find these and
+    re-attempt later. Clears the timestamp on success so a recovered claim
+    looks healthy again."""
     claim = db.get(Claim, claim_id)
     if not claim or not claim.claim_text:
         return False
     embedding = await embed_claim_text(claim.claim_text, db)
     if embedding is None:
+        claim.embedding_failed_at = datetime.now(UTC)
+        db.commit()
         return False
     blob = _serialize(embedding)
     db.execute(
@@ -78,6 +100,7 @@ async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
         ),
         {"cid": claim_id, "embedding": blob},
     )
+    claim.embedding_failed_at = None
     db.commit()
     return True
 
