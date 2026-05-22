@@ -87,6 +87,30 @@ def _active_stages(doc: Document) -> list[str]:
     ]
 
 
+def _executing_stages(doc: Document) -> list[str]:
+    """Stages where a worker is actively processing RIGHT NOW (status=running).
+
+    Distinct from _active_stages, which also includes 'retrying' — those are
+    waiting for a countdown, not executing. For the queue-panel split into
+    'Executing' vs 'Queued' sections, only truly-running stages count as
+    executing; retrying stages display as queued."""
+    return [
+        key
+        for key, rec in _ordered_stages(doc)
+        if isinstance(rec, dict) and rec.get("status") == "running"
+    ]
+
+
+def _retrying_stages(doc: Document) -> list[str]:
+    """Stages waiting for a Celery retry countdown — visible in the panel but
+    classified as queued for the executing/queued split."""
+    return [
+        key
+        for key, rec in _ordered_stages(doc)
+        if isinstance(rec, dict) and rec.get("status") == "retrying"
+    ]
+
+
 def _first_pending_stage(doc: Document) -> str:
     """Return the earliest (lowest-order) pending stage, or empty string."""
     for key, rec in reversed(_ordered_stages(doc)):
@@ -116,20 +140,30 @@ def _first_failed_stage_info(doc: Document) -> dict:
 def _build_queue_items(running: list[Document], pending: list[Document]) -> list[dict]:
     """Build display items for the queue panel.
 
-    Running docs: one item per active stage — a doc with ENTITIES + CLAIMS both
-    running produces two separate rows so every concurrent stage is visible.
+    Each item carries an `executing` flag — True when the stage is RUNNING
+    (a worker is actively processing it right now), False when it's
+    queued/retrying/blocked by a gate. The flag drives both the badge
+    counts and the executing/queued split in the panel template.
+
+    Running docs: emit one item per RUNNING stage (executing=True). If the
+    doc has no RUNNING stage but is in PARTIAL/RUNNING DB state, emit an
+    item for the first retrying or pending stage as queued.
+    Pending docs: one item per doc showing the next stage to run as queued.
     Batch-scoped stages (BATCH_ANALYSIS) are grouped into one item per batch.
-    Pending docs: one item per doc showing the next stage to run.
     """
     items: list[dict] = []
     batch_buckets: dict[tuple, int] = {}
 
-    def _add_stage(doc: Document, stage: str) -> None:
+    def _add_stage(doc: Document, stage: str, executing: bool) -> None:
         spec = STAGE_REGISTRY.get(stage) if stage else None
         if spec and spec.dispatch_arg == "batch_id" and doc.ingest_batch_id is not None:
             key = (stage, doc.ingest_batch_id)
             if key in batch_buckets:
                 items[batch_buckets[key]]["docs"].append(doc)
+                # Upgrade to executing if any sibling is RUNNING — the
+                # batch-level task either is or isn't running, no mixed state.
+                if executing:
+                    items[batch_buckets[key]]["executing"] = True
             else:
                 batch_buckets[key] = len(items)
                 items.append(
@@ -137,28 +171,39 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
                         "type": "batch",
                         "batch": doc.ingest_batch,
                         "stage": stage,
+                        "executing": executing,
                         "docs": [doc],
                     }
                 )
         else:
-            items.append({"type": "doc", "doc": doc, "stage": stage})
+            items.append(
+                {"type": "doc", "doc": doc, "stage": stage, "executing": executing}
+            )
 
     for doc in running:
-        active = _active_stages(doc)
-        if active:
-            for stage in active:
-                _add_stage(doc, stage)
+        executing = _executing_stages(doc)
+        retrying = _retrying_stages(doc)
+        if executing:
+            for stage in executing:
+                _add_stage(doc, stage, executing=True)
+            # Also surface any concurrent retrying stages as queued items.
+            for stage in retrying:
+                _add_stage(doc, stage, executing=False)
+        elif retrying:
+            for stage in retrying:
+                _add_stage(doc, stage, executing=False)
         else:
-            # Fallback: doc is RUNNING in DB but no stage has running status yet
-            # (transition window); show first pending stage instead.
+            # Fallback: doc is RUNNING/PARTIAL in DB but no stage has a
+            # non-terminal status yet (transition window); show first
+            # pending stage instead, as queued.
             stage = _first_pending_stage(doc)
             if stage:
-                _add_stage(doc, stage)
+                _add_stage(doc, stage, executing=False)
 
     for doc in pending:
         stage = _first_pending_stage(doc)
         if stage:
-            _add_stage(doc, stage)
+            _add_stage(doc, stage, executing=False)
 
     return items
 
@@ -193,33 +238,28 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
-    # Use COUNT(*) for accurate totals — _get_queue_docs caps at 50 docs so
-    # len(running) would understate the real count when the queue is deep.
-    # PARTIAL docs count as running: they have completed some stages and are
-    # mid-pipeline (active stage may be PENDING or RUNNING within PARTIAL).
-    n_running = (
-        db.query(Document)
-        .filter(
-            Document.pipeline_state.in_([PipelineState.RUNNING, PipelineState.PARTIAL])
-        )
-        .count()
-    )
-    n_pending = (
-        db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.PENDING)
-        .count()
-    )
+    # Executing vs queued counts derive directly from queue_items so badges
+    # match what the panel actually renders. "Executing" = a worker is
+    # processing this item right now (status=running); everything else
+    # (pending, retrying, blocked on a gate) counts as queued.
+    n_executing = sum(1 for item in queue_items if item.get("executing"))
+    n_queued = sum(1 for item in queue_items if not item.get("executing"))
+    # Split the items list so the template can render an "Executing" section
+    # and a "Queued" section without re-filtering.
+    executing_items = [item for item in queue_items if item.get("executing")]
+    queued_items = [item for item in queue_items if not item.get("executing")]
     failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
-            "queue_items": queue_items,
+            "executing_items": executing_items,
+            "queued_items": queued_items,
             "failed_docs": failed,
             "failed_doc_errors": failed_doc_errors,
             "n_active_ai": n_active_ai,
-            "n_running": n_running,
-            "n_pending": n_pending,
+            "n_executing": n_executing,
+            "n_queued": n_queued,
             "n_failed": len(failed),
         },
     )
@@ -249,27 +289,22 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
-    n_running = (
-        db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.RUNNING)
-        .count()
-    )
-    n_pending = (
-        db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.PENDING)
-        .count()
-    )
+    n_executing = sum(1 for item in queue_items if item.get("executing"))
+    n_queued = sum(1 for item in queue_items if not item.get("executing"))
+    executing_items = [item for item in queue_items if item.get("executing")]
+    queued_items = [item for item in queue_items if not item.get("executing")]
     failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_panel_body.html",
         {
-            "queue_items": queue_items,
+            "executing_items": executing_items,
+            "queued_items": queued_items,
             "failed_docs": failed,
             "failed_doc_errors": failed_doc_errors,
             "n_active_ai": n_active_ai,
-            "n_running": n_running,
-            "n_pending": n_pending,
+            "n_executing": n_executing,
+            "n_queued": n_queued,
             "n_failed": len(failed),
         },
     )

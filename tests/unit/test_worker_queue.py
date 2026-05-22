@@ -85,28 +85,149 @@ def test_badge_reflects_db_queue_depth_not_redis(app_client, db_session, sample_
 
 @pytest.mark.unit
 def test_badge_and_panel_header_agree(app_client, db_session, sample_case):
-    """Badge count must equal the panel header 'X Active' at the same DB snapshot."""
+    """Badge count must equal the panel header 'X Active' at the same DB snapshot.
+
+    Realistic fixture: production docs always have stage rows (initialize()
+    is called at ingest time). The panel's queue items come from those stage
+    rows — a doc without stage rows produces no items and would render as
+    idle, even though pipeline_state says otherwise. Tests must mirror that
+    invariant or they're testing a state that can't exist."""
     from app.models.enums import OriginatorType
 
-    for state in (PipelineState.RUNNING, PipelineState.PENDING):
-        db_session.add(
-            Document(
-                title=f"Doc {state}",
-                content="x",
-                case_id=sample_case.id,
-                originator_type=OriginatorType.COURT,
-                pipeline_state=state,
-            )
+    # Doc 1: pipeline_state=RUNNING with a stage in RUNNING → one executing item.
+    doc_running = Document(
+        title="Doc RUNNING",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=PipelineState.RUNNING,
+    )
+    db_session.add(doc_running)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc_running.id,
+            stage=PipelineStage.ENRICH.value,
+            status=StageStatus.RUNNING.value,
         )
+    )
+
+    # Doc 2: pipeline_state=PENDING with a pending stage → one queued item.
+    doc_pending = Document(
+        title="Doc PENDING",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=PipelineState.PENDING,
+    )
+    db_session.add(doc_pending)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc_pending.id,
+            stage=PipelineStage.EXTRACT.value,
+            status=StageStatus.PENDING.value,
+        )
+    )
     db_session.commit()
 
     badge_resp = app_client.get("/api/worker/queue/badge")
     panel_resp = app_client.get("/api/worker/queue/panel")
     assert badge_resp.status_code == 200
     assert panel_resp.status_code == 200
-    # Both should show 2 (1 running + 1 pending)
+    # Both should show 2 (1 executing + 1 queued)
     assert b"2" in badge_resp.content
     assert b"2 Active" in panel_resp.content
+
+
+@pytest.mark.unit
+def test_panel_separates_executing_from_queued(db_session, sample_case):
+    """The new executing/queued split: a stage in RUNNING shows as executing,
+    a stage in PENDING shows as queued. Counts match items, not pipeline_state.
+
+    This is the fix for the screenshot bug: '8 running' was counting
+    pipeline_state=PARTIAL docs whose stages were all queued — only one
+    doc's stage was actually executing on a worker."""
+    from app.api.worker_queue import _build_queue_items
+
+    # One doc with a RUNNING stage — should be executing.
+    doc_executing = Document(
+        title="Executing doc",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=PipelineState.PARTIAL,
+    )
+    db_session.add(doc_executing)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc_executing.id,
+            stage=PipelineStage.METADATA.value,
+            status=StageStatus.RUNNING.value,
+        )
+    )
+
+    # Several docs with all stages PENDING — should be queued.
+    queued_docs = []
+    for i in range(3):
+        d = Document(
+            title=f"Queued doc {i}",
+            content="x",
+            case_id=sample_case.id,
+            originator_type=OriginatorType.COURT,
+            pipeline_state=PipelineState.PARTIAL,
+        )
+        db_session.add(d)
+        db_session.flush()
+        db_session.add(
+            DocumentPipelineStage(
+                document_id=d.id,
+                stage=PipelineStage.EXTRACT.value,
+                status=StageStatus.PENDING.value,
+            )
+        )
+        queued_docs.append(d)
+    db_session.commit()
+    db_session.refresh(doc_executing)
+    for d in queued_docs:
+        db_session.refresh(d)
+
+    items = _build_queue_items([doc_executing] + queued_docs, [])
+    n_executing = sum(1 for it in items if it.get("executing"))
+    n_queued = sum(1 for it in items if not it.get("executing"))
+    assert n_executing == 1, f"expected 1 executing item, got {n_executing}"
+    assert n_queued == 3, f"expected 3 queued items, got {n_queued}"
+
+
+@pytest.mark.unit
+def test_panel_retrying_classified_as_queued(db_session, sample_case):
+    """A stage in RETRYING (waiting for the retry countdown) is NOT a worker
+    actively processing — it's queued. Goes in the queued section."""
+    from app.api.worker_queue import _build_queue_items
+
+    doc = Document(
+        title="Retrying doc",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        pipeline_state=PipelineState.PARTIAL,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id,
+            stage=PipelineStage.ENRICH.value,
+            status=StageStatus.RETRYING.value,
+        )
+    )
+    db_session.commit()
+    db_session.refresh(doc)
+
+    items = _build_queue_items([doc], [])
+    assert len(items) == 1
+    assert items[0]["executing"] is False
 
 
 @pytest.mark.unit

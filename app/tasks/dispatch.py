@@ -31,7 +31,17 @@ def dispatch_task(task: Any, *args: Any, **kwargs: Any) -> None:
             if isinstance(t, str):
                 module_path, name = t.rsplit(".", 1)
                 t = getattr(importlib.import_module(module_path), name)
-            t.apply_async(args=args, kwargs=kwargs)
+            result = t.apply_async(args=args, kwargs=kwargs)
+            # Diagnostic log line — pairs with dispatch_pipeline_retry's
+            # pre-dispatch info log so we can correlate which dispatches
+            # made it to the broker and got a task_id assigned.
+            label = task if isinstance(task, str) else getattr(task, "name", repr(task))
+            logger.info(
+                "dispatch_task: %s args=%s task_id=%s",
+                label,
+                args,
+                getattr(result, "id", None),
+            )
         except Exception as exc:  # pragma: no cover - log and swallow
             label = task if isinstance(task, str) else getattr(task, "name", repr(task))
             logger.error("Dispatch %s failed: %s", label, exc, exc_info=True)

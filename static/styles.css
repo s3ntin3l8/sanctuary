@@ -2640,6 +2640,12 @@
       background-color: color-mix(in oklab, var(--color-error-container) 30%, transparent);
     }
   }
+  .bg-error-container\/\[0\.05\] {
+    background-color: color-mix(in srgb, #fe8983 5%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-error-container) 5%, transparent);
+    }
+  }
   .bg-error\/10 {
     background-color: color-mix(in srgb, #9f403d 10%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -3220,6 +3226,12 @@
     background-color: color-mix(in srgb, #466371 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-tertiary) 20%, transparent);
+    }
+  }
+  .bg-tertiary\/\[0\.03\] {
+    background-color: color-mix(in srgb, #466371 3%, transparent);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-tertiary) 3%, transparent);
     }
   }
   .bg-transparent {

@@ -18,6 +18,17 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage) -> None:
             "Cannot dispatch retry for %s — no %s available", stage, spec.dispatch_arg
         )
         return
+    # Diagnostic: log every dispatch attempt so we can correlate which docs
+    # actually got their tasks queued vs. which got lost in transit. When
+    # recover_pipeline_task picks up "stuck dispatches" later, the missing
+    # log lines here pinpoint exactly which dispatches never made it.
+    logger.info(
+        "dispatch_pipeline_retry: doc_id=%d batch_id=%s stage=%s task=%s",
+        doc_id,
+        batch_id,
+        stage.value if hasattr(stage, "value") else stage,
+        spec.retry_task,
+    )
     dispatch_task(spec.retry_task, arg)
 
 
