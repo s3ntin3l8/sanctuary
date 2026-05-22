@@ -150,3 +150,42 @@ async def test_ingest_file_uses_batch_subfolder_in_triage(tmp_path):
     assert (tmp_path / "_TRIAGE" / "ib-5").is_dir()
     # _create_document was called with a file_path inside ib-5
     assert "ib-5" in str(mock_create.call_args.kwargs["file_path"])
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_without_batch_id_uses_flat_triage(tmp_path):
+    """Files uploaded to _TRIAGE WITHOUT a batch_id stay in flat _TRIAGE/ (no subdir)."""
+    from app.services.ingestion.service import ingest_file
+
+    pdf_bytes = b"%PDF-1.4 fake"
+    upload = MagicMock()
+    upload.filename = "orphan.pdf"
+    # Return data once then empty bytes so the read loop terminates
+    upload.read = AsyncMock(side_effect=[pdf_bytes, b""])
+    upload.seek = AsyncMock()
+
+    db = MagicMock()
+    # No duplicate found
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with (
+        patch("app.services.ingestion.service.DATA_DIR", tmp_path),
+        patch("app.services.ingestion.service.validate_file_magic", return_value=None),
+        patch("app.services.ingestion.service._create_document") as mock_create,
+    ):
+        mock_create.return_value = MagicMock(
+            id=100, file_path=str(tmp_path / "_TRIAGE" / "orphan.pdf")
+        )
+
+        await ingest_file(
+            file=upload,
+            db=db,
+            case_id=None,
+            ingest_batch_id=None,
+            skip_processing=True,
+        )
+
+    # Should land in flat _TRIAGE/, NOT in a ib-* subfolder
+    assert (tmp_path / "_TRIAGE").is_dir()
+    saved_path = str(mock_create.call_args.kwargs["file_path"])
+    assert "ib-" not in saved_path
