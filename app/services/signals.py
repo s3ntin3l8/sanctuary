@@ -43,13 +43,18 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
     #     "link": "/settings"
     # })
 
-    # AI Provider Check — probe /v1/models which both Ollama and LM Studio handle
+    # AI Provider Check — use the provider-native health endpoint:
+    #   Ollama  → /api/tags   (returns {"models": [...]})
+    #   everything else → /v1/models
     import requests
 
     from app.services.ai_config import get_chat_config
 
-    base_url = get_chat_config(db).base_url
-    probe_url = f"{base_url}/v1/models"
+    cfg = get_chat_config(db)
+    base_url = cfg.base_url
+    probe_url = (
+        f"{base_url}/api/tags" if cfg.provider == "ollama" else f"{base_url}/v1/models"
+    )
     try:
         resp = requests.get(probe_url, timeout=1.5)
         if resp.status_code >= 500:
