@@ -49,6 +49,9 @@ def get_db_session():
 def run_migration(dry_run: bool = True) -> tuple[int, int]:
     """Move files and update DB records.
 
+    Handles both absolute paths (e.g. /…/data/_TRIAGE/doc.pdf) and relative
+    paths (e.g. _TRIAGE/doc.pdf) — batch_orchestrator stores absolute paths.
+
     Returns (moved_count, skipped_count).
     """
     moved = 0
@@ -56,27 +59,47 @@ def run_migration(dry_run: bool = True) -> tuple[int, int]:
 
     db = get_db_session()
     try:
+        # Use .contains() to match both absolute and relative path formats,
+        # and to avoid the SQL LIKE '_' wildcard issue (underscore = any char).
         docs = (
             db.query(Document)
             .filter(
-                Document.file_path.like("_TRIAGE/%"),
+                Document.file_path.contains("_TRIAGE"),
                 Document.ingest_batch_id.isnot(None),
             )
             .all()
         )
 
         for doc in docs:
-            fp = Path(doc.file_path)  # e.g. _TRIAGE/doc.pdf
-            parts = fp.parts  # ('_TRIAGE', 'doc.pdf')
+            fp = Path(doc.file_path)
+
+            # Normalize to relative path from DATA_DIR (handles absolute paths)
+            if fp.is_absolute():
+                try:
+                    rel = fp.relative_to(DATA_DIR)
+                except ValueError:
+                    print(f"  WARN  path not under DATA_DIR, skipping: {fp}")
+                    skipped += 1
+                    continue
+            else:
+                rel = fp
+
+            parts = rel.parts  # e.g. ('_TRIAGE', 'doc.pdf')
+
+            # Skip docs not in _TRIAGE root
+            if not parts or parts[0] != "_TRIAGE":
+                skipped += 1
+                continue
 
             # Skip docs already in a batch subfolder
             if len(parts) > 2:
+                print(f"  SKIP  already in subfolder: {rel}")
                 skipped += 1
                 continue
 
             batch_subdir = f"ib-{doc.ingest_batch_id}"
-            old_abs = DATA_DIR / fp
-            new_rel = Path("_TRIAGE") / batch_subdir / fp.name
+            old_abs = DATA_DIR / rel
+            new_rel = Path("_TRIAGE") / batch_subdir / rel.name
             new_abs = DATA_DIR / new_rel
 
             if not old_abs.exists():
@@ -84,13 +107,17 @@ def run_migration(dry_run: bool = True) -> tuple[int, int]:
                 skipped += 1
                 continue
 
-            print(f"  {'DRY ' if dry_run else ''}MOVE  {fp}  →  {new_rel}")
+            print(f"  {'DRY ' if dry_run else ''}MOVE  {rel}  →  {new_rel}")
 
             if not dry_run:
                 new_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(old_abs), str(new_abs))
-                doc.file_path = str(new_rel)
-                moved += 1
+                try:
+                    shutil.move(str(old_abs), str(new_abs))
+                    doc.file_path = str(new_abs)
+                    moved += 1
+                except OSError as e:
+                    print(f"  ERROR  could not move {old_abs}: {e}")
+                    skipped += 1
             else:
                 moved += 1  # count as "would move"
 
