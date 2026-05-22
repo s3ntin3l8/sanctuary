@@ -122,6 +122,36 @@ def enrich_document_task(self, doc_id: int):
         finally:
             db.close()
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except httpx.HTTPStatusError as e:
+        # 4xx = client-side error — the exact same request will always fail.
+        # Fail immediately without burning retries; 5xx may be transient so
+        # fall through to the generic handler below.
+        if 400 <= e.response.status_code < 500:
+            logger.error(
+                "Doc #%d: AI returned HTTP %d — failing immediately (no retry): %s",
+                doc_id,
+                e.response.status_code,
+                e,
+            )
+            db = get_db_session()
+            try:
+                mark_failed(
+                    doc_id,
+                    PipelineStage.ENRICH,
+                    db,
+                    error=f"HTTP {e.response.status_code}: {e}",
+                )
+            finally:
+                db.close()
+            return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+        # 5xx — may be transient; let the generic handler below decide on retry.
+        logger.error(
+            "Doc #%d: AI returned HTTP %d — treating as transient: %s",
+            doc_id,
+            e.response.status_code,
+            e,
+        )
+        raise RuntimeError(str(e)) from e
     except Exception as e:
         logger.error(f"Doc {doc_id} enrichment task failed: {e}", exc_info=True)
         if self.request.retries < self.max_retries:
