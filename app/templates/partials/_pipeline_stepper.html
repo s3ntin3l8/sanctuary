@@ -104,7 +104,7 @@
       {% set _ = tooltip_parts.append('Searchable scan — scanner OCR used') %}
     {% endif %}
     {% if s_status == 'completed' and s.get('completed_at') %}
-      {% set _ = tooltip_parts.append(s['completed_at'][:16].replace('T', ' ')) %}
+      {% set _ = tooltip_parts.append(s['completed_at'] | local_strftime('%Y-%m-%d %H:%M')) %}
     {% elif s_status == 'failed' and s.get('error') %}
       {% set _ = tooltip_parts.append(s['error']) %}
     {% elif s_status == 'retrying' %}
@@ -112,7 +112,7 @@
         {% set _ = tooltip_parts.append('attempt ' ~ s['attempt'] ~ '/' ~ s['max_attempts']) %}
       {% endif %}
       {% if s.get('next_at') %}
-        {% set _ = tooltip_parts.append('next ' ~ s['next_at'][11:19]) %}
+        {% set _ = tooltip_parts.append('next ' ~ (s['next_at'] | local_strftime('%H:%M:%S'))) %}
       {% endif %}
       {% if s.get('error') %}
         {% set _ = tooltip_parts.append('last error: ' ~ s['error']) %}
@@ -212,7 +212,7 @@
     </span>
     {% elif detail.kind == 'retrying' %}
     <span class="text-amber-500 font-medium" title="{{ detail.error or '' }}">
-      Retrying {{ detail.stage }}{% if detail.attempt and detail.max_attempts %} ({{ detail.attempt }}/{{ detail.max_attempts }}){% endif %}{% if detail.next_at %} <span class="font-mono text-amber-500/70">· next {{ detail.next_at[11:19] }}</span>{% endif %}
+      Retrying {{ detail.stage }}{% if detail.attempt and detail.max_attempts %} ({{ detail.attempt }}/{{ detail.max_attempts }}){% endif %}{% if detail.next_at %} <span class="font-mono text-amber-500/70">· next {{ detail.next_at | local_strftime('%H:%M:%S') }}</span>{% endif %}
     </span>
     {% elif detail.kind == 'running' %}
     <span class="text-tertiary font-medium animate-pulse">
@@ -221,7 +221,7 @@
     {% elif detail.kind == 'completed' %}
     <span class="text-on-surface-variant">
       Last completed <span class="text-on-surface">{{ detail.stage }}</span>
-      {% if detail.ts %}<span class="font-mono text-on-surface-variant/70">· {{ detail.ts[:16].replace('T', ' ') }}</span>{% endif %}
+      {% if detail.ts %}<span class="font-mono text-on-surface-variant/70">· {{ detail.ts | local_strftime('%Y-%m-%d %H:%M') }}</span>{% endif %}
     </span>
     {% else %}
     <span class="text-on-surface-variant/60 italic">Pipeline pending</span>

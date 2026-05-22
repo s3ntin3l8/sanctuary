@@ -481,8 +481,17 @@ def _local_strftime(dt, fmt: str) -> str:
 
     from app.services.timezone_service import get_user_tz
 
-    if dt is None:
+    if dt is None or dt == "":
         return ""
+    # Accept ISO-string inputs as well as datetime/date — `stages_dict`
+    # (app/services/pipeline_status.py) emits completed_at/started_at as
+    # `dt.isoformat()` strings into the per-doc pipeline_stages dict, and
+    # templates that read those need the same TZ-aware rendering.
+    if isinstance(dt, str):
+        try:
+            dt = _dt.fromisoformat(dt)
+        except ValueError:
+            return ""
     if isinstance(dt, _dt):
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=_UTC)

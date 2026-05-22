@@ -15,13 +15,57 @@ logger = logging.getLogger(__name__)
 def generate_embedding_task(self, doc_id: int):
     """Generate and store vector embedding for a document."""
     from app.dependencies import get_db_session
+    from app.models.database import Document
+    from app.models.enums import StageStatus
     from app.services.embeddings import generate_embedding
     from app.services.pipeline_status import (
         mark_completed,
         mark_failed,
         mark_started,
         schedule_retry,
+        stages_dict,
     )
+
+    _TERMINAL = {
+        StageStatus.COMPLETED.value,
+        StageStatus.FAILED.value,
+        StageStatus.SKIPPED.value,
+    }
+
+    # Dependency gate: METADATA must be terminal before EMBEDDINGS runs.
+    # EMBEDDINGS reads doc.content (from EXTRACT) and uses doc.title
+    # (from METADATA). dispatch_batch_retry fires EMBEDDINGS in parallel
+    # with the head-stage retry — when head=EXTRACT, both get queued at
+    # once, and if the EMBEDDINGS worker picks up first it would run
+    # against stale or missing content. process_document_task already
+    # dispatches EMBEDDINGS only after METADATA-done, so this gate makes
+    # the retry path symmetric.
+    #
+    # Return early WITHOUT marking the stage — leave it PENDING so
+    # process_document_task's claim_stage_for_dispatch (line 151-160)
+    # picks it up again after METADATA completes. Marking SKIPPED would
+    # break the re-dispatch (claim_stage_for_dispatch only claims pending
+    # rows) and lose the embedding for this doc forever.
+    db = get_db_session()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if doc:
+            stages = stages_dict(doc)
+            metadata_status = stages.get("metadata", {}).get("status")
+            if metadata_status not in _TERMINAL:
+                logger.info(
+                    "Doc #%d: deferring embeddings — METADATA not yet terminal "
+                    "(status=%s); process_document_task will redispatch on completion",
+                    doc_id,
+                    metadata_status,
+                )
+                return {
+                    "status": "deferred",
+                    "doc_id": doc_id,
+                    "reason": "metadata_not_completed",
+                }
+    finally:
+        db.close()
 
     db = get_db_session()
     try:
