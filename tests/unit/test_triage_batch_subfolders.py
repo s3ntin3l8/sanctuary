@@ -1,4 +1,6 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 def test_migration_moves_files_and_updates_db(tmp_path):
@@ -109,3 +111,48 @@ def test_migration_skips_missing_file(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "WARN" in captured.out
     db.commit.assert_called_once()  # still commits (nothing to commit, but no crash)
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_uses_batch_subfolder_in_triage(tmp_path):
+    """Files uploaded to _TRIAGE land in _TRIAGE/ib-{batch_id}/."""
+    from app.services.ingestion.service import ingest_file
+
+    pdf_bytes = b"%PDF-1.4 fake"
+    upload = MagicMock()
+    upload.filename = "letter.pdf"
+    # Return data once then empty bytes so the read loop terminates
+    upload.read = AsyncMock(side_effect=[pdf_bytes, b""])
+    upload.seek = AsyncMock()
+
+    db = MagicMock()
+    # No duplicate found
+    db.query.return_value.filter.return_value.first.return_value = None
+
+    with (
+        patch("app.services.ingestion.service.DATA_DIR", tmp_path),
+        patch("app.services.ingestion.service.validate_file_magic", return_value=None),
+        patch("app.services.ingestion.service._create_document") as mock_create,
+    ):
+        mock_create.return_value = MagicMock(
+            id=99, file_path=str(tmp_path / "_TRIAGE" / "ib-5" / "letter.pdf")
+        )
+
+        await ingest_file(
+            file=upload,
+            db=db,
+            case_id=None,
+            ingest_batch_id=5,
+            skip_processing=True,
+        )
+
+    # The directory _TRIAGE/ib-5 must have been created on disk
+    assert (tmp_path / "_TRIAGE" / "ib-5").is_dir()
+    # _create_document was called with a file_path inside ib-5
+    call_kwargs = mock_create.call_args
+    # file_path may be a positional or keyword arg — check both
+    all_args = list(call_kwargs.args) + list(call_kwargs.kwargs.values())
+    saved_paths = [str(a) for a in all_args]
+    assert any("ib-5" in p for p in saved_paths), (
+        f"Expected ib-5 in call args, got: {saved_paths}"
+    )

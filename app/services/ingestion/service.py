@@ -446,7 +446,10 @@ async def ingest_file(
                     detail=f"Invalid case_id '{preliminary_case_id}'.",
                 )
             preliminary_case_id = validated
-        case_dir = DATA_DIR / preliminary_case_id
+        if preliminary_case_id == "_TRIAGE" and ingest_batch_id is not None:
+            case_dir = DATA_DIR / "_TRIAGE" / f"ib-{ingest_batch_id}"
+        else:
+            case_dir = DATA_DIR / preliminary_case_id
         if (
             DATA_DIR.resolve() not in case_dir.resolve().parents
             and case_dir.resolve() != DATA_DIR.resolve()
