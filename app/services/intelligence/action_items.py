@@ -13,6 +13,25 @@ logger = logging.getLogger(__name__)
 VALID_ACTION_TYPES = {e.value for e in ActionItemType}
 
 
+def purge_action_items_from_doc(source_doc_id: int, db: Session) -> int:
+    """Delete non-superseded ActionItems sourced from this document.
+
+    Mirrors the Streitwert-erase pattern: when the action-item court gate
+    rejects a re-enrichment (originator flipped court→party, or the doc was
+    never a court source to begin with), prior auto-extracted items are
+    stale and must vanish. Tombstones (superseded=True) are preserved —
+    they're permanent guards against later re-insertion of stale dates.
+    """
+    return (
+        db.query(ActionItem)
+        .filter(
+            ActionItem.source_document_id == source_doc_id,
+            ActionItem.superseded.is_(False),
+        )
+        .delete(synchronize_session=False)
+    )
+
+
 def create_from_payload(
     case_id: str,
     source_doc_id: int | None,

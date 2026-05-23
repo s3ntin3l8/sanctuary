@@ -7,6 +7,7 @@ import pytest
 from app.models.database import Document, IngestBatch
 from app.models.enums import (
     DocumentRole,
+    DocumentType,
     IngestBatchSourceType,
     IngestBatchStatus,
     OriginatorType,
@@ -896,3 +897,145 @@ def test_completion_sweep_sets_attributed_originator_from_sender(
     assert unclaimed.parent_id == cover.id
     # attributed_originator must be propagated from sender.
     assert unclaimed.attributed_originator == "Yingying Liu"
+
+
+@pytest.mark.unit
+def test_batch_does_not_override_court_for_ruling_enclosure(db_session, sample_case):
+    """ib-0039 regression: a court ruling enclosed in a court letter (doc #113
+    in ib-0039) must keep originator_type=COURT even when the batch AI
+    mistakenly classifies it as a party type. RULING/RELAY document types and
+    court-named senders are confirmed-court signals the batch AI cannot
+    downgrade. Compare with the COURT→OPPOSING override above (which still
+    works for party-authored docs without these signals)."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben OLG",
+        content="Das Gericht übermittelt anliegend den Beschluss...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        document_type=DocumentType.RELAY,
+        sender="Oberlandesgericht München",
+    )
+    # A genuine court ruling — RULING doc_type and court-named sender. Batch
+    # AI returns OPPOSING (e.g. confused by the Rubrum or party names in the
+    # body); the guard must refuse to downgrade.
+    ruling = Document(
+        title="Beschluss",
+        content="Der Senat hat beschlossen...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        document_type=DocumentType.RULING,
+        sender="Oberlandesgericht München",
+    )
+    db_session.add(cover)
+    db_session.add(ruling)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(ruling)
+    db_session.refresh(batch)
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "enclosed_doc_id": ruling.id,
+                        "originator_type": "opposing",  # batch AI is wrong
+                        "attributed_originator": "Some Party",
+                        "matched_filename": None,
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, ruling], result, db_session)
+
+    db_session.expire_all()
+    ruling = db_session.get(Document, ruling.id)
+
+    assert ruling.role == DocumentRole.ENCLOSURE
+    # Guard fires — COURT preserved despite batch AI saying OPPOSING.
+    assert ruling.originator_type == OriginatorType.COURT
+
+
+@pytest.mark.unit
+def test_batch_still_overrides_court_when_sender_is_party(db_session, sample_case):
+    """Companion to the RULING-guard test: when neither signal (court-only
+    doc_type, court sender) is present, the batch AI override is still allowed
+    — that's the case the override was added for in commit a73cdcf (party-
+    authored docs with court Rubrum headers that METADATA misfires as COURT)."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben",
+        content="Das Gericht übermittelt anliegend...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        document_type=DocumentType.RELAY,
+        sender="Oberlandesgericht München",
+    )
+    # Party-authored Schriftsatz: METADATA misfired COURT, doc_type is
+    # MOTION (or unset), sender is a person, not a court.
+    party_motion = Document(
+        title="Antrag",
+        content="Im Namen meiner Mandantin beantrage ich...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,  # wrong heuristic
+        document_type=DocumentType.MOTION,
+        sender="Yingying Liu",
+    )
+    db_session.add(cover)
+    db_session.add(party_motion)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(party_motion)
+    db_session.refresh(batch)
+
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "enclosed_doc_id": party_motion.id,
+                        "originator_type": "opposing",
+                        "attributed_originator": "Yingying Liu",
+                        "matched_filename": None,
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, party_motion], result, db_session)
+
+    db_session.expire_all()
+    party_motion = db_session.get(Document, party_motion.id)
+
+    # Override is allowed — no confirmed-court signals.
+    assert party_motion.originator_type == OriginatorType.OPPOSING

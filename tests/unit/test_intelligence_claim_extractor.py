@@ -839,29 +839,55 @@ def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_
 
 
 @pytest.mark.unit
-def test_retry_preserves_user_modified_claims(db_session, significant_doc, sample_case):
-    """Claims with non-default status (CONTESTED/REFUTED/ESTABLISHED) carry
-    cross-doc evidence signal or user edits and must survive a re-extraction."""
-    _make_claim(
+def test_retry_preserves_claims_with_cross_doc_evidence(
+    db_session, significant_doc, sample_case
+):
+    """ib-0033 #98 regression contract: cleanup discriminator is cross-doc
+    evidence presence, not status. A claim survives retry when ANY other
+    document has confirmed evidence on it (SUPPORTS/CONTESTS/REFUTES/etc.);
+    otherwise it's treated as auto-extracted from this document alone and
+    cleaned, regardless of how its status was set."""
+    # Another doc whose evidence will protect a claim from cleanup.
+    other_doc = Document(
+        title="Other doc that weighs in",
+        content="content",
+        case_id=sample_case.id,
+        significance_tier=SignificanceTier.SIGNIFICANT,
+    )
+    db_session.add(other_doc)
+    db_session.flush()
+
+    # 1) ASSERTED with no cross-doc evidence — deleted.
+    only_doc_asserted = _make_claim(
         db_session,
         asserting_doc=significant_doc,
-        claim_text="Stale ASSERTED claim that should be deleted on retry",
-        claim_type=ClaimType.FACTUAL,
+        claim_text="Stale ASSERTED claim with no other-doc evidence",
         status=ClaimStatus.ASSERTED,
     )
-    _make_claim(
+    # 2) ESTABLISHED with no cross-doc evidence — also deleted (this is the
+    #    ib-0033 #98 case: originator flipped court→opposing, so the original
+    #    ESTABLISHED status is no longer valid and no other doc is propping
+    #    the claim up).
+    only_doc_established = _make_claim(
         db_session,
         asserting_doc=significant_doc,
-        claim_text="A contested claim that another doc challenges and must persist",
-        claim_type=ClaimType.LEGAL,
+        claim_text="Stale ESTABLISHED claim with no other-doc evidence",
+        status=ClaimStatus.ESTABLISHED,
+    )
+    # 3) CONTESTED with cross-doc evidence from other_doc — preserved.
+    contested_with_signal = _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
+        claim_text="A contested claim that another doc challenges",
         status=ClaimStatus.CONTESTED,
     )
-    _make_claim(
-        db_session,
-        asserting_doc=significant_doc,
-        claim_text="A refuted claim that has independent signal and must persist",
-        claim_type=ClaimType.PROCEDURAL,
-        status=ClaimStatus.REFUTED,
+    db_session.add(
+        ClaimEvidence(
+            claim_id=contested_with_signal.id,
+            document_id=other_doc.id,
+            role=ClaimEvidenceRole.CONTESTS,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
     )
     db_session.commit()
 
@@ -882,18 +908,15 @@ def test_retry_preserves_user_modified_claims(db_session, significant_doc, sampl
 
         extract(significant_doc.id)
 
-    from app.repositories.claim import ClaimRepository
-
     db_session.expire_all()
-    remaining = {
-        c.status: c.claim_text
-        for c in ClaimRepository(db_session).claims_asserted_by_document(
-            significant_doc.id
-        )
-    }
-    assert ClaimStatus.ASSERTED not in remaining, "stale ASSERTED claim must be deleted"
-    assert ClaimStatus.CONTESTED in remaining, "CONTESTED claim must survive"
-    assert ClaimStatus.REFUTED in remaining, "REFUTED claim must survive"
+    assert db_session.get(Claim, only_doc_asserted.id) is None
+    assert db_session.get(Claim, only_doc_established.id) is None, (
+        "ESTABLISHED claim with no cross-doc evidence must be cleaned — "
+        "this is the ib-0033 #98 case where originator flipped"
+    )
+    assert db_session.get(Claim, contested_with_signal.id) is not None, (
+        "claim with cross-doc evidence must survive regardless of status"
+    )
 
 
 @pytest.mark.unit

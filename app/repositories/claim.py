@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import distinct, func
-from sqlalchemy.orm import Session
+from sqlalchemy import distinct, func, not_
+from sqlalchemy.orm import Session, aliased
 
 from app.models.database import Claim, ClaimEvidence, Document
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, ClaimType
@@ -86,6 +86,43 @@ class ClaimRepository(BaseRepository[Claim]):
                 ClaimEvidence.document_id == document_id,
                 ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
                 Claim.dismissed_at.is_(None),
+            )
+            .order_by(Claim.id)
+            .all()
+        )
+
+    def claims_only_originated_by_document(self, document_id: int) -> Sequence[Claim]:
+        """Non-dismissed claims this document originated and no other doc has touched.
+
+        Returns claims where (a) this doc has an ASSERTS evidence row, AND (b)
+        no ClaimEvidence row from any other document exists. These claims have
+        no cross-doc signal — their entire existence (text, status, evidence)
+        comes from this document, so they can be safely cleaned on
+        re-enrichment of the source. Claims that any other document has
+        SUPPORTED, CONTESTED, REFUTED, or CITED_AS_PROOF are excluded — those
+        carry independent signal we must preserve.
+        """
+        # Alias the inner ClaimEvidence so SQLAlchemy doesn't try to auto-
+        # correlate the outer ClaimEvidence (used for the ASSERTS join) into
+        # the subquery's FROM list — that auto-correlation strips both
+        # references and leaves the EXISTS subquery without any FROM.
+        ce_inner = aliased(ClaimEvidence)
+        other_doc_evidence = (
+            self.db.query(ce_inner.id)
+            .filter(
+                ce_inner.claim_id == Claim.id,
+                ce_inner.document_id != document_id,
+            )
+            .exists()
+        )
+        return (
+            self.db.query(Claim)
+            .join(ClaimEvidence, ClaimEvidence.claim_id == Claim.id)
+            .filter(
+                ClaimEvidence.document_id == document_id,
+                ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+                Claim.dismissed_at.is_(None),
+                not_(other_doc_evidence),
             )
             .order_by(Claim.id)
             .all()

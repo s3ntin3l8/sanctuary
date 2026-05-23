@@ -18,6 +18,7 @@ from app.config import SessionLocal
 from app.models.database import Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     DocumentRole,
+    DocumentType,
     OriginatorType,
     RelationshipConfidence,
     RelationshipType,
@@ -36,6 +37,34 @@ from app.services.intelligence.prompts import (
 from app.services.intelligence.schemas import BatchAnalysis
 
 logger = logging.getLogger(__name__)
+
+
+_COURT_SENDER_FRAGMENTS = (
+    "amtsgericht",
+    "landgericht",
+    "oberlandesgericht",
+    "bundesgerichtshof",
+    "bundesverfassungsgericht",
+    "verwaltungsgericht",
+    "sozialgericht",
+    "arbeitsgericht",
+    "finanzgericht",
+)
+
+
+def _is_confirmed_court_document(doc: Document) -> bool:
+    """Return True when static metadata confirms a court is the author.
+
+    Guards the batch-AI originator override from downgrading
+    Phase-1-COURT documents back to a party type. RULING (Beschluss/Urteil)
+    and RELAY (Begleitschreiben) are court-only document types — only courts
+    issue rulings or relay correspondence. A sender naming a recognized German
+    court institution is also a reliable signal.
+    """
+    if doc.document_type in (DocumentType.RULING, DocumentType.RELAY):
+        return True
+    sender_lower = (doc.sender or "").lower()
+    return any(fragment in sender_lower for fragment in _COURT_SENDER_FRAGMENTS)
 
 
 def _has_manual_groups(batch_id: int, db) -> bool:
@@ -359,7 +388,9 @@ def _apply_batch_results(
                     # analysis sees all siblings so it's more reliable for
                     # enclosures. METADATA can misfire COURT on party-authored
                     # documents that have a court Rubrum header; allow the
-                    # batch AI to correct that.
+                    # batch AI to correct that — but never downgrade a
+                    # confirmed court document (RULING/RELAY type, or sender
+                    # naming a recognized court institution).
                     batch_orig = parse_originator_type(encl.get("originator_type"))
                     if (
                         batch_orig
@@ -371,7 +402,21 @@ def _apply_batch_results(
                             OriginatorType.COURT,
                         )
                     ):
-                        child.originator_type = batch_orig
+                        if (
+                            child.originator_type == OriginatorType.COURT
+                            and _is_confirmed_court_document(child)
+                        ):
+                            logger.info(
+                                "Batch #%d: refusing COURT→%s override for "
+                                "doc #%d (confirmed court: doc_type=%s, sender=%r)",
+                                batch_id,
+                                batch_orig.value,
+                                child.id,
+                                child.document_type,
+                                child.sender,
+                            )
+                        else:
+                            child.originator_type = batch_orig
                     if not child.attributed_originator:
                         child.attributed_originator = encl.get("attributed_originator")
     else:
@@ -433,7 +478,21 @@ def _apply_batch_results(
                         OriginatorType.COURT,
                     )
                 ):
-                    child.originator_type = batch_orig
+                    if (
+                        child.originator_type == OriginatorType.COURT
+                        and _is_confirmed_court_document(child)
+                    ):
+                        logger.info(
+                            "Batch #%d: refusing COURT→%s override for "
+                            "doc #%d (confirmed court: doc_type=%s, sender=%r)",
+                            batch_id,
+                            batch_orig.value,
+                            child.id,
+                            child.document_type,
+                            child.sender,
+                        )
+                    else:
+                        child.originator_type = batch_orig
                 if not child.attributed_originator:
                     child.attributed_originator = encl.get("attributed_originator")
 

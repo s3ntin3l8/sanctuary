@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.timezone import to_naive
 from app.models.database import CostSignal, Document, LegalCost
-from app.models.enums import CostCategory, CostSignalType, CostStatus
+from app.models.enums import (
+    CostCategory,
+    CostSignalType,
+    CostStatus,
+    OriginatorType,
+)
 from app.repositories.legal_cost import LegalCostRepository
 
 logger = logging.getLogger(__name__)
@@ -27,6 +32,75 @@ _KIND_TO_SIGNAL_TYPE: dict[str, CostSignalType] = {
     "pkh_grant": CostSignalType.PKH_GRANT,
     "pkh_denied": CostSignalType.PKH_DENIED,
 }
+
+# Phrases that indicate a Streitwert false positive — the AI sometimes
+# extracts the EUR ceiling from these boilerplate clauses as Verfahrenswert.
+# Match is case-insensitive substring against the cost_delta description.
+_STREITWERT_FALSE_POSITIVE_FRAGMENTS = (
+    "ordnungsgeld",
+    "§ 33 famfg",
+    "§33 famfg",
+    "§ 890 zpo",
+    "§890 zpo",
+    "bußgeld",
+    "bussgeld",
+    "bis zu",
+    "höchstens",
+    "hoechstens",
+    "maximal",
+)
+
+
+def _looks_like_streitwert_false_positive(description: str | None) -> bool:
+    """Detect cost_delta descriptions that quote a statutory penalty ceiling
+    rather than a court-set Verfahrenswert. Defense in depth alongside the
+    prompt anti-patterns — prompts drift, code rejection sticks."""
+    if not description:
+        return False
+    lower = description.lower()
+    return any(fragment in lower for fragment in _STREITWERT_FALSE_POSITIVE_FRAGMENTS)
+
+
+def _erase_streitwert_for_doc(doc_id: int, db: Session, *, reason: str) -> int:
+    """Erase any CostSignal(type=STREITWERT, source=doc_id). Returns rows deleted."""
+    deleted = (
+        db.query(CostSignal)
+        .filter(
+            CostSignal.source_document_id == doc_id,
+            CostSignal.signal_type == CostSignalType.STREITWERT,
+        )
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        logger.info(
+            "Doc %s: erased %d Streitwert signal(s) (%s)", doc_id, deleted, reason
+        )
+    return deleted
+
+
+def purge_disqualified_streitwert(doc: Document, db: Session) -> int:
+    """Proactively erase any prior STREITWERT signal that the current doc
+    state would no longer qualify to create.
+
+    Called from the enricher BEFORE the AI's cost_delta is consulted, so
+    re-enrichment that emits no cost_delta still cleans stale rows. The
+    in-`_ensure_cost_signal` gate continues to handle the case where the AI
+    re-emits the bad value.
+    """
+    # Disqualified when not a direct court doc, OR (we can't see the AI's
+    # current description here, so the description-based false-positive
+    # check fires only in `_ensure_cost_signal` when the AI re-submits).
+    is_court_source = (
+        doc.originator_type == OriginatorType.COURT and not doc.court_relay
+    )
+    if not is_court_source:
+        return _erase_streitwert_for_doc(
+            doc.id,
+            db,
+            reason=f"non-court source: originator={doc.originator_type}, "
+            f"court_relay={doc.court_relay}",
+        )
+    return 0
 
 
 def materialize_cost_signal(
@@ -140,6 +214,37 @@ def _ensure_cost_signal(
     signal_type = _KIND_TO_SIGNAL_TYPE.get(kind)
     if signal_type is None or not doc.case_id:
         return None
+
+    # Streitwert gates — both must pass for a STREITWERT signal to materialise.
+    # (1) Originator gate: only direct court documents are authoritative.
+    #     Opposing letters quoting prior rulings and court relays carrying
+    #     party submissions are both disqualified.
+    # (2) Description gate: the AI sometimes extracts Ordnungsgeld ceilings
+    #     (§ 33 FamFG: "Das einzelne Ordnungsgeld kann bis zu 1.000,00 €
+    #     betragen") and other "bis zu" statutory maxima as Streitwert.
+    #     Reject these by keyword. Defense in depth alongside the prompt
+    #     anti-patterns.
+    # On rejection from either gate, also erase any stale row from prior runs.
+    if signal_type == CostSignalType.STREITWERT:
+        is_court_source = (
+            doc.originator_type == OriginatorType.COURT and not doc.court_relay
+        )
+        description = cost_delta.get("description")
+        if not is_court_source:
+            _erase_streitwert_for_doc(
+                doc.id,
+                db,
+                reason=f"non-court source: originator={doc.originator_type}, "
+                f"court_relay={doc.court_relay}",
+            )
+            return None
+        if _looks_like_streitwert_false_positive(description):
+            _erase_streitwert_for_doc(
+                doc.id,
+                db,
+                reason=f"false-positive description: {description!r}",
+            )
+            return None
 
     issued_at = doc.issued_date or doc.ingest_date
     if issued_at is not None:

@@ -207,6 +207,27 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
                     logger.warning(f"Doc {doc.id}: invalid key_passage skipped: {e}")
         doc.key_passages = validated or None
 
+    # court_relay — set BEFORE cost_delta + action_items so downstream gates
+    # (Streitwert source check, action-item court gate) see the AI's current
+    # value, not the prior-run value loaded from the DB.
+    court_relay_raw = result.get("court_relay")
+    if isinstance(court_relay_raw, bool):
+        doc.court_relay = court_relay_raw
+
+    # Proactive stale-Streitwert cleanup — runs regardless of whether the
+    # AI emits a cost_delta this run. Handles the re-enrichment case where
+    # the AI correctly emits no Streitwert but a prior run's bad row needs
+    # to vanish (e.g. doc #98 from ib-0033 after originator flipped to OPPOSING).
+    if db is not None:
+        try:
+            from app.services.cost_service import purge_disqualified_streitwert
+
+            purge_disqualified_streitwert(doc, db)
+        except Exception as purge_err:
+            logger.warning(
+                f"Doc {doc.id}: proactive Streitwert purge failed: {purge_err}"
+            )
+
     # cost_delta — validate and normalise the typed signal
     cost_delta = result.get("cost_delta")
     if isinstance(cost_delta, dict):
@@ -279,10 +300,8 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     new_meta["ai_context_chars"] = len(get_content_preview(doc, 60000))
     doc.meta = new_meta
 
-    # court_relay — set when AI signals the court is a postal relay for a party filing
-    court_relay_raw = result.get("court_relay")
-    if isinstance(court_relay_raw, bool):
-        doc.court_relay = court_relay_raw
+    # (court_relay was already applied above — moved earlier so the
+    # Streitwert and action-item gates see the AI's current value.)
 
 
 def enrich(doc_id: int) -> None:
@@ -360,16 +379,41 @@ def enrich(doc_id: int) -> None:
             return
         _apply_enrichment(doc, result, db=db)
 
-        from app.services.intelligence.action_items import create_from_payload
-
-        create_from_payload(
-            case_id,
-            doc_id,
-            proceeding_id,
-            result.get("action_items") or [],
-            db,
-            source_doc_date=issued_date,
+        from app.models.enums import OriginatorType
+        from app.services.intelligence.action_items import (
+            create_from_payload,
+            purge_action_items_from_doc,
         )
+
+        # Action item court gate (mirrors the Streitwert gate, same rationale):
+        # only direct court documents authoritatively set Termine/Fristen.
+        # Opposing party letters and court relays carrying party submissions
+        # may quote court-set deadlines but the source isn't authoritative,
+        # so we don't persist their action items. On rejection, also erase
+        # any stale non-superseded items from prior runs (tombstones stay).
+        is_court_source = (
+            doc.originator_type == OriginatorType.COURT and not doc.court_relay
+        )
+        if is_court_source:
+            create_from_payload(
+                case_id,
+                doc_id,
+                proceeding_id,
+                result.get("action_items") or [],
+                db,
+                source_doc_date=issued_date,
+            )
+        else:
+            purged = purge_action_items_from_doc(doc_id, db)
+            if purged:
+                logger.info(
+                    "Doc %s: purged %d stale action item(s) — non-court "
+                    "source (originator=%s, court_relay=%s)",
+                    doc_id,
+                    purged,
+                    doc.originator_type,
+                    doc.court_relay,
+                )
 
         db.commit()
         logger.info(f"Doc {doc_id} enriched successfully")

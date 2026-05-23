@@ -205,7 +205,11 @@ Extract these fields:
   {"kind": "...", "amount": float_or_null, "direction": "incoming|outgoing|ruling|none", "description": "..."}
 
   kind must be exactly one of:
-  - "streitwert"       — document states or sets a Verfahrenswert / Streitwert (e.g. Streitwertbeschluss, Streitwertfestsetzung). amount = the EUR value.
+  - "streitwert"       — document EXPLICITLY sets a Verfahrenswert / Streitwert via a court Streitwertfestsetzung or Streitwertbeschluss. Typical phrasing: "Der Streitwert wird auf X EUR festgesetzt", "Der Verfahrenswert beträgt X EUR", "Verfahrenswert: X EUR". amount = the fixed EUR value. Do NOT emit `kind="streitwert"` for:
+      * Statutory penalty maxima — "Ordnungsgeld bis zu …", "Ordnungsgeld kann … betragen", "§ 33 FamFG", "§ 890 ZPO". These are penalty ceilings, not the case value.
+      * Bußgeld ranges or any "bis zu" / "höchstens" / "maximal" clause quoting a ceiling.
+      * Amounts mentioned only as comparators, references to other proceedings, or examples.
+      * Costs / fees / invoice totals — those have their own kinds (invoice_lawyer, invoice_court, vorschuss_*).
   - "cost_ruling"      — document contains a Kostenentscheidung (§91 ZPO / §81 FamFG). amount = null. direction = "ruling". Include allocation, written from the user's (Mandant's) perspective using the Party perspective rules below:
       * {"loser": 1.0, "client_role": "winner"}  — opposing party is the loser and bears all costs
       * {"loser": 1.0, "client_role": "loser"}   — our side is the loser and bears all costs

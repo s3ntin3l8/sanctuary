@@ -316,23 +316,23 @@ def extract(doc_id: int) -> str | None:
             return reason
 
         # Clear stale auto-extracted claims from prior runs so retries don't
-        # accumulate. Delete only claims this document originally ASSERTED
-        # (canonical "originated by" evidence row) and that are still in
-        # their default ASSERTED state. Claims promoted to
-        # CONTESTED/REFUTED/ESTABLISHED via cross-doc evidence (or user edits)
-        # carry signal we want to preserve. ClaimEvidence rows for the
-        # deleted claims cascade via FK ondelete=CASCADE. Cross-doc evidence
-        # pointing at OTHER docs' claims is independent and untouched.
+        # accumulate. The right discriminator is *cross-doc evidence*, not
+        # status: a claim is safe to drop only when this document is its sole
+        # source. Status alone is misleading — when this doc's originator
+        # changes between runs (e.g. court→opposing), _apply_claims' initial
+        # status assignment changes too, so old ESTABLISHED claims rooted
+        # only in this doc become orphaned under the new originator and must
+        # be cleaned out before re-extraction. Claims with confirmed evidence
+        # from ANY other document (SUPPORTS, CONTESTS, REFUTES, CITES_AS_PROOF)
+        # carry independent signal and are preserved regardless of status.
+        # ClaimEvidence rows for the deleted claims cascade via FK
+        # ondelete=CASCADE.
         stale_repo = ClaimRepository(db)
-        stale = [
-            c
-            for c in stale_repo.claims_asserted_by_document(doc.id)
-            if c.status == ClaimStatus.ASSERTED
-        ]
+        stale = stale_repo.claims_only_originated_by_document(doc.id)
         if stale:
             logger.info(
-                f"Doc {doc_id}: clearing {len(stale)} stale ASSERTED claim(s) "
-                f"before re-extraction"
+                f"Doc {doc_id}: clearing {len(stale)} stale auto-originated "
+                f"claim(s) (no cross-doc evidence) before re-extraction"
             )
             for c in stale:
                 db.delete(c)
