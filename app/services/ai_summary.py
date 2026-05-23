@@ -303,6 +303,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     from app.models.database import Case
     from app.models.enums import parse_originator_type
     from app.services.ingestion.service import refresh_review_reasons
+    from app.services.intelligence._court_identity import is_confirmed_court_document
 
     # 1. Update core fields (AI overrides heuristics)
     if summary_data.get("sender"):
@@ -310,7 +311,27 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
 
     parsed_ot = parse_originator_type(summary_data.get("originator"))
     if parsed_ot is not None:
-        doc.originator_type = parsed_ot
+        # Defense in depth (Fix 8c): refuse a party-side override on a
+        # confirmed court document. The AI can be misled by a poisoned
+        # "Known Party Identity" preamble (auto-bootstrapped court names
+        # in opposing_parties), but a RULING/RELAY doc_type or court-named
+        # sender is a hard signal. Only let the AI override TO court
+        # types (or set when no prior value exists).
+        if parsed_ot in (
+            OriginatorType.OPPOSING,
+            OriginatorType.OWN,
+            OriginatorType.THIRD_PARTY,
+        ) and is_confirmed_court_document(doc):
+            logger.info(
+                "Doc %s: refusing AI originator override to %s — confirmed "
+                "court document (doc_type=%s, sender=%r)",
+                doc.id,
+                parsed_ot.value,
+                doc.document_type,
+                doc.sender,
+            )
+        else:
+            doc.originator_type = parsed_ot
 
     if summary_data.get("issued_date"):
         raw_date = str(summary_data["issued_date"]).strip()

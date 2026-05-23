@@ -211,3 +211,95 @@ def test_compute_parties_empty_list():
     """Empty document list returns empty parties list."""
     result = _compute_parties([])
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Fix 8a: COURT lock — courts never drift into a party role
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_compute_parties_locks_court_for_court_named_entity():
+    """ib-0039 root cause: OLG München had {COURT:1, OPPOSING:1} from a stale
+    misclassification of doc #113. The old 'discount COURT' heuristic picked
+    OPPOSING. The fix: when the NAME is a German court entity, lock to COURT
+    regardless of how many docs miscategorised it as a party."""
+    docs = [
+        _make_doc(
+            attributed_originator="Oberlandesgericht München", originator_type="court"
+        ),
+        _make_doc(
+            attributed_originator="Oberlandesgericht München",
+            originator_type="opposing",
+        ),
+    ]
+
+    parties = _compute_parties(docs)
+
+    assert len(parties) == 1
+    assert parties[0]["name"] == "Oberlandesgericht München"
+    assert parties[0]["role"] == "court"
+    assert parties[0]["document_count"] == 2
+
+
+@pytest.mark.unit
+def test_compute_parties_court_name_locks_even_with_zero_court_count():
+    """Edge case: a court name has ONLY misclassifications (e.g. every doc
+    set originator=OPPOSING for a freshly-ingested court the AI has never
+    seen yet). The name-pattern check still locks it to court."""
+    docs = [
+        _make_doc(
+            attributed_originator="Bayerisches Verwaltungsgericht München",
+            originator_type="opposing",
+        ),
+        _make_doc(
+            attributed_originator="Bayerisches Verwaltungsgericht München",
+            originator_type="opposing",
+        ),
+    ]
+
+    parties = _compute_parties(docs)
+
+    assert len(parties) == 1
+    assert parties[0]["role"] == "court"
+
+
+@pytest.mark.unit
+def test_compute_parties_party_name_with_court_misfire_still_resolves_to_party():
+    """a73cdcf intent preserved: a party name (no court keywords) misclassified
+    as COURT in a few docs but mostly OPPOSING should resolve to OPPOSING.
+    The COURT count is the misfire (court Rubrum header on a party brief).
+    The discount-COURT path runs for non-court names, exactly as before."""
+    docs = [
+        _make_doc(attributed_originator="Yingying Liu", originator_type="opposing"),
+        _make_doc(attributed_originator="Yingying Liu", originator_type="opposing"),
+        _make_doc(attributed_originator="Yingying Liu", originator_type="court"),
+    ]
+
+    parties = _compute_parties(docs)
+
+    assert len(parties) == 1
+    # Yingying Liu has no court-name fragment → falls through to non_court
+    # pool which has OPPOSING:2 → role=opposing. The lone COURT misfire is
+    # discounted, exactly the a73cdcf behaviour.
+    assert parties[0]["role"] == "opposing"
+
+
+@pytest.mark.unit
+def test_compute_parties_law_firm_not_locked_to_court():
+    """Defense against name-fragment over-fire: 'Rechtsanwälte am Landgericht'
+    style names would falsely trip 'landgericht' substring. Test that an
+    ordinary law-firm name with no court fragment stays at its computed role."""
+    docs = [
+        _make_doc(
+            attributed_originator="RA Maier und Kollegen", originator_type="third_party"
+        ),
+        _make_doc(
+            attributed_originator="RA Maier und Kollegen", originator_type="third_party"
+        ),
+    ]
+
+    parties = _compute_parties(docs)
+
+    assert len(parties) == 1
+    assert parties[0]["role"] == "third_party"

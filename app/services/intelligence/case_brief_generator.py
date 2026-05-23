@@ -15,6 +15,7 @@ from app.models.enums import (
 )
 from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
+from app.services.intelligence._court_identity import is_court_name
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
@@ -108,11 +109,22 @@ def _compute_parties(
         role_counts[name][str(doc.originator_type)] += 1
 
     result = []
+    court_role_key = str(OriginatorType.COURT)
     for name, counts in role_counts.items():
         total = sum(counts.values())
-        non_court = {r: c for r, c in counts.items() if r != str(OriginatorType.COURT)}
-        best_pool = non_court if non_court else counts
-        canonical_role = max(best_pool, key=best_pool.get)
+        # Courts don't switch sides. When the NAME itself identifies the
+        # entity as a German court (Amtsgericht, OLG, Verwaltungsgericht,
+        # etc.), lock role to COURT — no amount of misclassified docs can
+        # flip OLG München into an opposing party. For non-court names,
+        # keep the original "discount COURT" heuristic: party documents
+        # that misfire as COURT (court Rubrum header) should resolve to
+        # the more frequent party role — this is the a73cdcf intent.
+        if is_court_name(name):
+            canonical_role = court_role_key
+        else:
+            non_court = {r: c for r, c in counts.items() if r != court_role_key}
+            best_pool = non_court if non_court else counts
+            canonical_role = max(best_pool, key=best_pool.get)
         result.append(
             {
                 "name": name,
@@ -339,11 +351,17 @@ def generate(case_id: str) -> None:
 
             # Auto-bootstrap opposing_parties from AI-derived parties when user
             # has not yet confirmed them. Never overwrites a user-edited value.
+            # Defense-in-depth filter: even though _compute_parties locks
+            # canonical_role=COURT for any name with a COURT count or court
+            # keyword, this filter blocks court names from sneaking in via
+            # OPPOSING when a case has only ever misclassified them as parties
+            # (no COURT counts yet to trigger the lock).
             if not case.opposing_parties:
                 case.opposing_parties = [
                     p["name"]
                     for p in parties
                     if p.get("role") == str(OriginatorType.OPPOSING)
+                    and not is_court_name(p.get("name"))
                 ]
 
             logger.info(f"Case {case_id} brief generated successfully")
