@@ -51,7 +51,10 @@ def create_from_payload(
 
     if source_doc_id is not None:
         db.query(ActionItem).filter(
-            ActionItem.source_document_id == source_doc_id
+            ActionItem.source_document_id == source_doc_id,
+            ActionItem.superseded.is_(
+                False
+            ),  # tombstones are permanent guards — never erase
         ).delete(synchronize_session=False)
 
     # Compare on `.date()` — `due_date` from strptime is naive, but

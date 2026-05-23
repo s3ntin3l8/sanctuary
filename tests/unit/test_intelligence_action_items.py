@@ -369,6 +369,124 @@ def test_tombstone_blocks_reinsertion(db_session, sample_case):
 
 
 @pytest.mark.unit
+def test_reenrichment_preserves_tombstone(db_session, sample_case):
+    """IB-0033 regression: re-enriching a source doc must NOT erase tombstones
+    that another doc set via UPDATE on the original row.
+
+    Sequence:
+    1. Doc A creates OPEN item for 2025-09-22.
+    2. Doc B (supersedes_date=2025-09-22) tombstones it via UPDATE → item now
+       has source_document_id=doc_a.id, superseded=True.
+    3. Re-enrich doc A — the cleanup DELETE used to wipe ALL rows for
+       source_doc_id=doc_a, including the tombstone.  After the fix it must
+       skip rows with superseded=True.
+    4. Assert: tombstone survives; no new OPEN item for 2025-09-22 inserted.
+    """
+    from app.models.database import Document
+    from app.models.enums import ActionItemStatus, OriginatorType
+
+    doc_a = Document(
+        title="Terminsverlegung",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+    )
+    doc_b = Document(
+        title="Umladung",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+
+    # Step 1: doc A enriches — creates OPEN item for 2025-09-22.
+    create_from_payload(
+        case_id=sample_case.id,
+        source_doc_id=doc_a.id,
+        proceeding_id=None,
+        actions=[
+            {
+                "title": "Erörterungstermin",
+                "action_type": "court_date",
+                "due_date": "2025-09-22",
+                "description": "hearing",
+                "confidence": "high",
+            }
+        ],
+        db=db_session,
+    )
+    db_session.flush()
+
+    # Step 2: doc B enriches with supersedes_date=2025-09-22 — tombstones the
+    # 2025-09-22 item (UPDATE sets superseded=True, status=DISMISSED).
+    # The tombstoned row retains source_document_id=doc_a.id.
+    create_from_payload(
+        case_id=sample_case.id,
+        source_doc_id=doc_b.id,
+        proceeding_id=None,
+        actions=[
+            {
+                "title": "Hörsaaltermin",
+                "action_type": "court_date",
+                "due_date": "2025-11-03",
+                "description": "rescheduled",
+                "confidence": "high",
+                "supersedes_date": "2025-09-22",
+            }
+        ],
+        db=db_session,
+    )
+    db_session.flush()
+
+    # Verify setup: tombstone for 2025-09-22 exists, OPEN item for 2025-11-03.
+    items_before = (
+        db_session.query(ActionItem).filter(ActionItem.case_id == sample_case.id).all()
+    )
+    tombstones_before = [i for i in items_before if i.superseded]
+    assert len(tombstones_before) >= 1, "setup failed — no tombstone created"
+    # The tombstone should still carry source_document_id=doc_a.id (from UPDATE)
+    # or be a sentinel (source_document_id=None).  Both cases must survive step 3.
+
+    # Step 3: doc A is re-enriched — cleanup DELETE runs for source_doc_id=doc_a.
+    # With the bug: tombstone is deleted → guard doesn't fire → new OPEN inserted.
+    # With the fix: tombstone is preserved (superseded=True excluded from DELETE).
+    count = create_from_payload(
+        case_id=sample_case.id,
+        source_doc_id=doc_a.id,
+        proceeding_id=None,
+        actions=[
+            {
+                "title": "Erörterungstermin",
+                "action_type": "court_date",
+                "due_date": "2025-09-22",
+                "description": "hearing",
+                "confidence": "high",
+            }
+        ],
+        db=db_session,
+    )
+    db_session.flush()
+
+    # Step 4: assert tombstone survives and no new OPEN item for 2025-09-22.
+    assert count == 0, "re-enrichment must not re-insert the tombstoned date"
+    items_after = (
+        db_session.query(ActionItem).filter(ActionItem.case_id == sample_case.id).all()
+    )
+    open_items = [i for i in items_after if i.status == ActionItemStatus.OPEN]
+    tombstone_items = [i for i in items_after if i.superseded]
+    dates_open = {i.due_date.date().isoformat() for i in open_items}
+    assert "2025-09-22" not in dates_open, (
+        "2025-09-22 must not be OPEN after re-enrichment"
+    )
+    assert len(tombstone_items) >= 1, (
+        "tombstone for 2025-09-22 must survive re-enrichment"
+    )
+    tombstone_dates = {i.due_date.date().isoformat() for i in tombstone_items}
+    assert "2025-09-22" in tombstone_dates
+
+
+@pytest.mark.unit
 def test_iso_datetime_due_date_is_parsed(db_session, sample_case):
     """Batch analyzer may return full ISO datetimes; truncation to YYYY-MM-DD
     must allow these to be parsed and stored correctly."""
