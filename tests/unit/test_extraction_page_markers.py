@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.ingestion.converters import (
+    _LAYOUT_MODEL_SPEC,
+    _apply_glyph_fixes,
     _collect_pictures,
     _convert_in_subprocess,
     _extract_pdf_text_layer,
@@ -315,7 +317,12 @@ def test_run_conversion_recovers_picture_text_from_pdf_layer():
     mock_doc = MagicMock()
     mock_doc.pages = [MagicMock()]
     mock_doc.pictures = [_fake_picture(1)]
-    mock_doc.export_to_markdown.return_value = "Judges named above\n\n<!-- image -->"
+    # Body must be long enough that the page isn't treated as image-only —
+    # otherwise the sandwich-PDF gate would (correctly) skip picture recovery.
+    body = (
+        "The court has reviewed the matter and finds the following. Judges named above"
+    )
+    mock_doc.export_to_markdown.return_value = f"{body}\n\n<!-- image -->"
     mock_res.document = mock_doc
     mock_res.input.format.value = "PDF"
     mock_conv.convert.return_value = mock_res
@@ -342,7 +349,8 @@ def test_run_conversion_leaves_placeholder_when_recovery_empty():
     mock_doc = MagicMock()
     mock_doc.pages = [MagicMock()]
     mock_doc.pictures = [_fake_picture(1)]
-    mock_doc.export_to_markdown.return_value = "Body\n\n<!-- image -->"
+    body = "Body content long enough to clear the sandwich-PDF threshold and exercise picture recovery."
+    mock_doc.export_to_markdown.return_value = f"{body}\n\n<!-- image -->"
     mock_res.document = mock_doc
     mock_res.input.format.value = "PDF"
     mock_conv.convert.return_value = mock_res
@@ -451,3 +459,116 @@ def test_rotation_corrected_safety_net_retries_at_90():
     assert result_meta.get("ocr_rotation_corrected") is True
     assert "Gescannt aber lesbar" in result_md
     assert mock_run.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Round 2: layout model + glyph-fixes cleanups
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_unknown_placeholder_stripped():
+    """Both literal and HTML-escaped <unknown> placeholders are removed."""
+    md_in = "Body text.\n\n<unknown>\n\nMore body.\n\n&lt;unknown&gt;\n\nEnd."
+    out = _apply_glyph_fixes(md_in)
+    assert "<unknown>" not in out
+    assert "&lt;unknown&gt;" not in out
+    assert "Body text." in out and "More body." in out and "End." in out
+
+
+@pytest.mark.unit
+def test_amp_entity_unescaped():
+    """Plain-text HTML entities Docling injects get unescaped."""
+    out = _apply_glyph_fixes("Rechtsanwälte Pietsch &amp; Hönig")
+    assert out == "Rechtsanwälte Pietsch & Hönig"
+
+
+@pytest.mark.unit
+def test_lt_gt_entities_unescaped():
+    """&lt;tag&gt; entities outside the unknown-placeholder pattern still get
+    unescaped (no separate codepath)."""
+    # Use a tag whose body is not "unknown" so the strip step leaves it alone.
+    out = _apply_glyph_fixes("See &lt;Anlage 3&gt; for details.")
+    assert out == "See <Anlage 3> for details."
+
+
+@pytest.mark.unit
+def test_phantom_prefix_stripped():
+    """Phantom auto-numbering on legal sub-items (4. 2.b.a)) is stripped,
+    real numbered headings (4. Body sentence) are preserved."""
+    md_in = (
+        "Some context.\n\n"
+        "4. 2.b.a)  Das betrifft auch das Aufsuchen.\n\n"
+        "4. Body sentence that is a real list item.\n"
+    )
+    out = _apply_glyph_fixes(md_in)
+    assert "2.b.a)  Das betrifft auch das Aufsuchen." in out
+    assert "4. 2.b.a)" not in out
+    # Real list item untouched
+    assert "4. Body sentence that is a real list item." in out
+
+
+@pytest.mark.unit
+def test_leading_single_char_noise_stripped():
+    """Document-head punctuation/letter scraps (`:`, `u`, `'`, `|`, `|`)
+    from Jugendamt form templates are stripped; legitimate short markers
+    deeper in the doc are preserved."""
+    md_in = (
+        ":\n\n"
+        "u\n\n"
+        "'\n\n"
+        "|\n\n"
+        "|\n\n"
+        "Landratsamt Eichstätt — Amt für Familie und Jugend\n\n"
+        "Body text after the noise.\n"
+    )
+    out = _apply_glyph_fixes(md_in)
+    assert out.startswith("Landratsamt Eichstätt")
+    assert "Body text after the noise." in out
+
+
+@pytest.mark.unit
+def test_leading_noise_strip_preserves_roman_numeral_markers():
+    """A short legitimate marker like 'I.' at the head should NOT be stripped
+    when it isn't pure single-char noise."""
+    md_in = "I.\n\nDie Antragstellerin trägt vor, dass …\n"
+    out = _apply_glyph_fixes(md_in)
+    # I. is two non-noise chars (letter + period); should survive
+    assert out.startswith("I.")
+    assert "Die Antragstellerin" in out
+
+
+@pytest.mark.unit
+def test_layout_model_configured_to_egret_large():
+    """Layout model is set to EGRET_LARGE via the module-level constant.
+    Defensive: catches accidental model swap in PRs."""
+    from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
+
+    assert _LAYOUT_MODEL_SPEC is DOCLING_LAYOUT_EGRET_LARGE
+
+
+@pytest.mark.unit
+def test_run_conversion_skips_picture_recovery_on_image_only_output():
+    """When the standard docling pass produces only image placeholders (the
+    sandwich-PDF signal), picture recovery is skipped so the whole-document
+    text-layer fallback in _convert_in_subprocess can handle it cleanly."""
+    mock_conv = MagicMock()
+    mock_res = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.pages = [MagicMock()]
+    mock_doc.pictures = [_fake_picture(1)]
+    # All placeholders, no real text — looks like a scan
+    mock_doc.export_to_markdown.return_value = "<!-- image -->\n\n<!-- image -->"
+    mock_res.document = mock_doc
+    mock_res.input.format.value = "PDF"
+    mock_conv.convert.return_value = mock_res
+
+    with patch(
+        "app.services.ingestion.converters._recover_picture_text"
+    ) as mock_recover:
+        md, _chunks, meta = _run_conversion(mock_conv, "scanned.pdf")
+
+    mock_recover.assert_not_called()
+    assert "picture_text_recovered" not in meta
+    # Placeholders preserved so the outer sandwich gate still sees image-only
+    assert "<!-- image -->" in md

@@ -1,14 +1,24 @@
 import concurrent.futures
+import html
 import logging
 import os
 import re
 import threading
+
+from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
 
 from app.config import INGEST_CONVERSION_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 CONVERSION_TIMEOUT = INGEST_CONVERSION_TIMEOUT  # seconds
+
+# Layout model used by Docling's PDF/IMAGE pipelines. EGRET_LARGE outperforms
+# the default HERON on German legal-document layouts in our cross-document tests
+# (footer leak detection, heading consistency, reading order, table-vs-picture
+# classification). EGRET_XLARGE regressed on the same metrics, so LARGE is the
+# right size for our document type.
+_LAYOUT_MODEL_SPEC = DOCLING_LAYOUT_EGRET_LARGE
 
 
 class TimeoutError(Exception):
@@ -52,7 +62,67 @@ def _apply_glyph_fixes(text: str | None) -> str | None:
     # Standardize court-style date spacing artifacts (e.g., "0 1. Aug" -> "01. Aug")
     text = re.sub(r"(\d)\s+(\d\.)\s+([A-Z][a-z]{2})", r"\1\2 \3", text)
 
+    # 1. Unescape HTML entities Docling injects into plain-text exports
+    #    (e.g. "Pietsch &amp; Hönig" → "Pietsch & Hönig"). Apply before the
+    #    <unknown> strip so the escaped variant also gets caught.
+    text = html.unescape(text)
+
+    # 2. Strip <unknown> placeholders. Docling emits these where the layout
+    #    model could read text but couldn't classify it (often around stamp
+    #    watermarks, e.g. "Beglaubigte Abschrift" on certified copies).
+    #    The placeholder itself carries no information; dropping is safer
+    #    than leaving the literal "<unknown>" string in the markdown.
+    text = text.replace("<unknown>", "")
+
+    # 3. Strip phantom auto-numbered prefixes on enumerated legal sub-items.
+    #    Docling sometimes prepends "4." to a "2.b.a) …" sub-item because it
+    #    sees an outer ordered list. The leading number is never legitimate
+    #    in front of legal sub-numbering (e.g. "2.b.a)", "2.b.b)").
+    text = re.sub(
+        r"(?m)^\d+\.\s+(\d+\.[a-z](?:\.[a-z])?\)\s)",
+        r"\1",
+        text,
+    )
+
+    # 4. Strip leading single-character noise paragraphs at the document head.
+    #    Some forms (Jugendamt Hilfeplan etc.) produce "paragraphs" that are
+    #    just one stray punctuation char or letter (": / u / ' / | / |") before
+    #    the real content starts. Trim until the first non-trivial paragraph.
+    text = _strip_leading_noise_paragraphs(text)
+
     return text
+
+
+# Pure punctuation or a single bare letter. Legitimate short section markers
+# ("I.", "II.", "1.", "a)") all combine alphanumerics with punctuation across
+# at least two chars and are preserved.
+_NOISE_PARAGRAPH_RE = re.compile(r"^[\W_]{1,3}$|^[A-Za-zÄÖÜäöüß]$")
+
+
+def _strip_leading_noise_paragraphs(text: str) -> str:
+    """Drop one- or two-char punctuation/single-letter "paragraphs" at the head.
+
+    Stops at the first paragraph whose stripped length is > 5 — beyond that,
+    short paragraphs deep in the document are kept (they may be legitimate
+    section markers or numbered items).
+    """
+    paragraphs = text.split("\n\n")
+    head_end = 0
+    for i, para in enumerate(paragraphs):
+        stripped = para.strip()
+        if len(stripped) > 5:
+            head_end = i
+            break
+        if _NOISE_PARAGRAPH_RE.match(stripped):
+            continue
+        # A short paragraph that isn't pure noise — keep it and stop trimming.
+        head_end = i
+        break
+    else:
+        # Whole document is short/noise — leave it alone to avoid eating
+        # everything on a near-empty page.
+        return text
+    return "\n\n".join(paragraphs[head_end:])
 
 
 def validate_file_magic(file_path: str) -> str | None:
@@ -144,6 +214,7 @@ def _build_converter(force_full_page_ocr: bool = False):
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
+            LayoutOptions,
             PdfPipelineOptions,
             TableFormerMode,
             TesseractCliOcrOptions,
@@ -161,6 +232,11 @@ def _build_converter(force_full_page_ocr: bool = False):
             lang=["deu", "eng"],
             force_full_page_ocr=force_full_page_ocr,
         )
+        # EGRET_LARGE outperforms the default HERON on German legal-document
+        # layouts (footer detection, heading consistency, reading order,
+        # table-vs-picture classification). See .claude/plans/why-is-docling-not-
+        # squishy-waterfall.md for the cross-document comparison.
+        pipeline_options.layout_options = LayoutOptions(model_spec=_LAYOUT_MODEL_SPEC)
         if force_full_page_ocr:
             # Render at 2× scale so Tesseract gets higher-resolution input on
             # scanned pages where the layout model produced only image placeholders.
@@ -217,6 +293,7 @@ def _build_image_ocr_converter():
     """
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
+        LayoutOptions,
         PdfPipelineOptions,
         TableFormerMode,
         TesseractCliOcrOptions,
@@ -227,6 +304,7 @@ def _build_image_ocr_converter():
     pipeline_options.do_table_structure = True
     pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
     pipeline_options.do_ocr = True
+    pipeline_options.layout_options = LayoutOptions(model_spec=_LAYOUT_MODEL_SPEC)
     pipeline_options.ocr_options = TesseractCliOcrOptions(
         lang=["deu", "eng"],
         force_full_page_ocr=True,
@@ -463,7 +541,12 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     parts = markdown.split(page_break)
 
     recovered = 0
-    if ext == ".pdf" and pictures_by_page:
+    # Skip picture recovery when the standard pass produced essentially nothing
+    # but image placeholders — that's the sandwich-PDF signal, and the
+    # _convert_in_subprocess fallback handles those by reading the full PDF
+    # text layer (which gives cleaner full-document text than piecemeal
+    # picture-region recovery would).
+    if ext == ".pdf" and pictures_by_page and not _is_image_only_output(markdown):
         picture_texts = _recover_picture_text(file_path, pictures_by_page)
         recovered = sum(1 for v in picture_texts.values() if v)
         if recovered:
