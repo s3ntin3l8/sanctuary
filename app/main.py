@@ -279,6 +279,7 @@ async def lifespan(app: FastAPI):
     from app.services.pipeline_status import (
         recover_orphaned_running_stages,
         recover_placeholder_summary_docs,
+        recover_stranded_batch_pending,
         recover_stranded_gate_skipped,
         recover_stuck_pending_dispatches,
     )
@@ -291,6 +292,18 @@ async def lifespan(app: FastAPI):
         stats = recover_orphaned_running_stages(recovery_db, min_age_seconds=0)
     if any(stats.values()):
         logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
+
+    # Recover docs whose batch_analysis=pending while their batch siblings are
+    # done: happens when a single doc's metadata is retried in an already-
+    # analyzed batch — the idempotency guard blocks claim_batch_for_analysis.
+    # Must run before recover_stuck_pending_dispatches to prevent double-dispatch.
+    with SessionLocal() as batch_pending_db:
+        batch_pending_stats = recover_stranded_batch_pending(batch_pending_db)
+    if batch_pending_stats.get("docs_recovered"):
+        logging.getLogger(__name__).warning(
+            "Pipeline recovery on startup (stranded batch-pending): %s",
+            batch_pending_stats,
+        )
 
     # Recover docs stranded by the gate-block-skip race: ENRICH was marked
     # SKIPPED with a gate reason but BATCH_ANALYSIS has since completed.

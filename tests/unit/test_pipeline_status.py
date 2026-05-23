@@ -1206,3 +1206,189 @@ def test_update_stage_rejects_disallowed_key(db_session):
         )
     # db.execute should NOT have been called
     db.execute.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# recover_stranded_batch_pending
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_recover_stranded_batch_pending_promotes_and_dispatches(
+    db_session, monkeypatch
+):
+    """Single-doc metadata retry in an already-analyzed batch leaves the retried
+    doc with batch_analysis=pending while its siblings have batch_analysis=completed.
+    recover_stranded_batch_pending must promote it to completed and dispatch enrich.
+
+    Setup mirrors the real scenario:
+    - Batch with doc A (sibling, batch_analysis=completed) and doc B (retried,
+      batch_analysis=pending from cascade reset, enrich=pending).
+    - Recovery sweep must: mark B.batch_analysis=completed, dispatch enrich for B.
+    """
+    from app.models.database import Case, Document, IngestBatch
+    from app.models.enums import (
+        CaseStatus,
+        IngestBatchSourceType,
+        IngestBatchStatus,
+        Jurisdiction,
+        OriginatorType,
+    )
+    from app.services.pipeline_status import (
+        StageStatus,
+        initialize,
+        mark_completed,
+        recover_stranded_batch_pending,
+        stages_dict,
+    )
+
+    case = Case(
+        id="_TBP1", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=__import__("datetime").datetime.now(),
+        ingest_date=__import__("datetime").datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    doc_a = Document(
+        title="sibling.pdf",
+        content="x",
+        case_id=case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+    )
+    doc_b = Document(
+        title="retried.pdf",
+        content="x",
+        case_id=case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+
+    # Both docs get pipeline stages initialized.
+    initialize(doc_a, batched=True, db=db_session)
+    initialize(doc_b, batched=True, db=db_session)
+    db_session.commit()
+
+    # Doc A has already completed batch_analysis (the normal case).
+    mark_completed(doc_a.id, PipelineStage.BATCH_ANALYSIS, db_session)
+
+    # Doc B simulates the retried state: batch_analysis=pending, enrich=pending.
+    # (reset_stage would have done this cascade; we set it up manually here.)
+    # batch_analysis is already pending from initialize(); enrich too.
+
+    # Sanity-check setup.
+    db_session.expire_all()
+    stages_b = stages_dict(doc_b)
+    assert (
+        stages_b[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.PENDING.value
+    )
+    assert stages_b[PipelineStage.ENRICH.value]["status"] == StageStatus.PENDING.value
+
+    captured: list[int] = []
+
+    def fake_dispatch(task, *args, **kwargs):
+        captured.append(args[0] if args else kwargs.get("doc_id"))
+
+    monkeypatch.setattr("app.tasks.dispatch.dispatch_task", fake_dispatch)
+
+    result = recover_stranded_batch_pending(db_session)
+
+    assert result["docs_recovered"] == 1
+    assert doc_b.id in result["doc_ids"]
+    assert captured == [doc_b.id], "enrich must be dispatched for the stranded doc"
+
+    # Doc B's batch_analysis must now be completed.
+    db_session.expire_all()
+    stages_b_after = stages_dict(doc_b)
+    assert (
+        stages_b_after[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.COMPLETED.value
+    ), "batch_analysis must be promoted to completed"
+
+    # Doc A must not have been touched.
+    stages_a_after = stages_dict(doc_a)
+    assert (
+        stages_a_after[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.COMPLETED.value
+    )
+
+
+@pytest.mark.unit
+def test_recover_stranded_batch_pending_ignores_single_doc_batches(
+    db_session, monkeypatch
+):
+    """A single-doc batch where the doc itself has batch_analysis=pending is NOT
+    stranded — it's still waiting for the normal analyze_batch_task. The sweep
+    must not promote it."""
+    from app.models.database import Case, Document, IngestBatch
+    from app.models.enums import (
+        CaseStatus,
+        IngestBatchSourceType,
+        IngestBatchStatus,
+        Jurisdiction,
+        OriginatorType,
+    )
+    from app.services.pipeline_status import (
+        StageStatus,
+        initialize,
+        recover_stranded_batch_pending,
+        stages_dict,
+    )
+
+    case = Case(
+        id="_TBP2", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=__import__("datetime").datetime.now(),
+        ingest_date=__import__("datetime").datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    doc = Document(
+        title="solo.pdf",
+        content="x",
+        case_id=case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=True, db=db_session)
+    db_session.commit()
+
+    # No sibling has batch_analysis=completed — sweep must leave this alone.
+    captured: list[int] = []
+
+    def fake_dispatch(task, *args, **kwargs):
+        captured.append(args[0] if args else kwargs.get("doc_id"))
+
+    monkeypatch.setattr("app.tasks.dispatch.dispatch_task", fake_dispatch)
+
+    result = recover_stranded_batch_pending(db_session)
+
+    assert result["docs_recovered"] == 0
+    assert captured == []
+    stages = stages_dict(doc)
+    assert (
+        stages[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.PENDING.value
+    )

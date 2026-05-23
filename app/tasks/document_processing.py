@@ -145,6 +145,50 @@ def process_document_task(self, doc_id: int):
                         doc_id,
                         doc.ingest_batch_id,
                     )
+                else:
+                    # Claim failed — either someone else won the race, or the
+                    # batch is already analyzed (idempotency guard fired because
+                    # sibling docs have batch_analysis=completed). In the second
+                    # case this doc's batch_analysis was cascade-reset to pending
+                    # by a metadata retry but will never be claimed. Detect it
+                    # and promote + dispatch enrich directly so the doc isn't
+                    # permanently stranded.
+                    from sqlalchemy import text
+
+                    batch_already_done = db_batch.execute(
+                        text(
+                            """
+                            SELECT 1 FROM documents d2
+                            JOIN document_pipeline_stages dps2
+                              ON dps2.document_id = d2.id
+                            WHERE d2.ingest_batch_id = :bid
+                              AND d2.id != :doc_id
+                              AND dps2.stage = 'batch_analysis'
+                              AND dps2.status IN ('completed', 'failed', 'skipped')
+                            LIMIT 1
+                            """
+                        ),
+                        {"bid": doc.ingest_batch_id, "doc_id": doc_id},
+                    ).scalar()
+                    if batch_already_done:
+                        from app.services.pipeline_status import (
+                            claim_stage_for_dispatch,
+                            mark_completed,
+                        )
+
+                        mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db_batch)
+                        logger.info(
+                            "Doc #%d: batch #%d already analyzed — promoted "
+                            "batch_analysis to completed, dispatching enrich directly",
+                            doc_id,
+                            doc.ingest_batch_id,
+                        )
+                        if claim_stage_for_dispatch(
+                            doc_id, PipelineStage.ENRICH, db_batch
+                        ):
+                            from app.tasks.enrich_document import enrich_document_task
+
+                            enrich_document_task.delay(doc_id)
             finally:
                 db_batch.close()
 

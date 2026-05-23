@@ -993,6 +993,68 @@ def recover_stranded_gate_skipped(db: Session) -> dict:
     return {"docs_recovered": len(recovered), "doc_ids": recovered}
 
 
+def recover_stranded_batch_pending(db: Session) -> dict:
+    """Promote docs where batch_analysis=pending but batch siblings are done.
+
+    These are left by 'retry metadata on a single doc in an already-analyzed
+    batch': reset_stage cascades batch_analysis → PENDING, but
+    claim_batch_for_analysis's idempotency guard (which blocks re-claim when
+    any sibling has a terminal batch_analysis) prevents any task from ever
+    claiming it. The enrich gate then defers forever.
+
+    Finds these docs, marks their batch_analysis COMPLETED (the batch was
+    already analyzed for the other docs), and dispatches enrich.
+
+    Returns {"docs_recovered": N, "doc_ids": [...]}.
+    """
+    from app.tasks.dispatch import dispatch_task
+
+    rows = db.execute(
+        text(
+            """
+            SELECT dps.document_id
+            FROM document_pipeline_stages dps
+            JOIN documents d ON d.id = dps.document_id
+            WHERE dps.stage = 'batch_analysis'
+              AND dps.status = 'pending'
+              AND d.ingest_batch_id IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM documents d2
+                  JOIN document_pipeline_stages dps2 ON dps2.document_id = d2.id
+                  WHERE d2.ingest_batch_id = d.ingest_batch_id
+                    AND d2.id != d.id
+                    AND dps2.stage = 'batch_analysis'
+                    AND dps2.status IN ('completed', 'failed', 'skipped')
+              )
+            """
+        )
+    ).fetchall()
+
+    promoted: list[int] = []
+    for (doc_id,) in rows:
+        mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db, commit=False)
+        promoted.append(doc_id)
+    if promoted:
+        db.commit()
+
+    dispatched: list[int] = []
+    for doc_id in promoted:
+        from app.tasks.enrich_document import enrich_document_task
+
+        if claim_stage_for_dispatch(doc_id, PipelineStage.ENRICH, db):
+            dispatch_task(enrich_document_task, doc_id)
+            dispatched.append(doc_id)
+
+    if promoted:
+        logger.info(
+            "recover_stranded_batch_pending: promoted %d doc(s), dispatched enrich for %d: %s",
+            len(promoted),
+            len(dispatched),
+            promoted,
+        )
+    return {"docs_recovered": len(dispatched), "doc_ids": dispatched}
+
+
 def recover_placeholder_summary_docs(db: Session) -> dict:
     """Reset and re-enrich docs whose ai_summary is the all-placeholder JSON.
 
