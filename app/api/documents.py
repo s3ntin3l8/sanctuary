@@ -570,7 +570,11 @@ async def retry_pipeline_stage(
 ):
     """Retry a specific pipeline stage. Returns 409 if upstream is running."""
     from app.models.enums import PipelineStage
-    from app.services.pipeline_status import get_upstream_blocking, reset_stage
+    from app.services.pipeline_status import (
+        STAGE_REGISTRY,
+        get_upstream_blocking,
+        reset_stage,
+    )
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
@@ -597,15 +601,27 @@ async def retry_pipeline_stage(
             status_code=409,
         )
 
-    # Guard: reject if any upstream stage is running
+    # Guard: reject if any upstream stage is running. Message reflects that
+    # the cascade will re-run this stage when upstream finishes — each task's
+    # tail calls claim_stage_for_dispatch on its successors.
     blocking = get_upstream_blocking(pipeline_stage, stages)
     if blocking:
+        stage_label = STAGE_REGISTRY[pipeline_stage].label
+        upstream_labels = [STAGE_REGISTRY[PipelineStage(b)].label for b in blocking]
+        upstream_str = ", ".join(upstream_labels)
+        if len(upstream_labels) == 1:
+            tail = "when it completes"
+        else:
+            tail = "when they complete"
         return templates.TemplateResponse(
             request,
             "partials/_pipeline_stepper.html",
             {
                 "doc": doc,
-                "retry_error": f"Cannot retry '{stage}' — upstream stage(s) running: {', '.join(blocking)}",
+                "retry_error": (
+                    f"Waiting for {upstream_str} — {stage_label} will re-run "
+                    f"automatically {tail}."
+                ),
             },
             status_code=409,
         )
