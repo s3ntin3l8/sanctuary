@@ -318,3 +318,53 @@ def test_malformed_ai_response_propagates_exception(db_session, doc_with_content
         from app.services.intelligence.document_enricher import enrich
 
         enrich(doc_with_content.id)
+
+
+@pytest.mark.unit
+def test_placeholder_summary_leaves_ai_summary_null(doc_with_content, db_session):
+    """When the AI returns all-placeholder management_summary ('...' for every
+    field), _apply_enrichment must leave doc.ai_summary as None rather than
+    storing the useless placeholder JSON. The doc can then be re-enriched."""
+    from app.services.intelligence.document_enricher import _apply_enrichment
+
+    result = {
+        "management_summary": {
+            "legal_significance": "...",
+            "required_action": "...",
+            "financial_impact": "...",
+        },
+        "action_items": [],
+    }
+
+    doc_with_content.ai_summary = None
+    _apply_enrichment(doc_with_content, result, db=db_session)
+
+    assert doc_with_content.ai_summary is None
+    assert doc_with_content.ai_summary_created_at is None
+
+
+@pytest.mark.unit
+def test_partial_placeholder_summary_stores_real_fields(doc_with_content, db_session):
+    """When only some fields are placeholders, real fields are stored and
+    placeholders are replaced with None — the doc is NOT fully rejected."""
+    from app.services.intelligence.document_enricher import _apply_enrichment
+
+    result = {
+        "management_summary": {
+            "legal_significance": "Gericht weist Antrag ab.",
+            "required_action": "...",
+            "financial_impact": "None",
+        },
+        "action_items": [],
+    }
+
+    doc_with_content.ai_summary = None
+    _apply_enrichment(doc_with_content, result, db=db_session)
+
+    assert doc_with_content.ai_summary is not None
+    assert (
+        doc_with_content.ai_summary["legal_significance"] == "Gericht weist Antrag ab."
+    )
+    assert doc_with_content.ai_summary["required_action"] is None
+    # "None" (the string) is short enough to be a placeholder too
+    assert doc_with_content.ai_summary["financial_impact"] is None

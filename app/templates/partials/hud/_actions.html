@@ -29,7 +29,7 @@
       <div class="flex-1 min-w-0">
         <p class="text-on-surface font-medium truncate">{{ item.title }}</p>
         <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-          <span class="text-[9px] font-mono" style="color:var(--color-outline);">{{ item.due_date | format_due_relative if item.due_date else '—' }}</span>
+          <span class="text-[9px] font-mono" style="color:var(--color-outline);">{{ item.due_date | format_due_relative if item.due_date else '—' }}{% if item.due_date %} · {{ item.due_date.strftime('%d.%m.%y') }}{% endif %}</span>
           <span class="text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-surface-container-high {{ status_tone }}">{{ status_val }}</span>
         </div>
         {% if status_val == 'open' %}

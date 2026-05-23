@@ -39,6 +39,16 @@ VALID_PASSAGE_KINDS = {
 }
 VALID_COST_DIRECTIONS = {"incoming", "outgoing", "ruling", "none"}
 
+# Placeholder values the AI occasionally emits when it has no real answer.
+# Any management_summary field matching these is treated as missing.
+_PLACEHOLDER_VALUES = frozenset({"...", "…", "tbd", "n/a", "none", ""})
+
+
+def _is_placeholder(s: str | None) -> bool:
+    """Return True if `s` is a known AI placeholder rather than real content."""
+    return not s or s.strip().lower() in _PLACEHOLDER_VALUES or len(s.strip()) < 4
+
+
 THREAD_OPEN_TYPES = {
     DocumentType.STATEMENT,
     DocumentType.MOTION,
@@ -236,17 +246,31 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
         except Exception as e:
             logger.warning(f"Doc {doc.id}: invalid cost_delta skipped: {e}")
 
-    # ai_summary — must use exact keys that templates expect
+    # ai_summary — must use exact keys that templates expect.
+    # Reject all-placeholder responses (AI returned "..." for every field) so
+    # the doc stays with ai_summary=NULL and can be re-enriched rather than
+    # permanently storing useless placeholder text.
     mgmt = result.get("management_summary") or {}
-    try:
-        validated_summary = AISummarySchema(
-            legal_significance=mgmt.get("legal_significance"),
-            required_action=mgmt.get("required_action"),
-            financial_impact=mgmt.get("financial_impact"),
+    legal_sig = mgmt.get("legal_significance")
+    req_action = mgmt.get("required_action")
+    fin_impact = mgmt.get("financial_impact")
+
+    if all(_is_placeholder(v) for v in (legal_sig, req_action, fin_impact)):
+        logger.warning(
+            "Doc %d: AI returned all-placeholder management_summary — leaving null",
+            doc.id,
         )
-        doc.ai_summary = validated_summary.model_dump()
-    except Exception as e:
-        logger.warning(f"Doc {doc.id}: invalid ai_summary skipped: {e}")
+    else:
+        try:
+            validated_summary = AISummarySchema(
+                legal_significance=None if _is_placeholder(legal_sig) else legal_sig,
+                required_action=None if _is_placeholder(req_action) else req_action,
+                financial_impact=None if _is_placeholder(fin_impact) else fin_impact,
+            )
+            doc.ai_summary = validated_summary.model_dump()
+            doc.ai_summary_created_at = datetime.now(UTC)
+        except Exception as e:
+            logger.warning("Doc %d: invalid ai_summary skipped: %s", doc.id, e)
 
     # Track strategy and character count for UI transparency
     content_len = len(doc.content or "")
@@ -259,8 +283,6 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     court_relay_raw = result.get("court_relay")
     if isinstance(court_relay_raw, bool):
         doc.court_relay = court_relay_raw
-
-    doc.ai_summary_created_at = datetime.now(UTC)
 
 
 def enrich(doc_id: int) -> None:

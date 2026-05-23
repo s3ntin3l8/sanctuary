@@ -746,3 +746,153 @@ def test_two_cover_letters_dont_swallow_each_other(db_session, sample_case):
     # No cycles: cover1 not under cover2, cover2 not under cover1.
     assert cover1.parent_id != cover2.id
     assert cover2.parent_id != cover1.id
+
+
+@pytest.mark.unit
+def test_batch_overrides_court_originator_with_party_type(db_session, sample_case):
+    """Fix 2a regression: when METADATA misclassified a party-authored enclosure
+    as COURT (e.g. doc #98 which has a court Rubrum header), the batch AI's
+    explicit OPPOSING classification for that enclosure must override it.
+
+    OWN/OPPOSING/THIRD_PARTY set by METADATA are still protected (batch AI
+    cannot downgrade them to COURT)."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben Amtsgericht",
+        content="Das Gericht übermittelt...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        court_relay=True,
+    )
+    # METADATA misclassified as COURT (confused by the Rubrum header).
+    party_filing = Document(
+        title="Antrag auf alleiniges Sorgerecht",
+        content="Im Namen meiner Mandantin beantrage ich...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,  # wrong — misfire from METADATA
+        attributed_originator=None,
+        sender="Yingying Liu",
+    )
+    db_session.add(cover)
+    db_session.add(party_filing)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(party_filing)
+    db_session.refresh(batch)
+
+    # Batch AI correctly identifies the enclosure as OPPOSING.
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [
+                    {
+                        "enclosed_doc_id": party_filing.id,
+                        "originator_type": "opposing",
+                        "attributed_originator": "Yingying Liu",
+                        "matched_filename": None,
+                    }
+                ],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, party_filing], result, db_session)
+
+    db_session.expire_all()
+    party_filing = db_session.get(Document, party_filing.id)
+
+    assert party_filing.role == DocumentRole.ENCLOSURE
+    # Batch AI's OPPOSING must override METADATA's incorrect COURT.
+    assert party_filing.originator_type == OriginatorType.OPPOSING
+    assert party_filing.attributed_originator == "Yingying Liu"
+
+
+@pytest.mark.unit
+def test_completion_sweep_sets_attributed_originator_from_sender(
+    db_session, sample_case
+):
+    """Fix 2b: when the completion sweep claims an unclaimed doc as an enclosure
+    (doc wasn't in any AI bundle), it must fill attributed_originator from the
+    doc's sender field if not already set."""
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    from app.models.database import Proceeding
+
+    proceeding = Proceeding(
+        case_id=sample_case.id,
+        court_level="ag",
+        court_name="Amtsgericht Ingolstadt",
+    )
+    db_session.add(proceeding)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben",
+        content="Das Gericht übersendet...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        court_relay=True,
+        proceeding_id=proceeding.id,
+    )
+    # Not in any bundle — will be picked up by completion sweep.
+    unclaimed = Document(
+        title="Antrag",
+        content="Im Namen meiner Mandantin...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        attributed_originator=None,
+        sender="Yingying Liu",
+        proceeding_id=proceeding.id,
+    )
+    db_session.add(cover)
+    db_session.add(unclaimed)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(unclaimed)
+    db_session.refresh(batch)
+
+    # AI produced a bundle with only the cover (enclosed is empty) —
+    # unclaimed doc is not in any bundle.
+    result = {
+        "bundles": [
+            {
+                "cover_letter_doc_id": cover.id,
+                "enclosed": [],
+            }
+        ],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, unclaimed], result, db_session)
+
+    db_session.expire_all()
+    unclaimed = db_session.get(Document, unclaimed.id)
+
+    # Completion sweep wired it as an enclosure.
+    assert unclaimed.role == DocumentRole.ENCLOSURE
+    assert unclaimed.parent_id == cover.id
+    # attributed_originator must be propagated from sender.
+    assert unclaimed.attributed_originator == "Yingying Liu"

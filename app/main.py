@@ -278,6 +278,7 @@ async def lifespan(app: FastAPI):
     # Reset any pipeline stages that were left in RUNNING state by a prior crash.
     from app.services.pipeline_status import (
         recover_orphaned_running_stages,
+        recover_placeholder_summary_docs,
         recover_stranded_gate_skipped,
         recover_stuck_pending_dispatches,
     )
@@ -300,6 +301,15 @@ async def lifespan(app: FastAPI):
     if gate_stats.get("docs_recovered"):
         logging.getLogger(__name__).warning(
             "Pipeline recovery on startup (gate-skipped stranded): %s", gate_stats
+        )
+
+    # Re-enrich docs whose ai_summary was stored as all-placeholder "..."
+    # JSON by the old enricher (before placeholder validation was added).
+    with SessionLocal() as placeholder_db:
+        placeholder_stats = recover_placeholder_summary_docs(placeholder_db)
+    if placeholder_stats.get("docs_recovered"):
+        logging.getLogger(__name__).warning(
+            "Pipeline recovery on startup (placeholder summary): %s", placeholder_stats
         )
 
     # Re-dispatch docs whose process_document_task daemon thread was killed by

@@ -354,13 +354,24 @@ def _apply_batch_results(
                     child.role = DocumentRole.ENCLOSURE
                     child.parent_id = cover_id
                     _add_encloses_edge(db, existing_edges, cover_id, child.id)
-                    # Only fill originator_type when metadata had no opinion;
-                    # full-text metadata beats batch's title-only context.
-                    if child.originator_type in (None, OriginatorType.UNKNOWN):
-                        child.originator_type = (
-                            parse_originator_type(encl.get("originator_type"))
-                            or child.originator_type
+                    # Prefer batch AI's originator over METADATA's single-doc
+                    # guess when batch AI returns a clear party type. Batch
+                    # analysis sees all siblings so it's more reliable for
+                    # enclosures. METADATA can misfire COURT on party-authored
+                    # documents that have a court Rubrum header; allow the
+                    # batch AI to correct that.
+                    batch_orig = parse_originator_type(encl.get("originator_type"))
+                    if (
+                        batch_orig
+                        and batch_orig != OriginatorType.UNKNOWN
+                        and child.originator_type
+                        in (
+                            None,
+                            OriginatorType.UNKNOWN,
+                            OriginatorType.COURT,
                         )
+                    ):
+                        child.originator_type = batch_orig
                     if not child.attributed_originator:
                         child.attributed_originator = encl.get("attributed_originator")
     else:
@@ -411,11 +422,18 @@ def _apply_batch_results(
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
                 _add_encloses_edge(db, existing_edges, cover_letter_doc_id, child.id)
-                if child.originator_type in (None, OriginatorType.UNKNOWN):
-                    child.originator_type = (
-                        parse_originator_type(encl.get("originator_type"))
-                        or child.originator_type
+                batch_orig = parse_originator_type(encl.get("originator_type"))
+                if (
+                    batch_orig
+                    and batch_orig != OriginatorType.UNKNOWN
+                    and child.originator_type
+                    in (
+                        None,
+                        OriginatorType.UNKNOWN,
+                        OriginatorType.COURT,
                     )
+                ):
+                    child.originator_type = batch_orig
                 if not child.attributed_originator:
                     child.attributed_originator = encl.get("attributed_originator")
 
@@ -471,6 +489,8 @@ def _apply_batch_results(
                 d.role = DocumentRole.ENCLOSURE
                 d.parent_id = relay.id
                 claimed_ids.add(d.id)
+                if not d.attributed_originator and d.sender:
+                    d.attributed_originator = d.sender
 
     # Proceeding-grouping fallback: AI returned no bundles AND single-relay
     # didn't apply. Pick the cover-letter candidate the same way analyze()
@@ -504,6 +524,8 @@ def _apply_batch_results(
                     d.role = DocumentRole.ENCLOSURE
                     d.parent_id = candidate.id
                     claimed_ids.add(d.id)
+                    if not d.attributed_originator and d.sender:
+                        d.attributed_originator = d.sender
                 logger.info(
                     "Batch #%d: AI bundles empty — applied proceeding-grouping "
                     "fallback (cover=%d, %d enclosure(s) sharing proceeding_id=%s).",
@@ -546,6 +568,12 @@ def _apply_batch_results(
             d.role = DocumentRole.ENCLOSURE
             d.parent_id = cover.id
             claimed_ids.add(d.id)
+            # Propagate attributed_originator from sender when the completion
+            # sweep claims a doc that wasn't in any AI-produced bundle (the
+            # bundle path sets it via encl.get("attributed_originator"), but
+            # the sweep has no bundle data — sender is the best available signal).
+            if not d.attributed_originator and d.sender:
+                d.attributed_originator = d.sender
             swept += 1
         if swept:
             logger.info(

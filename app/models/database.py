@@ -640,6 +640,11 @@ class ActionItem(Base):
     )
     location = Column(String, nullable=True)  # for court_date entries
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    # Tombstone flag — True when this item was replaced by a later reschedule
+    # (Terminsverlegung / Umladung). DISMISSED status removes it from default
+    # UI view; superseded=True guards against re-insertion by older docs that
+    # enrich after the rescheduling notice.
+    superseded = Column(Boolean, nullable=False, default=False)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")

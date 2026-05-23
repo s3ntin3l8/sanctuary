@@ -993,6 +993,70 @@ def recover_stranded_gate_skipped(db: Session) -> dict:
     return {"docs_recovered": len(recovered), "doc_ids": recovered}
 
 
+def recover_placeholder_summary_docs(db: Session) -> dict:
+    """Reset and re-enrich docs whose ai_summary is the all-placeholder JSON.
+
+    When the AI returns {"legal_significance":"...","required_action":"...",
+    "financial_impact":"..."} the enricher now leaves ai_summary=NULL.  But
+    docs enriched before that fix landed may have the placeholder string stored.
+    Find those docs, reset their ENRICH stage to PENDING, and dispatch so they
+    get real summaries on the next run.
+
+    Called once at startup alongside recover_stranded_gate_skipped.
+    Returns {"docs_recovered": N, "doc_ids": [...]}.
+    """
+    from app.tasks.dispatch import dispatch_task
+
+    # The all-placeholder JSON string the old enricher stored verbatim.
+    placeholder_summary = '{"legal_significance": "...", "required_action": "...", "financial_impact": "..."}'
+
+    rows = db.execute(
+        text(
+            """
+            SELECT d.id
+            FROM documents d
+            JOIN document_pipeline_stages dps ON dps.document_id = d.id
+            WHERE d.ai_summary = :placeholder
+              AND dps.stage = 'enrich'
+              AND dps.status = 'completed'
+            """
+        ),
+        {"placeholder": placeholder_summary},
+    ).fetchall()
+
+    recovered: list[int] = []
+    for (doc_id,) in rows:
+        _update_stage(
+            doc_id,
+            PipelineStage.ENRICH,
+            db,
+            status=StageStatus.PENDING,
+            extra_sets={
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "reason": None,
+                "attempt": None,
+                "max_attempts": None,
+                "next_at": None,
+            },
+            commit=True,
+        )
+        from app.tasks.enrich_document import enrich_document_task
+
+        if claim_stage_for_dispatch(doc_id, PipelineStage.ENRICH, db):
+            dispatch_task(enrich_document_task, doc_id)
+            recovered.append(doc_id)
+
+    if recovered:
+        logger.info(
+            "recover_placeholder_summary_docs: reset and redispatched %d doc(s): %s",
+            len(recovered),
+            recovered,
+        )
+    return {"docs_recovered": len(recovered), "doc_ids": recovered}
+
+
 def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:
     """Re-dispatch docs whose pipeline got stalled mid-cascade.
 

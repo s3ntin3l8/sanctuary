@@ -149,7 +149,7 @@ Normalization & Ambiguity:
 - Treat minor variations in `az_court` and `internal_id` as IDENTICAL (e.g., "003" vs "3", "-" vs "/").
 - Reversed party order between Email and Rubrum is common; prioritize the **Document Rubrum** and do NOT flag it as a contradiction.
 - `sender` must always reflect the actual letterhead organization (who physically sent or issued the document). Never replace the sender with a party name.
-- `originator` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage.
+- `originator` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage. If the letterhead identifies a named private individual or law firm as the sender — not a court institution — `originator` must be `opposing` or `own`, never `court`. Documents authored by parties that carry a court Rubrum (Aktenzeichen, docket reference) at the top are still party-authored; the Rubrum is routing context, not authorship.
 
 Aktenzeichen Suffixes:
 - Preserve critical German suffixes (e.g., 'e' for electronic, 'eA' for expedited, 'B' for Beschwerde). Do NOT trim them to fit a generic digits-only pattern.

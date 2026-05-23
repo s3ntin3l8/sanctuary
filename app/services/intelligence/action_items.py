@@ -37,6 +37,13 @@ def create_from_payload(
     hearing dates from Sitzungsprotokolle / Terminsprotokolle as if they were
     upcoming deadlines.
 
+    Supersession (Terminsverlegung / Umladung): when an action carries
+    supersedes_date, existing items at that date are marked DISMISSED +
+    superseded=True (tombstoned) instead of being deleted. The tombstone blocks
+    any later doc from re-inserting the stale date, regardless of processing
+    order. This fixes the race where an older scheduling notice enriches after
+    the rescheduling notice has already established the supersession.
+
     Returns the count of rows created.
     """
     if not case_id:
@@ -99,25 +106,59 @@ def create_from_payload(
         except (ValueError, TypeError):
             supersedes_date = None
         if supersedes_date:
-            # Match by date alone — the AI may classify the same real-world
-            # event with different action_types across documents (a hearing
-            # showing up as "court_date" in the rescheduling notice but
-            # "deadline" in the original Ladung). The supersedes contract is
-            # "the old date is void," so any action on that date for this
-            # case is invalidated.
-            deleted = (
+            # Tombstone any item at the superseded date: mark DISMISSED +
+            # superseded=True. Match by date alone — the AI may classify the
+            # same real-world hearing with different action_types across docs
+            # (a hearing showing up as "court_date" in the rescheduling notice
+            # but "deadline" in the original Ladung). The tombstone persists so
+            # a later-processing older doc can't re-insert the stale date.
+            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+            updated = (
                 db.query(ActionItem)
                 .filter(
                     ActionItem.case_id == case_id,
                     ActionItem.due_date == supersedes_date,
                 )
-                .delete(synchronize_session=False)
+                .update(
+                    {"status": ActionItemStatus.DISMISSED, "superseded": True},
+                    synchronize_session=False,
+                )
             )
-            if deleted:
+            if updated:
                 logger.info(
-                    "ActionItem: removed %d superseded item(s) for case=%s "
-                    "date=%s (replaced by %s)",
-                    deleted,
+                    "ActionItem: tombstoned %d item(s) for case=%s "
+                    "date=%s (superseded by %s)",
+                    updated,
+                    case_id,
+                    supersedes_date.date(),
+                    due_date.date(),
+                )
+            else:
+                # No existing item at the superseded date — insert a sentinel
+                # tombstone row so the guard fires even when an older doc
+                # enriches later (reverse-processing-order case). on_conflict
+                # is a no-op if a tombstone with the same key already exists.
+                sentinel_stmt = (
+                    sqlite_insert(ActionItem.__table__)
+                    .values(
+                        case_id=case_id,
+                        source_document_id=None,
+                        title=f"[Superseded {supersedes_date.date()}]",
+                        due_date=supersedes_date,
+                        action_type=ActionItemType.DEADLINE,
+                        status=ActionItemStatus.DISMISSED,
+                        superseded=True,
+                        ingest_date=datetime.now(UTC),
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["case_id", "due_date", "action_type"]
+                    )
+                )
+                db.execute(sentinel_stmt)
+                logger.info(
+                    "ActionItem: inserted sentinel tombstone for case=%s "
+                    "date=%s (superseded by %s — no existing item)",
                     case_id,
                     supersedes_date.date(),
                     due_date.date(),
@@ -127,7 +168,33 @@ def create_from_payload(
         key = (due_date.date(), raw_type)
         if key in existing_keys:
             continue
+
+        # Tombstone guard: if any item at this date was previously superseded,
+        # a rescheduling notice established it as void — don't re-insert.
+        if (
+            db.query(ActionItem)
+            .filter(
+                ActionItem.case_id == case_id,
+                ActionItem.due_date == due_date,
+                ActionItem.superseded.is_(True),
+            )
+            .first()
+        ):
+            logger.debug(
+                "ActionItem: skipping %s for case=%s — tombstone exists for date=%s",
+                raw_type,
+                case_id,
+                due_date.date(),
+            )
+            continue
+
         existing_keys.add(key)
+
+        # Reject placeholder descriptions the AI occasionally emits.
+        desc = action.get("description")
+        _PLACEHOLDER_DESCS = {"...", "…", "TBD", "N/A", "n/a"}
+        if desc and desc.strip() in _PLACEHOLDER_DESCS:
+            desc = None
 
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -138,7 +205,7 @@ def create_from_payload(
                 proceeding_id=proceeding_id,
                 source_document_id=source_doc_id,
                 title=action.get("title", "Extracted action item")[:255],
-                description=action.get("description"),
+                description=desc,
                 due_date=due_date,
                 action_type=ActionItemType(raw_type),
                 status=ActionItemStatus.OPEN,

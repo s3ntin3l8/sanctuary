@@ -2685,12 +2685,6 @@
   .bg-orange-500 {
     background-color: var(--color-orange-500);
   }
-  .bg-orange-500\/15 {
-    background-color: color-mix(in srgb, oklch(70.5% 0.213 47.604) 15%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      background-color: color-mix(in oklab, var(--color-orange-500) 15%, transparent);
-    }
-  }
   .bg-originator-court {
     background-color: var(--color-originator-court);
   }
@@ -3386,9 +3380,6 @@
   }
   .pt-1 {
     padding-top: calc(var(--spacing) * 1);
-  }
-  .pt-1\.5 {
-    padding-top: calc(var(--spacing) * 1.5);
   }
   .pt-2 {
     padding-top: calc(var(--spacing) * 2);
