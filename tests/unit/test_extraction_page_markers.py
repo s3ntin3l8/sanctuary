@@ -3,12 +3,27 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.ingestion.converters import (
+    _collect_pictures,
     _convert_in_subprocess,
     _extract_pdf_text_layer,
     _ocr_with_rotation_correction,
     _run_conversion,
+    _substitute_picture_placeholders,
     is_valid_docling_output,
 )
+
+
+def _fake_picture(page_no: int, left=0.0, top=100.0, right=100.0, bottom=0.0):
+    """Build a MagicMock that mimics a docling PictureItem with one provenance entry."""
+    prov = MagicMock()
+    prov.page_no = page_no
+    prov.bbox.l = left
+    prov.bbox.t = top
+    prov.bbox.r = right
+    prov.bbox.b = bottom
+    pic = MagicMock()
+    pic.prov = [prov]
+    return pic
 
 
 @pytest.mark.unit
@@ -236,6 +251,165 @@ def test_rotation_corrected_ocr_sets_metadata():
     assert call_kwargs.kwargs.get("rotation") == 90 or (
         len(call_kwargs.args) >= 2 and call_kwargs.args[1] == 90
     )
+
+
+@pytest.mark.unit
+def test_collect_pictures_groups_by_page_in_order():
+    doc = MagicMock()
+    p1 = _fake_picture(1)
+    p2a = _fake_picture(2)
+    p2b = _fake_picture(2)
+    doc.pictures = [p1, p2a, p2b]
+    by_page = _collect_pictures(doc)
+    assert list(by_page.keys()) == [1, 2]
+    assert by_page[1] == [p1]
+    assert by_page[2] == [p2a, p2b]
+
+
+@pytest.mark.unit
+def test_collect_pictures_skips_pictures_without_provenance():
+    doc = MagicMock()
+    good = _fake_picture(1)
+    bad = MagicMock()
+    bad.prov = []
+    doc.pictures = [good, bad]
+    by_page = _collect_pictures(doc)
+    assert list(by_page.keys()) == [1]
+    assert by_page[1] == [good]
+
+
+@pytest.mark.unit
+def test_substitute_placeholders_replaces_in_reading_order():
+    md = "Before\n\n<!-- image -->\n\nMiddle\n\n<!-- image -->\n\nAfter"
+    result = _substitute_picture_placeholders(md, ["FIRST", "SECOND"])
+    assert "<!-- image -->" not in result
+    assert result.index("FIRST") < result.index("SECOND")
+    assert result.index("Before") < result.index("FIRST") < result.index("Middle")
+    assert result.index("Middle") < result.index("SECOND") < result.index("After")
+
+
+@pytest.mark.unit
+def test_substitute_keeps_placeholder_when_text_empty():
+    md = "<!-- image -->"
+    result = _substitute_picture_placeholders(md, [""])
+    assert result == "<!-- image -->"
+
+
+@pytest.mark.unit
+def test_substitute_count_mismatch_appends_at_tail(caplog):
+    import logging
+
+    md = "Body\n\n<!-- image -->"  # only 1 placeholder, 2 recovered texts
+    with caplog.at_level(logging.WARNING, logger="app.services.ingestion.converters"):
+        result = _substitute_picture_placeholders(md, ["RECOVERED-A", "RECOVERED-B"])
+    assert "RECOVERED-A" in result
+    assert "RECOVERED-B" in result
+    assert any("placeholder count mismatch" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
+def test_run_conversion_recovers_picture_text_from_pdf_layer():
+    """Picture region with embedded text gets that text substituted at placeholder site."""
+    mock_conv = MagicMock()
+    mock_res = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.pages = [MagicMock()]
+    mock_doc.pictures = [_fake_picture(1)]
+    mock_doc.export_to_markdown.return_value = "Judges named above\n\n<!-- image -->"
+    mock_res.document = mock_doc
+    mock_res.input.format.value = "PDF"
+    mock_conv.convert.return_value = mock_res
+
+    with patch(
+        "app.services.ingestion.converters._recover_picture_text"
+    ) as mock_recover:
+        # Map by id(picture) — match what _recover_picture_text returns
+        mock_recover.return_value = {id(mock_doc.pictures[0]): "Für die Richtigkeit"}
+        md, _chunks, meta = _run_conversion(mock_conv, "stamp.pdf")
+
+    assert "<!-- image -->" not in md
+    assert "Für die Richtigkeit" in md
+    # Position check: appears where the placeholder was, after judges
+    assert md.index("Judges named above") < md.index("Für die Richtigkeit")
+    assert meta.get("picture_text_recovered") == 1
+
+
+@pytest.mark.unit
+def test_run_conversion_leaves_placeholder_when_recovery_empty():
+    """Picture with no text layer and no OCR result keeps its <!-- image --> placeholder."""
+    mock_conv = MagicMock()
+    mock_res = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.pages = [MagicMock()]
+    mock_doc.pictures = [_fake_picture(1)]
+    mock_doc.export_to_markdown.return_value = "Body\n\n<!-- image -->"
+    mock_res.document = mock_doc
+    mock_res.input.format.value = "PDF"
+    mock_conv.convert.return_value = mock_res
+
+    with patch(
+        "app.services.ingestion.converters._recover_picture_text"
+    ) as mock_recover:
+        mock_recover.return_value = {id(mock_doc.pictures[0]): ""}
+        md, _chunks, meta = _run_conversion(mock_conv, "decorative.pdf")
+
+    assert "<!-- image -->" in md
+    assert "picture_text_recovered" not in meta
+
+
+@pytest.mark.unit
+def test_run_conversion_skips_picture_recovery_for_non_pdf():
+    """Non-PDF input never invokes pypdfium2 picture recovery."""
+    mock_conv = MagicMock()
+    mock_res = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.pages = [MagicMock()]
+    mock_doc.pictures = [_fake_picture(1)]
+    mock_doc.export_to_markdown.return_value = "Body\n\n<!-- image -->"
+    mock_res.document = mock_doc
+    mock_res.input.format.value = "DOCX"
+    mock_conv.convert.return_value = mock_res
+
+    with patch(
+        "app.services.ingestion.converters._recover_picture_text"
+    ) as mock_recover:
+        md, _chunks, meta = _run_conversion(mock_conv, "letter.docx")
+
+    mock_recover.assert_not_called()
+    assert "<!-- image -->" in md
+    assert "picture_text_recovered" not in meta
+
+
+@pytest.mark.unit
+def test_recover_picture_text_uses_text_layer_first_then_ocr():
+    """When the PDF text layer has content under the bbox, OCR is not invoked.
+    When it doesn't, OCR fallback runs."""
+    from app.services.ingestion.converters import _recover_picture_text
+
+    page1_pic = _fake_picture(1)
+    page2_pic = _fake_picture(2)
+    pictures_by_page = {1: [page1_pic], 2: [page2_pic]}
+
+    mock_page1 = MagicMock()
+    mock_page2 = MagicMock()
+    mock_pdf = MagicMock()
+    mock_pdf.__getitem__.side_effect = lambda i: [mock_page1, mock_page2][i]
+
+    with (
+        patch("pypdfium2.PdfDocument", return_value=mock_pdf),
+        patch("app.services.ingestion.converters._pdf_text_in_bbox") as mock_text,
+        patch("app.services.ingestion.converters._ocr_picture_region") as mock_ocr,
+    ):
+        # Page 1 has text under bbox; page 2 does not
+        mock_text.side_effect = ["Page 1 stamp text", ""]
+        mock_ocr.return_value = "Page 2 OCR text"
+
+        result = _recover_picture_text("any.pdf", pictures_by_page)
+
+    assert result[id(page1_pic)] == "Page 1 stamp text"
+    assert result[id(page2_pic)] == "Page 2 OCR text"
+    # OCR called exactly once — only for the picture with no text layer
+    assert mock_ocr.call_count == 1
 
 
 @pytest.mark.unit

@@ -267,6 +267,161 @@ def _is_image_only_output(content: str | None) -> bool:
     return has_placeholders and word_chars < 30
 
 
+_IMAGE_PLACEHOLDER = "<!-- image -->"
+_IMAGE_PLACEHOLDER_RE = re.compile(re.escape(_IMAGE_PLACEHOLDER))
+
+
+def _collect_pictures(document) -> dict[int, list]:
+    """Group docling PictureItem objects by 1-indexed page number, in reading order.
+
+    Docling's `pictures` list is already in document reading order; we just bucket
+    by page. Pictures without provenance are skipped.
+    """
+    by_page: dict[int, list] = {}
+    pics = getattr(document, "pictures", None) or []
+    for pic in pics:
+        prov = getattr(pic, "prov", None)
+        if not prov:
+            continue
+        page_no = getattr(prov[0], "page_no", None)
+        if not page_no:
+            continue
+        by_page.setdefault(page_no, []).append(pic)
+    return by_page
+
+
+def _pdf_text_in_bbox(textpage, bbox) -> str:
+    """Read text from a docling BoundingBox via pypdfium2.
+
+    Docling bbox is bottom-left origin in PDF points (l/t/r/b where t > b).
+    pypdfium2 get_text_bounded uses the same convention: (left, bottom, right, top).
+    """
+    try:
+        text = textpage.get_text_bounded(bbox.l, bbox.b, bbox.r, bbox.t)
+    except Exception as e:
+        logger.debug("get_text_bounded failed: %s", e)
+        return ""
+    return (text or "").strip()
+
+
+def _ocr_picture_region(page, bbox) -> str:
+    """OCR the rendered picture region via the image-input docling pipeline.
+
+    Used when the PDF text layer has nothing under the picture (true image-only
+    regions like signature scans or stamped seals with image-only glyphs).
+    """
+    import tempfile
+    from pathlib import Path
+
+    try:
+        page_w, page_h = page.get_size()
+        bitmap = page.render(scale=300 / 72)
+        img = bitmap.to_pil()
+        img_w, img_h = img.size
+        sx, sy = img_w / page_w, img_h / page_h
+        # Convert bottom-left PDF coords -> top-left pixel coords for PIL crop
+        x0 = max(0, int(bbox.l * sx))
+        y0 = max(0, int((page_h - bbox.t) * sy))
+        x1 = min(img_w, int(bbox.r * sx))
+        y1 = min(img_h, int((page_h - bbox.b) * sy))
+        if x1 - x0 < 10 or y1 - y0 < 10:
+            return ""
+        cropped = img.crop((x0, y0, x1, y1))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            img_path = str(Path(tmpdir) / "pic.png")
+            cropped.save(img_path)
+            md, _, _ = _run_conversion(_get_image_ocr_converter(), img_path)
+        cleaned = _PLACEHOLDER_RE.sub("", md).strip()
+        # Reject results that are just noise or another image placeholder
+        if len(re.sub(r"\s+", "", cleaned)) < 3:
+            return ""
+        return cleaned
+    except Exception as e:
+        logger.debug("OCR of picture region failed: %s", e)
+        return ""
+
+
+def _recover_picture_text(
+    file_path: str, pictures_by_page: dict[int, list]
+) -> dict[int, str]:
+    """For each picture, recover text from the PDF text layer or via region OCR.
+
+    Returns a mapping from id(picture) -> recovered text (empty string if neither
+    source produced anything usable).
+    """
+    if not pictures_by_page:
+        return {}
+
+    import pypdfium2 as pdfium
+
+    out: dict[int, str] = {}
+    try:
+        pdf = pdfium.PdfDocument(file_path)
+    except Exception as e:
+        logger.debug("Failed to open PDF for picture recovery: %s", e)
+        return {id(p): "" for pics in pictures_by_page.values() for p in pics}
+
+    try:
+        for page_no, pics in pictures_by_page.items():
+            try:
+                page = pdf[page_no - 1]
+            except Exception:
+                for p in pics:
+                    out[id(p)] = ""
+                continue
+            textpage = None
+            try:
+                textpage = page.get_textpage()
+                for pic in pics:
+                    bbox = pic.prov[0].bbox
+                    text = _pdf_text_in_bbox(textpage, bbox)
+                    if not text:
+                        text = _ocr_picture_region(page, bbox)
+                    out[id(pic)] = text
+            finally:
+                if textpage is not None:
+                    textpage.close()
+                page.close()
+    finally:
+        pdf.close()
+    return out
+
+
+def _substitute_picture_placeholders(page_md: str, picture_texts: list[str]) -> str:
+    """Replace each `<!-- image -->` placeholder in reading order with recovered text.
+
+    Empty entries keep the placeholder in place. If the placeholder count doesn't
+    match the picture count for this page (shouldn't normally happen — docling
+    emits one placeholder per picture in reading order), append the non-empty
+    recovered texts at the end of the page as a safety net so no content is lost.
+    """
+    placeholder_count = page_md.count(_IMAGE_PLACEHOLDER)
+    if placeholder_count == 0 or not picture_texts:
+        return page_md
+
+    if placeholder_count != len(picture_texts):
+        logger.warning(
+            "Picture placeholder count mismatch (md=%d, pictures=%d) — appending recovered text at page tail",
+            placeholder_count,
+            len(picture_texts),
+        )
+        extras = [t for t in picture_texts if t]
+        if not extras:
+            return page_md
+        return page_md.rstrip() + "\n\n" + "\n\n".join(extras)
+
+    iterator = iter(picture_texts)
+
+    def _replace(_match):
+        text = next(iterator)
+        if not text:
+            return _IMAGE_PLACEHOLDER
+        return f"\n\n{text}\n\n"
+
+    return _IMAGE_PLACEHOLDER_RE.sub(_replace, page_md)
+
+
 def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     """Run one Docling conversion pass; return (markdown, chunks, metadata)."""
     ext = os.path.splitext(file_path)[1].lower()
@@ -300,13 +455,30 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     except Exception as e:
         logger.warning("Chunking failed for %s: %s", file_path, e)
 
+    pictures_by_page = _collect_pictures(result.document)
+
     # Export with page break placeholders so we can inject explicit headers
     page_break = "<!-- PAGE_BREAK -->"
     markdown = result.document.export_to_markdown(page_break_placeholder=page_break)
+    parts = markdown.split(page_break)
+
+    recovered = 0
+    if ext == ".pdf" and pictures_by_page:
+        picture_texts = _recover_picture_text(file_path, pictures_by_page)
+        recovered = sum(1 for v in picture_texts.values() if v)
+        if recovered:
+            new_parts = []
+            for i, part in enumerate(parts):
+                pics = pictures_by_page.get(i + 1, [])
+                if pics and _IMAGE_PLACEHOLDER in part:
+                    texts = [picture_texts.get(id(p), "") for p in pics]
+                    part = _substitute_picture_placeholders(part, texts)
+                new_parts.append(part)
+            parts = new_parts
+            metadata["picture_text_recovered"] = recovered
 
     # Post-process to add --- PAGE {N} --- markers. Docling doesn't support
     # dynamic placeholders like {page_no} yet.
-    parts = markdown.split(page_break)
     processed_parts = []
     for i, part in enumerate(parts):
         header = f"--- PAGE {i + 1} ---"
