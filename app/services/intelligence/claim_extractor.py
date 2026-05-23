@@ -104,7 +104,30 @@ def _apply_claims(
 ) -> None:
     claim_repo = ClaimRepository(db)
     evidence_repo = ClaimEvidenceRepository(db)
-    valid_claim_ids = {c.id for c in existing_claims}
+    snapshot_ids = {c.id for c in existing_claims}
+
+    # Re-validate against the current DB state.  Between Phase 1 (snapshot)
+    # and Phase 3 (write) the AI call takes several minutes.  Concurrent
+    # workers running Phase 1 for *other* documents delete their own stale
+    # ASSERTED claims during that window, which can remove IDs that are in
+    # our snapshot.  Inserting a ClaimEvidenceProposal whose target_claim_id
+    # no longer exists raises a FK constraint.  One cheap SELECT prevents that.
+    if snapshot_ids:
+        live_ids: set[int] = {
+            r[0] for r in db.query(Claim.id).filter(Claim.id.in_(snapshot_ids)).all()
+        }
+        dropped = snapshot_ids - live_ids
+        if dropped:
+            logger.info(
+                "Doc %d: %d candidate claim(s) deleted between Phase 1 and Phase 3 "
+                "(stale-cleanup race) — dropping evidence links for IDs %s",
+                doc.id,
+                len(dropped),
+                sorted(dropped),
+            )
+    else:
+        live_ids = set()
+    valid_claim_ids = live_ids
 
     # Build a set of normalized existing claim texts for dedupe
     seen_texts: set[str] = {

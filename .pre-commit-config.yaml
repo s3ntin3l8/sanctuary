@@ -22,7 +22,7 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [pre-push]
     -   id: integration-tests
         name: run integration tests
         entry: .venv/bin/python -m pytest -m integration
