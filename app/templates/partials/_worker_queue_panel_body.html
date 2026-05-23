@@ -80,7 +80,10 @@
             </div>
             <div class="ml-10 mt-1.5 border-l border-outline-variant/20 pl-2 flex flex-col gap-0.5">
                 {% for member in item.docs %}
-                <p class="text-[9px] text-on-surface-variant/70 line-clamp-1">{{ member.title or member.filename or ("Doc #" ~ member.id) }}</p>
+                <div class="flex items-center gap-1 min-w-0">
+                    <span class="shrink-0 inline-flex items-center px-1 rounded text-[8px] font-bold bg-surface-container-high text-on-surface-variant/70">D#{{ member.id }}</span>
+                    <span class="text-[9px] text-on-surface-variant/70 truncate">{{ member.title or member.filename or ("Doc #" ~ member.id) }}</span>
+                </div>
                 {% endfor %}
             </div>
         </div>
@@ -95,7 +98,13 @@
                 </span>
             </div>
             <div class="min-w-0 flex-1">
-                <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ item.doc.title or item.doc.filename or ("Doc #" ~ item.doc.id) }}</p>
+                <div class="flex items-center gap-1 min-w-0">
+                    {% if item.doc.ingest_batch_id %}
+                    <span class="shrink-0 inline-flex items-center px-1 rounded text-[8px] font-bold bg-surface-container-high text-on-surface-variant/70">B#{{ item.doc.ingest_batch_id }}</span>
+                    {% endif %}
+                    <span class="shrink-0 inline-flex items-center px-1 rounded text-[8px] font-bold bg-surface-container-high text-on-surface-variant/70">D#{{ item.doc.id }}</span>
+                    <span class="text-[10px] font-semibold text-on-surface truncate">{{ item.doc.title or item.doc.filename or ("Doc #" ~ item.doc.id) }}</span>
+                </div>
                 {% if item.stage %}
                 <p class="text-[9px] text-on-surface-variant mt-0.5 font-mono uppercase tracking-wide">{{ item.stage | replace("_", " ") }}</p>
                 {% endif %}
@@ -136,7 +145,13 @@
                     <span class="material-symbols-outlined text-sm text-error">error_outline</span>
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="text-[10px] font-semibold text-on-surface line-clamp-1">{{ doc.title or doc.filename or ("Doc #" ~ doc.id) }}</p>
+                    <div class="flex items-center gap-1 min-w-0">
+                        {% if doc.ingest_batch_id %}
+                        <span class="shrink-0 inline-flex items-center px-1 rounded text-[8px] font-bold bg-surface-container-high text-on-surface-variant/70">B#{{ doc.ingest_batch_id }}</span>
+                        {% endif %}
+                        <span class="shrink-0 inline-flex items-center px-1 rounded text-[8px] font-bold bg-surface-container-high text-on-surface-variant/70">D#{{ doc.id }}</span>
+                        <span class="text-[10px] font-semibold text-on-surface truncate">{{ doc.title or doc.filename or ("Doc #" ~ doc.id) }}</span>
+                    </div>
                     {% set err = failed_doc_errors.get(doc.id, {}) %}
                     {% if err.stage %}
                     <p class="text-[9px] text-error/80 mt-0.5 font-mono uppercase tracking-wide line-clamp-1"

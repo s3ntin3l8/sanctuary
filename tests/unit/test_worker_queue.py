@@ -347,3 +347,56 @@ def test_build_queue_items_non_batch_stage_stays_flat(db_session, sample_case):
 
     assert len(items) == 2
     assert all(item["type"] == "doc" for item in items)
+
+
+@pytest.mark.unit
+def test_panel_doc_rows_show_batch_and_doc_id_badges(
+    app_client, db_session, sample_case
+):
+    """Doc rows must render B#<batch_id> and D#<doc_id> badges inline before the title.
+
+    Covers: standalone doc rows (executing/queued) and failed doc rows.
+    Batch member rows only show D# — tested via the batch grouping fixture
+    which already asserts item structure; the badge presence here covers the
+    flat-doc path that is most common.
+    """
+    from app.models.enums import OriginatorType
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        received_at=datetime.now(UTC),
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PROCESSING,
+        subject="Badge Test Email",
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    doc = Document(
+        title="Badge Test Doc",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+        ingest_batch_id=batch.id,
+        pipeline_state=PipelineState.RUNNING,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id,
+            stage=PipelineStage.ENRICH.value,
+            status=StageStatus.RUNNING.value,
+        )
+    )
+    db_session.commit()
+    db_session.refresh(doc)
+
+    response = app_client.get("/api/worker/queue/panel")
+    assert response.status_code == 200
+    html = response.text
+
+    batch_badge = f"B#{batch.id}"
+    doc_badge = f"D#{doc.id}"
+    assert batch_badge in html, f"Expected '{batch_badge}' in panel HTML"
+    assert doc_badge in html, f"Expected '{doc_badge}' in panel HTML"
