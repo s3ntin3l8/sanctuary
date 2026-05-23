@@ -832,21 +832,24 @@ def call_json_ai(
     # `content`, even with `enable_thinking=False` set. The grammar still
     # forced the right shape — only the channel is wrong. When we asked for
     # a schema and the response channel is empty but the reasoning channel
-    # looks like the JSON answer, promote it.
-    if (
-        schema is not None
-        and not full_response.strip()
-        and full_thinking
-        and "{" in full_thinking
-        and "}" in full_thinking
-    ):
-        logger.info(
-            "call %s: empty content but reasoning_content holds the schema-"
-            "constrained answer — promoting reasoning to response",
-            pass2_label,
-        )
-        full_response = full_thinking
-        full_thinking = ""
+    # contains JSON (possibly truncated by the watchdog), try to extract and
+    # promote it. parse_json_response handles mixed prose, markdown fences,
+    # and truncation repair — more robust than a bare substring check.
+    _pre_promotion_thinking_len = len(full_thinking)
+    if schema is not None and not full_response.strip() and full_thinking:
+        try:
+            _promoted = parse_json_response(full_thinking)
+            if _promoted:
+                full_response = json.dumps(_promoted)
+                full_thinking = ""
+                logger.info(
+                    "call %s: empty content but reasoning_content holds JSON"
+                    " — promoting extracted JSON to response (%d chars thinking)",
+                    pass2_label,
+                    _pre_promotion_thinking_len,
+                )
+        except Exception:
+            pass  # Promotion failed; fall through to error handling below
 
     if not full_response.strip():
         # Watchdog-drain short-circuit: when pass-2's thinking channel passed
@@ -858,7 +861,9 @@ def call_json_ai(
         # callers like batch_analyzer.analyze() already have their own
         # fallback path (e.g. a single retry with suppress_thinking from
         # the service layer, batch_analyzer.py:632–659).
-        watchdog_drained = len(full_thinking) > _THINK_WATCHDOG_CHARS
+        # Use _pre_promotion_thinking_len so the check is accurate even when
+        # promotion cleared full_thinking to "".
+        watchdog_drained = _pre_promotion_thinking_len > _THINK_WATCHDOG_CHARS
         # Single-pass: retry once with suppress_thinking=True if we haven't yet.
         # Two-pass: pass 2 already runs with suppress_thinking, so the same
         # escalation isn't available. Re-run the whole two-pass once for
@@ -889,14 +894,21 @@ def call_json_ai(
                 "skipping inner retry to avoid AI-call multiplier; outer "
                 "caller handles fallback",
                 pass2_label,
-                len(full_thinking),
+                _pre_promotion_thinking_len,
+            )
+            raise ValueError(
+                f"Thinking-loop trap for '{pass2_label}': model generated "
+                f"{_pre_promotion_thinking_len:,} chars of reasoning without "
+                f"producing a response (watchdog fired after "
+                f"{_THINK_WATCHDOG_SECS:.0f}s). Re-queue this document to "
+                f"retry enrichment. See {scope_file} for details."
             )
         refusal_hint = ""
         if full_thinking:
-            refusal_hint = f" (Thinking was present: {full_thinking[:100]}...)"
+            refusal_hint = f" (Thinking present: {full_thinking[:80]}...)"
         raise ValueError(
-            f"AI returned an empty response for '{pass2_label}'.{refusal_hint}"
-            f" See {scope_file} for details."
+            f"Empty AI response for '{pass2_label}'{refusal_hint}. "
+            f"See {scope_file} for details."
         )
 
     parsed = parse_json_response(full_response)

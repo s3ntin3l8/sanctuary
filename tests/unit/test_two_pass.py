@@ -495,7 +495,7 @@ def test_two_pass_watchdog_drain_short_circuits_retry(patched_provider):
         return ("", "x" * (_ai_call._THINK_WATCHDOG_CHARS + 1000))
 
     with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
-        with pytest.raises(ValueError, match="empty response"):
+        with pytest.raises(ValueError, match="Thinking-loop trap"):
             _ai_call.call_json_ai(
                 system_prompt="sys",
                 user_prompt="orig",
