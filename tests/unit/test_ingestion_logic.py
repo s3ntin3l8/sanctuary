@@ -9,6 +9,53 @@ from app.services.ingestion import (
     extract_sender,
     normalize_az_court,
 )
+from app.services.ingestion.service import _h1_looks_clean
+
+# ---------------------------------------------------------------------------
+# H1 OCR-garbage guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Antrag auf alleiniges Sorgerecht",
+        "Beschluss § 1671 BGB - Sorgerecht",
+        "Verfügung Terminsbestimmung Elterliche Sorge",
+        "33 SS von AG IN vom 05 08 2025 Ladung zum 15 09 2025",
+        "Ladung Erörterungstermin",
+        "Klageerwiderung Antragsgegnerin",
+    ],
+)
+def test_h1_looks_clean_accepts_legitimate_titles(title):
+    """Real document titles — including Aktenzeichen-heavy German legal
+    headings — must pass the OCR-garbage filter."""
+    assert _h1_looks_clean(title) is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "garbage",
+    [
+        # Real garbage observed on doc 98 in IB-33 (decorative stamp OCR'd
+        # by Tesseract into apostrophes/backslashes).
+        "--fr'lt\"l\\ 'l- 4.- .//'tj<'-\\ z't/",
+        # Other shapes of OCR garbage seen in samples.
+        "''/\\\\``",
+        "..//",
+        "<<<>>>",
+        # Empty / too-short strings are also rejected.
+        "",
+        "a",
+    ],
+)
+def test_h1_looks_clean_rejects_ocr_garbage(garbage):
+    """OCR mis-recognition of stylized PDF text produces strings dominated
+    by apostrophes, backslashes, slashes, etc. with very few alphabetic
+    characters. The 35% alpha-ratio threshold catches them while leaving
+    real titles above the line."""
+    assert _h1_looks_clean(garbage) is False
 
 
 @pytest.mark.unit

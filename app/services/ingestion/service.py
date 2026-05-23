@@ -34,6 +34,30 @@ from app.services.ingestion.extractors import (
     extract_sender,
 )
 
+_H1_MIN_ALPHA_RATIO = 0.35
+
+
+def _h1_looks_clean(text: str) -> bool:
+    """Heuristic: reject H1 candidates that look like OCR garbage.
+
+    Docling sometimes emits stylized PDF text (stamps, decorative
+    letterheads, signatures) as H1 markdown headings. Tesseract OCR on
+    those produces strings heavy in apostrophes, backslashes, angle
+    brackets, etc., with very few alphabetic characters — e.g. doc 98's
+    `--fr'lt"l\\ 'l- 4.- .//'tj<'-\\ z't/` at 29% alpha.
+
+    Threshold tuned against real samples: garbage clocks ~30% alpha;
+    even the most punctuation-heavy legit titles (Aktenzeichen + dates)
+    stay above 40%. 35% gives some margin without over-rejecting.
+
+    Rejected H1s fall through to extract_clean_title(filename, ""),
+    which produces a more useful placeholder until METADATA's AI pass
+    sets the real title."""
+    if not text or len(text) < 3:
+        return False
+    alpha = sum(1 for c in text if c.isalpha())
+    return alpha / len(text) >= _H1_MIN_ALPHA_RATIO
+
 
 class IngestionError(Exception):
     """Structured error for ingestion pipeline failures."""
@@ -303,8 +327,9 @@ def process_uploaded_document(doc: Document, db: Session):
     # Prefer H1 from content; fall back to filename-derived title only when no
     # title has been set yet (e.g. subject of an email body doc).
     h1 = re.search(r"^#\s+(.+)$", markdown_content or "", re.MULTILINE)
-    if h1 and len(h1.group(1).strip()) < 100:
-        doc.title = h1.group(1).strip()
+    h1_text = h1.group(1).strip() if h1 else ""
+    if h1_text and len(h1_text) < 100 and _h1_looks_clean(h1_text):
+        doc.title = h1_text
     elif not doc.title:
         doc.title = extract_clean_title(safe_filename, "")
     doc.meta = conversion_metadata
