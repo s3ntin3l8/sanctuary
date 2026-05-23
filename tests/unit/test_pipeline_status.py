@@ -807,15 +807,15 @@ def test_recover_stuck_pending_resumes_partial_pipeline(db_session, monkeypatch)
 
     result = recover_stuck_pending_dispatches(db_session)
 
-    # Recovery must dispatch process_document_task (METADATA's retry_task) so
-    # the task can resume from METADATA — it skips EXTRACT internally if done.
+    # Recovery must dispatch METADATA's retry_task (metadata_task on the ai
+    # queue) so the doc resumes from METADATA — EXTRACT already finished and
+    # the ingest-queue task only owns EXTRACT.
     assert result["docs_redispatched"] == 1
     assert result["doc_ids"] == [doc.id]
     assert len(captured) == 1
     task, args, _ = captured[0]
     assert args == (doc.id,)
-    # process_document_task is the retry_task for both EXTRACT and METADATA.
-    assert task.name == "app.tasks.document_processing.process_document_task"
+    assert task.name == "app.tasks.document_processing.metadata_task"
 
 
 @pytest.mark.unit

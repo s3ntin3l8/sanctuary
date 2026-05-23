@@ -60,16 +60,14 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
     errors, etc.) leave stages stuck in PENDING with no UI signal.
     Best-effort: if we can't map label→stage or extract a doc_id, just exit.
 
-    process_document_task is the retry_task for both EXTRACT and METADATA, so
-    we resolve the actual retried stage by inspecting the doc's first
-    non-terminal stage (matching the bundle retry endpoint's head logic).
+    Each PipelineStage now maps to exactly one retry_task, so label uniquely
+    identifies the failing stage.
     """
     try:
         from app.dependencies import get_db_session
         from app.models.database import Document
         from app.models.enums import StageStatus
         from app.services.pipeline_status import (
-            _STAGE_ORDER,
             STAGE_REGISTRY,
             mark_failed_with_cascade,
             stages_dict,
@@ -89,7 +87,13 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
         if not isinstance(doc_id, int):
             return
 
-        candidate_stages = [s.stage for s in candidates]
+        # Invariant: STAGE_REGISTRY assigns one retry_task per stage, so a
+        # doc-keyed dispatch label resolves to a single stage.
+        assert len(candidates) == 1, (
+            f"dispatch label {label!r} maps to {len(candidates)} stages; "
+            "STAGE_REGISTRY must keep retry_task unique per doc-keyed stage"
+        )
+        stage = candidates[0].stage
 
         db = get_db_session()
         try:
@@ -97,25 +101,6 @@ def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> Non
             if doc is None:
                 return
             stages = stages_dict(doc)
-            terminal = {
-                StageStatus.COMPLETED.value,
-                StageStatus.SKIPPED.value,
-            }
-
-            # Resolve the actual retried stage when retry_task is shared
-            # (process_document_task → EXTRACT or METADATA).
-            if len(candidate_stages) == 1:
-                stage = candidate_stages[0]
-            else:
-                stage = next(
-                    (
-                        s.stage
-                        for s in _STAGE_ORDER
-                        if s.stage in candidate_stages
-                        and stages.get(s.stage.value, {}).get("status") not in terminal
-                    ),
-                    candidate_stages[0],
-                )
 
             # If the task's own error handler already marked this stage failed,
             # leave its specific message alone — don't stomp it with a generic

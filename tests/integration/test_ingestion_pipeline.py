@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.database import Case, CaseStatus, Document
-from app.tasks.document_processing import process_document_task
+from app.tasks.document_processing import metadata_task, process_document_task
 
 client = TestClient(app)
 
@@ -54,6 +54,10 @@ def test_full_ingestion_pipeline(db_session, test_engine):
             "app.services.embeddings.generate_embedding",
             side_effect=mock_emb_async_impl,
         ),
+        # process_document_task now dispatches metadata_task on the ai queue
+        # instead of running METADATA inline. No-op the dispatch so we drive
+        # metadata_task ourselves below, keeping the test free of Redis.
+        patch("app.tasks.document_processing.metadata_task.delay"),
     ):
         # 3. Upload Document
         file_content = b"PDF dummy content"
@@ -70,8 +74,11 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         doc = db_session.query(Document).filter(Document.case_id == "ADV-123-K").first()
         assert doc is not None
 
-        # 5. Manually run the background task (to ensure it runs exactly as we expect)
+        # 5. Manually run the background tasks (to ensure they run exactly as we expect).
+        # Pipeline is now split: process_document_task → EXTRACT only,
+        # metadata_task → METADATA + downstream fan-out.
         process_document_task(doc.id)
+        metadata_task(doc.id)
 
         # 6. Verify Results
         db_session.refresh(doc)

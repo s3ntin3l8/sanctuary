@@ -9,9 +9,8 @@ from app.tasks.dispatch import _record_dispatch_failure
 
 
 @pytest.mark.unit
-def test_dispatch_failure_marks_metadata_stage_when_extract_completed():
-    """For process_document_task (ambiguous retry_task), the recorder picks
-    the first non-terminal stage of the doc. EXTRACT completed → METADATA."""
+def test_dispatch_failure_marks_metadata_stage_for_metadata_task():
+    """metadata_task failures map to METADATA."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
     fake_stages = {
@@ -26,7 +25,7 @@ def test_dispatch_failure_marks_metadata_stage_when_extract_completed():
         patch("app.services.pipeline_status.stages_dict", return_value=fake_stages),
     ):
         _record_dispatch_failure(
-            "app.tasks.document_processing.process_document_task",
+            "app.tasks.document_processing.metadata_task",
             (42,),
             RuntimeError("database is locked"),
         )
@@ -41,8 +40,8 @@ def test_dispatch_failure_marks_metadata_stage_when_extract_completed():
 
 
 @pytest.mark.unit
-def test_dispatch_failure_marks_extract_stage_when_extract_pending():
-    """When EXTRACT is the doc's first non-terminal stage, mark that failed."""
+def test_dispatch_failure_marks_extract_stage_for_process_document_task():
+    """process_document_task failures map to EXTRACT — it no longer runs METADATA."""
     fake_db = MagicMock()
     fake_doc = MagicMock()
     fake_stages = {

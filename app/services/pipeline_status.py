@@ -73,8 +73,10 @@ class StageSpec:
 
 
 # Real dispatch dependencies (from the per-task .delay() chains):
-#   process_document_task: EXTRACT → METADATA, then fans out to BATCH_ANALYSIS
-#     (gated on all batch siblings' METADATA done) AND EMBEDDINGS (parallel).
+#   process_document_task: EXTRACT only (ingest queue, concurrency=1), then
+#     dispatches metadata_task on the ai queue and returns.
+#   metadata_task: METADATA, then fans out to BATCH_ANALYSIS (gated on all
+#     batch siblings' METADATA done) AND EMBEDDINGS (parallel).
 #   analyze_batch_task: BATCH_ANALYSIS → ENRICH per doc.
 #   enrich_document_task: ENRICH → RELATIONSHIPS, ENTITIES (parallel siblings).
 #   detect_relationships_task: RELATIONSHIPS → CLAIMS.
@@ -111,7 +113,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
             PipelineStage.CLAIMS,
             PipelineStage.ENTITIES,
         ),
-        retry_task="app.tasks.document_processing.process_document_task",
+        retry_task="app.tasks.document_processing.metadata_task",
     ),
     PipelineStage.EMBEDDINGS: StageSpec(
         stage=PipelineStage.EMBEDDINGS,
@@ -821,7 +823,7 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
         if running_docs == 0:
             # Guard: if batch_analysis already finished for this batch, do NOT
             # clear the claim — that re-opens the CAS and lets stale
-            # process_document_task replays re-fire the analyzer (ib-0001 loop).
+            # metadata_task replays re-fire the analyzer (ib-0001 loop).
             already_terminal = db.execute(
                 text("""
                     SELECT 1 FROM document_pipeline_stages dps
@@ -853,7 +855,7 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
     were never queued.
 
     Closes the gap left by per-stage doc retries: those paths don't run
-    process_document_task, so they never call claim_batch_for_analysis().
+    metadata_task, so they never call claim_batch_for_analysis().
     The result is a batch with analysis_queued_at IS NULL even though every
     doc has completed extract + metadata. This sweep finds candidates and
     delegates to claim_batch_for_analysis() — its atomic UPDATE re-checks

@@ -22,7 +22,13 @@ _TRANSIENT_AI_ERRORS = (
 
 @celery_app.task(bind=True, max_retries=3)
 def process_document_task(self, doc_id: int):
-    """Process a document: Docling conversion, then trigger Phase 4 AI pipeline."""
+    """EXTRACT-only: run Docling conversion, then hand off METADATA to the ai queue.
+
+    This task is pinned to the `ingest` queue (concurrency=1) so heavy
+    Docling/OCR work doesn't share a slot with LLM calls. On success it
+    dispatches metadata_task on the `ai` queue and returns immediately,
+    freeing the ingest slot for the next sibling doc's EXTRACT.
+    """
     from app.services.pipeline_status import (
         mark_completed,
         mark_failed_with_cascade,
@@ -38,84 +44,115 @@ def process_document_task(self, doc_id: int):
             logger.warning(f"Document {doc_id} not found")
             return {"status": "not_found", "doc_id": doc_id}
 
-        # Skip EXTRACT when retrying a later stage (EXTRACT already completed).
-        stages = stages_dict(doc)
-        extract_done = (
-            stages.get(PipelineStage.EXTRACT.value, {}).get("status") == "completed"
+        from app.services.ingestion.service import (
+            IngestionError,
+            process_uploaded_document,
         )
 
-        if not extract_done:
-            from app.services.ingestion.service import (
-                IngestionError,
-                process_uploaded_document,
-            )
+        mark_started(doc_id, PipelineStage.EXTRACT, db)
+        try:
+            process_uploaded_document(doc, db)
+            mark_completed(doc_id, PipelineStage.EXTRACT, db)
+            logger.info(f"Document {doc_id} extracted successfully")
+        except IngestionError as e:
+            db.rollback()
+            error_msg = f"Ingestion error: {e.message}"
+            if e.detail:
+                error_msg += f" ({e.detail})"
+            mark_failed_with_cascade(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
+            logger.warning(f"Document {doc_id} ingestion failed: {e}")
+            return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)
 
-            mark_started(doc_id, PipelineStage.EXTRACT, db)
-            try:
-                process_uploaded_document(doc, db)
-                mark_completed(doc_id, PipelineStage.EXTRACT, db)
-                logger.info(f"Document {doc_id} extracted successfully")
-            except IngestionError as e:
-                db.rollback()
-                error_msg = f"Ingestion error: {e.message}"
-                if e.detail:
-                    error_msg += f" ({e.detail})"
-                mark_failed_with_cascade(
-                    doc_id, PipelineStage.EXTRACT, db, error=error_msg
-                )
-                logger.warning(f"Document {doc_id} ingestion failed: {e}")
-                return {"status": "failed", "doc_id": doc_id, "error": str(e)}
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Document {doc_id} processing failed: {e}", exc_info=True)
-
-                if self.request.retries < self.max_retries:
-                    countdown = 60 * (self.request.retries + 1)
-                    # Mark RETRYING (not FAILED) so the polling templates keep
-                    # refreshing through the countdown — the next attempt runs
-                    # invisibly otherwise.
-                    schedule_retry(
-                        doc_id,
-                        PipelineStage.EXTRACT,
-                        db,
-                        error=f"System error: {e}",
-                        attempt=self.request.retries + 1,
-                        max_attempts=self.max_retries,
-                        countdown=countdown,
-                    )
-                    raise self.retry(exc=e, countdown=countdown) from e
-
-                # All retries exhausted — terminal failure cascades downstream.
-                mark_failed_with_cascade(
-                    doc_id, PipelineStage.EXTRACT, db, error=f"System error: {e}"
-                )
-                from celery.exceptions import MaxRetriesExceededError
-
-                raise MaxRetriesExceededError(
-                    f"Document {doc_id} failed after {self.max_retries} retries",
-                    exc=e,
-                ) from e
-            except BaseException as e:
-                db.rollback()
-                mark_failed_with_cascade(
+            if self.request.retries < self.max_retries:
+                countdown = 60 * (self.request.retries + 1)
+                # Mark RETRYING (not FAILED) so the polling templates keep
+                # refreshing through the countdown — the next attempt runs
+                # invisibly otherwise.
+                schedule_retry(
                     doc_id,
                     PipelineStage.EXTRACT,
                     db,
-                    error=f"task aborted: {type(e).__name__}",
+                    error=f"System error: {e}",
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
                 )
-                raise
+                raise self.retry(exc=e, countdown=countdown) from e
 
-        # Phase 1: metadata extraction + auto-triage (with transient-error retry).
-        # Skip when already completed — recovery may re-dispatch this task for a
-        # later stuck stage; re-running the AI call here would be wasteful.
+            # All retries exhausted — terminal failure cascades downstream.
+            mark_failed_with_cascade(
+                doc_id, PipelineStage.EXTRACT, db, error=f"System error: {e}"
+            )
+            from celery.exceptions import MaxRetriesExceededError
+
+            raise MaxRetriesExceededError(
+                f"Document {doc_id} failed after {self.max_retries} retries",
+                exc=e,
+            ) from e
+        except BaseException as e:
+            db.rollback()
+            mark_failed_with_cascade(
+                doc_id,
+                PipelineStage.EXTRACT,
+                db,
+                error=f"task aborted: {type(e).__name__}",
+            )
+            raise
+
+        # EXTRACT done — hand off to METADATA on the ai queue and return so the
+        # ingest worker slot is free for the next doc's EXTRACT.
+        metadata_task.delay(doc_id)
+        return {"status": "success", "doc_id": doc_id}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.document_processing.metadata_task", queue="ai")
+def metadata_task(doc_id: int):
+    """Phase 1 metadata (LLM) + downstream fan-out (batch analysis + embeddings).
+
+    Runs on the `ai` queue (concurrency=3) so sibling docs can have their
+    LLM calls in flight at the same time without blocking the ingest slot
+    that does Docling/OCR.
+    """
+    from app.services.pipeline_status import (
+        claim_stage_for_dispatch,
+        mark_completed,
+        mark_failed_with_cascade,
+    )
+
+    db = get_db_session()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            logger.warning(f"metadata_task: document {doc_id} not found")
+            return {"status": "not_found", "doc_id": doc_id}
+
+        stages = stages_dict(doc)
         metadata_done = (
             stages.get(PipelineStage.METADATA.value, {}).get("status") == "completed"
         )
         if not metadata_done:
+            # Atomic CAS: only the worker that flips METADATA from PENDING→RUNNING
+            # proceeds. Defends against the race between process_document_task's
+            # post-EXTRACT dispatch and recover_stuck_pending_dispatches firing
+            # the same metadata_task seconds later — without this both runs would
+            # call _run_phase1_summary and burn two LLM round-trips for the same
+            # doc. If the claim fails (concurrent runner won, or stage already
+            # running/retrying/failed) we return early; the winning runner owns
+            # the downstream fan-out so we must not double-dispatch it either.
+            if not claim_stage_for_dispatch(doc_id, PipelineStage.METADATA, db):
+                logger.info(
+                    "Doc #%d: METADATA already claimed by another worker — skipping",
+                    doc_id,
+                )
+                return {"status": "already_claimed", "doc_id": doc_id}
             _run_phase1_summary(doc_id)
 
-        # Gate: if METADATA ended failed, skip downstream dispatch for this doc.
-        # Sibling docs still proceed via the batch analyzer (see below).
+        # Re-read after _run_phase1_summary, which manages its own DB sessions.
         db.refresh(doc)
         metadata_status = (
             stages_dict(doc)
@@ -171,11 +208,6 @@ def process_document_task(self, doc_id: int):
                         {"bid": doc.ingest_batch_id, "doc_id": doc_id},
                     ).scalar()
                     if batch_already_done:
-                        from app.services.pipeline_status import (
-                            claim_stage_for_dispatch,
-                            mark_completed,
-                        )
-
                         mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db_batch)
                         logger.info(
                             "Doc #%d: batch #%d already analyzed — promoted "
@@ -193,8 +225,6 @@ def process_document_task(self, doc_id: int):
                 db_batch.close()
 
         # Embeddings — claim before dispatch for the same fan-out protection.
-        from app.services.pipeline_status import claim_stage_for_dispatch
-
         db_emb = get_db_session()
         try:
             if claim_stage_for_dispatch(doc_id, PipelineStage.EMBEDDINGS, db_emb):
