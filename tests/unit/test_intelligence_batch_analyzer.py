@@ -858,12 +858,14 @@ def test_completion_sweep_sets_attributed_originator_from_sender(
         proceeding_id=proceeding.id,
     )
     # Not in any bundle — will be picked up by completion sweep.
+    # UNKNOWN type reaches the completion sweep (OWN/OPPOSING/THIRD_PARTY are skipped;
+    # COURT is guarded from attribution). UNKNOWN with a sender gets attributed.
     unclaimed = Document(
         title="Antrag",
         content="Im Namen meiner Mandantin...",
         case_id=sample_case.id,
         ingest_batch_id=batch.id,
-        originator_type=OriginatorType.COURT,
+        originator_type=OriginatorType.UNKNOWN,
         attributed_originator=None,
         sender="Yingying Liu",
         proceeding_id=proceeding.id,
@@ -895,8 +897,82 @@ def test_completion_sweep_sets_attributed_originator_from_sender(
     # Completion sweep wired it as an enclosure.
     assert unclaimed.role == DocumentRole.ENCLOSURE
     assert unclaimed.parent_id == cover.id
-    # attributed_originator must be propagated from sender.
+    # For an unclassified (UNKNOWN) doc, attributed_originator is propagated from sender.
     assert unclaimed.attributed_originator == "Yingying Liu"
+
+
+@pytest.mark.unit
+def test_completion_sweep_skips_attributed_originator_for_court_doc(
+    db_session, sample_case
+):
+    """COURT documents must NOT inherit attributed_originator from sender.
+
+    When a genuine court order (originator_type=COURT) is enclosed in a bundle,
+    the sender field holds whoever submitted it (the opposing party), not the court
+    that authored it. The sweep must leave attributed_originator=None for COURT docs.
+    """
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        case_id=sample_case.id,
+        status=IngestBatchStatus.PENDING,
+        received_at=datetime.now(),
+        ingest_date=datetime.now(),
+    )
+    db_session.add(batch)
+    db_session.flush()
+
+    from app.models.database import Proceeding
+
+    proceeding = Proceeding(
+        case_id=sample_case.id,
+        court_level="ag",
+        court_name="Amtsgericht Ingolstadt",
+    )
+    db_session.add(proceeding)
+    db_session.flush()
+
+    cover = Document(
+        title="Begleitschreiben",
+        content="Das Gericht übersendet...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+        court_relay=True,
+        proceeding_id=proceeding.id,
+    )
+    # A genuine court order (Verfügung) enclosed by the opposing party.
+    court_order = Document(
+        title="Verfügung Amtsgericht Ingolstadt",
+        content="Es wird angeordnet...",
+        case_id=sample_case.id,
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,  # correct — this IS a court document
+        attributed_originator=None,
+        sender="Yingying Liu",  # submitter of the bundle, not the author
+        proceeding_id=proceeding.id,
+    )
+    db_session.add(cover)
+    db_session.add(court_order)
+    db_session.commit()
+    db_session.refresh(cover)
+    db_session.refresh(court_order)
+    db_session.refresh(batch)
+
+    result = {
+        "bundles": [{"cover_letter_doc_id": cover.id, "enclosed": []}],
+        "detected_actions": [],
+    }
+
+    _apply_batch_results(batch.id, [cover, court_order], result, db_session)
+
+    db_session.expire_all()
+    court_order = db_session.get(Document, court_order.id)
+
+    # Completion sweep wired it as an enclosure.
+    assert court_order.role == DocumentRole.ENCLOSURE
+    assert court_order.parent_id == cover.id
+    # COURT doc: attributed_originator must NOT be set from the sender (who is just the submitter).
+    assert court_order.attributed_originator is None
 
 
 @pytest.mark.unit

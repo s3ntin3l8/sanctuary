@@ -6,9 +6,9 @@
      hx-trigger="every 5s"
      hx-swap="outerHTML"
      hx-sync="this:drop">
-    {% if n_queue > 0 %}
+    {% if n_active > 0 %}
     <span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-tertiary text-on-tertiary text-[9px] font-bold rounded-full border-2 border-surface-container-low animate-pulse">
-        {{ n_queue }}
+        {{ n_active }}
     </span>
     {% endif %}
     {% if n_failed > 0 %}

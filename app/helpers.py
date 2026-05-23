@@ -10,7 +10,6 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     IngestBatchStatus,
-    PipelineState,
 )
 
 
@@ -38,24 +37,17 @@ def build_sidebar_counts(db: Session) -> dict:
     triage_count = batch_count + loose_count
     total_docs = db.query(Document).count()
     case_count = db.query(Case).filter(Case.status != CaseStatus.CLOSED).count()
+    # Lazy import: app.api.worker_queue → app.api.__init__ pulls route modules
+    # that import helpers, so a top-level import here would cycle.
+    from app.api.worker_queue import compute_queue_counts
+
+    queue_counts = compute_queue_counts(db)
     return {
         "triage_count": triage_count,
         "total_docs": total_docs,
         "case_count": case_count,
-        "queue_depth_count": (
-            db.query(Document)
-            .filter(
-                Document.pipeline_state.in_(
-                    [PipelineState.RUNNING, PipelineState.PENDING]
-                )
-            )
-            .count()
-        ),
-        "queue_failed_count": (
-            db.query(Document)
-            .filter(Document.pipeline_state == PipelineState.FAILED)
-            .count()
-        ),
+        "queue_depth_count": queue_counts["n_executing"] + queue_counts["n_queued"],
+        "queue_failed_count": queue_counts["n_failed"],
     }
 
 

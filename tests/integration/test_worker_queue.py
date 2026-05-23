@@ -68,7 +68,10 @@ def test_retry_failed_succeeds_after_one_lock(app_client, db_session, sample_cas
             raise OperationalError("database is locked", None, None)
 
     with (
-        patch("app.services.pipeline_status.reset_all_stages", side_effect=flaky_reset),
+        patch(
+            "app.services.pipeline_status.reset_failed_stages_only",
+            side_effect=flaky_reset,
+        ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):
         response = app_client.post("/api/worker/queue/retry-failed")
@@ -88,7 +91,8 @@ def test_retry_failed_skips_permanently_locked_doc(app_client, db_session, sampl
 
     with (
         patch(
-            "app.services.pipeline_status.reset_all_stages", side_effect=always_locked
+            "app.services.pipeline_status.reset_failed_stages_only",
+            side_effect=always_locked,
         ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):
@@ -114,7 +118,8 @@ def test_retry_failed_dispatch_count_matches_reset_successes(
 
     with (
         patch(
-            "app.services.pipeline_status.reset_all_stages", side_effect=selective_reset
+            "app.services.pipeline_status.reset_failed_stages_only",
+            side_effect=selective_reset,
         ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):

@@ -6,7 +6,7 @@
     <span class="material-symbols-outlined text-sm">event</span>
     Actions
     {% if actions %}
-    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-originator-opposing/15 text-originator-opposing">{{ actions|length }}</span>
+    <span class="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-originator-opposing/15 text-originator-opposing">{{ actions | rejectattr("status.value", "equalto", "dismissed") | list | length }}</span>
     {% endif %}
   </h4>
 

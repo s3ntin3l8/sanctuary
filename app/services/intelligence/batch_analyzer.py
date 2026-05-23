@@ -548,7 +548,11 @@ def _apply_batch_results(
                 d.role = DocumentRole.ENCLOSURE
                 d.parent_id = relay.id
                 claimed_ids.add(d.id)
-                if not d.attributed_originator and d.sender:
+                if (
+                    not d.attributed_originator
+                    and d.sender
+                    and d.originator_type != OriginatorType.COURT
+                ):
                     d.attributed_originator = d.sender
 
     # Proceeding-grouping fallback: AI returned no bundles AND single-relay
@@ -571,7 +575,11 @@ def _apply_batch_results(
             if siblings_in_proceeding:
                 candidate.role = DocumentRole.COVER_LETTER
                 candidate.parent_id = None
-                if not candidate.attributed_originator and candidate.sender:
+                if (
+                    not candidate.attributed_originator
+                    and candidate.sender
+                    and candidate.originator_type != OriginatorType.COURT
+                ):
                     candidate.attributed_originator = candidate.sender
                 for d in siblings_in_proceeding:
                     if d.originator_type in (
@@ -583,7 +591,11 @@ def _apply_batch_results(
                     d.role = DocumentRole.ENCLOSURE
                     d.parent_id = candidate.id
                     claimed_ids.add(d.id)
-                    if not d.attributed_originator and d.sender:
+                    if (
+                        not d.attributed_originator
+                        and d.sender
+                        and d.originator_type != OriginatorType.COURT
+                    ):
                         d.attributed_originator = d.sender
                 logger.info(
                     "Batch #%d: AI bundles empty — applied proceeding-grouping "
@@ -631,7 +643,13 @@ def _apply_batch_results(
             # sweep claims a doc that wasn't in any AI-produced bundle (the
             # bundle path sets it via encl.get("attributed_originator"), but
             # the sweep has no bundle data — sender is the best available signal).
-            if not d.attributed_originator and d.sender:
+            # Skip COURT docs: for court orders the sender is the submitter
+            # (the party who filed it), not the court that authored it.
+            if (
+                not d.attributed_originator
+                and d.sender
+                and d.originator_type != OriginatorType.COURT
+            ):
                 d.attributed_originator = d.sender
             swept += 1
         if swept:

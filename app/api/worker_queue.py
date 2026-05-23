@@ -208,27 +208,34 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
     return items
 
 
+def compute_queue_counts(db: Session) -> dict[str, int]:
+    """Single source of truth for worker-queue badge and popover counts.
+
+    Stage-level counts (one per running/retrying stage, one per pending
+    doc's first stage) so the rail badge matches the popover's "X Active"
+    header exactly. n_failed stays per-document — a failed doc is one
+    failure regardless of which stage tripped it.
+    """
+    running, pending, failed = _get_queue_docs(db)
+    queue_items = _build_queue_items(running, pending)
+    return {
+        "n_executing": sum(1 for item in queue_items if item.get("executing")),
+        "n_queued": sum(1 for item in queue_items if not item.get("executing")),
+        "n_failed": len(failed),
+    }
+
+
 @router.get("/badge")
 async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
     _fail_fast_reads(db)
-    n_queue = (
-        db.query(Document)
-        .filter(
-            Document.pipeline_state.in_(
-                [PipelineState.RUNNING, PipelineState.PARTIAL, PipelineState.PENDING]
-            )
-        )
-        .count()
-    )
-    n_failed = (
-        db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.FAILED)
-        .count()
-    )
+    counts = compute_queue_counts(db)
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_badge.html",
-        {"n_queue": n_queue, "n_failed": n_failed},
+        {
+            "n_active": counts["n_executing"] + counts["n_queued"],
+            "n_failed": counts["n_failed"],
+        },
     )
 
 

@@ -213,7 +213,10 @@ def build_hud_context(
 
     actions = (
         db.query(ActionItem)
-        .filter(ActionItem.source_document_id == doc.id)
+        .filter(
+            ActionItem.source_document_id == doc.id,
+            ActionItem.superseded.is_(False),  # tombstones are display-invisible
+        )
         .order_by(ActionItem.due_date.asc())
         .all()
     )

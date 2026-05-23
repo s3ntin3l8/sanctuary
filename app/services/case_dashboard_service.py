@@ -180,7 +180,10 @@ class CaseDashboardService:
         # --- Action items (deadlines + court dates combined, chronological)
         action_items = (
             self.db.query(ActionItem)
-            .filter(ActionItem.case_id == case_id)
+            .filter(
+                ActionItem.case_id == case_id,
+                ActionItem.superseded.is_(False),  # tombstones are display-invisible
+            )
             .order_by(ActionItem.due_date.asc().nullslast(), ActionItem.id.asc())
             .all()
         )

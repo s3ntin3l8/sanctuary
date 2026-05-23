@@ -60,12 +60,14 @@ def test_worker_queue_panel_endpoint_returns_200_when_quiet(app_client):
 
 
 @pytest.mark.unit
-def test_badge_reflects_db_queue_depth_not_redis(app_client, db_session, sample_case):
-    """Badge endpoint must count DB RUNNING+PENDING docs, not Redis sentinels.
+def test_badge_reflects_queue_items_not_redis(app_client, db_session, sample_case):
+    """Badge endpoint must count queue items (same as the panel header),
+    not Redis sentinels or raw pipeline_state document counts.
 
-    Regression: previously the badge called count_inflight() (Redis), which
-    diverged from the modal's n_running (DB). Now both read from the same DB.
-    """
+    Regression chain: badge once called count_inflight() (Redis), then
+    counted Documents by pipeline_state (one per doc, even when a doc had
+    multiple concurrent stages). Now it shares compute_queue_counts() with
+    the panel, so badge == "X Active" always."""
     from app.models.enums import OriginatorType
 
     doc = Document(
@@ -76,6 +78,14 @@ def test_badge_reflects_db_queue_depth_not_redis(app_client, db_session, sample_
         pipeline_state=PipelineState.RUNNING,
     )
     db_session.add(doc)
+    db_session.flush()
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id,
+            stage=PipelineStage.ENRICH.value,
+            status=StageStatus.RUNNING.value,
+        )
+    )
     db_session.commit()
 
     response = app_client.get("/api/worker/queue/badge")
