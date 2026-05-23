@@ -268,23 +268,65 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
 @router.post("/retry-failed")
 @limiter.limit("5/minute")
 async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
-    from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
+    import importlib
+
+    from app.services.pipeline_status import (
+        STAGE_REGISTRY,
+        reset_failed_stages_only,
+        retry_on_db_locked,
+        stages_dict,
+    )
     from app.tasks.dispatch import dispatch_task
-    from app.tasks.document_processing import process_document_task
 
     failed_docs = (
         db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED).all()
     )
     for doc in failed_docs:
         doc_id = doc.id
+
+        # Snapshot stage states BEFORE reset — reset turns FAILED → PENDING,
+        # so we must read which stages were FAILED first.
+        db.refresh(doc)
+        pre_reset = stages_dict(doc)
+
         try:
-            retry_on_db_locked(lambda _id=doc_id: reset_all_stages(_id, db), db)
+            retry_on_db_locked(lambda _id=doc_id: reset_failed_stages_only(_id, db), db)
         except OperationalError:
             logger.warning(
                 "retry-failed: doc %d still locked after retries; skipping", doc_id
             )
             continue
-        dispatch_task(process_document_task, doc_id)
+
+        # Find the lowest-order failed stage and dispatch its registered task,
+        # so CLAIMS-only failures go straight to extract_claims_task instead of
+        # re-running Docling from the beginning.
+        failed_specs = [
+            spec
+            for stage, spec in STAGE_REGISTRY.items()
+            if pre_reset.get(stage.value, {}).get("status") == "failed"
+        ]
+        if failed_specs:
+            earliest = min(failed_specs, key=lambda s: s.order)
+            arg = doc.ingest_batch_id if earliest.dispatch_arg == "batch_id" else doc_id
+            module_name, func_name = earliest.retry_task.rsplit(".", 1)
+            task = getattr(importlib.import_module(module_name), func_name)
+            logger.info(
+                "retry-failed: doc %d dispatching %s (earliest failed stage: %s)",
+                doc_id,
+                func_name,
+                earliest.stage.value,
+            )
+            dispatch_task(task, arg)
+        else:
+            # No recognised failed stage — fall back to head task (EXTRACT).
+            from app.tasks.document_processing import process_document_task
+
+            logger.warning(
+                "retry-failed: doc %d has no identifiable failed stage; "
+                "dispatching head task",
+                doc_id,
+            )
+            dispatch_task(process_document_task, doc_id)
 
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)

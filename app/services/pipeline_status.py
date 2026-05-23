@@ -565,6 +565,50 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
     db.commit()
 
 
+def reset_failed_stages_only(doc_id: int, db: Session) -> None:
+    """Reset only FAILED pipeline stages to PENDING.
+
+    Preserves COMPLETED and SKIPPED stages so a retry resumes from the
+    first failed stage rather than re-running the entire pipeline from EXTRACT.
+    Used by the queue's retry-failed action.
+
+    Cascade-failed stages (status=failed, error="upstream X failed") are also
+    reset — they become PENDING and will re-run once their upstream succeeds.
+    """
+    rows = db.execute(
+        text(
+            "SELECT stage, status FROM document_pipeline_stages WHERE document_id = :doc_id"
+        ),
+        {"doc_id": doc_id},
+    ).fetchall()
+    if not rows:
+        return
+    for stage_key, status_val in rows:
+        if status_val != StageStatus.FAILED.value:
+            continue
+        try:
+            stage_enum = PipelineStage(stage_key)
+        except ValueError:
+            continue
+        _update_stage(
+            doc_id,
+            stage_enum,
+            db,
+            status=StageStatus.PENDING,
+            extra_sets={
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "attempt": None,
+                "max_attempts": None,
+                "next_at": None,
+                "reason": None,
+            },
+            commit=False,
+        )
+    db.commit()
+
+
 def compute_overall_state(stages: dict) -> PipelineState:
     """Derive overall PipelineState from per-stage dict.
 
