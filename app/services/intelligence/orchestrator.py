@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.pipeline_status import _GATE_BLOCK_SKIP_REASONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,13 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
             SET analysis_queued_at = :now
             WHERE id = :batch_id
               AND analysis_queued_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM documents d2
+                JOIN document_pipeline_stages dps2 ON dps2.document_id = d2.id
+                WHERE d2.ingest_batch_id = :batch_id
+                  AND dps2.stage = 'batch_analysis'
+                  AND dps2.status IN ('completed', 'failed', 'skipped')
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM documents
                 WHERE ingest_batch_id = :batch_id
@@ -52,23 +61,6 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
     )
     db.commit()
     return result.rowcount == 1
-
-
-# SKIPPED reasons that indicate a stage was BLOCKED by an upstream gate, NOT
-# a permanent policy decision. These mean "we will re-run when the upstream
-# clears" — so they must NOT count as terminal for brief readiness, otherwise
-# the brief fires prematurely with no actual claims data. Reasons used by:
-#   extract_claims_task        — "enrich_not_completed"
-#   enrich_document_task       — "batch_analysis_not_completed"
-#   generate_embedding_task    — leaves PENDING, not SKIPPED (see comment in task)
-# Policy-skips ("ineligible_tier:administrative", "no batch (manual upload)")
-# ARE permanent and correctly count as terminal.
-_GATE_BLOCK_SKIP_REASONS = (
-    "enrich_not_completed",
-    "batch_analysis_not_completed",
-    "metadata_not_completed",
-    "missing_ai_summary",
-)
 
 
 def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:

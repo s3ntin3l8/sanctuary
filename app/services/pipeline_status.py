@@ -775,7 +775,23 @@ def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
         )
 
         if running_docs == 0:
-            # No docs are running, but batch is still "claimed". Release it.
+            # Guard: if batch_analysis already finished for this batch, do NOT
+            # clear the claim — that re-opens the CAS and lets stale
+            # process_document_task replays re-fire the analyzer (ib-0001 loop).
+            already_terminal = db.execute(
+                text("""
+                    SELECT 1 FROM document_pipeline_stages dps
+                    JOIN documents d ON d.id = dps.document_id
+                    WHERE d.ingest_batch_id = :bid
+                      AND dps.stage = 'batch_analysis'
+                      AND dps.status IN ('completed', 'failed', 'skipped')
+                    LIMIT 1
+                """),
+                {"bid": batch.id},
+            ).scalar()
+            if already_terminal:
+                continue
+            # No docs are running and batch_analysis not yet done. Release claim.
             batch.analysis_queued_at = None
             if batch.status == IngestBatchStatus.PROCESSING:
                 batch.status = IngestBatchStatus.PENDING
@@ -833,6 +849,104 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
             dispatched,
         )
     return {"batches_dispatched": len(dispatched), "batch_ids": dispatched}
+
+
+# Gate-block skip reasons that produce recoverable SKIPPED rows — see
+# enrich_document.py and extract_claims.py for context. Policy-skips
+# ("ineligible_tier:administrative", etc.) are NOT listed here and stay SKIPPED.
+_GATE_BLOCK_SKIP_REASONS = frozenset(
+    {
+        "batch_analysis_not_completed",
+        "enrich_not_completed",
+        "metadata_not_completed",
+        "missing_ai_summary",
+    }
+)
+
+# Stages downstream of ENRICH that are skipped with gate reasons when ENRICH
+# is gate-blocked. We reset these alongside ENRICH so they can re-run once
+# ENRICH completes.
+_ENRICH_BLOCKED_DOWNSTREAM = (
+    PipelineStage.CLAIMS,
+    PipelineStage.RELATIONSHIPS,
+    PipelineStage.ENTITIES,
+)
+
+
+def recover_stranded_gate_skipped(db: Session) -> dict:
+    """Reset docs stranded by the gate-block-skip race and dispatch them.
+
+    When a doc's ENRICH stage was marked SKIPPED with a gate-block reason
+    (e.g. 'batch_analysis_not_completed') but BATCH_ANALYSIS has since
+    completed, the doc is silently stuck: compute_overall_state treats
+    SKIPPED as terminal so no recovery sweep picks it up, and
+    _enrich_if_pending's CAS requires status='pending' — never satisfied.
+
+    Finds these docs, resets ENRICH (and downstream gate-skipped stages) to
+    PENDING, and dispatches enrich_document_task. Called once at startup
+    after recover_orphaned_running_stages so any current restart unstrands
+    victims of prior runs.
+
+    Returns {"docs_recovered": N, "doc_ids": [...]}.
+    """
+    from app.tasks.dispatch import dispatch_task
+
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT dps.document_id
+            FROM document_pipeline_stages dps
+            WHERE dps.stage = 'enrich'
+              AND dps.status = 'skipped'
+              AND dps.reason = 'batch_analysis_not_completed'
+              AND EXISTS (
+                SELECT 1 FROM document_pipeline_stages dps2
+                WHERE dps2.document_id = dps.document_id
+                  AND dps2.stage = 'batch_analysis'
+                  AND dps2.status IN ('completed', 'failed')
+              )
+            """
+        )
+    ).fetchall()
+
+    recovered: list[int] = []
+    for (doc_id,) in rows:
+        # Reset ENRICH + cascade-skipped downstream stages to PENDING so the
+        # CAS in claim_stage_for_dispatch can reclaim them.
+        stages_to_reset = [PipelineStage.ENRICH, *_ENRICH_BLOCKED_DOWNSTREAM]
+        for stage in stages_to_reset:
+            _update_stage(
+                doc_id,
+                stage,
+                db,
+                status=StageStatus.PENDING,
+                extra_sets={
+                    "started_at": None,
+                    "completed_at": None,
+                    "error": None,
+                    "reason": None,
+                    "attempt": None,
+                    "max_attempts": None,
+                    "next_at": None,
+                },
+                commit=False,
+            )
+        db.commit()
+
+        # Dispatch via claim so concurrent workers don't double-fire.
+        from app.tasks.enrich_document import enrich_document_task
+
+        if claim_stage_for_dispatch(doc_id, PipelineStage.ENRICH, db):
+            dispatch_task(enrich_document_task, doc_id)
+            recovered.append(doc_id)
+
+    if recovered:
+        logger.info(
+            "recover_stranded_gate_skipped: reset and redispatched %d doc(s): %s",
+            len(recovered),
+            recovered,
+        )
+    return {"docs_recovered": len(recovered), "doc_ids": recovered}
 
 
 def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:
@@ -894,6 +1008,23 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
         head_spec = None
         for spec in _STAGE_ORDER:
             if spec.stage in skip_stages:
+                # Batch-level stage: never dispatch from here, but it still
+                # blocks downstream stages when not yet terminal. The original
+                # unconditional `continue` was the bug that stranded ib-0033:
+                # pending BATCH_ANALYSIS was invisible, so ENRICH was dispatched
+                # prematurely, gate-blocked itself to SKIPPED, and the batch
+                # analyzer's _enrich_if_pending CAS then found no PENDING row.
+                stage_record = stages.get(spec.stage.value, {})
+                status = (
+                    stage_record.get("status")
+                    if isinstance(stage_record, dict)
+                    else None
+                )
+                if status not in (
+                    StageStatus.COMPLETED.value,
+                    StageStatus.SKIPPED.value,
+                ):
+                    break
                 continue
             stage_record = stages.get(spec.stage.value, {})
             if not isinstance(stage_record, dict):

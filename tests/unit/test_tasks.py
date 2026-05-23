@@ -125,10 +125,10 @@ def test_enrich_failure_dispatches_detect_relationships(db_session, sample_docum
 
 @pytest.mark.unit
 def test_enrich_skipped_when_batch_analysis_pending(db_session, sample_document):
-    """Primary gate: ENRICH must skip with reason=batch_analysis_not_completed
-    when batch_analysis is not yet in a terminal state. This prevents the
-    early-ENRICH/cascade-reset loop that produced 30+ enricher attempts per
-    doc on the IB-0033 retry."""
+    """Primary gate: ENRICH must defer (reset to PENDING, not SKIPPED) with
+    reason=batch_analysis_not_completed when batch_analysis is not yet terminal.
+    The old behavior was status='skipped', which broke _enrich_if_pending's CAS
+    (requires status='pending') and silently stranded docs (ib-0033 root cause)."""
     _set_doc_stages(
         db_session, sample_document, {"batch_analysis": {"status": "pending"}}
     )
@@ -140,7 +140,7 @@ def test_enrich_skipped_when_batch_analysis_pending(db_session, sample_document)
         mock_get_db.return_value = db_session
         result = enrich_document_task.run(sample_document.id)
 
-    assert result["status"] == "skipped"
+    assert result["status"] == "deferred"
     assert result["reason"] == "batch_analysis_not_completed"
     # Critical: the actual AI call must NOT have happened.
     mock_enrich.assert_not_called()

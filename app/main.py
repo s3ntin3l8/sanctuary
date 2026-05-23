@@ -278,6 +278,7 @@ async def lifespan(app: FastAPI):
     # Reset any pipeline stages that were left in RUNNING state by a prior crash.
     from app.services.pipeline_status import (
         recover_orphaned_running_stages,
+        recover_stranded_gate_skipped,
         recover_stuck_pending_dispatches,
     )
 
@@ -289,6 +290,17 @@ async def lifespan(app: FastAPI):
         stats = recover_orphaned_running_stages(recovery_db, min_age_seconds=0)
     if any(stats.values()):
         logging.getLogger(__name__).warning("Pipeline recovery on startup: %s", stats)
+
+    # Recover docs stranded by the gate-block-skip race: ENRICH was marked
+    # SKIPPED with a gate reason but BATCH_ANALYSIS has since completed.
+    # Must run before recover_stuck_pending_dispatches so those docs aren't
+    # double-dispatched.
+    with SessionLocal() as gate_db:
+        gate_stats = recover_stranded_gate_skipped(gate_db)
+    if gate_stats.get("docs_recovered"):
+        logging.getLogger(__name__).warning(
+            "Pipeline recovery on startup (gate-skipped stranded): %s", gate_stats
+        )
 
     # Re-dispatch docs whose process_document_task daemon thread was killed by
     # uvicorn --reload before it could call mark_started (EAGER mode hazard).

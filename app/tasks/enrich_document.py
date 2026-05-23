@@ -22,6 +22,7 @@ def enrich_document_task(self, doc_id: int):
         mark_failed,
         mark_skipped,
         mark_started,
+        reset_stage,
         schedule_retry,
         stages_dict,
     )
@@ -54,20 +55,21 @@ def enrich_document_task(self, doc_id: int):
             # is SKIPPED at initialize-time, so this check passes immediately.
             batch_analysis_status = stages.get("batch_analysis", {}).get("status")
             if batch_analysis_status not in _TERMINAL:
-                mark_skipped(
-                    doc_id,
-                    PipelineStage.ENRICH,
-                    db,
-                    reason="batch_analysis_not_completed",
-                )
+                # Reset ENRICH back to PENDING (not SKIPPED) so that
+                # _enrich_if_pending's CAS can reclaim it once batch_analysis
+                # finishes. Marking SKIPPED here was the bug: claim_stage_for_dispatch
+                # requires status='pending', so a SKIPPED row was silently dropped
+                # and the doc was stranded. Matches generate_embedding_task which
+                # leaves the stage PENDING on gate-block rather than marking SKIPPED.
+                reset_stage(doc_id, PipelineStage.ENRICH, db)
                 logger.info(
-                    "Doc #%d: skipping enrich — batch_analysis not yet terminal "
-                    "(status=%s); analyze_batch_task will redispatch",
+                    "Doc #%d: deferring enrich — batch_analysis not yet terminal "
+                    "(status=%s); reset to PENDING for _enrich_if_pending redispatch",
                     doc_id,
                     batch_analysis_status,
                 )
                 return {
-                    "status": "skipped",
+                    "status": "deferred",
                     "doc_id": doc_id,
                     "reason": "batch_analysis_not_completed",
                 }
