@@ -49,6 +49,26 @@ def process_document_task(self, doc_id: int):
             process_uploaded_document,
         )
 
+        # Idempotency guard: if a prior run already extracted content (meta has
+        # the extractor stamp + chunks), don't re-call Chandra. Reconcile the
+        # stage row to COMPLETED. Only re-dispatch metadata_task if the cascade
+        # is incomplete — for already-completed docs, metadata_task would be a
+        # no-op chain through every stage's claim CAS, just adding log noise.
+        # Defends against duplicate dispatches (e.g. recover_stuck_pending_-
+        # dispatches racing the FIFO ingest queue).
+        meta = doc.meta or {}
+        if meta.get("extractor") and meta.get("chunks"):
+            mark_completed(doc_id, PipelineStage.EXTRACT, db)
+            if doc.pipeline_state != "completed":
+                metadata_task.delay(doc_id)
+            logger.info(
+                "Doc #%d: already extracted (extractor=%s, %d chunks) — skipping Chandra",
+                doc_id,
+                meta.get("extractor"),
+                len(meta.get("chunks") or []),
+            )
+            return {"status": "skipped_already_extracted", "doc_id": doc_id}
+
         mark_started(doc_id, PipelineStage.EXTRACT, db)
         try:
             process_uploaded_document(doc, db)

@@ -879,6 +879,88 @@ def test_recover_stuck_pending_skips_running_stage(db_session, monkeypatch):
     assert captured == []
 
 
+@pytest.mark.unit
+def test_recover_stuck_pending_skips_extract_when_worker_recently_active(
+    db_session, monkeypatch
+):
+    """When another doc's EXTRACT completed recently, the ingest worker is
+    presumed alive and PENDING extracts are queue-waiting — not lost. Don't
+    re-dispatch them. Reproduces the runaway-loop incident: a batch of 38 docs
+    serialized through Chandra; recovery cron saw waiting docs as stuck every
+    5 min and re-dispatched, racking up 900+ duplicate Chandra calls."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        StageStatus,
+        initialize,
+        recover_stuck_pending_dispatches,
+    )
+
+    case = Case(
+        id="_TR5", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # The doc the worker just finished — proves the worker is alive. Mark
+    # all its stages as completed so it doesn't itself qualify as a recovery
+    # candidate (we only want to test the gate for `waiting`).
+    finished = Document(
+        title="finished.pdf",
+        content="ok",
+        case_id="_TR5",
+        originator_type=OriginatorType.UNKNOWN,
+        ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=10),
+        pipeline_state="completed",
+    )
+    db_session.add(finished)
+    db_session.flush()
+    initialize(finished, batched=False, db=db_session)
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages "
+            "SET status=:status, completed_at=:ts "
+            "WHERE document_id=:id"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "ts": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            "id": finished.id,
+        },
+    )
+    db_session.commit()
+
+    # The doc that's queue-waiting behind a slow predecessor — looks "stuck"
+    # to the old recovery but is actually fine.
+    waiting = Document(
+        title="waiting.pdf",
+        content=None,
+        case_id="_TR5",
+        originator_type=OriginatorType.UNKNOWN,
+        ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
+    )
+    db_session.add(waiting)
+    db_session.flush()
+    initialize(waiting, batched=False, db=db_session)
+    db_session.commit()
+
+    captured: list[int] = []
+
+    def fake_dispatch(task, *args, **kwargs):
+        captured.append(args[0] if args else kwargs.get("doc_id"))
+
+    monkeypatch.setattr("app.tasks.dispatch.dispatch_task", fake_dispatch)
+
+    result = recover_stuck_pending_dispatches(db_session)
+
+    assert result["docs_redispatched"] == 0
+    assert captured == []
+
+
 # ---------------------------------------------------------------------------
 # recover_unclaimed_ready_batches — closes the gap where per-stage retries
 # leave an IngestBatch with analysis_queued_at IS NULL but every doc ready.

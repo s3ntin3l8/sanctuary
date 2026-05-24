@@ -1121,7 +1121,12 @@ def recover_placeholder_summary_docs(db: Session) -> dict:
     return {"docs_recovered": len(recovered), "doc_ids": recovered}
 
 
-def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) -> dict:
+def recover_stuck_pending_dispatches(
+    db: Session,
+    *,
+    max_age_seconds: int = 60,
+    recent_extract_window_seconds: int = 1800,
+) -> dict:
     """Re-dispatch docs whose pipeline got stalled mid-cascade.
 
     Sibling to recover_orphaned_running_stages. Catches the EAGER+uvicorn-reload
@@ -1141,6 +1146,17 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
       * No stage is currently RUNNING (running-state recovery owns those)
       * There IS a pending head stage that can resume the cascade
 
+    Special gate for EXTRACT (the first stage, FIFO ingest queue, concurrency=1):
+    "PENDING + ingest_date old + no stage RUNNING" is indistinguishable between
+    "dispatch was lost" and "dispatch is still waiting in the queue behind a
+    slow predecessor." Re-dispatching the latter caused a runaway loop (38
+    docs ingested, Chandra serialized → cron saw them all as stuck every 5
+    min, generated 900+ duplicate Chandra calls). To distinguish: if any
+    EXTRACT stage anywhere completed within `recent_extract_window_seconds`
+    (or is currently running), the ingest worker is presumed alive and any
+    PENDING EXTRACTs are queue-waiting; skip them. If no recent EXTRACT
+    activity, the worker is presumed down and recovery proceeds normally.
+
     Returns {"docs_redispatched": N, "doc_ids": [...]}.
     """
     import importlib
@@ -1159,6 +1175,32 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
             Document.ingest_date < cutoff,
         )
         .all()
+    )
+
+    # Probe: is the ingest worker presumed alive? If any EXTRACT stage is
+    # currently running, or completed recently, the worker is processing
+    # the queue and PENDING EXTRACTs are queue-waiting, not lost. See
+    # docstring for the runaway-loop incident this gate prevents.
+    extract_window_cutoff = naive_utc_now() - timedelta(
+        seconds=recent_extract_window_seconds
+    )
+    ingest_worker_alive = (
+        db.execute(
+            text(
+                "SELECT 1 FROM document_pipeline_stages "
+                "WHERE stage = :stage "
+                "  AND (status = :running "
+                "       OR (status = :completed AND completed_at > :cutoff)) "
+                "LIMIT 1"
+            ),
+            {
+                "stage": PipelineStage.EXTRACT.value,
+                "running": StageStatus.RUNNING.value,
+                "completed": StageStatus.COMPLETED.value,
+                "cutoff": extract_window_cutoff,
+            },
+        ).scalar()
+        is not None
     )
 
     # BATCH_ANALYSIS is batch-level (dispatch_arg="batch_id"); its claim +
@@ -1213,6 +1255,12 @@ def recover_stuck_pending_dispatches(db: Session, *, max_age_seconds: int = 60) 
                 break
 
         if head_spec is None or head_spec.dispatch_arg != "doc_id":
+            continue
+
+        # See docstring: a PENDING EXTRACT may be queue-waiting (legit) rather
+        # than lost (recoverable). If the ingest worker is presumed alive
+        # (recent extract activity), assume queue-waiting and skip.
+        if head_spec.stage == PipelineStage.EXTRACT and ingest_worker_alive:
             continue
 
         # Lazy imports — pipeline_status is also imported during task execution.
