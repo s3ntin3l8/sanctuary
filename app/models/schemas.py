@@ -20,7 +20,6 @@ class ExtractionConfidenceSchema(BaseModel):
 
     sender: str = "low"
     issued_date: str = "low"
-    originator: str = "low"
     az_court: str = "low"
     internal_id: str = "low"
 

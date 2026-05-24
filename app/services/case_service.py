@@ -48,13 +48,27 @@ _TRIAGE = "_TRIAGE"
 
 
 def get_case_opposing_parties(case_id: str, db: Session) -> list[str]:
-    """Return the per-case opposing party list, or [] for _TRIAGE / missing case."""
+    """Return the per-case opposing party list, or [] for _TRIAGE / missing case.
+
+    User-set `case.opposing_parties` is authoritative. When unset (no user
+    confirmation yet), fall back to `case.parties` entries whose AI-computed
+    role is `opposing` — that gives the AI a hint without persisting a
+    self-confirming wrong default.
+    """
     if not case_id or case_id == _TRIAGE:
         return []
     case = db.query(Case).filter(Case.id == case_id).first()
-    if not case or not case.opposing_parties:
+    if not case:
         return []
-    return [p for p in case.opposing_parties if p and str(p).strip()]
+    if case.opposing_parties:
+        return [p for p in case.opposing_parties if p and str(p).strip()]
+    if case.parties:
+        return [
+            p["name"]
+            for p in case.parties
+            if isinstance(p, dict) and p.get("name") and p.get("role") == "opposing"
+        ]
+    return []
 
 
 def set_case_opposing_parties(case_id: str, parties: list[str], db: Session) -> None:

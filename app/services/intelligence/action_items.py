@@ -11,6 +11,7 @@ from app.models.enums import ActionItemStatus, ActionItemType
 logger = logging.getLogger(__name__)
 
 VALID_ACTION_TYPES = {e.value for e in ActionItemType}
+VALID_ADDRESSEES = {"user", "opposing", "third_party", "court"}
 
 
 def purge_action_items_from_doc(source_doc_id: int, db: Session) -> int:
@@ -220,6 +221,9 @@ def create_from_payload(
 
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+        raw_addressee = (action.get("addressee") or "").strip().lower() or None
+        addressee = raw_addressee if raw_addressee in VALID_ADDRESSEES else None
+
         stmt = (
             sqlite_insert(ActionItem.__table__)
             .values(
@@ -231,6 +235,7 @@ def create_from_payload(
                 due_date=due_date,
                 action_type=ActionItemType(raw_type),
                 status=ActionItemStatus.OPEN,
+                addressee=addressee,
                 ingest_date=datetime.now(UTC),
             )
             .on_conflict_do_nothing(

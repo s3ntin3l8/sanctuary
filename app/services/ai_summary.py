@@ -303,35 +303,14 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     from app.models.database import Case
     from app.models.enums import parse_originator_type
     from app.services.ingestion.service import refresh_review_reasons
-    from app.services.intelligence._court_identity import is_confirmed_court_document
 
-    # 1. Update core fields (AI overrides heuristics)
+    # 1. Update core fields (AI is authoritative)
     if summary_data.get("sender"):
         doc.sender = summary_data["sender"]
 
     parsed_ot = parse_originator_type(summary_data.get("originator"))
     if parsed_ot is not None:
-        # Defense in depth (Fix 8c): refuse a party-side override on a
-        # confirmed court document. The AI can be misled by a poisoned
-        # "Known Party Identity" preamble (auto-bootstrapped court names
-        # in opposing_parties), but a RULING/RELAY doc_type or court-named
-        # sender is a hard signal. Only let the AI override TO court
-        # types (or set when no prior value exists).
-        if parsed_ot in (
-            OriginatorType.OPPOSING,
-            OriginatorType.OWN,
-            OriginatorType.THIRD_PARTY,
-        ) and is_confirmed_court_document(doc):
-            logger.info(
-                "Doc %s: refusing AI originator override to %s — confirmed "
-                "court document (doc_type=%s, sender=%r)",
-                doc.id,
-                parsed_ot.value,
-                doc.document_type,
-                doc.sender,
-            )
-        else:
-            doc.originator_type = parsed_ot
+        doc.originator_type = parsed_ot
 
     if summary_data.get("issued_date"):
         raw_date = str(summary_data["issued_date"]).strip()
@@ -590,17 +569,14 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
         else extract_internal_id(content_for_hints)["value"]
     )
 
-    # Strip Docling markdown heading artifacts (e.g. "## Amtsgericht Ingolstadt")
-    _md_prefix = re.compile(r"^[#\s]+")
-    sender_clean = _md_prefix.sub("", doc.sender or "").strip() or None
-
     hints = {
         "az_court": az_hint,
         "internal_id": internal_id_hint,
-        "sender": sender_clean,
-        # issued_date intentionally omitted: feeding it back amplifies earlier errors.
-        # originator intentionally omitted: prior value biases the AI toward confirming
-        # an incorrect classification instead of reading the document afresh.
+        # sender intentionally omitted: the regex-extracted sender is frequently
+        # the email address (info@haidlfunk.de) or the court Eingangsstempel,
+        # neither of which is the letterhead organization. Feeding it back biases
+        # the AI toward emitting that value instead of reading the letterhead.
+        # Mirrors the rationale for omitting `originator` and `issued_date`.
         "email_subject": batch_subject if batch_sender_email else None,
     }
     hints = {k: v for k, v in hints.items() if v is not None}

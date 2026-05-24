@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.database import ActionItem, Case, Document, IngestBatch, UserSettings
@@ -42,6 +43,9 @@ class HomeService:
             .filter(
                 ActionItem.status == ActionItemStatus.OPEN,
                 ActionItem.due_date <= thirty_days_later,
+                # Home shows only the user's deadlines; opposing/third-party/court
+                # items are case-scoped and visible via the case action-items toggle.
+                or_(ActionItem.addressee == "user", ActionItem.addressee.is_(None)),
             )
             .all()
         )

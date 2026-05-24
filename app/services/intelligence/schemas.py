@@ -33,6 +33,7 @@ _ActionType = Literal[
     "filing_required",
     "payment_due",
 ]
+_Addressee = Literal["user", "opposing", "third_party", "court"]
 _RelationshipType = Literal["replies_to", "references", "supersedes"]
 _EntityType = Literal[
     "person",
@@ -164,6 +165,10 @@ class _ActionItem(BaseModel):
     description: str | None = None
     confidence: _ConfidenceLevel | None = None
     supersedes_date: str | None = None
+    # Whom the action targets. Null when the AI can't tell. Items where
+    # addressee != "user" are tracked but hidden from the default action list;
+    # see app/services/intelligence/action_items.py and the UI filter.
+    addressee: _Addressee | None = None
 
 
 class DocumentEnrichment(BaseModel):

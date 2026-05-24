@@ -639,6 +639,10 @@ class ActionItem(Base):
         SAEnum(ActionItemStatus), default=ActionItemStatus.OPEN, nullable=False
     )
     location = Column(String, nullable=True)  # for court_date entries
+    # Whom the action is directed at: "user" (or own-side lawyer) | "opposing"
+    # | "third_party" (expert, agency, etc.) | "court" | NULL when AI can't tell.
+    # The UI defaults to addressee IN ('user', NULL); the toggle shows all.
+    addressee = Column(String, nullable=True)
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
     # Tombstone flag — True when this item was replaced by a later reschedule
     # (Terminsverlegung / Umladung). DISMISSED status removes it from default

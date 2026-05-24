@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import TypedDict
 
-from app.models.enums import CaseType, OriginatorType, ProceedingCourtLevel
+from app.models.enums import CaseType, ProceedingCourtLevel
 
 CASE_ID_PATTERNS = [
     re.compile(r"(?:\||^|\s+)(ADV-\d{3,4}-[A-Z]{1,3})\b", re.IGNORECASE),
@@ -42,51 +42,6 @@ FILENAME_CASE_ID_PATTERNS = [
     re.compile(r"\b(\d{4}-CV-\d{4,6})\b", re.IGNORECASE),
 ]
 
-COURT_KEYWORDS = {
-    "court order": 2,
-    "court clerk": 3,
-    "landgericht": 3,
-    "oberlandesgericht": 3,
-    "amtsgericht": 3,
-    "gericht": 2,
-    "richter": 2,
-    "beschluss": 2,
-    "urteil": 2,
-    "klage": 2,
-    "az.": 3,
-    "aktenzeichen": 3,
-    "gerichtsbeschluss": 3,
-    "mahnbescheid": 3,
-    "vollstreckungsbescheid": 3,
-}
-
-OPPOSING_KEYWORDS = {
-    "anwalt": 1,
-    "rechtsanwalt": 2,
-    "kläger": 1,
-    "klägerin": 1,
-    "antragsteller": 1,
-    "antragstellerin": 1,
-    "beklagter": 1,
-    "beklagte": 1,
-    "gegner": 2,
-    "gegnerin": 2,
-    "widerspruch": 2,
-    "einspruch": 2,
-    "klageerwiderung": 2,
-}
-
-OWN_KEYWORDS = {
-    "mandant": 2,
-    "mandantin": 2,
-    "unser": 1,
-    "unsere": 1,
-    "ihre": 1,
-    "hiermit": 1,
-    "vereinbarung": 1,
-    "vollmacht": 2,
-}
-
 
 class ExtractionResult(TypedDict):
     value: str | None
@@ -125,48 +80,6 @@ def extract_case_id(filename: str, content: str) -> ExtractionResult:
                 value = match.group(1).upper().replace(" ", "-")
                 confidence = "medium"
                 break
-
-    return {"value": value, "confidence": confidence}
-
-
-def extract_originator(filename: str, content: str) -> ExtractionResult:
-    """Extract originator type from content.
-
-    Court keywords are scored against the header region only (first 500 chars)
-    to avoid lawyer letters being misclassified as court documents because they
-    mention court names or Aktenzeichen in their body text.
-    """
-    value = OriginatorType.UNKNOWN
-    confidence = "low"
-    score = {"court": 0, "opposing": 0, "own": 0}
-
-    # Court scoring: header only — institution names appear in letterhead, not body.
-    header_text = content.lower()[:500] if content else ""
-    # Opposing/own scoring: full document context
-    text = content.lower()[:10000] if content else ""
-    filename_lower = filename.lower()
-
-    for keyword, weight in COURT_KEYWORDS.items():
-        if keyword in header_text or keyword in filename_lower:
-            score["court"] += weight
-
-    for keyword, weight in OPPOSING_KEYWORDS.items():
-        if keyword in text or keyword in filename_lower:
-            score["opposing"] += weight
-
-    for keyword, weight in OWN_KEYWORDS.items():
-        if keyword in text:
-            score["own"] += weight
-
-    if score["court"] > score["opposing"] and score["court"] > score["own"]:
-        value = OriginatorType.COURT
-        confidence = "medium" if score["court"] >= 3 else "low"
-    elif score["opposing"] > score["court"] and score["opposing"] > score["own"]:
-        value = OriginatorType.OPPOSING
-        confidence = "medium" if score["opposing"] >= 3 else "low"
-    elif score["own"] > 2:
-        value = OriginatorType.OWN
-        confidence = "low"
 
     return {"value": value, "confidence": confidence}
 

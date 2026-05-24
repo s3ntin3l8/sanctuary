@@ -7,10 +7,13 @@
   {% set _items = (deadlines + hearings) | sort(attribute='due_date') %}
 {% endif %}
 
-{# Compute next open deadline for Case Clock (rendered below action items) #}
+{# Compute next open deadline for Case Clock (rendered below action items).
+   The Case Clock is the *user's* clock — exclude items addressed to opposing /
+   third party / court. #}
 {% set _next = namespace(item=none) %}
 {% for item in _items %}
-  {% if item.due_date and (item.status is none or item.status.value == 'open') %}
+  {% if item.due_date and (item.status is none or item.status.value == 'open')
+        and (item.addressee in (none, 'user')) %}
     {% if _next.item is none or item.due_date < _next.item.due_date %}
       {% set _next.item = item %}
     {% endif %}
@@ -26,9 +29,16 @@
   'payment_due':       'payments'
 } %}
 
+{# Addressee → short label (shown only for non-user items) #}
+{% set _addressee_labels = {
+  'opposing':    'opposing',
+  'third_party': '3rd party',
+  'court':       'court'
+} %}
+
 {# ── Action Items ────────────────────────────────────────────────── #}
 <div id="action-items-anchor"
-     x-data="{ filter: 'open' }">
+     x-data="{ filter: 'open', audience: 'mine' }">
 
   {# Header + filter tabs + collapse toggle #}
   <div class="flex items-center justify-between gap-2 px-5 py-3 border-b border-outline-variant/30">
@@ -42,6 +52,20 @@
                          ? 'bg-primary/20 text-primary'
                          : 'text-on-surface-variant hover:bg-surface-container-high'"
                 class="px-2 py-0.5 rounded-full font-medium transition-colors">
+          {{ label }}
+        </button>
+        {% endfor %}
+      </div>
+      <div x-show="!actionItemsCollapsed" class="flex items-center gap-1 pl-2 border-l border-outline-variant/30">
+        {% for key, label in [('mine','mine'),('audience-all','all')] %}
+        {% set audience_key = 'mine' if key == 'mine' else 'all' %}
+        <button type="button"
+                @click="audience = '{{ audience_key }}'"
+                :class="audience === '{{ audience_key }}'
+                         ? 'bg-primary/20 text-primary'
+                         : 'text-on-surface-variant hover:bg-surface-container-high'"
+                class="px-2 py-0.5 rounded-full font-medium transition-colors"
+                title="{{ 'Show only deadlines for me (the user)' if audience_key == 'mine' else 'Show deadlines for opposing/third-party/court too' }}">
           {{ label }}
         </button>
         {% endfor %}
@@ -65,11 +89,14 @@
     {% set is_done = (item.status.value in ('completed','dismissed')) if item.status else false %}
     {% set _icon = _type_icons.get(item.action_type.value, 'event_note') %}
     {% set _is_deadline = item.action_type.value == 'deadline' %}
-    <div class="flex items-start gap-3 px-4 py-2.5"
+    {% set _is_mine = (item.addressee in (none, 'user')) %}
+    {% set _addressee_label = _addressee_labels.get(item.addressee) %}
+    <div class="flex items-start gap-3 px-4 py-2.5 {{ '' if _is_mine else 'opacity-70' }}"
          x-data="{ closed: false }"
-         x-show="filter === 'all'
-                  || (filter === 'open' && {{ 'true' if is_open else 'false' }})
-                  || (filter === 'completed' && {{ 'true' if is_done else 'false' }})">
+         x-show="(audience === 'all' || {{ 'true' if _is_mine else 'false' }})
+                  && (filter === 'all'
+                       || (filter === 'open' && {{ 'true' if is_open else 'false' }})
+                       || (filter === 'completed' && {{ 'true' if is_done else 'false' }}))">
 
       {# Left: type icon #}
       <div class="w-4 text-center pt-[2px] shrink-0">
@@ -115,16 +142,22 @@
           {% endif %}
         </div>
 
-        {# Row 2: title (clickable → HUD if source doc exists) #}
-        {% if item.source_document_id %}
-        <button type="button"
-                @click="window._dashOpenDoc({{ item.source_document_id }})"
-                class="text-[13px] text-left text-on-surface hover:text-primary hover:underline underline-offset-2 cursor-pointer transition-colors w-full truncate block">
-          {{ item.title }}
-        </button>
-        {% else %}
-        <span class="text-[13px] text-on-surface block truncate">{{ item.title }}</span>
-        {% endif %}
+        {# Row 2: title (clickable → HUD if source doc exists) + addressee chip for non-user items #}
+        <div class="flex items-center gap-1.5 min-w-0">
+          {% if item.source_document_id %}
+          <button type="button"
+                  @click="window._dashOpenDoc({{ item.source_document_id }})"
+                  class="text-[13px] text-left text-on-surface hover:text-primary hover:underline underline-offset-2 cursor-pointer transition-colors min-w-0 flex-1 truncate">
+            {{ item.title }}
+          </button>
+          {% else %}
+          <span class="text-[13px] text-on-surface min-w-0 flex-1 truncate">{{ item.title }}</span>
+          {% endif %}
+          {% if _addressee_label %}
+          <span class="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant uppercase tracking-wider"
+                title="Deadline targets: {{ item.addressee }}">{{ _addressee_label }}</span>
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endfor %}

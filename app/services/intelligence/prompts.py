@@ -67,7 +67,17 @@ PASS1_USER_SUFFIX = (
     "is produced in a follow-up step. Just analyze. ---"
 )
 
-PASS2_USER_SUFFIX = "--- Now output ONLY the JSON matching the schema. No prose. ---"
+PASS2_USER_SUFFIX = (
+    "--- Now output ONLY the JSON matching the schema. No prose.\n"
+    "The JSON MUST faithfully reflect the conclusions of your prior analysis "
+    "above — do NOT re-decide, re-weigh, or hedge. This is a formatting step, "
+    "not a second classification.\n"
+    "Specifically: if the analysis concluded a clear value for `originator`, "
+    "`sender`, `is_court_document`, or any other field, emit that exact value. "
+    "If the analysis was genuinely uncertain on a field, pick the most-likely "
+    'value the analysis pointed to and set its confidence to "low" — do not '
+    "downgrade to a safer or blander answer than what you reasoned to. ---"
+)
 
 # ---------------------------------------------------------------------------
 # Slicing
@@ -141,7 +151,8 @@ Extract metadata from the document.
 
 Case Title Rules:
 - Standard format: "[Party1] ./. [Party2] - [Matter]".
-- Append " (eA)" for expedited/preliminary proceedings.
+- Append " (eA)" ONLY for expedited/preliminary proceedings — and the only reliable signal for this is the Aktenzeichen suffix `eA` (e.g. "12 F 100/24 eA"). Do NOT add (eA) just because the document mentions urgency, fast-track service, or transmission via beA.
+- Do NOT confuse "beA" with "eA": **beA = besonderes elektronisches Anwaltspostfach** (the lawyer's electronic mailbox, a transmission method only — analogous to "per fax" or "per E-Mail"); **eA = einstweilige Anordnung / expedited** (a procedural status marked on the Aktenzeichen). "per beA" on a letterhead is delivery metadata, never grounds for (eA).
 - Use surnames only. Order parties as per the Rubrum (Applicant/Plaintiff FIRST).
 - Example: "Hansen ./. Liu - Sorgerecht" or "Kindesunterhalt - Hansen".
 
@@ -231,13 +242,13 @@ Extract these fields:
   - direction: "incoming" = money owed to us / received, "outgoing" = money we must pay, "ruling" = allocation decision, "none" = no direction.
 - management_summary: three-bullet executive summary:
   {"legal_significance": "1-2 sentences on legal meaning", "required_action": "what needs to be done and by when", "financial_impact": "direct financial implications or 'None'"}
-- action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document imposes on the user or the user's lawyer. Patterns to capture:
+- action_items: REQUIRED list (use [] if none). Extract every deadline or required action the document establishes — regardless of whom it targets. The `addressee` field labels whom each item is for; downstream code filters the user's default view to addressee="user". Patterns to capture:
   * Court deadlines: filing, response (Stellungnahme), appeal, objection (Beschwerde, Erinnerung)
   * Court hearing dates (Verhandlungstermin, Anhörung)
-  * Court directives addressed to a party role: "wird dem Gläubiger aufgegeben …", "der Antragsteller wird aufgefordert …", "die Antragsgegnerin hat … einzureichen". When the role label maps to the user — see Party perspective below — this is an action item for the user. When it maps to the opposing party, skip it.
+  * Court directives addressed to a party role: "wird dem Gläubiger aufgegeben …", "der Antragsteller wird aufgefordert …", "die Antragsgegnerin hat … einzureichen". Resolve the role to the explicit party (see Party perspective below) and set `addressee` accordingly: "user" when the role maps to the user/own-side, "opposing" when it maps to the opposing party, "third_party" for experts/Sachverständiger/Jugendamt/etc., "court" for items the court itself owes (rare).
   * Relative time periods: "binnen 2 Wochen", "binnen einer Woche", "innerhalb von 14 Tagen", "innerhalb eines Monats", "Frist von …", "fällig am …", "Zahlungsfrist", "Zahlungserinnerung", "Erinnerungsfrist nach § 5 JBeitrG"
-  * Invoice / court fee payment deadlines (Gerichtskostenrechnung, Landesjustizkasse, any explicit payment period)
-  Each entry: {"title": "short title", "action_type": "deadline|court_date|response_required|filing_required|payment_due", "due_date": "YYYY-MM-DD or null", "description": "details — for relative deadlines state the basis, e.g. 'binnen 2 Wochen ab Datum des Schreibens (2026-04-30)'", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null"}
+  * Invoice / court fee payment deadlines (Gerichtskostenrechnung, Landesjustizkasse, any explicit payment period) — addressee="user" when the user owes the fee.
+  Each entry: {"title": "short title", "action_type": "deadline|court_date|response_required|filing_required|payment_due", "due_date": "YYYY-MM-DD or null", "description": "details — for relative deadlines state the basis, e.g. 'binnen 2 Wochen ab Datum des Schreibens (2026-04-30)'", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null", "addressee": "user|opposing|third_party|court or null when truly ambiguous"}
   For relative deadlines, compute due_date from the document's own date (Datum, issued date) when possible.
   When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
 
@@ -247,8 +258,10 @@ FamFG / German family-law role defaults (apply when no Known Party Identity bloc
 - Verfahrensbeistand, Verfahrenspfleger → third_party
 - Jugendamt (Kreisjugendamt, Stadtjugendamt, etc.) → third_party
 - Sachverständiger, Gutachter → third_party
+- Any private organisation acting on a court appointment (Beweisbeschluss, Verkehrswertermittlung, Schätzung, Gutachten-Auftrag, Vermessung, etc.) → third_party. This includes appraisers, surveyors, accountants, and consulting firms when the document is their report or correspondence about that appointment. The court appoints them; they are not part of the court themselves.
 - Amtsgericht, Landgericht, Oberlandesgericht, Bundesgerichtshof → court
 - Any other court or Verwaltungsgericht → court
+- Landesjustizkasse, Gerichtskasse, Justizvollzugskasse → third_party (these are state treasuries that collect court fees on behalf of the judiciary; they are not the court itself, and they are not a party to the dispute)
 
 - court_relay: set to true when the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
 

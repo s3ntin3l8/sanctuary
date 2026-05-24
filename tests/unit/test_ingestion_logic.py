@@ -1,11 +1,9 @@
 import pytest
 
-from app.models.enums import OriginatorType
 from app.services.ingestion import (
     extract_case_id,
     extract_cost_candidates,
     extract_internal_id,
-    extract_originator,
     extract_sender,
     normalize_az_court,
 )
@@ -77,15 +75,6 @@ def test_extract_case_id():
 
     result = extract_case_id("random.pdf", "No numbers here")
     assert result["value"] is None
-
-
-@pytest.mark.unit
-def test_extract_originator():
-    result = extract_originator("", "This is a court order from the judge.")
-    assert result["value"] == OriginatorType.COURT
-
-    result = extract_originator("file.txt", "Hello world")
-    assert result["value"] == OriginatorType.UNKNOWN
 
 
 @pytest.mark.unit
@@ -250,24 +239,3 @@ def test_infer_case_type_from_az():
     # Non-canonical input → None (function requires normalize_az_court output)
     assert infer_case_type_from_az("003F426/25") is None
     assert infer_case_type_from_az("") is None
-
-
-@pytest.mark.unit
-def test_extract_originator_court_score_uses_header_only():
-    from app.services.ingestion.extractors import extract_originator
-
-    # Body text mentioning courts should NOT push a lawyer letter to COURT
-    lawyer_body = "Sehr geehrte Frau Müller,\n\n" * 20 + (
-        "Das Amtsgericht hat per Beschluss entschieden. "
-        "Das Oberlandesgericht hat bestätigt. "
-        "Az.: 3 F 951/25 wurde verhandelt. " * 10
-    )
-    result = extract_originator("brief.pdf", lawyer_body)
-    assert result["value"] != "court", (
-        "Court keywords in body text should not classify a lawyer letter as court"
-    )
-
-    # Court letterhead in first 500 chars SHOULD classify as court
-    court_header = "Amtsgericht Ingolstadt\nRichter Dr. Meier\n\nBeschluss\n\n"
-    result2 = extract_originator("beschluss.pdf", court_header)
-    assert result2["value"] == "court"

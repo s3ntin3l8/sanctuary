@@ -30,7 +30,6 @@ from app.services.ingestion.extractors import (
     extract_case_id,
     extract_internal_id,
     extract_issued_date,
-    extract_originator,
     extract_sender,
 )
 
@@ -355,7 +354,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     safe_filename = os.path.basename(doc.file_path) if doc.file_path else ""
 
     result_case_id = extract_case_id(safe_filename, content)
-    result_originator = extract_originator(safe_filename, content)
     result_date = extract_issued_date(content, safe_filename)
     result_sender = extract_sender(content)
     result_internal_id = extract_internal_id(content)
@@ -365,7 +363,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
         if db.query(CaseModel).filter(CaseModel.id == result_case_id["value"]).first():
             doc.case_id = result_case_id["value"]
 
-    doc.originator_type = result_originator["value"]
     doc.sender = result_sender["value"]
     doc.issued_date = result_date["value"]
     if not doc.received_date:
@@ -377,7 +374,6 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
         **ExtractionConfidenceSchema(
             sender=result_sender["confidence"],
             issued_date=result_date["confidence"],
-            originator=result_originator["confidence"],
             internal_id=result_internal_id["confidence"],
         ).model_dump(),
     }

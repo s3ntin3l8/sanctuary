@@ -95,13 +95,16 @@ def _call_enricher_sync(
             "in this email/delivery):\n"
             + json.dumps(batch_detected_actions, ensure_ascii=False, indent=2)
             + "\nFor each batch-detected action with confidence: high and a due_date, "
-            "include it in your action_items if THIS document is the most-direct source "
-            "— defined as: (1) a Verfügung/Ladung/court order setting the date, OR "
+            "include it in your action_items ONLY when THIS document is the most-direct "
+            "source — defined as: (1) a Verfügung/Ladung/court order setting the date, OR "
             "(2) when no order document exists in the batch, the cover letter announcing it. "
             "Do NOT include the action if another document in the batch is a more-direct "
             "source (the dedup constraint on (case_id, due_date, action_type) prevents "
             "double-creation). For confidence: low actions, apply the strict "
-            "'directly establishes' filter. Set supersedes_date as indicated."
+            "'directly establishes' filter. Set supersedes_date as indicated.\n"
+            "Set the `addressee` for every entry — including batch-detected items — to "
+            "the party the action targets (user|opposing|third_party|court). Do not "
+            "auto-promote a third-party or opposing-directed obligation to addressee=user."
         )
 
     party_block = (party_context + "\n\n") if party_context else ""

@@ -349,21 +349,6 @@ def generate(case_id: str) -> None:
             )
             case.parties = parties
 
-            # Auto-bootstrap opposing_parties from AI-derived parties when user
-            # has not yet confirmed them. Never overwrites a user-edited value.
-            # Defense-in-depth filter: even though _compute_parties locks
-            # canonical_role=COURT for any name with a COURT count or court
-            # keyword, this filter blocks court names from sneaking in via
-            # OPPOSING when a case has only ever misclassified them as parties
-            # (no COURT counts yet to trigger the lock).
-            if not case.opposing_parties:
-                case.opposing_parties = [
-                    p["name"]
-                    for p in parties
-                    if p.get("role") == str(OriginatorType.OPPOSING)
-                    and not is_court_name(p.get("name"))
-                ]
-
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:
             logger.error(f"Case {case_id} brief generation failed: {e}", exc_info=True)
