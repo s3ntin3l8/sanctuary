@@ -66,6 +66,21 @@ _BACKOFF_INITIAL = 0.05
 _BACKOFF_MAX = 2.0
 _BACKOFF_GROWTH = 1.6
 
+# Celery queue that carries chandra OCR work (process_document_task). When
+# a qwen acquirer would otherwise be granted the freshly-released gate,
+# but the ingest queue still has pending chandra tasks, qwen defers so
+# the ingest worker can keep the chandra slot hot across the batch. This
+# is the "drain extract first" bias that prevents per-doc model swaps
+# during batch ingest.
+_INGEST_QUEUE_NAME = "ingest"
+
+# Maximum total time a single qwen acquire will defer for the ingest
+# queue before falling back to normal acquire semantics. Bounds the
+# starvation risk if gmail-sync or scan-folder keep feeding new work
+# faster than chandra can drain it. The overall acquire timeout
+# (_DEFAULT_ACQUIRE_TIMEOUT, 30 min) still applies on top of this.
+_QUEUE_DEFER_CAP_SECONDS = 10 * 60.0  # 10 min
+
 # Compatibility table — keys are the family being acquired, values are the
 # set of families that may coexist in flight. chandra ↔ qwen exclude each
 # other; embed (small enough to coexist) is compatible with everything.
@@ -204,7 +219,10 @@ def model_gate(
     deadline = time.monotonic() + timeout
     backoff = _BACKOFF_INITIAL
     wait_logged = False
+    queue_defer_logged = False
+    queue_defer_exhausted = False  # latched True once cap reached; never re-check
     started_wait_at: float | None = None
+    queue_defer_started_at: float | None = None
 
     try:
         client = _get_client()
@@ -212,6 +230,55 @@ def model_gate(
         compat_list = sorted(COMPATIBILITY[family])
 
         while True:
+            # Drain-first bias: qwen yields to pending chandra work on the
+            # ingest queue so a multi-doc batch keeps chandra loaded across
+            # all extracts instead of swapping models after each one. Only
+            # applies to qwen — chandra never defers, embed is compatible
+            # with everyone so the check would be moot. Latched off once
+            # the per-acquire defer cap is reached, so a perpetually-fed
+            # ingest queue can't starve qwen forever.
+            if family == "qwen" and not queue_defer_exhausted:
+                try:
+                    pending_ingest = client.llen(_INGEST_QUEUE_NAME)
+                except (redis.RedisError, OSError) as exc:
+                    _maybe_warn(exc)
+                    pending_ingest = 0
+
+                if pending_ingest > 0:
+                    now = time.monotonic()
+                    if queue_defer_started_at is None:
+                        queue_defer_started_at = now
+                    deferred_for = now - queue_defer_started_at
+                    if deferred_for < _QUEUE_DEFER_CAP_SECONDS:
+                        if not queue_defer_logged:
+                            logger.info(
+                                "model_gate: %s waiting for ingest queue "
+                                "(%d task(s) pending — chandra stays loaded)",
+                                label or "<unlabeled>",
+                                pending_ingest,
+                            )
+                            queue_defer_logged = True
+                        if started_wait_at is None:
+                            started_wait_at = now
+                        if now >= deadline:
+                            raise TimeoutError(
+                                f"model_gate: timed out after {timeout:.0f}s "
+                                f"deferring for ingest queue "
+                                f"(label={label or '<unlabeled>'})"
+                            )
+                        time.sleep(min(backoff, max(0.0, deadline - now)))
+                        backoff = min(backoff * _BACKOFF_GROWTH, _BACKOFF_MAX)
+                        continue
+                    # Defer cap reached — log once, latch off, and fall
+                    # through to normal acquire.
+                    queue_defer_exhausted = True
+                    logger.warning(
+                        "model_gate: %s deferred %.0fs for ingest queue, "
+                        "cap reached — falling back to normal acquire",
+                        label or "<unlabeled>",
+                        deferred_for,
+                    )
+
             try:
                 result = script(
                     keys=[sentinel_key],
