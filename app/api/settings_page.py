@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_db
 from app.helpers import render_page
 from app.services.ai_config import _get_ai_section, get_embed_config
-from app.services.ai_provider import chat_provider, embed_provider
+from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
 from app.services.timezone_service import get_timezone_choices
 from app.services.user_settings_service import (
     _get_or_create,
     get_ai_debug_redact,
+    get_extraction_engine,
     get_party_identity,
 )
 
@@ -76,10 +77,12 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
     instances = list_instances(db)
     active_chat_id = ai.get("active_chat_id", "")
     active_embed_id = ai.get("active_embed_id", "")
+    active_ocr_id = ai.get("active_ocr_id", "")
     embed_cfg = get_embed_config(db)
 
     chat_provider.reload_from_db(db)
     embed_provider.reload_from_db(db)
+    ocr_provider.reload_from_db(db)
 
     import asyncio
 
@@ -98,8 +101,10 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         instance_health=instance_health,
         active_chat_id=active_chat_id,
         active_embed_id=active_embed_id,
+        active_ocr_id=active_ocr_id,
         embed_cfg=embed_cfg,
         ai_debug_redact=get_ai_debug_redact(db),
+        extraction_engine=get_extraction_engine(db),
     )
 
 

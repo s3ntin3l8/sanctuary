@@ -724,8 +724,19 @@ def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
     return _conversion_executor
 
 
-def convert_file(file_path: str, timeout: int = None) -> dict:
-    """Convert file to markdown using Docling and extract structural metadata."""
+def convert_file(
+    file_path: str, timeout: int = None, *, engine: str = "docling"
+) -> dict:
+    """Convert file to markdown and extract structural metadata.
+
+    ``engine`` controls PDF extraction: ``"chandra"`` routes through the
+    Chandra-OCR vision pipeline (active OCR instance from settings); anything
+    else uses the existing Docling+Tesseract subprocess. Non-PDF formats
+    always use the existing path — Chandra is image-based and adds nothing
+    for text-native formats. If Chandra extraction raises (no OCR model
+    configured, endpoint unreachable, all pages failed) we fall back to
+    Docling so a misconfigured OCR endpoint never bricks ingestion.
+    """
     if timeout is None:
         timeout = CONVERSION_TIMEOUT
 
@@ -742,6 +753,34 @@ def convert_file(file_path: str, timeout: int = None) -> dict:
         with open(file_path, encoding="utf-8", errors="ignore") as f:
             content = f.read()
         return {"content": content, "metadata": {"pages": 1}, "chunks": []}
+
+    if ext == ".pdf" and engine == "chandra":
+        try:
+            from app.config import SessionLocal
+            from app.services.ai_config import get_ocr_config
+            from app.services.ingestion.chandra_extractor import (
+                ChandraExtractionError,
+                extract_with_chandra,
+            )
+
+            session = SessionLocal()
+            try:
+                ocr_cfg = get_ocr_config(session)
+            finally:
+                session.close()
+            return extract_with_chandra(file_path, ocr_config=ocr_cfg)
+        except ChandraExtractionError as exc:
+            logger.warning(
+                "Chandra extraction failed for %s — falling back to Docling: %s",
+                file_path,
+                exc,
+            )
+        except Exception as exc:  # noqa: BLE001 — never let OCR brick ingest
+            logger.warning(
+                "Chandra extraction crashed for %s — falling back to Docling: %s",
+                file_path,
+                exc,
+            )
 
     executor = _get_executor()
     future = executor.submit(_convert_in_subprocess, file_path)

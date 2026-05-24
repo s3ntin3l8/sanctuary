@@ -37,6 +37,7 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+benchmarks/
 
 # Node.js
 node_modules/
@@ -78,3 +79,6 @@ competitor_analysis.md
 scratch/
 superpowers/
 celerybeat-schedule.*
+
+# Benchmark outputs (large JSON dumps + per-run reports; not checked in)
+benchmarks/*/outputs/

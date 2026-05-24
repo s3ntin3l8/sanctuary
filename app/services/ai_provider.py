@@ -170,27 +170,26 @@ class AIProvider:
             from app.services.ai_config import get_chat_config
 
             cfg = get_chat_config(db)
-            changed = (
-                cfg.base_url != self.base_url
-                or cfg.provider != self.provider
-                or cfg.api_key != self.api_key
-            )
-            self.base_url = cfg.base_url
-            self.provider = cfg.provider
-            self.api_key = cfg.api_key
             self._user_context = cfg.user_context
-        else:
+        elif self._role == "embed":
             from app.services.ai_config import get_embed_config
 
             cfg = get_embed_config(db)
-            changed = (
-                cfg.base_url != self.base_url
-                or cfg.provider != self.provider
-                or cfg.api_key != self.api_key
-            )
-            self.base_url = cfg.base_url
-            self.provider = cfg.provider
-            self.api_key = cfg.api_key
+        elif self._role == "ocr":
+            from app.services.ai_config import get_ocr_config
+
+            cfg = get_ocr_config(db)
+        else:
+            raise ValueError(f"Unknown role {self._role!r}")
+
+        changed = (
+            cfg.base_url != self.base_url
+            or cfg.provider != self.provider
+            or cfg.api_key != self.api_key
+        )
+        self.base_url = cfg.base_url
+        self.provider = cfg.provider
+        self.api_key = cfg.api_key
         if changed:
             self._detected_type = None
 
@@ -464,9 +463,11 @@ class AIProvider:
         return None
 
 
-# Role-specific singletons: chat_provider for generation, embed_provider for embeddings
+# Role-specific singletons: chat_provider for generation, embed_provider for
+# embeddings, ocr_provider for image-to-markdown extraction (Chandra-class).
 chat_provider = AIProvider(role="chat")
 embed_provider = AIProvider(role="embed")
+ocr_provider = AIProvider(role="ocr")
 
 
 async def get_embedding_params_for(config: dict, model: str, prompt: str) -> dict:

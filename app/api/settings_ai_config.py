@@ -23,7 +23,7 @@ from app.services.ai_config import (
     set_active,
     set_user_context,
 )
-from app.services.ai_provider import chat_provider, embed_provider
+from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
 
 logger = logging.getLogger(__name__)
 
@@ -95,20 +95,33 @@ async def _probe_embed_dim(inst: dict) -> tuple[int | None, str | None]:
 
 
 def _categorize_models(models: list[str]) -> dict[str, list[str]]:
-    """Categorize models into chat and embed based on heuristics."""
+    """Categorize models into chat, embed, and ocr based on name heuristics.
+
+    A model can appear in multiple categories — Qwen3.5-VL for instance is
+    both chat-capable and OCR-capable. The select widgets filter by category
+    so multi-category models naturally show up in each relevant dropdown.
+    """
     chat = []
     embed = []
+    ocr = []
 
     embed_keywords = ["embed", "similarity", "bert", "nomic", "minilm", "mxbai"]
+    ocr_keywords = ["ocr", "chandra", "vl", "vision", "docling"]
 
     for m in models:
         name_lower = m.lower()
-        if any(kw in name_lower for kw in embed_keywords):
+        is_embed = any(kw in name_lower for kw in embed_keywords)
+        is_ocr = any(kw in name_lower for kw in ocr_keywords)
+        if is_embed:
             embed.append(m)
-        else:
+        if is_ocr:
+            ocr.append(m)
+        if not is_embed:
+            # Anything not strictly an embedding model is a candidate chat
+            # model. Vision-LLMs (e.g. qwen-vl) can drive chat too.
             chat.append(m)
 
-    return {"chat": chat, "embed": embed}
+    return {"chat": chat, "embed": embed, "ocr": ocr}
 
 
 async def _fetch_models(inst: dict) -> dict[str, list[str]]:
@@ -174,6 +187,7 @@ async def create_instance(
     api_key: str = Form("not-needed"),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
+    ocr_model: str = Form(""),
     db: Session = Depends(get_db),
 ):
     from app.services.ai_config import _make_id
@@ -188,6 +202,7 @@ async def create_instance(
         "summary_model": summary_model.strip(),
         "embed_model": embed_model.strip(),
         "embed_dim": None,
+        "ocr_model": ocr_model.strip(),
     }
 
     if embed_model.strip():
@@ -225,6 +240,7 @@ async def save_instance_route(
     api_key: str = Form(""),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
+    ocr_model: str = Form(""),
     db: Session = Depends(get_db),
 ):
     existing = get_instance(db, instance_id)
@@ -241,6 +257,7 @@ async def save_instance_route(
         "summary_model": summary_model.strip() or existing.get("summary_model", ""),
         "embed_model": new_embed_model,
         "embed_dim": existing.get("embed_dim"),
+        "ocr_model": ocr_model.strip() or existing.get("ocr_model", ""),
     }
 
     # Always probe when embed_model is set — catches stale dims from before auto-detect.
@@ -255,6 +272,7 @@ async def save_instance_route(
     save_instance(db, instance)
     chat_provider.reload_from_db(db)
     embed_provider.reload_from_db(db)
+    ocr_provider.reload_from_db(db)
 
     # Warn if this is the active embed instance and dim no longer matches vec0
     from app.services.ai_config import _get_ai_section
@@ -297,6 +315,7 @@ async def delete_instance_route(
     if (
         ai.get("active_chat_id") == instance_id
         or ai.get("active_embed_id") == instance_id
+        or ai.get("active_ocr_id") == instance_id
     ):
         return HTMLResponse(
             _toast(
@@ -366,6 +385,7 @@ async def instance_models(
 
     chat_models = categorized.get("chat", [])
     embed_models = categorized.get("embed", [])
+    ocr_models = categorized.get("ocr", [])
 
     # If categorized lists are empty, provide fallback options
     summary_opts = (
@@ -378,11 +398,17 @@ async def instance_models(
         if embed_models
         else f'<option value="{escape(inst.get("embed_model", ""), quote=True)}" selected>{escape(inst.get("embed_model", "") or "No embedding models found")}</option>'
     )
+    ocr_opts = (
+        _model_options(ocr_models, inst.get("ocr_model", ""))
+        if ocr_models
+        else f'<option value="{escape(inst.get("ocr_model", ""), quote=True)}" selected>{escape(inst.get("ocr_model", "") or "No OCR models found")}</option>'
+    )
 
-    # Return both selects with OOB swap
+    # Return all three selects with OOB swap
     res = [
         f'<select id="summary_model_{safe_id}" name="summary_model" hx-swap-oob="innerHTML">{summary_opts}</select>',
         f'<select id="embed_model_{safe_id}" name="embed_model" hx-swap-oob="innerHTML">{embed_opts}</select>',
+        f'<select id="ocr_model_{safe_id}" name="ocr_model" hx-swap-oob="innerHTML">{ocr_opts}</select>',
     ]
 
     return HTMLResponse("".join(res))
@@ -399,7 +425,7 @@ async def set_active_instance(
     instance_id: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    if role not in ("chat", "embed"):
+    if role not in ("chat", "embed", "ocr"):
         return HTMLResponse(_toast(False, "Invalid role"), status_code=400)
 
     inst = get_instance(db, instance_id)
@@ -412,6 +438,11 @@ async def set_active_instance(
         chat_provider.reload_from_db(db)
         health = await chat_provider.probe_health()
         ptype = await chat_provider.get_type()
+        return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
+    if role == "ocr":
+        ocr_provider.reload_from_db(db)
+        health = await ocr_provider.probe_health()
+        ptype = await ocr_provider.get_type()
         return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
     embed_provider.reload_from_db(db)
     health = await embed_provider.probe_health()
@@ -592,6 +623,28 @@ async def set_debug_redact(
     from fastapi.responses import Response
 
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Extraction engine toggle (Chandra vs Docling for PDFs)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/extraction-engine", response_class=HTMLResponse)
+async def set_extraction_engine_route(
+    engine: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Persist the PDF extraction engine choice (chandra | docling)."""
+    from app.services.user_settings_service import (
+        VALID_EXTRACTION_ENGINES,
+        set_extraction_engine,
+    )
+
+    if engine not in VALID_EXTRACTION_ENGINES:
+        return HTMLResponse(_toast(False, f"Invalid engine: {engine}"), status_code=400)
+    set_extraction_engine(db, engine)
+    return HTMLResponse(_toast(True, f"Default engine: {engine}"))
 
 
 # ---------------------------------------------------------------------------

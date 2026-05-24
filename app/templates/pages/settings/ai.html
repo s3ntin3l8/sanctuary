@@ -11,9 +11,9 @@
     {# ── Active Instance Selectors ────────────────────────────────────── #}
     <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-5">
         <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Active Instances</p>
-        <p class="text-xs text-on-surface-variant/70">Select which registered instance handles chat and which handles embeddings. They can be the same or different.</p>
+        <p class="text-xs text-on-surface-variant/70">Select which registered instance handles chat, embeddings, and OCR. They can be the same or different — OCR can point at a separate vision/OCR model on its own endpoint.</p>
 
-        <div class="grid grid-cols-2 gap-5">
+        <div class="grid grid-cols-3 gap-5">
             {# Active chat instance #}
             <div class="space-y-2">
                 <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Chat / Generation</label>
@@ -89,7 +89,77 @@
                     {% endif %}
                 </div>
             </div>
+
+            {# Active OCR instance #}
+            <div class="space-y-2">
+                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">OCR / Document Extraction</label>
+                <div class="flex items-center gap-2">
+                    <select id="active-ocr-select"
+                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
+                            hx-vals='{"role": "ocr"}'
+                            hx-include="#active-ocr-select"
+                            hx-target="#ocr-status-result"
+                            hx-swap="innerHTML"
+                            name="instance_id"
+                            class="flex-1 bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
+                        {% for inst in instances %}
+                        <option value="{{ inst.id }}" {% if inst.id == active_ocr_id %}selected{% endif %}>
+                            {{ inst.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="ocr-status-result" class="min-h-[20px]">
+                    {% set ocr_inst = instances | selectattr("id", "equalto", active_ocr_id) | first | default(instances[0] if instances else None) %}
+                    {% if ocr_inst %}
+                    {% set h = instance_health.get(ocr_inst.id, {"ok": False, "detail": "Unknown"}) %}
+                    {% if h.ok %}
+                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
+                        <span class="material-symbols-outlined text-[13px]">check_circle</span>
+                        <span>{{ h.detail }}</span>
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-error)">
+                        <span class="material-symbols-outlined text-[13px]">error</span>
+                        <span>{{ h.detail }}</span>
+                    </span>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
         </div>
+    </div>
+
+    {# ── Document Extraction Engine ───────────────────────────────────── #}
+    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-4">
+        <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Document Extraction Engine</p>
+        <p class="text-xs text-on-surface-variant/70">
+            Choose how PDFs are converted to markdown during ingest. Chandra uses the active OCR instance and produces much cleaner text on stamped, scanned, or image-heavy documents; Docling runs locally with Tesseract and is faster on clean digital PDFs. Other file types (DOCX, EML, TXT) always use Docling.
+        </p>
+        <form hx-post="{{ request.app.url_path_for('set_extraction_engine_route') }}"
+              hx-target="#extraction-engine-status"
+              hx-swap="innerHTML"
+              class="space-y-3">
+            <div class="flex flex-wrap items-center gap-5">
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="engine" value="chandra"
+                           {% if extraction_engine == 'chandra' %}checked{% endif %}
+                           class="accent-primary">
+                    <span class="text-sm text-on-surface">Chandra OCR <span class="text-on-surface-variant/60 text-xs">(recommended)</span></span>
+                </label>
+                <label class="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="engine" value="docling"
+                           {% if extraction_engine == 'docling' %}checked{% endif %}
+                           class="accent-primary">
+                    <span class="text-sm text-on-surface">Docling + Tesseract</span>
+                </label>
+                <button type="submit"
+                        class="px-3 py-1.5 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-lg hover:opacity-90 transition-all">
+                    Save
+                </button>
+                <div id="extraction-engine-status" class="min-h-[20px]"></div>
+            </div>
+        </form>
     </div>
 
     {# ── Registered Instances ─────────────────────────────────────────── #}

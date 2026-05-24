@@ -23,6 +23,7 @@ from app.services.intelligence.prompts import (
     PASS2_USER_SUFFIX,
     PROMPT_VERSION,
 )
+from app.services.model_gate import model_gate
 from app.services.timezone_service import get_user_tz
 
 logger = logging.getLogger(__name__)
@@ -384,114 +385,120 @@ def _stream_response(
     watchdog_event: str | None = None
 
     try:
-        with track_ai_call(debug_label):
-            with httpx.Client(
-                timeout=httpx.Timeout(
-                    connect=5.0, read=AI_READ_TIMEOUT, write=30.0, pool=10.0
-                )
-            ) as client:
-                with client.stream(
-                    "POST",
-                    params["url"],
-                    json=params["json"],
-                    headers=params["headers"],
-                ) as response:
-                    if not response.is_success:
-                        _body = response.read()
-                        _code = _parse_litellm_error_code(_body)
-                        _summary = _parse_litellm_error_summary(_body)
-                        if _code == "context_length_exceeded":
-                            logger.warning(
-                                "call %s: context length exceeded (HTTP %s) — "
-                                "prompt too large for model context window",
-                                debug_label,
-                                response.status_code,
+        # Acquire the qwen family lock for the duration of this HTTP call.
+        # When the chandra OCR pipeline is active on the shared inference
+        # host, this blocks until extraction drains rather than letting
+        # LMStudio swap models mid-request. Same-family calls coalesce on
+        # the loaded qwen and run in parallel up to the worker concurrency.
+        with model_gate("qwen", label=debug_label):
+            with track_ai_call(debug_label):
+                with httpx.Client(
+                    timeout=httpx.Timeout(
+                        connect=5.0, read=AI_READ_TIMEOUT, write=30.0, pool=10.0
+                    )
+                ) as client:
+                    with client.stream(
+                        "POST",
+                        params["url"],
+                        json=params["json"],
+                        headers=params["headers"],
+                    ) as response:
+                        if not response.is_success:
+                            _body = response.read()
+                            _code = _parse_litellm_error_code(_body)
+                            _summary = _parse_litellm_error_summary(_body)
+                            if _code == "context_length_exceeded":
+                                logger.warning(
+                                    "call %s: context length exceeded (HTTP %s) — "
+                                    "prompt too large for model context window",
+                                    debug_label,
+                                    response.status_code,
+                                )
+                            # Splice body summary into the exception text so it
+                            # propagates into runs.jsonl (truncated to 200 chars
+                            # at _append_index) and the per-scope debug log. Lets
+                            # us diagnose Lm_studioException / MidStreamFallback /
+                            # context_length_exceeded etc. without re-pulling the
+                            # litellm /spend/logs/v2 endpoint after the fact.
+                            raise httpx.HTTPStatusError(
+                                f"HTTP {response.status_code}"
+                                + (f" [{_code}]" if _code else "")
+                                + (f" {_summary[:200]}" if _summary else ""),
+                                request=response.request,
+                                response=response,
                             )
-                        # Splice body summary into the exception text so it
-                        # propagates into runs.jsonl (truncated to 200 chars
-                        # at _append_index) and the per-scope debug log. Lets
-                        # us diagnose Lm_studioException / MidStreamFallback /
-                        # context_length_exceeded etc. without re-pulling the
-                        # litellm /spend/logs/v2 endpoint after the fact.
-                        raise httpx.HTTPStatusError(
-                            f"HTTP {response.status_code}"
-                            + (f" [{_code}]" if _code else "")
-                            + (f" {_summary[:200]}" if _summary else ""),
-                            request=response.request,
-                            response=response,
-                        )
-                    for line in response.iter_lines():
-                        if not line:
-                            continue
-                        chunk = chat_provider.parse_stream_line(line, ptype)
-                        if not chunk:
-                            continue
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            chunk = chat_provider.parse_stream_line(line, ptype)
+                            if not chunk:
+                                continue
 
-                        if chunk.get("usage"):
-                            final_usage = chunk["usage"]
+                            if chunk.get("usage"):
+                                final_usage = chunk["usage"]
 
-                        if chunk.get("done"):
-                            break
+                            if chunk.get("done"):
+                                break
 
-                        # After a watchdog fires we keep reading to reach the final
-                        # usage chunk (OpenAI sends it right before [DONE]) but
-                        # discard all content. Give up after 30 s if it never arrives.
-                        if _drain_mode:
+                            # After a watchdog fires we keep reading to reach the final
+                            # usage chunk (OpenAI sends it right before [DONE]) but
+                            # discard all content. Give up after 30 s if it never arrives.
+                            if _drain_mode:
+                                if (
+                                    _drain_deadline is not None
+                                    and time.perf_counter() > _drain_deadline
+                                ):
+                                    logger.warning(
+                                        "call %s: drain timeout — giving up on usage chunk",
+                                        debug_label,
+                                    )
+                                    break
+                                continue
+
+                            if "thinking" in chunk:
+                                full_thinking += chunk["thinking"]
+                            if "response" in chunk:
+                                token = chunk["response"]
+                                if token:
+                                    if ttfb_perf is None:
+                                        ttfb_perf = time.perf_counter()
+                                    full_response += token
+
+                            # Abort content accumulation when thinking consumes budget
+                            # with zero response tokens; keep draining for usage chunk.
                             if (
-                                _drain_deadline is not None
-                                and time.perf_counter() > _drain_deadline
+                                not full_response
+                                and len(full_thinking) > _THINK_WATCHDOG_CHARS
+                                and (time.perf_counter() - start_perf)
+                                > _THINK_WATCHDOG_SECS
                             ):
                                 logger.warning(
-                                    "call %s: drain timeout — giving up on usage chunk",
+                                    "call %s: thinking-loop watchdog triggered "
+                                    "(%d thinking chars, %.0fs elapsed) — draining for usage",
                                     debug_label,
+                                    len(full_thinking),
+                                    time.perf_counter() - start_perf,
                                 )
-                                break
-                            continue
+                                _drain_mode = True
+                                _drain_deadline = time.perf_counter() + 30.0
+                                watchdog_event = "think_drain"
 
-                        if "thinking" in chunk:
-                            full_thinking += chunk["thinking"]
-                        if "response" in chunk:
-                            token = chunk["response"]
-                            if token:
-                                if ttfb_perf is None:
-                                    ttfb_perf = time.perf_counter()
-                                full_response += token
-
-                        # Abort content accumulation when thinking consumes budget
-                        # with zero response tokens; keep draining for usage chunk.
-                        if (
-                            not full_response
-                            and len(full_thinking) > _THINK_WATCHDOG_CHARS
-                            and (time.perf_counter() - start_perf)
-                            > _THINK_WATCHDOG_SECS
-                        ):
-                            logger.warning(
-                                "call %s: thinking-loop watchdog triggered "
-                                "(%d thinking chars, %.0fs elapsed) — draining for usage",
-                                debug_label,
-                                len(full_thinking),
-                                time.perf_counter() - start_perf,
-                            )
-                            _drain_mode = True
-                            _drain_deadline = time.perf_counter() + 30.0
-                            watchdog_event = "think_drain"
-
-                        # Abort content accumulation when response monologue consumes budget
-                        elif (
-                            len(full_response) > _RESPONSE_WATCHDOG_CHARS
-                            and (time.perf_counter() - start_perf)
-                            > _THINK_WATCHDOG_SECS
-                        ):
-                            logger.warning(
-                                "call %s: response-monologue watchdog triggered "
-                                "(%d response chars, %.0fs elapsed) — draining for usage",
-                                debug_label,
-                                len(full_response),
-                                time.perf_counter() - start_perf,
-                            )
-                            _drain_mode = True
-                            _drain_deadline = time.perf_counter() + 30.0
-                            watchdog_event = "response_monologue"
+                            # Abort content accumulation when response monologue consumes budget
+                            elif (
+                                len(full_response) > _RESPONSE_WATCHDOG_CHARS
+                                and (time.perf_counter() - start_perf)
+                                > _THINK_WATCHDOG_SECS
+                            ):
+                                logger.warning(
+                                    "call %s: response-monologue watchdog triggered "
+                                    "(%d response chars, %.0fs elapsed) — draining for usage",
+                                    debug_label,
+                                    len(full_response),
+                                    time.perf_counter() - start_perf,
+                                )
+                                _drain_mode = True
+                                _drain_deadline = time.perf_counter() + 30.0
+                                watchdog_event = "response_monologue"
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         # Fast-fail: host is unreachable — log compactly and re-raise immediately.
         duration_so_far = int((time.perf_counter() - start_perf) * 1000)

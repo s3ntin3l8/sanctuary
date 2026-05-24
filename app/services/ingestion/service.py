@@ -292,7 +292,10 @@ def process_uploaded_document(doc: Document, db: Session):
     conversion_error: str | None = None
 
     try:
-        conversion_result = convert_file(file_path)
+        from app.services.user_settings_service import get_extraction_engine
+
+        engine = get_extraction_engine(db)
+        conversion_result = convert_file(file_path, engine=engine)
         markdown_content = conversion_result["content"]
         conversion_metadata = conversion_result["metadata"]
         # Add chunks to metadata
@@ -562,7 +565,10 @@ async def ingest_file(
         conversion_error: str | None = None
 
         try:
-            conversion_result = convert_file(file_path)
+            from app.services.user_settings_service import get_extraction_engine
+
+            engine = get_extraction_engine(db)
+            conversion_result = convert_file(file_path, engine=engine)
             markdown_content = conversion_result["content"]
             conversion_metadata = conversion_result["metadata"]
             conversion_metadata["chunks"] = conversion_result.get("chunks", [])

@@ -358,6 +358,48 @@ def get_ai_debug_redact(db) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Document ingestion engine (Chandra OCR vs Docling+Tesseract for PDFs)
+# ---------------------------------------------------------------------------
+
+VALID_EXTRACTION_ENGINES = ("chandra", "docling")
+DEFAULT_EXTRACTION_ENGINE = "chandra"
+
+
+def get_extraction_engine(db) -> str:
+    """Return the configured PDF extraction engine.
+
+    Defaults to "chandra" so new installs get the better-quality extractor
+    out of the box. Falls back to "docling" only if explicitly set.
+    """
+    settings = db.query(UserSettings).first()
+    if settings and isinstance(settings.settings_json, dict):
+        engine = settings.settings_json.get("ingestion", {}).get("extraction_engine")
+        if engine in VALID_EXTRACTION_ENGINES:
+            return engine
+    return DEFAULT_EXTRACTION_ENGINE
+
+
+def set_extraction_engine(db, engine: str) -> None:
+    """Persist the PDF extraction engine selection."""
+    if engine not in VALID_EXTRACTION_ENGINES:
+        raise ValueError(
+            f"Unknown engine {engine!r}; expected one of {VALID_EXTRACTION_ENGINES}"
+        )
+    settings = _get_or_create(db)
+    data = dict(settings.settings_json or {})
+    ingestion = dict(data.get("ingestion", {}))
+    ingestion["extraction_engine"] = engine
+    data["ingestion"] = ingestion
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.SETTINGS_INGESTION_CHANGED,
+        payload={"extraction_engine": engine},
+    )
+    db.commit()
+
+
 def set_ai_debug_redact(db, value: bool) -> None:
     """Persist the AI debug log redaction toggle and emit an audit event."""
     settings = _get_or_create(db)

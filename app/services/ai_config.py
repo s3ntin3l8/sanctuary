@@ -41,6 +41,24 @@ class EmbedConfig:
     embed_dim: int
 
 
+@dataclass(frozen=True)
+class OcrConfig:
+    """Effective OCR (Chandra-class) extraction config for the active OCR instance.
+
+    Mirrors ChatConfig/EmbedConfig — same instance object, different active_id
+    pointer, different model field. The OCR endpoint can be a separate host
+    from chat/embed (e.g. a dedicated vision-LLM box) or the same litellm
+    proxy with a different model name.
+    """
+
+    id: str
+    label: str
+    base_url: str
+    provider: str
+    api_key: str
+    ocr_model: str
+
+
 def _env_defaults() -> dict:
     return {
         "base_url": AI_BASE_URL,
@@ -82,10 +100,17 @@ def get_instance(db, instance_id: str) -> dict | None:
     return None
 
 
+_ACTIVE_KEY_BY_ROLE = {
+    "chat": "active_chat_id",
+    "embed": "active_embed_id",
+    "ocr": "active_ocr_id",
+}
+
+
 def _resolve_active(db, role: str) -> dict:
     ai = _get_ai_section(db)
     instances = ai.get("instances", [])
-    key = "active_chat_id" if role == "chat" else "active_embed_id"
+    key = _ACTIVE_KEY_BY_ROLE.get(role, "active_chat_id")
     active_id = ai.get(key)
     for inst in instances:
         if inst.get("id") == active_id:
@@ -127,15 +152,38 @@ def get_embed_config(db=None) -> EmbedConfig:
     )
 
 
+def get_ocr_config(db=None) -> OcrConfig:
+    """Return effective OCR config for the active OCR instance.
+
+    Falls back to the same env-derived base_url/provider/api_key as chat/embed
+    when no instance has an OCR model set, so existing installs that haven't
+    configured Chandra still produce a coherent config object.
+    """
+    env = _env_defaults()
+    inst = _resolve_active(db, "ocr")
+    return OcrConfig(
+        id=inst.get("id", ""),
+        label=inst.get("label", "Default"),
+        base_url=(inst.get("base_url") or env["base_url"]).strip().rstrip("/"),
+        provider=(inst.get("provider") or env["provider"]).strip(),
+        api_key=(inst.get("api_key") or env["api_key"]).strip(),
+        ocr_model=(inst.get("ocr_model") or "").strip(),
+    )
+
+
 def set_active(db, role: str, instance_id: str) -> None:
-    """Set the active instance for 'chat' or 'embed'."""
+    """Set the active instance for 'chat', 'embed', or 'ocr'."""
     from app.services.user_settings_service import _get_or_create
+
+    if role not in _ACTIVE_KEY_BY_ROLE:
+        raise ValueError(
+            f"Unknown role {role!r}; expected one of {list(_ACTIVE_KEY_BY_ROLE)}"
+        )
 
     settings = _get_or_create(db)
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))
-    key = "active_chat_id" if role == "chat" else "active_embed_id"
-    ai[key] = instance_id
+    ai[_ACTIVE_KEY_BY_ROLE[role]] = instance_id
     data["ai"] = ai
     settings.settings_json = data
     audit_service.record(

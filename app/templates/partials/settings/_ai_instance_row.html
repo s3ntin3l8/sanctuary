@@ -118,8 +118,9 @@
         {# Models (populated via HTMX discover) #}
         {% set chat_models = models.chat if models is mapping else [] %}
         {% set embed_models = models.embed if models is mapping else [] %}
+        {% set ocr_models = models.ocr if models is mapping else [] %}
 
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-3 gap-3">
             <div class="space-y-1.5">
                 <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Chat Model</label>
                 <select id="summary_model_{{ iid }}" name="summary_model"
@@ -143,6 +144,20 @@
                     {% endfor %}
                     {% else %}
                     <option value="{{ inst.embed_model }}" selected>{{ inst.embed_model or 'Click Discover' }}</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="space-y-1.5">
+                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">OCR Model</label>
+                <select id="ocr_model_{{ iid }}" name="ocr_model"
+                        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
+                    {% if ocr_models %}
+                    <option value="" {% if not inst.ocr_model %}selected{% endif %}>— none —</option>
+                    {% for m in ocr_models %}
+                    <option value="{{ m }}" {% if m == inst.ocr_model %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                    {% else %}
+                    <option value="{{ inst.get('ocr_model', '') }}" selected>{{ inst.get('ocr_model', '') or 'Click Discover' }}</option>
                     {% endif %}
                 </select>
             </div>

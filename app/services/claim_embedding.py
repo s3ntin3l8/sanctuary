@@ -20,6 +20,7 @@ from app.models.database import Claim
 from app.services.ai_config import get_embed_config
 from app.services.ai_provider import embed_provider
 from app.services.intelligence._ai_call import _parse_litellm_error_summary
+from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
 
@@ -40,23 +41,26 @@ async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
     cfg = get_embed_config(db)
     try:
         params = await embed_provider.get_embedding_params(cfg.embed_model, claim_text)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                params["url"], json=params["json"], headers=params["headers"]
-            )
-            if not response.is_success:
-                # Surface the litellm body — embedding failures were previously
-                # swallowed at WARNING level, leaving 60+ silent failures/day
-                # invisible in normal log monitoring. Log at ERROR with the
-                # parsed body summary so they're discoverable in celery.log.
-                summary = _parse_litellm_error_summary(response.content) or ""
-                logger.error(
-                    "claim embedding HTTP %s: %s",
-                    response.status_code,
-                    summary[:200] or response.text[:200],
+        # See app/services/embeddings.py — embed family is compat with all in
+        # the current policy, so this gate is a fast-path no-op today.
+        with model_gate("embed", label="embed:claim"):
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    params["url"], json=params["json"], headers=params["headers"]
                 )
-                return None
-            data = response.json()
+                if not response.is_success:
+                    # Surface the litellm body — embedding failures were previously
+                    # swallowed at WARNING level, leaving 60+ silent failures/day
+                    # invisible in normal log monitoring. Log at ERROR with the
+                    # parsed body summary so they're discoverable in celery.log.
+                    summary = _parse_litellm_error_summary(response.content) or ""
+                    logger.error(
+                        "claim embedding HTTP %s: %s",
+                        response.status_code,
+                        summary[:200] or response.text[:200],
+                    )
+                    return None
+                data = response.json()
         embedding = data.get("embedding") or (
             data.get("data", [{}])[0].get("embedding") if data.get("data") else None
         )
