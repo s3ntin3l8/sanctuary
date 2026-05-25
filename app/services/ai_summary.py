@@ -303,6 +303,11 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     from app.models.database import Case
     from app.models.enums import parse_originator_type
     from app.services.ingestion.service import refresh_review_reasons
+    from app.services.intelligence._court_identity import reconcile_ai_fields
+
+    # Resolve self-contradictions in the AI output before writing any fields.
+    # Mutates summary_data in place; logs any rule that fired.
+    reconcile_ai_fields(doc, summary_data)
 
     # 1. Update core fields (AI is authoritative)
     if summary_data.get("sender"):

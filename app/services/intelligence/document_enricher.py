@@ -150,6 +150,12 @@ def _repair_passage_offsets(doc: Document, passage_dict: dict) -> dict:
 
 def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
     """Write AI enrichment results to the document (caller commits)."""
+    from app.services.intelligence._court_identity import reconcile_ai_fields
+
+    # Resolve self-contradictions in the AI output before writing any fields.
+    # In particular: court_relay=true requires a court sender; MOTION/STATEMENT
+    # doc types cannot have originator=court. Mutates `result` in place.
+    reconcile_ai_fields(doc, result)
 
     # title — only overwrite when AI returns a clean, non-empty title
     ai_title = (result.get("title") or "").strip()

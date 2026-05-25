@@ -800,12 +800,39 @@ def call_json_ai(
         else:
             analysis = p1_response
 
+        # Pass-1 JSON promotion: PASS1_USER_SUFFIX now asks the model to commit
+        # its analysis to a fenced JSON object. When that JSON parses and
+        # validates against the schema, treat pass-1 as authoritative and skip
+        # the schema-constrained pass-2 entirely. This is the architectural fix
+        # for the pass-2 flip pattern (model picks a low-probability token under
+        # grammar constraint that contradicts its own pass-1 conclusion).
+        if schema is not None and analysis.strip():
+            combined = f"{p1_response}\n{p1_thinking}".strip()
+            try:
+                p1_parsed = parse_json_response(combined)
+                p1_validated = schema.model_validate(p1_parsed)
+            except (ValueError, ValidationError) as e:
+                logger.debug(
+                    "call %s pass-1 JSON promotion failed (%s) — falling "
+                    "through to pass-2",
+                    debug_label,
+                    e.__class__.__name__,
+                )
+            else:
+                logger.info(
+                    "call %s: pass-1 JSON validated — skipping pass-2",
+                    debug_label,
+                )
+                return p1_validated
+
     # Pass 2 (or single-pass): schema-constrained formatting.
     if two_pass and analysis.strip():
+        # Strip the original user_prompt (which carries the <document> fence):
+        # pass-2 is the format fallback for cases where pass-1 didn't emit
+        # parseable JSON. Re-exposing it to the document text invites it to
+        # re-decide rather than format pass-1's conclusions.
         pass2_user_prompt = (
-            f"{user_prompt}\n\n"
-            f"--- Your prior analysis ---\n{analysis.strip()}\n\n"
-            f"{PASS2_USER_SUFFIX}"
+            f"--- Your prior analysis ---\n{analysis.strip()}\n\n{PASS2_USER_SUFFIX}"
         )
     else:
         pass2_user_prompt = f"{user_prompt}\n\n{PASS2_USER_SUFFIX}"

@@ -140,7 +140,11 @@ def test_two_pass_makes_two_stream_calls_with_correct_schema_split(patched_provi
 
 @pytest.mark.unit
 def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
-    """Pass 2 user prompt must contain the original prompt + pass-1 analysis."""
+    """Pass 2 user prompt must contain pass-1 analysis but NOT the original
+    document/user prompt. Stripping the document prevents pass-2 from
+    re-deciding under grammar constraint when pass-1 already reasoned to
+    a conclusion. Regression: pass-2 used to receive the full user_prompt
+    (including the <document> fence) which let the model re-read and flip."""
     calls: list[dict] = []
 
     def fake_stream(
@@ -171,10 +175,11 @@ def test_two_pass_embeds_pass1_output_in_pass2_user_prompt(patched_provider):
     p1, p2 = calls
     assert "ORIGINAL_PROMPT_TOKEN" in p1["user_prompt"]
     assert "DEEP_ANALYSIS_TOKEN" not in p1["user_prompt"]  # not yet
-    assert "ORIGINAL_PROMPT_TOKEN" in p2["user_prompt"]
+    # Pass-2 receives ONLY the analysis — not the original prompt/document.
+    assert "ORIGINAL_PROMPT_TOKEN" not in p2["user_prompt"]
     assert "DEEP_ANALYSIS_TOKEN" in p2["user_prompt"]
     assert "Your prior analysis" in p2["user_prompt"]
-    assert "Now output ONLY the JSON matching the schema" in p2["user_prompt"]
+    assert "Now output ONLY the JSON" in p2["user_prompt"]
 
 
 @pytest.mark.unit
@@ -548,13 +553,15 @@ def test_single_pass_unchanged(patched_provider):
 
 
 @pytest.mark.unit
-def test_pass1_user_prompt_carries_no_json_directive(patched_provider):
-    """Pass 1 must augment the user prompt with a 'don't output JSON yet'
-    directive so the model spends its budget on reasoning instead of
-    re-emitting the structured output that pass 2 will produce under
-    grammar enforcement. Regression: without this, pass 1 routinely hit
-    the stage's max_tokens cap mid-JSON-emit on claims/entities/metadata,
-    leaving pass 2 with truncated analysis context."""
+def test_pass1_user_prompt_asks_for_final_json(patched_provider):
+    """Pass 1 must reason in prose AND commit its conclusions as a fenced
+    JSON block at the end. The combined "think first, then JSON" approach
+    is what lets the apply layer promote pass-1's answer over pass-2 (which
+    sometimes flips conclusions under grammar constraint).
+
+    Regression: with pass-1's original "don't output JSON yet" directive,
+    pass-1 produced reasoning only and pass-2 had to re-classify under the
+    schema — that's where flips like doc-29 own→opposing happened."""
     seen_prompts: dict[str, str] = {}
 
     def fake_stream(
@@ -585,10 +592,11 @@ def test_pass1_user_prompt_carries_no_json_directive(patched_provider):
     p1_prompt = seen_prompts["doc_9_proceeding-p1"]
     assert "ORIGINAL_PROMPT" in p1_prompt
     assert "Analysis pass" in p1_prompt
-    assert "Do NOT output JSON" in p1_prompt
-    # Pass 2 should NOT carry the same directive (it needs JSON output)
+    # New behavior: pass-1 IS asked for JSON at the end of its analysis.
+    assert "JSON object" in p1_prompt
+    assert "```json" in p1_prompt
+    # Pass 2 still gets its own "output JSON only" framing
     p2_prompt = seen_prompts["doc_9_proceeding-p2"]
-    assert "Do NOT output JSON" not in p2_prompt
     assert "Now output ONLY the JSON" in p2_prompt
 
 
@@ -780,3 +788,185 @@ def test_runs_jsonl_entry_for_case_scoped_calls(tmp_path, monkeypatch):
     assert entry["case_id"] == "ADV-101-Z"
     assert entry["doc_id"] is None
     assert entry["batch_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Pass-1 JSON promotion: skip pass-2 entirely when pass-1 emits valid JSON
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_skips_pass2(patched_provider):
+    """When pass-1 emits parseable JSON that validates against the schema,
+    `call_json_ai` returns it directly and never invokes pass-2. This is
+    the architectural fix for the pass-2 flip pattern."""
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            # Pass-1 includes prose reasoning AND a fenced JSON block.
+            return (
+                "Analysis: this is a court letter from AG Hamburg.\n\n"
+                '```json\n{"is_court_document": true, "court_level": "ag", '
+                '"court_name": "AG Hamburg", "az_court": null, '
+                '"subject_matter": null, "appeal_deadline_days": null}\n```',
+                "",
+            )
+        # Pass-2 should never run; if it does, the test will detect it.
+        return ('{"is_court_document": false}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_promo_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert calls == ["doc_promo_proceeding-p1"], (
+        f"pass-2 must be skipped when pass-1 JSON validates; got {calls}"
+    )
+    assert isinstance(result, ProceedingExtraction)
+    assert result.is_court_document is True
+    assert result.court_level == "ag"
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_from_thinking_channel(patched_provider):
+    """Some models emit JSON via the reasoning/thinking channel instead of
+    the content channel. The promotion path must combine both channels
+    when scanning for JSON."""
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            # Empty response; JSON arrives via thinking channel.
+            return (
+                "",
+                'Analysis is here.\n```json\n{"is_court_document": true, '
+                '"court_level": "ag", "court_name": null, "az_court": null, '
+                '"subject_matter": null, "appeal_deadline_days": null}\n```',
+            )
+        return ('{"is_court_document": false}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_promo2_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert calls == ["doc_promo2_proceeding-p1"]
+    assert result.is_court_document is True
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_falls_through_on_malformed(patched_provider):
+    """When pass-1 emits prose with no parseable JSON, the promotion path
+    falls through to pass-2 unchanged. (Existing two-pass tests rely on
+    this behaviour.)"""
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            return ("Analysis without any JSON block.", "")
+        return (
+            '{"is_court_document": true, "court_level": "ag", "court_name": null, '
+            '"az_court": null, "subject_matter": null, "appeal_deadline_days": null}',
+            "",
+        )
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_fall_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert calls == ["doc_fall_proceeding-p1", "doc_fall_proceeding-p2"]
+    assert result.is_court_document is True
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_falls_through_on_schema_mismatch(patched_provider):
+    """Pass-1 may emit JSON whose shape doesn't match the schema (wrong
+    field types). Fall through to pass-2.
+
+    `appeal_deadline_days` is typed as `int | None`. A non-numeric string
+    cannot be coerced by Pydantic v2 and will raise ValidationError, which
+    the promotion path catches before falling through."""
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            return (
+                '```json\n{"is_court_document": true, '
+                '"appeal_deadline_days": "not_a_number"}\n```',
+                "",
+            )
+        return (
+            '{"is_court_document": true, "court_level": "ag", "court_name": null, '
+            '"az_court": null, "subject_matter": null, "appeal_deadline_days": null}',
+            "",
+        )
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_mismatch_proceeding",
+            schema=ProceedingExtraction,
+            two_pass=True,
+        )
+
+    assert calls == ["doc_mismatch_proceeding-p1", "doc_mismatch_proceeding-p2"]
+    assert result.is_court_document is True

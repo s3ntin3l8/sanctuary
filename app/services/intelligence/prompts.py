@@ -62,9 +62,14 @@ def sanitize_oneline(text: str | None, max_len: int = 300) -> str:
 # ---------------------------------------------------------------------------
 
 PASS1_USER_SUFFIX = (
-    "--- Analysis pass: think through this carefully in plain "
-    "English. Do NOT output JSON yet — the structured JSON output "
-    "is produced in a follow-up step. Just analyze. ---"
+    "--- Analysis pass: think through this carefully in plain English first.\n"
+    "After your analysis, commit to your conclusions by emitting a single "
+    "JSON object inside a fenced ```json … ``` block at the very end of "
+    "your response. The JSON must match the schema you would produce in a "
+    "format pass — every field named, with the value your analysis settled "
+    "on, or null when the analysis was genuinely uncertain. This is your "
+    "authoritative answer; the format pass is a fallback if your JSON here "
+    "is incomplete or malformed. ---"
 )
 
 PASS2_USER_SUFFIX = (
@@ -161,6 +166,7 @@ Normalization & Ambiguity:
 - Reversed party order between Email and Rubrum is common; prioritize the **Document Rubrum** and do NOT flag it as a contradiction.
 - `sender` must always reflect the actual letterhead organization (who physically sent or issued the document). Never replace the sender with a party name.
 - `originator` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage. If the letterhead identifies a named private individual or law firm as the sender — not a court institution — `originator` must be `opposing` or `own`, never `court`. Documents authored by parties that carry a court Rubrum (Aktenzeichen, docket reference) at the top are still party-authored; the Rubrum is routing context, not authorship.
+- **Originator follows the letterhead, not the document's subject or title.** A letter from Lawyer A discussing or responding to Party B is `originator=own/opposing` based on which side A is on — never based on which side B is on. Words like "Empfehlung an [opposing]", "Empfehlungsschreiben Antragsgegnerin", "Erwiderung auf [opposing's brief]", "Stellungnahme zu [opposing]" describe what the letter is *about*; they do not flip authorship. If the letterhead is the user's lawyer (on YOUR SIDE), `originator=own` regardless of which party the letter discusses.
 
 Aktenzeichen Suffixes:
 - Preserve critical German suffixes (e.g., 'e' for electronic, 'eA' for expedited, 'B' for Beschwerde). Do NOT trim them to fit a generic digits-only pattern.
