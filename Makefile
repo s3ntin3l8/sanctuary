@@ -7,7 +7,7 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed reset migrate lint clean redis
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed reset migrate lint clean redis _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -41,7 +41,15 @@ setup: .venv ## Install dependencies and pre-commit hooks
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait
 
-run: ## Start Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
+_check-no-celery: ## Internal: refuse to start if celery beat/workers already running
+	@if pgrep -f "celery -A app.tasks.celery_app (beat|worker)" >/dev/null 2>&1; then \
+		echo "ERROR: celery beat or worker already running:"; \
+		pgrep -fa "celery -A app.tasks.celery_app (beat|worker)" | sed 's/^/  /'; \
+		echo "Kill them first, then re-run. Otherwise you get duplicate beats (every scheduled task fires N× → recover-pipeline storms)."; \
+		exit 1; \
+	fi
+
+run: _check-no-celery ## Start Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
@@ -49,7 +57,7 @@ run: ## Start Redis, web server, ingest worker (OCR), AI worker, and beat schedu
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
-run-stable: ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
+run-stable: _check-no-celery ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
@@ -57,7 +65,7 @@ run-stable: ## Start without --reload (use for ingestion/pipeline testing — av
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
-run-debug: ## Start server with DEBUG logging (+ Redis + both workers)
+run-debug: _check-no-celery ## Start server with DEBUG logging (+ Redis + both workers)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
 	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
@@ -68,7 +76,7 @@ run-debug: ## Start server with DEBUG logging (+ Redis + both workers)
 server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
-worker: ## Start both Celery workers (ingest + ai) and beat scheduler
+worker: _check-no-celery ## Start both Celery workers (ingest + ai) and beat scheduler
 	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \

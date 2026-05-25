@@ -650,6 +650,150 @@ def test_recover_orphaned_skips_recently_started_stages(db_session):
     assert result_startup["stages_reset"] == 1
 
 
+@pytest.mark.unit
+def test_recover_orphaned_skips_running_stage_when_workers_active(
+    db_session, monkeypatch
+):
+    """A stage stuck in RUNNING past min_age_seconds must NOT be reset when
+    other workers are showing forward progress within the activity window.
+    Reproduces the ai-queue runaway loop: enrich_document_tasks legitimately
+    gate-wait for Qwen under shared-GPU contention, individual stages can
+    exceed 20 min in RUNNING while the cascade is alive elsewhere. Without
+    this gate, the cron resets them, recover_stuck_pending_dispatches
+    re-dispatches, the cycle repeats."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R6", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Doc A: stale RUNNING enrich (30 min ago — past 20-min threshold).
+    stale = Document(
+        title="stale-running.pdf",
+        content="x",
+        case_id="_TR_R6",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(stale)
+    db_session.flush()
+    initialize(stale, batched=False, db=db_session)
+    stale.pipeline_state = "running"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, started_at=:started "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "started": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30),
+            "id": stale.id,
+            "stage": PipelineStage.ENRICH.value,
+        },
+    )
+
+    # Doc B: a different doc whose batch_analysis just completed — proves
+    # the worker is alive and the stale RUNNING is presumed gate-waiting.
+    alive = Document(
+        title="recently-active.pdf",
+        content="x",
+        case_id="_TR_R6",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(alive)
+    db_session.flush()
+    initialize(alive, batched=False, db=db_session)
+    alive.pipeline_state = "partial"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages "
+            "SET status=:status, completed_at=:done "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "done": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            "id": alive.id,
+            "stage": PipelineStage.BATCH_ANALYSIS.value,
+        },
+    )
+    db_session.expire(stale, ["stage_rows"])
+    db_session.expire(alive, ["stage_rows"])
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    # Stale stage must NOT be reset — workers are alive.
+    assert result["docs_reset"] == 0
+    assert result["stages_reset"] == 0
+
+
+@pytest.mark.unit
+def test_recover_orphaned_resets_stale_running_when_workers_idle(db_session):
+    """When no other stage has shown recent activity, the stale RUNNING is
+    genuinely orphaned and recovery must reset it. Keeps the legitimate
+    crash-recovery path working."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R7", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Single doc with one stale RUNNING enrich; nothing else has any activity.
+    # The activity probe finds the stale row itself, but its started_at is OLD,
+    # so it does NOT count as "recent activity" — recovery proceeds.
+    doc = Document(
+        title="genuinely-orphaned.pdf",
+        content="x",
+        case_id="_TR_R7",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    doc.pipeline_state = "running"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, started_at=:started "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "started": datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=2),
+            "id": doc.id,
+            "stage": PipelineStage.ENRICH.value,
+        },
+    )
+    db_session.expire(doc, ["stage_rows"])
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert result["docs_reset"] == 1
+    assert result["stages_reset"] == 1
+
+
 # ---------------------------------------------------------------------------
 # recover_stuck_pending_dispatches — EAGER+reload hazard recovery
 # ---------------------------------------------------------------------------

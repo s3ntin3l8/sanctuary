@@ -667,7 +667,10 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
 
 
 def recover_orphaned_running_stages(
-    db: Session, *, min_age_seconds: int = 1200
+    db: Session,
+    *,
+    min_age_seconds: int = 1200,
+    recent_activity_window_seconds: int = 1800,
 ) -> dict:
     """Reset pipeline stages stuck in RUNNING/RETRYING state past their
     expected runtime — presumed orphaned by a crashed worker.
@@ -677,12 +680,25 @@ def recover_orphaned_running_stages(
     runs on a 5-min cron via recover_pipeline_task — at which point an
     unbounded reset will kill legitimately-running long tasks (the
     batch_analyzer routinely runs 4-5 minutes; the enricher 2-3 min).
-    The `min_age_seconds` guard keeps the cron-mode safe: only stages
-    whose started_at is older than the threshold count as orphaned.
 
-    20 min default covers the slowest legitimate stage (batch_analyzer
-    with retries) by ~3×; tighter recovery for genuinely-crashed stages
-    still happens within one extra cron tick after the threshold passes.
+    Two gates keep cron-mode safe:
+
+    1. `min_age_seconds` — only stages whose started_at is older than this
+       threshold count as candidates. 20 min default covers the slowest
+       legitimate single-stage call by ~3×.
+
+    2. Worker-activity probe — even past min_age, a stage is only treated
+       as orphaned when no OTHER stage anywhere has shown forward progress
+       within `recent_activity_window_seconds`. "Forward progress" means a
+       stage running with a recent started_at OR a stage completed with a
+       recent completed_at. The rationale: gated LLM workers under shared-
+       GPU contention legitimately spend 5-15 min waiting on the model_gate
+       before their LLM call even starts, so a single stage's started_at
+       can be stale while the cascade is genuinely alive. This gate
+       prevents the runaway loop where the cron resets in-flight stages to
+       PENDING, recover_stuck_pending_dispatches re-dispatches them, and
+       the cycle repeats — the failure mode that produced 33-orphan-stages
+       cycles and stranded 38 docs in mixed running/partial state.
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
@@ -690,6 +706,39 @@ def recover_orphaned_running_stages(
     from app.models.enums import IngestBatchStatus
 
     cutoff = naive_utc_now() - timedelta(seconds=min_age_seconds)
+
+    # Worker-activity probe: is any stage showing forward progress recently?
+    # We sample globally because the relevant signal is "are workers making
+    # progress at all" — a recent batch_analyzer completion implies the ai
+    # worker is alive, which means a stale RUNNING enrich on a different
+    # doc is also probably gate-waiting rather than orphaned.
+    #
+    # Skip the probe in startup mode (min_age_seconds <= 0): the call site
+    # is asserting "workers just rebooted, no RUNNING row can be valid."
+    # Without this bypass, the probe would find the candidate stage's own
+    # RUNNING row as "recent activity" and refuse to reset it.
+    if min_age_seconds > 0:
+        activity_cutoff = naive_utc_now() - timedelta(
+            seconds=recent_activity_window_seconds
+        )
+        workers_recently_active = (
+            db.execute(
+                text(
+                    "SELECT 1 FROM document_pipeline_stages "
+                    "WHERE (status = :running AND started_at > :activity_cutoff) "
+                    "   OR (status = :completed AND completed_at > :activity_cutoff) "
+                    "LIMIT 1"
+                ),
+                {
+                    "running": StageStatus.RUNNING.value,
+                    "completed": StageStatus.COMPLETED.value,
+                    "activity_cutoff": activity_cutoff,
+                },
+            ).scalar()
+            is not None
+        )
+    else:
+        workers_recently_active = False
 
     docs = (
         db.query(Document)
@@ -724,6 +773,11 @@ def recover_orphaned_running_stages(
                         continue
                 except (ValueError, TypeError):
                     pass  # unparseable → treat as old, reset
+            # Second gate (see docstring): even past min_age, presume the
+            # stage is gate-waiting rather than orphaned when workers are
+            # actively making progress elsewhere.
+            if workers_recently_active:
+                continue
             stuck.append(key)
         if not stuck:
             continue
