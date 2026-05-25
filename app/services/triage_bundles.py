@@ -134,7 +134,7 @@ class BundleView:
     def has_unconfirmed_metadata(self) -> bool:
         """True if any doc has an explicitly low/medium confidence on a tracked field."""
         tracked = (
-            "originator",
+            "originator_type",
             "sender",
             "issued_date",
             "significance_tier",

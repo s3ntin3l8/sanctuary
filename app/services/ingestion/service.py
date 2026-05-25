@@ -142,7 +142,13 @@ def compute_review_reasons(doc: Document, confirmed: bool = False) -> list[str]:
     # 3. Extraction Confidence
     conf = doc.extraction_confidence or {}
     # If any primary field is low/medium confidence, flag it
-    for field in ["internal_id", "az_court", "sender", "issued_date", "originator"]:
+    for field in [
+        "internal_id",
+        "az_court",
+        "sender",
+        "issued_date",
+        "originator_type",
+    ]:
         if conf.get(field) in ("low", "medium"):
             reasons.append("low_confidence")
             break

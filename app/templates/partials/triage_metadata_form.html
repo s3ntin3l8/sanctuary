@@ -87,9 +87,9 @@
           ">
 
         {# ── Body (mirrors review's order: Originator, Sender, Issued, Received, Tier, Type) ── #}
-        {% call field_row('Originator', field_confs.originator, needs_review=field_confs.originator in ('low', 'medium')) %}
+        {% call field_row('Originator', field_confs.originator_type, needs_review=field_confs.originator_type in ('low', 'medium')) %}
             <select name="originator_type"
-                    {% if field_confs.originator in ('low', 'medium') %}data-needs-review{% endif %}
+                    {% if field_confs.originator_type in ('low', 'medium') %}data-needs-review{% endif %}
                     class="{{ _select_cls }}">
                 {% for type in OriginatorType %}
                 <option value="{{ type.value }}" {% if doc.originator_type == type %}selected{% endif %}>{{ type.value|capitalize }}</option>

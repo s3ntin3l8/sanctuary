@@ -24,12 +24,17 @@ STAGE_OPTIONS: dict[str, dict] = {
     "metadata": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        # Bumped 6000 → 8000: two-pass mode's pass-1 reasoning chain on this
-        # stage routinely landed at 105-109% of a 6000 budget. Headroom
-        # eliminates truncation even if the JSON-suppression directive is
-        # ever bypassed.
-        "num_predict": 8000,
-        "max_tokens": 8000,
+        # Bumped 8000 → 12000: metadata pass-1 was hitting the cap on ~25% of
+        # multi-page docs (2026-05-25 re-enrichment audit: 27/114 sync-p1 calls
+        # had completion_tokens == 8000 with response_len=0 — model exhausted
+        # the budget mid-thinking and emitted no JSON). Same rationale as the
+        # earlier enricher bump. The remaining empty-response cases (Mode B —
+        # model terminates after `</think>` without writing the JSON despite
+        # having budget left) are a qwen3.5-9b behavior the bump does not
+        # address — see _ai_call.py:792-799 for the thinking-as-analysis
+        # fallback that handles those.
+        "num_predict": 12000,
+        "max_tokens": 12000,
     },
     "batch_analysis": {
         "num_ctx": 65536,

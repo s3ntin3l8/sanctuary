@@ -77,15 +77,15 @@ def reconcile_ai_fields(doc: Document, ai_output: dict) -> list[str]:
     """
     fired: list[str] = []
 
-    # Rule 1 — AI says "not a court document" but emits originator=court.
+    # Rule 1 — AI says "not a court document" but emits originator_type=court.
     # Mutates the AI-output dict so the metadata apply step writes the
     # corrected value (only fires on the metadata stage; enricher does not
-    # emit `originator`).
+    # emit `originator_type` directly through ai_output).
     if (
         ai_output.get("is_court_document") is False
-        and ai_output.get("originator") == "court"
+        and ai_output.get("originator_type") == "court"
     ):
-        ai_output["originator"] = "unknown"
+        ai_output["originator_type"] = "unknown"
         fired.append("R1_not_court_doc_but_court_originator")
 
     # Rule 2 — court_relay=true requires the letterhead sender to name a
@@ -103,16 +103,17 @@ def reconcile_ai_fields(doc: Document, ai_output: dict) -> list[str]:
     # current value on the document. The effective originator is the AI's
     # new value (metadata stage) or the current value on the document.
     # Mutate both surfaces:
-    #   - ai_output["originator"] for the metadata stage's apply layer,
+    #   - ai_output["originator_type"] for the metadata stage's apply layer,
     #   - doc.originator_type directly for the enricher stage (whose apply
-    #     layer does not read `originator` — it's not in DocumentEnrichment).
+    #     layer does not read `originator_type` from ai_output — it's not in
+    #     DocumentEnrichment).
     from app.models.enums import OriginatorType  # local import: avoid cycle
 
     new_doc_type = ai_output.get("document_type")
     effective_doc_type = new_doc_type or (
         doc.document_type.value if doc.document_type else None
     )
-    new_originator = ai_output.get("originator")
+    new_originator = ai_output.get("originator_type")
     effective_originator = new_originator or (
         doc.originator_type.value if doc.originator_type else None
     )
@@ -120,11 +121,11 @@ def reconcile_ai_fields(doc: Document, ai_output: dict) -> list[str]:
         effective_doc_type in _PARTY_AUTHORED_DOC_TYPES
         and effective_originator == "court"
     ):
-        ai_output["originator"] = "unknown"
-        # Enricher stage doesn't read `originator` from ai_output — mutate
-        # the document directly so the rule takes effect when fired from
-        # there. (new_originator is None means the AI in this call didn't
-        # touch originator, which only happens in the enricher stage.)
+        ai_output["originator_type"] = "unknown"
+        # Enricher stage doesn't read `originator_type` from ai_output —
+        # mutate the document directly so the rule takes effect when fired
+        # from there. (new_originator is None means the AI in this call
+        # didn't touch originator, which only happens in the enricher stage.)
         if new_originator is None:
             doc.originator_type = OriginatorType.UNKNOWN
         fired.append("R3_party_authored_type_but_court_originator")
@@ -132,11 +133,11 @@ def reconcile_ai_fields(doc: Document, ai_output: dict) -> list[str]:
     for rule in fired:
         logger.warning(
             "Doc %s: AI self-contradiction reconciled — %s "
-            "(sender=%r, originator=%r, court_relay=%r, doc_type=%r)",
+            "(sender=%r, originator_type=%r, court_relay=%r, doc_type=%r)",
             doc.id,
             rule,
             ai_output.get("sender") or doc.sender,
-            ai_output.get("originator"),
+            ai_output.get("originator_type"),
             ai_output.get("court_relay"),
             ai_output.get("document_type")
             or (doc.document_type.value if doc.document_type else None),

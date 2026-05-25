@@ -819,11 +819,28 @@ def call_json_ai(
                     e.__class__.__name__,
                 )
             else:
-                logger.info(
-                    "call %s: pass-1 JSON validated — skipping pass-2",
-                    debug_label,
-                )
-                return p1_validated
+                # Quality bar: for the metadata schema (Phase1Metadata) the
+                # one high-signal field that must commit is `originator_type`.
+                # An all-nulls Phase1Metadata validates trivially but adds no
+                # information over what's already on the doc — fall through to
+                # pass-2 instead of "promoting" a half-baked answer that
+                # silently leaves stale prior values on the row.
+                # The `_unset` sentinel keeps the check schema-specific:
+                # schemas without an `originator_type` field (claims, entities,
+                # relationships, enricher) skip this guard entirely.
+                ot = getattr(p1_validated, "originator_type", "_unset")
+                if ot is None:
+                    logger.debug(
+                        "call %s pass-1 JSON valid but originator_type is "
+                        "None — falling through to pass-2",
+                        debug_label,
+                    )
+                else:
+                    logger.info(
+                        "call %s: pass-1 JSON validated — skipping pass-2",
+                        debug_label,
+                    )
+                    return p1_validated
 
     # Pass 2 (or single-pass): schema-constrained formatting.
     if two_pass and analysis.strip():

@@ -261,7 +261,7 @@ class _Phase1Confidence(BaseModel):
     case_title: _ConfidenceLevel | None = None
     sender: _ConfidenceLevel | None = None
     issued_date: _ConfidenceLevel | None = None
-    originator: _ConfidenceLevel | None = None
+    originator_type: _ConfidenceLevel | None = None
 
 
 class Phase1Metadata(BaseModel):
@@ -286,7 +286,7 @@ class Phase1Metadata(BaseModel):
     issued_date: str | None = Field(
         None, description="The date shown on the document (ISO format: YYYY-MM-DD)."
     )
-    originator: OriginatorType | None = Field(
+    originator_type: OriginatorType | None = Field(
         None, description="Categorize the document's author/source."
     )
     confidence: _Phase1Confidence = Field(default_factory=_Phase1Confidence)

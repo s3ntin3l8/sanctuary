@@ -31,12 +31,12 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
             "internal_id": "8124/25",
             "sender": "AG Hamburg",
             "issued_date": "2025-05-20",
-            "originator": "court",
+            "originator_type": "court",
             "confidence": {
                 "az_court": "high",
                 "sender": "high",
                 "issued_date": "high",
-                "originator": "high",
+                "originator_type": "high",
             },
         }
 
@@ -55,5 +55,5 @@ def test_ai_verifies_and_overrides_heuristics(db_session, monkeypatch):
     # az_court lives on Proceeding, not Document — verify triage matching instead
     assert doc.extraction_confidence["sender"] == "high"
     assert doc.extraction_confidence["issued_date"] == "high"
-    assert doc.extraction_confidence["originator"] == "high"
+    assert doc.extraction_confidence["originator_type"] == "high"
     assert doc.extraction_confidence["az_court"] == "high"

@@ -20,7 +20,7 @@ def test_summarize_document_sync_success(db_session, sample_document):
             "az_court": "003 F 426/25",
             "sender": "Amtsgericht Hamburg",
             "date": "2025-01-15",
-            "originator": "court",
+            "originator_type": "court",
         }
 
         updated_doc = _summarize_document_sync(sample_document.id, db_session)
@@ -113,7 +113,7 @@ def test_generate_summary_sync_strips_null_hints(db_session):
                 "az_court": None,
                 "internal_id": None,
                 "sender": None,
-                "originator": None,
+                "originator_type": None,
                 "confidence": {},
             }
         )
@@ -146,3 +146,94 @@ def test_enrich_document_tracks_strategy(db_session, sample_document):
     assert sample_document.meta["ai_context_strategy"] == "windowed"
     # 60k chars + 2 separators (approx 33 chars each)
     assert sample_document.meta["ai_context_chars"] > 60000
+
+
+# ---------------------------------------------------------------------------
+# Sender sanitizer: strip Docling markdown image alt-text bleeding into sender
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_sender_sanitizer_strips_markdown_image_alt_text():
+    """Doc-4 pattern: the AI copied a Docling-rendered image alt-text into
+    `sender` verbatim. The sanitizer strips `![…](…)` so a real sender
+    fragment (or nothing) is what reaches the DB."""
+    from app.services.ai_summary import _sanitize_sender
+
+    raw = (
+        "![Red stamp of Amtsgericht Ingolstadt, dated 14. Nov. 2025, "
+        "with the text 'Nachbriefkasten' at the bottom.]()"
+        "Amtsgericht Ingolstadt"
+    )
+    assert _sanitize_sender(raw) == "Amtsgericht Ingolstadt"
+
+
+@pytest.mark.unit
+def test_sender_sanitizer_returns_none_when_string_was_only_alt_text():
+    """When the entire sender string is image alt-text, return None — the
+    apply layer then leaves doc.sender unchanged instead of overwriting a
+    good prior value with nothing."""
+    from app.services.ai_summary import _sanitize_sender
+
+    raw = "![Red stamp of Amtsgericht Ingolstadt, ...](https://x/img.png)"
+    assert _sanitize_sender(raw) is None
+
+
+@pytest.mark.unit
+def test_sender_sanitizer_passes_clean_sender_through():
+    """A normal sender string is returned unchanged (modulo whitespace)."""
+    from app.services.ai_summary import _sanitize_sender
+
+    assert _sanitize_sender("Haidl Funk Rechtsanwälte") == "Haidl Funk Rechtsanwälte"
+    assert _sanitize_sender("  Amtsgericht Ingolstadt  ") == "Amtsgericht Ingolstadt"
+
+
+@pytest.mark.unit
+def test_sender_sanitizer_handles_none_and_empty():
+    """Edge cases: None and empty strings round-trip without exception."""
+    from app.services.ai_summary import _sanitize_sender
+
+    assert _sanitize_sender(None) is None
+    assert _sanitize_sender("") == ""
+
+
+@pytest.mark.unit
+def test_enrich_document_with_ai_sanitizes_sender(db_session, sample_document):
+    """Integration: enrich_document_with_ai strips markdown image alt-text
+    before writing to doc.sender."""
+    from app.services.ai_summary import enrich_document_with_ai
+
+    polluted = (
+        "![Red stamp of Amtsgericht Ingolstadt, dated 14. Nov. 2025, "
+        "with the text 'Nachbriefkasten' at the bottom.]()A red recta"
+    )
+    enrich_document_with_ai(
+        sample_document,
+        {"sender": polluted, "confidence": {}},
+        db_session,
+    )
+
+    assert sample_document.sender == "A red recta", (
+        f"sender should have markdown image stripped; got: {sample_document.sender!r}"
+    )
+
+
+@pytest.mark.unit
+def test_enrich_document_with_ai_keeps_prior_sender_when_alt_only(
+    db_session, sample_document
+):
+    """If the AI-emitted sender is *entirely* alt-text, the apply layer
+    leaves the prior doc.sender unchanged (returning None from the sanitizer
+    means "skip this write")."""
+    from app.services.ai_summary import enrich_document_with_ai
+
+    sample_document.sender = "Existing Clean Sender"
+    db_session.commit()
+    polluted = "![Red stamp of Amtsgericht Ingolstadt, ...](https://x/img.png)"
+    enrich_document_with_ai(
+        sample_document,
+        {"sender": polluted, "confidence": {}},
+        db_session,
+    )
+
+    assert sample_document.sender == "Existing Clean Sender"

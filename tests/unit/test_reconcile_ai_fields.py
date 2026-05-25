@@ -1,9 +1,9 @@
 """Unit tests for `reconcile_ai_fields`.
 
 The reconciler resolves three AI self-contradictions:
-- R1: is_court_document=false ∧ originator=court  → originator=unknown
+- R1: is_court_document=false ∧ originator_type=court  → originator_type=unknown
 - R2: court_relay=true ∧ sender is not a court name → court_relay=false
-- R3: doc_type ∈ {MOTION, STATEMENT} ∧ originator=court → originator=unknown
+- R3: doc_type ∈ {MOTION, STATEMENT} ∧ originator_type=court → originator_type=unknown
 
 These rules fire only when the AI's own output internally contradicts itself
 (or contradicts the system prompt's explicit rules). They are not judgment
@@ -46,19 +46,19 @@ def _make_doc(
 
 @pytest.mark.unit
 def test_r1_not_court_doc_but_court_originator(db_session, sample_case):
-    """Metadata stage: AI says is_court_document=false but emits originator=court.
-    The reconciler clears originator to 'unknown'."""
+    """Metadata stage: AI says is_court_document=false but emits originator_type=court.
+    The reconciler clears originator_type to 'unknown'."""
     doc = _make_doc(db_session, sample_case, sender="Some Lawyer")
     ai_output = {
         "is_court_document": False,
-        "originator": "court",
+        "originator_type": "court",
         "sender": "Some Lawyer",
     }
 
     fired = reconcile_ai_fields(doc, ai_output)
 
     assert "R1_not_court_doc_but_court_originator" in fired
-    assert ai_output["originator"] == "unknown"
+    assert ai_output["originator_type"] == "unknown"
 
 
 @pytest.mark.unit
@@ -88,17 +88,17 @@ def test_r2_court_relay_with_court_sender_passes(db_session, sample_case):
 
 @pytest.mark.unit
 def test_r3_motion_with_court_originator_metadata_stage(db_session, sample_case):
-    """Metadata stage: AI emits document_type=motion + originator=court.
-    The reconciler clears originator to 'unknown' (mutates ai_output)."""
+    """Metadata stage: AI emits document_type=motion + originator_type=court.
+    The reconciler clears originator_type to 'unknown' (mutates ai_output)."""
     doc = _make_doc(db_session, sample_case, sender="Haidl Funk Rechtsanwälte")
-    ai_output = {"document_type": "motion", "originator": "court"}
+    ai_output = {"document_type": "motion", "originator_type": "court"}
 
     fired = reconcile_ai_fields(doc, ai_output)
 
     assert "R3_party_authored_type_but_court_originator" in fired
-    assert ai_output["originator"] == "unknown"
+    assert ai_output["originator_type"] == "unknown"
     # Doc not mutated because the metadata-stage path mutates the dict.
-    # (The metadata apply layer reads ai_output['originator'] and writes the doc.)
+    # (The metadata apply layer reads ai_output['originator_type'] and writes the doc.)
 
 
 @pytest.mark.unit
@@ -106,14 +106,14 @@ def test_r3_motion_with_court_originator_enricher_stage(db_session, sample_case)
     """Enricher stage: AI just set document_type=motion; doc.originator_type was
     previously COURT (from Phase-1). Enricher AI output has no `originator` key.
     The reconciler must mutate doc.originator_type directly because the
-    enricher apply layer does not read 'originator' from its result dict."""
+    enricher apply layer does not read 'originator_type' from its result dict."""
     doc = _make_doc(
         db_session,
         sample_case,
         sender="Haidl Funk Rechtsanwälte",
         originator_type=OriginatorType.COURT,
     )
-    ai_output = {"document_type": "motion"}  # no 'originator' key
+    ai_output = {"document_type": "motion"}  # no 'originator_type' key
 
     fired = reconcile_ai_fields(doc, ai_output)
 
@@ -125,24 +125,24 @@ def test_r3_motion_with_court_originator_enricher_stage(db_session, sample_case)
 def test_r3_statement_also_triggers(db_session, sample_case):
     """STATEMENT (Klageerwiderung/Stellungnahme) is also party-authored."""
     doc = _make_doc(db_session, sample_case, sender="Haidl Funk Rechtsanwälte")
-    ai_output = {"document_type": "statement", "originator": "court"}
+    ai_output = {"document_type": "statement", "originator_type": "court"}
 
     fired = reconcile_ai_fields(doc, ai_output)
 
     assert "R3_party_authored_type_but_court_originator" in fired
-    assert ai_output["originator"] == "unknown"
+    assert ai_output["originator_type"] == "unknown"
 
 
 @pytest.mark.unit
 def test_r3_ruling_does_not_trigger(db_session, sample_case):
     """Counter-test: RULING (Beschluss/Urteil) IS court-authored — no rule fires."""
     doc = _make_doc(db_session, sample_case, sender="Amtsgericht Ingolstadt")
-    ai_output = {"document_type": "ruling", "originator": "court"}
+    ai_output = {"document_type": "ruling", "originator_type": "court"}
 
     fired = reconcile_ai_fields(doc, ai_output)
 
     assert fired == []
-    assert ai_output["originator"] == "court"
+    assert ai_output["originator_type"] == "court"
 
 
 @pytest.mark.unit
@@ -151,7 +151,7 @@ def test_consistent_ai_output_no_rules_fire(db_session, sample_case):
     doc = _make_doc(db_session, sample_case, sender="Amtsgericht Ingolstadt")
     ai_output = {
         "is_court_document": True,
-        "originator": "court",
+        "originator_type": "court",
         "sender": "Amtsgericht Ingolstadt",
         "court_relay": False,
         "document_type": "ruling",
@@ -169,7 +169,7 @@ def test_multiple_rules_fire_in_one_pass(db_session, sample_case):
     doc = _make_doc(db_session, sample_case, sender="Haidl Funk WMA")
     ai_output = {
         "is_court_document": False,
-        "originator": "court",
+        "originator_type": "court",
         "sender": "Haidl Funk WMA",
         "court_relay": True,
     }
@@ -178,5 +178,5 @@ def test_multiple_rules_fire_in_one_pass(db_session, sample_case):
 
     assert "R1_not_court_doc_but_court_originator" in fired
     assert "R2_court_relay_but_non_court_sender" in fired
-    assert ai_output["originator"] == "unknown"
+    assert ai_output["originator_type"] == "unknown"
     assert ai_output["court_relay"] is False

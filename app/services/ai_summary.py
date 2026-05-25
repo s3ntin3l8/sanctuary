@@ -26,6 +26,26 @@ _LAW_FIRM_INDICATORS = re.compile(
     re.IGNORECASE,
 )
 
+# Strip Docling-rendered markdown image alt-text that occasionally leaks into
+# the AI-extracted `sender` when the document's first visible token is a red
+# court stamp rendered as ` ![Red stamp of …](…) `. Pure transport-layer
+# pollution removal — not an AI judgment override.
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _sanitize_sender(raw: str | None) -> str | None:
+    """Strip markdown image alt-text from an AI-emitted sender string.
+
+    Returns None when the entire string was alt-text (so the caller can leave
+    `doc.sender` unchanged rather than overwriting a clean prior value with
+    garbage). Also normalizes whitespace.
+    """
+    if not raw or not isinstance(raw, str):
+        return raw
+    cleaned = _MARKDOWN_IMAGE_RE.sub("", raw)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
+
 
 def _looks_like_court(name: str | None) -> bool:
     """Return False if name looks like a law firm rather than a court."""
@@ -310,10 +330,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     reconcile_ai_fields(doc, summary_data)
 
     # 1. Update core fields (AI is authoritative)
-    if summary_data.get("sender"):
-        doc.sender = summary_data["sender"]
+    sender_raw = summary_data.get("sender")
+    cleaned_sender = _sanitize_sender(sender_raw)
+    if cleaned_sender:
+        doc.sender = cleaned_sender
 
-    parsed_ot = parse_originator_type(summary_data.get("originator"))
+    parsed_ot = parse_originator_type(summary_data.get("originator_type"))
     if parsed_ot is not None:
         doc.originator_type = parsed_ot
 
@@ -340,7 +362,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     _KNOWN_CONF_KEYS = {
         "sender",
         "issued_date",
-        "originator",
+        "originator_type",
         "az_court",
         "internal_id",
         "title",

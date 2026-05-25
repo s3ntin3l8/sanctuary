@@ -970,3 +970,112 @@ def test_pass1_json_promotion_falls_through_on_schema_mismatch(patched_provider)
 
     assert calls == ["doc_mismatch_proceeding-p1", "doc_mismatch_proceeding-p2"]
     assert result.is_court_document is True
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_phase1_falls_through_when_originator_type_none(
+    patched_provider,
+):
+    """Quality bar for the metadata schema: a Phase1Metadata that validates
+    but has originator_type=None carries no usable identity signal — promote
+    it and the apply layer reads None and silently leaves the previous
+    (often wrong) value on the document. Fall through to pass-2 instead.
+
+    Schemas without an `originator_type` field (entities/relationships/etc.)
+    are unaffected by this guard; they continue to promote on validation alone.
+    """
+    from app.services.intelligence.schemas import Phase1Metadata
+
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            # Valid JSON but `originator_type` omitted — Phase1Metadata
+            # validates fine (the field is Optional) but the promotion path
+            # must reject the half-baked result.
+            return (
+                '```json\n{"sender": "Some Lawyer", "is_court_document": false}\n```',
+                "",
+            )
+        # Pass-2 returns the proper answer with originator_type set.
+        return (
+            '{"sender": "Some Lawyer", "is_court_document": false, '
+            '"originator_type": "own"}',
+            "",
+        )
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_p1_no_ot_metadata",
+            schema=Phase1Metadata,
+            two_pass=True,
+        )
+
+    assert calls == [
+        "doc_p1_no_ot_metadata-p1",
+        "doc_p1_no_ot_metadata-p2",
+    ], (
+        "pass-2 must run when pass-1 omits originator_type even though the "
+        f"schema validates; got {calls}"
+    )
+    assert isinstance(result, Phase1Metadata)
+    assert result.originator_type == "own"
+
+
+@pytest.mark.unit
+def test_pass1_json_promotion_phase1_succeeds_when_originator_type_set(
+    patched_provider,
+):
+    """Counter-test: when pass-1's Phase1Metadata JSON includes a non-null
+    `originator_type`, the promotion path returns it and pass-2 is skipped."""
+    from app.services.intelligence.schemas import Phase1Metadata
+
+    calls: list[str] = []
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        calls.append(debug_label)
+        if debug_label.endswith("-p1"):
+            return (
+                '```json\n{"sender": "Some Lawyer", '
+                '"is_court_document": false, '
+                '"originator_type": "own"}\n```',
+                "",
+            )
+        # pass-2 should NOT run here
+        return ('{"originator_type": "opposing"}', "")
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_p1_ok_metadata",
+            schema=Phase1Metadata,
+            two_pass=True,
+        )
+
+    assert calls == ["doc_p1_ok_metadata-p1"]
+    assert isinstance(result, Phase1Metadata)
+    assert result.originator_type == "own"

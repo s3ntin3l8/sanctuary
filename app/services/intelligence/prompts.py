@@ -77,8 +77,9 @@ PASS2_USER_SUFFIX = (
     "The JSON MUST faithfully reflect the conclusions of your prior analysis "
     "above — do NOT re-decide, re-weigh, or hedge. This is a formatting step, "
     "not a second classification.\n"
-    "Specifically: if the analysis concluded a clear value for `originator`, "
-    "`sender`, `is_court_document`, or any other field, emit that exact value. "
+    "Specifically: if the analysis concluded a clear value for "
+    "`originator_type`, `sender`, `is_court_document`, or any other field, "
+    "emit that exact value. "
     "If the analysis was genuinely uncertain on a field, pick the most-likely "
     'value the analysis pointed to and set its confidence to "low" — do not '
     "downgrade to a safer or blander answer than what you reasoned to. ---"
@@ -165,8 +166,9 @@ Normalization & Ambiguity:
 - Treat minor variations in `az_court` and `internal_id` as IDENTICAL (e.g., "003" vs "3", "-" vs "/").
 - Reversed party order between Email and Rubrum is common; prioritize the **Document Rubrum** and do NOT flag it as a contradiction.
 - `sender` must always reflect the actual letterhead organization (who physically sent or issued the document). Never replace the sender with a party name.
-- `originator` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage. If the letterhead identifies a named private individual or law firm as the sender — not a court institution — `originator` must be `opposing` or `own`, never `court`. Documents authored by parties that carry a court Rubrum (Aktenzeichen, docket reference) at the top are still party-authored; the Rubrum is routing context, not authorship.
-- **Originator follows the letterhead, not the document's subject or title.** A letter from Lawyer A discussing or responding to Party B is `originator=own/opposing` based on which side A is on — never based on which side B is on. Words like "Empfehlung an [opposing]", "Empfehlungsschreiben Antragsgegnerin", "Erwiderung auf [opposing's brief]", "Stellungnahme zu [opposing]" describe what the letter is *about*; they do not flip authorship. If the letterhead is the user's lawyer (on YOUR SIDE), `originator=own` regardless of which party the letter discusses.
+- **Recipient block vs. sender letterhead.** A court address at the top of a party-filed pleading is the RECIPIENT, not the sender's letterhead. Identify the actual sender from the signature block at the bottom (e.g. `Mit Freundlichen Grüßen` / `Mit freundlichen Grüßen` followed by a name and signature line). A pleading that opens with `An\n\n[Court name + address]` — or with just `[Court name]\n[Date]` and no other letterhead — and closes with a private party's signature is a direct party filing: `sender` is that signing party (e.g. "Liu Yingying"), `originator_type` is `opposing` or `own`, and the document is NOT a court relay. Only set `sender=[Court]` when the document is actually issued BY the court — a Beschluss/Urteil/Verfügung signed by a judge, or a court cover letter (Begleitschreiben) where the court itself is the signatory.
+- `originator_type` reflects the procedural role of the sender. If the sender is a court that is forwarding a party's Schriftsatz, set `originator_type` to `court` (not to the party whose text is enclosed) — the document enricher will set `court_relay=true` in a later stage. If the letterhead identifies a named private individual or law firm as the sender — not a court institution — `originator_type` must be `opposing` or `own`, never `court`. Documents authored by parties that carry a court Rubrum (Aktenzeichen, docket reference) at the top are still party-authored; the Rubrum is routing context, not authorship.
+- **Originator follows the letterhead, not the document's subject or title.** A letter from Lawyer A discussing or responding to Party B is `originator_type=own/opposing` based on which side A is on — never based on which side B is on. Words like "Empfehlung an [opposing]", "Empfehlungsschreiben Antragsgegnerin", "Erwiderung auf [opposing's brief]", "Stellungnahme zu [opposing]" describe what the letter is *about*; they do not flip authorship. If the letterhead is the user's lawyer (on YOUR SIDE), `originator_type=own` regardless of which party the letter discusses.
 
 Aktenzeichen Suffixes:
 - Preserve critical German suffixes (e.g., 'e' for electronic, 'eA' for expedited, 'B' for Beschwerde). Do NOT trim them to fit a generic digits-only pattern.
@@ -180,14 +182,21 @@ Hints:
 
 Be concise. Use null if information is unavailable.
 
-Court Document Detection:
+Extract these fields (these are the exact JSON keys the output must use):
+- az_court: official court Aktenzeichen / docket number (e.g. "12 F 100/24"). Single-AZ rule: if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (page-1 letterhead). Suffixes ('e', 'eA', 'B', …) are critical — preserve them.
+- internal_id: the lawyer's internal reference (e.g. "1234/25"). Email subject is a primary source.
+- case_title: short title "[Party1] ./. [Party2] - [Matter]" (surnames only).
+- sender: the actual letterhead organization (who physically sent or issued the document). Never replace it with a party name.
+- issued_date: the date shown on the document itself (ISO format "YYYY-MM-DD") or null.
+- originator_type: one of "own" | "opposing" | "court" | "third_party" | "unknown" — follow the letterhead/role rules above.
 - is_court_document: true ONLY when the Lead Document was issued BY a court (letterhead is a court, not a law firm). False for all lawyer letters, even those forwarding court documents.
-- court_level: classify the issuing court — "ag" (Amtsgericht), "lg" (Landgericht), "olg" (Oberlandesgericht), "bgh" (Bundesgerichtshof), "other". Null if not a court document.
+- court_level: "ag" (Amtsgericht), "lg" (Landgericht), "olg" (Oberlandesgericht), "bgh" (Bundesgerichtshof), or "other". Null if not a court document.
 - court_name: full official name of the issuing court (e.g. "Amtsgericht Ingolstadt"). Null if not a court document.
 - subject_matter: legal matter from the AZ suffix or document heading (e.g. "§ 1671 BGB, Sorgerecht"). Null if not determinable.
 - appeal_deadline_days: formal appeal period in days only when this document is a ruling that states one (e.g. 14, 28). Null otherwise.
-- az_court (single AZ rule): if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (found on page 1 letterhead). Suffixes (e.g. 'e', 'eA', 'B') are critical — preserve them.
-- case_type: classify the legal domain as "family" when you see Familiensache, Sorgerecht, Umgangsrecht, Unterhalt, Kindesunterhalt, Ehesache, Scheidung, § 1671/1684 BGB, or FamFG keywords; "administrative" for Verwaltungsgericht/VwGO; "criminal" for Strafkammer/StPO; "civil" for all other civil proceedings. Null when content is insufficient to classify."""
+- case_type: classify the legal domain as "family" when you see Familiensache, Sorgerecht, Umgangsrecht, Unterhalt, Kindesunterhalt, Ehesache, Scheidung, § 1671/1684 BGB, or FamFG keywords; "administrative" for Verwaltungsgericht/VwGO; "criminal" for Strafkammer/StPO; "civil" for all other civil proceedings. Null when content is insufficient to classify.
+- confidence: per-field reliability scores as a JSON object with keys `az_court`, `internal_id`, `case_title`, `sender`, `issued_date`, `originator_type`. Each value is "high" | "medium" | "low" or omitted.
+- contradictions: list of any factual/procedural contradictions you noticed with the hint context. Empty list when none."""
 
 
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.
