@@ -126,6 +126,11 @@ def _call_enricher_sync(
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
+        # Per-doc stage: suppress the case-narrative preamble. The enricher was
+        # the worst offender — doc 44 (ICBC bank cert about Teilungsversteigerung)
+        # got `required_action="File as supporting evidence in custody
+        # proceedings"` because the preamble framed everything as custody.
+        include_user_context=False,
     )
     return result.model_dump()
 

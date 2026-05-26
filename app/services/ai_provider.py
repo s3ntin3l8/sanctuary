@@ -210,8 +210,21 @@ class AIProvider:
         options: dict | None = None,
     ) -> dict:
         """Get provider-specific request parameters for text generation."""
+        # User-context preamble (e.g. "I'm Björn fighting for custody…") is
+        # prepended to the system prompt by default, which is what case-level
+        # synthesis (case brief) needs. Per-doc stages opt out via
+        # `_include_user_context=False` because the preamble leaks the case
+        # narrative into individual document summaries — e.g. an ICBC bank
+        # certificate ended up with `required_action="File as supporting
+        # evidence in custody proceedings"` because the preamble framed
+        # everything as a custody case. The per-doc prompts get the party
+        # identities they need from the explicit "Known Party Identity" block
+        # in the user prompt, not from this preamble.
+        include_user_context = (
+            options.get("_include_user_context", True) if options else True
+        )
         ctx = self._user_context
-        if ctx:
+        if ctx and include_user_context:
             system_prompt = f"{ctx}\n\n{system_prompt}" if system_prompt else ctx
 
         ptype = await self.get_type()
@@ -219,9 +232,10 @@ class AIProvider:
         # Meta flags set by call_json_ai. Both are translated below into
         # provider-specific fields and stripped from forwarded options so they
         # don't leak as unknown keys to the server.
-        #   _enable_thinking — Qwen thinking-disable
-        #   _response_schema — JSON schema for grammar-constrained output
-        #   _schema_name     — human-readable name for the OpenAI strict-mode envelope
+        #   _enable_thinking         — Qwen thinking-disable
+        #   _response_schema         — JSON schema for grammar-constrained output
+        #   _schema_name             — human-readable name for the OpenAI strict-mode envelope
+        #   _include_user_context    — handled above; stripped before forwarding
         enable_thinking = options.get("_enable_thinking", True) if options else True
         response_schema = options.get("_response_schema") if options else None
         schema_name = options.get("_schema_name", "response") if options else "response"

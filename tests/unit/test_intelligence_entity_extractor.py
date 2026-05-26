@@ -125,3 +125,126 @@ def test_save_entities_no_entities(db_session, sample_document):
     """Empty list returns 0."""
     count = _save_entities(sample_document, {"entities": []}, db_session)
     assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #6: entity quality — court-type override, case-title rejection,
+# party-name canonicalization snap.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_save_entities_overrides_court_misclassified_as_law_firm(
+    db_session, sample_document
+):
+    """Regression for entity 95: AI emitted `LAW_FIRM Amtsgericht Ingolstadt`.
+    A court name MUST be stored as COURT regardless of the AI's type call."""
+    result = {
+        "entities": [
+            {
+                "type": "LAW_FIRM",
+                "name": "Amtsgericht Ingolstadt",
+                "context_quote": "x",
+            },
+        ]
+    }
+    _save_entities(sample_document, result, db_session)
+    rows = (
+        db_session.query(Entity).filter(Entity.case_id == sample_document.case_id).all()
+    )
+    assert len(rows) == 1
+    assert rows[0].type.name == "COURT"
+    assert rows[0].name == "Amtsgericht Ingolstadt"
+
+
+@pytest.mark.unit
+def test_save_entities_overrides_court_misclassified_as_organization(
+    db_session, sample_document
+):
+    """Same override logic for ORGANIZATION → COURT (e.g. 'Landgericht …')."""
+    result = {
+        "entities": [
+            {
+                "type": "ORGANIZATION",
+                "name": "Landgericht Ingolstadt",
+                "context_quote": "x",
+            },
+        ]
+    }
+    _save_entities(sample_document, result, db_session)
+    rows = (
+        db_session.query(Entity).filter(Entity.case_id == sample_document.case_id).all()
+    )
+    assert [r.type.name for r in rows] == ["COURT"]
+
+
+@pytest.mark.unit
+def test_save_entities_drops_case_title_stored_as_person(db_session, sample_document):
+    """Regression: 'Hansen, Björn /. Liu, Yingying' was stored as a PERSON
+    entity — that's a Rubrum string, not a person."""
+    result = {
+        "entities": [
+            {
+                "type": "PERSON",
+                "name": "Hansen, Björn /. Liu, Yingying",
+                "context_quote": "x",
+            },
+            # Other variants the regex must also reject:
+            {"type": "PERSON", "name": "Müller v. Schmidt", "context_quote": "x"},
+            {"type": "PERSON", "name": "Kläger gegen Beklagte", "context_quote": "x"},
+            # ...and a real person who must NOT be dropped:
+            {"type": "PERSON", "name": "Yingying Liu", "context_quote": "x"},
+        ]
+    }
+    _save_entities(sample_document, result, db_session)
+    rows = (
+        db_session.query(Entity).filter(Entity.case_id == sample_document.case_id).all()
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "Yingying Liu"
+
+
+@pytest.mark.unit
+def test_save_entities_snaps_variants_to_known_party_canonical_name(
+    db_session, sample_document
+):
+    """When a Case has `parties=[{"name": "Liu Yingying", …}]`, all variants
+    that normalize to the same dedup key as 'Liu Yingying' (Liu, Yingying Liu,
+    Liu Yingying, J. Liu Yingying, etc.) should snap to that canonical
+    spelling — the row stores 'Liu Yingying', not the variant."""
+    from app.models.database import Case
+
+    case = db_session.query(Case).filter(Case.id == sample_document.case_id).one()
+    case.parties = [
+        {"name": "Liu Yingying", "role": "opposing", "document_count": 5},
+        {"name": "Björn Hansen", "role": "own", "document_count": 0},
+    ]
+    db_session.flush()
+
+    # Different orderings / forms all referring to the same person.
+    result = {
+        "entities": [
+            {"type": "PERSON", "name": "Yingying Liu", "context_quote": "x"},
+        ]
+    }
+    _save_entities(sample_document, result, db_session)
+
+    rows = (
+        db_session.query(Entity)
+        .filter(
+            Entity.case_id == sample_document.case_id,
+            Entity.type.in_(
+                [
+                    __import__(
+                        "app.models.enums", fromlist=["EntityType"]
+                    ).EntityType.PERSON
+                ]
+            ),
+        )
+        .all()
+    )
+    # Exactly one row, with the canonical name from Case.parties.
+    assert len(rows) == 1
+    assert rows[0].name == "Liu Yingying", (
+        f"expected canonical spelling 'Liu Yingying', got {rows[0].name!r}"
+    )

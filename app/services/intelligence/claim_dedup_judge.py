@@ -60,6 +60,8 @@ def _judge_pair(
             model=model or None,
             db=db,
             two_pass=False,
+            # Per-claim comparison; doesn't need the case-narrative preamble.
+            include_user_context=False,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("dedup judge call failed for existing %s: %s", existing_id, exc)
@@ -228,6 +230,8 @@ def _judge_batch(
             model=model or None,
             db=db,
             two_pass=False,
+            # Per-claim batch comparison; doesn't need the narrative preamble.
+            include_user_context=False,
         )
         valid_pairs = {(nid, eid) for nid, _, eid, _ in pairs}
         return [

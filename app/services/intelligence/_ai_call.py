@@ -17,7 +17,7 @@ from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call
 from app.services.ai_provider import chat_provider
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._json import is_effectively_empty, parse_json_response
 from app.services.intelligence.prompts import (
     PASS1_USER_SUFFIX,
     PASS2_USER_SUFFIX,
@@ -599,6 +599,7 @@ def _build_params(
     suppress_thinking: bool,
     resolved_model: str,
     pass1_max_tokens_override: int | None = None,
+    include_user_context: bool = True,
 ) -> dict:
     """Resolve provider-specific request params for one streaming call."""
     effective_options: dict = {
@@ -607,6 +608,12 @@ def _build_params(
     }
     if suppress_thinking:
         effective_options["_enable_thinking"] = False
+    if not include_user_context:
+        # Suppresses ai_provider.get_generate_params from prepending the
+        # case-narrative preamble (set via the Settings UI / AI_USER_CONTEXT
+        # env). Per-doc stages opt out to keep the case-arc framing from
+        # leaking into individual document summaries.
+        effective_options["_include_user_context"] = False
     if schema is not None:
         effective_options["_response_schema"] = schema.model_json_schema()
         effective_options["_schema_name"] = schema.__name__
@@ -647,6 +654,7 @@ def call_json_ai(
     two_pass: bool = ...,
     pass1_max_tokens: int | None = ...,
     case_id: str | None = ...,
+    include_user_context: bool = ...,
 ) -> T: ...
 
 
@@ -665,6 +673,7 @@ def call_json_ai(
     two_pass: bool = ...,
     pass1_max_tokens: int | None = ...,
     case_id: str | None = ...,
+    include_user_context: bool = ...,
 ) -> dict: ...
 
 
@@ -682,6 +691,7 @@ def call_json_ai(
     two_pass: bool = False,
     pass1_max_tokens: int | None = _DEFAULT_PASS1_MAX_TOKENS,
     case_id: str | None = None,
+    include_user_context: bool = True,
 ) -> BaseModel | dict:
     """Synchronous streaming AI call returning a Pydantic model or parsed dict.
 
@@ -763,6 +773,7 @@ def call_json_ai(
             suppress_thinking=False,  # let the model think
             resolved_model=resolved_model,
             pass1_max_tokens_override=pass1_max_tokens,
+            include_user_context=include_user_context,
         )
         try:
             p1_response, p1_thinking = _stream_response(
@@ -866,6 +877,7 @@ def call_json_ai(
         schema=schema,
         suppress_thinking=pass2_suppress,
         resolved_model=resolved_model,
+        include_user_context=include_user_context,
     )
 
     full_response, full_thinking = _stream_response(
@@ -887,7 +899,7 @@ def call_json_ai(
     # promote it. parse_json_response handles mixed prose, markdown fences,
     # and truncation repair — more robust than a bare substring check.
     _pre_promotion_thinking_len = len(full_thinking)
-    if schema is not None and not full_response.strip() and full_thinking:
+    if schema is not None and is_effectively_empty(full_response) and full_thinking:
         try:
             _promoted = parse_json_response(full_thinking)
             if _promoted:
@@ -902,7 +914,7 @@ def call_json_ai(
         except Exception:
             pass  # Promotion failed; fall through to error handling below
 
-    if not full_response.strip():
+    if is_effectively_empty(full_response):
         # Watchdog-drain short-circuit: when pass-2's thinking channel passed
         # _THINK_WATCHDOG_CHARS, the model spun in a reasoning loop and the
         # stream was drained without ever producing a parsable answer.
@@ -938,6 +950,7 @@ def call_json_ai(
                 two_pass=two_pass,
                 pass1_max_tokens=pass1_max_tokens,
                 case_id=case_id,
+                include_user_context=include_user_context,
             )
         if watchdog_drained:
             logger.warning(

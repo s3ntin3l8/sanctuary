@@ -11,11 +11,33 @@ logger = logging.getLogger(__name__)
 
 
 def _dispatch_claims_safely(doc_id: int) -> None:
-    """Dispatch extract_claims_task; on broker failure mark CLAIMS failed instead
-    of leaving the stage stuck in PENDING."""
+    """Atomically claim CLAIMS and dispatch extract_claims_task. Without the
+    claim, a doc whose CLAIMS task is queued-behind-a-busy-worker gets seen as
+    PENDING by `recover_stuck_pending_dispatches` and double-dispatched —
+    two concurrent extract_claims_task runs then trip the stale-cleanup race
+    and the second wipes the first's work if it produces 0 claims. See
+    doc_39 / 2026-05-26 22:00-22:12 incident.
+
+    Mirrors the pattern in enrich_document._dispatch_if_pending: only the
+    worker that wins the PENDING→RUNNING CAS actually dispatches.
+
+    On broker failure, mark CLAIMS failed instead of leaving the stage stuck
+    in RUNNING (we already claimed it)."""
     from app.dependencies import get_db_session
-    from app.services.pipeline_status import mark_failed
+    from app.services.pipeline_status import claim_stage_for_dispatch, mark_failed
     from app.tasks.extract_claims import extract_claims_task
+
+    db = get_db_session()
+    try:
+        if not claim_stage_for_dispatch(doc_id, PipelineStage.CLAIMS, db):
+            logger.debug(
+                "Doc #%d: CLAIMS already claimed by another dispatcher — "
+                "skipping cascade dispatch",
+                doc_id,
+            )
+            return
+    finally:
+        db.close()
 
     try:
         extract_claims_task.delay(doc_id)

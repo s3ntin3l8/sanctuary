@@ -7,6 +7,34 @@ import re
 logger = logging.getLogger(__name__)
 
 
+_FENCE_OPEN_RE = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
+_FENCE_CLOSE_RE = re.compile(r"\s*```\s*$")
+
+
+def is_effectively_empty(text: str | None) -> bool:
+    """True for None/whitespace AND for an empty markdown fence like ```json\\n\\n```.
+
+    qwen3.5 + LMStudio occasionally emits *just* an opening + closing fence as
+    its response content, with the actual schema-conformant JSON sitting in
+    the reasoning_content channel.  The empty fence is 12 non-empty chars, so
+    a plain `not text.strip()` check treats it as a real response and the
+    JSON-in-thinking promotion logic at `_ai_call.py` is bypassed.
+
+    This helper narrowly recognizes that case: strip ONE leading and ONE
+    trailing markdown fence delimiter, then check whether anything remains.
+    A valid fenced payload like ```json\\n{"x": 1}\\n``` still has content
+    after stripping the fences, so this returns False for it.
+    """
+    if not text:
+        return True
+    s = text.strip()
+    if not s:
+        return True
+    s = _FENCE_OPEN_RE.sub("", s, count=1)
+    s = _FENCE_CLOSE_RE.sub("", s, count=1)
+    return not s.strip()
+
+
 def parse_json_response(raw_text: str) -> dict:
     """Strip markdown fences and parse JSON from an AI response."""
     if not raw_text or not raw_text.strip():

@@ -1079,3 +1079,63 @@ def test_pass1_json_promotion_phase1_succeeds_when_originator_type_set(
     assert calls == ["doc_p1_ok_metadata-p1"]
     assert isinstance(result, Phase1Metadata)
     assert result.originator_type == "own"
+
+
+@pytest.mark.unit
+def test_two_pass_empty_fence_pass2_promotes_thinking_channel(patched_provider):
+    """Regression for the post-R4 catastrophic case (doc_42, docs_40/41 sync-p2;
+    doc_39 claims-p2): qwen3.5 + LMStudio sometimes emits an empty markdown
+    fence ```json\\n\\n``` as the response content with the actual JSON living
+    in the reasoning_content channel.
+
+    Before the is_effectively_empty fix, the empty fence's 12 non-empty chars
+    fooled `not full_response.strip()`, the JSON-in-thinking promotion path at
+    _ai_call.py:890-903 never fired, the empty fence then failed to parse, and
+    a ValueError propagated — silent data loss for the document.
+
+    After the fix, is_effectively_empty() recognises the empty fence,
+    promotion fires, the thinking-channel JSON is treated as the response,
+    and the call returns a valid schema instance.
+    """
+    from app.services.intelligence.schemas import Phase1Metadata
+
+    json_in_thinking = (
+        '{"az_court": "2 K 92/25", "sender": "Liu Yingying", '
+        '"originator_type": "opposing", "confidence": {}}'
+    )
+
+    def fake_stream(
+        *,
+        params,
+        ptype,
+        debug_label,
+        resolved_model,
+        ingest_batch_id,
+        doc_case_id=None,
+        redact=False,
+    ):
+        if debug_label.endswith("-p1"):
+            # Pass 1 produces only thinking (model spun on the doc but never
+            # emitted a JSON commitment in the response channel). Note: no
+            # JSON in thinking either — analysis context only, so pass-1
+            # promotion can't fire and pass-2 must run.
+            return ("", "thinking-only analysis text without JSON")
+        # Pass 2: the bug-trigger. Empty fence in response, valid JSON in
+        # thinking. The model "got there" but the grammar-constrained output
+        # went to the wrong channel.
+        return ("```json\n\n```", json_in_thinking)
+
+    with patch.object(_ai_call, "_stream_response", side_effect=fake_stream):
+        result = _ai_call.call_json_ai(
+            system_prompt="sys",
+            user_prompt="orig",
+            options={},
+            debug_label="doc_42_sync",
+            schema=Phase1Metadata,
+            two_pass=True,
+        )
+
+    assert isinstance(result, Phase1Metadata)
+    assert result.sender == "Liu Yingying"
+    assert result.originator_type == "opposing"
+    assert result.az_court == "2 K 92/25"

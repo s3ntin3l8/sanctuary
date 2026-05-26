@@ -1,11 +1,12 @@
 """4d — Per-document entity extraction: PERSON, ORGANIZATION, COURT, LAW_FIRM, CITATION, FINANCIAL."""
 
 import logging
+import re
 
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.models.database import Document, Entity
+from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
@@ -23,6 +24,27 @@ ELIGIBLE_TIERS = {
     SignificanceTier.INFORMATIONAL,
 }
 VALID_ENTITY_TYPES = {e.name for e in EntityType}  # SAEnum stores .name (uppercase)
+
+# A name starting with these prefixes (case-insensitive) is unambiguously a
+# German court. The entity extractor sometimes mislabels them as LAW_FIRM or
+# ORGANIZATION — we override at save time. Cheaper and more reliable than
+# prompt nudging.
+_COURT_NAME_RE = re.compile(
+    r"^\s*(Amtsgericht|Landgericht|Oberlandesgericht|Bundesgerichtshof|"
+    r"Bundesverfassungsgericht|Verwaltungsgericht|Sozialgericht|"
+    r"Arbeitsgericht|Finanzgericht)\b",
+    re.IGNORECASE,
+)
+
+# A PERSON name containing one of these separators is structural noise — a
+# case-title string ("Hansen, Björn /. Liu, Yingying", "Müller v. Schmidt")
+# or a compound name-attempt smush ("Liu Yingying / Frau Liu",
+# "Yingying Liu / Ying Yang Liu") — and must be dropped. People don't have
+# slashes in their names.
+_CASE_TITLE_SEPARATOR_RE = re.compile(
+    r"\s\.?/\.?\s|\s+v\.?s?\.\s+|\s+gegen\s+",
+    re.IGNORECASE,
+)
 
 
 def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
@@ -60,8 +82,75 @@ def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
+        # Per-doc stage: suppress the case-narrative preamble (Issue #5).
+        include_user_context=False,
     )
     return result.model_dump()
+
+
+def _build_party_canonical_map(case: Case | None) -> dict[str, str]:
+    """Snap-to-canonical lookup for known case parties.
+
+    Returns a dict mapping `normalize_entity_name(variant, PERSON|ORG)` to the
+    canonical party name in `Case.parties`. The entity-extractor often emits
+    PERSON variants like "Liu", "Yingying Liu", "J. Liu, Yingying" that share
+    a dedup key with "Liu Yingying" once normalized — but some variants don't
+    quite normalize identically (East-Asian vs Western name ordering doesn't
+    collapse, initials, comma-reverse edge cases). Anchoring on the case's
+    `parties` list pins variants of both orderings to one row.
+    """
+    if not case or not case.parties:
+        return {}
+    mapping: dict[str, str] = {}
+    for party in case.parties:
+        if not isinstance(party, dict):
+            continue
+        canonical = (party.get("name") or "").strip()
+        if not canonical:
+            continue
+        # Map all entity-type normalisations so humans ("Liu Yingying") and
+        # orgs ("Haidl Funk Rechtsanwälte") and courts ("Amtsgericht
+        # Ingolstadt") all snap uniformly.
+        for et in (
+            EntityType.PERSON,
+            EntityType.ORGANIZATION,
+            EntityType.LAW_FIRM,
+            EntityType.COURT,
+        ):
+            key = normalize_entity_name(canonical, et)
+            if key:
+                mapping[key] = canonical
+        # For two-token PERSON names, also add the swapped ordering so that
+        # East-Asian surname-first names ("Liu Yingying") snap from a Western
+        # given-name-first variant ("Yingying Liu") and vice-versa. The
+        # existing normalize_entity_name handles `,`-separated reverses but
+        # not bare-space reorderings.
+        tokens = canonical.split()
+        if len(tokens) == 2:
+            swapped = f"{tokens[1]} {tokens[0]}"
+            key_swapped = normalize_entity_name(swapped, EntityType.PERSON)
+            if key_swapped and key_swapped not in mapping:
+                mapping[key_swapped] = canonical
+    return mapping
+
+
+def _coerce_entity_type(entity_type: EntityType, name: str) -> EntityType:
+    """Override the AI's type assignment for unambiguous cases.
+
+    Currently: a name starting with a German court prefix MUST be COURT, even
+    if the model called it LAW_FIRM or ORGANIZATION (the doc 31 / entity 95
+    bug pattern).
+    """
+    if _COURT_NAME_RE.match(name):
+        return EntityType.COURT
+    return entity_type
+
+
+def _is_case_title_string(name: str) -> bool:
+    """A PERSON whose name contains a case-title separator is structural
+    corruption — the AI captured the Rubrum string instead of the parties.
+    Drop it; the real parties get extracted on their own."""
+    return bool(_CASE_TITLE_SEPARATOR_RE.search(name))
 
 
 def _save_entities(doc: Document, result: dict, db: Session) -> int:
@@ -78,6 +167,13 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
     existing_keys: set[tuple[EntityType, str]] = {
         (t, normalize_entity_name(n, t)) for t, n in existing_rows
     }
+
+    # Case-party canonical-name map (Issue #6): pulls Case.parties to snap
+    # extracted variants to one canonical form per known actor.
+    case = (
+        db.query(Case).filter(Case.id == doc.case_id).first() if doc.case_id else None
+    )
+    party_canonicals = _build_party_canonical_map(case)
 
     # First pass: collect canonical names from this payload so sub-unit
     # collapse (e.g. "Landratsamt X, Amt Y" → "Landratsamt X") can fire
@@ -107,11 +203,39 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             continue
 
         entity_type = EntityType[type_raw]  # Look up by NAME (uppercase)
+
+        # Issue #6: hard-override court names that the AI mislabelled.
+        coerced = _coerce_entity_type(entity_type, name)
+        if coerced != entity_type:
+            logger.debug(
+                "Doc %s: overriding entity type for %r: %s → %s",
+                doc.id,
+                name,
+                entity_type.name,
+                coerced.name,
+            )
+            entity_type = coerced
+
+        # Issue #6: drop case-title strings stored as PERSON entities.
+        if entity_type == EntityType.PERSON and _is_case_title_string(name):
+            logger.debug(
+                "Doc %s: dropping case-title PERSON entity %r — structural noise",
+                doc.id,
+                name,
+            )
+            continue
+
         canonical = normalize_entity_name(
             name, entity_type, canonical_names=payload_canonicals
         )
         if not canonical:
             continue
+
+        # Issue #6: snap variants to a known case party's canonical spelling
+        # so the row stores "Liu Yingying" (not "Liu", "Ying Liu", "Liu, Y.").
+        # Falls through harmlessly when no match — non-party entities keep
+        # their original name.
+        stored_name = party_canonicals.get(canonical, name)
 
         if (entity_type, canonical) in existing_keys:
             continue
@@ -123,7 +247,7 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
             Entity(
                 case_id=doc.case_id,
                 type=entity_type,
-                name=name,  # store the original spelling on first occurrence
+                name=stored_name,
                 source_document_id=doc.id,
                 extra_data={"context_quote": context} if context else None,
             )

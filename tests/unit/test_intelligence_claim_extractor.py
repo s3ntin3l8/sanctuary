@@ -1,6 +1,6 @@
 """Tests for Phase 4c claim extractor."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -23,10 +23,17 @@ def _make_claim(
     claim_text: str,
     claim_type: ClaimType = ClaimType.FACTUAL,
     status: ClaimStatus = ClaimStatus.ASSERTED,
+    asserts_ingest_date: datetime | None = None,
 ) -> Claim:
     """Wave 2A test helper: create a global Claim plus its canonical ASSERTS
     evidence row. Replaces the old `Claim(case_id=…, source_document_id=…)`
-    pattern that's invalid after the column-drop migration."""
+    pattern that's invalid after the column-drop migration.
+
+    `asserts_ingest_date` lets retry-cleanup tests backdate the ASSERTS row
+    past the claim_extractor.extract() debounce window so the cleanup logic
+    is actually exercised. Default is the model's _utcnow (i.e. "just now"),
+    which is what most tests want.
+    """
     claim = Claim(
         claim_text=claim_text,
         claim_type=claim_type,
@@ -36,14 +43,22 @@ def _make_claim(
     )
     db_session.add(claim)
     db_session.flush()
-    db_session.add(
-        ClaimEvidence(
-            claim_id=claim.id,
-            document_id=asserting_doc.id,
-            role=ClaimEvidenceRole.ASSERTS,
-        )
-    )
+    ev_kwargs = {
+        "claim_id": claim.id,
+        "document_id": asserting_doc.id,
+        "role": ClaimEvidenceRole.ASSERTS,
+    }
+    if asserts_ingest_date is not None:
+        ev_kwargs["ingest_date"] = asserts_ingest_date
+    db_session.add(ClaimEvidence(**ev_kwargs))
     return claim
+
+
+# Backdate prior ASSERTS rows past the 300s debounce window so the
+# stale-cleanup branch is actually entered (otherwise extract() short-circuits
+# with reason="recent_extraction" — which is the intended behaviour for
+# dispatch-race scenarios but defeats tests that want to exercise cleanup).
+_PRE_DEBOUNCE = datetime.now() - timedelta(hours=1)
 
 
 @pytest.fixture
@@ -783,7 +798,11 @@ def test_relay_doc_skipped(db_session, sample_case):
 @pytest.mark.unit
 def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_case):
     """A repeat extraction on the same doc must not accumulate claims —
-    delete prior auto-extracted ASSERTED claims before re-running."""
+    delete prior auto-extracted ASSERTED claims before re-running.
+
+    Prior ASSERTS are backdated past _PRE_DEBOUNCE so extract()'s debounce
+    short-circuit doesn't fire — we want to exercise the stale-cleanup branch.
+    """
     from app.repositories.claim import ClaimRepository
 
     # Seed three claims from a prior run, all in default ASSERTED state.
@@ -792,6 +811,7 @@ def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_
             db_session,
             asserting_doc=significant_doc,
             claim_text=f"Stale claim from prior run number {i} that is long enough",
+            asserts_ingest_date=_PRE_DEBOUNCE,
         )
     db_session.commit()
     assert (
@@ -863,6 +883,7 @@ def test_retry_preserves_claims_with_cross_doc_evidence(
         asserting_doc=significant_doc,
         claim_text="Stale ASSERTED claim with no other-doc evidence",
         status=ClaimStatus.ASSERTED,
+        asserts_ingest_date=_PRE_DEBOUNCE,
     )
     # 2) ESTABLISHED with no cross-doc evidence — also deleted (this is the
     #    ib-0033 #98 case: originator flipped court→opposing, so the original
@@ -873,6 +894,7 @@ def test_retry_preserves_claims_with_cross_doc_evidence(
         asserting_doc=significant_doc,
         claim_text="Stale ESTABLISHED claim with no other-doc evidence",
         status=ClaimStatus.ESTABLISHED,
+        asserts_ingest_date=_PRE_DEBOUNCE,
     )
     # 3) CONTESTED with cross-doc evidence from other_doc — preserved.
     contested_with_signal = _make_claim(
@@ -880,6 +902,7 @@ def test_retry_preserves_claims_with_cross_doc_evidence(
         asserting_doc=significant_doc,
         claim_text="A contested claim that another doc challenges",
         status=ClaimStatus.CONTESTED,
+        asserts_ingest_date=_PRE_DEBOUNCE,
     )
     db_session.add(
         ClaimEvidence(
@@ -943,11 +966,14 @@ def test_retry_preserves_evidence_pointing_at_other_docs_claims(
     )
     db_session.flush()
 
-    # significant_doc has its own ASSERTED claim (will be deleted on retry)
+    # significant_doc has its own ASSERTED claim (will be deleted on retry).
+    # Backdate the ASSERTS row so the debounce window doesn't short-circuit
+    # extract() before the cleanup branch.
     own_claim = _make_claim(
         db_session,
         asserting_doc=significant_doc,
         claim_text="Own claim from prior extraction that will be cleared on retry",
+        asserts_ingest_date=_PRE_DEBOUNCE,
     )
     db_session.flush()
 
@@ -994,3 +1020,88 @@ def test_retry_preserves_evidence_pointing_at_other_docs_claims(
     assert ClaimEvidenceRole.ASSERTS in surviving_roles
     # significant_doc's own ASSERTED claim was cleared.
     assert db_session.get(Claim, own_claim.id) is None
+
+
+# ---------------------------------------------------------------------------
+# Debounce: defense in depth against the dispatch-race that destroyed doc_39's
+# 3-claim extraction (cron fired extract_claims_task multiple times in 8 min;
+# the second/third runs deleted prior good claims via stale-cleanup, and when
+# they then failed to produce JSON the original work was gone).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_extract_debounces_when_recent_asserts_exist(db_session, significant_doc):
+    """If a successful extraction wrote ASSERTS rows for this doc inside the
+    _RECENT_EXTRACTION_WINDOW_SECS window, extract() must return the
+    'recent_extraction' skip reason without entering the destructive
+    stale-cleanup branch — leaving the prior result intact."""
+    from app.services.intelligence.claim_extractor import extract
+
+    # Seed a successful prior extraction: a Claim with an ASSERTS row owned
+    # by significant_doc, dated "just now". This mirrors what a normal
+    # extract() run would have written.
+    prior = _make_claim(
+        db_session,
+        asserting_doc=significant_doc,
+        claim_text="A claim from a recent prior run",
+    )
+    db_session.commit()
+    prior_id = prior.id
+
+    called = {"ai": 0}
+
+    def fake_ai(*_a, **_k):
+        called["ai"] += 1
+        return {"new_claims": [], "evidence_links": []}
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            side_effect=fake_ai,
+        ),
+    ):
+        result = extract(significant_doc.id)
+
+    assert result == "recent_extraction", f"expected debounce skip, got {result!r}"
+    assert called["ai"] == 0, "AI must not be called inside the debounce window"
+    # Prior claim survives — debounce ran BEFORE the destructive stale-cleanup.
+    assert db_session.get(Claim, prior_id) is not None
+
+
+@pytest.mark.unit
+def test_extract_proceeds_when_no_recent_asserts(db_session, significant_doc):
+    """Counter-test: with no ASSERTS rows for this doc inside the window,
+    extract() proceeds normally."""
+    from app.services.intelligence.claim_extractor import extract
+
+    ai_result = {
+        "new_claims": [
+            {
+                "claim_text": "Fresh extraction claim",
+                "claim_type": "factual",
+                "excerpt": "n/a",
+            }
+        ],
+        "evidence_links": [],
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.claim_extractor.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.claim_extractor._call_claim_extractor_sync",
+            return_value=ai_result,
+        ),
+    ):
+        result = extract(significant_doc.id)
+
+    assert result is None, "extract() should have run, not returned a skip reason"

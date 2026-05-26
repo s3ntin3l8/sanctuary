@@ -156,6 +156,9 @@ def detect_cost_ruling_role(signal_id: int, db: Session) -> dict | None:
             db=db,
             case_id=signal.case_id,
             two_pass=False,
+            # Per-ruling cost sider; party identities arrive via party_context
+            # built into the user prompt. No case-narrative preamble needed.
+            include_user_context=False,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("cost_ruling_sider failed for signal %s: %s", signal_id, exc)

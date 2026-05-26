@@ -59,17 +59,25 @@ STAGE_OPTIONS: dict[str, dict] = {
     "relationships": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        "num_predict": 6000,
-        "max_tokens": 6000,
+        # Bumped 6000 → 10000: post-R4 audit (2026-05-26) shows 7/10
+        # relationships-p1 calls (70%) cap-hit at 6000 — every empty
+        # relationships-p1 in the window was Mode A. Smaller bump than
+        # claims/metadata because relationship reasoning is structurally
+        # simpler, but 6000 left no headroom for thinking-heavy docs.
+        "num_predict": 10000,
+        "max_tokens": 10000,
     },
     "claims": {
         "num_ctx": 32768,
         **_QWEN_SAMPLING,
-        # Bumped 6000 → 8000: every two-pass claims-p1 in the 2026-05-07
-        # retry exceeded a 6000 budget (119-127%), truncating pass-1
-        # mid-emit and confusing pass 2.
-        "num_predict": 8000,
-        "max_tokens": 8000,
+        # Bumped 8000 → 12000: post-R4 audit (2026-05-26) shows 14/41
+        # claims-p1 calls (34%) cap-hit at 8000 with response_len=0 — same
+        # Mode A pattern as the prior metadata and enricher bumps. Claims
+        # pass-1 reasons against an existing-claims context list and needs
+        # the headroom to commit to JSON. (Earlier 6000→8000 bump on
+        # 2026-05-07 was insufficient.)
+        "num_predict": 12000,
+        "max_tokens": 12000,
     },
     "entities": {
         "num_ctx": 32768,

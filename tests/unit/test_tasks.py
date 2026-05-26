@@ -286,6 +286,14 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch("app.services.pipeline_status.mark_started"),
         patch("app.services.pipeline_status.mark_skipped") as mock_mark_skipped,
+        # _dispatch_claims_safely now gates on claim_stage_for_dispatch (Issue
+        # #4 race fix). The test setup deletes the CLAIMS pipeline row so the
+        # real CAS would return False — mock it to True since this test is
+        # about the dispatch decision, not the claim primitive.
+        patch(
+            "app.services.pipeline_status.claim_stage_for_dispatch",
+            return_value=True,
+        ),
         patch(
             "app.tasks.extract_claims.extract_claims_task.delay"
         ) as mock_claims_delay,
@@ -321,6 +329,10 @@ def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missin
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch("app.services.pipeline_status.mark_started"),
         patch("app.services.pipeline_status.mark_skipped") as mock_mark_skipped,
+        patch(
+            "app.services.pipeline_status.claim_stage_for_dispatch",
+            return_value=True,
+        ),
         patch(
             "app.tasks.extract_claims.extract_claims_task.delay"
         ) as mock_claims_delay,

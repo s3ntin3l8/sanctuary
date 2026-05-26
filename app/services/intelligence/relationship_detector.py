@@ -112,6 +112,8 @@ def _call_relationship_detector_sync(
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
+        # Per-doc stage: suppress the case-narrative preamble (Issue #5).
+        include_user_context=False,
     )
     return result.model_dump()
 

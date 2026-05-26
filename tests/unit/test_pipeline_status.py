@@ -1105,6 +1105,75 @@ def test_recover_stuck_pending_skips_extract_when_worker_recently_active(
     assert captured == []
 
 
+@pytest.mark.unit
+def test_recover_stuck_pending_uses_claim_stage_to_avoid_double_dispatch(
+    db_session, monkeypatch
+):
+    """Regression for doc_39 / 2026-05-26 22:00-22:12 triple-dispatch incident.
+
+    Setup: a doc whose head pending stage is METADATA (looks recoverable).
+    Simulate a concurrent dispatcher having just claimed METADATA — meaning
+    claim_stage_for_dispatch returns False because the SQL CAS sees the row
+    is no longer PENDING.
+
+    Pre-fix: recovery called dispatch_task() unconditionally → race-doubled
+    extract task. Post-fix: recovery calls claim_stage_for_dispatch first
+    and skips dispatch when the claim fails.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services import pipeline_status as ps
+    from app.services.pipeline_status import (
+        initialize,
+        recover_stuck_pending_dispatches,
+    )
+
+    case = Case(
+        id="_TR_RACE",
+        title="T",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="raced.pdf",
+        content=None,
+        case_id="_TR_RACE",
+        originator_type=OriginatorType.UNKNOWN,
+        ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    db_session.commit()
+
+    captured: list[int] = []
+
+    def fake_dispatch(task, *args, **kwargs):
+        captured.append(args[0] if args else kwargs.get("doc_id"))
+
+    monkeypatch.setattr("app.tasks.dispatch.dispatch_task", fake_dispatch)
+
+    # Simulate another worker having just claimed the head stage: the SQL
+    # CAS would have transitioned PENDING→RUNNING, leaving no PENDING row to
+    # claim. We monkeypatch claim_stage_for_dispatch to return False directly
+    # so the test exercises only the recovery's gate logic.
+    monkeypatch.setattr(
+        ps, "claim_stage_for_dispatch", lambda _doc_id, _stage, _db: False
+    )
+
+    result = recover_stuck_pending_dispatches(db_session)
+
+    assert result["docs_redispatched"] == 0, (
+        "recovery must not double-dispatch when claim_stage_for_dispatch fails"
+    )
+    assert captured == [], "dispatch_task must not be called when claim fails"
+
+
 # ---------------------------------------------------------------------------
 # recover_unclaimed_ready_batches — closes the gap where per-stage retries
 # leave an IngestBatch with analysis_queued_at IS NULL but every doc ready.

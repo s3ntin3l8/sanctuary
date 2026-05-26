@@ -4,7 +4,12 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-22.1"
+PROMPT_VERSION = "2026-05-26.1"
+# Bumping convention: every commit that edits a system prompt or user-suffix
+# string in this file bumps PROMPT_VERSION in the same commit. Format
+# `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
+# version is logged into every runs.jsonl row and every ai_debug header so
+# later analyses can bucket results by prompt era.
 
 # ---------------------------------------------------------------------------
 # Prompt-injection defenses
@@ -183,7 +188,7 @@ Hints:
 Be concise. Use null if information is unavailable.
 
 Extract these fields (these are the exact JSON keys the output must use):
-- az_court: official court Aktenzeichen / docket number (e.g. "12 F 100/24"). Single-AZ rule: if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (page-1 letterhead). Suffixes ('e', 'eA', 'B', …) are critical — preserve them.
+- az_court: official court Aktenzeichen / docket number (e.g. "12 F 100/24"). Single-AZ rule: if multiple AZs appear (common in appeals), return ONLY the AZ of the court that issued THIS Lead Document (page-1 letterhead). Suffixes ('e', 'eA', 'B', …) are critical — preserve them **only when they are literally printed as part of the Aktenzeichen** (e.g. "12 F 100/24 eA"). Never append a procedural-status marker that is not in the printed AZ; transmission methods ("per beA", "per Fax") and procedural intensity ("Eilantrag", "Eilsache") are never part of `az_court`. Same beA-vs-eA rule as for case_title above: "per beA" is delivery metadata, not an AZ suffix.
 - internal_id: the lawyer's internal reference (e.g. "1234/25"). Email subject is a primary source.
 - case_title: short title "[Party1] ./. [Party2] - [Matter]" (surnames only).
 - sender: the actual letterhead organization (who physically sent or issued the document). Never replace it with a party name.
@@ -267,7 +272,7 @@ Extract these fields:
   For relative deadlines, compute due_date from the document's own date (Datum, issued date) when possible.
   When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
 
-Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
+Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the Known Party Identity block in the user prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
 
 FamFG / German family-law role defaults (apply when no Known Party Identity block overrides):
 - Verfahrensbeistand, Verfahrenspfleger → third_party
@@ -468,7 +473,7 @@ Only use claim_ids from the provided existing claims list — never invent IDs.
 
 # PARTY PERSPECTIVE
 
-When the document refers to a party by role label (e.g. "the petitioner", "the respondent", "the plaintiff", "the defendant", "the creditor", "the debtor" — in any language) AND the document context (caption, letterhead, addressee) plus the user-context preamble at the top of this system prompt make clear which party holds that role, resolve the role label to the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
+When the document refers to a party by role label (e.g. "the petitioner", "the respondent", "the plaintiff", "the defendant", "the creditor", "the debtor" — in any language) AND the document context (caption, letterhead, addressee) plus the Known Party Identity block in the user prompt make clear which party holds that role, resolve the role label to the explicit party name in claim_text. Do not leave a role label generic when the mapping is determinable.
 
 # WORKED EXAMPLES
 

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.services.intelligence._json import parse_json_response
+from app.services.intelligence._json import is_effectively_empty, parse_json_response
 
 
 @pytest.mark.unit
@@ -105,3 +105,37 @@ def test_parse_json_response_truncated_mid_string_nested():
     raw_text = '{"outer": {"inner": "partial val'
     result = parse_json_response(raw_text)
     assert result["outer"]["inner"].startswith("partial val")
+
+
+# ---------------------------------------------------------------------------
+# is_effectively_empty: catches the empty-fence pass-2 pathology where qwen3.5
+# emits just ```json\n\n``` with the actual JSON living in reasoning_content.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # truly empty inputs
+        (None, True),
+        ("", True),
+        ("   \n\n   ", True),
+        # empty markdown fences — the case this helper exists to catch
+        ("```json\n\n```", True),
+        ("```\n\n```", True),
+        ("  ```json\n\n```  ", True),
+        ("```json```", True),
+        # valid fenced payloads — must NOT be flagged as empty
+        ('```json\n{"x": 1}\n```', False),
+        ("```json\n  {}\n```", False),  # `{}` is non-empty content
+        ('```\n{"a": 2}\n```', False),
+        # bare JSON without fences
+        ("   {}   ", False),
+        ('{"key": "value"}', False),
+        # leading prose
+        ("Here is the result: {}", False),
+    ],
+)
+@pytest.mark.unit
+def test_is_effectively_empty(raw, expected):
+    assert is_effectively_empty(raw) is expected

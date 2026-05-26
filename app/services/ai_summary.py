@@ -569,7 +569,7 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
             batch.proceeding_id = proceeding.id
 
 
-def generate_summary_sync(doc: Document, db=None) -> dict:
+def generate_summary_sync(doc: Document, db=None, model: str = "") -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_chat_config(db)
     content_preview = get_content_preview(doc, 60000)
@@ -640,11 +640,13 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
             options=STAGE_OPTIONS["metadata"],
             debug_label=f"doc_{doc.id}_sync",
             schema=Phase1Metadata,
-            model=cfg.summary_model,
+            model=model or cfg.summary_model,
             db=db,
             ingest_batch_id=doc.ingest_batch_id,
             case_id=doc.case_id,
             two_pass=True,
+            # Per-doc stage: suppress the case-narrative preamble (Issue #5).
+            include_user_context=False,
         )
     except ValueError as e:
         if "empty response" in str(e):
@@ -658,12 +660,13 @@ def generate_summary_sync(doc: Document, db=None) -> dict:
                 options=STAGE_OPTIONS["metadata"],
                 debug_label=f"doc_{doc.id}_syncretry",
                 schema=Phase1Metadata,
-                model=cfg.summary_model,
+                model=model or cfg.summary_model,
                 db=db,
                 ingest_batch_id=doc.ingest_batch_id,
                 case_id=doc.case_id,
                 suppress_thinking=True,
                 two_pass=True,
+                include_user_context=False,
             )
         else:
             raise

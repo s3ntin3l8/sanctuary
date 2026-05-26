@@ -1331,6 +1331,24 @@ def recover_stuck_pending_dispatches(
             )
             continue
 
+        # Atomic claim before dispatch — without this, a stage that is PENDING
+        # at snapshot time but whose task is already queued (waiting behind a
+        # busy worker) gets a second .delay() from us. Two concurrent extract_*
+        # tasks then run on the same doc, the second deletes the first's
+        # auto-claims via stale-cleanup, and if the second produces 0 the
+        # first's work is gone. See doc_39 / 2026-05-26 22:00-22:12 incident.
+        # claim_stage_for_dispatch is the same primitive every cascade
+        # dispatcher uses (document_processing, enrich_document); recovery
+        # was the outlier that skipped it.
+        if not claim_stage_for_dispatch(doc.id, head_spec.stage, db):
+            logger.debug(
+                "Stuck-pending recovery: stage %s for doc %d already claimed "
+                "by another worker — skipping",
+                head_spec.stage.value,
+                doc.id,
+            )
+            continue
+
         dispatch_task(task, doc.id)
         redispatched.append(doc.id)
 

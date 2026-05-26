@@ -53,6 +53,15 @@ VALID_CLAIM_TYPES = {e.value for e in ClaimType}
 VALID_EVIDENCE_ROLES = {e.value for e in ClaimEvidenceRole}
 MAX_EXISTING_CLAIMS = 20
 
+# Debounce window for re-extraction. The cron-recovery dispatch race (see
+# detect_relationships._dispatch_claims_safely docstring) is now closed via
+# claim_stage_for_dispatch, but this is defense in depth: if any other path
+# (manual UI re-trigger, future code) still ends up calling extract() while
+# a recent successful extraction is on the doc, we refuse to clobber it.
+# Five minutes covers the typical cron interval; anything longer is genuine
+# re-extraction and should proceed.
+_RECENT_EXTRACTION_WINDOW_SECS = 300
+
 
 def _format_existing_claims(claims: list[Claim]) -> str:
     if not claims:
@@ -95,6 +104,10 @@ def _call_claim_extractor_sync(
         ingest_batch_id=doc.ingest_batch_id,
         case_id=doc.case_id,
         two_pass=True,
+        # Per-doc stage: suppress the case-narrative preamble. Party identities
+        # come from the explicit "Known Party Identity" block built into the
+        # user prompt below.
+        include_user_context=False,
     )
     return result.model_dump()
 
@@ -313,6 +326,39 @@ def extract(doc_id: int) -> str | None:
         if not doc.case_id or doc.case_id == "_TRIAGE":
             reason = "triage_pending"
             logger.info(f"Doc {doc_id}: {reason}, skipping claim extraction")
+            return reason
+
+        # Debounce: skip if this doc had a successful extraction in the last
+        # _RECENT_EXTRACTION_WINDOW_SECS. Signal is the most recent ASSERTS
+        # row in claim_evidence for this doc — every successful run writes
+        # one per new_claim. If anything is fresher than the window, the
+        # prior run is presumed authoritative and we leave it alone instead
+        # of running the destructive stale-cleanup → re-extract dance.
+        from datetime import timedelta
+
+        from app.models.database import ClaimEvidence
+
+        cutoff = naive_utc_now() - timedelta(seconds=_RECENT_EXTRACTION_WINDOW_SECS)
+        recent = (
+            db.query(ClaimEvidence.ingest_date)
+            .filter(
+                ClaimEvidence.document_id == doc.id,
+                ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+                ClaimEvidence.ingest_date > cutoff,
+            )
+            .order_by(ClaimEvidence.ingest_date.desc())
+            .first()
+        )
+        if recent is not None:
+            reason = "recent_extraction"
+            logger.info(
+                "Doc %d: %s — last ASSERTS row at %s within %ds debounce window, "
+                "skipping re-extraction",
+                doc_id,
+                reason,
+                recent[0],
+                _RECENT_EXTRACTION_WINDOW_SECS,
+            )
             return reason
 
         # Clear stale auto-extracted claims from prior runs so retries don't

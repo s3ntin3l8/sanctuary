@@ -140,6 +140,9 @@ def _call_batch_analyzer_sync(
         case_id=docs[0].case_id,
         suppress_thinking=suppress_thinking,
         two_pass=True,
+        # Batch-level (but not case-level) stage: suppress the case-narrative
+        # preamble. Party identities come from the party_block built above.
+        include_user_context=False,
     )
     return result.model_dump()
 
