@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-27.4"
+PROMPT_VERSION = "2026-05-27.5"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -129,10 +129,11 @@ Extract these fields:
 - Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure.
 - Recognising a cover letter (Begleitschreiben): a document is a cover letter when it (a) has a short body (typically ≤ half a page) that says something like "anbei erhalten Sie", "beigefügt übersende ich", "in der Anlage", "als Anlage", or "hiermit leite ich weiter", AND (b) explicitly references an enclosed document by description, filename, or Anlage marker. A short court forwarding note ("Schreiben … vom … wird übersandt") is always a cover letter. A full-length Schriftsatz, Antrag, or Beschluss is never a cover letter even if it has attachments.
 - When you identify a document as a cover letter, always wire it to the most plausible sibling in the batch as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches at all.
-- Attachment Manifest (when provided above the document sections): use it as the **primary bundle signal**, overriding content inference.
-  - Documents within the same manifest group (same timestamp) came from the same court transmission — they form one bundle.
-  - Within each group, the document whose filename starts with `SCHR_` or contains "Schreiben" is the cover letter. If no such document exists, the shortest document is the cover letter.
-  - Filename prefixes: `SCHR_` = Schreiben (cover), `SS_` = Schriftsatz (filing/motion), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit/attachment. Use these to identify originator_type and role within the bundle.
+- Attachment Manifest (when provided above the document sections): use it as the **primary bundle signal**, overriding content inference. Each manifest group produces **at most one bundle** — never split a group into multiple bundles.
+  - **One group = one bundle.** All documents sharing the same timestamp + source label came from the same court transmission and belong to a single bundle together.
+  - **Identify the sole cover letter:** the cover letter is the document whose filename starts with `SCHR_` or contains "Schreiben" AND that was issued BY the court named in the group's source label. For a group labeled "Landgericht Ingolstadt", `SCHR_ LG IN …` is the cover letter. For a group labeled "Amtsgericht Ingolstadt", `SCHR VON AG IN …` is the cover letter. If multiple filenames start with `SCHR_`, the cover letter is the one issued by the named court (the others are party letters being forwarded). If no SCHR_ document exists, the shortest document is the cover letter.
+  - **ALL remaining documents in the group are enclosed by that single cover letter.** This includes: every SS_ (Schriftsatz/filing), every ANLAGE (exhibit), every BESCHLUSS (ruling), every VERMERK (note), and any SCHR_ documents NOT identified as the cover letter (e.g. a party letter forwarded by the court). Do NOT create a separate bundle for an SS_ or a party's SCHR_ that belongs to the same manifest group — it is always an enclosed_doc_id of the one bundle.
+  - Filename prefixes tell you the role *within* the bundle, not bundle membership: `SCHR_` = Schreiben (cover or forwarded letter), `SS_` = Schriftsatz (motion/filing), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit/attachment.
   - A manifest group with a single document has no bundle structure — treat that document as standalone.
   - Fall back to content-based inference only for documents not matched in the manifest.
 - Lawyer's Forwarding Note (when provided above the document sections): use it to infer actionability for detected_actions.
