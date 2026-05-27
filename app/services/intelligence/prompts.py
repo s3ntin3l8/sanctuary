@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-27.3"
+PROMPT_VERSION = "2026-05-27.4"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -129,6 +129,16 @@ Extract these fields:
 - Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure.
 - Recognising a cover letter (Begleitschreiben): a document is a cover letter when it (a) has a short body (typically ≤ half a page) that says something like "anbei erhalten Sie", "beigefügt übersende ich", "in der Anlage", "als Anlage", or "hiermit leite ich weiter", AND (b) explicitly references an enclosed document by description, filename, or Anlage marker. A short court forwarding note ("Schreiben … vom … wird übersandt") is always a cover letter. A full-length Schriftsatz, Antrag, or Beschluss is never a cover letter even if it has attachments.
 - When you identify a document as a cover letter, always wire it to the most plausible sibling in the batch as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches at all.
+- Attachment Manifest (when provided above the document sections): use it as the **primary bundle signal**, overriding content inference.
+  - Documents within the same manifest group (same timestamp) came from the same court transmission — they form one bundle.
+  - Within each group, the document whose filename starts with `SCHR_` or contains "Schreiben" is the cover letter. If no such document exists, the shortest document is the cover letter.
+  - Filename prefixes: `SCHR_` = Schreiben (cover), `SS_` = Schriftsatz (filing/motion), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit/attachment. Use these to identify originator_type and role within the bundle.
+  - A manifest group with a single document has no bundle structure — treat that document as standalone.
+  - Fall back to content-based inference only for documents not matched in the manifest.
+- Lawyer's Forwarding Note (when provided above the document sections): use it to infer actionability for detected_actions.
+  - "zur Kenntnisnahme" without "Rückmeldung" → informational batch, no action item required.
+  - "Bitte um Rückmeldung" / "bitte … beachten" / "mit der Bitte" → action required; surface as a detected_action with confidence: high.
+  - "erhalten Sie" phrasing → the lawyer is the sender; the client is the recipient.
 - Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
 - attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
 - originator_type must be exactly one of: own | opposing | court | third_party | unknown.

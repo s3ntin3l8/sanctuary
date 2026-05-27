@@ -156,6 +156,16 @@ def ingest_raw_email(
     batch.message_id = msg_id
     if source_hash:
         batch.source_hash = source_hash
+
+    # Store attachment manifest and forwarding note extracted from the email body
+    # before the body is discarded (happens below when attachments are present).
+    raw_manifest = parsed.get("attachment_manifest") or []
+    if raw_manifest:
+        batch.attachment_manifest = raw_manifest
+    raw_note = parsed.get("email_note") or ""
+    if raw_note:
+        batch.email_note = raw_note
+
     db.flush()
 
     # Attempt to auto-assign case from the email subject so downstream stages
@@ -274,6 +284,23 @@ def ingest_raw_email(
 
     if docs_to_process:
         batch.status = IngestBatchStatus.PROCESSING
+
+    # Link manifest entries to their Document IDs now that all docs are flushed.
+    if batch.attachment_manifest:
+        filename_to_doc_id = {
+            d.original_filename: d.id for d in docs_to_process if d.original_filename
+        }
+        linked = False
+        for entry in batch.attachment_manifest:
+            doc_id = filename_to_doc_id.get(entry.get("filename"))
+            if doc_id is not None:
+                entry["doc_id"] = doc_id
+                linked = True
+        if linked:
+            # Force SQLAlchemy to detect the JSON mutation
+            from sqlalchemy.orm.attributes import flag_modified
+
+            flag_modified(batch, "attachment_manifest")
 
     db.commit()
 

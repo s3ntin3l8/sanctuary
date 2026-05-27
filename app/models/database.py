@@ -486,6 +486,12 @@ class IngestBatch(Base):
     source_hash = Column(String, index=True, nullable=True)
     meta = Column(JSON, nullable=True)
     detected_actions = Column(JSON, nullable=True)
+    attachment_manifest = Column(
+        JSON, nullable=True
+    )  # [{filename, timestamp, source_label, doc_id}]
+    email_note = Column(
+        Text, nullable=True
+    )  # prose from lawyer's forwarding note (stripped, ≤800 chars)
 
     case = relationship("Case")
     proceeding = relationship("Proceeding")

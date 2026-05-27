@@ -90,6 +90,34 @@ _MIN_PREVIEW = 3_000
 _MAX_PREVIEW = 20_000
 
 
+def _build_manifest_block(manifest: list[dict]) -> str:
+    """Format the attachment manifest as a timestamped-group prompt block.
+
+    Groups entries by ISO timestamp (same value = same court transmission).
+    Each group is labelled with its timestamp and source court, and lists
+    the filename → doc_id mapping so the AI can reference documents by ID.
+    """
+    from itertools import groupby
+
+    sorted_entries = sorted(
+        manifest, key=lambda e: (e.get("timestamp", ""), e.get("source_label", ""))
+    )
+    lines = ["### Attachment Manifest (timestamp-grouped transmissions)"]
+    label = "A"
+    for (ts, court), group_iter in groupby(
+        sorted_entries,
+        key=lambda e: (e.get("timestamp", "?"), e.get("source_label", "?")),
+    ):
+        lines.append(f'Group {label} — {ts} "{court}":')
+        for entry in group_iter:
+            fname = entry.get("filename", "?")
+            doc_id = entry.get("doc_id")
+            doc_ref = f" → doc_{doc_id}" if doc_id is not None else ""
+            lines.append(f"  {fname}{doc_ref}")
+        label = chr(ord(label) + 1)
+    return "\n".join(lines) + "\n"
+
+
 def _call_batch_analyzer_sync(
     docs: list[Document],
     batch_id: int,
@@ -98,6 +126,9 @@ def _call_batch_analyzer_sync(
     suppress_thinking: bool = False,
     debug_label: str | None = None,
     party_context: str = "",
+    base_url: str | None = None,
+    attachment_manifest: list[dict] | None = None,
+    email_note: str | None = None,
 ) -> dict:
     """Synchronous AI call for batch analysis.
 
@@ -108,13 +139,23 @@ def _call_batch_analyzer_sync(
     n = len(docs)
     per_doc = min(_MAX_PREVIEW, max(_MIN_PREVIEW, _BUDGET_CHARS // n))
 
+    # Build a filename→doc_id lookup for the section headers
+    filename_to_id: dict[str, int] = {}
+    if attachment_manifest:
+        for entry in attachment_manifest:
+            if entry.get("doc_id") is not None and entry.get("filename"):
+                filename_to_id[entry["filename"]] = entry["doc_id"]
+
     sections = []
     temporal_map = []
     for d in docs:
         preview = get_content_preview(d, per_doc)
         safe_title = sanitize_oneline(d.title, max_len=120)
+        # Include original_filename in header so AI sees SCHR_/SS_/ANLAGE prefixes
+        orig = getattr(d, "original_filename", None)
+        filename_tag = f"[{orig}] " if orig and orig != d.title else ""
         sections.append(
-            f"=== (doc_id={d.id}) {safe_title} ===\n{fence(preview, 'batch_doc')}"
+            f"=== (doc_id={d.id}) {filename_tag}{safe_title} ===\n{fence(preview, 'batch_doc')}"
         )
         if d.issued_date:
             temporal_map.append(f"doc_{d.id}: {d.issued_date.strftime('%Y-%m-%d')}")
@@ -125,8 +166,22 @@ def _call_batch_analyzer_sync(
         else ""
     )
 
+    manifest_block = (
+        (_build_manifest_block(attachment_manifest) + "\n")
+        if attachment_manifest
+        else ""
+    )
+    note_block = (
+        f'### Lawyer\'s Forwarding Note\n"{email_note}"\n\n' if email_note else ""
+    )
     party_block = (party_context + "\n\n") if party_context else ""
-    prompt = party_block + temporal_block + "\n\n".join(sections)
+    prompt = (
+        party_block
+        + manifest_block
+        + note_block
+        + temporal_block
+        + "\n\n".join(sections)
+    )
 
     result = call_json_ai(
         system_prompt=BATCH_ANALYZER_SYSTEM,
@@ -143,6 +198,7 @@ def _call_batch_analyzer_sync(
         # Batch-level (but not case-level) stage: suppress the case-narrative
         # preamble. Party identities come from the party_block built above.
         include_user_context=False,
+        base_url=base_url,
     )
     return result.model_dump()
 
@@ -717,6 +773,10 @@ def analyze(batch_id: int) -> bool:
             own_parties=party_identity.get("own_parties", []),
             opposing_parties=case_opposing,
         )
+        # Load manifest / note now while the session is open; they are plain
+        # values and remain accessible after db.close().
+        attachment_manifest: list[dict] | None = batch.attachment_manifest or None
+        email_note: str | None = batch.email_note or None
         # docs objects detach from the session on close but column-level data
         # (content, title, id, …) stays accessible in memory for the AI call.
     finally:
@@ -729,6 +789,8 @@ def analyze(batch_id: int) -> bool:
             batch_id,
             model=model,
             party_context=party_context,
+            attachment_manifest=attachment_manifest,
+            email_note=email_note,
         )
     except ValueError as first_err:
         # AI returned empty/unparseable. Retry once with /no_think — same
@@ -749,6 +811,8 @@ def analyze(batch_id: int) -> bool:
                 suppress_thinking=True,
                 debug_label=f"batch_{batch_id}_analyzerretry",
                 party_context=party_context,
+                attachment_manifest=attachment_manifest,
+                email_note=email_note,
             )
         except ValueError as retry_err:
             logger.warning(

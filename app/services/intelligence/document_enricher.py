@@ -63,6 +63,7 @@ def _call_enricher_sync(
     reactions_block: str = "",
     batch_detected_actions: list[dict] | None = None,
     party_context: str = "",
+    base_url: str | None = None,
 ) -> dict:
     """Synchronous AI call to enrich a single document. No DB session held."""
     import json
@@ -131,6 +132,7 @@ def _call_enricher_sync(
         # got `required_action="File as supporting evidence in custody
         # proceedings"` because the preamble framed everything as custody.
         include_user_context=False,
+        base_url=base_url,
     )
     return result.model_dump()
 

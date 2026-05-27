@@ -75,7 +75,10 @@ def _format_existing_claims(claims: list[Claim]) -> str:
 
 
 def _call_claim_extractor_sync(
-    doc: Document, existing_claims: list[Claim], model: str = ""
+    doc: Document,
+    existing_claims: list[Claim],
+    model: str = "",
+    base_url: str | None = None,
 ) -> dict:
     """AI call only — no DB session held."""
     content_preview = get_content_preview(doc, 60000)
@@ -108,6 +111,7 @@ def _call_claim_extractor_sync(
         # come from the explicit "Known Party Identity" block built into the
         # user prompt below.
         include_user_context=False,
+        base_url=base_url,
     )
     return result.model_dump()
 

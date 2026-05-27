@@ -569,7 +569,9 @@ def _cascade_case_to_batch(db, doc: Document, case, proceeding) -> None:
             batch.proceeding_id = proceeding.id
 
 
-def generate_summary_sync(doc: Document, db=None, model: str = "") -> dict:
+def generate_summary_sync(
+    doc: Document, db=None, model: str = "", base_url: str | None = None
+) -> dict:
     """Synchronous version of generate_summary using configured AI provider."""
     cfg = get_chat_config(db)
     content_preview = get_content_preview(doc, 60000)
@@ -647,6 +649,7 @@ def generate_summary_sync(doc: Document, db=None, model: str = "") -> dict:
             two_pass=True,
             # Per-doc stage: suppress the case-narrative preamble (Issue #5).
             include_user_context=False,
+            base_url=base_url,
         )
     except ValueError as e:
         if "empty response" in str(e):
@@ -667,6 +670,7 @@ def generate_summary_sync(doc: Document, db=None, model: str = "") -> dict:
                 suppress_thinking=True,
                 two_pass=True,
                 include_user_context=False,
+                base_url=base_url,
             )
         else:
             raise

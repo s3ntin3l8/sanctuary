@@ -47,7 +47,9 @@ _CASE_TITLE_SEPARATOR_RE = re.compile(
 )
 
 
-def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
+def _call_entity_extractor_sync(
+    doc: Document, model: str = "", base_url: str | None = None
+) -> dict:
     """AI call only — no DB session held."""
     content_preview = get_content_preview(doc, 60000)
 
@@ -84,6 +86,7 @@ def _call_entity_extractor_sync(doc: Document, model: str = "") -> dict:
         two_pass=True,
         # Per-doc stage: suppress the case-narrative preamble (Issue #5).
         include_user_context=False,
+        base_url=base_url,
     )
     return result.model_dump()
 

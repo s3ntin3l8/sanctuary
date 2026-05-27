@@ -655,6 +655,7 @@ def call_json_ai(
     pass1_max_tokens: int | None = ...,
     case_id: str | None = ...,
     include_user_context: bool = ...,
+    base_url: str | None = ...,
 ) -> T: ...
 
 
@@ -674,6 +675,7 @@ def call_json_ai(
     pass1_max_tokens: int | None = ...,
     case_id: str | None = ...,
     include_user_context: bool = ...,
+    base_url: str | None = ...,
 ) -> dict: ...
 
 
@@ -692,6 +694,7 @@ def call_json_ai(
     pass1_max_tokens: int | None = _DEFAULT_PASS1_MAX_TOKENS,
     case_id: str | None = None,
     include_user_context: bool = True,
+    base_url: str | None = None,
 ) -> BaseModel | dict:
     """Synchronous streaming AI call returning a Pydantic model or parsed dict.
 
@@ -775,6 +778,8 @@ def call_json_ai(
             pass1_max_tokens_override=pass1_max_tokens,
             include_user_context=include_user_context,
         )
+        if base_url is not None:
+            pass1_params["url"] = f"{base_url}/v1/chat/completions"
         try:
             p1_response, p1_thinking = _stream_response(
                 params=pass1_params,
@@ -879,6 +884,8 @@ def call_json_ai(
         resolved_model=resolved_model,
         include_user_context=include_user_context,
     )
+    if base_url is not None:
+        pass2_params["url"] = f"{base_url}/v1/chat/completions"
 
     full_response, full_thinking = _stream_response(
         params=pass2_params,
