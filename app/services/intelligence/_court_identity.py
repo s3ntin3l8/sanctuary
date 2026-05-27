@@ -39,6 +39,64 @@ def is_court_name(name: str | None) -> bool:
     return any(fragment in lower for fragment in _COURT_SENDER_FRAGMENTS)
 
 
+# Substrings that uniquely identify entities that PHASE1_METADATA_SYSTEM's
+# `third_party defaults` block already labels as `third_party`. Keeps the
+# rule in lockstep with the prompt — every fragment below must correspond to
+# a rule in `prompts.py:277-286`.
+#
+# Used to break the feedback loop where `case_brief_generator._compute_parties`
+# aggregates a misclassified `originator_type=opposing` vote into
+# `case.parties`, which then propagates back to Phase 1 via the Known Party
+# Identity block and self-confirms the wrong role on every re-run.
+_THIRD_PARTY_DEFAULT_FRAGMENTS = (
+    # State treasuries that collect court fees on behalf of the judiciary.
+    # Not the court, not a party — doc 7 (Landesjustizkasse Bamberg) regression.
+    "landesjustizkasse",
+    "gerichtskasse",
+    "justizvollzugskasse",
+    # Court-appointed family-law roles.
+    "verfahrensbeistand",
+    "verfahrenspfleger",
+    "jugendamt",
+    # Court-appointed experts (Sachverständiger, Gutachter) and the orgs they
+    # act through. "sachverständig" covers the noun, adjective, and gendered
+    # forms; "sachverstaendig" covers the unfolded ASCII spelling.
+    "sachverständig",
+    "sachverstaendig",
+    "gutachter",
+    # Credentialing institutions (added Round 6 to PHASE1_METADATA_SYSTEM).
+    "notar",  # matches "Notar", "Notariat" — and harmlessly e.g.
+    # "notariell" if it appears in a name (rare).
+    "übersetz",  # sworn translator: "Übersetzer", "Übersetzungsbüro"
+    "uebersetz",
+    "standesamt",
+    "grundbuchamt",
+    "handelsregister",
+    # Banks named in the prompt rule. Avoid the bare word "bank" — too prone
+    # to false matches on stray words. Add specific German institutions and
+    # the ICBC name we've seen in case 8441-25 (doc 44).
+    "icbc",
+    "sparkasse",
+    "volksbank",
+    "raiffeisenbank",
+    "deutsche bank",
+)
+
+
+def is_third_party_default_name(name: str | None) -> bool:
+    """Return True when a name should be locked to `originator_type=third_party`.
+
+    Parallel to `is_court_name`. Matches institutions that the metadata
+    system prompt explicitly enumerates as third_party by default — closing
+    the feedback loop that lets a misclassified document override the rule
+    via the Known Party Identity block.
+    """
+    if not name:
+        return False
+    lower = name.lower()
+    return any(fragment in lower for fragment in _THIRD_PARTY_DEFAULT_FRAGMENTS)
+
+
 def is_confirmed_court_document(doc: Document) -> bool:
     """Return True when static metadata confirms a court is the author.
 

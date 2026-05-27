@@ -303,3 +303,92 @@ def test_save_entities_snap_dedupes_against_existing_canonical_row(
     )
     assert len(rows) == 1
     assert rows[0].name == "Liu Yingying"
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "Y. Liu",  # initial Western order
+        "Liu, Y.",  # initial East-Asian / comma form
+        "L. Yingying",  # initial swapped
+    ],
+)
+@pytest.mark.unit
+def test_save_entities_snap_initial_form_to_canonical(
+    db_session, sample_document, variant
+):
+    """Round 7: when Case.parties has 'Liu Yingying', initial-form variants
+    of the same person should snap to the canonical spelling and dedupe
+    against any existing canonical row. Closes the post-R6 doc 25
+    ('Liu, Y.') / similar duplicates."""
+    from app.models.database import Case
+    from app.models.enums import EntityType as ET
+
+    case = db_session.query(Case).filter(Case.id == sample_document.case_id).one()
+    case.parties = [
+        {"name": "Liu Yingying", "role": "opposing", "document_count": 5},
+    ]
+    db_session.flush()
+
+    # Seed the canonical row (as if a prior doc had created it).
+    db_session.add(
+        Entity(
+            case_id=sample_document.case_id,
+            type=ET.PERSON,
+            name="Liu Yingying",
+            source_document_id=sample_document.id,
+        )
+    )
+    db_session.flush()
+
+    result = {
+        "entities": [
+            {"type": "PERSON", "name": variant, "context_quote": "x"},
+        ]
+    }
+    count = _save_entities(sample_document, result, db_session)
+    rows = (
+        db_session.query(Entity)
+        .filter(
+            Entity.case_id == sample_document.case_id,
+            Entity.type == ET.PERSON,
+        )
+        .all()
+    )
+    assert count == 0, f"variant {variant!r} should dedupe against canonical"
+    assert len(rows) == 1
+    assert rows[0].name == "Liu Yingying"
+
+
+@pytest.mark.unit
+def test_save_entities_does_not_snap_bare_surname(db_session, sample_document):
+    """Defense: a bare-surname reference ('Liu' alone, or 'Frau Liu' that
+    normalizes to just 'liu' after honorific strip) MUST NOT snap to the
+    canonical party. Multiple Lius might be on a case (we have 'Liu Yingying'
+    and 'Liu Jun' in case 8441-25); snapping would falsely merge them."""
+    from app.models.database import Case
+    from app.models.enums import EntityType as ET
+
+    case = db_session.query(Case).filter(Case.id == sample_document.case_id).one()
+    case.parties = [
+        {"name": "Liu Yingying", "role": "opposing", "document_count": 5},
+    ]
+    db_session.flush()
+
+    result = {
+        "entities": [
+            {"type": "PERSON", "name": "Frau Liu", "context_quote": "x"},
+        ]
+    }
+    _save_entities(sample_document, result, db_session)
+    rows = (
+        db_session.query(Entity)
+        .filter(
+            Entity.case_id == sample_document.case_id,
+            Entity.type == ET.PERSON,
+        )
+        .all()
+    )
+    assert len(rows) == 1
+    # Frau Liu stored as-is — no false merge into "Liu Yingying"
+    assert rows[0].name == "Frau Liu"

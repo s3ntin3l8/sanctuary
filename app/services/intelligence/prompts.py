@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-27.1"
+PROMPT_VERSION = "2026-05-27.3"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -126,7 +126,9 @@ Extract these fields:
 - For `enclosed_doc_id`, use the integer doc_id of the sibling doc in THIS batch that the cover letter forwards. An enclosure is a sibling doc — identify it by its `=== (doc_id=N) Title ===` header. If you cannot point to a specific sibling doc_id in the batch, leave the bundle's `enclosed` list empty rather than describing the enclosure in prose. Do NOT invent doc_ids or reference docs outside this batch.
 - `matched_filename` (optional): the sibling's title exactly as shown in its header, as a redundancy check on `enclosed_doc_id`. May be null. Never the load-bearing link — `enclosed_doc_id` is.
 - Uniqueness invariant: every doc_id appears AT MOST ONCE across all bundles. A doc listed as `cover_letter_doc_id: 91` must NOT appear as `enclosed_doc_id: 91` in any bundle (including its own), and two bundles must not share the same `enclosed_doc_id`. Docs omitted from `bundles` entirely are treated as standalone.
-- Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure. When in doubt, omit.
+- Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure.
+- Recognising a cover letter (Begleitschreiben): a document is a cover letter when it (a) has a short body (typically ≤ half a page) that says something like "anbei erhalten Sie", "beigefügt übersende ich", "in der Anlage", "als Anlage", or "hiermit leite ich weiter", AND (b) explicitly references an enclosed document by description, filename, or Anlage marker. A short court forwarding note ("Schreiben … vom … wird übersandt") is always a cover letter. A full-length Schriftsatz, Antrag, or Beschluss is never a cover letter even if it has attachments.
+- When you identify a document as a cover letter, always wire it to the most plausible sibling in the batch as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches at all.
 - Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
 - attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
 - originator_type must be exactly one of: own | opposing | court | third_party | unknown.
@@ -220,10 +222,11 @@ Extract these fields:
 - issued_date: the date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
 - significance_tier: one of "critical", "significant", "informational", "administrative"
   * Base this on the **Lead Document**.
-  * critical: rulings, decisions, orders with legal force or hard deadlines
-  * significant: substantive motions, statements, reports that shape the case
-  * informational: factual updates, acknowledgments, routine correspondence
-  * administrative: pure relay letters, receipts, cover pages
+  * critical: the document IS a ruling, decision, or binding court order (Beschluss, Urteil, Verfügung, Versäumnisurteil) — i.e. it was issued BY a court with legal force. Also critical: documents that contain an absolute hard deadline within ≤14 days of the document date (e.g. an imminent Zwangsvollstreckung or enforcement action).
+  * significant: substantive motions (Antrag, Schriftsatz, Stellungnahme, Beschwerde, Klage), expert reports, and party statements that materially shape the case. A party's motion is significant even if it is urgent or requests a deadline — the document's own tier is determined by what it IS, not what it asks for.
+  * informational: factual updates, acknowledgments, routine correspondence, certificates, evidence bundles with no immediate deadline
+  * administrative: pure relay letters, receipts, cover pages (Begleitschreiben)
+  * Calibration: when in doubt between "critical" and "significant", choose "significant". Only court-issued rulings and decisions are critical; party-filed documents are at most significant.
   * If the batch context flags this document as a cover letter, set this to "administrative" UNLESS the document contains substantive primary content.
 - document_type: one of "ruling", "motion", "statement", "annex", "relay", "correspondence", "report", "invoice", "other"
   * Base this on the **Lead Document**.

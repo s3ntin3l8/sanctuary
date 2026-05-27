@@ -303,3 +303,85 @@ def test_compute_parties_law_firm_not_locked_to_court():
 
     assert len(parties) == 1
     assert parties[0]["role"] == "third_party"
+
+
+# ---------------------------------------------------------------------------
+# Round 7: third_party defaults lock — close the case.parties feedback loop
+# where a misclassified `originator_type=opposing` propagates into the party
+# list and overrides the prompt's third_party rules on the next Phase 1 run.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_compute_parties_locks_third_party_for_landesjustizkasse():
+    """Doc 7 regression: Landesjustizkasse Bamberg got voted `opposing` by
+    a sync-p1 misclassification (cost-notice billed against user's side).
+    Without the lock, the role propagates into case.parties → Known Party
+    Identity → next sync-p1 re-confirms the wrong role. The prompt rule
+    'Landesjustizkasse → third_party' must win regardless of vote counts."""
+    docs = [
+        _make_doc(
+            attributed_originator="Landesjustizkasse Bamberg",
+            originator_type="opposing",
+        ),
+        _make_doc(
+            attributed_originator="Landesjustizkasse Bamberg",
+            originator_type="opposing",
+        ),
+    ]
+    parties = _compute_parties(docs)
+    assert len(parties) == 1
+    assert parties[0]["name"] == "Landesjustizkasse Bamberg"
+    assert parties[0]["role"] == "third_party"
+
+
+@pytest.mark.unit
+def test_compute_parties_locks_third_party_for_court_appointed_roles():
+    """The same lock fires for Verfahrensbeistand / Jugendamt /
+    Sachverständiger — all enumerated as third_party in the prompt and now
+    enforced at the parties-aggregation layer."""
+    cases = [
+        ("Verfahrensbeistand Müller", "third_party"),
+        ("Kreisjugendamt Ingolstadt", "third_party"),
+        ("Sachverständigenbüro Schmidt", "third_party"),
+        ("Notariat Berlin", "third_party"),
+        ("Sparkasse Hamburg", "third_party"),
+        ("ICBC", "third_party"),
+    ]
+    for name, expected in cases:
+        docs = [_make_doc(attributed_originator=name, originator_type="opposing")]
+        parties = _compute_parties(docs)
+        assert len(parties) == 1
+        assert parties[0]["role"] == expected, (
+            f"{name}: expected {expected}, got {parties[0]['role']}"
+        )
+
+
+@pytest.mark.unit
+def test_compute_parties_third_party_lock_does_not_override_court_lock():
+    """Defense: if a name somehow matches both fragments (unlikely but
+    possible — e.g. "Amtsgericht … Gerichtskasse"), COURT lock fires first
+    and wins. Verify ordering."""
+    docs = [
+        _make_doc(
+            attributed_originator="Amtsgericht Ingolstadt - Gerichtskasse",
+            originator_type="court",
+        ),
+    ]
+    parties = _compute_parties(docs)
+    assert len(parties) == 1
+    # COURT lock fires before third_party check.
+    assert parties[0]["role"] == "court"
+
+
+@pytest.mark.unit
+def test_compute_parties_third_party_lock_preserves_actual_opposing():
+    """Non-third-party-default names continue to compute role from vote counts.
+    A real opposing party name (Liu Yingying) is not affected by the lock."""
+    docs = [
+        _make_doc(attributed_originator="Liu Yingying", originator_type="opposing"),
+        _make_doc(attributed_originator="Liu Yingying", originator_type="opposing"),
+    ]
+    parties = _compute_parties(docs)
+    assert len(parties) == 1
+    assert parties[0]["role"] == "opposing"

@@ -15,7 +15,10 @@ from app.models.enums import (
 )
 from app.services.ai_config import get_chat_config
 from app.services.intelligence._ai_call import call_json_ai
-from app.services.intelligence._court_identity import is_court_name
+from app.services.intelligence._court_identity import (
+    is_court_name,
+    is_third_party_default_name,
+)
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
@@ -110,6 +113,7 @@ def _compute_parties(
 
     result = []
     court_role_key = str(OriginatorType.COURT)
+    third_party_role_key = str(OriginatorType.THIRD_PARTY)
     for name, counts in role_counts.items():
         total = sum(counts.values())
         # Courts don't switch sides. When the NAME itself identifies the
@@ -119,8 +123,18 @@ def _compute_parties(
         # keep the original "discount COURT" heuristic: party documents
         # that misfire as COURT (court Rubrum header) should resolve to
         # the more frequent party role — this is the a73cdcf intent.
+        #
+        # Round 7: parallel lock for the third_party defaults the metadata
+        # system prompt enumerates (Landesjustizkasse, Verfahrensbeistand,
+        # banks, notaries, …). Without this, a single misclassified doc
+        # (e.g. doc 7 Landesjustizkasse Bamberg voted opposing) propagates
+        # into `case.parties` and then feeds back to Phase 1 metadata as
+        # "authoritative" via the Known Party Identity block — the prompt
+        # rule never wins. Locking here breaks the feedback loop.
         if is_court_name(name):
             canonical_role = court_role_key
+        elif is_third_party_default_name(name):
+            canonical_role = third_party_role_key
         else:
             non_court = {r: c for r, c in counts.items() if r != court_role_key}
             best_pool = non_court if non_court else counts

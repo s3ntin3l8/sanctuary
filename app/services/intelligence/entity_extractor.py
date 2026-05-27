@@ -120,17 +120,34 @@ def _build_party_canonical_map(case: Case | None) -> dict[str, str]:
             key = normalize_entity_name(canonical, et)
             if key:
                 mapping[key] = canonical
-        # For two-token PERSON names, also add the swapped ordering so that
-        # East-Asian surname-first names ("Liu Yingying") snap from a Western
-        # given-name-first variant ("Yingying Liu") and vice-versa. The
-        # existing normalize_entity_name handles `,`-separated reverses but
-        # not bare-space reorderings.
+        # For two-token PERSON names, expand the keyset so all common
+        # variants of the same person map back to the canonical spelling:
+        #
+        #  - swap order ("Liu Yingying" ↔ "Yingying Liu") for East-Asian
+        #    vs Western name ordering (existing).
+        #  - initial-form ("Y. Liu", "Liu, Y.", "L. Yingying") for the
+        #    abbreviated references the AI sometimes emits (Round 7 — fixes
+        #    the post-R6 doc 25 "Liu, Y." duplicate).
+        #
+        # Single-token bare-surname references ("Liu", "Frau Liu" stripped
+        # of honorific) are deliberately NOT mapped — a bare surname is
+        # ambiguous between "Liu Yingying" and "Liu Jun" (or any other Liu
+        # on the case) and snapping would falsely merge them. The
+        # honorific-stripped "Frau Liu" → key "liu" case is documented as
+        # accepted ambiguity; user can merge manually if needed.
         tokens = canonical.split()
         if len(tokens) == 2:
-            swapped = f"{tokens[1]} {tokens[0]}"
-            key_swapped = normalize_entity_name(swapped, EntityType.PERSON)
-            if key_swapped and key_swapped not in mapping:
-                mapping[key_swapped] = canonical
+            first, last = tokens
+            variants = [
+                f"{last} {first}",  # swapped order
+                f"{first[0]}. {last}",  # "Y. Liu"
+                f"{last}, {first[0]}.",  # "Liu, Y."
+                f"{last[0]}. {first}",  # "L. Yingying" (swapped + initial)
+            ]
+            for variant in variants:
+                key = normalize_entity_name(variant, EntityType.PERSON)
+                if key and key not in mapping:
+                    mapping[key] = canonical
     return mapping
 
 
