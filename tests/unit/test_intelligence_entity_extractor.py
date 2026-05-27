@@ -248,3 +248,58 @@ def test_save_entities_snaps_variants_to_known_party_canonical_name(
     assert rows[0].name == "Liu Yingying", (
         f"expected canonical spelling 'Liu Yingying', got {rows[0].name!r}"
     )
+
+
+@pytest.mark.unit
+def test_save_entities_snap_dedupes_against_existing_canonical_row(
+    db_session, sample_document
+):
+    """Round 6 regression: when Case.parties has "Liu Yingying" and an
+    Entity row exists with name="Liu Yingying", a NEW extraction emitting
+    "Yingying Liu" (Western order) must be snapped AND deduped — no
+    second row.
+
+    Pre-fix: the dedup key was computed from the AI-emitted raw name
+    ("yingying liu"), which differed from the existing row's normalize key
+    ("liu yingying"). The snap-to-canonical wrote the correct stored_name
+    but inserted a duplicate row. Post-fix: dedup key uses the snapped
+    name, so existing canonical rows are matched."""
+    from app.models.database import Case
+    from app.models.enums import EntityType as ET
+
+    case = db_session.query(Case).filter(Case.id == sample_document.case_id).one()
+    case.parties = [
+        {"name": "Liu Yingying", "role": "opposing", "document_count": 5},
+    ]
+    db_session.flush()
+
+    # Seed an existing canonical row (e.g. from a prior doc's extraction).
+    db_session.add(
+        Entity(
+            case_id=sample_document.case_id,
+            type=ET.PERSON,
+            name="Liu Yingying",
+            source_document_id=sample_document.id,
+        )
+    )
+    db_session.flush()
+
+    # New extraction emits the Western-order variant.
+    result = {
+        "entities": [
+            {"type": "PERSON", "name": "Yingying Liu", "context_quote": "x"},
+        ]
+    }
+    count = _save_entities(sample_document, result, db_session)
+
+    assert count == 0, "snap must dedupe against the existing canonical row"
+    rows = (
+        db_session.query(Entity)
+        .filter(
+            Entity.case_id == sample_document.case_id,
+            Entity.type == ET.PERSON,
+        )
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].name == "Liu Yingying"

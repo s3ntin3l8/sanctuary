@@ -237,3 +237,28 @@ def test_enrich_document_with_ai_keeps_prior_sender_when_alt_only(
     )
 
     assert sample_document.sender == "Existing Clean Sender"
+
+
+# ---------------------------------------------------------------------------
+# Round 6 Regression A: PHASE1_METADATA_SYSTEM must include the issuers-of-
+# certifying-evidence rule so banks (ICBC), notaries, translators, and foreign
+# registrars are classified as third_party instead of own/opposing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_phase1_metadata_system_has_banks_third_party_rule():
+    """Smoke check that the third_party defaults block in the metadata system
+    prompt explicitly covers credentialing institutions. Doc 44 regression:
+    ICBC bank deposit cert was classified as `own` because the rule only
+    enumerated court-appointed actors, not banks/notaries/registrars."""
+    from app.services.intelligence.prompts import PHASE1_METADATA_SYSTEM
+
+    # The rule must mention banks explicitly (the doc 44 case).
+    assert "Bank" in PHASE1_METADATA_SYSTEM, (
+        "metadata system prompt missing the banks/notaries third_party rule"
+    )
+    # And must reinforce that originator_type is "who authored", not
+    # "which side benefits".
+    assert "credentialing institution" in PHASE1_METADATA_SYSTEM
+    assert "third_party" in PHASE1_METADATA_SYSTEM

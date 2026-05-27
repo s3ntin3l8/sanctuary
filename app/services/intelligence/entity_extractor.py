@@ -237,9 +237,22 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
         # their original name.
         stored_name = party_canonicals.get(canonical, name)
 
-        if (entity_type, canonical) in existing_keys:
+        # Round 6: when a snap occurred, the dedup key must match what's
+        # actually stored. Otherwise an existing "Liu Yingying" row (normalize
+        # key "liu yingying") doesn't match an incoming "Yingying Liu"
+        # (normalize key "yingying liu" — different key, same person after
+        # the snap) and a duplicate row gets inserted. Re-normalize using the
+        # snapped name so dedup aligns with persistence.
+        if stored_name is not name:
+            dedup_key = normalize_entity_name(
+                stored_name, entity_type, canonical_names=payload_canonicals
+            )
+        else:
+            dedup_key = canonical
+
+        if (entity_type, dedup_key) in existing_keys:
             continue
-        existing_keys.add((entity_type, canonical))
+        existing_keys.add((entity_type, dedup_key))
 
         context = (item.get("context_quote") or "")[:500]
 
