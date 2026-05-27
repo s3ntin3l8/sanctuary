@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-27.5"
+PROMPT_VERSION = "2026-05-27.6"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -111,37 +111,42 @@ A new document starts when: letterhead changes, a new Aktenzeichen or docket num
 
 BATCH_ANALYZER_SYSTEM = """You are a legal document analyst processing a batch of documents that arrived together (same email or delivery).
 
-Analyze all documents in the batch. An email may contain multiple cover letters (Begleitschreiben), each introducing different enclosures - this is common with court digests or forwarded collections.
-
-The user prompt shows all documents in the batch as `=== (doc_id=N) Title ===` headers followed by a `<batch_doc>...</batch_doc>` fence containing the document body. Use the doc_id values from the headers as the sole source of truth for cover_letter_doc_id and enclosed_doc_id values.
-
-If a value is unknown, use null.
+The user prompt shows all documents as `=== (doc_id=N) [filename] Title ===` headers followed by `<batch_doc>…</batch_doc>` fences. Use the doc_id values from these headers as the sole source of truth for all doc_id fields below. If a value is unknown, use null.
 
 Extract these fields:
-- bundles: list of bundles found. Each bundle represents one cover letter and its enclosures. Structure:
+
+- bundles: list of bundles found. Each bundle represents one cover letter and its enclosures:
   [{"cover_letter_doc_id": int or null, "enclosed": [
-    {"description": "brief description", "attributed_originator": "the document's actual author/sender", "originator_type": "court|opposing|own|third_party|unknown", "enclosed_doc_id": int, "matched_filename": "filename or null"}
+    {"description": "brief description", "attributed_originator": "actual author/sender", "originator_type": "court|opposing|own|third_party|unknown", "enclosed_doc_id": int, "matched_filename": "filename or null"}
   ]}]
-- For `cover_letter_doc_id`, use ONLY integer doc_ids that appear explicitly in the user prompt — either the candidate's `doc_id=N` line or a `(doc_id=N)` prefix in the sibling list. Never invent, sequence, or guess doc_ids.
-- For `enclosed_doc_id`, use the integer doc_id of the sibling doc in THIS batch that the cover letter forwards. An enclosure is a sibling doc — identify it by its `=== (doc_id=N) Title ===` header. If you cannot point to a specific sibling doc_id in the batch, leave the bundle's `enclosed` list empty rather than describing the enclosure in prose. Do NOT invent doc_ids or reference docs outside this batch.
-- `matched_filename` (optional): the sibling's title exactly as shown in its header, as a redundancy check on `enclosed_doc_id`. May be null. Never the load-bearing link — `enclosed_doc_id` is.
-- Uniqueness invariant: every doc_id appears AT MOST ONCE across all bundles. A doc listed as `cover_letter_doc_id: 91` must NOT appear as `enclosed_doc_id: 91` in any bundle (including its own), and two bundles must not share the same `enclosed_doc_id`. Docs omitted from `bundles` entirely are treated as standalone.
-- Default rule: treat every sibling as STANDALONE — i.e. OMIT it from `bundles`. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure.
-- Recognising a cover letter (Begleitschreiben): a document is a cover letter when it (a) has a short body (typically ≤ half a page) that says something like "anbei erhalten Sie", "beigefügt übersende ich", "in der Anlage", "als Anlage", or "hiermit leite ich weiter", AND (b) explicitly references an enclosed document by description, filename, or Anlage marker. A short court forwarding note ("Schreiben … vom … wird übersandt") is always a cover letter. A full-length Schriftsatz, Antrag, or Beschluss is never a cover letter even if it has attachments.
-- When you identify a document as a cover letter, always wire it to the most plausible sibling in the batch as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches at all.
-- Attachment Manifest (when provided above the document sections): use it as the **primary bundle signal**, overriding content inference. Each manifest group produces **at most one bundle** — never split a group into multiple bundles.
-  - **One group = one bundle.** All documents sharing the same timestamp + source label came from the same court transmission and belong to a single bundle together.
-  - **Identify the sole cover letter:** the cover letter is the document whose filename starts with `SCHR_` or contains "Schreiben" AND that was issued BY the court named in the group's source label. For a group labeled "Landgericht Ingolstadt", `SCHR_ LG IN …` is the cover letter. For a group labeled "Amtsgericht Ingolstadt", `SCHR VON AG IN …` is the cover letter. If multiple filenames start with `SCHR_`, the cover letter is the one issued by the named court (the others are party letters being forwarded). If no SCHR_ document exists, the shortest document is the cover letter.
-  - **ALL remaining documents in the group are enclosed by that single cover letter.** This includes: every SS_ (Schriftsatz/filing), every ANLAGE (exhibit), every BESCHLUSS (ruling), every VERMERK (note), and any SCHR_ documents NOT identified as the cover letter (e.g. a party letter forwarded by the court). Do NOT create a separate bundle for an SS_ or a party's SCHR_ that belongs to the same manifest group — it is always an enclosed_doc_id of the one bundle.
-  - Filename prefixes tell you the role *within* the bundle, not bundle membership: `SCHR_` = Schreiben (cover or forwarded letter), `SS_` = Schriftsatz (motion/filing), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit/attachment.
-  - A manifest group with a single document has no bundle structure — treat that document as standalone.
-  - Fall back to content-based inference only for documents not matched in the manifest.
-- Lawyer's Forwarding Note (when provided above the document sections): use it to infer actionability for detected_actions.
-  - "zur Kenntnisnahme" without "Rückmeldung" → informational batch, no action item required.
-  - "Bitte um Rückmeldung" / "bitte … beachten" / "mit der Bitte" → action required; surface as a detected_action with confidence: high.
+  Field constraints (apply regardless of detection method):
+  - `cover_letter_doc_id`: ONLY integers that appear as `doc_id=N` in the user prompt. Never invent or guess.
+  - `enclosed_doc_id`: integer doc_id of a sibling doc in THIS batch. Never invent doc_ids or reference docs outside this batch. If no sibling matches, leave `enclosed` empty rather than writing prose.
+  - `matched_filename`: the sibling's filename/title as shown in its header — redundancy check only; `enclosed_doc_id` is the load-bearing field.
+  - Uniqueness invariant: every doc_id appears AT MOST ONCE across all bundles. A `cover_letter_doc_id` must NOT also appear as an `enclosed_doc_id` anywhere; two bundles must not share an `enclosed_doc_id`. Docs omitted from bundles entirely are treated as standalone.
+
+  PRIMARY — Attachment Manifest (when provided above the document sections):
+  - Each manifest group (same timestamp + source label) yields exactly one bundle. Never split a group into multiple bundles.
+  - Identify the sole cover letter: the document whose filename starts with `SCHR_` or contains "Schreiben" AND was issued by the court named in the source label. For "Landgericht Ingolstadt", `SCHR_ LG IN …` is the cover; for "Amtsgericht Ingolstadt", `SCHR VON AG IN …` is the cover. If multiple filenames start with `SCHR_`, the cover letter is the one from the named court (the others are party letters being forwarded). If no SCHR_ document exists, use the shortest document.
+  - ALL other documents in the group are enclosed by that single cover letter — SS_ (Schriftsatz/filing), ANLAGE (exhibit), BESCHLUSS (ruling), VERMERK (note), and any SCHR_ documents not identified as the cover. Do NOT create separate bundles for SS_ or party SCHR_ documents within the same manifest group.
+  - Filename prefixes identify role within the bundle, not bundle membership: `SCHR_` = Schreiben (cover or forwarded party letter), `SS_` = Schriftsatz (motion/filing), `BESCHLUSS` = ruling, `VERMERK` = court note, `ANLAGE` = exhibit.
+  - A manifest group with a single document has no bundle structure — treat as standalone.
+
+  FALLBACK — content-based detection (no manifest, or document not in the manifest):
+  - An email may contain multiple cover letters, each introducing different enclosures — common with court digests or forwarded collections.
+  - Default rule: treat every sibling as STANDALONE. Place a sibling in a bundle ONLY when the candidate's text or the sibling's filename clearly identifies it as a cover letter or enclosure.
+  - Recognising a cover letter (Begleitschreiben): (a) short body (≤ half a page) with phrases like "anbei erhalten Sie", "beigefügt übersende ich", "in der Anlage", "als Anlage", or "hiermit leite ich weiter", AND (b) explicitly references an enclosed document by description, filename, or Anlage marker. A short court forwarding note ("Schreiben … vom … wird übersandt") is always a cover letter. A full-length Schriftsatz, Antrag, or Beschluss is never a cover letter even if it has attachments.
+  - When you identify a document as a cover letter, wire it to the most plausible sibling as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches.
+
+- Lawyer's Forwarding Note (when provided):
+  - "zur Kenntnisnahme" without "Rückmeldung" → informational, no action item.
+  - "Bitte um Rückmeldung" / "bitte … beachten" / "mit der Bitte" → action required; surface as detected_action with confidence: high.
   - "erhalten Sie" phrasing → the lawyer is the sender; the client is the recipient.
-- Intra-Document Boundaries: When analyzing a specific `doc_id`'s content, be aware that the file itself might be a bundled PDF. A new document boundary *within a single file* occurs when: letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. If a `doc_id` contains a bundled PDF, base its role in the batch ONLY on its **Lead Document** (the first document in its text). Do not let appended court notices trick you into classifying a motion as a 'relay'.
-- attributed_originator is the organization or person who AUTHORED the document — typically a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's own lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"), not the client name. For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use the opposing counsel's firm if visible, or fall back to the party label only if no firm is identifiable.
+
+- Intra-Document Boundaries: a `doc_id`'s PDF may bundle multiple distinct documents. A new boundary occurs when letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. Base a doc's bundle role ONLY on its **Lead Document** (first document in its text). Do not let appended court notices trick you into classifying a motion as a relay.
+
+- attributed_originator is the organization or person who AUTHORED the document — a law firm, court, or company. NOT the case party they represent. For a Schriftsatz from the user's lawyer, use the firm name (e.g. "Kanzlei XY Rechtsanwälte"). For a court letter, use the court name (e.g. "Amtsgericht Hamburg"). For an opposing-party filing, use opposing counsel's firm if visible, or fall back to the party label.
+
 - originator_type must be exactly one of: own | opposing | court | third_party | unknown.
   Party identity guidance (if a "Known Party Identity" block appears at the start of the user prompt, that is authoritative):
   * own = authored by the user's side (the user personally, or their lawyer)
@@ -150,14 +155,30 @@ Extract these fields:
   * third_party = Verfahrensbeistand, Verfahrenspfleger, Jugendamt, Sachverständiger/Gutachter, or any other neutral actor
   * unknown = cannot be determined
   Name normalization (critical — these strings are used for party deduplication across all documents):
-  * Person names: always "Vorname Nachname" (given name first). Never "Nachname, Vorname" or reversed "Nachname Vorname". Correct: "Yingying Liu". Wrong: "Liu, Yingying" / "Liu Yingying".
-  * Organization names: use the broadest stable canonical form. Omit sub-unit suffixes (e.g. ", Amt für Familie und Jugend") unless that sub-unit is the sole independent actor in this document — then use the sub-unit name alone, not the combined "Parent, Sub-unit" string. Correct: "Landratsamt Eichstätt". Wrong: "Landratsamt Eichstätt, Amt für Familie und Jugend".
+  * Person names: always "Vorname Nachname" (given name first). Never "Nachname, Vorname". Correct: "Yingying Liu". Wrong: "Liu, Yingying".
+  * Organization names: broadest stable canonical form. Omit sub-unit suffixes unless that sub-unit is the sole independent actor. Correct: "Landratsamt Eichstätt". Wrong: "Landratsamt Eichstätt, Amt für Familie und Jugend".
   * Within this batch: use IDENTICAL strings for the same entity across every document.
+
 - detected_actions: list of deadlines/actions found across all bundles:
   {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null"}
-  - When a Terminsverlegung, Umladung, or any hearing rescheduling is present in the batch, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
+  - When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date. Set supersedes_date to the original void date. Never emit both dates as separate action items.
 
-Example response (batch has doc_ids 1, 2, 5, 7; doc 2 is the enclosure for cover 1, doc 7 is the enclosure for cover 5):
+Example — manifest provided (Group A: doc_10=cover + doc_11=enclosed; Group B: doc_20=cover + docs 21/22/23=enclosed):
+{
+  "bundles": [
+    {"cover_letter_doc_id": 10, "enclosed": [
+      {"description": "Schriftsatz der Antragsgegnerin", "attributed_originator": "Opposing Firm GbR", "originator_type": "opposing", "enclosed_doc_id": 11, "matched_filename": "Schr von geg.pdf"}
+    ]},
+    {"cover_letter_doc_id": 20, "enclosed": [
+      {"description": "Anhörungsrüge", "attributed_originator": "Kanzlei Hansen", "originator_type": "own", "enclosed_doc_id": 21, "matched_filename": "SS_filing.pdf"},
+      {"description": "Kaufabsichtserklärung", "attributed_originator": "Kanzlei Hansen", "originator_type": "own", "enclosed_doc_id": 22, "matched_filename": "Anlage.pdf"},
+      {"description": "Kapitalerklärung", "attributed_originator": "Bank XY", "originator_type": "third_party", "enclosed_doc_id": 23, "matched_filename": "Anlage (1).pdf"}
+    ]}
+  ],
+  "detected_actions": []
+}
+
+Example — no manifest (doc_ids 1, 2, 5, 7; doc 2 enclosed by cover 1; doc 7 enclosed by cover 5):
 {
   "bundles": [
     {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "enclosed_doc_id": 2, "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
