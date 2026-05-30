@@ -78,6 +78,12 @@ def upgrade() -> None:
             "ix_claims_proceeding",
             "ix_claims_case_id",
             "ix_claims_proceeding_id",
+            # Two migrations created an index on source_document_id under
+            # different names: 404c6c87d3f1 as ix_claims_source_document and
+            # the 7c6a3376821b reset as ix_claims_source_document_id. Both must
+            # be dropped here or the batch recreate below reflects the leftover
+            # and fails with "no such column: source_document_id".
+            "ix_claims_source_document",
             "ix_claims_source_document_id",
         ):
             if idx_name in existing_idx:
