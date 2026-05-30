@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
+from app.models.database import User
 from app.services.ai_config import _get_ai_section, get_embed_config
 from app.services.ai_provider import chat_provider, embed_provider, ocr_provider
 from app.services.timezone_service import get_timezone_choices
 from app.services.user_settings_service import (
-    _get_or_create,
     get_ai_debug_redact,
     get_extraction_engine,
     get_party_identity,
@@ -22,6 +22,19 @@ from app.services.user_settings_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["settings"])
+
+
+def _display_settings(db, user_id: int) -> dict:
+    """Merged settings for template display: global AppSettings keys overlaid
+    with the user's per-user keys (theme, dashboard_cards, timezone preference)."""
+    from app.models.database import UserSettings
+    from app.services.app_settings_service import get_json as _app_json
+
+    merged = dict(_app_json(db))
+    row = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if row and isinstance(row.settings_json, dict):
+        merged.update(row.settings_json)
+    return merged
 
 
 def _stats(db):
@@ -40,18 +53,34 @@ def _stats(db):
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_root():
-    return RedirectResponse(url="/settings/gmail", status_code=303)
+    return RedirectResponse(url="/settings/account", status_code=303)
+
+
+@router.get("/settings/account", response_class=HTMLResponse)
+async def settings_account(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return render_page(
+        request,
+        "pages/settings/account.html",
+        db=db,
+        account=user,
+    )
 
 
 @router.get("/settings/gmail", response_class=HTMLResponse)
-async def settings_gmail(request: Request, db: Session = Depends(get_db)):
-    user_settings = _get_or_create(db)
-    settings_json = user_settings.settings_json or {}
+async def settings_gmail(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     return render_page(
         request,
         "pages/settings/gmail.html",
         db=db,
-        settings=settings_json,
+        settings=_display_settings(db, user.id),
     )
 
 
@@ -109,27 +138,31 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/settings/appearance", response_class=HTMLResponse)
-async def settings_appearance(request: Request, db: Session = Depends(get_db)):
-    user_settings = _get_or_create(db)
-    settings_json = user_settings.settings_json or {}
+async def settings_appearance(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     return render_page(
         request,
         "pages/settings/appearance.html",
         db=db,
-        settings=settings_json,
+        settings=_display_settings(db, user.id),
         timezone_choices=get_timezone_choices(),
     )
 
 
 @router.get("/settings/data", response_class=HTMLResponse)
-async def settings_data(request: Request, db: Session = Depends(get_db)):
-    user_settings = _get_or_create(db)
-    settings_json = user_settings.settings_json or {}
+async def settings_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     return render_page(
         request,
         "pages/settings/data.html",
         db=db,
-        settings=settings_json,
+        settings=_display_settings(db, user.id),
         stats=_stats(db),
     )
 

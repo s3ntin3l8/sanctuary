@@ -35,6 +35,7 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     AuditEventType,
+    CaseAccessLevel,
     CaseStatus,
     CaseType,
     ClaimEvidenceRole,
@@ -60,6 +61,7 @@ from app.models.enums import (
     RelationshipType,
     SignificanceTier,
     UserReactionType,
+    UserRole,
 )
 
 Base = declarative_base()
@@ -81,6 +83,13 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
     content = Column(Text, nullable=True)
+    # The user who ingested this document. INVARIANT: owner_id governs visibility
+    # ONLY in the no-case triage view. Once a document has a real case, visibility
+    # is case-driven (access_service.can_view_case = owner OR share). NEVER filter
+    # a case-context document query by owner_id — it would break shared-case access
+    # (a shared editor must see documents the case owner ingested). No DB-level FK
+    # (avoids a SQLite recreate of this heavily-referenced table).
+    owner_id = Column(Integer, nullable=True, index=True)
     case_id = Column(
         String,
         ForeignKey("cases.id", ondelete="SET NULL"),
@@ -371,6 +380,13 @@ class Case(Base):
         String, primary_key=True, index=True
     )  # Internal lead ID, e.g. ADV-992-K
     title = Column(String, nullable=False)
+    # Owning user. NULL only transiently during the ownership migration backfill;
+    # enforced not-null afterwards. Filtering is applied at the route/repository
+    # layer (see app.services.access_service.visible_case_ids) — never as a model
+    # default, so background workers see all cases.
+    owner_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
     jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
     ingest_date = Column(DateTime, default=_utcnow)
@@ -458,6 +474,10 @@ class IngestBatch(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    # The user who ingested this batch (upload / gmail / scan-folder). Drives the
+    # per-user triage inbox. No DB-level FK (avoids a SQLite table recreate);
+    # enforced/used at the app layer. NULL only for legacy/unowned rows.
+    owner_id = Column(Integer, nullable=True, index=True)
     source_type = Column(SAEnum(IngestBatchSourceType), nullable=False)
     received_at = Column(DateTime, default=_utcnow, nullable=False)
     sender_email = Column(String, nullable=True)
@@ -848,7 +868,9 @@ class UserReaction(Base):
     document_id = Column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
-    user_id = Column(String, default="single_user", nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     reaction = Column(SAEnum(UserReactionType), nullable=False)
     notes = Column(Text, nullable=True)
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
@@ -875,18 +897,77 @@ class DocumentPin(Base):
     )
     passage_id = Column(String(12), nullable=False)
     note = Column(Text, nullable=True)
-    user_id = Column(String, default="single_user", nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
     document = relationship("Document", back_populates="pins")
 
 
+class User(Base):
+    """An account. Authenticates via local password and/or OIDC.
+
+    Email is the human identifier (stored lowercased). ``password_hash`` is
+    nullable so OIDC-only accounts can exist without a local password.
+    ``token_version`` is bumped on disable / password-reset to invalidate every
+    outstanding signed-cookie session for this user.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    # URL/filesystem-safe unique slug — names this user's scan-ingest subfolder
+    # (data/scans/incoming/<username>/). Generated from display_name/email.
+    username = Column(String, unique=True, nullable=True, index=True)
+    password_hash = Column(String, nullable=True)
+    display_name = Column(String, nullable=True)
+    role = Column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    token_version = Column(Integer, default=0, nullable=False)
+    # OIDC linkage (Phase 2) — `sub` + issuer of the external identity.
+    oidc_subject = Column(String, nullable=True, index=True)
+    oidc_issuer = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+
+    @validates("email")
+    def _normalize_email(self, key, value):
+        return value.strip().lower() if value else value
+
+
+class AppSettings(Base):
+    """Single-row global application/worker configuration.
+
+    Holds settings that are NOT per-user and are read by background workers
+    that have no request context: AI instance config, extraction/ingestion
+    engine, reindex/dedup job state, global party identity.
+    """
+
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True)
+    settings_json = Column(JSON, default=lambda: {})
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(String, default="single_user", unique=True, nullable=False)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
     settings_json = Column(
         JSON,
         default=lambda: {
@@ -901,12 +982,43 @@ class UserSettings(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class CaseShare(Base):
+    """Grants a non-owner user access to a case (Phase 3 hybrid sharing).
+
+    The owner (Case.owner_id) always has full access; CaseShare rows add other
+    users at viewer (read) or editor (mutate) level.
+    """
+
+    __tablename__ = "case_shares"
+    __table_args__ = (
+        UniqueConstraint("case_id", "user_id", name="uq_case_shares_case_user"),
+        Index("ix_case_shares_case", "case_id"),
+        Index("ix_case_shares_user", "user_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(String, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    permission = Column(SAEnum(CaseAccessLevel), nullable=False)
+    granted_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)
     created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
-    actor = Column(String, default="single_user", nullable=False)
+    # The acting user, when a request drove the event. NULL for system/worker
+    # events; `actor_label` then names the non-user actor ("system", "celery").
+    actor_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    actor_label = Column(String, nullable=True)
     event_type = Column(SAEnum(AuditEventType), nullable=False, index=True)
     target_type = Column(String, nullable=True)
     target_id = Column(String, nullable=True)
@@ -1074,6 +1186,9 @@ class Conversation(Base):
     scope_type = Column(String, nullable=False)  # "document" | "case"
     scope_id = Column(String, nullable=False)  # doc id (str) or case id (ADV-024-A)
     title = Column(String, nullable=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
 
     messages = relationship(

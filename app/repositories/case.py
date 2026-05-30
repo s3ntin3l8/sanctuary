@@ -52,10 +52,19 @@ class CaseRepository(BaseRepository[Case]):
         )
 
     def get_all_sorted_by_date(
-        self, descending: bool = True, include_drafts: bool = False
+        self,
+        descending: bool = True,
+        include_drafts: bool = False,
+        visible_ids: set[str] | None = None,
     ) -> Sequence[Case]:
-        """Get all cases sorted by creation date."""
+        """Get all cases sorted by creation date.
+
+        When ``visible_ids`` is given, restrict to that set (per-user isolation:
+        owned ∪ shared). Pass ``None`` for the unrestricted/admin view.
+        """
         query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+        if visible_ids is not None:
+            query = query.filter(Case.id.in_(visible_ids))
         if not include_drafts:
             query = query.filter(Case.is_draft.is_(False))
         if descending:
@@ -98,14 +107,14 @@ class CaseRepository(BaseRepository[Case]):
         """Count cases by status."""
         return self.db.query(Case).filter(Case.status == status).count()
 
-    def count_all_by_status(self) -> dict[CaseStatus, int]:
+    def count_all_by_status(
+        self, visible_ids: set[str] | None = None
+    ) -> dict[CaseStatus, int]:
         """Count all cases grouped by status (single query, avoids N+1)."""
-        results = (
-            self.db.query(Case.status, func.count())
-            .filter(Case.id != "_TRIAGE")
-            .group_by(Case.status)
-            .all()
-        )
+        query = self.db.query(Case.status, func.count()).filter(Case.id != "_TRIAGE")
+        if visible_ids is not None:
+            query = query.filter(Case.id.in_(visible_ids))
+        results = query.group_by(Case.status).all()
         return {row[0]: row[1] for row in results}
 
     def create_case(
@@ -114,6 +123,7 @@ class CaseRepository(BaseRepository[Case]):
         title: str,
         status: CaseStatus = CaseStatus.INTAKE,
         jurisdiction: Jurisdiction = Jurisdiction.DE,
+        owner_id: int | None = None,
     ) -> Case:
         """Create a new case."""
         return self.create(
@@ -121,6 +131,7 @@ class CaseRepository(BaseRepository[Case]):
             title=title,
             status=status,
             jurisdiction=jurisdiction,
+            owner_id=owner_id,
             ingest_date=datetime.now(),
         )
 
@@ -149,9 +160,13 @@ class CaseRepository(BaseRepository[Case]):
         per_page: int = 20,
         status: CaseStatus | None = None,
         include_drafts: bool = False,
+        visible_ids: set[str] | None = None,
     ) -> tuple[Sequence[Case], int]:
         """Get paginated cases with total count."""
         query = self.db.query(Case).filter(Case.id != "_TRIAGE")
+
+        if visible_ids is not None:
+            query = query.filter(Case.id.in_(visible_ids))
 
         if not include_drafts:
             query = query.filter(Case.is_draft.is_(False))

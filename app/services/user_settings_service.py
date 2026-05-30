@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from sqlalchemy.exc import OperationalError
 
 from app.core.timezone import naive_utc_now
-from app.models.database import UserSettings
+from app.models.database import AppSettings, UserSettings
 from app.models.enums import AuditEventType
 from app.services import audit_service
+from app.services.app_settings_service import _get_or_create as _get_or_create_app
 from app.services.pipeline_status import is_db_locked
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,29 @@ logger = logging.getLogger(__name__)
 STALE_JOB_THRESHOLD_SECONDS = 3600
 
 
-def get_last_viewed(case_id: str, db) -> datetime | None:
-    """Return the datetime the current user last viewed this case, or None."""
-    settings = db.query(UserSettings).first()
+# ===========================================================================
+# Per-user settings (theme, dashboard cards, last-viewed, active proceeding).
+# These require a user_id — callers pass current_user.id. Background workers
+# never touch per-user settings; only the global ones (further below).
+# ===========================================================================
+
+
+def _get_or_create_user(db, user_id: int) -> UserSettings:
+    settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if not settings:
+        settings = UserSettings(user_id=user_id, settings_json={})
+        db.add(settings)
+        db.flush()
+    return settings
+
+
+def _user_settings(db, user_id: int) -> UserSettings | None:
+    return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+
+
+def get_last_viewed(case_id: str, db, user_id: int) -> datetime | None:
+    """Return the datetime the user last viewed this case, or None."""
+    settings = _user_settings(db, user_id)
     if not settings or not settings.settings_json:
         return None
     last_viewed = settings.settings_json.get("last_viewed_cases", {})
@@ -32,21 +53,12 @@ def get_last_viewed(case_id: str, db) -> datetime | None:
     return datetime.fromisoformat(raw)
 
 
-def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
-    """Record that the user just viewed this case.
-
-    Best-effort: this is a UX nicety (last-viewed tracking). If a Celery
-    writer (claim extraction, dedup judge) is holding the SQLite write
-    lock past busy_timeout, swallow `database is locked` rather than 500
-    the case-page render. The user can always view the case again.
-    """
+def mark_viewed(case_id: str, db, user_id: int, *, now: datetime | None = None) -> None:
+    """Record that the user just viewed this case (best-effort)."""
     if now is None:
-        now = naive_utc_now()  # naive UTC, consistent with Document.ingest_date
+        now = naive_utc_now()
     try:
-        settings = db.query(UserSettings).first()
-        if not settings:
-            return
-        # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
+        settings = _get_or_create_user(db, user_id)
         current = dict(settings.settings_json or {})
         last_viewed = dict(current.get("last_viewed_cases", {}))
         last_viewed[case_id] = now.isoformat()
@@ -63,26 +75,19 @@ def mark_viewed(case_id: str, db, *, now: datetime | None = None) -> None:
         raise
 
 
-def _get_or_create(db) -> UserSettings:
-    settings = db.query(UserSettings).first()
-    if not settings:
-        settings = UserSettings(settings_json={})
-        db.add(settings)
-        db.flush()
-    return settings
-
-
-def get_active_proceeding(case_id: str, db) -> int | None:
-    settings = db.query(UserSettings).first()
-    if not settings:
+def get_active_proceeding(case_id: str, db, user_id: int) -> int | None:
+    settings = _user_settings(db, user_id)
+    if not settings or not settings.settings_json:
         return None
     value = settings.settings_json.get("active_proceeding", {}).get(case_id)
     return int(value) if value is not None else None
 
 
-def set_active_proceeding(case_id: str, proceeding_id: int, db) -> None:
-    settings = _get_or_create(db)
-    data = dict(settings.settings_json)
+def set_active_proceeding(
+    case_id: str, proceeding_id: int | None, db, user_id: int
+) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
     active = dict(data.get("active_proceeding", {}))
     active[case_id] = proceeding_id
     data["active_proceeding"] = active
@@ -90,16 +95,139 @@ def set_active_proceeding(case_id: str, proceeding_id: int, db) -> None:
     db.flush()
 
 
-def get_dedup_job(case_id: str, db) -> dict | None:
-    settings = db.query(UserSettings).first()
-    if not settings:
+def mark_home_visit(db, user_id: int, *, now: datetime | None = None) -> None:
+    """Record that the user just visited the home page (best-effort)."""
+    if now is None:
+        now = naive_utc_now()
+    try:
+        settings = _get_or_create_user(db, user_id)
+        current = dict(settings.settings_json or {})
+        current["last_home_visit"] = now.isoformat()
+        settings.settings_json = current
+        db.flush()
+    except OperationalError as exc:
+        if is_db_locked(exc):
+            logger.warning("mark_home_visit: db locked, skipping update")
+            db.rollback()
+            return
+        raise
+
+
+def get_last_home_visit(db, user_id: int) -> datetime | None:
+    settings = _user_settings(db, user_id)
+    if not settings or not settings.settings_json:
         return None
-    return settings.settings_json.get("dedup_jobs", {}).get(case_id)
+    raw = settings.settings_json.get("last_home_visit")
+    if raw is None:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def set_theme(theme: str, db, user_id: int) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
+    data["theme"] = theme
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.SETTINGS_THEME_CHANGED,
+        payload={"theme": theme},
+        actor_user_id=user_id,
+    )
+    db.flush()
+
+
+def set_dashboard_cards(cards: dict, db, user_id: int) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
+    data["dashboard_cards"] = cards
+    settings.settings_json = data
+    audit_service.record(
+        db, AuditEventType.SETTINGS_DASHBOARD_CARDS_CHANGED, actor_user_id=user_id
+    )
+    db.flush()
+
+
+# --- Per-user Gmail connection (each user connects their own mailbox) ---
+
+_GMAIL_KEYS = (
+    "gmail_credentials_json",
+    "gmail_allowlist",
+    "gmail_label_filter",
+    "gmail_connected_at",
+)
+
+
+def get_gmail_config(db, user_id: int) -> dict:
+    """Return this user's Gmail config keys (empty values when unset)."""
+    settings = _user_settings(db, user_id)
+    data = (settings.settings_json or {}) if settings else {}
+    return {k: data.get(k) for k in _GMAIL_KEYS}
+
+
+def set_gmail_inbox_filters(
+    db, user_id: int, *, allowlist: list[str], label_filter: str
+) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
+    data["gmail_allowlist"] = allowlist
+    data["gmail_label_filter"] = label_filter
+    settings.settings_json = data
+    db.flush()
+
+
+def set_gmail_credentials(
+    db, user_id: int, *, credentials_json: str, connected_at: str
+) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
+    data["gmail_credentials_json"] = credentials_json
+    data["gmail_connected_at"] = connected_at
+    settings.settings_json = data
+    db.flush()
+
+
+def user_ids_with_gmail(db) -> list[int]:
+    """User ids that have connected Gmail (for the per-user sync fan-out)."""
+    rows = db.query(UserSettings.user_id, UserSettings.settings_json).all()
+    out: list[int] = []
+    for uid, sj in rows:
+        if isinstance(sj, dict) and sj.get("gmail_credentials_json"):
+            out.append(uid)
+    return out
+
+
+def count_new_since(case_id: str, since: datetime | None, db) -> int:
+    """Count documents added to the case after `since`. Returns 0 if since is None."""
+    if since is None:
+        return 0
+    from app.models.database import Document
+
+    return (
+        db.query(Document)
+        .filter(Document.case_id == case_id, Document.ingest_date > since)
+        .count()
+    )
+
+
+# ===========================================================================
+# Global settings (no user). Stored in the AppSettings singleton so background
+# workers can read/write without a request. Signatures are db-only by design —
+# existing callers are unchanged.
+# ===========================================================================
+
+
+def get_dedup_job(case_id: str, db) -> dict | None:
+    data = _get_or_create_app(db).settings_json or {}
+    return data.get("dedup_jobs", {}).get(case_id)
 
 
 def set_dedup_running(case_id: str, db, *, total: int = 0) -> None:
-    settings = _get_or_create(db)
-    jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+    settings = _get_or_create_app(db)
+    jobs = dict((settings.settings_json or {}).get("dedup_jobs", {}))
     jobs[case_id] = {
         "status": "running",
         "total": total,
@@ -107,25 +235,21 @@ def set_dedup_running(case_id: str, db, *, total: int = 0) -> None:
         "started_at": naive_utc_now().isoformat(),
         "ended_at": None,
     }
-    settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+    settings.settings_json = {**(settings.settings_json or {}), "dedup_jobs": jobs}
     db.flush()
 
 
 def update_dedup_progress(case_id: str, db, *, processed: int) -> None:
-    """Update processed-count on the in-flight dedup job for this case.
-
-    Best-effort: swallows OperationalError on db-lock contention so a busy
-    SQLite writer doesn't kill the background task.
-    """
+    """Update processed-count on the in-flight dedup job (best-effort)."""
     try:
-        settings = _get_or_create(db)
-        jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+        settings = _get_or_create_app(db)
+        jobs = dict((settings.settings_json or {}).get("dedup_jobs", {}))
         job = dict(jobs.get(case_id) or {})
         if job.get("status") != "running":
             return
         job["processed"] = processed
         jobs[case_id] = job
-        settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+        settings.settings_json = {**(settings.settings_json or {}), "dedup_jobs": jobs}
         db.flush()
     except OperationalError as exc:
         if is_db_locked(exc):
@@ -139,38 +263,33 @@ def update_dedup_progress(case_id: str, db, *, processed: int) -> None:
 def set_dedup_result(
     case_id: str, stats: dict | None, db, *, failed: bool = False
 ) -> None:
-    settings = _get_or_create(db)
-    jobs = dict(settings.settings_json.get("dedup_jobs", {}))
+    settings = _get_or_create_app(db)
+    jobs = dict((settings.settings_json or {}).get("dedup_jobs", {}))
     prior = jobs.get(case_id) or {}
     jobs[case_id] = {
         "status": "failed" if failed else "done",
         "stats": stats or {},
-        # Preserve started_at when the prior job carried one; ended_at is
-        # always set fresh on transition.
         "started_at": prior.get("started_at"),
         "ended_at": naive_utc_now().isoformat(),
     }
-    settings.settings_json = {**settings.settings_json, "dedup_jobs": jobs}
+    settings.settings_json = {**(settings.settings_json or {}), "dedup_jobs": jobs}
     db.flush()
 
 
-# ---------------------------------------------------------------------------
-# Embedding reindex job state (singleton — at most one in flight globally)
-# ---------------------------------------------------------------------------
+# --- Embedding reindex job state (singleton — at most one in flight globally) ---
 
 
 def get_reindex_job(db) -> dict | None:
-    """Return the current reindex job state, or None if none has ever run."""
-    settings = db.query(UserSettings).first()
-    if not settings or not settings.settings_json:
+    row = db.query(AppSettings).first()
+    if not row or not row.settings_json:
         return None
-    return settings.settings_json.get("reindex_job")
+    return row.settings_json.get("reindex_job")
 
 
 def set_reindex_running(db, *, total: int, embed_dim: int) -> None:
-    settings = _get_or_create(db)
+    settings = _get_or_create_app(db)
     settings.settings_json = {
-        **settings.settings_json,
+        **(settings.settings_json or {}),
         "reindex_job": {
             "status": "running",
             "total": total,
@@ -188,13 +307,13 @@ def set_reindex_running(db, *, total: int, embed_dim: int) -> None:
 def update_reindex_progress(db, *, reindexed: int, failed: int) -> None:
     """Update progress counters on the in-flight reindex job. Best-effort."""
     try:
-        settings = _get_or_create(db)
-        job = dict(settings.settings_json.get("reindex_job") or {})
+        settings = _get_or_create_app(db)
+        job = dict((settings.settings_json or {}).get("reindex_job") or {})
         if job.get("status") != "running":
             return
         job["reindexed"] = reindexed
         job["failed"] = failed
-        settings.settings_json = {**settings.settings_json, "reindex_job": job}
+        settings.settings_json = {**(settings.settings_json or {}), "reindex_job": job}
         db.flush()
     except OperationalError as exc:
         if is_db_locked(exc):
@@ -204,33 +323,28 @@ def update_reindex_progress(db, *, reindexed: int, failed: int) -> None:
 
 
 def set_reindex_done(db) -> None:
-    settings = _get_or_create(db)
-    job = dict(settings.settings_json.get("reindex_job") or {})
+    settings = _get_or_create_app(db)
+    job = dict((settings.settings_json or {}).get("reindex_job") or {})
     job["status"] = "done"
     job["ended_at"] = naive_utc_now().isoformat()
-    settings.settings_json = {**settings.settings_json, "reindex_job": job}
+    settings.settings_json = {**(settings.settings_json or {}), "reindex_job": job}
     db.flush()
 
 
 def set_reindex_failed(db, error: str) -> None:
-    settings = _get_or_create(db)
-    job = dict(settings.settings_json.get("reindex_job") or {})
+    settings = _get_or_create_app(db)
+    job = dict((settings.settings_json or {}).get("reindex_job") or {})
     job["status"] = "failed"
     job["ended_at"] = naive_utc_now().isoformat()
     job["error"] = error[:500]
-    settings.settings_json = {**settings.settings_json, "reindex_job": job}
+    settings.settings_json = {**(settings.settings_json or {}), "reindex_job": job}
     db.flush()
 
 
-# ---------------------------------------------------------------------------
-# Stale-job recovery — called from the hourly maintenance task
-# ---------------------------------------------------------------------------
+# --- Stale-job recovery — called from the hourly maintenance task ---
 
 
 def _is_stale(started_at_iso: str | None) -> bool:
-    """True when started_at + STALE_JOB_THRESHOLD_SECONDS is in the past.
-    Returns False when started_at is missing/unparseable (defensive: pre-existing
-    jobs written before this field existed shouldn't be auto-failed)."""
     if not started_at_iso:
         return False
     try:
@@ -241,11 +355,7 @@ def _is_stale(started_at_iso: str | None) -> bool:
 
 
 def recover_stale_reindex_job(db) -> bool:
-    """Flip a stuck reindex_job from 'running' to 'failed'.
-
-    Returns True when the job was flipped, False otherwise. No-op when the
-    job is missing, not running, or fresh.
-    """
+    """Flip a stuck reindex_job from 'running' to 'failed'."""
     job = get_reindex_job(db)
     if not job or job.get("status") != "running":
         return False
@@ -256,14 +366,11 @@ def recover_stale_reindex_job(db) -> bool:
 
 
 def recover_stale_dedup_jobs(db) -> list[str]:
-    """Flip every stuck dedup job (per case) from 'running' to 'failed'.
-
-    Returns the list of case_ids that were flipped, for logging.
-    """
-    settings = db.query(UserSettings).first()
-    if not settings or not settings.settings_json:
+    """Flip every stuck dedup job (per case) from 'running' to 'failed'."""
+    row = db.query(AppSettings).first()
+    if not row or not row.settings_json:
         return []
-    jobs = settings.settings_json.get("dedup_jobs", {}) or {}
+    jobs = row.settings_json.get("dedup_jobs", {}) or {}
     flipped: list[str] = []
     for case_id, job in jobs.items():
         if not isinstance(job, dict) or job.get("status") != "running":
@@ -277,36 +384,10 @@ def recover_stale_dedup_jobs(db) -> list[str]:
     return flipped
 
 
-def mark_home_visit(db, *, now: datetime | None = None) -> None:
-    """Record that the user just visited the home page. Best-effort —
-    swallows SQLite write-lock contention rather than 500 the home page."""
-    if now is None:
-        now = naive_utc_now()
-    try:
-        settings = _get_or_create(db)
-        # Reassign entire dict to trigger SQLAlchemy JSON mutation detection
-        current = dict(settings.settings_json or {})
-        current["last_home_visit"] = now.isoformat()
-        settings.settings_json = current
-        db.flush()
-    except OperationalError as exc:
-        if is_db_locked(exc):
-            logger.warning("mark_home_visit: db locked, skipping update")
-            db.rollback()
-            return
-        raise
-
-
 def get_party_identity(db) -> dict:
-    """Return global party identity: {own_self, own_parties}.
-
-    opposing_parties is per-case (on Case.opposing_parties) — not returned here.
-    """
-    defaults: dict = {"own_self": "", "own_parties": []}
-    settings = db.query(UserSettings).first()
-    if not settings or not settings.settings_json:
-        return defaults
-    stored = settings.settings_json.get("party_identity", {})
+    """Return global party identity: {own_self, own_parties}."""
+    data = _get_or_create_app(db).settings_json or {}
+    stored = data.get("party_identity", {})
     return {
         "own_self": stored.get("own_self", ""),
         "own_parties": stored.get("own_parties", []),
@@ -314,9 +395,9 @@ def get_party_identity(db) -> dict:
 
 
 def set_party_identity(identity: dict, db) -> None:
-    """Persist global party identity (own_self, own_parties only — opposing is per-case)."""
-    settings = _get_or_create(db)
-    data = dict(settings.settings_json)
+    """Persist global party identity (own_self, own_parties; opposing is per-case)."""
+    settings = _get_or_create_app(db)
+    data = dict(settings.settings_json or {})
     data["party_identity"] = {
         "own_self": (identity.get("own_self") or "").strip(),
         "own_parties": [
@@ -330,53 +411,22 @@ def set_party_identity(identity: dict, db) -> None:
     db.flush()
 
 
-def set_theme(theme: str, db) -> None:
-    settings = _get_or_create(db)
-    data = dict(settings.settings_json)
-    data["theme"] = theme
-    settings.settings_json = data
-    audit_service.record(
-        db, AuditEventType.SETTINGS_THEME_CHANGED, payload={"theme": theme}
-    )
-    db.flush()
-
-
-def set_dashboard_cards(cards: dict, db) -> None:
-    settings = _get_or_create(db)
-    data = dict(settings.settings_json)
-    data["dashboard_cards"] = cards
-    settings.settings_json = data
-    audit_service.record(db, AuditEventType.SETTINGS_DASHBOARD_CARDS_CHANGED)
-    db.flush()
-
-
 def get_ai_debug_redact(db) -> bool:
     """Return True if AI debug log message bodies should be redacted."""
-    settings = db.query(UserSettings).first()
-    if settings and isinstance(settings.settings_json, dict):
-        return bool(settings.settings_json.get("ai", {}).get("ai_debug_redact", False))
-    return False
+    data = _get_or_create_app(db).settings_json or {}
+    return bool(data.get("ai", {}).get("ai_debug_redact", False))
 
-
-# ---------------------------------------------------------------------------
-# Document ingestion engine (Chandra OCR vs Docling+Tesseract for PDFs)
-# ---------------------------------------------------------------------------
 
 VALID_EXTRACTION_ENGINES = ("chandra", "docling")
 DEFAULT_EXTRACTION_ENGINE = "chandra"
 
 
 def get_extraction_engine(db) -> str:
-    """Return the configured PDF extraction engine.
-
-    Defaults to "chandra" so new installs get the better-quality extractor
-    out of the box. Falls back to "docling" only if explicitly set.
-    """
-    settings = db.query(UserSettings).first()
-    if settings and isinstance(settings.settings_json, dict):
-        engine = settings.settings_json.get("ingestion", {}).get("extraction_engine")
-        if engine in VALID_EXTRACTION_ENGINES:
-            return engine
+    """Return the configured PDF extraction engine."""
+    data = _get_or_create_app(db).settings_json or {}
+    engine = data.get("ingestion", {}).get("extraction_engine")
+    if engine in VALID_EXTRACTION_ENGINES:
+        return engine
     return DEFAULT_EXTRACTION_ENGINE
 
 
@@ -386,7 +436,7 @@ def set_extraction_engine(db, engine: str) -> None:
         raise ValueError(
             f"Unknown engine {engine!r}; expected one of {VALID_EXTRACTION_ENGINES}"
         )
-    settings = _get_or_create(db)
+    settings = _get_or_create_app(db)
     data = dict(settings.settings_json or {})
     ingestion = dict(data.get("ingestion", {}))
     ingestion["extraction_engine"] = engine
@@ -402,7 +452,7 @@ def set_extraction_engine(db, engine: str) -> None:
 
 def set_ai_debug_redact(db, value: bool) -> None:
     """Persist the AI debug log redaction toggle and emit an audit event."""
-    settings = _get_or_create(db)
+    settings = _get_or_create_app(db)
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))
     ai["ai_debug_redact"] = value
@@ -412,16 +462,3 @@ def set_ai_debug_redact(db, value: bool) -> None:
         db, AuditEventType.AI_DEBUG_REDACT_TOGGLED, payload={"enabled": value}
     )
     db.commit()
-
-
-def count_new_since(case_id: str, since: datetime | None, db) -> int:
-    """Count documents added to the case after `since`. Returns 0 if since is None."""
-    if since is None:
-        return 0
-    from app.models.database import Document
-
-    return (
-        db.query(Document)
-        .filter(Document.case_id == case_id, Document.ingest_date > since)
-        .count()
-    )

@@ -50,7 +50,9 @@ def render_bundle_group_oob(request: Request, bundle, db: Session) -> str:
     )
 
 
-def render_triage_feed_oob(request: Request, db: Session) -> str:
+def render_triage_feed_oob(
+    request: Request, db: Session, owner_id: int | None = None
+) -> str:
     """Renders the full triage feed as an OOB swap (used by bundle confirms)."""
     from app.models.database import Proceeding
     from app.repositories.case import CaseRepository
@@ -65,12 +67,13 @@ def render_triage_feed_oob(request: Request, db: Session) -> str:
     proceeding_ids = request.query_params.getlist("proceeding_id")
     pipeline_filters = request.query_params.getlist("pipeline_filter")
 
-    filter_options = get_triage_filter_options(db)
+    filter_options = get_triage_filter_options(db, owner_id=owner_id)
     bundles = get_triage_bundles(
         db,
         case_ids=case_ids or None,
         proceeding_ids=proceeding_ids or None,
         pipeline_filters=pipeline_filters or None,
+        owner_id=owner_id,
     )
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
@@ -173,12 +176,14 @@ def render_row_targeted_oob(
     return render_bundle_group_oob(request, bundle, db)
 
 
-def render_sidebar_badges_oob(db: Session) -> str:
+def render_sidebar_badges_oob(db: Session, owner_id: int | None = None) -> str:
     """Render global sidebar badges (triage, notifications) as OOB swaps."""
     from app.helpers import _build_notifications, build_sidebar_counts
+    from app.models.database import User
 
-    counts = build_sidebar_counts(db)
-    notif_data = _build_notifications(db)
+    counts = build_sidebar_counts(db, owner_id=owner_id)
+    notif_user = db.get(User, owner_id) if owner_id is not None else None
+    notif_data = _build_notifications(db, user=notif_user)
     notif_count = notif_data["notification_count"]
 
     triage_badge_inner = ""
@@ -200,7 +205,9 @@ def render_sidebar_badges_oob(db: Session) -> str:
     return triage_oob + notif_oob
 
 
-def render_triage_header_stats_oob(request: Request, db: Session, bundles=None) -> str:
+def render_triage_header_stats_oob(
+    request: Request, db: Session, bundles=None, owner_id: int | None = None
+) -> str:
     """Render the redesigned triage header chip stats as an OOB swap.
 
     Targets `#triage-header-stats` in `partials/triage_filter_chips.html`.
@@ -211,7 +218,7 @@ def render_triage_header_stats_oob(request: Request, db: Session, bundles=None) 
     from app.services.triage_view import stats_for_chips
 
     if bundles is None:
-        bundles = get_triage_bundles(db, enrich=False)
+        bundles = get_triage_bundles(db, enrich=False, owner_id=owner_id)
     return templates.get_template("partials/triage_filter_chips.html").render(
         {
             "request": request,
@@ -225,6 +232,7 @@ def render_batch_oob(
     request: Request,
     bundle_keys: list[str],
     db: Session,
+    owner_id: int | None = None,
 ) -> str:
     """Build a concatenated OOB response for multiple bundle keys.
 
@@ -236,7 +244,7 @@ def render_batch_oob(
     from app.services.triage_bundles import get_triage_bundles
 
     parts: list[str] = []
-    remaining = get_triage_bundles(db)
+    remaining = get_triage_bundles(db, owner_id=owner_id)
     remaining_by_key = {b.key: b for b in remaining}
 
     for key in bundle_keys:
@@ -248,6 +256,10 @@ def render_batch_oob(
                 f'<div id="triage-row-expanded-{key}" hx-swap-oob="delete"></div>'
             )
 
-    parts.append(render_sidebar_badges_oob(db))
-    parts.append(render_triage_header_stats_oob(request, db, bundles=remaining))
+    parts.append(render_sidebar_badges_oob(db, owner_id=owner_id))
+    parts.append(
+        render_triage_header_stats_oob(
+            request, db, bundles=remaining, owner_id=owner_id
+        )
+    )
     return "".join(parts)

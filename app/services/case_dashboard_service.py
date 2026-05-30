@@ -74,13 +74,14 @@ class CaseDashboardService:
         active_proceeding_id: int | None,
         active_view: str,
         significance_filter: str = "significant+",
+        user_id: int | None = None,
     ) -> dict | None:
         """Return the full template context dict for the case dashboard.
 
         Returns ``None`` when the case does not exist (caller should render 404).
         """
         case_service = CaseService(self.db)
-        data = case_service.get_case_with_summary(case_id)
+        data = case_service.get_case_with_summary(case_id, user_id)
         if not data:
             return None
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
-from app.models.database import Case, Document
+from app.models.database import Case, Document, IngestBatch
 from app.models.enums import OriginatorType
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
@@ -54,6 +54,39 @@ def _parse_bundle_key(key: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+def _key_owned_by(
+    db: Session, batch_id: int | None, doc_id: int | None, user_id: int
+) -> bool:
+    """Whether the bundle key's batch/doc belongs to the user (per-user triage)."""
+    if batch_id is not None:
+        row = db.query(IngestBatch.owner_id).filter(IngestBatch.id == batch_id).first()
+        return row is not None and row[0] == user_id
+    if doc_id is not None:
+        row = db.query(Document.owner_id).filter(Document.id == doc_id).first()
+        return row is not None and row[0] == user_id
+    return False
+
+
+def _require_editable_target(
+    db: Session, case_id: str | None, request: Request
+) -> None:
+    """403 when assigning a triage item to an EXISTING case the user can't edit.
+
+    Prevents a cross-tenant write: owning your triage bundle does not let you
+    file it into someone else's case. New cases (just created here, owned by the
+    user) and the _TRIAGE pseudo-case are always allowed.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        return  # nonexistent target — let the downstream FK handling deal with it
+    from app.services import access_service
+
+    if not access_service.can_edit_case(db, request.state.current_user, case):
+        raise HTTPException(status_code=403, detail="You cannot assign to that case")
+
+
 @router.post("/triage/document/{doc_id}/confirm")
 @limiter.limit("30/minute")
 async def confirm_document(
@@ -73,6 +106,7 @@ async def confirm_document(
     from app.models.enums import DocumentType, SignificanceTier
 
     resolved_case_id = case_id if case_id else None
+    _require_editable_target(db, resolved_case_id, request)
 
     pre_confirm_doc = db.query(Document).filter(Document.id == doc_id).first()
     pre_confirm_case_id = pre_confirm_doc.case_id if pre_confirm_doc else None
@@ -166,8 +200,10 @@ async def confirm_document(
     # Targeted OOB: update only the affected card + bundle footer + badge.
     targeted_oob = render_row_targeted_oob(request, doc, db)
     # Global OOB: sidebar badges + status bar
-    global_oob = render_sidebar_badges_oob(db)
-    global_oob += render_triage_header_stats_oob(request, db)
+    global_oob = render_sidebar_badges_oob(db, owner_id=request.state.current_user.id)
+    global_oob += render_triage_header_stats_oob(
+        request, db, owner_id=request.state.current_user.id
+    )
 
     response.body += (targeted_oob + global_oob).encode("utf-8")
 
@@ -229,12 +265,15 @@ async def confirm(
             internal_id=new_case_id,
             batch_subject=batch_subj,
             is_draft=False,
+            owner_id=request.state.current_user.id,
         )
         db.flush()
         case_id = new_case_obj.id
 
     if not case_id:
         raise HTTPException(status_code=422, detail="case_id is required")
+
+    _require_editable_target(db, case_id, request)
 
     parsed_proceeding_id = None
     if proceeding_id:
@@ -304,7 +343,7 @@ async def confirm(
             reset_and_reenrich(db, pre_triage_docs)
 
     # ---- build targeted OOB response (no full feed replacement) ----
-    bundles = get_triage_bundles(db)
+    bundles = get_triage_bundles(db, owner_id=request.state.current_user.id)
     updated_bundle = next((b for b in bundles if b.key == bundle_key), None)
 
     oob_parts: list[str] = []
@@ -347,8 +386,14 @@ async def confirm(
             trigger["triage:clear"] = {}
 
     # Global OOB: sidebar badges + status bar
-    oob_parts.append(render_sidebar_badges_oob(db))
-    oob_parts.append(render_triage_header_stats_oob(request, db))
+    oob_parts.append(
+        render_sidebar_badges_oob(db, owner_id=request.state.current_user.id)
+    )
+    oob_parts.append(
+        render_triage_header_stats_oob(
+            request, db, owner_id=request.state.current_user.id
+        )
+    )
 
     # Surface destination so the page can show a clickable toast.
     if case_id and case_id != "_TRIAGE":
@@ -404,6 +449,9 @@ async def batch_confirm(
         if batch_id is None and doc_id is None:
             skipped_count += 1
             continue
+        if not _key_owned_by(db, batch_id, doc_id, request.state.current_user.id):
+            skipped_count += 1
+            continue
 
         case_id, proceeding_id = get_bundle_suggestion(
             db, batch_id=batch_id, doc_id=doc_id
@@ -449,7 +497,9 @@ async def batch_confirm(
         confirmed_keys.append(key)
         confirmed_count += 1
 
-    oob_html = render_batch_oob(request, bundle_keys, db)
+    oob_html = render_batch_oob(
+        request, bundle_keys, db, owner_id=request.state.current_user.id
+    )
     trigger = {
         "triage:batch-confirmed": {
             "confirmed": confirmed_count,
@@ -486,12 +536,15 @@ async def batch_assign(
             internal_id=new_case_id,
             batch_subject=new_case_title or None,
             is_draft=False,
+            owner_id=request.state.current_user.id,
         )
         db.flush()
         case_id = new_case_obj.id
 
     if not case_id:
         raise HTTPException(status_code=422, detail="case_id is required")
+
+    _require_editable_target(db, case_id, request)
 
     parsed_proceeding_id: int | None = None
     if proceeding_id:
@@ -507,6 +560,8 @@ async def batch_assign(
     for key in bundle_keys:
         batch_id, doc_id = _parse_bundle_key(key)
         if batch_id is None and doc_id is None:
+            continue
+        if not _key_owned_by(db, batch_id, doc_id, request.state.current_user.id):
             continue
 
         if batch_id:
@@ -555,7 +610,9 @@ async def batch_assign(
         assigned_count += 1
 
     case_obj = db.query(Case).filter(Case.id == case_id).first()
-    oob_html = render_batch_oob(request, bundle_keys, db)
+    oob_html = render_batch_oob(
+        request, bundle_keys, db, owner_id=request.state.current_user.id
+    )
     trigger = {
         "triage:batch-assigned": {
             "count": assigned_count,

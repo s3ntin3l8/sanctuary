@@ -276,7 +276,7 @@ def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b
 
 
 @pytest.mark.unit
-def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a):
+def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a, sample_user):
     from app.services.claim_service import ClaimService
 
     claim = _make_claim(
@@ -288,6 +288,7 @@ def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a):
         document_id=doc_a.id,
         reaction=UserReactionType.LIES,
         notes="I dispute this",
+        user_id=sample_user.id,
     )
     db_session.add(reaction)
     db_session.commit()

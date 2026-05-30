@@ -11,10 +11,16 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -225,11 +231,24 @@ async def lifespan(app: FastAPI):
         yield
         return
 
+    from app.config import AUTH_ENABLED as _AUTH_ENABLED
     from app.config import HOST as _HOST
 
     _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
     _is_loopback = _HOST in _LOOPBACK_HOSTS
     _is_default_secret = _session_secret() == b"dev-session-key"
+
+    # With authentication on, the signed session cookie carries the user's
+    # identity. A default (publicly-known) secret means anyone can forge a
+    # cookie claiming uid=admin — so require a real secret unconditionally,
+    # even on loopback / in DEBUG.
+    if _AUTH_ENABLED and _is_default_secret:
+        raise RuntimeError(
+            "SESSION_SECRET is unset while AUTH_ENABLED=true. A default secret "
+            "lets anyone forge an admin session cookie. Set SESSION_SECRET in .env "
+            "(generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'), "
+            "or set AUTH_ENABLED=false for single-user dev mode."
+        )
 
     if not DEBUG and _is_default_secret:
         raise RuntimeError(
@@ -238,19 +257,17 @@ async def lifespan(app: FastAPI):
             "(generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))')."
         )
 
-    # The app has no auth — any non-loopback bind exposes every mutation
-    # endpoint to anyone on the network. Refuse to start with a default
-    # SESSION_SECRET on a non-loopback HOST, even in DEBUG mode.
+    # Even with auth disabled, a non-loopback bind on a default secret exposes
+    # every endpoint to the network. Refuse to start.
     if not _is_loopback and _is_default_secret:
         raise RuntimeError(
             f"HOST={_HOST!r} is not loopback and SESSION_SECRET is unset. "
-            "This app has no authentication — non-loopback binds expose every "
-            "endpoint. Either set HOST=127.0.0.1 or set SESSION_SECRET in .env."
+            "Either set HOST=127.0.0.1 or set SESSION_SECRET in .env."
         )
 
-    if not _is_loopback:
+    if not _is_loopback and not _AUTH_ENABLED:
         logging.getLogger(__name__).warning(
-            "HOST=%s is not loopback. This app has no authentication; "
+            "HOST=%s is not loopback and AUTH_ENABLED=false; "
             "anyone reachable at that address can read and mutate case data.",
             _HOST,
         )
@@ -274,6 +291,30 @@ async def lifespan(app: FastAPI):
 
     with SessionLocal() as seed_db:
         seed_triage_case(seed_db)
+
+    # Seed the bootstrap admin so there is always a current_user in dev mode
+    # (AUTH_ENABLED=false) and so a configured BOOTSTRAP_ADMIN_EMAIL exists on a
+    # fresh DB. When auth is on and no admin email is configured, skip — the
+    # first-run create-admin screen handles that instead. Idempotent.
+    from app.config import AUTH_ENABLED, BOOTSTRAP_ADMIN_EMAIL
+
+    if not AUTH_ENABLED or BOOTSTRAP_ADMIN_EMAIL:
+        from app.services import auth_service
+
+        with SessionLocal() as admin_db:
+            auth_service.get_or_create_bootstrap_admin(admin_db)
+            admin_db.commit()
+
+    # Reconcile per-user scan-ingest subfolders (incoming/<username>/) and
+    # backfill any missing usernames for existing accounts.
+    from app.models.database import User as _User
+    from app.services import auth_service as _auth_service
+
+    with SessionLocal() as folder_db:
+        for _u in folder_db.query(_User).all():
+            _auth_service.ensure_username(folder_db, _u)
+            _auth_service.ensure_user_scan_dir(_u)
+        folder_db.commit()
 
     # Reset any pipeline stages that were left in RUNNING state by a prior crash.
     from app.services.pipeline_status import (
@@ -463,6 +504,86 @@ class SignedCookieSessionMiddleware:
         await self.app(scope, receive, send_wrapper)
 
 
+# Public paths reachable without authentication. Everything else is default-deny
+# (fail-closed). Prefixes cover static assets and the Phase-2 OIDC routes.
+_PUBLIC_EXACT_PATHS = {"/health", "/favicon.ico", "/login", "/signup", "/logout"}
+_PUBLIC_PATH_PREFIXES = ("/static", "/auth/")
+
+
+def _is_public_path(path: str) -> bool:
+    return path in _PUBLIC_EXACT_PATHS or any(
+        path.startswith(p) for p in _PUBLIC_PATH_PREFIXES
+    )
+
+
+def _unauthenticated_response(request: Request) -> Response:
+    """Branch the unauthenticated response by request kind.
+
+    HTMX → 401 + HX-Redirect (client-side nav). API/JSON → 401 JSON.
+    Plain HTML navigation → 303 redirect to /login?next=<original>.
+    """
+    if request.headers.get("HX-Request") == "true":
+        return Response(status_code=401, headers={"HX-Redirect": "/login"})
+    accept = request.headers.get("accept", "")
+    if request.url.path.startswith("/api/") or "application/json" in accept:
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    target = request.url.path
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(f"/login?next={quote(target, safe='')}", status_code=303)
+
+
+class AuthGateMiddleware:
+    """Fail-closed authentication gate.
+
+    Reads the signed session cookie directly (order-independent of the session
+    middleware), resolves the user, and either passes the request through with
+    ``request.state.auth_user_id`` set, or returns an unauthenticated response.
+    When AUTH_ENABLED is false, binds the bootstrap admin so downstream code
+    always has a current user.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+        from app.config import AUTH_ENABLED
+
+        # Dev mode: no gating. The current user is bound lazily downstream
+        # (get_current_user / render_page) on the request-scoped session, so the
+        # gate never touches a database here (keeps it engine-agnostic for tests).
+        if not AUTH_ENABLED:
+            await self.app(scope, receive, send)
+            return
+
+        if request.method == "OPTIONS" or _is_public_path(request.url.path):
+            await self.app(scope, receive, send)
+            return
+
+        from app.dependencies import SessionLocal
+        from app.services import auth_service
+
+        session = _load_session_cookie(request.cookies.get(_SESSION_COOKIE))
+        db = SessionLocal()
+        try:
+            user = auth_service.resolve_session_user(db, session)
+            uid = user.id if user else None
+        finally:
+            db.close()
+
+        if uid is None:
+            await _unauthenticated_response(request)(scope, receive, send)
+            return
+
+        scope.setdefault("state", {})["auth_user_id"] = uid
+        await self.app(scope, receive, send)
+
+
 # --- FastAPI App ---
 app = FastAPI(
     title="The Sanctuary",
@@ -489,6 +610,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.middleware("http")(add_request_id)
 app.add_middleware(OriginGuardMiddleware)
+app.add_middleware(AuthGateMiddleware)
 
 # Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -833,9 +955,14 @@ from app.api import (
     search,
     triage_router,
 )
+from app.api.admin_users import router as admin_users_router
+from app.api.auth import router as auth_router
+from app.api.auth_oidc import router as auth_oidc_router
+from app.api.case_sharing import router as case_sharing_router
 from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
 from app.api.export import router as export_router
+from app.api.settings_account import router as settings_account_router
 from app.api.settings_ai_config import router as settings_ai_router
 from app.api.settings_appearance import router as settings_appearance_router
 from app.api.settings_maintenance import router as settings_maintenance_router
@@ -844,12 +971,24 @@ from app.api.settings_parties import router as settings_parties_router
 from app.api.slicing import router as slicing_router
 from app.api.user_settings import router as user_settings_router
 
+app.include_router(auth_router)
+app.include_router(auth_oidc_router)
+app.include_router(admin_users_router)
+app.include_router(case_sharing_router)
+app.include_router(settings_account_router)
 app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(home_router)
-app.include_router(triage_router)
-app.include_router(slicing_router)
+# Triage is the per-user intake inbox: each user sees and acts on only the
+# documents/batches they ingested. The feed reads are owner-filtered; this
+# router-level guard 404s any by-id mutation targeting another user's object.
+from app.api.triage.ownership import require_triage_object_owner
+
+app.include_router(triage_router, dependencies=[Depends(require_triage_object_owner)])
+# Slicing acts on a batch_id (multi-page scan review) — same per-user ownership
+# guard so a user can't drive slicing on another user's batch.
+app.include_router(slicing_router, dependencies=[Depends(require_triage_object_owner)])
 app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)

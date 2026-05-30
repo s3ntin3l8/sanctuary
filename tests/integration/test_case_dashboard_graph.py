@@ -132,7 +132,12 @@ class TestCaseDashboardGraph:
         # Expire the session so we read the latest UserSettings row written by
         # the request handler's own session.
         db_session.expire_all()
-        assert get_active_proceeding(graph_case.id, db_session) == graph_proceeding.id
+        from app.services import auth_service
+
+        uid = auth_service.get_or_create_bootstrap_admin(db_session).id
+        assert (
+            get_active_proceeding(graph_case.id, db_session, uid) == graph_proceeding.id
+        )
 
     @pytest.mark.integration
     def test_document_hud_route(
@@ -199,4 +204,9 @@ class TestUserSettingsDashboard:
         assert response.status_code == 204
 
         db_session.expire_all()
-        assert get_active_proceeding(graph_case.id, db_session) == graph_proceeding.id
+        from app.services import auth_service
+
+        uid = auth_service.get_or_create_bootstrap_admin(db_session).id
+        assert (
+            get_active_proceeding(graph_case.id, db_session, uid) == graph_proceeding.id
+        )

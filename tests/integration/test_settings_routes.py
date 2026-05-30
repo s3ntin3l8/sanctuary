@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import AuditLog, UserSettings
+from app.models.database import AppSettings, AuditLog, UserSettings
 from app.models.enums import AuditEventType
 
 client = TestClient(app)
@@ -71,7 +71,7 @@ def test_appearance_save_timezone_valid(db_session):
     assert response.status_code == 204
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).first()
+    settings = db_session.query(AppSettings).first()
     assert settings is not None
     assert settings.settings_json.get("timezone") == "Europe/Berlin"
 
@@ -128,7 +128,7 @@ def test_parties_set_identity(db_session):
     assert response.status_code == 204
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).first()
+    settings = db_session.query(AppSettings).first()
     assert settings is not None
     identity = settings.settings_json.get("party_identity", {})
     assert identity.get("own_self") == "Alice Müller"
@@ -144,7 +144,7 @@ def test_parties_set_identity_empty(db_session):
     assert response.status_code == 204
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).first()
+    settings = db_session.query(AppSettings).first()
     assert settings is not None
     identity = settings.settings_json.get("party_identity", {})
     assert identity.get("own_self") == ""
@@ -171,9 +171,11 @@ def test_ingestion_update_settings(db_session):
     assert response.status_code in (303, 302, 200)
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).filter_by(user_id="single_user").first()
-    assert settings is not None
-    s_json = settings.settings_json
+    # Gmail is per-user now: it lands in the (dev-mode) bootstrap admin's settings.
+    from app.services import auth_service
+
+    admin = auth_service.get_or_create_bootstrap_admin(db_session)
+    s_json = auth_service.ensure_user_settings(db_session, admin).settings_json
     assert "sender@example.com" in s_json.get("gmail_allowlist", [])
     assert s_json.get("gmail_label_filter") == "INBOX"
 
@@ -189,9 +191,11 @@ def test_ingestion_update_settings_empty_allowlist(db_session):
     assert response.status_code in (303, 302, 200)
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).filter_by(user_id="single_user").first()
-    assert settings is not None
-    assert settings.settings_json.get("gmail_allowlist") == []
+    from app.services import auth_service
+
+    admin = auth_service.get_or_create_bootstrap_admin(db_session)
+    s_json = auth_service.ensure_user_settings(db_session, admin).settings_json
+    assert s_json.get("gmail_allowlist") == []
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +214,7 @@ def test_ai_config_save_user_context(db_session):
     assert "saved" in response.text.lower() or "Context" in response.text
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).first()
+    settings = db_session.query(AppSettings).first()
     assert settings is not None
     ai = settings.settings_json.get("ai", {})
     assert ai.get("user_context") == "Always respond in German."
@@ -235,7 +239,7 @@ def test_ai_config_create_instance(db_session):
     assert response.status_code == 200
 
     db_session.expire_all()
-    settings = db_session.query(UserSettings).first()
+    settings = db_session.query(AppSettings).first()
     assert settings is not None
     instances = settings.settings_json.get("ai", {}).get("instances", [])
     labels = [i.get("label") for i in instances]
@@ -277,10 +281,10 @@ def test_ai_config_set_active_missing_instance():
 
 @pytest.mark.integration
 def test_settings_page_redirects():
-    """GET /settings redirects to /settings/gmail."""
+    """GET /settings redirects to the first settings tab (Account)."""
     response = client.get("/settings", follow_redirects=False)
     assert response.status_code in (301, 302, 303)
-    assert "gmail" in response.headers.get("location", "")
+    assert "account" in response.headers.get("location", "")
 
 
 @pytest.mark.integration

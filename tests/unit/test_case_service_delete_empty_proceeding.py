@@ -56,14 +56,14 @@ def _make_proceeding(db, case_id, name="AG München"):
 
 
 @pytest.mark.unit
-def test_delete_empty_proceeding_succeeds(db_session):
+def test_delete_empty_proceeding_succeeds(db_session, sample_user):
     case = _make_case(db_session)
     p1 = _make_proceeding(db_session, case.id, "AG München")
     p2 = _make_proceeding(db_session, case.id, "LG München")
 
     from app.services.case_service import CaseService
 
-    result = CaseService(db_session).delete_empty_proceeding(p2.id)
+    result = CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
 
     assert result["case_id"] == case.id
     assert result["was_active"] is False
@@ -74,7 +74,7 @@ def test_delete_empty_proceeding_succeeds(db_session):
 
 
 @pytest.mark.unit
-def test_delete_proceeding_with_document_raises(db_session):
+def test_delete_proceeding_with_document_raises(db_session, sample_user):
     case = _make_case(db_session)
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
@@ -86,14 +86,14 @@ def test_delete_proceeding_with_document_raises(db_session):
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="attached records"):
-        CaseService(db_session).delete_empty_proceeding(p2.id)
+        CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
 
     db_session.expire_all()
     assert db_session.get(Proceeding, p2.id) is not None
 
 
 @pytest.mark.unit
-def test_delete_proceeding_with_ingest_batch_raises(db_session):
+def test_delete_proceeding_with_ingest_batch_raises(db_session, sample_user):
     case = _make_case(db_session)
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
@@ -109,11 +109,11 @@ def test_delete_proceeding_with_ingest_batch_raises(db_session):
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="attached records"):
-        CaseService(db_session).delete_empty_proceeding(p2.id)
+        CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
 
 
 @pytest.mark.unit
-def test_delete_proceeding_with_action_item_raises(db_session):
+def test_delete_proceeding_with_action_item_raises(db_session, sample_user):
     case = _make_case(db_session)
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
@@ -131,11 +131,11 @@ def test_delete_proceeding_with_action_item_raises(db_session):
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="attached records"):
-        CaseService(db_session).delete_empty_proceeding(p2.id)
+        CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
 
 
 @pytest.mark.unit
-def test_delete_proceeding_with_legal_cost_raises(db_session):
+def test_delete_proceeding_with_legal_cost_raises(db_session, sample_user):
     case = _make_case(db_session)
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
@@ -155,43 +155,43 @@ def test_delete_proceeding_with_legal_cost_raises(db_session):
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="attached records"):
-        CaseService(db_session).delete_empty_proceeding(p2.id)
+        CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
 
 
 @pytest.mark.unit
-def test_delete_last_proceeding_raises(db_session):
+def test_delete_last_proceeding_raises(db_session, sample_user):
     case = _make_case(db_session)
     p = _make_proceeding(db_session, case.id, "AG")
 
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="only proceeding"):
-        CaseService(db_session).delete_empty_proceeding(p.id)
+        CaseService(db_session).delete_empty_proceeding(p.id, sample_user.id)
 
     db_session.expire_all()
     assert db_session.get(Proceeding, p.id) is not None
 
 
 @pytest.mark.unit
-def test_delete_nonexistent_proceeding_raises(db_session):
+def test_delete_nonexistent_proceeding_raises(db_session, sample_user):
     from app.services.case_service import CaseService
 
     with pytest.raises(ValueError, match="not found"):
-        CaseService(db_session).delete_empty_proceeding(999999)
+        CaseService(db_session).delete_empty_proceeding(999999, sample_user.id)
 
 
 @pytest.mark.unit
-def test_delete_active_proceeding_reports_was_active(db_session):
+def test_delete_active_proceeding_reports_was_active(db_session, sample_user):
     case = _make_case(db_session)
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
 
     from app.services.user_settings_service import set_active_proceeding
 
-    set_active_proceeding(case.id, p2.id, db_session)
+    set_active_proceeding(case.id, p2.id, db_session, sample_user.id)
     db_session.commit()
 
     from app.services.case_service import CaseService
 
-    result = CaseService(db_session).delete_empty_proceeding(p2.id)
+    result = CaseService(db_session).delete_empty_proceeding(p2.id, sample_user.id)
     assert result["was_active"] is True

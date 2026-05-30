@@ -21,6 +21,21 @@ from app.tasks.dispatch import dispatch_task
 logger = logging.getLogger(__name__)
 
 
+def _resolve_owner_id(db: Session, owner_id: int | None) -> int | None:
+    """Ingestion must never produce an unowned row. When the caller can't supply
+    an owner (e.g. a legacy/root scan-folder file), fall back to the bootstrap
+    admin so the document lands in *someone's* triage inbox."""
+    if owner_id is not None:
+        return owner_id
+    try:
+        from app.services import auth_service
+
+        admin = auth_service.get_or_create_bootstrap_admin(db)
+        return admin.id
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
 def _sanitize_filename(name: str) -> str:
     """Sanitize filename while preserving Unicode characters (e.g. German umlauts)."""
     if not name:
@@ -83,7 +98,9 @@ def ingest_raw_email(
     db: Session,
     raw_bytes: bytes,
     source_type: IngestBatchSourceType = IngestBatchSourceType.EMAIL,
+    owner_id: int | None = None,
 ) -> IngestBatch | None:
+    owner_id = _resolve_owner_id(db, owner_id)
     parsed = parse_rfc822(raw_bytes)
     msg_id = parsed["message_id"]
     sender = parsed["sender"] or "unknown"
@@ -149,6 +166,7 @@ def ingest_raw_email(
 
     batch = batch_repo.create_batch(
         source_type=source_type,
+        owner_id=owner_id,
         subject=subject[:255],
         sender_email=sender[:255] if sender != "unknown" else None,
         received_at=received_date,
@@ -206,6 +224,7 @@ def ingest_raw_email(
         _subject_internal_id = extract_internal_id_from_subject(subject)
         doc = Document(
             title=subject,
+            owner_id=owner_id,
             file_path=str(body_path),
             original_filename=f"email_body_{batch.id}.txt",
             content_hash=body_hash,
@@ -264,6 +283,7 @@ def ingest_raw_email(
 
         doc = Document(
             title=att["filename"],
+            owner_id=owner_id,
             file_path=str(att_path),
             original_filename=att["filename"],
             content_hash=att_hash,
@@ -320,12 +340,14 @@ def ingest_scanned_file(
     pdf_path: Path,
     batch_id: str,
     source_hash: str,
+    owner_id: int | None = None,
 ) -> IngestBatch | None:
     """Ingest a single scanned PDF from the scan folder.
 
     Returns None when the file is a duplicate (already ingested).
     Returns the created IngestBatch otherwise.
     """
+    owner_id = _resolve_owner_id(db, owner_id)
     batch_repo = IngestBatchRepository(db)
 
     existing = batch_repo.get_by_source_hash(source_hash)
@@ -335,6 +357,7 @@ def ingest_scanned_file(
 
     batch = batch_repo.create_batch(
         source_type=IngestBatchSourceType.SCAN,
+        owner_id=owner_id,
         subject=pdf_path.name[:255],
         raw_source_path=str(pdf_path),
     )
@@ -356,6 +379,7 @@ def ingest_scanned_file(
         content_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         doc = Document(
             title=pdf_path.name,
+            owner_id=owner_id,
             file_path=str(pdf_path),
             original_filename=pdf_path.name,
             content_hash=content_hash,

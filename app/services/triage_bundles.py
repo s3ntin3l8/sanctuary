@@ -217,7 +217,7 @@ def _bundle_pipeline_label(bundle: BundleView) -> str:
 
 
 def _build_bundles(
-    db: Session, include_sub_groups: bool = True
+    db: Session, include_sub_groups: bool = True, owner_id: int | None = None
 ) -> dict[str, BundleView]:
     """Shared bundle-construction logic for feed reads.
 
@@ -238,10 +238,16 @@ def _build_bundles(
         )
         options.append(joinedload(Document.sub_group))
 
+    query = db.query(Document).outerjoin(
+        IngestBatch, Document.ingest_batch_id == IngestBatch.id
+    )
+    if owner_id is not None:
+        # Per-user triage: a user sees only documents they ingested. (Triage docs
+        # have no case yet, so this is the right visibility lane — see the
+        # Document.owner_id invariant.)
+        query = query.filter(Document.owner_id == owner_id)
     docs = (
-        db.query(Document)
-        .outerjoin(IngestBatch, Document.ingest_batch_id == IngestBatch.id)
-        .options(*options)
+        query.options(*options)
         .filter(
             Document.status != DocumentStatus.DISMISSED,
             or_(
@@ -326,6 +332,7 @@ def get_triage_bundles(
     proceeding_ids: list[str] | None = None,
     pipeline_filters: list[str] | None = None,
     enrich: bool = True,
+    owner_id: int | None = None,
 ) -> list[BundleView]:
     """All triage documents grouped into bundles.
 
@@ -333,8 +340,11 @@ def get_triage_bundles(
     edges, or resolved suggested-case metadata — only fields populated by
     `_build_bundles` (subject, documents, confirmed/suggested ids).
     Useful for header-stat callers that only need pipeline counts.
+
+    ``owner_id`` restricts the feed to one user's ingested documents (the
+    per-user triage inbox). None = unrestricted.
     """
-    bundles = _build_bundles(db, include_sub_groups=True)
+    bundles = _build_bundles(db, include_sub_groups=True, owner_id=owner_id)
 
     _STATUS_ORDER = {
         "stuck": 0,
@@ -390,7 +400,7 @@ def get_triage_bundles(
     return visible
 
 
-def get_triage_filter_options(db: Session) -> dict:
+def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     """Return filter option lists derived from the live triage queue.
 
     Returns a dict with keys:
@@ -400,7 +410,7 @@ def get_triage_filter_options(db: Session) -> dict:
                           present in the queue, in canonical display order
     Only options that have at least one matching bundle are included.
     """
-    bundles = _build_bundles(db, include_sub_groups=False)
+    bundles = _build_bundles(db, include_sub_groups=False, owner_id=owner_id)
 
     case_ids: dict[str, str] = {}
     proceeding_opts: dict[int, str] = {}
@@ -572,14 +582,14 @@ def enrich_bundle(db: Session, bundle: BundleView) -> None:
     enrich_bundles(db, [bundle])
 
 
-def get_slicing_queue(db: Session) -> list:
-    """Batches awaiting document slicing review."""
-    return (
-        db.query(IngestBatch)
-        .filter(IngestBatch.status == IngestBatchStatus.AWAITING_SLICING)
-        .order_by(IngestBatch.received_at.desc())
-        .all()
+def get_slicing_queue(db: Session, owner_id: int | None = None) -> list:
+    """Batches awaiting document slicing review (per-user when owner_id given)."""
+    query = db.query(IngestBatch).filter(
+        IngestBatch.status == IngestBatchStatus.AWAITING_SLICING
     )
+    if owner_id is not None:
+        query = query.filter(IngestBatch.owner_id == owner_id)
+    return query.order_by(IngestBatch.received_at.desc()).all()
 
 
 def get_bundle_by_batch_id(db: Session, batch_id: int) -> BundleView | None:

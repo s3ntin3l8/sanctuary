@@ -172,7 +172,7 @@ def test_pdf_is_ingested_from_archived_path(tmp_path):
     (incoming / "doc.pdf").write_bytes(b"%PDF-1.4")
     seen_paths = []
 
-    def fake_ingest(_db, pdf_path, _batch_id, _source_hash):
+    def fake_ingest(_db, pdf_path, _batch_id, _source_hash, owner_id=None):
         seen_paths.append(pdf_path)
         assert pdf_path.exists()
         assert processed in pdf_path.parents

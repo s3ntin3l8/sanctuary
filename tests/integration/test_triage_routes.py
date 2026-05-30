@@ -148,10 +148,11 @@ def test_create_sub_group_returns_200_with_tree_html(app_client, db_session):
 
 
 @pytest.mark.integration
-def test_create_sub_group_missing_batch_raises_integrity_error(app_client, db_session):
-    """create_sub_group with a non-existent batch_id returns 422 (FK constraint)."""
+def test_create_sub_group_missing_batch_404(app_client, db_session):
+    """A non-existent (hence unowned) batch is rejected by the per-user
+    ownership guard with 404 before the route runs."""
     response = app_client.post("/triage/bundle/999998/new-group")
-    assert response.status_code == 422
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -286,12 +287,11 @@ def test_reset_sub_groups_returns_200_with_tree_html(app_client, db_session):
 
 
 @pytest.mark.integration
-def test_reset_sub_groups_missing_batch_returns_gracefully(app_client, db_session):
-    """Missing batch falls back to the 'Bundle not found' HTML (200)."""
+def test_reset_sub_groups_missing_batch_404(app_client, db_session):
+    """A non-existent (hence unowned) batch is rejected by the per-user
+    ownership guard with 404 before the route runs."""
     response = app_client.post("/triage/bundle/999999/reset-groups")
-    # _render_picker returns a 200 with fallback div when bundle is missing.
-    assert response.status_code == 200
-    assert "Bundle not found" in response.text
+    assert response.status_code == 404
 
 
 # ---------------------------------------------------------------------------

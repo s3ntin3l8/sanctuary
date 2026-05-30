@@ -27,11 +27,11 @@ def case_and_doc(db_session):
 
 
 @pytest.mark.unit
-def test_delete_document_removes_pins(db_session, case_and_doc):
+def test_delete_document_removes_pins(db_session, case_and_doc, sample_user):
     """Deleting a document removes its DocumentPin rows."""
     _, doc = case_and_doc
     pin = DocumentPin(
-        document_id=doc.id, passage_id="abc123456789", user_id="single_user"
+        document_id=doc.id, passage_id="abc123456789", user_id=sample_user.id
     )
     db_session.add(pin)
     db_session.commit()
@@ -47,10 +47,12 @@ def test_delete_document_removes_pins(db_session, case_and_doc):
 
 
 @pytest.mark.unit
-def test_delete_document_removes_reactions(db_session, case_and_doc):
+def test_delete_document_removes_reactions(db_session, case_and_doc, sample_user):
     """Deleting a document removes its UserReaction rows."""
     _, doc = case_and_doc
-    reaction = UserReaction(document_id=doc.id, reaction=UserReactionType.LIES)
+    reaction = UserReaction(
+        document_id=doc.id, reaction=UserReactionType.LIES, user_id=sample_user.id
+    )
     db_session.add(reaction)
     db_session.commit()
     reaction_id = reaction.id
@@ -90,14 +92,16 @@ def test_delete_document_removes_claim_evidence(db_session, case_and_doc):
 
 
 @pytest.mark.unit
-def test_delete_document_removes_all_children(db_session, case_and_doc):
+def test_delete_document_removes_all_children(db_session, case_and_doc, sample_user):
     """Deleting a document removes pins, reactions, and claim evidence together."""
     _case, doc = case_and_doc
 
     pin = DocumentPin(
-        document_id=doc.id, passage_id="pid111111111", user_id="single_user"
+        document_id=doc.id, passage_id="pid111111111", user_id=sample_user.id
     )
-    reaction = UserReaction(document_id=doc.id, reaction=UserReactionType.TRUE)
+    reaction = UserReaction(
+        document_id=doc.id, reaction=UserReactionType.TRUE, user_id=sample_user.id
+    )
     db_session.add_all([pin, reaction])
     db_session.flush()
 

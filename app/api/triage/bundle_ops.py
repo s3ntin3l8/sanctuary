@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
+from app.models.database import User
 from app.models.enums import OriginatorType, UserReactionType
 from app.services.triage_bundles import get_bundle_by_batch_id, get_triage_bundles
 from app.services.triage_dismissal import delete_bundle as _delete_bundle
@@ -38,6 +39,7 @@ async def dismiss_bundle(
     batch_id: int | None = None,
     doc_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     success = _dismiss_bundle(db, batch_id=batch_id, doc_id=doc_id)
     if not success:
@@ -49,8 +51,8 @@ async def dismiss_bundle(
     )
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
-    # If triage is now empty, OOB-replace the entire feed with its empty state.
-    bundles = get_triage_bundles(db, limit=1)
+    # If this user's triage is now empty, OOB-replace the feed with its empty state.
+    bundles = get_triage_bundles(db, limit=1, owner_id=user.id)
     if not bundles:
         empty_feed = templates.get_template("partials/triage_feed.html").render(
             bundles=[], as_oob=True
@@ -65,6 +67,7 @@ async def delete_bundle(
     batch_id: int | None = None,
     doc_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     try:
         success = _delete_bundle(db, batch_id=batch_id, doc_id=doc_id)
@@ -78,7 +81,7 @@ async def delete_bundle(
     )
     html = f'<div id="{target_id}" hx-swap-oob="delete"></div>'
 
-    bundles = get_triage_bundles(db, limit=1)
+    bundles = get_triage_bundles(db, limit=1, owner_id=user.id)
     if not bundles:
         empty_feed = templates.get_template("partials/triage_feed.html").render(
             bundles=[], as_oob=True
@@ -95,6 +98,7 @@ async def retry_bundle_pipeline(
     batch_id: int = Form(...),
     full: str = Form("false"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Re-run every AI stage for every doc in the bundle.
 
@@ -136,15 +140,17 @@ async def retry_bundle_pipeline(
     dispatch_batch_retry(items, batch_fallback=batch_fallback, batch_id=batch_id, db=db)
 
     # OOB row update + global badges
-    bundles = get_triage_bundles(db)
+    bundles = get_triage_bundles(db, owner_id=user.id)
     bundle_key = f"batch-{batch_id}"
     updated_bundle = next((b for b in bundles if b.key == bundle_key), None)
 
     oob_parts: list[str] = []
     if updated_bundle:
         oob_parts.append(render_bundle_group_oob(request, updated_bundle, db))
-    oob_parts.append(render_sidebar_badges_oob(db))
-    oob_parts.append(render_triage_header_stats_oob(request, db, bundles=bundles))
+    oob_parts.append(render_sidebar_badges_oob(db, owner_id=user.id))
+    oob_parts.append(
+        render_triage_header_stats_oob(request, db, bundles=bundles, owner_id=user.id)
+    )
 
     trigger = {"triage:bundle-retried": {"batch_id": batch_id, "doc_count": doc_count}}
 
@@ -158,8 +164,9 @@ async def retry_bundle_pipeline(
 async def retry_all_bundles(
     request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    """Retry the AI pipeline for every bundle currently in triage.
+    """Retry the AI pipeline for every bundle in *this user's* triage.
 
     Bundles with an actively running stage are skipped rather than rejected.
     Bundles that can't acquire the write lock after retries are also skipped.
@@ -167,7 +174,7 @@ async def retry_all_bundles(
     from app.models.database import IngestBatch
     from app.services.pipeline_status import retry_on_db_locked
 
-    bundles = get_triage_bundles(db, limit=500, enrich=False)
+    bundles = get_triage_bundles(db, limit=500, enrich=False, owner_id=user.id)
     batch_ids = {b.batch_id for b in bundles if b.batch_id is not None}
 
     batches = db.query(IngestBatch).filter(IngestBatch.id.in_(batch_ids)).all()
@@ -199,9 +206,9 @@ async def retry_all_bundles(
         retried += 1
 
     oob_parts = [
-        render_triage_feed_oob(request, db),
-        render_sidebar_badges_oob(db),
-        render_triage_header_stats_oob(request, db),
+        render_triage_feed_oob(request, db, owner_id=user.id),
+        render_sidebar_badges_oob(db, owner_id=user.id),
+        render_triage_header_stats_oob(request, db, owner_id=user.id),
     ]
 
     bundle_word = "bundle" if retried == 1 else "bundles"

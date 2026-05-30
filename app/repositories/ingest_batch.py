@@ -67,9 +67,11 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
         case_id: str | None = None,
         proceeding_id: int | None = None,
         received_at: datetime | None = None,
+        owner_id: int | None = None,
     ) -> IngestBatch:
         return self.create(
             source_type=source_type,
+            owner_id=owner_id,
             sender_email=sender_email,
             subject=subject,
             raw_source_path=raw_source_path,

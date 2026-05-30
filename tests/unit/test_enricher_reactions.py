@@ -13,7 +13,7 @@ import pytest
 
 
 @pytest.mark.unit
-def test_enricher_prompt_includes_user_reactions(db_session):
+def test_enricher_prompt_includes_user_reactions(db_session, sample_user):
     from app.models.database import Case, Document, IngestBatch, UserReaction
     from app.models.enums import IngestBatchSourceType, UserReactionType
     from app.services.intelligence import document_enricher
@@ -36,6 +36,7 @@ def test_enricher_prompt_includes_user_reactions(db_session):
             document_id=doc.id,
             reaction=UserReactionType.LIES,
             notes="Termin war verlegt — Beleg im Postfach",
+            user_id=sample_user.id,
         )
     )
     db_session.commit()

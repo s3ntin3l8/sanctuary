@@ -11,6 +11,8 @@ def record(
     target_type: str | None = None,
     target_id: str | None = None,
     payload: dict | None = None,
+    actor_user_id: int | None = None,
+    actor_label: str | None = None,
 ) -> None:
     db.add(
         AuditLog(
@@ -18,6 +20,8 @@ def record(
             target_type=target_type,
             target_id=target_id,
             payload=payload,
+            actor_user_id=actor_user_id,
+            actor_label=actor_label,
         )
     )
     db.flush()

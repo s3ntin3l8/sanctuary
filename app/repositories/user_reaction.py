@@ -51,6 +51,8 @@ class UserReactionRepository(BaseRepository[UserReaction]):
         document_id: int,
         reaction: UserReactionType,
         notes: str | None = None,
+        *,
+        user_id: int,
     ) -> UserReaction:
         """Idempotent upsert — creates if absent, updates notes if present."""
         existing = self.find(document_id, reaction)
@@ -63,6 +65,7 @@ class UserReactionRepository(BaseRepository[UserReaction]):
             document_id=document_id,
             reaction=reaction,
             notes=notes,
+            user_id=user_id,
         )
 
     def get_by_document_ids(self, document_ids: list[int]) -> list[UserReaction]:

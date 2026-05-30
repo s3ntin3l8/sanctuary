@@ -1,0 +1,43 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in | The Sanctuary{% endblock %}
+{% block subtitle %}Sign in to continue{% endblock %}
+
+{% block auth_body %}
+<form method="post" action="/login" class="space-y-4">
+    <input type="hidden" name="next" value="{{ next | default('/') }}" />
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="email">Email</label>
+        <input id="email" type="email" name="email" required autofocus autocomplete="username"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+    </div>
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="password">Password</label>
+        <input id="password" type="password" name="password" required autocomplete="current-password"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+    </div>
+    <button type="submit"
+            class="w-full bg-primary text-on-primary font-semibold text-sm rounded-lg px-4 py-2.5 hover:opacity-90 transition-opacity">
+        Sign in
+    </button>
+</form>
+{% if oidc_enabled %}
+<div class="flex items-center gap-3 my-4">
+    <div class="flex-1 h-px bg-outline-variant/30"></div>
+    <span class="text-[10px] uppercase tracking-wider text-on-surface-variant">or</span>
+    <div class="flex-1 h-px bg-outline-variant/30"></div>
+</div>
+<a href="/auth/oidc/login"
+   class="w-full flex items-center justify-center gap-2 bg-surface-container-high text-on-surface font-semibold text-sm rounded-lg px-4 py-2.5 border border-outline-variant/30 hover:border-primary transition-colors">
+    <span class="material-symbols-outlined text-[18px]">key</span>
+    Sign in with {{ oidc_provider_name | default('SSO') }}
+</a>
+{% endif %}
+{% endblock %}
+
+{% block auth_footer %}
+{% if signup_enabled %}
+<p class="text-center text-xs text-on-surface-variant mt-5">
+    No account? <a href="/signup" class="text-primary font-medium hover:underline">Create one</a>
+</p>
+{% endif %}
+{% endblock %}

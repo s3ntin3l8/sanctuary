@@ -12,7 +12,7 @@ from datetime import timedelta
 import pytest
 
 from app.core.timezone import naive_utc_now
-from app.models.database import UserSettings
+from app.models.database import AppSettings
 
 
 def _stale_iso(minutes_ago: int) -> str:
@@ -20,8 +20,8 @@ def _stale_iso(minutes_ago: int) -> str:
 
 
 @pytest.fixture
-def settings_row(db_session) -> UserSettings:
-    row = UserSettings(user_id="single_user", settings_json={})
+def settings_row(db_session) -> AppSettings:
+    row = AppSettings(settings_json={})
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
@@ -104,7 +104,7 @@ def test_recover_pipeline_task_flips_stale_jobs_end_to_end(
     # The task's db.close() in `finally` evicts our settings_row from the
     # session's identity map; re-query rather than refresh.
     db_session.expire_all()
-    row = db_session.query(UserSettings).first()
+    row = db_session.query(AppSettings).first()
     job = row.settings_json["reindex_job"]
     assert job["status"] == "failed"
     assert "stale" in (job.get("error") or "")

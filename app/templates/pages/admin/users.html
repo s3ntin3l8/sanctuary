@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Manage users | The Sanctuary{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col h-full bg-background overflow-hidden">
+    <header class="h-14 min-h-[56px] flex items-center justify-between px-8 border-b border-outline-variant/10 bg-surface-container-low sticky top-0 z-40">
+        <h1 class="text-lg font-black uppercase tracking-tight text-on-surface">Manage Users</h1>
+        <form hx-post="/admin/signup-toggle" hx-swap="none" class="flex items-center gap-2">
+            <span class="text-xs text-on-surface-variant">Self-service signup</span>
+            <button type="submit"
+                    class="text-xs font-bold rounded-full px-3 py-1 {{ 'bg-originator-own/15 text-originator-own' if signup_enabled else 'bg-surface-container-high text-on-surface-variant' }}">
+                {{ 'ON' if signup_enabled else 'OFF' }}
+            </button>
+        </form>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-8 max-w-4xl space-y-8">
+        <!-- Create user -->
+        <section class="bg-surface-container rounded-2xl border border-outline-variant/20 p-5">
+            <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-4">Create user</h2>
+            <form hx-post="/admin/users" hx-swap="none" class="flex flex-wrap items-end gap-3">
+                <div class="flex-1 min-w-[180px]">
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Email</label>
+                    <input type="email" name="email" required
+                           class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+                </div>
+                <div class="min-w-[150px]">
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Password</label>
+                    <input type="password" name="password" required minlength="8"
+                           class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Role</label>
+                    <select name="role" class="mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="bg-primary text-on-primary text-sm font-semibold rounded-lg px-4 py-2 hover:opacity-90 transition-opacity">Create</button>
+            </form>
+        </section>
+
+        <!-- User list -->
+        <section>
+            <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-4">Users ({{ users | length }})</h2>
+            <div class="space-y-2">
+                {% for u in users %}
+                <div class="bg-surface-container rounded-xl border border-outline-variant/20 p-4 flex flex-wrap items-center gap-3">
+                    <div class="flex-1 min-w-[160px]">
+                        <p class="text-sm font-bold text-on-surface">{{ u.display_name or u.email }}</p>
+                        <p class="text-[11px] text-on-surface-variant">{{ u.email }}</p>
+                    </div>
+                    <span class="text-[10px] font-bold rounded-full px-2 py-0.5 {{ 'bg-primary/15 text-primary' if u.role.value == 'admin' else 'bg-surface-container-high text-on-surface-variant' }}">{{ u.role.value }}</span>
+                    <span class="text-[10px] font-bold rounded-full px-2 py-0.5 {{ 'bg-originator-own/15 text-originator-own' if u.is_active else 'bg-error-container/30 text-error' }}">{{ 'active' if u.is_active else 'inactive' }}</span>
+
+                    <div class="flex items-center gap-1.5">
+                        <form hx-post="/admin/users/{{ u.id }}/toggle-active" hx-swap="none">
+                            <button class="text-[11px] px-2 py-1 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-container-highest">{{ 'Deactivate' if u.is_active else 'Activate' }}</button>
+                        </form>
+                        <form hx-post="/admin/users/{{ u.id }}/role" hx-swap="none">
+                            <input type="hidden" name="role" value="{{ 'user' if u.role.value == 'admin' else 'admin' }}">
+                            <button class="text-[11px] px-2 py-1 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-container-highest">Make {{ 'user' if u.role.value == 'admin' else 'admin' }}</button>
+                        </form>
+                        <form hx-post="/admin/users/{{ u.id }}/reset-password" hx-swap="none"
+                              hx-on::after-request="if(event.detail.successful) this.reset()" class="flex items-center gap-1">
+                            <input type="password" name="new_password" placeholder="new pw" minlength="8"
+                                   class="w-24 bg-surface-container-low border border-outline-variant/20 rounded-lg px-2 py-1 text-[11px] text-on-surface focus:border-primary focus:outline-none" />
+                            <button class="text-[11px] px-2 py-1 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-container-highest">Reset</button>
+                        </form>
+                        <form hx-post="/admin/users/{{ u.id }}/delete" hx-swap="none"
+                              hx-confirm="Delete {{ u.email }}? This cannot be undone.">
+                            <button class="text-[11px] px-2 py-1 rounded-lg bg-error-container/20 text-error hover:bg-error-container/40">Delete</button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

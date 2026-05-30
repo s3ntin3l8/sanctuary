@@ -147,6 +147,7 @@ async def slicing_confirm(
 
             doc = Document(
                 title=f"{pdf_path.stem} – Part {slice_idx + 1}",
+                owner_id=batch.owner_id,  # sliced docs inherit the batch's owner
                 file_path=str(slice_filename),
                 original_filename=slice_filename.name,
                 content_hash=content_hash,

@@ -94,7 +94,7 @@ def test_delete_409_processing_batch(app_client, db_session):
     assert db_session.get(IngestBatch, batch.id) is not None
 
 
-def test_delete_parent_with_children_and_fk_refs(app_client, db_session):
+def test_delete_parent_with_children_and_fk_refs(app_client, db_session, sample_user):
     """Regression: a sliced bundle (parent cover-letter + N enclosure children)
     with UserReaction / DocumentPin / DocumentRelationship rows hanging off the
     children must delete cleanly. Previously failed because Document.children
@@ -124,9 +124,17 @@ def test_delete_parent_with_children_and_fk_refs(app_client, db_session):
     # FK guard to fire when the parent's cascade tried to drop the children.
     for child in children:
         db_session.add(
-            UserReaction(document_id=child.id, reaction=UserReactionType.LIES)
+            UserReaction(
+                document_id=child.id,
+                reaction=UserReactionType.LIES,
+                user_id=sample_user.id,
+            )
         )
-        db_session.add(DocumentPin(document_id=child.id, passage_id="p1", note="x"))
+        db_session.add(
+            DocumentPin(
+                document_id=child.id, passage_id="p1", note="x", user_id=sample_user.id
+            )
+        )
     db_session.add(
         DocumentRelationship(
             from_document_id=children[0].id,
