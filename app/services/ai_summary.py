@@ -477,6 +477,9 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 batch_subject=batch_subject,
                 ai_case_title=ai_case_title,
                 is_draft=True,
+                # AI-auto-created draft cases are owned by whoever ingested the
+                # document (so they appear in that user's case directory).
+                owner_id=doc.owner_id,
             )
             db.flush()
             doc.case_id = draft_case.id

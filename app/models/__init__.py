@@ -1,7 +1,9 @@
 from app.models.database import (
     ActionItem,
+    AppSettings,
     Base,
     Case,
+    CaseShare,
     CaseStatus,
     Claim,
     ClaimEvidence,
@@ -17,11 +19,14 @@ from app.models.database import (
     LegalCost,
     OriginatorType,
     Proceeding,
+    User,
     UserReaction,
+    UserSettings,
 )
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    CaseAccessLevel,
     ClaimEvidenceRole,
     ClaimStatus,
     ClaimType,
@@ -39,14 +44,18 @@ from app.models.enums import (
     SignificanceTier,
     StageStatus,
     UserReactionType,
+    UserRole,
 )
 
 __all__ = [
     "ActionItem",
     "ActionItemStatus",
     "ActionItemType",
+    "AppSettings",
     "Base",
     "Case",
+    "CaseAccessLevel",
+    "CaseShare",
     "CaseStatus",
     "Claim",
     "ClaimEvidence",
@@ -78,6 +87,9 @@ __all__ = [
     "RelationshipConfidence",
     "RelationshipType",
     "SignificanceTier",
+    "User",
     "UserReaction",
     "UserReactionType",
+    "UserRole",
+    "UserSettings",
 ]

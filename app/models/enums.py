@@ -1,6 +1,20 @@
 import enum
 
 
+class UserRole(enum.StrEnum):
+    """Account role. Admins manage users, signup, and password resets."""
+
+    ADMIN = "admin"
+    USER = "user"
+
+
+class CaseAccessLevel(enum.StrEnum):
+    """Permission a CaseShare grants a non-owner user (Phase 3 sharing)."""
+
+    VIEWER = "viewer"  # read-only
+    EDITOR = "editor"  # may mutate case data
+
+
 class CaseStatus(enum.StrEnum):
     INTAKE = "intake"
     DISCOVERY = "discovery"

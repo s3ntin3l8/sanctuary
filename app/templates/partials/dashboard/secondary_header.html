@@ -11,6 +11,15 @@
     <span style="color:var(--color-on-surface-variant);">{{ case.title | truncate(40, true) }}</span>
   </nav>
 
+  {% if current_user and (current_user.role.value == 'admin' or case.owner_id == current_user.id) %}
+  <a href="/cases/{{ case.id }}/sharing"
+     class="flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-semibold uppercase tracking-wider transition-colors hover:bg-surface-high"
+     style="border-color:var(--color-outline-variant); color:var(--color-on-surface-variant); text-decoration:none;"
+     title="Manage sharing">
+    <span class="material-symbols-outlined" style="font-size:13px;">share</span> share
+  </a>
+  {% endif %}
+
   <div class="ml-auto flex items-center gap-4 text-[11px]" style="color:var(--color-on-surface-variant);">
     {# Filter — significance #}
     <span class="flex items-center gap-1.5">

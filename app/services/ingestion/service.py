@@ -85,11 +85,11 @@ def create_manual_upload_batch(
     db: Session,
     filenames: list[str],
     case_id: str | None = None,
+    owner_id: int | None = None,
 ) -> int:
     """Create an IngestBatch row for one upload action.
 
     A single user upload = one batch, even if it contains multiple files.
-    Email/scan batches come later (Phase 3).
     """
     subject = (
         filenames[0]
@@ -101,6 +101,7 @@ def create_manual_upload_batch(
         source_type=IngestBatchSourceType.MANUAL,
         subject=subject,
         case_id=case_id,
+        owner_id=owner_id,
     )
     batch.status = IngestBatchStatus.PROCESSING
     db.flush()
@@ -401,6 +402,7 @@ def _create_document(
     content: str | None = None,
     markdown_content: str | None = None,
     conversion_metadata: dict | None = None,
+    owner_id: int | None = None,
 ) -> Document:
     """Shared Document creation logic - reduces duplication between skip_processing paths."""
     from app.services.pipeline_status import initialize as _pipeline_init
@@ -412,6 +414,7 @@ def _create_document(
 
     new_doc = Document(
         title=extracted_title if extracted_title != safe_filename else safe_filename,
+        owner_id=owner_id,
         content=content or markdown_content,
         case_id=case_id,
         file_path=file_path,
@@ -444,6 +447,7 @@ async def ingest_file(
     parent_id: int = None,
     skip_processing: bool = False,
     ingest_batch_id: int | None = None,
+    owner_id: int | None = None,
 ) -> Document:
     """Save uploaded file, optionally process it."""
     file_path: str | None = None
@@ -555,6 +559,7 @@ async def ingest_file(
                 ingest_batch_id=ingest_batch_id,
                 original_filename=file.filename,
                 content=None,
+                owner_id=owner_id,
             )
             db.add(new_doc)
             db.flush()
@@ -598,6 +603,7 @@ async def ingest_file(
             original_filename=file.filename,
             markdown_content=markdown_content,
             conversion_metadata=conversion_metadata,
+            owner_id=owner_id,
         )
         _apply_script_extractors(new_doc, markdown_content or "", db)
         db.add(new_doc)

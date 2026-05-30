@@ -123,3 +123,7 @@ celery==5.6.3
 redis==7.4.0
 google-auth-oauthlib==1.2.0
 google-api-python-client==2.118.0
+pwdlib==0.3.0
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
+authlib==1.7.2

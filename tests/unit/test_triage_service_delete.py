@@ -39,15 +39,26 @@ def _make_batch_with_docs(db_session, doc_count=2, *, raw_source_path=None):
 
 
 @pytest.mark.unit
-def test_delete_batch_removes_all_rows(db_session):
+def test_delete_batch_removes_all_rows(db_session, sample_user):
     batch, docs = _make_batch_with_docs(db_session, doc_count=2)
     doc_ids = [d.id for d in docs]
     batch_id = batch.id
 
     # Per-doc dependents
-    db_session.add(UserReaction(document_id=docs[0].id, reaction=UserReactionType.TRUE))
     db_session.add(
-        DocumentPin(document_id=docs[0].id, passage_id="abc123", note="my pin")
+        UserReaction(
+            document_id=docs[0].id,
+            reaction=UserReactionType.TRUE,
+            user_id=sample_user.id,
+        )
+    )
+    db_session.add(
+        DocumentPin(
+            document_id=docs[0].id,
+            passage_id="abc123",
+            note="my pin",
+            user_id=sample_user.id,
+        )
     )
     # ActionItem on second doc
     db_session.add(

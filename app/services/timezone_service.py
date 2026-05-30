@@ -37,14 +37,14 @@ def _validated_zone(name: str) -> ZoneInfo:
 
 
 def _read_from_db() -> str | None:
-    """Return the timezone string stored in UserSettings, or None."""
+    """Return the timezone string stored in AppSettings, or None."""
     try:
         from app.config import SessionLocal
-        from app.models.database import UserSettings
+        from app.models.database import AppSettings
 
         db = SessionLocal()
         try:
-            settings = db.query(UserSettings).first()
+            settings = db.query(AppSettings).first()
             if settings and settings.settings_json:
                 return settings.settings_json.get("timezone")
         finally:
@@ -89,10 +89,10 @@ def set_timezone(tz: str, db) -> None:
     """Validate, persist and apply a new timezone."""
     if tz != "UTC" and tz not in available_timezones():
         raise ValueError(f"Unknown timezone: {tz!r}")
-    from app.services.user_settings_service import _get_or_create
+    from app.services.app_settings_service import _get_or_create
 
     settings = _get_or_create(db)
-    data = dict(settings.settings_json)
+    data = dict(settings.settings_json or {})
     data["timezone"] = tz
     settings.settings_json = data
     db.flush()

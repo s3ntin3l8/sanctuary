@@ -47,6 +47,38 @@ AI_READ_TIMEOUT = float(os.getenv("AI_READ_TIMEOUT", "600"))
 AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
 AI_API_KEY = os.getenv("AI_API_KEY", "not-needed")
 
+# --- Authentication / Accounts ---
+# When false, the request is auto-bound to the bootstrap admin (single-user dev
+# mode): there is always exactly one current_user and no login is required.
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
+# Self-service signup. Off by default — flip on (here or at runtime via the admin
+# UI) once you intend to onboard additional users. New signups are regular users.
+AUTH_SIGNUP_ENABLED = os.getenv("AUTH_SIGNUP_ENABLED", "false").lower() == "true"
+# The designated first admin. On a fresh DB a user with this email is created as
+# admin during startup seeding (password from BOOTSTRAP_ADMIN_PASSWORD, or set on
+# first login via the one-time create-admin screen when both are unset).
+BOOTSTRAP_ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+BOOTSTRAP_ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
+# Signed-cookie session lifetime. Sessions older than this (by issued-at) are
+# treated as logged out. Default 14 days.
+SESSION_LIFETIME_SECONDS = int(os.getenv("SESSION_LIFETIME_SECONDS", "1209600"))
+
+# OIDC / authentik (Phase 2). OIDC is active only when issuer + client id +
+# secret are all set; otherwise the OIDC routes 404 and the login button hides.
+OIDC_ISSUER = os.getenv("OIDC_ISSUER", "").strip().rstrip("/")
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "").strip()
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "").strip()
+OIDC_REDIRECT_URI = os.getenv(
+    "OIDC_REDIRECT_URI", "http://localhost:8000/auth/oidc/callback"
+)
+OIDC_SCOPES = os.getenv("OIDC_SCOPES", "openid email profile")
+OIDC_PROVIDER_NAME = os.getenv("OIDC_PROVIDER_NAME", "authentik")
+
+
+def oidc_enabled() -> bool:
+    return bool(OIDC_ISSUER and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET)
+
+
 # Gmail OAuth Configuration
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")

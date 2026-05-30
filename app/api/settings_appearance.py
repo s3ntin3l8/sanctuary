@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
+from app.models.database import User
 from app.models.enums import AuditEventType
 from app.services import audit_service, timezone_service
 from app.services.user_settings_service import set_dashboard_cards, set_theme
@@ -17,10 +18,14 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.post("/theme")
-async def save_theme(theme: str = Form(...), db: Session = Depends(get_db)):
+async def save_theme(
+    theme: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     if theme not in ("dark", "light"):
         theme = "dark"
-    set_theme(theme, db)
+    set_theme(theme, db, user.id)
     db.commit()
     return Response(status_code=204)
 
@@ -31,13 +36,14 @@ async def save_dashboard_cards(
     costs: str = Form("off"),
     documents: str = Form("off"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     cards = {
         "action_items": action_items == "on",
         "costs": costs == "on",
         "documents": documents == "on",
     }
-    set_dashboard_cards(cards, db)
+    set_dashboard_cards(cards, db, user.id)
     db.commit()
     return Response(status_code=204)
 

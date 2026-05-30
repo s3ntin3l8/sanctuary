@@ -10,12 +10,18 @@ class DocumentPinRepository:
         self.db = db
 
     def create(
-        self, document_id: int, passage_id: str, note: str | None = None
+        self,
+        document_id: int,
+        passage_id: str,
+        note: str | None = None,
+        *,
+        user_id: int,
     ) -> DocumentPin:
         pin = DocumentPin(
             document_id=document_id,
             passage_id=passage_id,
             note=note,
+            user_id=user_id,
             ingest_date=datetime.now(),
             updated_at=datetime.now(),
         )

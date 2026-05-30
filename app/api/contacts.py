@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
-from app.models.database import Case
+from app.models.database import Case, User
+from app.services import access_service
 from app.services.document_service import DocumentService
 
 router = APIRouter(tags=["pages"])
@@ -13,13 +14,21 @@ router = APIRouter(tags=["pages"])
 
 @router.get("/contacts/{sender_name}")
 async def sender_detail(
-    request: Request, sender_name: str, db: Session = Depends(get_db)
+    request: Request,
+    sender_name: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from urllib.parse import unquote
 
     sender = unquote(sender_name)
     doc_service = DocumentService(db)
     docs = doc_service.get_documents_by_sender(sender)
+
+    # Per-user isolation: only show documents in cases the user may see.
+    visible = access_service.visible_case_ids(db, user)
+    if visible is not None:
+        docs = [d for d in docs if d.case_id in visible]
 
     case_ids = {d.case_id for d in docs if d.case_id}
     cases = {}

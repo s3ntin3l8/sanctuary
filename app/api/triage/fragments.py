@@ -7,12 +7,29 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.config import templates
-from app.dependencies import get_db
-from app.models.database import Document, DocumentRelationship
+from app.dependencies import get_current_user, get_db
+from app.models.database import Document, DocumentRelationship, User
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
 
 router = APIRouter()
+
+
+def _require_owned_rel(db: Session, rel_id: int, user: User) -> DocumentRelationship:
+    """Fetch a relationship, 404ing unless both its documents belong to the user."""
+    rel = (
+        db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
+    )
+    if not rel:
+        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+    doc_ids = [rel.from_document_id, rel.to_document_id]
+    owners = {
+        row[0]
+        for row in db.query(Document.owner_id).filter(Document.id.in_(doc_ids)).all()
+    }
+    if owners - {user.id}:
+        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+    return rel
 
 
 @router.post("/triage/relationship/{rel_id}/confirm")
@@ -20,17 +37,14 @@ async def confirm_relationship(
     request: Request,
     rel_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Promote an AI-detected relationship to user-confirmed, closing the target's thread."""
     from app.models.enums import RelationshipConfidence
     from app.services.ingestion.service import refresh_review_reasons
     from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
-    rel = (
-        db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
-    )
-    if not rel:
-        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+    rel = _require_owned_rel(db, rel_id, user)
 
     source_id = rel.from_document_id
     rel.confidence = RelationshipConfidence.USER_CONFIRMED
@@ -47,16 +61,13 @@ async def reject_relationship(
     request: Request,
     rel_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Remove a relationship suggestion, reopening the target's thread if no confirmed edges remain."""
     from app.services.ingestion.service import refresh_review_reasons
     from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
-    rel = (
-        db.query(DocumentRelationship).filter(DocumentRelationship.id == rel_id).first()
-    )
-    if not rel:
-        raise HTTPException(status_code=404, detail=f"Relationship {rel_id} not found")
+    rel = _require_owned_rel(db, rel_id, user)
 
     target_id = rel.to_document_id
     source_id = rel.from_document_id

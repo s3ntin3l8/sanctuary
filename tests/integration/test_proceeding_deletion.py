@@ -87,18 +87,24 @@ def test_delete_active_proceeding_clears_user_setting(app_client, db_session):
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
 
+    from app.services import auth_service
     from app.services.user_settings_service import (
         get_active_proceeding,
         set_active_proceeding,
     )
 
-    set_active_proceeding(case.id, p2.id, db_session)
+    # Dev mode binds the bootstrap admin; the delete route clears that user's
+    # active proceeding, so set/read it under the same uid.
+    uid = auth_service.get_or_create_bootstrap_admin(db_session).id
     db_session.commit()
 
-    assert get_active_proceeding(case.id, db_session) == p2.id
+    set_active_proceeding(case.id, p2.id, db_session, uid)
+    db_session.commit()
+
+    assert get_active_proceeding(case.id, db_session, uid) == p2.id
 
     response = app_client.delete(f"/proceedings/{p2.id}")
     assert response.status_code == 200
 
     db_session.expire_all()
-    assert get_active_proceeding(case.id, db_session) is None
+    assert get_active_proceeding(case.id, db_session, uid) is None

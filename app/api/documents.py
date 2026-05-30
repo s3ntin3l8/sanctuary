@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
-from app.models.database import Case, Document
+from app.models.database import Case, Document, User
 from app.models.enums import IngestBatchSourceType, UserReactionType
 from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
@@ -62,6 +62,7 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
 async def upload_document(
     request: Request,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     form = await request.form()
     files = form.getlist("files")
@@ -95,6 +96,7 @@ async def upload_document(
             db,
             filenames=[f.filename for f in non_eml_files],
             case_id=case_id,
+            owner_id=user.id,
         )
         db.commit()
 
@@ -153,7 +155,10 @@ async def upload_document(
             try:
                 raw_bytes = await file.read()
                 batch = ingest_raw_email(
-                    db, raw_bytes, source_type=IngestBatchSourceType.MANUAL
+                    db,
+                    raw_bytes,
+                    source_type=IngestBatchSourceType.MANUAL,
+                    owner_id=user.id,
                 )
                 if batch:
                     success_count += 1
@@ -176,6 +181,7 @@ async def upload_document(
                 parent_id,
                 skip_processing=True,
                 ingest_batch_id=ingest_batch_id,
+                owner_id=user.id,
             )
             success_count += 1
 
@@ -463,6 +469,7 @@ async def hud_toggle_reaction(
     reaction: str = Form(...),
     notes: str | None = Form(None),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     import json as _json
 
@@ -478,7 +485,7 @@ async def hud_toggle_reaction(
     if existing and notes is None:
         db.delete(existing)
     else:
-        repo.set_reaction(doc_id, reaction_enum, notes)
+        repo.set_reaction(doc_id, reaction_enum, notes, user_id=user.id)
     db.commit()
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -752,13 +759,14 @@ async def create_pin(
     passage_id: str = Form(...),
     note: str | None = Form(None),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     repo = DocumentPinRepository(db)
-    pin = repo.create(doc_id, passage_id, note)
+    pin = repo.create(doc_id, passage_id, note, user_id=user.id)
     db.commit()
     db.refresh(pin)
 

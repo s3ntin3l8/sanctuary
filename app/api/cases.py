@@ -7,12 +7,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import templates
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
 from app.models.database import (
     Case,
     Document,
     Proceeding,
+    User,
 )
 from app.models.enums import (
     CaseStatus,
@@ -44,6 +45,7 @@ async def case_directory(
     request: Request,
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from app.constants import CASE_STATUS_META
     from app.core.timezone import naive_utc_now
@@ -52,10 +54,10 @@ async def case_directory(
 
     if page > 1:
         data = case_service.get_all_cases_directory_paginated(
-            page=page, per_page=DEFAULT_PAGE_SIZE
+            user.id, page=page, per_page=DEFAULT_PAGE_SIZE
         )
     else:
-        data = case_service.get_all_cases_directory()
+        data = case_service.get_all_cases_directory(user.id)
 
     case_titles = {c["id"]: c["title"] for c in data["cases"]}
     now = naive_utc_now()
@@ -81,11 +83,16 @@ async def case_directory(
 
 @router.get("/{case_id}/brief")
 async def case_brief_partial(
-    request: Request, case_id: str, db: Session = Depends(get_db)
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """HTMX polling endpoint — returns the brief panel partial."""
+    from app.services import access_service
+
     case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
+    if not case or not access_service.can_view_case(db, user, case):
         return HTMLResponse(content="<p>Case not found</p>", status_code=404)
     return templates.TemplateResponse(
         request,
@@ -140,10 +147,13 @@ async def case_detail(
     view: str | None = None,
     filter: FilterQuery = "significant+",
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Primary case dashboard — graph-first strategic view."""
+    from app.services import access_service
+
     case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
+    if not case or not access_service.can_view_case(db, user, case):
         response = render_page(
             request,
             "errors/404.html",
@@ -155,10 +165,10 @@ async def case_detail(
 
     # --- Resolve active proceeding (query param wins; persist when given) ---
     if proceeding is not None:
-        set_active_proceeding(case_id, proceeding, db)
+        set_active_proceeding(case_id, proceeding, db, user.id)
         active_proceeding_id: int | None = proceeding
     else:
-        active_proceeding_id = get_active_proceeding(case_id, db)
+        active_proceeding_id = get_active_proceeding(case_id, db, user.id)
 
     # --- Resolve active view (query param wins; always defaults to graph) ---
     active_view = view if view is not None else "graph"
@@ -169,6 +179,7 @@ async def case_detail(
         active_proceeding_id=active_proceeding_id,
         active_view=active_view,
         significance_filter=filter,
+        user_id=user.id,
     )
     if context is None:
         response = render_page(
@@ -187,7 +198,7 @@ async def case_detail(
         **context,
     )
 
-    mark_viewed(case_id, db)
+    mark_viewed(case_id, db, user.id)
     db.commit()
     return response
 
@@ -236,10 +247,16 @@ async def case_document_hud(
     case_id: str,
     doc_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Render the document HUD slide-in for the given doc within the case."""
+    from app.services import access_service
+
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc or doc.case_id != case_id:
+        return HTMLResponse(content="<p>Document not found</p>", status_code=404)
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not access_service.can_view_case(db, user, case):
         return HTMLResponse(content="<p>Document not found</p>", status_code=404)
 
     ctx = build_hud_context(db, doc, mode="read")
@@ -254,9 +271,11 @@ async def case_document_fullscreen(
     case_id: str,
     doc_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Full-screen document reader at /cases/:case_id/document/:doc_id."""
     from app.helpers import render_page
+    from app.services import access_service
 
     doc = (
         db.query(Document)
@@ -267,7 +286,12 @@ async def case_document_fullscreen(
         .filter(Document.id == doc_id)
         .first()
     )
-    if not doc or doc.case_id != case_id:
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if (
+        not doc
+        or doc.case_id != case_id
+        or not access_service.can_view_case(db, user, case)
+    ):
         from fastapi.responses import RedirectResponse
 
         return RedirectResponse(f"/cases/{case_id}", status_code=302)

@@ -1,0 +1,47 @@
+{% extends "auth_base.html" %}
+{% block title %}{% if first_run %}Create admin{% else %}Sign up{% endif %} | The Sanctuary{% endblock %}
+{% block subtitle %}{% if first_run %}Create the administrator account{% else %}Create your account{% endif %}{% endblock %}
+
+{% block auth_body %}
+{% if first_run %}
+<p class="text-xs text-on-surface-variant mb-4 leading-relaxed">
+    This is the first account on this Sanctuary — it will be the
+    <span class="font-semibold text-on-surface">administrator</span>.
+</p>
+{% endif %}
+<form method="post" action="/signup" class="space-y-4">
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="display_name">Name</label>
+        <input id="display_name" type="text" name="display_name" autocomplete="name" value="{{ display_name | default('') }}"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+    </div>
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="email">Email</label>
+        <input id="email" type="email" name="email" required autofocus autocomplete="username" value="{{ email | default('') }}"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+    </div>
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="password">Password</label>
+        <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+        <p class="text-[10px] text-on-surface-variant mt-1">At least 8 characters.</p>
+    </div>
+    <div>
+        <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="password_confirm">Confirm password</label>
+        <input id="password_confirm" type="password" name="password_confirm" required minlength="8" autocomplete="new-password"
+               class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+    </div>
+    <button type="submit"
+            class="w-full bg-primary text-on-primary font-semibold text-sm rounded-lg px-4 py-2.5 hover:opacity-90 transition-opacity">
+        {% if first_run %}Create admin account{% else %}Create account{% endif %}
+    </button>
+</form>
+{% endblock %}
+
+{% block auth_footer %}
+{% if not first_run %}
+<p class="text-center text-xs text-on-surface-variant mt-5">
+    Already have an account? <a href="/login" class="text-primary font-medium hover:underline">Sign in</a>
+</p>
+{% endif %}
+{% endblock %}

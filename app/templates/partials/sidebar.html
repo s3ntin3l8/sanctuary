@@ -19,7 +19,7 @@
             </span>
         </a>
 
-        <!-- 2. Triage Center -->
+        <!-- 2. Triage Center (per-user intake inbox) -->
         <a class="relative flex items-center justify-center w-10 h-10 rounded-xl {{ 'text-primary bg-primary/10' if request.url.path == '/triage' else 'text-on-surface-variant hover:text-primary hover:bg-surface-container-high/50' }} transition-colors duration-300 group" href="{{ request.app.url_path_for('triage_page') }}">
             {% if request.url.path == '/triage' %}
             <span class="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary"></span>
@@ -121,13 +121,34 @@
         </a>
 
         <!-- User Profile -->
-        <div class="relative flex items-center justify-center w-10 h-10 mt-2 cursor-pointer group">
-            <div class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 flex items-center justify-center border border-primary/20 group-hover:border-primary transition-colors">
+        <div class="relative flex items-center justify-center w-10 h-10 mt-2" x-data="{ open: false }">
+            <button type="button" @click="open = !open" @click.outside="open = false"
+                    class="w-8 h-8 rounded-full overflow-hidden bg-primary-container/30 flex items-center justify-center border border-primary/20 hover:border-primary transition-colors cursor-pointer"
+                    title="{{ current_user.email if current_user else 'Account' }}">
                 <span class="material-symbols-outlined text-sm text-primary">person</span>
+            </button>
+            <div x-show="open" x-cloak x-transition
+                 class="absolute bottom-0 left-12 w-52 bg-surface-container-highest border border-outline-variant/30 rounded-xl shadow-2xl py-1.5 z-[120]">
+                {% if current_user %}
+                <div class="px-3 py-2 border-b border-outline-variant/20">
+                    <p class="text-xs font-bold text-on-surface truncate">{{ current_user.display_name or current_user.email }}</p>
+                    <p class="text-[10px] text-on-surface-variant truncate">{{ current_user.email }}{% if current_user.role.value == 'admin' %} · admin{% endif %}</p>
+                </div>
+                {% endif %}
+                <a href="/settings/account" class="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-surface-container-high transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">manage_accounts</span> Account
+                </a>
+                {% if current_user and current_user.role.value == 'admin' %}
+                <a href="/admin/users" class="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-surface-container-high transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">group</span> Manage users
+                </a>
+                {% endif %}
+                <form method="post" action="/logout" class="border-t border-outline-variant/20 mt-1 pt-1">
+                    <button type="submit" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-error hover:bg-error-container/20 transition-colors">
+                        <span class="material-symbols-outlined text-[16px]">logout</span> Sign out
+                    </button>
+                </form>
             </div>
-            <span class="absolute top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-surface-container-highest text-on-surface text-[11px] font-medium rounded-md border border-outline-variant shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100]" style="left: 48px;">
-                Profile
-            </span>
         </div>
     </div>
 </aside>

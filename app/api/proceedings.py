@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
+from app.models.database import User
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
 from app.repositories.proceeding import ProceedingRepository
 from app.services.case_service import CaseService
@@ -46,18 +47,22 @@ async def update_proceeding(
 
 
 @router.delete("/{proceeding_id}")
-async def delete_proceeding(proceeding_id: int, db: Session = Depends(get_db)):
+async def delete_proceeding(
+    proceeding_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Delete an empty proceeding (no documents, batches, action items, or costs).
     Refuses to delete the last proceeding of a case."""
     try:
-        result = CaseService(db).delete_empty_proceeding(proceeding_id)
+        result = CaseService(db).delete_empty_proceeding(proceeding_id, user.id)
     except ValueError as e:
         msg = str(e)
         code = 404 if "not found" in msg.lower() else 400
         raise HTTPException(status_code=code, detail=msg) from e
 
     if result["was_active"]:
-        set_active_proceeding(result["case_id"], None, db)
+        set_active_proceeding(result["case_id"], None, db, user.id)
         db.commit()
 
     return Response(headers={"HX-Refresh": "true"})

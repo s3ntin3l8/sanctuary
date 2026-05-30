@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS, ORIGINATOR_ICONS
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
-from app.models.database import Case, Document
+from app.models.database import Case, Document, User
 from app.models.enums import OriginatorType, UserReactionType
 from app.repositories.case import CaseRepository
 from app.services.triage_bundles import (
@@ -36,10 +36,11 @@ def triage_page(
     proceeding_id: list[str] = Query(default=[]),
     pipeline_filter: list[str] = Query(default=[]),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from app.models.database import Proceeding
 
-    filter_options = get_triage_filter_options(db)
+    filter_options = get_triage_filter_options(db, owner_id=user.id)
 
     bundles = get_triage_bundles(
         db,
@@ -50,9 +51,18 @@ def triage_page(
         case_ids=case_id,
         proceeding_ids=proceeding_id,
         pipeline_filters=pipeline_filter,
+        owner_id=user.id,
     )
-    slicing_queue = get_slicing_queue(db)
-    all_cases = CaseRepository(db).list_for_picker()
+    slicing_queue = get_slicing_queue(db, owner_id=user.id)
+    # The assign picker lists only cases this user may file into (own + editor
+    # shares; admins see all) — avoids leaking other users' case titles.
+    from app.services import access_service
+
+    all_cases = [
+        c
+        for c in CaseRepository(db).list_for_picker()
+        if access_service.can_edit_case(db, user, c)
+    ]
     total_docs = sum(b.doc_count for b in bundles)
 
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
@@ -127,6 +137,7 @@ def triage_feed_partial(
     proceeding_id: list[str] = Query(default=[]),
     pipeline_filter: list[str] = Query(default=[]),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     from app.services.triage_view import stats_for_chips
 
@@ -139,6 +150,7 @@ def triage_feed_partial(
         case_ids=case_id,
         proceeding_ids=proceeding_id,
         pipeline_filters=pipeline_filter,
+        owner_id=user.id,
     )
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
@@ -179,6 +191,7 @@ def triage_card_live(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Return OOB row swap for a single doc (polling refresh).
 
@@ -187,7 +200,7 @@ def triage_card_live(
     consumers (e.g., chunked retries that target a single doc).
     """
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
+    if not doc or doc.owner_id != user.id:
         return HTMLResponse("", status_code=404)
 
     return HTMLResponse(render_row_targeted_oob(request, doc, db, allow_delete=False))

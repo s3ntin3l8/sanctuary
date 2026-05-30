@@ -284,6 +284,7 @@ def get_or_create_case_from_reference(
     batch_subject: str | None = None,
     ai_case_title: str | None = None,
     is_draft: bool = False,
+    owner_id: int | None = None,
 ) -> tuple[Case, Proceeding | None, bool]:
     """Return (case, proceeding, created).
 
@@ -336,6 +337,7 @@ def get_or_create_case_from_reference(
         status=CaseStatus.INTAKE,
         jurisdiction=Jurisdiction.DE,
         is_draft=is_draft,
+        owner_id=owner_id,
     )
     db.add(new_case)
     from sqlalchemy.exc import IntegrityError
@@ -792,7 +794,7 @@ class CaseService:
         self.entity_repo = EntityRepository(db)
         self.cost_repo = LegalCostRepository(db)
 
-    def get_case_with_summary(self, case_id: str) -> dict | None:
+    def get_case_with_summary(self, case_id: str, user_id: int) -> dict | None:
         """Get case with all related data."""
         from app.services.user_settings_service import count_new_since, get_last_viewed
 
@@ -813,7 +815,7 @@ class CaseService:
         costs = self.cost_repo.get_by_case(case_id)
         entities = self.entity_repo.get_by_case(case_id)
 
-        last_visit = get_last_viewed(case_id, self.db)
+        last_visit = get_last_viewed(case_id, self.db, user_id)
         new_docs = count_new_since(case_id, last_visit, self.db)
 
         now = datetime.now()
@@ -1047,23 +1049,26 @@ class CaseService:
             else None,
         }
 
-    def get_all_cases_directory(self) -> dict:
+    def _visible_filter(self, user_id: int | None) -> set[str] | None:
+        """Return the set of case ids the user may see (owned ∪ shared), or
+        None for the unrestricted admin/dev view."""
+        from app.models.database import User
+        from app.services import access_service
+
+        user = self.db.get(User, user_id) if user_id is not None else None
+        return access_service.visible_case_ids(self.db, user)
+
+    def get_all_cases_directory(self, user_id: int) -> dict:
         """Get all cases with counts for directory view."""
-        all_cases = self.case_repo.get_all_sorted_by_date(include_drafts=True)
+        visible = self._visible_filter(user_id)
+        all_cases = self.case_repo.get_all_sorted_by_date(
+            include_drafts=True, visible_ids=visible
+        )
         now = datetime.now()
 
-        # Fetch last_home_visit from user settings for enrichment
-        from app.models.database import UserSettings
+        from app.services.user_settings_service import get_last_home_visit
 
-        settings = self.db.query(UserSettings).first()
-        last_home_visit_iso = (
-            settings.settings_json.get("last_home_visit")
-            if settings and settings.settings_json
-            else None
-        )
-        last_home_visit = (
-            datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
-        )
+        last_home_visit = get_last_home_visit(self.db, user_id)
 
         batched = self._batch_card_context([c.id for c in all_cases])
         enriched_cases = [
@@ -1083,7 +1088,7 @@ class CaseService:
             if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
         ]
 
-        stats_by_status = self.case_repo.count_all_by_status()
+        stats_by_status = self.case_repo.count_all_by_status(visible_ids=visible)
 
         doc_counts = self.doc_repo.bulk_count_by_case([c.id for c in all_cases])
         action_counts = self.action_repo.bulk_count_open_by_case(
@@ -1102,26 +1107,18 @@ class CaseService:
         }
 
     def get_all_cases_directory_paginated(
-        self, page: int = 1, per_page: int = 20
+        self, user_id: int, page: int = 1, per_page: int = 20
     ) -> dict:
         """Get paginated cases with counts for directory view."""
+        visible = self._visible_filter(user_id)
         cases, total = self.case_repo.get_paginated(
-            page=page, per_page=per_page, include_drafts=True
+            page=page, per_page=per_page, include_drafts=True, visible_ids=visible
         )
         now = datetime.now()
 
-        # Fetch last_home_visit from user settings for enrichment
-        from app.models.database import UserSettings
+        from app.services.user_settings_service import get_last_home_visit
 
-        settings = self.db.query(UserSettings).first()
-        last_home_visit_iso = (
-            settings.settings_json.get("last_home_visit")
-            if settings and settings.settings_json
-            else None
-        )
-        last_home_visit = (
-            datetime.fromisoformat(last_home_visit_iso) if last_home_visit_iso else None
-        )
+        last_home_visit = get_last_home_visit(self.db, user_id)
 
         batched = self._batch_card_context([c.id for c in cases])
         enriched_cases = [
@@ -1141,7 +1138,7 @@ class CaseService:
             if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
         ]
 
-        stats_by_status = self.case_repo.count_all_by_status()
+        stats_by_status = self.case_repo.count_all_by_status(visible_ids=visible)
 
         case_ids = [c.id for c in cases]
         doc_counts = self.doc_repo.bulk_count_by_case(case_ids)
@@ -1167,6 +1164,7 @@ class CaseService:
         title: str,
         status: CaseStatus = CaseStatus.INTAKE,
         jurisdiction: Jurisdiction = Jurisdiction.DE,
+        owner_id: int | None = None,
     ) -> Case:
         """Create a new case."""
         return self.case_repo.create_case(
@@ -1174,6 +1172,7 @@ class CaseService:
             title=title,
             status=status,
             jurisdiction=jurisdiction,
+            owner_id=owner_id,
         )
 
     def update_case_status(self, case_id: str, status: CaseStatus) -> Case | None:
@@ -1403,7 +1402,7 @@ class CaseService:
 
         return {"doc_count": len(docs), "dir_erased": dir_existed}
 
-    def delete_empty_proceeding(self, proceeding_id: int) -> dict:
+    def delete_empty_proceeding(self, proceeding_id: int, user_id: int) -> dict:
         """Delete a proceeding that has no attached documents, batches, action items, or costs.
 
         Refuses to delete the last remaining proceeding of a case.
@@ -1453,7 +1452,7 @@ class CaseService:
         if sibling_count == 0:
             raise ValueError("Cannot delete the only proceeding of a case")
 
-        active_id = get_active_proceeding(case_id, self.db)
+        active_id = get_active_proceeding(case_id, self.db, user_id)
         was_active = active_id == proceeding_id
 
         self.db.delete(proceeding)

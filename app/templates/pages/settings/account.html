@@ -1,0 +1,48 @@
+{% extends "pages/settings/_layout.html" %}
+
+{% block settings_body %}
+<section>
+    <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-1">Account</h2>
+    <p class="text-xs text-on-surface-variant mb-5">Your profile and credentials.</p>
+
+    <div class="bg-surface-container rounded-2xl border border-outline-variant/20 p-5 space-y-5">
+        <div>
+            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Email</span>
+            <p class="text-sm text-on-surface mt-0.5">{{ account.email }}</p>
+        </div>
+        <div>
+            <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Role</span>
+            <p class="text-sm text-on-surface mt-0.5 capitalize">{{ account.role.value }}</p>
+        </div>
+
+        <form hx-post="/api/settings/account/profile" hx-swap="none" class="pt-2 border-t border-outline-variant/10">
+            <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="display_name">Display name</label>
+            <div class="flex gap-2 mt-1">
+                <input id="display_name" type="text" name="display_name" value="{{ account.display_name or '' }}"
+                       class="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+                <button type="submit" class="bg-primary text-on-primary text-sm font-semibold rounded-lg px-4 hover:opacity-90 transition-opacity">Save</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<section>
+    <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-1">Change password</h2>
+    <p class="text-xs text-on-surface-variant mb-5">Changing your password signs out your other sessions.</p>
+
+    <form hx-post="/api/settings/account/password" hx-swap="none" hx-on::after-request="if(event.detail.successful) this.reset()"
+          class="bg-surface-container rounded-2xl border border-outline-variant/20 p-5 space-y-4 max-w-md">
+        <div>
+            <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="current_password">Current password</label>
+            <input id="current_password" type="password" name="current_password" autocomplete="current-password"
+                   class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+        </div>
+        <div>
+            <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider" for="new_password">New password</label>
+            <input id="new_password" type="password" name="new_password" minlength="8" autocomplete="new-password"
+                   class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+        </div>
+        <button type="submit" class="bg-primary text-on-primary text-sm font-semibold rounded-lg px-4 py-2 hover:opacity-90 transition-opacity">Update password</button>
+    </form>
+</section>
+{% endblock %}

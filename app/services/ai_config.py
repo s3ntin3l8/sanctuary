@@ -79,9 +79,9 @@ def _get_ai_section(db) -> dict:
     if db is None:
         return {}
     try:
-        from app.models.database import UserSettings
+        from app.models.database import AppSettings
 
-        settings = db.query(UserSettings).first()
+        settings = db.query(AppSettings).first()
         if settings and isinstance(settings.settings_json, dict):
             return settings.settings_json.get("ai", {})
     except Exception:
@@ -173,7 +173,7 @@ def get_ocr_config(db=None) -> OcrConfig:
 
 def set_active(db, role: str, instance_id: str) -> None:
     """Set the active instance for 'chat', 'embed', or 'ocr'."""
-    from app.services.user_settings_service import _get_or_create
+    from app.services.app_settings_service import _get_or_create
 
     if role not in _ACTIVE_KEY_BY_ROLE:
         raise ValueError(
@@ -196,7 +196,7 @@ def set_active(db, role: str, instance_id: str) -> None:
 
 def save_instance(db, instance: dict) -> None:
     """Create or update an instance (matched by id)."""
-    from app.services.user_settings_service import _get_or_create
+    from app.services.app_settings_service import _get_or_create
 
     existing = get_instance(db, instance.get("id"))
     settings = _get_or_create(db)
@@ -225,7 +225,7 @@ def save_instance(db, instance: dict) -> None:
 
 def delete_instance(db, instance_id: str) -> None:
     """Remove an instance by ID."""
-    from app.services.user_settings_service import _get_or_create
+    from app.services.app_settings_service import _get_or_create
 
     settings = _get_or_create(db)
     data = dict(settings.settings_json or {})
@@ -243,7 +243,7 @@ def delete_instance(db, instance_id: str) -> None:
 
 
 def set_user_context(db, text: str) -> None:
-    from app.services.user_settings_service import _get_or_create
+    from app.services.app_settings_service import _get_or_create
 
     settings = _get_or_create(db)
     data = dict(settings.settings_json or {})

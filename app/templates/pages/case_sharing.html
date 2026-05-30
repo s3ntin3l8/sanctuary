@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Sharing · {{ case.id }} | The Sanctuary{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col h-full bg-background overflow-hidden">
+    <header class="h-14 min-h-[56px] flex items-center gap-3 px-8 border-b border-outline-variant/10 bg-surface-container-low sticky top-0 z-40">
+        <a href="/cases/{{ case.id }}" class="text-on-surface-variant hover:text-primary">
+            <span class="material-symbols-outlined text-[20px]">arrow_back</span>
+        </a>
+        <h1 class="text-lg font-black uppercase tracking-tight text-on-surface">Sharing · {{ case.id }}</h1>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-8 max-w-2xl space-y-8">
+        <section class="bg-surface-container rounded-2xl border border-outline-variant/20 p-5">
+            <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-1">Owner</h2>
+            <p class="text-sm text-on-surface">{{ owner.display_name or owner.email if owner else '—' }}</p>
+        </section>
+
+        <section class="bg-surface-container rounded-2xl border border-outline-variant/20 p-5">
+            <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-4">Grant access</h2>
+            <form hx-post="/cases/{{ case.id }}/shares" hx-swap="none" class="flex flex-wrap items-end gap-3">
+                <div class="flex-1 min-w-[200px]">
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">User email</label>
+                    <input type="email" name="email" required
+                           class="w-full mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none" />
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Permission</label>
+                    <select name="permission" class="mt-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
+                        <option value="viewer">Viewer (read-only)</option>
+                        <option value="editor">Editor (can edit)</option>
+                    </select>
+                </div>
+                <button type="submit" class="bg-primary text-on-primary text-sm font-semibold rounded-lg px-4 py-2 hover:opacity-90 transition-opacity">Share</button>
+            </form>
+        </section>
+
+        <section>
+            <h2 class="text-sm font-black uppercase tracking-wider text-on-surface mb-4">Shared with ({{ shares | length }})</h2>
+            <div class="space-y-2">
+                {% for row in shares %}
+                <div class="bg-surface-container rounded-xl border border-outline-variant/20 p-4 flex items-center gap-3">
+                    <div class="flex-1">
+                        <p class="text-sm font-bold text-on-surface">{{ row.user.display_name or row.user.email }}</p>
+                        <p class="text-[11px] text-on-surface-variant">{{ row.user.email }}</p>
+                    </div>
+                    <span class="text-[10px] font-bold rounded-full px-2 py-0.5 bg-primary/15 text-primary">{{ row.share.permission.value }}</span>
+                    <form hx-post="/cases/{{ case.id }}/shares/{{ row.user.id }}/remove" hx-swap="none">
+                        <button class="text-[11px] px-2 py-1 rounded-lg bg-error-container/20 text-error hover:bg-error-container/40">Remove</button>
+                    </form>
+                </div>
+                {% else %}
+                <p class="text-xs text-on-surface-variant">Not shared with anyone yet.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
