@@ -1,0 +1,116 @@
+# =============================================================================
+# The Sanctuary — self-contained Traefik + Let's Encrypt deployment
+#
+#   cp .env.traefik.example .env      # set SANCTUARY_DOMAIN + ACME_EMAIL first
+#   docker compose -f docker-compose.traefik.yml up -d
+#
+# Traefik terminates TLS on :443 (auto-cert via Let's Encrypt HTTP-01) and
+# proxies to the app over the internal network. The app itself speaks plain
+# HTTP and is never published directly — only Traefik exposes ports 80/443.
+# =============================================================================
+
+services:
+  traefik:
+    image: traefik:v3.3
+    restart: unless-stopped
+    command:
+      # Discover containers via Docker labels; nothing is exposed unless opted in.
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      # Entrypoints: plain HTTP (for the ACME challenge + redirect) and HTTPS.
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Force every HTTP request up to HTTPS.
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Let's Encrypt via the HTTP-01 challenge, stored on a persistent volume.
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      # Uncomment to expose the dashboard — secure it (auth middleware) first.
+      # - "--api.dashboard=true"
+      # - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "letsencrypt:/letsencrypt"
+    networks:
+      - proxy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
+  web:
+    build: .
+    restart: unless-stopped
+    # --proxy-headers + --forwarded-allow-ips lets the app trust Traefik's
+    # X-Forwarded-Proto / X-Forwarded-For (correct scheme + real client IP for
+    # rate limiting). Safe here because the app is only reachable via Traefik.
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips="*"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=false
+    # Reach an Ollama/LMStudio server running on the Docker host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sanctuary.rule=Host(`${SANCTUARY_DOMAIN}`)"
+      - "traefik.http.routers.sanctuary.entrypoints=websecure"
+      - "traefik.http.routers.sanctuary.tls.certresolver=le"
+      - "traefik.http.services.sanctuary.loadbalancer.server.port=8000"
+    networks:
+      - proxy
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: python -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  # Public-facing network shared between Traefik and the web app.
+  proxy:
+  # Internal network: app <-> redis <-> worker, never reachable from outside.
+  internal:
+
+volumes:
+  redis_data:
+  letsencrypt:
