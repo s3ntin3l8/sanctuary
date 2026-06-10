@@ -6,40 +6,15 @@ on:
   pull_request:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-
-      - name: Create virtual environment
-        run: python -m venv .venv
-
-      - name: Install Python dependencies
-        run: .venv/bin/pip install -r requirements.txt
-
-      - name: Install Node dependencies
-        run: npm install
-
-      - name: Lint (pre-commit, skip test hooks)
-        run: .venv/bin/pre-commit run --all-files
-        env:
-          SKIP: unit-tests,integration-tests
-
-      - name: Run tests
-        run: .venv/bin/python -m pytest --ignore=tests/e2e -p no:cacheprovider
-        env:
-          CELERY_TASK_ALWAYS_EAGER: "true"
-          PYTEST_CURRENT_TEST: "1"
+  ci:
+    permissions:
+      contents: read
+    uses: s3ntin3l8/.github/.github/workflows/ci-python.yml@main
+    with:
+      python-version: "3.12"
+      coverage-source: "app"
+      # Measured ~70% locally (full suite, e2e skipped). Floor set below that for
+      # margin; ratchet up as coverage grows. Codecov tracks the exact number.
+      coverage-fail-under: "65"
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

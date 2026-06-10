@@ -1,0 +1,21 @@
+# Dev/test dependencies for CI.
+#
+# The standardized ci-python.yml reusable workflow installs ONLY this file when
+# present (it prefers requirements-dev.txt over an editable install or
+# requirements.txt). pyproject.toml here is config-only (no [project]/
+# [build-system]), so `pip install -e .` would fail and nothing would install.
+#
+# requirements.txt already pins the full runtime stack plus the test/lint tools
+# (pytest, pytest-cov, ruff, pre-commit, playwright), so a single include covers
+# everything CI needs.
+#
+# CI override: pull the CPU-only torch build. The default CUDA wheel drags in
+# ~4-5 GB of nvidia-cu12-* libraries that exhaust the runner's disk, and this
+# app runs all LLM inference via Ollama (torch is only used for docling/
+# embeddings on CPU). The app's own requirements.txt / Docker image keep the
+# default build untouched. `torch==2.8.0` in requirements.txt is satisfied by
+# `2.8.0+cpu` (PEP 440 local-version match).
+--extra-index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+torch==2.8.0+cpu
+torchvision==0.23.0+cpu

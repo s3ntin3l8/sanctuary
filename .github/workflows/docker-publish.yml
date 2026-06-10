@@ -1,0 +1,20 @@
+name: Docker Publish
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  edge:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@main
+    with:
+      image-name: s3ntin3l8/sanctuary # -> ghcr.io/s3ntin3l8/sanctuary
+      push-edge: true
+      # amd64-only for now: the image installs the full ML stack (torch,
+      # transformers, docling, onnxruntime), and emulated arm64 builds risk the
+      # reusable workflow's 20-min cap. Add linux/arm64 once amd64 is validated.
+      platforms: linux/amd64

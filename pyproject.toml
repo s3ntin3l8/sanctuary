@@ -1,5 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so `import app` works under a bare `pytest`
+# invocation (the standardized CI runs the console script, not `python -m
+# pytest`, so the CWD isn't auto-added).
+pythonpath = ["."]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
