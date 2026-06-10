@@ -27,7 +27,7 @@ h11==0.16.0
 httpx==0.28.1
 hf-xet==1.4.3
 huggingface_hub==0.36.2
-idna==3.11
+idna==3.15
 Jinja2==3.1.6
 jsonlines==4.0.0
 jsonref==1.1.0
