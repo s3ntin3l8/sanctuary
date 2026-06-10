@@ -13,7 +13,7 @@ click==8.1.8
 colorlog==6.10.1
 dill==0.4.1
 docling==2.69.1
-docling-core==2.60.1
+docling-core==2.74.1
 docling-ibm-models==3.10.3
 docling-parse==4.7.3
 et_xmlfile==2.0.0
