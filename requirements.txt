@@ -1,3 +1,9 @@
+# CPU-only torch: this app delegates LLM inference to Ollama/LMStudio and the
+# container is never granted GPU access, so the default CUDA build's ~4-5 GB of
+# nvidia-cu12-* libraries are dead weight. The +cpu wheels live on the PyTorch
+# CPU index. (Linux/Windows only — there is no macOS +cpu wheel.)
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 accelerate==1.10.1
 alembic==1.14.1
 aiofiles==25.1.0
@@ -95,8 +101,8 @@ starlette==0.49.3
 sympy==1.14.0
 tabulate==0.9.0
 tokenizers==0.22.2
-torch==2.8.0
-torchvision==0.23.0
+torch==2.8.0+cpu
+torchvision==0.23.0+cpu
 tqdm==4.67.3
 transformers==4.57.6
 tree-sitter==0.23.2
