@@ -312,4 +312,6 @@ KNN queries use `WHERE embedding MATCH :blob ORDER BY distance LIMIT :k`.
 
 ## License
 
-Copyright © 2025-2026 Sanctuary Legal. All rights reserved.
+Copyright © 2025-2026 Björn Hansen
+
+Released under the [MIT License](LICENSE).
