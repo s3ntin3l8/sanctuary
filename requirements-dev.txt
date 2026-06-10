@@ -1,0 +1,12 @@
+# Dev/test dependencies for CI.
+#
+# The standardized ci-python.yml reusable workflow installs ONLY this file when
+# present (it prefers requirements-dev.txt over an editable install or
+# requirements.txt). pyproject.toml here is config-only (no [project]/
+# [build-system]), so `pip install -e .` would fail and nothing would install.
+#
+# requirements.txt already pins the full runtime stack plus the test/lint tools
+# (pytest, pytest-cov, ruff, pre-commit, playwright), and the app cannot be
+# imported without the runtime deps, so a single include covers everything CI
+# needs.
+-r requirements.txt

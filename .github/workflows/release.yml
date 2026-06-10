@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release-please:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: s3ntin3l8/.github/.github/workflows/release-please.yml@main
+    # config-file / manifest-file inputs default to release-please-config.json
+    # and .release-please-manifest.json, which match the files in this repo.
+
+  # Build the release-tagged image in the SAME workflow: a release published by
+  # GITHUB_TOKEN does not fire a separate `release:` event, so we chain off
+  # release-please's outputs instead of using a release trigger.
+  docker-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: s3ntin3l8/.github/.github/workflows/docker-publish.yml@main
+    with:
+      image-name: s3ntin3l8/sanctuary
+      push-release: true
+      release-tag: ${{ needs.release-please.outputs.tag_name }}
+      platforms: linux/amd64

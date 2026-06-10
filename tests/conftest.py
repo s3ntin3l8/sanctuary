@@ -2,6 +2,11 @@ import logging
 import os
 
 os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
+# Run Celery tasks inline so the suite needs no broker/Redis. The standardized
+# ci-python.yml reusable workflow can't inject env vars, so the test suite owns
+# this default (matching what the bespoke CI used to set). setdefault lets a real
+# worker/dev run override it.
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
 
 
 def pytest_sessionfinish(session, exitstatus):
