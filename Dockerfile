@@ -1,5 +1,5 @@
 # --- Stage 1: Build CSS ---
-FROM node:20-slim AS css-builder
+FROM node:26-slim AS css-builder
 WORKDIR /build
 COPY package*.json ./
 RUN npm install
@@ -9,7 +9,7 @@ COPY app/templates ./app/templates
 RUN npx @tailwindcss/cli -i static/input.css -o static/styles.css
 
 # --- Stage 2: Final Image ---
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
