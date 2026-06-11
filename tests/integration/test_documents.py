@@ -37,7 +37,7 @@ def _set_stages(db, doc, stages: dict):
 
 
 @pytest.mark.integration
-def test_upload_document_to_case(db_session):
+def test_upload_document_to_case(db_session, mock_dispatch_task):
     case = Case(id="UPLOAD-001", title="Upload Test Case", status=CaseStatus.INTAKE)
     db_session.add(case)
     db_session.commit()
@@ -55,9 +55,15 @@ def test_upload_document_to_case(db_session):
     assert doc is not None
     assert doc.title is not None
 
+    # Wiring intact: the endpoint queued exactly one background pipeline run...
+    mock_dispatch_task.assert_called_once()
+    # ...but it must NOT have run synchronously. If the pipeline body executed on
+    # the request/daemon thread it would have populated content — a flake source.
+    assert doc.content is None
+
 
 @pytest.mark.integration
-def test_upload_document_to_triage(db_session):
+def test_upload_document_to_triage(db_session, mock_dispatch_task):
     file_content = b"%PDF-1.4 test"
     response = client.post(
         "/upload",
@@ -65,10 +71,12 @@ def test_upload_document_to_triage(db_session):
     )
     assert response.status_code in [200, 302, 303]
     assert "queued for processing" in response.text
+    # The pipeline is queued, not run inline — no daemon thread racing the test.
+    mock_dispatch_task.assert_called_once()
 
 
 @pytest.mark.integration
-def test_upload_auto_case_matching(db_session):
+def test_upload_auto_case_matching(db_session, mock_dispatch_task):
     file_content = b"%PDF-1.4 test"
     response = client.post(
         "/upload",
@@ -77,6 +85,7 @@ def test_upload_auto_case_matching(db_session):
 
     assert response.status_code in [200, 302, 303]
     assert "queued for processing" in response.text
+    mock_dispatch_task.assert_called_once()
 
 
 @pytest.mark.integration
