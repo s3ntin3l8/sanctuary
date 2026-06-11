@@ -67,7 +67,7 @@ pydantic-settings==2.14.1
 pydantic_core==2.41.5
 Pygments==2.20.0
 pylatexenc==2.10
-pyobjc-core==11.1; sys_platform == 'darwin'
+pyobjc-core==12.2; sys_platform == 'darwin'
 pyobjc-framework-Cocoa==11.1; sys_platform == 'darwin'
 pyobjc-framework-CoreML==11.1; sys_platform == 'darwin'
 pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
