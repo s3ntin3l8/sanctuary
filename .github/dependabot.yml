@@ -17,14 +17,24 @@ updates:
       python-deps:
         patterns:
           - "*"
+        # Bundle only minor/patch in the weekly group. Major bumps still get
+        # their own individual PRs (reviewable/testable) — the all-in-one major
+        # bundle was perpetually unmergeable against the pinned framework stack.
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
-      # Breaking major bumps — adopt individually with tests, not via the weekly group.
+      # Held framework majors — adopt deliberately with tests, not automatically.
       - dependency-name: "torch"
         update-types: ["version-update:semver-major"]
       - dependency-name: "torchvision"
         update-types: ["version-update:semver-major"]
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
+      # Transitive deps capped by held frameworks: docling pins typer<0.22 and
+      # transformers pins tokenizers<=0.23.0 — let the frameworks drive them.
+      - dependency-name: "typer"
+      - dependency-name: "tokenizers"
       # docling is the ingestion engine — upgrade the family in lockstep, by hand.
       - dependency-name: "docling*"
 
