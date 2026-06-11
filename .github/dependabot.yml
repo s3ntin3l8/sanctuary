@@ -35,8 +35,20 @@ updates:
       # transformers pins tokenizers<=0.23.0 — let the frameworks drive them.
       - dependency-name: "typer"
       - dependency-name: "tokenizers"
+      # transformers (4.57.x) pins huggingface-hub<1.0 and docling-core pins
+      # semchunk<4.0.0 — their majors can't install while those frameworks are
+      # held, so let the frameworks drive them (minor/patch still flow).
+      - dependency-name: "huggingface-hub"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "semchunk"
+        update-types: ["version-update:semver-major"]
       # docling is the ingestion engine — upgrade the family in lockstep, by hand.
       - dependency-name: "docling*"
+      # pyobjc is a darwin-only OCR dependency family (core + Cocoa/CoreML/Quartz/
+      # Vision) that must move in lockstep; an individual major PR desyncs it.
+      # The minor/patch group keeps them aligned — only block the majors.
+      - dependency-name: "pyobjc*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/"
