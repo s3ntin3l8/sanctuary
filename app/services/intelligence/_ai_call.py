@@ -7,7 +7,7 @@ import re
 import time
 import traceback
 from datetime import datetime
-from typing import TypeVar, overload
+from typing import overload
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -27,8 +27,6 @@ from app.services.model_gate import model_gate
 from app.services.timezone_service import get_user_tz
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=BaseModel)
 
 # Thinking-loop watchdog: pathological-case safety net only. The primary
 # primary anti-loop mechanism is the Qwen sampling config in ai_options.py
@@ -640,7 +638,7 @@ def _build_params(
 
 
 @overload
-def call_json_ai(
+def call_json_ai[T: BaseModel](
     *,
     system_prompt: str,
     user_prompt: str,

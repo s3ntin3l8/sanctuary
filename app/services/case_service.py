@@ -1499,7 +1499,7 @@ def _compute_dormancy_alert(case, db) -> str | None:
         return None
 
     proc_ids = [p.id for p in active_procs]
-    last_by_proc: dict[int, datetime | None] = {pid: None for pid in proc_ids}
+    last_by_proc: dict[int, datetime | None] = dict.fromkeys(proc_ids)
     rows = (
         db.query(Document.proceeding_id, func.max(Document.ingest_date))
         .filter(Document.proceeding_id.in_(proc_ids))
