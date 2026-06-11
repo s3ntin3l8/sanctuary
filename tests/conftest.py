@@ -183,20 +183,30 @@ def setup_test_db(test_engine):
         return TestingSessionLocal()
 
     app.dependency_overrides[get_db] = override_get_db
-    # We also need to patch get_db_session where it's used in background tasks.
-    # Also no-op `process_document_task.delay` at every import site: with
-    # CELERY_TASK_ALWAYS_EAGER=true (the project's `.env` default) every upload
-    # would otherwise fire a real httpx call to the configured AI provider
-    # (Ollama / LM Studio) and hang when the provider isn't reachable.
-    fake_delay = MagicMock()
+    # Patch get_db_session where background tasks open their own sessions, and
+    # globally neutralize the EXTRACT pipeline entry so no request handler ever
+    # runs it implicitly during tests. Two dispatch surfaces reach
+    # process_document_task:
+    #   * `.delay`       — the direct caller reingest_all_documents_task.
+    #   * `.apply_async` — what dispatch_task() invokes for the upload path.
+    # Under CELERY_TASK_ALWAYS_EAGER=true (the suite default) either would run
+    # the task body inline — cascading into metadata_task (real AI httpx) and
+    # concurrent writes to the shared test SQLite on an unmanaged daemon thread
+    # that outlives the test. No-op both so uploads stay "queued, not run".
+    fake_dispatch = MagicMock()
 
     with (
         patch(
             "app.tasks.document_processing.get_db_session",
             side_effect=override_get_db_session,
         ),
-        patch("app.tasks.document_processing.process_document_task.delay", fake_delay),
-        patch("app.api.documents.process_document_task.delay", fake_delay),
+        patch(
+            "app.tasks.document_processing.process_document_task.delay", fake_dispatch
+        ),
+        patch(
+            "app.tasks.document_processing.process_document_task.apply_async",
+            fake_dispatch,
+        ),
     ):
         yield
     app.dependency_overrides.clear()
@@ -452,6 +462,26 @@ def mock_phase4_celery_tasks():
         patch("app.tasks.generate_case_brief.refresh_case_brief_task.apply_async"),
     ):
         yield
+
+
+@pytest.fixture
+def mock_dispatch_task():
+    """Opt-in: intercept the request handler's background pipeline dispatch.
+
+    The EXTRACT pipeline body is already globally inert in tests — `setup_test_db`
+    no-ops `process_document_task.{delay,apply_async}`, so nothing runs the real
+    pipeline regardless of dispatch path. This fixture is a finer instrument for
+    the upload tests: patching `dispatch_task` at its source lets them assert the
+    endpoint *queued* the run (wiring intact) while keeping it from spawning even
+    the (now harmless) eager daemon thread, so the assertion is race-free.
+
+    documents.py imports dispatch_task lazily inside the handler, so the source
+    patch covers the upload path. Not autouse: tests that exercise dispatch_task's
+    real forwarding (e.g. recover_unclaimed_ready_batches) must keep the genuine
+    function.
+    """
+    with patch("app.tasks.dispatch.dispatch_task") as mock:
+        yield mock
 
 
 @pytest.fixture(autouse=True)
