@@ -25,8 +25,6 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "pillow"
-        update-types: ["version-update:semver-major"]
       # docling is the ingestion engine — upgrade the family in lockstep, by hand.
       - dependency-name: "docling*"
 
