@@ -61,7 +61,8 @@ def upgrade() -> None:
     # Backfill existing batches/documents to the bootstrap admin so they remain
     # visible in that admin's triage inbox.
     admin_id = bind.execute(
-        sa.text("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1")
+        # role is the UserRole *name* ('ADMIN'), matching how the ORM persists it.
+        sa.text("SELECT id FROM users WHERE role = 'ADMIN' ORDER BY id LIMIT 1")
     ).scalar()
     if admin_id is not None:
         bind.execute(

@@ -77,8 +77,10 @@ def upgrade() -> None:
     )
     bind.execute(
         sa.text(
+            # role stores the UserRole *name* (SAEnum persists names), so this
+            # must be 'ADMIN', not the lowercase value 'admin'.
             "INSERT INTO users (email, role, is_active, token_version, "
-            "created_at, updated_at) VALUES (:email, 'admin', 1, 0, "
+            "created_at, updated_at) VALUES (:email, 'ADMIN', 1, 0, "
             "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         ),
         {"email": admin_email},
