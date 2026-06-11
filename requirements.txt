@@ -122,7 +122,7 @@ xlsxwriter==3.2.9
 sqlite-vec==0.1.9
 pytest==9.0.3
 pytest-asyncio==1.4.0
-pytest-cov==6.0.0
+pytest-cov==7.1.0
 playwright==1.60.0
 pytest-playwright==0.8.0
 pre-commit==4.6.0
