@@ -118,11 +118,11 @@ urllib3==2.7.0
 uvicorn==0.39.0
 xlsxwriter==3.2.9
 sqlite-vec==0.1.9
-pytest==8.3.4
-pytest-asyncio==0.25.3
+pytest==9.0.3
+pytest-asyncio==1.4.0
 pytest-cov==6.0.0
 playwright==1.50.0
-pytest-playwright==0.7.0
+pytest-playwright==0.8.0
 pre-commit==4.1.0
 ruff==0.9.9
 celery==5.6.3
