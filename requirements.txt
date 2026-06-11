@@ -91,7 +91,7 @@ rpds-py==0.27.1
 rtree==1.4.1
 safetensors==0.7.0
 scipy==1.13.1
-semchunk==2.2.2
+semchunk==4.0.0
 shapely==2.0.7
 shellingham==1.5.4
 six==1.17.0
