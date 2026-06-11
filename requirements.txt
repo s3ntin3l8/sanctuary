@@ -9,7 +9,7 @@
 # separately only lets dependabot bump the child past the parent and break the
 # group resolve. The parent drives them deterministically.
 
-accelerate==1.13.0
+accelerate==1.14.0
 alembic==1.18.4
 aiofiles==25.1.0
 annotated-doc==0.0.4
@@ -83,7 +83,7 @@ python-pptx==1.0.2
 pytz==2026.2
 PyYAML==6.0.3
 onnxruntime==1.26.0
-rapidocr==3.8.2
+rapidocr==3.8.3
 slowapi==0.1.9
 referencing==0.37.0
 regex==2026.5.9
