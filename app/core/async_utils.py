@@ -1,12 +1,10 @@
 import asyncio
 import concurrent.futures
 from collections.abc import Coroutine
-from typing import Any, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 
-def run_async(coro: Coroutine[Any, Any, T]) -> T:
+def run_async[T](coro: Coroutine[Any, Any, T]) -> T:
     """Run a coroutine from synchronous code.
 
     Works whether or not an event loop is already running (e.g. eager Celery

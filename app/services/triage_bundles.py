@@ -437,7 +437,7 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     case_options = sorted(case_ids.items(), key=lambda x: x[0])
     proceeding_options = sorted(
         proceeding_opts.items(),
-        key=lambda x: ("" if x[0] == "unassigned" else x[1]),
+        key=lambda x: "" if x[0] == "unassigned" else x[1],
     )
     canonical_pipeline = [
         ("ready", "✓ ready"),

@@ -126,7 +126,7 @@ class HomeService:
             # Single batched query for new ActionItem counts per case.
             from sqlalchemy import func as sa_func
 
-            action_counts: dict[str, int] = {cid: 0 for cid in case_ids}
+            action_counts: dict[str, int] = dict.fromkeys(case_ids, 0)
             if case_ids:
                 rows = (
                     self.db.query(ActionItem.case_id, sa_func.count(ActionItem.id))

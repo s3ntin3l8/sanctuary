@@ -31,6 +31,7 @@ ignore = [
     "DTZ001", # datetime() without tzinfo: timezone normalization is a separate effort
     "DTZ005", # datetime.now() without tz: same
     "DTZ007", # datetime.strptime() without tz: same
+    "DTZ901", # datetime.min/max without tz: naive sort sentinels; same deferred effort
     "SIM117", # Nested with statements: stylistic preference
 ]
 
