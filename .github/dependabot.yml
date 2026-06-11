@@ -18,9 +18,6 @@ updates:
         patterns:
           - "*"
     ignore:
-      # FastAPI 0.128.x pins starlette <1.0.0 — hold the 1.x bump until FastAPI moves.
-      - dependency-name: "starlette"
-        update-types: ["version-update:semver-major"]
       # Breaking major bumps — adopt individually with tests, not via the weekly group.
       - dependency-name: "torch"
         update-types: ["version-update:semver-major"]
