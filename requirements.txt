@@ -4,12 +4,16 @@
 # CPU index. (Linux/Windows only — there is no macOS +cpu wheel.)
 --extra-index-url https://download.pytorch.org/whl/cpu
 
+# Deliberately NOT pinned: pydantic-core, antlr4-python3-runtime, mpmath. Each is
+# exact-pinned by a parent here (pydantic / omegaconf / sympy), so listing them
+# separately only lets dependabot bump the child past the parent and break the
+# group resolve. The parent drives them deterministically.
+
 accelerate==1.13.0
 alembic==1.18.4
 aiofiles==25.1.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
-antlr4-python3-runtime==4.13.2
 anyio==4.13.0
 attrs==26.1.0
 beautifulsoup4==4.15.0
@@ -47,7 +51,6 @@ marko==2.2.3
 MarkupSafe==3.0.3
 mdurl==0.1.2
 mpire==2.10.2
-mpmath==1.4.1
 multiprocess==0.70.19
 networkx==3.6.1
 numpy==2.4.6
@@ -64,7 +67,6 @@ psutil==7.2.2
 pyclipper==1.4.0
 pydantic==2.13.4
 pydantic-settings==2.14.1
-pydantic_core==2.47.0
 Pygments==2.20.0
 pylatexenc==2.10
 pyobjc-core==11.1; sys_platform == 'darwin'
@@ -124,7 +126,7 @@ pytest-cov==6.0.0
 playwright==1.60.0
 pytest-playwright==0.8.0
 pre-commit==4.6.0
-ruff==0.15.16
+ruff==0.9.9
 celery==5.6.3
 redis==7.4.0
 google-auth-oauthlib==1.4.0
