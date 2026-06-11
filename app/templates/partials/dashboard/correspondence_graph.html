@@ -260,10 +260,10 @@
             stroke="var(--color-amber)" stroke-width="1"
             stroke-dasharray="3 3" opacity="0.9"/>
 
-      {# Court originator stripe on bundle #}
+      {# Court originator stripe — always the relay doc's own color, not the routed lane #}
       <rect x="{{ bundle.x - 8 }}" y="{{ bundle.y - 8 }}"
             width="5" height="{{ bundle_h + 16 }}" rx="10"
-            fill="var(--color-originator-{{ bundle.lane }})"/>
+            fill="var(--color-originator-{{ bundle.originator }})"/>
 
       {# Bundle header label #}
       <text x="{{ bundle.x + 10 }}" y="{{ bundle.y + 10 }}"
