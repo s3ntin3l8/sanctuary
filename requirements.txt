@@ -69,7 +69,7 @@ Pygments==2.20.0
 pylatexenc==2.10
 pyobjc-core==11.1; sys_platform == 'darwin'
 pyobjc-framework-Cocoa==11.1; sys_platform == 'darwin'
-pyobjc-framework-CoreML==11.1; sys_platform == 'darwin'
+pyobjc-framework-CoreML==12.2; sys_platform == 'darwin'
 pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
 pyobjc-framework-Vision==11.1; sys_platform == 'darwin'
 pypdfium2==5.6.0
