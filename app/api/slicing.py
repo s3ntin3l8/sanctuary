@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.core.paths import to_storage_path
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.helpers import render_page
@@ -148,7 +149,7 @@ async def slicing_confirm(
             doc = Document(
                 title=f"{pdf_path.stem} – Part {slice_idx + 1}",
                 owner_id=batch.owner_id,  # sliced docs inherit the batch's owner
-                file_path=str(slice_filename),
+                file_path=to_storage_path(slice_filename),
                 original_filename=slice_filename.name,
                 content_hash=content_hash,
                 case_id="_TRIAGE",

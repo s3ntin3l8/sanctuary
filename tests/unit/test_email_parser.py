@@ -1,10 +1,18 @@
 """Expanded tests for parse_rfc822 — covering multipart, encodings, edge cases."""
 
+from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from app.services.ingestion.email_parser import parse_rfc822
+import pytest
+
+from app.services.ingestion.email_parser import (
+    _extract_email_note,
+    _parse_attachment_manifest,
+    parse_email_date,
+    parse_rfc822,
+)
 
 
 def _simple_email(
@@ -147,3 +155,75 @@ def test_parse_rfc822_attachment_with_no_filename():
     result = parse_rfc822(msg.as_bytes())
     assert len(result["attachments"]) == 1
     assert result["attachments"][0]["filename"] is None
+
+
+# --- parse_email_date fallbacks ---
+
+
+def test_parse_email_date_empty_returns_none():
+    assert parse_email_date("") is None
+
+
+def test_parse_email_date_rfc822():
+    dt = parse_email_date("Tue, 26 May 2026 08:24:00 +0200")
+    assert dt is not None
+    assert (dt.year, dt.month, dt.day) == (2026, 5, 26)
+
+
+def test_parse_email_date_iso_fallback():
+    assert parse_email_date("2026-05-26 08:24:00") == datetime(2026, 5, 26, 8, 24, 0)
+
+
+def test_parse_email_date_dotted_fallback():
+    assert parse_email_date("26.05.2026") == datetime(2026, 5, 26)
+
+
+@pytest.mark.parametrize("yy,century", [("26", 2026), ("80", 1980)])
+def test_parse_email_date_two_digit_year_pivot(yy, century):
+    assert parse_email_date(f"26.05.{yy}").year == century
+
+
+def test_parse_email_date_garbage_returns_none():
+    assert parse_email_date("not a date at all") is None
+
+
+def test_parse_email_date_impossible_date_returns_none():
+    # regex matches but datetime() rejects month 13 → None
+    assert parse_email_date("26.13.2026") is None
+
+
+# --- attachment manifest ---
+
+
+def test_parse_attachment_manifest_extracts_entries():
+    body = 'SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt"'
+    entries = _parse_attachment_manifest(body)
+    assert len(entries) == 1
+    assert entries[0]["filename"] == "SCHR_ LG IN V_ 26_05_26.PDF"
+    assert entries[0]["timestamp"] == "2026-05-26T08:24"
+    assert entries[0]["source_label"] == "Landgericht Ingolstadt"
+
+
+def test_parse_attachment_manifest_empty_without_match():
+    assert _parse_attachment_manifest("just a normal sentence") == []
+
+
+# --- email note extraction ---
+
+
+def test_extract_email_note_strips_anlagen_and_boilerplate():
+    body = (
+        "Sehr geehrte Damen und Herren,\n"
+        "anbei der Schriftsatz zur Kenntnis.\n"
+        "Anlagen:\n"
+        'DOC.PDF: 26.05.2026 08:24 - "LG IN"\n'
+        "\n"
+        "Mit freundlichen Grüßen\n"
+    )
+    assert _extract_email_note(body) == "anbei der Schriftsatz zur Kenntnis."
+
+
+def test_extract_email_note_truncates_long_text():
+    note = _extract_email_note("wort " * 400)  # ~2000 chars, no boilerplate
+    assert len(note) <= 802
+    assert note.endswith("…")

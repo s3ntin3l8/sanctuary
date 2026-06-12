@@ -61,6 +61,63 @@ def test_open_original_404_nonexistent_doc(db_session):
     assert response.status_code == 404
 
 
+@pytest.mark.integration
+def test_open_original_serves_relative_path(db_session, isolate_data_dir):
+    """Regression: file_path stored RELATIVE to DATA_DIR must serve (the HUD 404 bug).
+
+    Documents persist file_path relative to DATA_DIR so the DB is portable across
+    hosts. The route must re-root it under the running host's DATA_DIR.
+    """
+    triage = isolate_data_dir / "_TRIAGE"
+    triage.mkdir(exist_ok=True)
+    (triage / "letter.pdf").write_bytes(b"%PDF-1.4 relative path content")
+
+    doc = Document(title="Relative Path Doc", file_path="_TRIAGE/letter.pdf")
+    db_session.add(doc)
+    db_session.commit()
+
+    response = client.get(f"/document/{doc.id}/original")
+    assert response.status_code == 200
+    assert b"%PDF" in response.content
+
+
+@pytest.mark.integration
+def test_ingested_attachment_is_stored_relative_and_served(
+    db_session, isolate_data_dir
+):
+    """End-to-end: ingest an email PDF, confirm relative storage, serve it via the route."""
+    import email.message
+    from pathlib import Path
+
+    from app.models.enums import IngestBatchSourceType
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    msg = email.message.EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["Subject"] = "Schriftsatz ADV-024-A"
+    msg["Message-ID"] = "<rel-path-001@example.com>"
+    msg.set_content("im Anhang")
+    msg.add_attachment(
+        b"%PDF-1.4 attached letter",
+        maintype="application",
+        subtype="pdf",
+        filename="schriftsatz.pdf",
+    )
+
+    batch = ingest_raw_email(
+        db_session, msg.as_bytes(), source_type=IngestBatchSourceType.EMAIL
+    )
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+
+    # Stored path is relative — not baked to this host's absolute layout.
+    assert not Path(doc.file_path).is_absolute()
+    assert (isolate_data_dir / doc.file_path).exists()
+
+    response = client.get(f"/document/{doc.id}/original")
+    assert response.status_code == 200
+    assert b"%PDF" in response.content
+
+
 # ── Pipeline retry-all ────────────────────────────────────────────────────
 
 

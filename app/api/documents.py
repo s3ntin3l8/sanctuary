@@ -926,6 +926,7 @@ async def document_original(
     db: Session = Depends(get_db),
 ):
     from app.config import DATA_DIR
+    from app.core.paths import resolve_storage_path
 
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
@@ -936,16 +937,10 @@ async def document_original(
             status_code=404, detail="No original file stored for this document"
         )
 
-    import pathlib
-
-    file_path = pathlib.Path(doc.file_path)
-    if not file_path.is_absolute():
-        file_path = DATA_DIR / file_path
-
     # Defense-in-depth: refuse to serve anything outside DATA_DIR even if the
     # stored file_path were ever attacker-influenced (compromised task,
     # malicious migration, future SQLi).
-    resolved = file_path.resolve()
+    resolved = resolve_storage_path(doc.file_path).resolve()
     data_root = DATA_DIR.resolve()
     if not str(resolved).startswith(str(data_root) + "/") and resolved != data_root:
         raise HTTPException(status_code=404, detail="Original file not found on disk")
