@@ -15,7 +15,9 @@
     {# Endpoint + Model #}
     <div class="grid grid-cols-2 gap-3">
         <div class="space-y-1.5">
-            <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Endpoint</label>
+            <div class="flex items-center h-4">
+                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Endpoint</label>
+            </div>
             <select id="endpoint-select-{{ role }}" name="instance_id"
                     hx-post="{{ request.app.url_path_for('set_role', role=role) }}"
                     hx-target="#role-status-{{ role }}"
@@ -29,7 +31,7 @@
             </select>
         </div>
         <div class="space-y-1.5">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between h-4">
                 <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Model</label>
                 {% if card.active_id %}
                 <button type="button"

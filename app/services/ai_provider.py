@@ -55,6 +55,12 @@ def sanitize_provider_error(exc: Exception, provider_url: str = "") -> str:
         return f"Provider returned HTTP {s}."
     if isinstance(exc, json.JSONDecodeError):
         return "Provider returned non-JSON response — the URL is likely wrong."
+    if isinstance(exc, RuntimeError):
+        # detect_provider / get_embedding_params_for raise RuntimeError when no
+        # endpoint responded on /v1/models or /api/tags — i.e. unreachable.
+        return (
+            "Endpoint not reachable — check the URL and that the AI server is running."
+        )
     return f"Unexpected error: {type(exc).__name__}"
 
 

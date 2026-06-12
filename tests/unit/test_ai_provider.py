@@ -3,6 +3,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.services.ai_provider import (
@@ -10,7 +11,24 @@ from app.services.ai_provider import (
     ProviderType,
     _make_openai_strict,
     detect_provider,
+    sanitize_provider_error,
 )
+
+
+@pytest.mark.unit
+def test_sanitize_runtime_error_is_clear_unreachable_message():
+    """An unreachable endpoint (detect_provider RuntimeError) gets a readable
+    message, not the opaque 'Unexpected error: RuntimeError' fallback."""
+    msg = sanitize_provider_error(RuntimeError("AI provider unreachable: …"))
+    assert "not reachable" in msg.lower()
+    assert "RuntimeError" not in msg
+
+
+@pytest.mark.unit
+def test_sanitize_connect_error_names_the_target():
+    msg = sanitize_provider_error(httpx.ConnectError("refused"), "http://10.0.0.9:7000")
+    assert "10.0.0.9:7000" in msg or "Cannot reach" in msg
+
 
 # ---------------------------------------------------------------------------
 # detect_provider
