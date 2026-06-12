@@ -1,6 +1,9 @@
 {# app/templates/partials/settings/_ai_instance_row.html #}
 {% set iid = inst.id %}
 {% set h = health | default({"ok": False, "detail": "Not tested"}) %}
+{% set active_chat_id = active_chat_id | default('') %}
+{% set active_embed_id = active_embed_id | default('') %}
+{% set active_ocr_id = active_ocr_id | default('') %}
 
 <div id="instance-{{ iid }}"
      class="p-4 bg-surface-container-low border border-outline-variant/10 rounded-xl space-y-3"
@@ -59,6 +62,21 @@
             </button>
         </div>
     </div>
+
+    {# Active-role badges — which roles this endpoint serves, and with what model #}
+    {% if iid in [active_chat_id, active_embed_id, active_ocr_id] %}
+    <div class="flex flex-wrap items-center gap-1.5">
+        {% if iid == active_chat_id %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-primary/15 text-primary">Chat · {{ inst.summary_model or '—' }}</span>
+        {% endif %}
+        {% if iid == active_embed_id %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-primary/15 text-primary">Embed · {{ inst.embed_model or '—' }}{% if inst.embed_dim %} ({{ inst.embed_dim }}){% endif %}</span>
+        {% endif %}
+        {% if iid == active_ocr_id %}
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-primary/15 text-primary">OCR · {{ inst.ocr_model or '—' }}</span>
+        {% endif %}
+    </div>
+    {% endif %}
     <div id="delete-error-{{ iid }}"></div>
 
     {# ── Edit form (expanded) ─────────────────────────────────────────── #}
@@ -115,77 +133,14 @@
             </div>
         </div>
 
-        {# Models (populated via HTMX discover) #}
-        {% set chat_models = models.chat if models is mapping else [] %}
-        {% set embed_models = models.embed if models is mapping else [] %}
-        {% set ocr_models = models.ocr if models is mapping else [] %}
-
-        <div class="grid grid-cols-3 gap-3">
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Chat Model</label>
-                <select id="summary_model_{{ iid }}" name="summary_model"
-                        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
-                    {% if chat_models %}
-                    {% for m in chat_models %}
-                    <option value="{{ m }}" {% if m == inst.summary_model %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                    {% else %}
-                    <option value="{{ inst.summary_model }}" selected>{{ inst.summary_model or 'Click Discover' }}</option>
-                    {% endif %}
-                </select>
-            </div>
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Embed Model</label>
-                <select id="embed_model_{{ iid }}" name="embed_model"
-                        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
-                    {% if embed_models %}
-                    {% for m in embed_models %}
-                    <option value="{{ m }}" {% if m == inst.embed_model %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                    {% else %}
-                    <option value="{{ inst.embed_model }}" selected>{{ inst.embed_model or 'Click Discover' }}</option>
-                    {% endif %}
-                </select>
-            </div>
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">OCR Model</label>
-                <select id="ocr_model_{{ iid }}" name="ocr_model"
-                        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
-                    {% if ocr_models %}
-                    <option value="" {% if not inst.ocr_model %}selected{% endif %}>— none —</option>
-                    {% for m in ocr_models %}
-                    <option value="{{ m }}" {% if m == inst.ocr_model %}selected{% endif %}>{{ m }}</option>
-                    {% endfor %}
-                    {% else %}
-                    <option value="{{ inst.get('ocr_model', '') }}" selected>{{ inst.get('ocr_model', '') or 'Click Discover' }}</option>
-                    {% endif %}
-                </select>
-            </div>
-        </div>
-
-        {# Embed Dim (auto-detected on save) #}
-        <div class="flex items-end gap-3">
-            <div class="space-y-1.5">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Embed Dim</label>
-                <span class="inline-flex items-center text-sm font-mono px-3 py-1.5 rounded-lg bg-surface-container-high/50 border border-outline-variant/20 text-on-surface-variant">
-                    {{ inst.embed_dim or "—" }}
-                </span>
-            </div>
-        </div>
+        {# Models are chosen per role in the cards above — this form is
+           endpoint-only (label / URL / provider / key). #}
 
         {# Actions #}
         <div class="flex flex-wrap items-center gap-2 pt-1">
             <button type="submit"
                     class="px-3 py-1.5 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-lg hover:opacity-90 transition-all">
                 Save
-            </button>
-            <button type="button"
-                    hx-get="{{ request.app.url_path_for('instance_models', instance_id=iid) }}"
-                    hx-trigger="click, refresh-models-{{ iid }} from:body"
-                    hx-swap="none"
-                    class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg border border-outline-variant/20 transition-all flex items-center gap-1">
-                <span class="material-symbols-outlined text-[13px]">search</span>
-                Discover
             </button>
             <button type="button"
                     hx-post="{{ request.app.url_path_for('test_instance', instance_id=iid) }}"

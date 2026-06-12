@@ -1,0 +1,10 @@
+{# Model <select> for one role card. Shared by _role_card.html (initial render,
+   oob=false) and _role_card_status.html (OOB refresh on endpoint switch, oob=true).
+   Requires context: role, options (pre-rendered <option> string), oob (bool). #}
+<select id="model-select-{{ role }}" name="model"
+        hx-post="{{ request.app.url_path_for('set_role', role=role) }}"
+        hx-include="#endpoint-select-{{ role }}"
+        hx-target="#role-status-{{ role }}"
+        hx-swap="innerHTML"
+        {% if oob %}hx-swap-oob="true"{% endif %}
+        class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">{{ options | safe }}</select>

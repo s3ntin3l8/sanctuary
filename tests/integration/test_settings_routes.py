@@ -255,21 +255,21 @@ def test_ai_config_delete_nonexistent_instance():
 
 
 @pytest.mark.integration
-def test_ai_config_set_active_invalid_role():
-    """POST /api/settings/ai/active with invalid role returns 400."""
+def test_ai_config_set_role_invalid_role():
+    """POST /api/settings/ai/role/{role} with invalid role returns 400."""
     response = client.post(
-        "/api/settings/ai/active",
-        data={"role": "invalid", "instance_id": "inst_abc"},
+        "/api/settings/ai/role/invalid",
+        data={"instance_id": "inst_abc"},
     )
     assert response.status_code == 400
 
 
 @pytest.mark.integration
-def test_ai_config_set_active_missing_instance():
-    """POST /api/settings/ai/active with unknown instance_id returns 404."""
+def test_ai_config_set_role_missing_instance():
+    """POST /api/settings/ai/role/{role} with unknown instance_id returns 404."""
     response = client.post(
-        "/api/settings/ai/active",
-        data={"role": "chat", "instance_id": "inst_doesnotexist"},
+        "/api/settings/ai/role/chat",
+        data={"instance_id": "inst_doesnotexist"},
     )
     assert response.status_code == 404
 
