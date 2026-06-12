@@ -6,7 +6,7 @@
     <div class="flex items-center gap-2 min-w-0">
         <span class="material-symbols-outlined text-primary text-[18px]">{{ card.icon }}</span>
         <span class="text-xs font-black uppercase tracking-widest text-on-surface-variant">{{ card.label }}</span>
-        <span class="ml-auto text-[11px] font-mono text-on-surface-variant/70 truncate max-w-[16rem]">
+        <span id="role-model-label-{{ role }}" class="ml-auto text-[11px] font-mono text-on-surface-variant/70 truncate max-w-[16rem]">
             {{ card.model or '— no model —' }}{% if card.embed_dim %} · {{ card.embed_dim }}d{% endif %}
         </span>
     </div>

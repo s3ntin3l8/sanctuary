@@ -166,11 +166,19 @@ async def _fetch_models(inst: dict) -> dict[str, list[str]]:
 def _model_options(models: list[str], selected: str) -> str:
     if not models:
         return f'<option value="{escape(selected, quote=True)}" selected>{escape(selected)}</option>'
-    return "".join(
+    opts = []
+    # No saved model (or it's not among the discovered ones): show an explicit
+    # placeholder rather than letting the browser silently display the first
+    # option as if chosen. Selecting a real model then always changes the value,
+    # firing the select's `change` trigger so set_role actually persists it.
+    if not selected or selected not in models:
+        opts.append('<option value="" selected disabled>— select a model —</option>')
+    opts += [
         f'<option value="{escape(m, quote=True)}" {"selected" if m == selected else ""}>'
         f"{escape(m)}</option>"
         for m in models
-    )
+    ]
+    return "".join(opts)
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +439,7 @@ async def set_role(
     set_active(db, role, instance_id)
 
     probed_dim = None
+    probe_warning = ""
     if not switching:
         inst = {**inst, field: model}
         if role == "embed" and inst.get("embed_model"):
@@ -439,7 +448,15 @@ async def set_role(
                 inst["embed_dim"] = dim
                 probed_dim = dim
             elif not inst.get("embed_dim"):
-                return HTMLResponse(_toast(False, f"Could not detect embed dim: {err}"))
+                # Probe failed and no dim is known yet. Persist the model anyway
+                # rather than silently discarding the user's pick; embeddings
+                # stay gated on a known dim, surfaced as a non-blocking warning.
+                probe_warning = (
+                    '<div class="mt-1 text-[11px]" style="color:var(--color-error)">'
+                    f"Model saved, but embed dimension couldn't be detected: {escape(str(err))}. "
+                    "Embeddings stay disabled until the endpoint is reachable — re-select to retry."
+                    "</div>"
+                )
         save_instance(db, inst)
 
     provider = _provider_for(role)
@@ -447,7 +464,7 @@ async def set_role(
     health = await provider.probe_health()
     ptype = await provider.get_type()
 
-    warning = _embed_dim_warning(db) if role == "embed" else ""
+    warning = (_embed_dim_warning(db) if role == "embed" else "") + probe_warning
 
     current_model = inst.get(field, "")
     if switching:
@@ -471,6 +488,8 @@ async def set_role(
             "probed_dim": probed_dim,
             "warning": warning,
             "options": options,
+            "current_model": current_model,
+            "model_dim": inst.get("embed_dim") if role == "embed" else None,
         },
     )
 

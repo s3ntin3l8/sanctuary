@@ -16,4 +16,7 @@
 {% if switching %}
 {% set oob = true %}
 {% include "partials/settings/_role_card_model_select.html" %}
+{% else %}
+{# A model was saved — OOB-refresh the resting header label so it stops being stale. #}
+<span id="role-model-label-{{ role }}" hx-swap-oob="true" class="ml-auto text-[11px] font-mono text-on-surface-variant/70 truncate max-w-[16rem]">{{ current_model or '— no model —' }}{% if model_dim %} · {{ model_dim }}d{% endif %}</span>
 {% endif %}
