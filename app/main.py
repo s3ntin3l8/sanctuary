@@ -164,8 +164,14 @@ _SESSION_COOKIE = "session"
 def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if origin:
-        expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
-        return origin == expected
+        # Compare host only, not scheme. Behind a TLS-terminating reverse proxy
+        # that doesn't forward X-Forwarded-Proto, request.url.scheme is "http"
+        # while the browser's Origin is "https://…", which would 403 every
+        # mutation. The Host match is the meaningful CSRF boundary here (an
+        # attacker can't serve content from the same host); the session cookie
+        # is already SameSite=lax. Origin has no path, so netloc == host[:port].
+        origin_host = origin.split("://", 1)[-1]
+        return origin_host == request.headers.get("host", "")
 
     # No Origin header. Modern browsers send Origin on every cross-origin
     # mutation, so this is usually a same-origin request. Tighten with the
