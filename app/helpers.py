@@ -104,7 +104,8 @@ def _current_user_for_template(request: Request, db: Session | None):
 
         user = auth_service.get_or_create_bootstrap_admin(db)
         db.commit()
-        request.state.current_user = user
+        if user is not None:
+            request.state.current_user = user
         return user
     return None
 

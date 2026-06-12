@@ -54,9 +54,11 @@ AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
 # Self-service signup. Off by default — flip on (here or at runtime via the admin
 # UI) once you intend to onboard additional users. New signups are regular users.
 AUTH_SIGNUP_ENABLED = os.getenv("AUTH_SIGNUP_ENABLED", "false").lower() == "true"
-# The designated first admin. On a fresh DB a user with this email is created as
-# admin during startup seeding (password from BOOTSTRAP_ADMIN_PASSWORD, or set on
-# first login via the one-time create-admin screen when both are unset).
+# Optional code-driven provisioning of the first admin (e.g. Ansible). FRESH DB
+# ONLY: both must be set, and they seed the primary admin exactly once when the
+# database has no users. After setup they are inert — editing them does nothing;
+# change the account from the UI. When unset, the one-time create-admin screen
+# onboards the first admin instead.
 BOOTSTRAP_ADMIN_EMAIL = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
 BOOTSTRAP_ADMIN_PASSWORD = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
 # Signed-cookie session lifetime. Sessions older than this (by issued-at) are

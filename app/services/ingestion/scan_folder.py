@@ -136,7 +136,10 @@ def scan_and_ingest(db: Session) -> int:
         return 0
 
     username_to_id = {u.username: u.id for u in db.query(User).all() if u.username}
-    admin_id = auth_service.get_or_create_bootstrap_admin(db).id
+    admin = auth_service.get_or_create_bootstrap_admin(db)
+    if admin is None:
+        return 0  # no admin configured yet — nothing owns ingested scans
+    admin_id = admin.id
 
     processed = 0
     for entry in candidates:

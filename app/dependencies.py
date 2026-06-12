@@ -50,6 +50,11 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not config.AUTH_ENABLED:
         user = auth_service.get_or_create_bootstrap_admin(db)
         db.commit()
+        if user is None:
+            # Fresh DB, no admin yet: send to the one-time create-admin screen.
+            raise HTTPException(
+                status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/signup"}
+            )
         request.state.current_user = user
         return user
 

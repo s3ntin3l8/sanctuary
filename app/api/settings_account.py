@@ -37,6 +37,31 @@ async def update_profile(
     return _toast("Profile updated")
 
 
+@router.post("/email")
+async def change_email(
+    new_email: str = Form(...),
+    current_password: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Gate the credential change on the current password, except for accounts
+    # that have none yet (e.g. an auth-disabled bootstrap admin) — nothing to
+    # verify against in that case.
+    if user.password_hash and not security.verify_password(
+        current_password, user.password_hash
+    ):
+        return _toast("Current password is incorrect.", "error", status=422)
+
+    try:
+        auth_service.change_email(db, user, new_email)
+    except auth_service.InvalidEmail:
+        return _toast("Enter a valid email address.", "error", status=422)
+    except auth_service.EmailAlreadyExists:
+        return _toast("That email is already in use.", "error", status=422)
+    db.commit()
+    return _toast("Email updated.")
+
+
 @router.post("/password")
 async def change_password(
     request: Request,

@@ -21,8 +21,14 @@ def _stale_iso(minutes_ago: int) -> str:
 
 @pytest.fixture
 def settings_row(db_session) -> AppSettings:
-    row = AppSettings(settings_json={})
-    db_session.add(row)
+    # AppSettings is a singleton; the bootstrap-admin pin may already have created
+    # the row, so get-or-create it rather than inserting a second one.
+    row = db_session.query(AppSettings).first()
+    if row is None:
+        row = AppSettings(settings_json={})
+        db_session.add(row)
+    else:
+        row.settings_json = {}
     db_session.commit()
     db_session.refresh(row)
     return row
