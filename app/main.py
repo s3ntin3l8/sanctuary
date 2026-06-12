@@ -164,8 +164,14 @@ _SESSION_COOKIE = "session"
 def _same_origin(request: Request) -> bool:
     origin = request.headers.get("origin")
     if origin:
-        expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
-        return origin == expected
+        # Compare host only, not scheme. Behind a TLS-terminating reverse proxy
+        # that doesn't forward X-Forwarded-Proto, request.url.scheme is "http"
+        # while the browser's Origin is "https://…", which would 403 every
+        # mutation. The Host match is the meaningful CSRF boundary here (an
+        # attacker can't serve content from the same host); the session cookie
+        # is already SameSite=lax. Origin has no path, so netloc == host[:port].
+        origin_host = origin.split("://", 1)[-1]
+        return origin_host == request.headers.get("host", "")
 
     # No Origin header. Modern browsers send Origin on every cross-origin
     # mutation, so this is usually a same-origin request. Tighten with the
@@ -675,6 +681,12 @@ templates.env.filters["format_days_ago"] = format_days_ago
 templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
 templates.env.filters["local_strftime"] = _local_strftime
+
+# Flags AI endpoints on the public internet so the settings UI can warn about
+# case-data egress (LAN/loopback endpoints stay quiet).
+from app.services.ai_config import is_external_endpoint as _is_external_endpoint
+
+templates.env.globals["is_external_endpoint"] = _is_external_endpoint
 
 # Markdown renderer.
 # html=False blocks raw-HTML passthrough — Docling-produced markdown can't inject

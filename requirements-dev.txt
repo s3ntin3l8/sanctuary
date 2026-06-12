@@ -1,11 +1,19 @@
-# Dev/test dependencies for CI.
+# Dev/test dependencies for CI and local development.
 #
 # The standardized ci-python.yml reusable workflow installs ONLY this file when
 # present (it prefers requirements-dev.txt over an editable install or
 # requirements.txt). pyproject.toml here is config-only (no [project]/
 # [build-system]), so `pip install -e .` would fail and nothing would install.
 #
-# requirements.txt already pins the full runtime stack (CPU-only torch included)
-# plus the test/lint tools (pytest, pytest-cov, ruff, pre-commit, playwright),
-# so a single include covers everything CI needs.
+# requirements.txt pins the full runtime stack (CPU-only torch included). The
+# test/lint tools below are intentionally kept OUT of requirements.txt so they
+# never reach the Docker image (the Dockerfile installs requirements.txt only).
 -r requirements.txt
+
+pytest==9.0.3
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+playwright==1.60.0
+pytest-playwright==0.8.0
+pre-commit==4.6.0
+ruff==0.15.16

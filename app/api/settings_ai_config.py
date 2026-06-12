@@ -166,11 +166,19 @@ async def _fetch_models(inst: dict) -> dict[str, list[str]]:
 def _model_options(models: list[str], selected: str) -> str:
     if not models:
         return f'<option value="{escape(selected, quote=True)}" selected>{escape(selected)}</option>'
-    return "".join(
+    opts = []
+    # No saved model (or it's not among the discovered ones): show an explicit
+    # placeholder rather than letting the browser silently display the first
+    # option as if chosen. Selecting a real model then always changes the value,
+    # firing the select's `change` trigger so set_role actually persists it.
+    if not selected or selected not in models:
+        opts.append('<option value="" selected disabled>— select a model —</option>')
+    opts += [
         f'<option value="{escape(m, quote=True)}" {"selected" if m == selected else ""}>'
         f"{escape(m)}</option>"
         for m in models
-    )
+    ]
+    return "".join(opts)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +191,6 @@ async def create_instance(
     request: Request,
     label: str = Form("New Instance"),
     base_url: str = Form("http://127.0.0.1:11434"),
-    provider: str = Form("auto"),
     api_key: str = Form("not-needed"),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
@@ -197,7 +204,8 @@ async def create_instance(
         "id": inst_id,
         "label": label.strip() or "New Instance",
         "base_url": base_url.strip().rstrip("/"),
-        "provider": provider.strip(),
+        # API shape is auto-detected at call time; never set manually.
+        "provider": "auto",
         "api_key": api_key.strip() or "not-needed",
         "summary_model": summary_model.strip(),
         "embed_model": embed_model.strip(),
@@ -213,18 +221,19 @@ async def create_instance(
 
     save_instance(db, instance)
     health = await _probe_instance(instance)
-    models = (
-        await _fetch_models(instance) if health["ok"] else {"chat": [], "embed": []}
-    )
+    from app.services.ai_config import _get_ai_section
 
+    ai = _get_ai_section(db)
     return templates.TemplateResponse(
         request,
         "partials/settings/_ai_instance_row.html",
         {
             "inst": instance,
             "health": health,
-            "models": models,
             "expanded": True,
+            "active_chat_id": ai.get("active_chat_id", ""),
+            "active_embed_id": ai.get("active_embed_id", ""),
+            "active_ocr_id": ai.get("active_ocr_id", ""),
         },
         headers={"HX-Reswap": "beforeend", "HX-Retarget": "#ai-instances"},
     )
@@ -236,7 +245,6 @@ async def save_instance_route(
     request: Request,
     label: str = Form(""),
     base_url: str = Form(""),
-    provider: str = Form("auto"),
     api_key: str = Form(""),
     summary_model: str = Form(""),
     embed_model: str = Form(""),
@@ -247,22 +255,25 @@ async def save_instance_route(
     if not existing:
         return HTMLResponse(_toast(False, "Instance not found"), status_code=404)
 
-    new_embed_model = embed_model.strip() or existing.get("embed_model", "")
+    # The Connections form is endpoint-only (label/url/provider/key); model
+    # fields are owned by the role cards. A blank model field here means "keep
+    # what's stored", so endpoint saves never wipe or re-probe models.
+    submitted_embed = embed_model.strip()
     instance = {
         "id": instance_id,
         "label": label.strip() or existing.get("label", "Instance"),
         "base_url": (base_url.strip() or existing.get("base_url", "")).rstrip("/"),
-        "provider": provider.strip() or existing.get("provider", "auto"),
+        # API shape is auto-detected; normalize any legacy manual value to auto.
+        "provider": "auto",
         "api_key": api_key.strip() or existing.get("api_key", "not-needed"),
         "summary_model": summary_model.strip() or existing.get("summary_model", ""),
-        "embed_model": new_embed_model,
+        "embed_model": submitted_embed or existing.get("embed_model", ""),
         "embed_dim": existing.get("embed_dim"),
         "ocr_model": ocr_model.strip() or existing.get("ocr_model", ""),
     }
 
-    # Always probe when embed_model is set — catches stale dims from before auto-detect.
-    # On failure: hard-fail only if we have no stored dim at all; otherwise keep existing.
-    if new_embed_model:
+    # Only re-probe the dimension when an embed model was explicitly submitted.
+    if submitted_embed:
         dim, err = await _probe_embed_dim(instance)
         if dim:
             instance["embed_dim"] = dim
@@ -296,10 +307,12 @@ async def save_instance_route(
         "partials/settings/_ai_instance_row.html",
         {
             "inst": instance,
-            "health": {"ok": None, "detail": "Saved"},
-            "models": [],
+            "health": {"ok": None, "detail": "✓ Saved"},
             "expanded": True,
             "dim_warning": dim_warning,
+            "active_chat_id": ai.get("active_chat_id", ""),
+            "active_embed_id": ai.get("active_embed_id", ""),
+            "active_ocr_id": ai.get("active_ocr_id", ""),
         },
     )
 
@@ -360,116 +373,142 @@ async def test_instance(
     except Exception:
         ptype = ProviderType.OLLAMA  # fallback for label
 
-    headers = {}
-    if health["ok"]:
-        headers["HX-Trigger"] = f"refresh-models-{instance_id}"
-
-    return HTMLResponse(
-        _status_pill(health, str(ptype) if health["ok"] else None),
-        headers=headers,
-    )
-
-
-@router.get("/instances/{instance_id}/models", response_class=HTMLResponse)
-async def instance_models(
-    instance_id: str,
-    db: Session = Depends(get_db),
-):
-    """Return HTMX Out-of-Band swaps that populate model <select> elements."""
-    inst = get_instance(db, instance_id)
-    if not inst:
-        return HTMLResponse("<option disabled>Instance not found</option>")
-
-    categorized = await _fetch_models(inst)
-    safe_id = escape(instance_id, quote=True)
-
-    chat_models = categorized.get("chat", [])
-    embed_models = categorized.get("embed", [])
-    ocr_models = categorized.get("ocr", [])
-
-    # If categorized lists are empty, provide fallback options
-    summary_opts = (
-        _model_options(chat_models, inst.get("summary_model", ""))
-        if chat_models
-        else f'<option value="{escape(inst.get("summary_model", ""), quote=True)}" selected>{escape(inst.get("summary_model", "") or "No chat models found")}</option>'
-    )
-    embed_opts = (
-        _model_options(embed_models, inst.get("embed_model", ""))
-        if embed_models
-        else f'<option value="{escape(inst.get("embed_model", ""), quote=True)}" selected>{escape(inst.get("embed_model", "") or "No embedding models found")}</option>'
-    )
-    ocr_opts = (
-        _model_options(ocr_models, inst.get("ocr_model", ""))
-        if ocr_models
-        else f'<option value="{escape(inst.get("ocr_model", ""), quote=True)}" selected>{escape(inst.get("ocr_model", "") or "No OCR models found")}</option>'
-    )
-
-    # Return all three selects with OOB swap
-    res = [
-        f'<select id="summary_model_{safe_id}" name="summary_model" hx-swap-oob="innerHTML">{summary_opts}</select>',
-        f'<select id="embed_model_{safe_id}" name="embed_model" hx-swap-oob="innerHTML">{embed_opts}</select>',
-        f'<select id="ocr_model_{safe_id}" name="ocr_model" hx-swap-oob="innerHTML">{ocr_opts}</select>',
-    ]
-
-    return HTMLResponse("".join(res))
+    return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
 
 
 # ---------------------------------------------------------------------------
-# Active instance selectors
+# Role-first selectors: each role (chat/embed/ocr) picks an active endpoint
+# and a model. The model is stored on the active instance's role-specific
+# field, which is exactly what get_*_config() resolves at call time.
 # ---------------------------------------------------------------------------
 
+_ROLE_FIELD = {"chat": "summary_model", "embed": "embed_model", "ocr": "ocr_model"}
+_ROLE_LABEL = {"chat": "Chat", "embed": "Embeddings", "ocr": "OCR"}
 
-@router.post("/active", response_class=HTMLResponse)
-async def set_active_instance(
-    role: str = Form(...),
-    instance_id: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    if role not in ("chat", "embed", "ocr"):
-        return HTMLResponse(_toast(False, "Invalid role"), status_code=400)
 
-    inst = get_instance(db, instance_id)
-    if not inst:
-        return HTMLResponse(_toast(False, "Instance not found"), status_code=404)
+def _provider_for(role: str):
+    return {"chat": chat_provider, "embed": embed_provider, "ocr": ocr_provider}[role]
 
-    set_active(db, role, instance_id)
 
-    if role == "chat":
-        chat_provider.reload_from_db(db)
-        health = await chat_provider.probe_health()
-        ptype = await chat_provider.get_type()
-        return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
-    if role == "ocr":
-        ocr_provider.reload_from_db(db)
-        health = await ocr_provider.probe_health()
-        ptype = await ocr_provider.get_type()
-        return HTMLResponse(_status_pill(health, str(ptype) if health["ok"] else None))
-    embed_provider.reload_from_db(db)
-    health = await embed_provider.probe_health()
-    ptype = await embed_provider.get_type()
-
-    # Warn if embed dim mismatch
+def _embed_dim_warning(db) -> str:
+    """Rebuild-index warning HTML when the active embed dim != vec0 dim."""
     from app.services.embeddings import verify_vec0_dim
 
     cfg = get_embed_config(db)
     dim_ok, actual_dim = verify_vec0_dim(db, cfg.embed_dim)
-    extra = ""
-    if not dim_ok:
-        actual = actual_dim or "unknown"
-        extra = (
-            f'<div class="mt-2 p-3 rounded-xl text-xs border" '
-            f'style="border-color:var(--color-error);color:var(--color-error)">'
-            f'<span class="material-symbols-outlined text-[14px] align-middle">warning</span> '
-            f"Vector index dim mismatch: index={actual}, new config={cfg.embed_dim}. "
-            f'<button type="button" '
-            f'hx-post="/api/settings/ai/rebuild-index" '
-            f'hx-target="#rebuild-result" hx-swap="innerHTML" '
-            f'class="underline font-bold ml-1">Rebuild index</button>'
-            f"</div>"
-        )
+    if dim_ok:
+        return ""
+    actual = actual_dim or "unknown"
+    return (
+        '<div class="mt-2 p-3 rounded-xl text-xs border" '
+        'style="border-color:var(--color-error);color:var(--color-error)">'
+        '<span class="material-symbols-outlined text-[14px] align-middle">warning</span> '
+        f"Vector index dim mismatch: index={actual}, config={cfg.embed_dim}. "
+        '<button type="button" hx-post="/api/settings/ai/rebuild-index" '
+        'hx-target="#reindex-status" hx-swap="innerHTML" '
+        'class="underline font-bold ml-1">Rebuild index</button></div>'
+    )
 
+
+@router.post("/role/{role}", response_class=HTMLResponse)
+async def set_role(
+    role: str,
+    request: Request,
+    instance_id: str = Form(...),
+    model: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Set the active endpoint (and optionally the model) for a role.
+
+    Sent by the role card. An empty `model` means the endpoint changed —
+    we set active and re-discover that endpoint's models (OOB-swapped into
+    the model select). A non-empty `model` means the user picked a model —
+    we write it to the active instance's role field and (for embed) re-probe
+    the dimension.
+    """
+    if role not in _ROLE_FIELD:
+        return HTMLResponse(_toast(False, "Invalid role"), status_code=400)
+    inst = get_instance(db, instance_id)
+    if not inst:
+        return HTMLResponse(_toast(False, "Instance not found"), status_code=404)
+
+    field = _ROLE_FIELD[role]
+    model = model.strip()
+    switching = model == ""
+
+    set_active(db, role, instance_id)
+
+    probed_dim = None
+    probe_warning = ""
+    if not switching:
+        inst = {**inst, field: model}
+        if role == "embed" and inst.get("embed_model"):
+            dim, err = await _probe_embed_dim(inst)
+            if dim:
+                inst["embed_dim"] = dim
+                probed_dim = dim
+            elif not inst.get("embed_dim"):
+                # Probe failed and no dim is known yet. Persist the model anyway
+                # rather than silently discarding the user's pick; embeddings
+                # stay gated on a known dim, surfaced as a non-blocking warning.
+                probe_warning = (
+                    '<div class="mt-1 text-[11px]" style="color:var(--color-error)">'
+                    f"Model saved, but embed dimension couldn't be detected: {escape(str(err))}. "
+                    "Embeddings stay disabled until the endpoint is reachable — re-select to retry."
+                    "</div>"
+                )
+        save_instance(db, inst)
+
+    provider = _provider_for(role)
+    provider.reload_from_db(db)
+    health = await provider.probe_health()
+    ptype = await provider.get_type()
+
+    warning = (_embed_dim_warning(db) if role == "embed" else "") + probe_warning
+
+    current_model = inst.get(field, "")
+    if switching:
+        saved_label = f"Switched to {inst.get('label', 'instance')}"
+    else:
+        saved_label = f"{current_model or '—'} active for {_ROLE_LABEL[role]}"
+
+    options = ""
+    if switching:
+        categorized = await _fetch_models(inst)
+        options = _model_options(categorized.get(role, []), current_model)
+
+    return templates.TemplateResponse(
+        request,
+        "partials/settings/_role_card_status.html",
+        {
+            "role": role,
+            "switching": switching,
+            "saved_label": saved_label,
+            "status_pill": _status_pill(health, str(ptype) if health["ok"] else None),
+            "probed_dim": probed_dim,
+            "warning": warning,
+            "options": options,
+            "current_model": current_model,
+            "model_dim": inst.get("embed_dim") if role == "embed" else None,
+        },
+    )
+
+
+@router.get("/role/{role}/models", response_class=HTMLResponse)
+async def role_model_options(
+    role: str,
+    instance_id: str,
+    db: Session = Depends(get_db),
+):
+    """Return the <option> list for one role's model select on a given endpoint."""
+    if role not in _ROLE_FIELD:
+        return HTMLResponse("<option disabled>Invalid role</option>", status_code=400)
+    inst = get_instance(db, instance_id)
+    if not inst:
+        return HTMLResponse("<option disabled>Instance not found</option>")
+    categorized = await _fetch_models(inst)
     return HTMLResponse(
-        _status_pill(health, str(ptype) if health["ok"] else None) + extra,
+        _model_options(categorized.get(role, []), inst.get(_ROLE_FIELD[role], ""))
     )
 
 
@@ -645,6 +684,29 @@ async def set_extraction_engine_route(
         return HTMLResponse(_toast(False, f"Invalid engine: {engine}"), status_code=400)
     set_extraction_engine(db, engine)
     return HTMLResponse(_toast(True, f"Default engine: {engine}"))
+
+
+@router.post("/worker-concurrency", response_class=HTMLResponse)
+async def set_worker_concurrency_route(
+    concurrency: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Persist the `ai` worker concurrency and apply it live (no restart)."""
+    from app.services.user_settings_service import set_worker_concurrency
+    from app.services.worker_control import apply_ai_concurrency
+
+    try:
+        set_worker_concurrency(db, concurrency)
+    except ValueError as e:
+        return HTMLResponse(_toast(False, str(e)), status_code=400)
+
+    res = apply_ai_concurrency(concurrency)
+    msg = (
+        f"AI concurrency → {concurrency} (applied live)"
+        if res["live"]
+        else f"Saved ({concurrency}); applies on next worker start"
+    )
+    return HTMLResponse(_toast(True, msg))
 
 
 # ---------------------------------------------------------------------------

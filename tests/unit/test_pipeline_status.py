@@ -1174,6 +1174,99 @@ def test_recover_stuck_pending_uses_claim_stage_to_avoid_double_dispatch(
     assert captured == [], "dispatch_task must not be called when claim fails"
 
 
+@pytest.mark.unit
+def test_recover_stuck_pending_dispatches_metadata_without_preclaim(
+    db_session, monkeypatch
+):
+    """Regression for the ib-0001 recovery deadlock.
+
+    metadata_task self-claims METADATA on entry. If recovery pre-claims it
+    (PENDING→RUNNING) and then dispatches, the task self-claims, sees RUNNING,
+    and skips as 'already_claimed' — a permanent deadlock. The fix marks
+    METADATA self_claims=True so recovery dispatches it UNCLAIMED.
+
+    We monkeypatch claim_stage_for_dispatch to ALWAYS fail: pre-fix that would
+    have skipped the dispatch; post-fix metadata is dispatched anyway because
+    its branch never calls the pre-claim.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services import pipeline_status as ps
+    from app.services.pipeline_status import (
+        StageStatus,
+        initialize,
+        recover_stuck_pending_dispatches,
+    )
+
+    case = Case(
+        id="_TR_SC", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    doc = Document(
+        title="stuck.pdf",
+        content="x",
+        case_id="_TR_SC",
+        originator_type=OriginatorType.UNKNOWN,
+        ingest_date=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5),
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=False, db=db_session)
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:s "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {"s": StageStatus.COMPLETED.value, "id": doc.id, "stage": "extract"},
+    )
+    doc.pipeline_state = "partial"  # extract done → METADATA is the head
+    db_session.expire(doc, ["stage_rows"])
+    db_session.commit()
+
+    captured: list[tuple] = []
+    monkeypatch.setattr(
+        "app.tasks.dispatch.dispatch_task",
+        lambda task, *a, **k: captured.append((task, a)),
+    )
+    # If recovery were to pre-claim METADATA, this False would skip dispatch.
+    monkeypatch.setattr(
+        ps, "claim_stage_for_dispatch", lambda _doc_id, _stage, _db: False
+    )
+
+    result = recover_stuck_pending_dispatches(db_session)
+
+    assert result["docs_redispatched"] == 1
+    assert len(captured) == 1
+    task, args = captured[0]
+    assert task.name == "app.tasks.document_processing.metadata_task"
+    assert args == (doc.id,)
+    # METADATA must be left PENDING (not pre-claimed to RUNNING) for the task
+    # to self-claim when it runs.
+    row = db_session.execute(
+        _text(
+            "SELECT status FROM document_pipeline_stages "
+            "WHERE document_id=:id AND stage='metadata'"
+        ),
+        {"id": doc.id},
+    ).scalar()
+    assert row == StageStatus.PENDING.value
+
+
+@pytest.mark.unit
+def test_only_metadata_self_claims_in_registry():
+    """Guard: METADATA is the only self-claiming stage (others mark_started)."""
+    from app.services.pipeline_status import STAGE_REGISTRY, PipelineStage
+
+    self_claiming = {s for s, spec in STAGE_REGISTRY.items() if spec.self_claims}
+    assert self_claiming == {PipelineStage.METADATA}
+
+
 # ---------------------------------------------------------------------------
 # recover_unclaimed_ready_batches — closes the gap where per-stage retries
 # leave an IngestBatch with analysis_queued_at IS NULL but every doc ready.

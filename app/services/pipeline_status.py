@@ -70,6 +70,13 @@ class StageSpec:
     downstream: tuple[PipelineStage, ...] = field(default_factory=tuple)
     retry_task: str = ""  # dotted Celery task name
     dispatch_arg: Literal["doc_id", "batch_id"] = "doc_id"
+    # True when the task atomically claims its own stage (pending→running) on
+    # entry, rather than relying on the dispatcher to pre-claim. Recovery must
+    # NOT pre-claim such stages: pre-claiming leaves the stage RUNNING and the
+    # dispatched task then self-claims, sees RUNNING, and skips as
+    # "already_claimed" — a permanent deadlock. Only metadata_task does this
+    # (its normal dispatcher, process_document_task, hands it off unclaimed).
+    self_claims: bool = False
 
 
 # Real dispatch dependencies (from the per-task .delay() chains):
@@ -114,6 +121,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
             PipelineStage.ENTITIES,
         ),
         retry_task="app.tasks.document_processing.metadata_task",
+        self_claims=True,  # metadata_task claims METADATA itself on entry
     ),
     PipelineStage.EMBEDDINGS: StageSpec(
         stage=PipelineStage.EMBEDDINGS,
@@ -1331,6 +1339,16 @@ def recover_stuck_pending_dispatches(
             )
             continue
 
+        # Self-claiming stages (metadata_task) must be dispatched UNCLAIMED:
+        # the task flips PENDING→RUNNING itself on entry. Pre-claiming here
+        # would leave the stage RUNNING with the dispatched task skipping as
+        # "already_claimed" — the recovery deadlock that stranded ib-0001. The
+        # task's own atomic claim provides the same double-dispatch dedup.
+        if head_spec.self_claims:
+            dispatch_task(task, doc.id)
+            redispatched.append(doc.id)
+            continue
+
         # Atomic claim before dispatch — without this, a stage that is PENDING
         # at snapshot time but whose task is already queued (waiting behind a
         # busy worker) gets a second .delay() from us. Two concurrent extract_*
@@ -1339,7 +1357,8 @@ def recover_stuck_pending_dispatches(
         # first's work is gone. See doc_39 / 2026-05-26 22:00-22:12 incident.
         # claim_stage_for_dispatch is the same primitive every cascade
         # dispatcher uses (document_processing, enrich_document); recovery
-        # was the outlier that skipped it.
+        # was the outlier that skipped it. Stages whose task mark_starts
+        # unconditionally (extract, enrich, …) rely on this pre-claim for dedup.
         if not claim_stage_for_dispatch(doc.id, head_spec.stage, db):
             logger.debug(
                 "Stuck-pending recovery: stage %s for doc %d already claimed "

@@ -450,6 +450,47 @@ def set_extraction_engine(db, engine: str) -> None:
     db.commit()
 
 
+AI_CONCURRENCY_MIN = 1
+AI_CONCURRENCY_MAX = 16
+DEFAULT_AI_CONCURRENCY = 2
+
+
+def get_worker_concurrency(db) -> int:
+    """Return the configured `ai` Celery worker concurrency (1–16, default 2).
+
+    Read at worker boot (via app.cli.worker_concurrency) so the DB is the single
+    source of truth, and shown in the Settings UI. Only the `ai` queue is
+    user-tunable; `ingest` stays serialized at 1 by design.
+    """
+    data = _get_or_create_app(db).settings_json or {}
+    val = data.get("workers", {}).get("ai_concurrency")
+    if isinstance(val, int) and AI_CONCURRENCY_MIN <= val <= AI_CONCURRENCY_MAX:
+        return val
+    return DEFAULT_AI_CONCURRENCY
+
+
+def set_worker_concurrency(db, concurrency: int) -> None:
+    """Persist the `ai` worker concurrency. Raises ValueError if out of bounds."""
+    if not isinstance(concurrency, int) or not (
+        AI_CONCURRENCY_MIN <= concurrency <= AI_CONCURRENCY_MAX
+    ):
+        raise ValueError(
+            f"Concurrency must be an integer {AI_CONCURRENCY_MIN}–{AI_CONCURRENCY_MAX}"
+        )
+    settings = _get_or_create_app(db)
+    data = dict(settings.settings_json or {})
+    workers = dict(data.get("workers", {}))
+    workers["ai_concurrency"] = concurrency
+    data["workers"] = workers
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.SETTINGS_WORKERS_CHANGED,
+        payload={"ai_concurrency": concurrency},
+    )
+    db.commit()
+
+
 def set_ai_debug_redact(db, value: bool) -> None:
     """Persist the AI debug log redaction toggle and emit an audit event."""
     settings = _get_or_create_app(db)

@@ -35,6 +35,31 @@ def test_same_origin_rejects_cross_origin_header():
 
 
 @pytest.mark.unit
+def test_same_origin_matches_https_origin_behind_proxy_seeing_http():
+    """TLS-terminating proxy that doesn't forward X-Forwarded-Proto: the app
+    sees scheme=http while the browser Origin is https. Same host → allow.
+    Regression: this used to 403 every mutation behind such a proxy."""
+    req = _request(
+        {
+            "origin": "https://sanctuary.example.de",
+            "host": "sanctuary.example.de",
+        },
+        scheme="http",
+    )
+    assert _same_origin(req) is True
+
+
+@pytest.mark.unit
+def test_same_origin_rejects_cross_origin_https():
+    """Different host over https is still cross-origin even when host-only."""
+    req = _request(
+        {"origin": "https://evil.example", "host": "sanctuary.example.de"},
+        scheme="http",
+    )
+    assert _same_origin(req) is False
+
+
+@pytest.mark.unit
 def test_same_origin_passes_when_origin_absent_and_no_sec_fetch():
     """Older browsers / curl: missing Origin + missing Sec-Fetch-Site = allow."""
     req = _request({"host": "localhost:8000"})

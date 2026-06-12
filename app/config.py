@@ -43,7 +43,9 @@ AI_USER_CONTEXT = os.getenv("AI_USER_CONTEXT", "")
 # can easily exceed 60s; the default of 600s gives slow local models headroom.
 AI_READ_TIMEOUT = float(os.getenv("AI_READ_TIMEOUT", "600"))
 
-# AI Provider Configuration (ollama, lmstudio, openai, or auto)
+# AI Provider Configuration. Registered instances always store "auto" (the UI
+# no longer exposes a manual picker — API shape is probed at runtime); this env
+# default only applies to the no-instance fallback and as an explicit override.
 AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
 AI_API_KEY = os.getenv("AI_API_KEY", "not-needed")
 

@@ -1,0 +1,22 @@
+{# Returned by set_role — fills a role card's #role-status-{role} slot.
+   Shows an explicit, self-clearing save confirmation, the live health pill,
+   the probed embedding dimension, and any vector-index mismatch warning.
+   When the endpoint was switched, also OOB-refreshes the model <select>. #}
+<div x-data="{ show: true }" x-init="setTimeout(() => show = false, 4000)"
+     x-show="show" x-transition
+     class="inline-flex items-center gap-1.5 text-xs" style="color:var(--color-primary)">
+    <span class="material-symbols-outlined text-[14px]">check_circle</span>
+    <span>{{ saved_label }}</span>
+</div>
+<div class="mt-1">{{ status_pill | safe }}</div>
+{% if probed_dim %}
+<div class="mt-0.5 text-[10px] text-on-surface-variant/70 italic">probed → {{ probed_dim }}-dim</div>
+{% endif %}
+{{ warning | safe }}
+{% if switching %}
+{% set oob = true %}
+{% include "partials/settings/_role_card_model_select.html" %}
+{% else %}
+{# A model was saved — OOB-refresh the resting header label so it stops being stale. #}
+<span id="role-model-label-{{ role }}" hx-swap-oob="true" class="ml-auto text-[11px] font-mono text-on-surface-variant/70 truncate max-w-[16rem]">{{ current_model or '— no model —' }}{% if model_dim %} · {{ model_dim }}d{% endif %}</span>
+{% endif %}

@@ -17,6 +17,7 @@ from app.services.user_settings_service import (
     get_ai_debug_redact,
     get_extraction_engine,
     get_party_identity,
+    get_worker_concurrency,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ async def settings_parties(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/settings/ai", response_class=HTMLResponse)
 async def settings_ai(request: Request, db: Session = Depends(get_db)):
-    from app.services.ai_config import list_instances
+    from app.services.ai_config import _resolve_active, list_instances
 
     ai = _get_ai_section(db)
     instances = list_instances(db)
@@ -122,18 +123,82 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         inst["id"]: h for inst, h in zip(instances, health_results, strict=True)
     }
 
+    # Role-first cards: each role resolves to its active instance + stored model.
+    role_meta = [
+        (
+            "chat",
+            "Chat",
+            "summary_model",
+            "forum",
+            "Powers case briefs, chat answers, and document summaries.",
+        ),
+        (
+            "embed",
+            "Embeddings",
+            "embed_model",
+            "scatter_plot",
+            "Powers semantic search and the vector index.",
+        ),
+        (
+            "ocr",
+            "OCR",
+            "ocr_model",
+            "document_scanner",
+            "Reads scanned or stamped PDFs when the Chandra engine is active.",
+        ),
+    ]
+    # Discover each active instance's models up front so the dropdowns are
+    # populated on load. This is a /v1/models (or /api/tags) listing — it does
+    # NOT load a model into the endpoint. Deduped so a shared endpoint (e.g.
+    # chat+ocr on the same box) is queried once.
+    from app.api.settings_ai_config import _fetch_models, _model_options
+
+    resolved = {role: _resolve_active(db, role) for role, *_ in role_meta}
+    inst_by_id = {inst["id"]: inst for inst in resolved.values() if inst.get("id")}
+    ids = list(inst_by_id)
+    fetched = (
+        await asyncio.gather(*[_fetch_models(inst_by_id[i]) for i in ids])
+        if ids
+        else []
+    )
+    models_by_id = dict(zip(ids, fetched, strict=True))
+
+    role_cards = []
+    for role, label, field, icon, hint in role_meta:
+        inst = resolved[role]
+        aid = inst.get("id", "")
+        cats = models_by_id.get(aid, {})
+        role_cards.append(
+            {
+                "role": role,
+                "label": label,
+                "icon": icon,
+                "hint": hint,
+                "active_id": aid,
+                "model": inst.get(field, ""),
+                "options": _model_options(cats.get(role, []), inst.get(field, "")),
+                "health": (
+                    instance_health.get(aid, {"ok": False, "detail": "Not tested"})
+                    if aid
+                    else {"ok": False, "detail": "No endpoint configured"}
+                ),
+                "embed_dim": inst.get("embed_dim") if role == "embed" else None,
+            }
+        )
+
     return render_page(
         request,
         "pages/settings/ai.html",
         db=db,
         instances=instances,
         instance_health=instance_health,
+        role_cards=role_cards,
         active_chat_id=active_chat_id,
         active_embed_id=active_embed_id,
         active_ocr_id=active_ocr_id,
         embed_cfg=embed_cfg,
-        ai_debug_redact=get_ai_debug_redact(db),
         extraction_engine=get_extraction_engine(db),
+        worker_concurrency=get_worker_concurrency(db),
     )
 
 
@@ -164,6 +229,7 @@ async def settings_data(
         db=db,
         settings=_display_settings(db, user.id),
         stats=_stats(db),
+        ai_debug_redact=get_ai_debug_redact(db),
     )
 
 

@@ -8,125 +8,37 @@
         <h2 class="text-xl font-extrabold text-on-surface tracking-tight">AI & Models</h2>
     </div>
 
-    {# ── Active Instance Selectors ────────────────────────────────────── #}
-    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-5">
-        <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Active Instances</p>
-        <p class="text-xs text-on-surface-variant/70">Select which registered instance handles chat, embeddings, and OCR. They can be the same or different — OCR can point at a separate vision/OCR model on its own endpoint.</p>
+    {# ── Role cards: what model does each job, on which endpoint ────────── #}
+    <div class="space-y-4">
+        {% for card in role_cards %}
+            {% include "partials/settings/_role_card.html" %}
+        {% endfor %}
+    </div>
 
-        <div class="grid grid-cols-3 gap-5">
-            {# Active chat instance #}
-            <div class="space-y-2">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Chat / Generation</label>
-                <div class="flex items-center gap-2">
-                    <select id="active-chat-select"
-                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
-                            hx-vals='{"role": "chat"}'
-                            hx-include="#active-chat-select"
-                            hx-target="#chat-status-result"
-                            hx-swap="innerHTML"
-                            name="instance_id"
-                            class="flex-1 bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                        {% for inst in instances %}
-                        <option value="{{ inst.id }}" {% if inst.id == active_chat_id %}selected{% endif %}>
-                            {{ inst.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="chat-status-result" class="min-h-[20px]">
-                    {% set chat_inst = instances | selectattr("id", "equalto", active_chat_id) | first | default(instances[0] if instances else None) %}
-                    {% if chat_inst %}
-                    {% set h = instance_health.get(chat_inst.id, {"ok": False, "detail": "Unknown"}) %}
-                    {% if h.ok %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
-                        <span class="material-symbols-outlined text-[13px]">check_circle</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% else %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-error)">
-                        <span class="material-symbols-outlined text-[13px]">error</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% endif %}
-                    {% endif %}
-                </div>
+    {# ── Connections (endpoints) ──────────────────────────────────────── #}
+    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Connections</p>
+                <p class="text-[11px] text-on-surface-variant/60 mt-0.5">Endpoints the role cards draw from. Models are chosen per role above.</p>
             </div>
+            <button type="button"
+                    hx-post="{{ request.app.url_path_for('create_instance') }}"
+                    hx-target="#ai-instances"
+                    hx-swap="beforeend"
+                    class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest transition-colors text-on-surface text-xs font-bold rounded-xl border border-outline-variant/20 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[14px]">add</span>
+                Add Endpoint
+            </button>
+        </div>
 
-            {# Active embed instance #}
-            <div class="space-y-2">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Embeddings / Vector Search</label>
-                <div class="flex items-center gap-2">
-                    <select id="active-embed-select"
-                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
-                            hx-vals='{"role": "embed"}'
-                            hx-include="#active-embed-select"
-                            hx-target="#embed-status-result"
-                            hx-swap="innerHTML"
-                            name="instance_id"
-                            class="flex-1 bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                        {% for inst in instances %}
-                        <option value="{{ inst.id }}" {% if inst.id == active_embed_id %}selected{% endif %}>
-                            {{ inst.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="embed-status-result" class="min-h-[20px]">
-                    {% set embed_inst = instances | selectattr("id", "equalto", active_embed_id) | first | default(instances[0] if instances else None) %}
-                    {% if embed_inst %}
-                    {% set h = instance_health.get(embed_inst.id, {"ok": False, "detail": "Unknown"}) %}
-                    {% if h.ok %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
-                        <span class="material-symbols-outlined text-[13px]">check_circle</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% else %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-error)">
-                        <span class="material-symbols-outlined text-[13px]">error</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% endif %}
-                    {% endif %}
-                </div>
-            </div>
-
-            {# Active OCR instance #}
-            <div class="space-y-2">
-                <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">OCR / Document Extraction</label>
-                <div class="flex items-center gap-2">
-                    <select id="active-ocr-select"
-                            hx-post="{{ request.app.url_path_for('set_active_instance') }}"
-                            hx-vals='{"role": "ocr"}'
-                            hx-include="#active-ocr-select"
-                            hx-target="#ocr-status-result"
-                            hx-swap="innerHTML"
-                            name="instance_id"
-                            class="flex-1 bg-surface-container-high/50 border border-outline-variant/20 rounded-xl px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                        {% for inst in instances %}
-                        <option value="{{ inst.id }}" {% if inst.id == active_ocr_id %}selected{% endif %}>
-                            {{ inst.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="ocr-status-result" class="min-h-[20px]">
-                    {% set ocr_inst = instances | selectattr("id", "equalto", active_ocr_id) | first | default(instances[0] if instances else None) %}
-                    {% if ocr_inst %}
-                    {% set h = instance_health.get(ocr_inst.id, {"ok": False, "detail": "Unknown"}) %}
-                    {% if h.ok %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-primary)">
-                        <span class="material-symbols-outlined text-[13px]">check_circle</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% else %}
-                    <span class="inline-flex items-center gap-1 text-xs" style="color:var(--color-error)">
-                        <span class="material-symbols-outlined text-[13px]">error</span>
-                        <span>{{ h.detail }}</span>
-                    </span>
-                    {% endif %}
-                    {% endif %}
-                </div>
-            </div>
+        <div id="ai-instances" class="space-y-3">
+            {% for inst in instances %}
+                {% set health = instance_health.get(inst.id, {"ok": False, "detail": "Unreachable"}) %}
+                {% include "partials/settings/_ai_instance_row.html" %}
+            {% else %}
+                <p class="text-sm text-on-surface-variant/60 italic">No endpoints configured. Add one above.</p>
+            {% endfor %}
         </div>
     </div>
 
@@ -162,59 +74,27 @@
         </form>
     </div>
 
-    {# ── Registered Instances ─────────────────────────────────────────── #}
+    {# ── Workers / Concurrency ────────────────────────────────────────── #}
     <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-4">
-        <div class="flex items-center justify-between">
-            <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Registered Instances</p>
-            <button type="button"
-                    hx-post="{{ request.app.url_path_for('create_instance') }}"
-                    hx-target="#ai-instances"
-                    hx-swap="beforeend"
-                    class="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest transition-colors text-on-surface text-xs font-bold rounded-xl border border-outline-variant/20 flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[14px]">add</span>
-                Add Instance
-            </button>
-        </div>
-
-        <div id="ai-instances" class="space-y-3">
-            {% for inst in instances %}
-                {% set health = instance_health.get(inst.id, {"ok": False, "detail": "Unreachable"}) %}
-                {% include "partials/settings/_ai_instance_row.html" %}
-            {% else %}
-                <p class="text-sm text-on-surface-variant/60 italic">No instances configured. Add one above.</p>
-            {% endfor %}
-        </div>
-    </div>
-
-    {# ── Recent AI calls ─────────────────────────────────────────────── #}
-    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm"
-         hx-get="{{ request.app.url_path_for('list_debug_logs') }}"
-         hx-trigger="revealed once"
-         hx-swap="innerHTML">
-        <p class="text-[11px] italic text-outline">Loading recent AI calls…</p>
-    </div>
-
-    {# ── Debug Log Privacy ───────────────────────────────────────────── #}
-    <div class="p-6 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm">
-        <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-4">Debug Log Privacy</p>
-        <div class="flex items-center justify-between py-3 border-t border-outline-variant/20">
-            <div>
-                <div class="text-sm font-medium text-on-surface">Redact PII in AI debug logs</div>
-                <div class="text-xs text-on-surface-variant mt-0.5">When enabled, message bodies (case content, document text) are replaced with [REDACTED N chars] in data/ai_debug/ files.</div>
-            </div>
-            <form hx-post="{{ request.app.url_path_for('set_debug_redact') }}" hx-swap="none">
-                <input type="hidden" name="enabled"
-                       x-data x-init="$el.value = {{ 'true' if ai_debug_redact else 'false' }}">
+        <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Workers · AI Concurrency</p>
+        <p class="text-xs text-on-surface-variant/70">
+            How many AI tasks (document summaries, enrichment, embeddings) the <span class="font-mono">ai</span> worker runs in parallel against your model server. Higher values fan out faster on bulk ingests; too high can overwhelm the backend. Applies live — no restart. The <span class="font-mono">ingest</span> worker stays serialized at 1 so heavy OCR runs one at a time.
+        </p>
+        <form hx-post="{{ request.app.url_path_for('set_worker_concurrency_route') }}"
+              hx-target="#worker-concurrency-status"
+              hx-swap="innerHTML"
+              class="space-y-3">
+            <div class="flex flex-wrap items-center gap-3">
+                <input type="number" name="concurrency"
+                       value="{{ worker_concurrency }}" min="1" max="16" step="1"
+                       class="w-24 bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface font-mono focus:outline-none focus:border-primary/50 transition-colors">
                 <button type="submit"
-                        x-data="{ on: {{ 'true' if ai_debug_redact else 'false' }} }"
-                        @click="on = !on; $el.previousElementSibling.value = on ? 'true' : 'false'"
-                        :class="on ? 'bg-primary' : 'bg-surface-container-highest'"
-                        class="relative inline-flex h-6 w-11 rounded-full transition-colors focus:outline-none">
-                    <span :class="on ? 'translate-x-5' : 'translate-x-1'"
-                          class="inline-block h-4 w-4 mt-1 rounded-full bg-white shadow transition-transform"></span>
+                        class="px-3 py-1.5 bg-primary text-on-primary text-xs font-black uppercase tracking-widest rounded-lg hover:opacity-90 transition-all">
+                    Save
                 </button>
-            </form>
-        </div>
+                <div id="worker-concurrency-status" class="min-h-[20px]"></div>
+            </div>
+        </form>
     </div>
 
     {# ── Embedding Index ──────────────────────────────────────────────── #}

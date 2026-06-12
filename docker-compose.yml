@@ -29,10 +29,35 @@ services:
       redis:
         condition: service_healthy
 
-  worker:
+  # Two-queue split (see app/tasks/celery_app.py): heavy Docling/OCR is pinned to
+  # `ingest` (concurrency=1, serialized); LLM/embeddings/light I/O run on `ai`.
+  # --max-tasks-per-child recycles pool children to cap RSS creep (Docling/torch);
+  # --without-{gossip,mingle,heartbeat} trims chatter for this small static cluster.
+  worker-ingest:
     build: .
     restart: unless-stopped
-    command: python -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery
+    command: python -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 --max-tasks-per-child=20 --without-gossip --without-mingle --without-heartbeat
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=false
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Also hosts the beat scheduler via -B (5-min pipeline-recovery cron, gmail
+  # sync, scan polling, …). Exactly one beat may run cluster-wide, so ONLY this
+  # service carries -B — worker-ingest must not. Beat runs in the worker's main
+  # process, unaffected by --max-tasks-per-child child recycling.
+  # The entrypoint resolves --concurrency from the DB (UI-controlled, see
+  # docker/worker-ai-entrypoint.sh) so a Settings change survives restarts.
+  worker-ai:
+    build: .
+    restart: unless-stopped
+    command: ["sh", "/app/docker/worker-ai-entrypoint.sh"]
     env_file:
       - .env
     environment:
