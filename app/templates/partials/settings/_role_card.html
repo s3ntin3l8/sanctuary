@@ -42,7 +42,7 @@
                 </button>
                 {% endif %}
             </div>
-            {% set options %}<option value="{{ card.model|e }}" selected>{{ card.model or '— click Discover —' }}</option>{% endset %}
+            {% set options = card.options %}
             {% set oob = false %}
             {% include "partials/settings/_role_card_model_select.html" %}
         </div>
