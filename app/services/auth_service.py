@@ -24,8 +24,38 @@ logger = logging.getLogger(__name__)
 _DEFAULT_ADMIN_EMAIL = "admin@localhost"
 
 
-def bootstrap_admin_email() -> str:
+def bootstrap_admin_email(db: Session) -> str:
+    """The email that identifies the implicit dev-mode admin.
+
+    A runtime override stored in AppSettings (set when an admin renames their
+    email) wins over the BOOTSTRAP_ADMIN_EMAIL env default, so the auth-disabled
+    resolution in `get_or_create_bootstrap_admin` follows the renamed account
+    instead of spawning a fresh admin.
+    """
+    from app.models.database import AppSettings
+
+    row = db.query(AppSettings).first()
+    if (
+        row
+        and isinstance(row.settings_json, dict)
+        and row.settings_json.get("bootstrap_admin_email")
+    ):
+        return str(row.settings_json["bootstrap_admin_email"]).strip().lower()
     return config.BOOTSTRAP_ADMIN_EMAIL or _DEFAULT_ADMIN_EMAIL
+
+
+def set_bootstrap_admin_email(db: Session, value: str) -> None:
+    from app.models.database import AppSettings
+
+    row = db.query(AppSettings).first()
+    if row is None:
+        row = AppSettings(settings_json={})
+        db.add(row)
+        db.flush()
+    data = dict(row.settings_json or {})
+    data["bootstrap_admin_email"] = (value or "").strip().lower()
+    row.settings_json = data
+    db.flush()
 
 
 def count_users(db: Session) -> int:
@@ -45,7 +75,7 @@ def get_or_create_bootstrap_admin(db: Session) -> User:
     Creates the admin if missing, and (re)asserts admin role + active state.
     Applies BOOTSTRAP_ADMIN_PASSWORD only when the account has no password yet.
     """
-    email = bootstrap_admin_email()
+    email = bootstrap_admin_email(db)
     user = get_user_by_email(db, email)
     if user is None:
         user = User(
@@ -129,6 +159,13 @@ class EmailAlreadyExists(Exception):
     """Raised when creating a user with an email that is already registered."""
 
 
+class InvalidEmail(Exception):
+    """Raised when an email address fails basic format validation."""
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+$")
+
+
 def create_user(
     db: Session,
     *,
@@ -154,6 +191,33 @@ def create_user(
     ensure_user_settings(db, user)
     ensure_user_scan_dir(user)
     return user
+
+
+def change_email(db: Session, user: User, new_email: str) -> None:
+    """Rename a user's login email in place.
+
+    Ownership FKs reference users.id (never the email string), so no document or
+    case reassignment is needed. Raises InvalidEmail on a malformed address and
+    EmailAlreadyExists if another account already uses it. When an admin renames
+    the account that currently resolves as the bootstrap admin, the override is
+    persisted so auth-disabled resolution follows the rename.
+    """
+    normalized = (new_email or "").strip().lower()
+    if not _EMAIL_RE.match(normalized):
+        raise InvalidEmail(normalized)
+    if normalized == (user.email or "").strip().lower():
+        return  # no-op rename
+    existing = get_user_by_email(db, normalized)
+    if existing is not None and existing.id != user.id:
+        raise EmailAlreadyExists(normalized)
+
+    was_bootstrap_admin = (user.email or "").strip().lower() == bootstrap_admin_email(
+        db
+    )
+    user.email = normalized
+    if user.role == UserRole.ADMIN and was_bootstrap_admin:
+        set_bootstrap_admin_email(db, normalized)
+    db.flush()
 
 
 def set_password(db: Session, user: User, password: str) -> None:
