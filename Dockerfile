@@ -8,29 +8,51 @@ COPY static/input.css ./static/
 COPY app/templates ./app/templates
 RUN npx @tailwindcss/cli -i static/input.css -o static/styles.css
 
-# --- Stage 2: Final Image ---
+# --- Stage 2: Python builder ---
+# Compiles/installs every dependency into an isolated venv. build-essential lives
+# ONLY here so it never reaches the shipped image (it was ~560 MB of dead weight).
+FROM python:3.14-slim AS py-builder
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Prod-only requirements (dev/test deps live in requirements-dev.txt, never shipped).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Stage 3: Final runtime image ---
 FROM python:3.14-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Install system dependencies
+# Runtime shared libs only — no compilers:
+#   libgl1 + libglib2.0-0  → OpenCV / Docling page rendering
+#   libmagic1              → file-type sniffing
+#   libgomp1               → OpenMP runtime for torch / onnxruntime
+#   curl                   → container healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     libgl1 \
     libglib2.0-0 \
     libmagic1 \
+    libgomp1 \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the prebuilt venv from the builder stage (same path keeps shebangs valid).
+COPY --from=py-builder /opt/venv /opt/venv
 
 # Copy application code
 COPY . .

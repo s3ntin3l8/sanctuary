@@ -31,8 +31,8 @@ help: ## Show this help message
 	$(PYTHON_EXE) -m venv .venv
 	$(PYTHON) -m pip install --upgrade pip
 
-setup: .venv ## Install dependencies and pre-commit hooks
-	$(PYTHON) -m pip install -r requirements.txt
+setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
+	$(PYTHON) -m pip install -r requirements-dev.txt
 	$(PYTHON) -m playwright install chromium
 	npm install
 	$(PRECOMMIT) install
