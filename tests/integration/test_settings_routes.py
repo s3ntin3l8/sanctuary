@@ -276,6 +276,110 @@ def test_ai_config_set_role_missing_instance():
     assert response.status_code == 404
 
 
+@pytest.mark.integration
+def test_ai_config_set_role_embed_persists_model_on_probe_failure(db_session):
+    """2B: a chosen embed model is saved even when the dim probe fails.
+
+    Regression guard — the route used to early-return and discard the user's
+    pick if _probe_embed_dim failed and no dim was known.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    client.post(
+        "/api/settings/ai/instances",
+        data={
+            "label": "EmbedBox",
+            "base_url": "http://127.0.0.1:11434",
+            "api_key": "not-needed",
+            "summary_model": "",
+            "embed_model": "",
+        },
+    )
+    db_session.expire_all()
+    settings = db_session.query(AppSettings).first()
+    inst = next(
+        i
+        for i in settings.settings_json["ai"]["instances"]
+        if i.get("label") == "EmbedBox"
+    )
+    inst_id = inst["id"]
+
+    fake_provider = MagicMock()
+    fake_provider.probe_health = AsyncMock(return_value={"ok": False, "detail": "down"})
+    fake_provider.get_type = AsyncMock(return_value="ollama")
+
+    with (
+        patch(
+            "app.api.settings_ai_config._probe_embed_dim",
+            AsyncMock(return_value=(None, "unreachable")),
+        ),
+        patch("app.api.settings_ai_config._provider_for", return_value=fake_provider),
+    ):
+        resp = client.post(
+            "/api/settings/ai/role/embed",
+            data={"instance_id": inst_id, "model": "nomic-embed"},
+        )
+    assert resp.status_code == 200
+    # OOB header refresh (§3): the saved model is swapped into the resting label.
+    assert "role-model-label-embed" in resp.text
+    assert "nomic-embed" in resp.text
+
+    db_session.expire_all()
+    settings = db_session.query(AppSettings).first()
+    saved = next(
+        i for i in settings.settings_json["ai"]["instances"] if i["id"] == inst_id
+    )
+    assert saved["embed_model"] == "nomic-embed"
+
+
+# ---------------------------------------------------------------------------
+# AI worker concurrency
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_set_worker_concurrency_valid(db_session):
+    """POST /api/settings/ai/worker-concurrency persists + emits an audit event."""
+    from unittest.mock import patch
+
+    with patch(
+        "app.services.worker_control.apply_ai_concurrency",
+        return_value={"live": False, "nodes": []},
+    ):
+        response = client.post(
+            "/api/settings/ai/worker-concurrency", data={"concurrency": "6"}
+        )
+    assert response.status_code == 200
+
+    db_session.expire_all()
+    settings = db_session.query(AppSettings).first()
+    assert settings.settings_json.get("workers", {}).get("ai_concurrency") == 6
+    log = (
+        db_session.query(AuditLog)
+        .filter_by(event_type=AuditEventType.SETTINGS_WORKERS_CHANGED)
+        .first()
+    )
+    assert log is not None
+
+
+@pytest.mark.integration
+def test_set_worker_concurrency_out_of_bounds():
+    """Out-of-range value is rejected with 400 (no worker call needed)."""
+    response = client.post(
+        "/api/settings/ai/worker-concurrency", data={"concurrency": "99"}
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.integration
+def test_set_worker_concurrency_non_integer():
+    """Non-integer form value is rejected by FastAPI coercion (422)."""
+    response = client.post(
+        "/api/settings/ai/worker-concurrency", data={"concurrency": "abc"}
+    )
+    assert response.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Settings page renders
 # ---------------------------------------------------------------------------

@@ -336,3 +336,66 @@ def test_set_dedup_running_records_started_at(app_row, db_session):
     assert job["status"] == "running"
     assert job["started_at"] is not None
     assert job["ended_at"] is None
+
+
+# ── ai worker concurrency (global AppSettings) ───────────────────────────────
+
+
+@pytest.mark.unit
+def test_get_worker_concurrency_default_when_unset(app_row, db_session):
+    from app.services.user_settings_service import (
+        DEFAULT_AI_CONCURRENCY,
+        get_worker_concurrency,
+    )
+
+    assert get_worker_concurrency(db_session) == DEFAULT_AI_CONCURRENCY
+
+
+@pytest.mark.unit
+def test_set_get_worker_concurrency_roundtrip(app_row, db_session):
+    from app.services.user_settings_service import (
+        get_worker_concurrency,
+        set_worker_concurrency,
+    )
+
+    set_worker_concurrency(db_session, 8)
+    db_session.refresh(app_row)
+    assert get_worker_concurrency(db_session) == 8
+    assert app_row.settings_json["workers"]["ai_concurrency"] == 8
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", [0, 17, -1, 2.5, "x", None])
+def test_set_worker_concurrency_rejects_out_of_bounds(app_row, db_session, bad):
+    from app.services.user_settings_service import set_worker_concurrency
+
+    with pytest.raises(ValueError):
+        set_worker_concurrency(db_session, bad)
+
+
+@pytest.mark.unit
+def test_get_worker_concurrency_clamps_invalid_stored(app_row, db_session):
+    """A corrupt/out-of-range stored value falls back to the default."""
+    from app.services.user_settings_service import (
+        DEFAULT_AI_CONCURRENCY,
+        get_worker_concurrency,
+    )
+
+    app_row.settings_json = {"workers": {"ai_concurrency": 99}}
+    db_session.commit()
+    assert get_worker_concurrency(db_session) == DEFAULT_AI_CONCURRENCY
+
+
+@pytest.mark.unit
+def test_set_worker_concurrency_records_audit(app_row, db_session):
+    from app.models.database import AuditLog
+    from app.models.enums import AuditEventType
+    from app.services.user_settings_service import set_worker_concurrency
+
+    set_worker_concurrency(db_session, 4)
+    log = (
+        db_session.query(AuditLog)
+        .filter_by(event_type=AuditEventType.SETTINGS_WORKERS_CHANGED)
+        .first()
+    )
+    assert log is not None
