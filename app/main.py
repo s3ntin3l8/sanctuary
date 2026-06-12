@@ -682,6 +682,12 @@ templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
 templates.env.filters["local_strftime"] = _local_strftime
 
+# Flags AI endpoints on the public internet so the settings UI can warn about
+# case-data egress (LAN/loopback endpoints stay quiet).
+from app.services.ai_config import is_external_endpoint as _is_external_endpoint
+
+templates.env.globals["is_external_endpoint"] = _is_external_endpoint
+
 # Markdown renderer.
 # html=False blocks raw-HTML passthrough — Docling-produced markdown can't inject
 # <script> even if the source PDF was adversarial. typographer upgrades straight

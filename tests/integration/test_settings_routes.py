@@ -229,7 +229,6 @@ def test_ai_config_create_instance(db_session):
         data={
             "label": "Test Instance",
             "base_url": "http://127.0.0.1:11434",
-            "provider": "auto",
             "api_key": "not-needed",
             "summary_model": "llama3",
             "embed_model": "",
@@ -244,6 +243,9 @@ def test_ai_config_create_instance(db_session):
     instances = settings.settings_json.get("ai", {}).get("instances", [])
     labels = [i.get("label") for i in instances]
     assert "Test Instance" in labels, f"Expected 'Test Instance' in {labels}"
+    # Provider is no longer user-set — stored as auto for runtime detection.
+    created = next(i for i in instances if i.get("label") == "Test Instance")
+    assert created.get("provider") == "auto"
 
 
 @pytest.mark.integration

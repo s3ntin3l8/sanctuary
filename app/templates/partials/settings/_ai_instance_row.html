@@ -103,35 +103,24 @@
             </div>
         </div>
 
-        {# Provider + API Key + cloud PII warning #}
-        <div x-data="{ provider: '{{ inst.provider }}' }">
-            <div class="grid grid-cols-2 gap-3">
-                <div class="space-y-1.5">
-                    <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Provider</label>
-                    <select name="provider"
-                            x-model="provider"
-                            class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors">
-                        {% for p in ['auto', 'ollama', 'lmstudio', 'openai'] %}
-                        <option value="{{ p }}" {% if inst.provider == p %}selected{% endif %}>{{ p }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="space-y-1.5">
-                    <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">API Key</label>
-                    <input type="password" name="api_key"
-                           value="{{ inst.api_key if inst.api_key != 'not-needed' else '' }}"
-                           class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
-                           placeholder="not-needed for Ollama">
-                </div>
-            </div>
-            <div x-show="provider === 'openai'"
-                 x-transition
-                 class="mt-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
-                <strong>External provider.</strong>
-                Calls to OpenAI send case content (parties, claim text, document excerpts) outside this machine.
-                Use only with non-sensitive test data, or configure an Ollama instance to keep everything local.
-            </div>
+        {# API Key — provider/API shape is auto-detected; key only for gateways #}
+        <div class="space-y-1.5">
+            <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">API Key</label>
+            <input type="password" name="api_key"
+                   value="{{ inst.api_key if inst.api_key != 'not-needed' else '' }}"
+                   class="w-full bg-surface-container-high/50 border border-outline-variant/20 rounded-lg px-3 py-1.5 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
+                   placeholder="Only for endpoints that require a key (e.g. a litellm / OpenAI gateway)">
         </div>
+
+        {# Data-egress warning — shown only for endpoints on the public internet.
+           Theme-aware tokens keep it readable in both light and dark mode. #}
+        {% if is_external_endpoint(inst.base_url) %}
+        <div class="rounded-lg border px-3 py-2 text-xs flex items-start gap-1.5"
+             style="border-color:var(--color-warning);background:var(--color-warning-container);color:var(--color-warning)">
+            <span class="material-symbols-outlined text-[14px] leading-none">warning</span>
+            <span><strong>External endpoint.</strong> This host is on the public internet — calls send case content (parties, claim text, document excerpts) off your network. Use only with non-sensitive test data, or point at a local/LAN model.</span>
+        </div>
+        {% endif %}
 
         {# Models are chosen per role in the cards above — this form is
            endpoint-only (label / URL / provider / key). #}
