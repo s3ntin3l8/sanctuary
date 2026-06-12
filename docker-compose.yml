@@ -52,10 +52,12 @@ services:
   # sync, scan polling, …). Exactly one beat may run cluster-wide, so ONLY this
   # service carries -B — worker-ingest must not. Beat runs in the worker's main
   # process, unaffected by --max-tasks-per-child child recycling.
+  # The entrypoint resolves --concurrency from the DB (UI-controlled, see
+  # docker/worker-ai-entrypoint.sh) so a Settings change survives restarts.
   worker-ai:
     build: .
     restart: unless-stopped
-    command: python -m celery -A app.tasks.celery_app worker -B -n ai@%h --loglevel=INFO -Q ai --concurrency=2 --max-tasks-per-child=50 --without-gossip --without-mingle --without-heartbeat
+    command: ["sh", "/app/docker/worker-ai-entrypoint.sh"]
     env_file:
       - .env
     environment:

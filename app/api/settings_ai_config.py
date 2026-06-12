@@ -686,6 +686,29 @@ async def set_extraction_engine_route(
     return HTMLResponse(_toast(True, f"Default engine: {engine}"))
 
 
+@router.post("/worker-concurrency", response_class=HTMLResponse)
+async def set_worker_concurrency_route(
+    concurrency: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Persist the `ai` worker concurrency and apply it live (no restart)."""
+    from app.services.user_settings_service import set_worker_concurrency
+    from app.services.worker_control import apply_ai_concurrency
+
+    try:
+        set_worker_concurrency(db, concurrency)
+    except ValueError as e:
+        return HTMLResponse(_toast(False, str(e)), status_code=400)
+
+    res = apply_ai_concurrency(concurrency)
+    msg = (
+        f"AI concurrency → {concurrency} (applied live)"
+        if res["live"]
+        else f"Saved ({concurrency}); applies on next worker start"
+    )
+    return HTMLResponse(_toast(True, msg))
+
+
 # ---------------------------------------------------------------------------
 # Debug log browser
 # ---------------------------------------------------------------------------

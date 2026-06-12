@@ -17,6 +17,7 @@ from app.services.user_settings_service import (
     get_ai_debug_redact,
     get_extraction_engine,
     get_party_identity,
+    get_worker_concurrency,
 )
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,7 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         active_ocr_id=active_ocr_id,
         embed_cfg=embed_cfg,
         extraction_engine=get_extraction_engine(db),
+        worker_concurrency=get_worker_concurrency(db),
     )
 
 

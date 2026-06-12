@@ -316,6 +316,7 @@ class AuditEventType(enum.StrEnum):
     SETTINGS_TIMEZONE_CHANGED = "settings_timezone_changed"
     SETTINGS_PARTIES_CHANGED = "settings_parties_changed"
     SETTINGS_INGESTION_CHANGED = "settings_ingestion_changed"
+    SETTINGS_WORKERS_CHANGED = "settings_workers_changed"
     MAINTENANCE_RESET_AI_ENRICHMENT = "maintenance_reset_ai_enrichment"
     MAINTENANCE_CLEAR_ALL_DATA = "maintenance_clear_all_data"
     MAINTENANCE_REBUILD_INDEX = "maintenance_rebuild_index"
