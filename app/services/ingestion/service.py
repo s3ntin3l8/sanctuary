@@ -8,6 +8,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
+from app.core.paths import resolve_storage_path, to_storage_path
 from app.core.validators import validate_case_id
 from app.models.database import (
     Document,
@@ -282,11 +283,9 @@ def process_uploaded_document(doc: Document, db: Session):
     """Process a pending document in the background."""
     import os
 
-    file_path = doc.file_path
-    if not file_path:
+    if not doc.file_path:
         raise IngestionError("Document has no file_path")
-    if not os.path.isabs(file_path):
-        file_path = str(DATA_DIR / file_path)
+    file_path = str(resolve_storage_path(doc.file_path))
     if not os.path.exists(file_path):
         raise IngestionError(f"File not found: {file_path}")
 
@@ -551,7 +550,7 @@ async def ingest_file(
         if skip_processing:
             new_doc = _create_document(
                 db=db,
-                file_path=file_path,
+                file_path=to_storage_path(file_path),
                 content_hash=content_hash,
                 case_id=preliminary_case_id,
                 safe_filename=safe_filename,
@@ -594,7 +593,7 @@ async def ingest_file(
 
         new_doc = _create_document(
             db=db,
-            file_path=file_path,
+            file_path=to_storage_path(file_path),
             content_hash=content_hash,
             case_id=preliminary_case_id,
             safe_filename=safe_filename,

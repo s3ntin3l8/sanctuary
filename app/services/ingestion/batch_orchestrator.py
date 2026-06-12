@@ -8,6 +8,7 @@ import pypdfium2 as pdfium
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
+from app.core.paths import to_storage_path
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.ingest_batch import IngestBatchRepository
@@ -225,7 +226,7 @@ def ingest_raw_email(
         doc = Document(
             title=subject,
             owner_id=owner_id,
-            file_path=str(body_path),
+            file_path=to_storage_path(body_path),
             original_filename=f"email_body_{batch.id}.txt",
             content_hash=body_hash,
             case_id=batch.case_id or "_TRIAGE",
@@ -284,7 +285,7 @@ def ingest_raw_email(
         doc = Document(
             title=att["filename"],
             owner_id=owner_id,
-            file_path=str(att_path),
+            file_path=to_storage_path(att_path),
             original_filename=att["filename"],
             content_hash=att_hash,
             case_id=batch.case_id or "_TRIAGE",
@@ -380,7 +381,7 @@ def ingest_scanned_file(
         doc = Document(
             title=pdf_path.name,
             owner_id=owner_id,
-            file_path=str(pdf_path),
+            file_path=to_storage_path(pdf_path),
             original_filename=pdf_path.name,
             content_hash=content_hash,
             case_id="_TRIAGE",

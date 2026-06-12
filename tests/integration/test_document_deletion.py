@@ -2,6 +2,7 @@ import pytest
 
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType
+from app.services.document_service import DocumentService
 
 
 @pytest.mark.integration
@@ -64,3 +65,23 @@ def test_delete_document_last_in_bundle_not_last_in_queue(app_client, db_session
     assert 'hx-swap-oob="delete"' in response.text
     # Should NOT return the full feed because batch2 still exists
     assert "Inbox empty" not in response.text
+
+
+@pytest.mark.integration
+def test_delete_document_removes_relative_file(db_session, isolate_data_dir):
+    """delete_document must resolve a relative file_path under DATA_DIR and unlink it."""
+    triage = isolate_data_dir / "_TRIAGE"
+    triage.mkdir(exist_ok=True)
+    pdf = triage / "to_delete.pdf"
+    pdf.write_bytes(b"%PDF-1.4 delete me")
+
+    doc = Document(
+        title="Relative Delete Doc",
+        case_id="_TRIAGE",
+        file_path="_TRIAGE/to_delete.pdf",
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    assert DocumentService(db_session).delete_document(doc.id) is True
+    assert not pdf.exists()

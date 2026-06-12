@@ -26,10 +26,9 @@ class DocumentService:
 
     def delete_document(self, doc_id: int) -> bool:
         """Delete document and all dependent rows from the database and filesystem."""
-        import os
-
         from sqlalchemy import func, or_, text
 
+        from app.core.paths import resolve_storage_path
         from app.models.database import (
             ActionItem,
             Claim,
@@ -115,9 +114,10 @@ class DocumentService:
         )
 
         if self.doc_repo.delete(doc_id):
-            if file_path and os.path.exists(file_path):
+            resolved = resolve_storage_path(file_path) if file_path else None
+            if resolved and resolved.exists():
                 try:
-                    os.remove(file_path)
+                    resolved.unlink()
                 except Exception as e:
                     import logging
 
