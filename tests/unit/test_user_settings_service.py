@@ -17,9 +17,17 @@ from app.services.user_settings_service import (
 
 @pytest.fixture
 def app_row(db_session) -> AppSettings:
-    """The global AppSettings singleton with an empty settings_json."""
-    row = AppSettings(settings_json={})
-    db_session.add(row)
+    """The global AppSettings singleton with an empty settings_json.
+
+    AppSettings is a singleton; the bootstrap-admin pin may already have created
+    the row, so get-or-create it rather than inserting a second one.
+    """
+    row = db_session.query(AppSettings).first()
+    if row is None:
+        row = AppSettings(settings_json={})
+        db_session.add(row)
+    else:
+        row.settings_json = {}
     db_session.commit()
     db_session.refresh(row)
     return row

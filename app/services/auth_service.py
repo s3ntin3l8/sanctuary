@@ -19,32 +19,24 @@ from app.models.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
-# Deterministic email for the implicit dev-mode admin when no BOOTSTRAP_ADMIN_EMAIL
-# is configured. Only ever used as a placeholder owner / auto-login identity.
-_DEFAULT_ADMIN_EMAIL = "admin@localhost"
 
+def bootstrap_admin_id(db: Session) -> int | None:
+    """The id of the designated primary admin, pinned in AppSettings.
 
-def bootstrap_admin_email(db: Session) -> str:
-    """The email that identifies the implicit dev-mode admin.
-
-    A runtime override stored in AppSettings (set when an admin renames their
-    email) wins over the BOOTSTRAP_ADMIN_EMAIL env default, so the auth-disabled
-    resolution in `get_or_create_bootstrap_admin` follows the renamed account
-    instead of spawning a fresh admin.
+    Identity is pinned by id (never by email), so renaming the admin's email
+    never orphans ownership or spawns a duplicate admin.
     """
     from app.models.database import AppSettings
 
     row = db.query(AppSettings).first()
-    if (
-        row
-        and isinstance(row.settings_json, dict)
-        and row.settings_json.get("bootstrap_admin_email")
-    ):
-        return str(row.settings_json["bootstrap_admin_email"]).strip().lower()
-    return config.BOOTSTRAP_ADMIN_EMAIL or _DEFAULT_ADMIN_EMAIL
+    if row and isinstance(row.settings_json, dict):
+        val = row.settings_json.get("bootstrap_admin_id")
+        if isinstance(val, int):
+            return val
+    return None
 
 
-def set_bootstrap_admin_email(db: Session, value: str) -> None:
+def set_bootstrap_admin_id(db: Session, user_id: int) -> None:
     from app.models.database import AppSettings
 
     row = db.query(AppSettings).first()
@@ -53,7 +45,7 @@ def set_bootstrap_admin_email(db: Session, value: str) -> None:
         db.add(row)
         db.flush()
     data = dict(row.settings_json or {})
-    data["bootstrap_admin_email"] = (value or "").strip().lower()
+    data["bootstrap_admin_id"] = int(user_id)
     row.settings_json = data
     db.flush()
 
@@ -68,37 +60,63 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email.strip().lower()).first()
 
 
-def get_or_create_bootstrap_admin(db: Session) -> User:
-    """Idempotently return the designated bootstrap admin.
-
-    Used by startup seeding and by the dependency when AUTH_ENABLED is false.
-    Creates the admin if missing, and (re)asserts admin role + active state.
-    Applies BOOTSTRAP_ADMIN_PASSWORD only when the account has no password yet.
-    """
-    email = bootstrap_admin_email(db)
-    user = get_user_by_email(db, email)
-    if user is None:
-        user = User(
-            email=email,
-            display_name="Administrator",
-            role=UserRole.ADMIN,
-            is_active=True,
-        )
-        if config.BOOTSTRAP_ADMIN_PASSWORD:
-            user.password_hash = security.hash_password(config.BOOTSTRAP_ADMIN_PASSWORD)
-        db.add(user)
-        db.flush()
-    else:
-        if user.role != UserRole.ADMIN:
-            user.role = UserRole.ADMIN
-        if not user.is_active:
-            user.is_active = True
-        if not user.password_hash and config.BOOTSTRAP_ADMIN_PASSWORD:
-            user.password_hash = security.hash_password(config.BOOTSTRAP_ADMIN_PASSWORD)
+def _ensure_admin_scaffold(db: Session, user: User) -> None:
+    """(Re)assert admin role + active state and the per-user scaffolding."""
+    if user.role != UserRole.ADMIN:
+        user.role = UserRole.ADMIN
+    if not user.is_active:
+        user.is_active = True
     ensure_username(db, user)
     ensure_user_settings(db, user)
     ensure_user_scan_dir(user)
-    return user
+
+
+def get_or_create_bootstrap_admin(db: Session) -> User | None:
+    """Resolve the designated primary admin, or None if the app isn't set up yet.
+
+    Identity is pinned by id, never re-derived from an email string. Resolution:
+      1. The admin pinned by id in AppSettings (stable across email renames).
+      2. Backfill: the earliest existing admin — pins it for next time. Covers
+         upgrades and the account just made on the first-run create-admin screen.
+      3. Seed from BOOTSTRAP_ADMIN_EMAIL + BOOTSTRAP_ADMIN_PASSWORD, but only on a
+         truly fresh DB (no users) — the optional code-driven provisioning path
+         (e.g. Ansible). Both must be set; otherwise the screen onboards instead.
+      4. None — no admin exists; the caller must route to the create-admin screen.
+    """
+    pinned = bootstrap_admin_id(db)
+    if pinned is not None:
+        user = db.get(User, pinned)
+        if user is not None and user.is_active:
+            _ensure_admin_scaffold(db, user)
+            return user
+
+    existing_admin = (
+        db.query(User)
+        .filter(User.role == UserRole.ADMIN, User.is_active.is_(True))
+        .order_by(User.id)
+        .first()
+    )
+    if existing_admin is not None:
+        set_bootstrap_admin_id(db, existing_admin.id)
+        _ensure_admin_scaffold(db, existing_admin)
+        return existing_admin
+
+    if (
+        config.BOOTSTRAP_ADMIN_EMAIL
+        and config.BOOTSTRAP_ADMIN_PASSWORD
+        and count_users(db) == 0
+    ):
+        user = create_user(
+            db,
+            email=config.BOOTSTRAP_ADMIN_EMAIL,
+            password=config.BOOTSTRAP_ADMIN_PASSWORD,
+            role=UserRole.ADMIN,
+            display_name="Administrator",
+        )
+        set_bootstrap_admin_id(db, user.id)
+        return user
+
+    return None
 
 
 def _slugify(value: str) -> str:
@@ -196,11 +214,10 @@ def create_user(
 def change_email(db: Session, user: User, new_email: str) -> None:
     """Rename a user's login email in place.
 
-    Ownership FKs reference users.id (never the email string), so no document or
-    case reassignment is needed. Raises InvalidEmail on a malformed address and
-    EmailAlreadyExists if another account already uses it. When an admin renames
-    the account that currently resolves as the bootstrap admin, the override is
-    persisted so auth-disabled resolution follows the rename.
+    Ownership FKs reference users.id (never the email string), and the bootstrap
+    admin is pinned by id — so a rename never reassigns documents nor orphans the
+    account. Raises InvalidEmail on a malformed address and EmailAlreadyExists if
+    another account already uses it.
     """
     normalized = (new_email or "").strip().lower()
     if not _EMAIL_RE.match(normalized):
@@ -210,13 +227,7 @@ def change_email(db: Session, user: User, new_email: str) -> None:
     existing = get_user_by_email(db, normalized)
     if existing is not None and existing.id != user.id:
         raise EmailAlreadyExists(normalized)
-
-    was_bootstrap_admin = (user.email or "").strip().lower() == bootstrap_admin_email(
-        db
-    )
     user.email = normalized
-    if user.role == UserRole.ADMIN and was_bootstrap_admin:
-        set_bootstrap_admin_email(db, normalized)
     db.flush()
 
 

@@ -292,18 +292,16 @@ async def lifespan(app: FastAPI):
     with SessionLocal() as seed_db:
         seed_triage_case(seed_db)
 
-    # Seed the bootstrap admin so there is always a current_user in dev mode
-    # (AUTH_ENABLED=false) and so a configured BOOTSTRAP_ADMIN_EMAIL exists on a
-    # fresh DB. When auth is on and no admin email is configured, skip — the
-    # first-run create-admin screen handles that instead. Idempotent.
-    from app.config import AUTH_ENABLED, BOOTSTRAP_ADMIN_EMAIL
+    # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
+    # and safe to call always: it pins an existing admin, optionally seeds one from
+    # BOOTSTRAP_ADMIN_EMAIL+PASSWORD on a fresh DB (the code-driven provisioning
+    # path), or no-ops on a fresh DB with no env creds — the first-run create-admin
+    # screen onboards the first admin in that case.
+    from app.services import auth_service
 
-    if not AUTH_ENABLED or BOOTSTRAP_ADMIN_EMAIL:
-        from app.services import auth_service
-
-        with SessionLocal() as admin_db:
-            auth_service.get_or_create_bootstrap_admin(admin_db)
-            admin_db.commit()
+    with SessionLocal() as admin_db:
+        auth_service.get_or_create_bootstrap_admin(admin_db)
+        admin_db.commit()
 
     # Reconcile per-user scan-ingest subfolders (incoming/<username>/) and
     # backfill any missing usernames for existing accounts.

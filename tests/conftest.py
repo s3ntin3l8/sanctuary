@@ -49,6 +49,29 @@ TEST_DB_PATH = "./test_sanctuary.db"
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 
+def _seed_bootstrap_admin(db):
+    """Test-only: create + pin the dev-mode primary admin (admin@localhost).
+
+    Production no longer auto-creates a magic admin (the first-run create-admin
+    screen / env provisioning does), so tests seed a deterministic owner here for
+    the AUTH_ENABLED=false gate and directly-created docs/batches to bind to.
+    """
+    from app.models.enums import UserRole
+    from app.services import auth_service
+
+    admin = auth_service.get_user_by_email(db, "admin@localhost")
+    if admin is None:
+        admin = auth_service.create_user(
+            db,
+            email="admin@localhost",
+            password="devpassword123",
+            role=UserRole.ADMIN,
+            display_name="Administrator",
+        )
+    auth_service.set_bootstrap_admin_id(db, admin.id)
+    return admin
+
+
 @pytest.fixture(scope="session", autouse=True)
 def isolate_data_dir(tmp_path_factory):
     """Redirect DATA_DIR to a session tmp dir so tests don't pollute ./data/."""
@@ -140,11 +163,9 @@ def setup_test_db(test_engine):
     _app_config.SessionLocal = TestingSessionLocal
     # Seed `_TRIAGE` + the dev-mode bootstrap admin once at session start.
     # `cleanup_per_test` re-seeds after every wipe so subsequent tests do too.
-    from app.services import auth_service as _auth_service
-
     with TestingSessionLocal() as seed_db:
         seed_triage_case(seed_db)
-        _auth_service.get_or_create_bootstrap_admin(seed_db)
+        _seed_bootstrap_admin(seed_db)
         seed_db.commit()
 
     # TEST-ONLY: documents/batches created directly in tests (without going
@@ -260,7 +281,6 @@ def cleanup_per_test(db_session):
     Case row. The wipe removes it; this re-seeds so the next test starts
     in the same state production lifespan would.
     """
-    from app.services import auth_service
     from app.services.case_service import seed_triage_case
 
     yield
@@ -268,10 +288,13 @@ def cleanup_per_test(db_session):
     for table in reversed(Base.metadata.sorted_tables):
         db_session.execute(table.delete())
     db_session.commit()
+    # Drop identity-mapped instances of the just-wiped rows so re-seeding the
+    # AppSettings singleton doesn't collide with a stale in-session object.
+    db_session.expunge_all()
     seed_triage_case(db_session)
     # Re-seed the dev-mode bootstrap admin so the next test's directly-created
     # docs/batches (defaulted to it via the before_insert listener) are visible.
-    auth_service.get_or_create_bootstrap_admin(db_session)
+    _seed_bootstrap_admin(db_session)
     db_session.commit()
 
 

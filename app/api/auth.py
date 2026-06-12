@@ -203,6 +203,10 @@ async def signup_submit(
             status_code=409,
         )
 
+    if first_run:
+        # The first account is the primary admin — pin it by id so worker and
+        # dev-mode code paths resolve it without re-deriving from any string.
+        auth_service.set_bootstrap_admin_id(db, user.id)
     db.commit()
     request.session.clear()
     request.session.update(auth_service.build_session(user))
