@@ -5,20 +5,29 @@ import os
 import re
 import threading
 
-from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
-
 from app.config import INGEST_CONVERSION_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
 CONVERSION_TIMEOUT = INGEST_CONVERSION_TIMEOUT  # seconds
 
-# Layout model used by Docling's PDF/IMAGE pipelines. EGRET_LARGE outperforms
-# the default HERON on German legal-document layouts in our cross-document tests
-# (footer leak detection, heading consistency, reading order, table-vs-picture
-# classification). EGRET_XLARGE regressed on the same metrics, so LARGE is the
-# right size for our document type.
-_LAYOUT_MODEL_SPEC = DOCLING_LAYOUT_EGRET_LARGE
+
+def _layout_model_spec():
+    """Docling layout model spec, imported lazily on first use.
+
+    Kept out of module scope so importing this module — and therefore
+    `app.main` / the whole test suite — does not pull in docling/torch. (The
+    eager import previously made every `pytest` process load torch, slowing
+    startup and inflating I/O.)
+
+    EGRET_LARGE outperforms the default HERON on German legal-document layouts
+    (footer leak detection, heading consistency, reading order, table-vs-picture
+    classification); EGRET_XLARGE regressed on the same metrics, so LARGE is the
+    right size for our document type.
+    """
+    from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
+
+    return DOCLING_LAYOUT_EGRET_LARGE
 
 
 class TimeoutError(Exception):
@@ -236,7 +245,7 @@ def _build_converter(force_full_page_ocr: bool = False):
         # layouts (footer detection, heading consistency, reading order,
         # table-vs-picture classification). See .claude/plans/why-is-docling-not-
         # squishy-waterfall.md for the cross-document comparison.
-        pipeline_options.layout_options = LayoutOptions(model_spec=_LAYOUT_MODEL_SPEC)
+        pipeline_options.layout_options = LayoutOptions(model_spec=_layout_model_spec())
         if force_full_page_ocr:
             # Render at 2× scale so Tesseract gets higher-resolution input on
             # scanned pages where the layout model produced only image placeholders.
@@ -304,7 +313,7 @@ def _build_image_ocr_converter():
     pipeline_options.do_table_structure = True
     pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
     pipeline_options.do_ocr = True
-    pipeline_options.layout_options = LayoutOptions(model_spec=_LAYOUT_MODEL_SPEC)
+    pipeline_options.layout_options = LayoutOptions(model_spec=_layout_model_spec())
     pipeline_options.ocr_options = TesseractCliOcrOptions(
         lang=["deu", "eng"],
         force_full_page_ocr=True,

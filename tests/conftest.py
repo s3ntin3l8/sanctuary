@@ -1,5 +1,7 @@
+import fcntl
 import logging
 import os
+import tempfile
 
 os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
 # Run Celery tasks inline so the suite needs no broker/Redis. The standardized
@@ -45,8 +47,61 @@ from app.models.enums import (
     OriginatorType,
 )
 
-TEST_DB_PATH = "./test_sanctuary.db"
+
+def _test_db_path() -> str:
+    """RAM-backed test DB path.
+
+    `/dev/shm` is tmpfs on Linux, so the suite never fsyncs to disk. Combined
+    with the single-run lock below this removes the disk-I/O contention that
+    once wedged overlapping `pytest` runs in uninterruptible `D` state. The pid
+    in the name is defense-in-depth against stale-file collisions.
+    """
+    base = (
+        "/dev/shm"
+        if os.path.isdir("/dev/shm") and os.access("/dev/shm", os.W_OK)
+        else tempfile.gettempdir()
+    )
+    return os.path.join(base, f"sanctuary_test_{os.getpid()}.db")
+
+
+TEST_DB_PATH = _test_db_path()
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
+
+# --- Single-run lock --------------------------------------------------------
+# The suite shares ONE on-disk SQLite database and has no per-process isolation.
+# Overlapping `pytest` processes contend on that file; an earlier incident piled
+# up ~14 concurrent runs and wedged the machine on disk I/O (D-state, un-killable
+# from userspace). This lock makes a second concurrent run fail fast — loudly —
+# instead of silently piling on. It lives in conftest (not the Makefile) so it
+# fires for every entry point: `make test`, a bare `python -m pytest`, and the
+# pre-push hook.
+_RUN_LOCK_PATH = os.path.join(tempfile.gettempdir(), "sanctuary-pytest.lock")
+_RUN_LOCK_FD: int | None = None
+
+
+def pytest_configure(config):
+    global _RUN_LOCK_FD
+    fd = os.open(_RUN_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        pytest.exit(
+            "another test run is active — the suite shares one SQLite DB and "
+            "must run serially; run one invocation at a time and wait for it",
+            returncode=2,
+        )
+    _RUN_LOCK_FD = fd
+
+
+def pytest_unconfigure(config):
+    global _RUN_LOCK_FD
+    if _RUN_LOCK_FD is not None:
+        try:
+            fcntl.flock(_RUN_LOCK_FD, fcntl.LOCK_UN)
+            os.close(_RUN_LOCK_FD)
+        finally:
+            _RUN_LOCK_FD = None
 
 
 def _seed_bootstrap_admin(db):
@@ -135,11 +190,15 @@ def test_engine():
         conn.commit()
     Base.metadata.create_all(bind=engine)
     yield engine
-    if os.path.exists(TEST_DB_PATH):
-        try:
-            os.remove(TEST_DB_PATH)
-        except PermissionError:
-            pass
+    # Remove the DB and its WAL/shared-memory sidecars (tmpfs, so they'd vanish
+    # on reboot anyway, but keep /dev/shm tidy between runs).
+    for suffix in ("", "-wal", "-shm"):
+        path = TEST_DB_PATH + suffix
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 @pytest.fixture(scope="session", autouse=True)

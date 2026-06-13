@@ -89,3 +89,5 @@ make lint       # Pre-commit hooks
 make migrate    # Run migrations
 ```
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
+
+**Testing — run serially.** The suite shares one SQLite test DB and has no per-process isolation. Run **one** `pytest`/`make test` at a time and wait for it; never launch overlapping runs (a `conftest.py` lock fails fast on the second). The DB is tmpfs-backed (`/dev/shm`) so a single run is disk-cheap.
