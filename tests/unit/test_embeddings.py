@@ -2,9 +2,15 @@ import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import text
 
 from app.config import AI_EMBED_DIM
-from app.services.embeddings import _serialize, generate_embedding
+from app.models.database import Document
+from app.services.embeddings import (
+    _serialize,
+    generate_embedding,
+    nearest_document_ids,
+)
 
 
 def test_serialize_roundtrip():
@@ -136,6 +142,68 @@ async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_docu
     insert_count = sum(1 for s in statements if "INSERT INTO document_vectors" in s)
     assert delete_count == 2
     assert insert_count == 2
+
+
+@pytest.mark.unit
+def test_nearest_document_ids_empty_query_short_circuits(db_session):
+    """No query text → no provider call, empty result."""
+    with patch(
+        "app.services.ai_provider.embed_provider.get_embedding_params",
+        new_callable=AsyncMock,
+    ) as mock_params:
+        assert nearest_document_ids("", db_session, k=5) == []
+    mock_params.assert_not_called()
+
+
+@pytest.mark.unit
+def test_nearest_document_ids_returns_match(db_session, sample_case):
+    """Success path: embed the query, vec0 MATCH returns the doc whose stored
+    vector is identical (distance 0)."""
+    doc = Document(title="Vektor", content="x", case_id=sample_case.id)
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    vec = [0.1] * AI_EMBED_DIM
+    db_session.execute(
+        text("INSERT INTO document_vectors(document_id, embedding) VALUES (:id, :e)"),
+        {"id": doc.id, "e": _serialize(vec)},
+    )
+    db_session.commit()
+
+    resp = MagicMock()
+    resp.json.return_value = {"embedding": vec}
+    resp.raise_for_status = MagicMock()
+
+    with (
+        patch(
+            "app.services.ai_provider.embed_provider.get_embedding_params",
+            new_callable=AsyncMock,
+            return_value={"url": "http://x", "json": {}, "headers": {}},
+        ),
+        patch("httpx.Client.post", return_value=resp),
+    ):
+        ids = nearest_document_ids("anything", db_session, k=5)
+
+    assert doc.id in ids
+
+
+@pytest.mark.unit
+def test_nearest_document_ids_dim_mismatch_returns_empty(db_session):
+    """A wrong-dimension embedding is rejected (never reaches the vec query)."""
+    resp = MagicMock()
+    resp.json.return_value = {"embedding": [0.1, 0.2, 0.3]}  # wrong dim
+    resp.raise_for_status = MagicMock()
+
+    with (
+        patch(
+            "app.services.ai_provider.embed_provider.get_embedding_params",
+            new_callable=AsyncMock,
+            return_value={"url": "http://x", "json": {}, "headers": {}},
+        ),
+        patch("httpx.Client.post", return_value=resp),
+    ):
+        assert nearest_document_ids("anything", db_session, k=5) == []
 
 
 @pytest.mark.asyncio

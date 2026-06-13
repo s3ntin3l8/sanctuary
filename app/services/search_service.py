@@ -1,12 +1,11 @@
 import logging
 from collections.abc import Sequence
 
-from sqlalchemy import or_, text
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-from app.core.async_utils import run_async
 from app.models.database import ActionItem, Case, Document, Entity, LegalCost
 from app.models.enums import ActionItemType
 from app.repositories.action_item import ActionItemRepository
@@ -103,46 +102,9 @@ class SearchService:
         Falls back to an empty list if the embedding model is unavailable or the
         query embedding fails for any reason.
         """
-        from app.services.ai_config import get_embed_config
-        from app.services.ai_provider import embed_provider
-        from app.services.embeddings import _serialize
+        from app.services.embeddings import nearest_document_ids
 
-        embed_provider.reload_from_db(self.db)
-        cfg = get_embed_config(self.db)
-
-        try:
-            import httpx
-
-            params = run_async(
-                embed_provider.get_embedding_params(cfg.embed_model, query_text)
-            )
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.post(
-                    params["url"], json=params["json"], headers=params["headers"]
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                embedding = data.get("embedding") or (
-                    data.get("data", [{}])[0].get("embedding")
-                    if data.get("data")
-                    else None
-                )
-
-            if not embedding or len(embedding) != cfg.embed_dim:
-                return []
-
-            blob = _serialize(embedding)
-            rows = self.db.execute(
-                text(
-                    "SELECT document_id, distance FROM document_vectors "
-                    "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
-                ),
-                {"blob": blob, "k": k},
-            ).fetchall()
-            return [row[0] for row in rows]
-        except Exception as e:
-            logger.debug(f"Semantic search unavailable: {e}")
-            return []
+        return nearest_document_ids(query_text, self.db, k=k)
 
     def semantic_document_search(
         self, query_text: str, limit: int = 10
