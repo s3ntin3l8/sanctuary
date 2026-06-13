@@ -212,7 +212,7 @@ class RelationshipType(enum.StrEnum):
     REFERENCES = "references"
     ATTACHES_AS_PROOF = "attaches_as_proof"  # cited as evidence, not independent
     SUPERSEDES = "supersedes"
-    CITED_BY = "cited_by"
+    CITED_BY = "cited_by"  # reserved inverse of references; never AI-emitted — user-created only
     ENCLOSES = "encloses"  # cover-letter → enclosure within a single ingest batch
 
 

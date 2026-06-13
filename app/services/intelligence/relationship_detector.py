@@ -9,6 +9,7 @@ from app.config import SessionLocal
 from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
 from app.services.ai_config import get_chat_config
+from app.services.embeddings import nearest_document_ids
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
 from app.services.intelligence.prompts import RELATIONSHIP_DETECTOR_SYSTEM
@@ -18,7 +19,15 @@ logger = logging.getLogger(__name__)
 
 CANDIDATE_TIERS = {SignificanceTier.CRITICAL, SignificanceTier.SIGNIFICANT}
 VALID_RELATIONSHIP_TYPES = {e.value for e in RelationshipType}
-MAX_CANDIDATES = 15
+MAX_CANDIDATES = 20
+# Of MAX_CANDIDATES, reserve this many slots for semantic neighbours the recency
+# window missed; the rest go to the most recent docs. Reserving slots is what
+# makes the blend work — once a case has more prior docs than MAX_CANDIDATES the
+# recency window is always full, so without a reservation the semantic half could
+# never contribute.
+_SEMANTIC_SLOTS = 6
+# vec0 KNN is global; over-fetch then prune to this case/tier/prior-id.
+_KNN_OVERFETCH = 6
 
 
 def _get_first_passage(doc: Document) -> str:
@@ -32,8 +41,29 @@ def _get_first_passage(doc: Document) -> str:
     return ""
 
 
+def _build_query_text(doc: Document) -> str:
+    """Compact query string for semantic candidate lookup — the same fields the
+    detector prompt is built from (title + legal significance + first passage)."""
+    mgmt = doc.ai_summary or {}
+    parts = [
+        doc.title or "",
+        mgmt.get("legal_significance", "") or "",
+        _get_first_passage(doc),
+    ]
+    return "\n".join(p for p in parts if p).strip()
+
+
 def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
-    """Return up to MAX_CANDIDATES prior docs in the same case."""
+    """Return up to MAX_CANDIDATES prior docs in the same case, combining a
+    recency window with semantic nearest-neighbours.
+
+    Recency (id DESC) is the high-precision half: direct replies are almost
+    always to recent docs, and it always catches same-batch siblings whose
+    embeddings may not be indexed yet. Semantic KNN is the high-recall half: it
+    surfaces relevant *older* docs that fall outside the recency window. The
+    union is strictly >= the recency-only behaviour, so it cannot regress.
+    Recency candidates lead; semantic-only candidates fill the remaining slots.
+    """
     case_id = doc.case_id
     if not case_id and doc.proceeding_id:
         # Fallback if case_id is missing but proceeding_id is present
@@ -46,20 +76,45 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
     if not case_id:
         return []
 
-    return (
-        db.query(Document)
-        .options(
-            defer(Document.content),
+    def _scoped():
+        return (
+            db.query(Document)
+            .options(defer(Document.content))
+            .filter(
+                Document.case_id == case_id,
+                Document.id < doc.id,  # Strictly prior documents
+                Document.significance_tier.in_(list(CANDIDATE_TIERS)),
+            )
         )
-        .filter(
-            Document.case_id == case_id,
-            Document.id < doc.id,  # Strictly prior documents
-            Document.significance_tier.in_(list(CANDIDATE_TIERS)),
-        )
-        .order_by(Document.id.desc())
-        .limit(MAX_CANDIDATES)
-        .all()
+
+    recent = _scoped().order_by(Document.id.desc()).limit(MAX_CANDIDATES).all()
+    recent_ids = {c.id for c in recent}
+
+    # Semantic neighbours the recency window did NOT already include.
+    knn_ids = nearest_document_ids(
+        _build_query_text(doc), db, k=MAX_CANDIDATES * _KNN_OVERFETCH
     )
+    extra_ids = [i for i in knn_ids if i not in recent_ids]
+    semantic: list[Document] = []
+    if extra_ids:
+        # Re-apply case/tier/prior filters so global KNN hits from other cases or
+        # wrong tiers are pruned, then restore KNN distance order.
+        docs = _scoped().filter(Document.id.in_(extra_ids)).all()
+        rank = {doc_id: pos for pos, doc_id in enumerate(extra_ids)}
+        docs.sort(key=lambda d: rank.get(d.id, len(extra_ids)))
+        semantic = docs
+
+    if not semantic:
+        # Recency-only — also the embed-failure / cold-index fallback. Identical
+        # to the pre-A1 behaviour, so this path cannot regress.
+        return recent
+
+    # Blend: give the closest semantic neighbours up to _SEMANTIC_SLOTS, fill the
+    # remainder with the most recent. Recency leads (high precision for replies),
+    # semantic-only candidates trail (recall for older referenced docs).
+    sem_take = semantic[:_SEMANTIC_SLOTS]
+    rec_take = recent[: MAX_CANDIDATES - len(sem_take)]
+    return (rec_take + sem_take)[:MAX_CANDIDATES]
 
 
 def _build_candidate_summary(candidate: Document) -> str:

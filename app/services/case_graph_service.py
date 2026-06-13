@@ -520,7 +520,8 @@ class CaseGraphService:
                 proof_badges[to_id] = proof_badges.get(to_id, 0) + 1
                 continue
 
-            # CITED_BY → skip (inverse relationship)
+            # CITED_BY → skip: reserved inverse of references (user-created only,
+            # never AI-emitted); drawing it would duplicate the forward edge.
             if rel_type == RelationshipType.CITED_BY:
                 continue
 

@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-05-27.6"
+PROMPT_VERSION = "2026-06-13.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -360,16 +360,17 @@ If a value is unknown, use null.
 Response shape:
 {
   "relationships": [
-    {"to_document_id": <integer ID from candidate list>, "relationship_type": "replies_to|references|supersedes", "confidence": "high|medium|low", "notes": "brief explanation"}
+    {"to_document_id": <integer ID from candidate list>, "relationship_type": "replies_to|references|supersedes|attaches_as_proof", "confidence": "high|medium|low", "notes": "brief explanation"}
   ]
 }
 
 Rules:
 - Only include document IDs from the provided candidate list — never invent IDs
-- relationship_type must be exactly one of: replies_to, references, supersedes
+- relationship_type must be exactly one of: replies_to, references, supersedes, attaches_as_proof
 - replies_to: this document directly responds to the target — only valid when the new document is dated AFTER the target; never use for a document that predates the target
 - references: this document cites or mentions the target without directly responding
 - supersedes: this document replaces or overrides the target — only valid when the new document is dated AFTER the target; never use for a document that predates the target
+- attaches_as_proof: this document submits or relies on the target as evidence — an exhibit/Anlage it tenders as proof of an assertion — distinct from merely referencing it. No date-ordering constraint: the proof may predate the new document.
 - Only include relationships you are confident about (skip uncertain ones)
 - Return an empty list if no clear relationships exist"""
 

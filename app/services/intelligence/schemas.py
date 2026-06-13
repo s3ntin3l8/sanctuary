@@ -34,7 +34,9 @@ _ActionType = Literal[
     "payment_due",
 ]
 _Addressee = Literal["user", "opposing", "third_party", "court"]
-_RelationshipType = Literal["replies_to", "references", "supersedes"]
+_RelationshipType = Literal[
+    "replies_to", "references", "supersedes", "attaches_as_proof"
+]
 _EntityType = Literal[
     "person",
     "organization",

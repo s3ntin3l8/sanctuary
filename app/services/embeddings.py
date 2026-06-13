@@ -111,6 +111,53 @@ async def generate_embedding(doc_id: int):
         db.close()
 
 
+def nearest_document_ids(query_text: str, db, *, k: int) -> list[int]:
+    """Return up to `k` document_ids whose stored embedding is nearest to
+    `query_text`, closest first.
+
+    Synchronous, best-effort: returns ``[]`` on any failure (provider down,
+    dim mismatch, sqlite-vec unavailable) so callers can fall back gracefully.
+    Mirrors the embed+vec0 MATCH pattern in
+    ``SearchService._semantic_document_ids``; lives here so the document-vector
+    KNN has one home.
+    """
+    from sqlalchemy import text
+
+    from app.core.async_utils import run_async
+
+    if not query_text:
+        return []
+    try:
+        embed_provider.reload_from_db(db)
+        cfg = get_embed_config(db)
+        params = run_async(
+            embed_provider.get_embedding_params(cfg.embed_model, query_text)
+        )
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(
+                params["url"], json=params["json"], headers=params["headers"]
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        embedding = data.get("embedding") or (
+            data.get("data", [{}])[0].get("embedding") if data.get("data") else None
+        )
+        if not embedding or len(embedding) != cfg.embed_dim:
+            return []
+        blob = _serialize(embedding)
+        rows = db.execute(
+            text(
+                "SELECT document_id, distance FROM document_vectors "
+                "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
+            ),
+            {"blob": blob, "k": k},
+        ).fetchall()
+        return [row[0] for row in rows]
+    except Exception as e:  # noqa: BLE001 — best-effort; never block the caller
+        logger.debug("nearest_document_ids unavailable: %s", e)
+        return []
+
+
 _REINDEX_BATCH_SIZE = 50
 
 
