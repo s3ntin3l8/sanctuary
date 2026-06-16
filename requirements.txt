@@ -130,7 +130,7 @@ websockets==16.0
 xlsxwriter==3.2.9
 sqlite-vec==0.1.9
 celery==5.6.3
-redis==7.4.0
+redis==8.0.0
 google-auth-oauthlib==1.4.0
 google-api-python-client==2.197.0
 pwdlib==0.3.0
