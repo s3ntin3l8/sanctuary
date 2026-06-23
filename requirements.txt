@@ -74,7 +74,7 @@ polyfactory==3.3.0
 psutil==7.2.2
 pyclipper==1.4.0
 pydantic==2.13.4
-pydantic-settings==2.14.1
+pydantic-settings==2.14.2
 Pygments==2.20.0
 pylatexenc==2.10
 pyobjc-core==11.1; sys_platform == 'darwin'
