@@ -1480,6 +1480,243 @@ def test_recover_unclaimed_ready_batches_ignores_already_claimed(
 
 
 # ---------------------------------------------------------------------------
+# claim_batch_for_metadata_phase / recover_unclaimed_ready_metadata_phases
+# (the OCR->chat barrier)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_claim_batch_for_metadata_phase_fires_when_all_extract_terminal(db_session):
+    """Every doc's EXTRACT completed: claim wins (rowcount==1), timestamp set."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.intelligence.orchestrator import (
+        claim_batch_for_metadata_phase,
+    )
+
+    case = Case(
+        id="_MP1", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_MP1", doc_stages=[extracted, extracted]
+    )
+
+    assert claim_batch_for_metadata_phase(batch.id, db_session) is True
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is not None
+
+
+@pytest.mark.unit
+def test_claim_batch_for_metadata_phase_blocks_on_pending_extract(db_session):
+    """One doc's EXTRACT still pending: claim's NOT EXISTS guard rejects."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.intelligence.orchestrator import (
+        claim_batch_for_metadata_phase,
+    )
+
+    case = Case(
+        id="_MP2", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    still_extracting = {}  # EXTRACT defaults to PENDING via initialize()
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_MP2", doc_stages=[extracted, still_extracting]
+    )
+
+    assert claim_batch_for_metadata_phase(batch.id, db_session) is False
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is None
+
+
+@pytest.mark.unit
+def test_claim_batch_for_metadata_phase_fires_with_failed_extract(db_session):
+    """A failed EXTRACT counts as terminal — it must not deadlock the batch's
+    survivors. This is the case the barrier's advisor-flagged fix covers:
+    the last doc to finish EXTRACT can be the one that failed."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.intelligence.orchestrator import (
+        claim_batch_for_metadata_phase,
+    )
+
+    case = Case(
+        id="_MP3", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    failed = {PipelineStage.EXTRACT.value: StageStatus.FAILED.value}
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_MP3", doc_stages=[extracted, failed]
+    )
+
+    assert claim_batch_for_metadata_phase(batch.id, db_session) is True
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is not None
+
+
+@pytest.mark.unit
+def test_claim_batch_for_metadata_phase_is_idempotent(db_session):
+    """A second claim attempt on an already-claimed batch is a no-op."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.intelligence.orchestrator import (
+        claim_batch_for_metadata_phase,
+    )
+
+    case = Case(
+        id="_MP4", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_MP4", doc_stages=[extracted]
+    )
+
+    assert claim_batch_for_metadata_phase(batch.id, db_session) is True
+    assert claim_batch_for_metadata_phase(batch.id, db_session) is False
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_metadata_phases_claims_and_dispatches(
+    db_session, monkeypatch
+):
+    """Batch where every doc's EXTRACT is terminal but metadata_phase_queued_at
+    is still NULL (missed inline trigger) gets claimed and dispatched."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401 — used inside _seed helper
+        recover_unclaimed_ready_metadata_phases,
+    )
+
+    case = Case(
+        id="_RM1", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    batch, docs = _seed_batch_with_docs(
+        db_session, case_id="_RM1", doc_stages=[extracted, extracted]
+    )
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, doc_id):
+            captured.append(doc_id)
+
+    monkeypatch.setattr("app.tasks.document_processing.metadata_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_metadata_phases(db_session)
+
+    assert result["batches_dispatched"] == 1
+    assert result["batch_ids"] == [batch.id]
+    assert sorted(captured) == sorted(d.id for d in docs)
+
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is not None
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_metadata_phases_skips_when_extract_pending(
+    db_session, monkeypatch
+):
+    """Readiness must be honoured: a doc still mid-EXTRACT blocks the sweep."""
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401
+        recover_unclaimed_ready_metadata_phases,
+    )
+
+    case = Case(
+        id="_RM2", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_RM2", doc_stages=[extracted, {}]
+    )
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, doc_id):
+            captured.append(doc_id)
+
+    monkeypatch.setattr("app.tasks.document_processing.metadata_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_metadata_phases(db_session)
+
+    assert result["batches_dispatched"] == 0
+    assert captured == []
+
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is None
+
+
+@pytest.mark.unit
+def test_recover_unclaimed_ready_metadata_phases_ignores_already_claimed(
+    db_session, monkeypatch
+):
+    """A batch with metadata_phase_queued_at already set is left alone — the
+    inline trigger already handled it. Idempotency guard."""
+    from datetime import UTC, datetime
+
+    from app.models.database import Case
+    from app.models.enums import CaseStatus, Jurisdiction
+    from app.services.pipeline_status import (
+        initialize,  # noqa: F401
+        recover_unclaimed_ready_metadata_phases,
+    )
+
+    case = Case(
+        id="_RM3", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    extracted = {PipelineStage.EXTRACT.value: StageStatus.COMPLETED.value}
+    batch, _docs = _seed_batch_with_docs(
+        db_session, case_id="_RM3", doc_stages=[extracted]
+    )
+    claimed_at = datetime.now(UTC).replace(tzinfo=None)
+    batch.metadata_phase_queued_at = claimed_at
+    db_session.commit()
+
+    captured: list[int] = []
+
+    class _FakeDelay:
+        def delay(self, doc_id):
+            captured.append(doc_id)
+
+    monkeypatch.setattr("app.tasks.document_processing.metadata_task", _FakeDelay())
+
+    result = recover_unclaimed_ready_metadata_phases(db_session)
+
+    assert result["batches_dispatched"] == 0
+    assert captured == []
+
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at == claimed_at
+
+
+# ---------------------------------------------------------------------------
 # retry_on_db_locked
 # ---------------------------------------------------------------------------
 

@@ -158,6 +158,7 @@ def isolate_data_dir(tmp_path_factory):
         "app.services.ingestion.service",
         "app.services.ingestion.batch_orchestrator",
         "app.services.intelligence._ai_call",
+        "app.services.ai_run_index",
     ):
         mod = __import__(modname, fromlist=["DATA_DIR"])
         if hasattr(mod, "DATA_DIR"):

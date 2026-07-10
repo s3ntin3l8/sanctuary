@@ -20,14 +20,74 @@ _TRANSIENT_AI_ERRORS = (
 )
 
 
+def dispatch_metadata_phase(batch_id: int, db) -> None:
+    """Dispatch metadata_task for every doc in a batch at once.
+
+    The winning side of the OCR->chat barrier (see
+    claim_batch_for_metadata_phase). METADATA is self_claims=True (see
+    STAGE_REGISTRY) — its own dispatcher hands it off unclaimed and
+    metadata_task CAS-claims its own doc's METADATA stage on entry, no-oping
+    for docs whose EXTRACT failed/skipped or whose METADATA already ran. So
+    this just fans out .delay() to every doc in the batch; no pre-claim.
+    """
+    doc_ids = [
+        row[0]
+        for row in db.query(Document.id)
+        .filter(Document.ingest_batch_id == batch_id)
+        .all()
+    ]
+    for sibling_id in doc_ids:
+        metadata_task.delay(sibling_id)
+
+
+def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> None:
+    """Check/dispatch the OCR->chat barrier after an EXTRACT terminal exit.
+
+    Call this on every terminal exit of process_document_task — success AND
+    terminal failure — since claim_batch_for_metadata_phase's readiness
+    predicate treats a failed/skipped EXTRACT as terminal too; only a
+    doc still pending/retrying blocks the claim. Docs with no batch (rare —
+    only when ingest_batch_id was never set) skip the barrier and dispatch
+    directly, since there's no sibling set to wait for.
+
+    Never raises: a crash right here (before the claim/dispatch completes)
+    leaves the batch's metadata_phase_queued_at NULL, which
+    recover_unclaimed_ready_metadata_phases picks up on the next maintenance
+    sweep — so letting an exception here mask the caller's own terminal-state
+    transition (return/raise) would trade a self-healing gap for a bigger one.
+    """
+    try:
+        if not batch_id:
+            metadata_task.delay(doc_id)
+            return
+        from app.services.intelligence.orchestrator import (
+            claim_batch_for_metadata_phase,
+        )
+
+        if claim_batch_for_metadata_phase(batch_id, db):
+            dispatch_metadata_phase(batch_id, db)
+    except Exception:
+        logger.error(
+            "Doc #%d: metadata-phase barrier check failed for batch %s — "
+            "will be picked up by recover_unclaimed_ready_metadata_phases",
+            doc_id,
+            batch_id,
+            exc_info=True,
+        )
+
+
 @celery_app.task(bind=True, max_retries=3)
 def process_document_task(self, doc_id: int):
     """EXTRACT-only: run Docling conversion, then hand off METADATA to the ai queue.
 
     This task is pinned to the `ingest` queue (concurrency=1) so heavy
-    Docling/OCR work doesn't share a slot with LLM calls. On success it
-    dispatches metadata_task on the `ai` queue and returns immediately,
-    freeing the ingest slot for the next sibling doc's EXTRACT.
+    Docling/OCR work doesn't share a slot with LLM calls. On every terminal
+    exit (success or failure) it checks the OCR->chat barrier
+    (claim_batch_for_metadata_phase): once every doc in the batch has a
+    terminal EXTRACT, metadata_task is dispatched for the whole batch at
+    once, rather than each doc triggering its own chat call the instant its
+    own EXTRACT finishes — this is what keeps the shared inference host from
+    swapping between the OCR and chat models mid-batch.
     """
     from app.services.pipeline_status import (
         mark_completed,
@@ -51,7 +111,7 @@ def process_document_task(self, doc_id: int):
 
         # Idempotency guard: if a prior run already extracted content (meta has
         # the extractor stamp + chunks), don't re-call Chandra. Reconcile the
-        # stage row to COMPLETED. Only re-dispatch metadata_task if the cascade
+        # stage row to COMPLETED. Only re-check the barrier if the cascade
         # is incomplete — for already-completed docs, metadata_task would be a
         # no-op chain through every stage's claim CAS, just adding log noise.
         # Defends against duplicate dispatches (e.g. recover_stuck_pending_-
@@ -60,7 +120,7 @@ def process_document_task(self, doc_id: int):
         if meta.get("extractor") and meta.get("chunks"):
             mark_completed(doc_id, PipelineStage.EXTRACT, db)
             if doc.pipeline_state != "completed":
-                metadata_task.delay(doc_id)
+                _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             logger.info(
                 "Doc #%d: already extracted (extractor=%s, %d chunks) — skipping Chandra",
                 doc_id,
@@ -81,6 +141,7 @@ def process_document_task(self, doc_id: int):
                 error_msg += f" ({e.detail})"
             mark_failed_with_cascade(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
             logger.warning(f"Document {doc_id} ingestion failed: {e}")
+            _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         except Exception as e:
             db.rollback()
@@ -90,7 +151,8 @@ def process_document_task(self, doc_id: int):
                 countdown = 60 * (self.request.retries + 1)
                 # Mark RETRYING (not FAILED) so the polling templates keep
                 # refreshing through the countdown — the next attempt runs
-                # invisibly otherwise.
+                # invisibly otherwise. EXTRACT isn't terminal yet, so the
+                # barrier predicate can't be satisfied for this doc — skip it.
                 schedule_retry(
                     doc_id,
                     PipelineStage.EXTRACT,
@@ -106,6 +168,7 @@ def process_document_task(self, doc_id: int):
             mark_failed_with_cascade(
                 doc_id, PipelineStage.EXTRACT, db, error=f"System error: {e}"
             )
+            _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             from celery.exceptions import MaxRetriesExceededError
 
             raise MaxRetriesExceededError(
@@ -120,11 +183,12 @@ def process_document_task(self, doc_id: int):
                 db,
                 error=f"task aborted: {type(e).__name__}",
             )
+            _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             raise
 
-        # EXTRACT done — hand off to METADATA on the ai queue and return so the
-        # ingest worker slot is free for the next doc's EXTRACT.
-        metadata_task.delay(doc_id)
+        # EXTRACT done — check the barrier and return so the ingest worker
+        # slot is free for the next doc's EXTRACT.
+        _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
         return {"status": "success", "doc_id": doc_id}
     finally:
         db.close()

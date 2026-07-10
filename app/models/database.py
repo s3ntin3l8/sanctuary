@@ -503,6 +503,12 @@ class IngestBatch(Base):
     )
     ingest_date = Column(DateTime, default=_utcnow, nullable=False)
     analysis_queued_at = Column(DateTime, nullable=True)
+    # Atomic CAS slot for the OCR->chat barrier: NULL until every doc in the
+    # batch has a terminal EXTRACT, then set by claim_batch_for_metadata_phase()
+    # so metadata_task dispatches for the whole batch at once instead of each
+    # doc triggering its own chat call the moment its own EXTRACT finishes.
+    # Mirrors analysis_queued_at — see app/services/intelligence/orchestrator.py.
+    metadata_phase_queued_at = Column(DateTime, nullable=True)
     source_hash = Column(String, index=True, nullable=True)
     meta = Column(JSON, nullable=True)
     detected_actions = Column(JSON, nullable=True)

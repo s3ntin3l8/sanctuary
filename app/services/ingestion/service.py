@@ -279,6 +279,53 @@ def extract_cost_candidates(content: str) -> list[dict]:
     return candidates[:20]
 
 
+def _record_ocr_run(
+    doc: Document, conversion_metadata: dict | None, markdown_content: str | None
+) -> None:
+    """Append a runs.jsonl entry for a Chandra OCR attempt, success or failure.
+
+    ``convert_file`` never raises on a Chandra failure — it silently falls
+    back to Docling (see converters.py) — so the failure signal is a note
+    stashed on the fallback result's metadata (``chandra_ocr_error``), not an
+    exception. No-ops when Chandra wasn't attempted (engine != chandra, or
+    non-PDF), since Docling makes no model call to record.
+    """
+    if not conversion_metadata:
+        return
+    from app.services.ai_run_index import record_run
+
+    if conversion_metadata.get("extractor") == "chandra-ocr-2":
+        record_run(
+            kind="doc",
+            scope_id=str(doc.id),
+            stage="ocr",
+            doc_id=doc.id,
+            batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            model=conversion_metadata.get("ocr_model") or "",
+            provider="chandra",
+            duration_ms=int(conversion_metadata.get("extraction_seconds", 0) * 1000),
+            response_len=len(markdown_content or ""),
+            status="ok",
+        )
+    elif conversion_metadata.get("chandra_ocr_error"):
+        record_run(
+            kind="doc",
+            scope_id=str(doc.id),
+            stage="ocr",
+            doc_id=doc.id,
+            batch_id=doc.ingest_batch_id,
+            case_id=doc.case_id,
+            model=conversion_metadata.get("chandra_ocr_model") or "",
+            provider="chandra",
+            # Chandra's own duration isn't surfaced through the Docling
+            # fallback path — only the failure message is.
+            duration_ms=0,
+            status="error",
+            error=conversion_metadata["chandra_ocr_error"][:200],
+        )
+
+
 def process_uploaded_document(doc: Document, db: Session):
     """Process a pending document in the background."""
     import os
@@ -305,6 +352,8 @@ def process_uploaded_document(doc: Document, db: Session):
         conversion_metadata = conversion_result["metadata"]
         # Add chunks to metadata
         conversion_metadata["chunks"] = conversion_result.get("chunks", [])
+
+        _record_ocr_run(doc, conversion_metadata, markdown_content)
 
         if ext == ".pdf" and markdown_content:
             text_only = re.sub(r"[#*_\[\]()]|!\[.*?\]\(.*?\)", "", markdown_content)

@@ -763,7 +763,16 @@ def convert_file(
             content = f.read()
         return {"content": content, "metadata": {"pages": 1}, "chunks": []}
 
+    # Stashed here (rather than raised) when Chandra is attempted and fails —
+    # process_uploaded_document reads it off the fallback result's metadata to
+    # record an "ocr" runs.jsonl entry with status=error, since the exception
+    # itself never reaches the caller (see the except blocks below).
+    chandra_failure: dict | None = None
+
     if ext == ".pdf" and engine == "chandra":
+        # Assigned before the inner try so the except blocks below can always
+        # report a model name, even if get_ocr_config() itself is what raised.
+        ocr_cfg = None
         try:
             from app.config import SessionLocal
             from app.services.ai_config import get_ocr_config
@@ -784,19 +793,34 @@ def convert_file(
                 file_path,
                 exc,
             )
+            chandra_failure = {
+                "error": str(exc),
+                "model": ocr_cfg.ocr_model if ocr_cfg else None,
+            }
         except Exception as exc:  # noqa: BLE001 — never let OCR brick ingest
             logger.warning(
                 "Chandra extraction crashed for %s — falling back to Docling: %s",
                 file_path,
                 exc,
             )
+            chandra_failure = {
+                "error": str(exc),
+                "model": ocr_cfg.ocr_model if ocr_cfg else None,
+            }
 
     executor = _get_executor()
     future = executor.submit(_convert_in_subprocess, file_path)
     try:
-        return future.result(timeout=timeout)
+        result = future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
         raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
+
+    if chandra_failure is not None:
+        result.setdefault("metadata", {})
+        result["metadata"]["chandra_ocr_error"] = chandra_failure["error"]
+        result["metadata"]["chandra_ocr_model"] = chandra_failure["model"]
+
+    return result
 
 
 _PLACEHOLDER_RE = re.compile(r"<!--[^>]*-->|--- PAGE \d+ ---")
