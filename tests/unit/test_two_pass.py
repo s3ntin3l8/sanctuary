@@ -314,10 +314,15 @@ def test_runs_jsonl_records_watchdog_drain_event(
     bursts of watchdog-drained completions look healthy in the index."""
     import json
 
+    from app.services import ai_run_index
     from app.services.intelligence import _ai_call as ai_call_mod
 
     # Redirect ai_debug to a tmp dir so we can inspect the runs.jsonl entry.
+    # _stream_response's own .md dump reads DATA_DIR from _ai_call's module
+    # namespace; the runs.jsonl append goes through ai_run_index.record_run,
+    # which reads DATA_DIR from its own — both need patching.
     monkeypatch.setattr(ai_call_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(ai_run_index, "DATA_DIR", tmp_path)
 
     # Patch httpx to return a stream where thinking accumulates past the
     # watchdog threshold without ever producing response tokens. The drain
@@ -406,9 +411,11 @@ def test_runs_jsonl_watchdog_field_null_on_normal_completion(
     healthy calls from ones that landed in the thinking channel via drain."""
     import json
 
+    from app.services import ai_run_index
     from app.services.intelligence import _ai_call as ai_call_mod
 
     monkeypatch.setattr(ai_call_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(ai_run_index, "DATA_DIR", tmp_path)
 
     class _FakeResponse:
         is_success = True
@@ -686,18 +693,25 @@ def test_runs_jsonl_entry_carries_doc_case_and_batch_for_doc_scoped_calls(
     without joining against the documents table."""
     import json
 
-    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
-    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    from app.services import ai_run_index
+
+    monkeypatch.setattr(ai_run_index, "DATA_DIR", tmp_path)
     runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
 
-    _ai_call._append_index(
-        runs_jsonl,
+    doc_id, batch_id, case_id = _ai_call._resolve_run_ids(
+        kind="doc",
+        scope_id="42",
+        ingest_batch_id=4,
+        doc_case_id="ADV-099-Z",
+    )
+    ai_run_index.record_run(
         started_at="2026-05-07T20:00:00Z",
         kind="doc",
         scope_id="42",
         stage="proceeding-p2",
-        ingest_batch_id=4,
-        doc_case_id="ADV-099-Z",
+        doc_id=doc_id,
+        batch_id=batch_id,
+        case_id=case_id,
         model="qwen/qwen3.5-9b",
         provider="openai",
         duration_ms=1234,
@@ -729,18 +743,25 @@ def test_runs_jsonl_entry_carries_case_for_batch_scoped_calls(tmp_path, monkeypa
     it's known at call time."""
     import json
 
-    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
-    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    from app.services import ai_run_index
+
+    monkeypatch.setattr(ai_run_index, "DATA_DIR", tmp_path)
     runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
 
-    _ai_call._append_index(
-        runs_jsonl,
+    doc_id, batch_id, case_id = _ai_call._resolve_run_ids(
+        kind="batch",
+        scope_id="4",
+        ingest_batch_id=4,
+        doc_case_id="ADV-100-Z",
+    )
+    ai_run_index.record_run(
         started_at="2026-05-07T20:00:00Z",
         kind="batch",
         scope_id="4",
         stage="analyzer-p2",
-        ingest_batch_id=4,
-        doc_case_id="ADV-100-Z",
+        doc_id=doc_id,
+        batch_id=batch_id,
+        case_id=case_id,
         model="qwen/qwen3.5-9b",
         provider="openai",
         duration_ms=2000,
@@ -762,18 +783,25 @@ def test_runs_jsonl_entry_for_case_scoped_calls(tmp_path, monkeypatch):
     """A case-scoped call (kind=case) puts the case ID in case_id."""
     import json
 
-    monkeypatch.setattr(_ai_call, "DATA_DIR", tmp_path)
-    (tmp_path / "ai_debug").mkdir(parents=True, exist_ok=True)
+    from app.services import ai_run_index
+
+    monkeypatch.setattr(ai_run_index, "DATA_DIR", tmp_path)
     runs_jsonl = tmp_path / "ai_debug" / "runs.jsonl"
 
-    _ai_call._append_index(
-        runs_jsonl,
+    doc_id, batch_id, case_id = _ai_call._resolve_run_ids(
+        kind="case",
+        scope_id="ADV-101-Z",
+        ingest_batch_id=None,
+        doc_case_id=None,
+    )
+    ai_run_index.record_run(
         started_at="2026-05-07T20:00:00Z",
         kind="case",
         scope_id="ADV-101-Z",
         stage="brief-p2",
-        ingest_batch_id=None,
-        doc_case_id=None,
+        doc_id=doc_id,
+        batch_id=batch_id,
+        case_id=case_id,
         model="qwen/qwen3.5-9b",
         provider="openai",
         duration_ms=3000,

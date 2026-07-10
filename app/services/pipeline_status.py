@@ -959,6 +959,69 @@ def recover_unclaimed_ready_batches(db: Session) -> dict:
     return {"batches_dispatched": len(dispatched), "batch_ids": dispatched}
 
 
+def recover_unclaimed_ready_metadata_phases(db: Session) -> dict:
+    """Claim + dispatch batches whose docs finished EXTRACT but never
+    triggered the OCR→chat barrier (claim_batch_for_metadata_phase).
+
+    Sibling to recover_unclaimed_ready_batches, same rationale: the barrier
+    is triggered inline from process_document_task's terminal exit (success
+    or failure). If that exit is interrupted before the check runs (worker
+    killed between mark_completed/mark_failed_with_cascade and the barrier
+    call), the batch is left with every doc's EXTRACT terminal but
+    metadata_phase_queued_at still NULL — permanently stalled without this
+    sweep. Delegates to claim_batch_for_metadata_phase(), whose atomic
+    UPDATE re-checks readiness, so this is race-safe and a no-op when the
+    inline trigger already fired normally.
+
+    Straggler docs whose own metadata_task dispatch is lost mid-fan-out
+    (rarer: crash inside the dispatch loop itself, after the batch claim
+    already succeeded) are covered by the existing generic
+    recover_stuck_pending_dispatches sweep — METADATA is self_claims=True,
+    so redispatching it for any doc is always a safe no-op.
+
+    Returns {"batches_dispatched": N, "batch_ids": [...]}.
+    """
+    from app.services.intelligence.orchestrator import (
+        claim_batch_for_metadata_phase,
+    )
+    from app.tasks.document_processing import dispatch_metadata_phase
+
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT b.id
+            FROM ingest_batches b
+            JOIN documents d ON d.ingest_batch_id = b.id
+            WHERE b.metadata_phase_queued_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM documents d2
+                WHERE d2.ingest_batch_id = b.id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM document_pipeline_stages dps
+                    WHERE dps.document_id = d2.id
+                      AND dps.stage = 'extract'
+                      AND dps.status IN ('completed', 'failed', 'skipped')
+                  )
+              )
+            """
+        )
+    ).fetchall()
+
+    dispatched: list[int] = []
+    for (batch_id,) in rows:
+        if claim_batch_for_metadata_phase(batch_id, db):
+            dispatch_metadata_phase(batch_id, db)
+            dispatched.append(batch_id)
+
+    if dispatched:
+        logger.info(
+            "recover_unclaimed_ready_metadata_phases: dispatched %d batch(es): %s",
+            len(dispatched),
+            dispatched,
+        )
+    return {"batches_dispatched": len(dispatched), "batch_ids": dispatched}
+
+
 # Gate-block skip reasons that produce recoverable SKIPPED rows — see
 # enrich_document.py and extract_claims.py for context. Policy-skips
 # ("ineligible_tier:administrative", etc.) are NOT listed here and stay SKIPPED.

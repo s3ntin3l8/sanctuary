@@ -187,13 +187,15 @@ def prune_ai_debug_logs_task():
 @celery_app.task(name="app.tasks.maintenance.recover_pipeline_task")
 def recover_pipeline_task():
     """Run all pipeline + background-job recovery heuristics (orphaned stages,
-    stuck dispatches, stuck batches, stale reindex/dedup jobs)."""
+    stuck dispatches, stuck batches, unclaimed metadata-phase barriers, stale
+    reindex/dedup jobs)."""
     from app.config import SessionLocal
     from app.services.pipeline_status import (
         recover_orphaned_running_stages,
         recover_stuck_batches,
         recover_stuck_pending_dispatches,
         recover_unclaimed_ready_batches,
+        recover_unclaimed_ready_metadata_phases,
     )
     from app.services.user_settings_service import (
         recover_stale_dedup_jobs,
@@ -206,6 +208,7 @@ def recover_pipeline_task():
         dispatches = recover_stuck_pending_dispatches(db)
         batches = recover_stuck_batches(db)
         unclaimed = recover_unclaimed_ready_batches(db)
+        unclaimed_metadata = recover_unclaimed_ready_metadata_phases(db)
         stale_reindex = recover_stale_reindex_job(db)
         stale_dedup = recover_stale_dedup_jobs(db)
         if stale_reindex or stale_dedup:
@@ -226,6 +229,9 @@ def recover_pipeline_task():
             "stuck_dispatches": dispatches.get("docs_redispatched", 0),
             "stuck_batches": batches.get("batches_recovered", 0),
             "unclaimed_batches": unclaimed.get("batches_dispatched", 0),
+            "unclaimed_metadata_phases": unclaimed_metadata.get(
+                "batches_dispatched", 0
+            ),
             "stale_reindex": 1 if stale_reindex else 0,
             "stale_dedup": len(stale_dedup),
         }

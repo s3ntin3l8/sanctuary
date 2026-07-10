@@ -63,6 +63,50 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
     return result.rowcount == 1
 
 
+def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
+    """Atomically claim a batch's metadata/chat phase — the OCR→chat barrier.
+
+    Returns True if this call won the race (rowcount == 1); the winner is
+    responsible for dispatching metadata_task for every doc in the batch at
+    once, instead of each doc dispatching its own chat call the instant its
+    own EXTRACT finishes. This is what keeps the shared inference host from
+    swapping between the OCR model and the chat model mid-batch — see
+    app/services/model_gate.py for the (now-redundant-within-a-batch, still
+    useful cross-batch) drain-first heuristic this supersedes.
+
+    Uses a single UPDATE ... WHERE metadata_phase_queued_at IS NULL to
+    prevent duplicate dispatch when multiple workers finish the batch's last
+    EXTRACT(s) near-simultaneously. Mirrors claim_batch_for_analysis.
+
+    Readiness condition: every document in the batch has EXTRACT completed,
+    failed, or skipped (a failed EXTRACT doesn't block the barrier — it just
+    means that doc's own METADATA claim will no-op when dispatched).
+    """
+    result = db.execute(
+        text(
+            """
+            UPDATE ingest_batches
+            SET metadata_phase_queued_at = :now
+            WHERE id = :batch_id
+              AND metadata_phase_queued_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM documents
+                WHERE ingest_batch_id = :batch_id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM document_pipeline_stages dps
+                    WHERE dps.document_id = documents.id
+                      AND dps.stage = 'extract'
+                      AND dps.status IN ('completed', 'failed', 'skipped')
+                  )
+              )
+            """
+        ),
+        {"now": datetime.now(UTC), "batch_id": batch_id},
+    )
+    db.commit()
+    return result.rowcount == 1
+
+
 def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
     """Atomically claim a case for brief dispatch when every doc in the case
     has CLAIMS in a terminal state (completed/failed/skipped-by-policy).

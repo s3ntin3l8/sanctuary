@@ -1,4 +1,5 @@
 import logging
+import time
 
 import httpx
 
@@ -6,6 +7,7 @@ from app.config import SessionLocal
 from app.models.database import Document
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
+from app.services.ai_run_index import record_run
 from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,14 @@ async def generate_embedding(doc_id: int):
     written but were still flagged COMPLETED, so search would miss them.
     """
     db = SessionLocal()
+    # Only recorded once the POST is actually attempted — a doc with no
+    # content (early return below) never called a model, so nothing to log.
+    attempted = False
+    run_started = time.perf_counter()
+    run_status = "error"
+    run_error: str | None = None
+    resp_len = 0
+    cfg = None
     try:
         embed_provider.reload_from_db(db)
         cfg = get_embed_config(db)
@@ -58,8 +68,9 @@ async def generate_embedding(doc_id: int):
         params = await embed_provider.get_embedding_params(
             cfg.embed_model, content_snippet
         )
-        await embed_provider.get_type()
+        ptype = await embed_provider.get_type()
 
+        attempted = True
         # Acquire the embed-family lock. The current policy treats embed as
         # compatible with chandra and qwen (small model fits alongside), so
         # this is a fast-path no-op — but the call site stays uniform if the
@@ -107,7 +118,27 @@ async def generate_embedding(doc_id: int):
             {"doc_id": doc_id, "embedding": blob},
         )
         db.commit()
+        resp_len = len(embedding)
+        run_status = "ok"
+    except Exception as exc:
+        run_error = str(exc)
+        raise
     finally:
+        if attempted and cfg is not None:
+            record_run(
+                kind="doc",
+                scope_id=str(doc_id),
+                stage="embed",
+                doc_id=doc_id,
+                batch_id=doc.ingest_batch_id if doc else None,
+                case_id=doc.case_id if doc else None,
+                model=cfg.embed_model,
+                provider=ptype,
+                duration_ms=int((time.perf_counter() - run_started) * 1000),
+                response_len=resp_len,
+                status=run_status,
+                error=run_error[:200] if run_error else None,
+            )
         db.close()
 
 

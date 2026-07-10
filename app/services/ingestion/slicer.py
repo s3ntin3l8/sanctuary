@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,7 @@ from app.models.database import IngestBatch
 from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
 from app.services.ai_provider import chat_provider
+from app.services.ai_run_index import record_run
 from app.services.intelligence.prompts import SLICING_CUT_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -349,15 +351,35 @@ def prepare(batch_id: int) -> None:
 
         # AI pass
         chat_provider.reload_from_db(db)
-        summary_model = get_chat_config(db).summary_model
+        chat_cfg = get_chat_config(db)
+        summary_model = chat_cfg.summary_model
         ai_results: dict[int, dict] = {}
         if heuristic_candidates:
+            slice_started = time.perf_counter()
+            slice_error: str | None = None
             try:
                 ai_results = run_async(
                     _ai_cut_judgments(heuristic_candidates, summary_model)
                 )
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
+                slice_error = str(exc)
+            # One aggregate entry per slicing run — the candidates fan out to
+            # many small parallel judgment calls (see _ai_cut_judgments), and
+            # docs don't exist yet at this point, so per-call/per-doc rows
+            # aren't meaningful here.
+            record_run(
+                kind="batch",
+                scope_id=str(batch_id),
+                stage="slice",
+                batch_id=batch_id,
+                model=summary_model,
+                provider=chat_cfg.provider,
+                duration_ms=int((time.perf_counter() - slice_started) * 1000),
+                response_len=len(ai_results),
+                status="error" if slice_error else "ok",
+                error=slice_error[:200] if slice_error else None,
+            )
 
         # Combine heuristic + AI into proposed_cuts
         proposed_cuts = []

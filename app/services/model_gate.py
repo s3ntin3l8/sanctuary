@@ -72,6 +72,18 @@ _BACKOFF_GROWTH = 1.6
 # the ingest worker can keep the chandra slot hot across the batch. This
 # is the "drain extract first" bias that prevents per-doc model swaps
 # during batch ingest.
+#
+# Since the OCR->chat barrier (claim_batch_for_metadata_phase, see
+# app/services/intelligence/orchestrator.py) was added, intra-batch model
+# swapping is eliminated by construction — metadata_task no longer dispatches
+# until every doc in the batch has a terminal EXTRACT, so there's rarely a
+# qwen call in flight while chandra work for the *same* batch remains. This
+# bias is still load-bearing as the *cross-batch* backstop (batch B's OCR vs.
+# batch A's chat racing) and as a fallback if the barrier's dispatch is ever
+# delayed — but its intra-batch leaks (the 10-min defer cap below, the
+# queue-length blind spot on in-flight/prefetched tasks, and fail-open on
+# Redis errors) are no longer the primary defense, so they're left as-is
+# rather than hardened further.
 _INGEST_QUEUE_NAME = "ingest"
 
 # Maximum total time a single qwen acquire will defer for the ingest

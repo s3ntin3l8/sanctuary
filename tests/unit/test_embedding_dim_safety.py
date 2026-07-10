@@ -47,10 +47,13 @@ async def test_dim_mismatch_raises(db_session):
         patch.object(
             emb_module.embed_provider, "get_embedding_params", new_callable=AsyncMock
         ) as mock_params,
-        patch.object(emb_module.embed_provider, "get_type", new_callable=AsyncMock),
+        patch.object(
+            emb_module.embed_provider, "get_type", new_callable=AsyncMock
+        ) as mock_get_type,
         patch("httpx.AsyncClient") as mock_client,
     ):
         mock_params.return_value = {"url": "x", "json": {}, "headers": {}}
+        mock_get_type.return_value = "ollama"
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(
             return_value=fake_response
         )

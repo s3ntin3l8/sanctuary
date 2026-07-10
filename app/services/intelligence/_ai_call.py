@@ -17,6 +17,7 @@ from app.core.async_utils import run_async
 from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call
 from app.services.ai_provider import chat_provider
+from app.services.ai_run_index import record_run
 from app.services.intelligence._json import is_effectively_empty, parse_json_response
 from app.services.intelligence.prompts import (
     PASS1_USER_SUFFIX,
@@ -254,39 +255,23 @@ def _write_block(
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
-def _append_index(
-    index_file,
-    *,
-    started_at: str,
-    kind: str,
-    scope_id: str,
-    stage: str,
-    ingest_batch_id,
-    doc_case_id: str | None,
-    model: str,
-    provider: str,
-    duration_ms: int,
-    ttfb_ms: int | None,
-    response_len: int,
-    thinking_len: int,
-    status: str,
-    error: str | None,
-    prompt_tokens: int | None = None,
-    completion_tokens: int | None = None,
-    reasoning_tokens: int | None = None,
-    watchdog: str | None = None,
-) -> None:
-    # Each entry carries three IDs so jq filters / log greps work uniformly
-    # regardless of scope kind:
-    #   doc_id    = the document this call relates to (when applicable)
-    #   batch_id  = the ingest batch this call relates to (the call's primary
-    #               scope when kind=batch, OR the doc's ingest_batch_id when
-    #               kind=doc — same logical "batch this run belongs to")
-    #   case_id   = the case this call relates to (call's scope when kind=case,
-    #               OR the doc's case_id when kind=doc, when known)
-    # Previously only the call's primary scope was reported, so doc-scoped
-    # entries had batch_id=null + case_id=null even when the doc clearly
-    # belonged to a batch and a case.
+def _resolve_run_ids(
+    kind: str, scope_id: str, ingest_batch_id, doc_case_id: str | None
+) -> tuple[int | None, int | None, str | None]:
+    """Resolve (doc_id, batch_id, case_id) for a runs.jsonl entry.
+
+    Each entry carries three IDs so jq filters / log greps work uniformly
+    regardless of scope kind:
+      doc_id    = the document this call relates to (when applicable)
+      batch_id  = the ingest batch this call relates to (the call's primary
+                  scope when kind=batch, OR the doc's ingest_batch_id when
+                  kind=doc — same logical "batch this run belongs to")
+      case_id   = the case this call relates to (call's scope when kind=case,
+                  OR the doc's case_id when kind=doc, when known)
+    Previously only the call's primary scope was reported, so doc-scoped
+    entries had batch_id=null + case_id=null even when the doc clearly
+    belonged to a batch and a case.
+    """
     doc_id = int(scope_id) if kind == "doc" else None
     if kind == "batch":
         batch_id: int | None = int(scope_id)
@@ -294,46 +279,8 @@ def _append_index(
         batch_id = int(ingest_batch_id)
     else:
         batch_id = None
-    if kind == "case":
-        case_id: str | None = scope_id
-    else:
-        case_id = doc_case_id
-
-    entry = {
-        "ts": started_at,
-        "prompt_version": PROMPT_VERSION,
-        "kind": kind,
-        "scope_id": scope_id,
-        "stage": stage,
-        "doc_id": doc_id,
-        "batch_id": batch_id,
-        "case_id": case_id,
-        "model": model,
-        "provider": provider,
-        "duration_ms": duration_ms,
-        "ttfb_ms": ttfb_ms,
-        "response_len": response_len,
-        "thinking_len": thinking_len,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "reasoning_tokens": reasoning_tokens,
-        "status": status,
-        "error": error,
-        # Watchdog signal: None when the stream completed normally, "think_drain"
-        # when the reasoning channel exceeded _THINK_WATCHDOG_CHARS within the
-        # time budget, "response_monologue" when the response channel ran away.
-        # The call may still report status=ok if the drained thinking channel
-        # held a usable schema-constrained answer (channel promotion).
-        "watchdog": watchdog,
-    }
-    line = json.dumps(entry, ensure_ascii=False) + "\n"
-
-    with open(index_file, "a", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            f.write(line)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    case_id = scope_id if kind == "case" else doc_case_id
+    return doc_id, batch_id, case_id
 
 
 def _stream_response(
@@ -358,7 +305,6 @@ def _stream_response(
     debug_dir = DATA_DIR / "ai_debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     scope_file = _scope_file(debug_dir, debug_label, ingest_batch_id)
-    index_file = debug_dir / "runs.jsonl"
 
     m = _LABEL_RE.match(debug_label)
     if m:
@@ -563,14 +509,17 @@ def _stream_response(
             reasoning_tokens=reasoning_tokens,
             redact=redact,
         )
-        _append_index(
-            index_file,
+        doc_id, batch_id, case_id = _resolve_run_ids(
+            kind, scope_id, ingest_batch_id, doc_case_id
+        )
+        record_run(
             started_at=started_at,
             kind=kind,
             scope_id=scope_id,
             stage=stage,
-            ingest_batch_id=ingest_batch_id,
-            doc_case_id=doc_case_id,
+            doc_id=doc_id,
+            batch_id=batch_id,
+            case_id=case_id,
             model=resolved_model,
             provider=ptype,
             duration_ms=duration_ms,
@@ -582,6 +531,12 @@ def _stream_response(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             reasoning_tokens=reasoning_tokens,
+            # Watchdog signal: None when the stream completed normally,
+            # "think_drain" when the reasoning channel exceeded
+            # _THINK_WATCHDOG_CHARS within the time budget,
+            # "response_monologue" when the response channel ran away. The
+            # call may still report status=ok if the drained thinking channel
+            # held a usable schema-constrained answer (channel promotion).
             watchdog=watchdog_event,
         )
 
