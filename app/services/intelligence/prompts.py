@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-06-13.1"
+PROMPT_VERSION = "2026-07-10.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -611,10 +611,16 @@ You will be given:
 2. Proceedings with their court level (AG/LG/OLG/BGH) and active/closed state
 3. A list of documents (title, date, document_type, significance_tier, attributed_originator, management_summary)
 4. Open action items (title, due_date, action_type)
+5. Contested or Asserted Claims (Truth Map): each with its status and a count of
+   supporting/contesting evidence. Treat CONTESTED claims, and claims with any
+   contesting evidence, as active pressure points — the Truth Map is the case's
+   most reliable source-anchored signal of what is actually in dispute.
+6. Key entities: the principal people and organizations named across the case
+   documents, for grounding who the posture and pressure points refer to.
 
 Extract these fields:
 - posture: one sentence describing the current legal posture (who has the initiative, what phase are we in)
-- pressure_points: list of 2-4 strings, each naming a specific legal or factual pressure point
+- pressure_points: list of 2-4 strings, each naming a specific legal or factual pressure point. Prefer pressure points grounded in a CONTESTED claim or a claim with contesting evidence when one is available.
 - next_move: one sentence describing the single most important next action
 - detected_status: the case's current procedural stage. Choose exactly one of:
     * intake       — documents are arriving but no procedural step has been taken yet
