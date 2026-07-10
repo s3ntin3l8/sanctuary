@@ -1,12 +1,12 @@
 """Settings page router — /settings/* subpages."""
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app import config as cfg
 from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
 from app.models.database import User
@@ -41,7 +41,7 @@ def _display_settings(db, user_id: int) -> dict:
 def _stats(db):
     from app.models.database import Case, Claim, Document, LegalCost
 
-    db_path = Path("data/sanctuary.db")
+    db_path = cfg.DATA_DIR / "sanctuary.db"
     db_size = db_path.stat().st_size if db_path.exists() else 0
     return {
         "db_size_mb": round(db_size / 1024 / 1024, 2),
