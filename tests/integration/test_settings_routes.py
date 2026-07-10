@@ -296,6 +296,43 @@ def test_ai_config_create_instance(db_session):
 
 
 @pytest.mark.integration
+def test_ai_config_create_instance_refreshes_role_cards(db_session):
+    """POST /api/settings/ai/instances OOB-refreshes the empty-state
+    placeholder and all three role cards in the same response, so the new
+    endpoint is selectable in Chat/Embeddings/OCR without a page refresh.
+
+    Regression guard — the response used to be a single appended row with no
+    OOB fragments, leaving "No endpoints configured" and the stale role
+    selectors in place until a manual reload.
+    """
+    response = client.post(
+        "/api/settings/ai/instances",
+        data={
+            "label": "OOB Test Instance",
+            "base_url": "http://127.0.0.1:11434",
+            "api_key": "not-needed",
+            "summary_model": "llama3",
+            "embed_model": "",
+        },
+    )
+    assert response.status_code == 200
+
+    db_session.expire_all()
+    settings = db_session.query(AppSettings).first()
+    instances = settings.settings_json.get("ai", {}).get("instances", [])
+    created = next(i for i in instances if i.get("label") == "OOB Test Instance")
+
+    # Empty-state placeholder is OOB-deleted (idempotent when already absent).
+    assert 'id="ai-empty" hx-swap-oob="delete"' in response.text
+    # All three role cards are OOB-replaced by id.
+    for role in ("chat", "embed", "ocr"):
+        assert f'id="role-card-{role}"' in response.text
+    assert response.text.count('hx-swap-oob="true"') >= 3
+    # The new instance is an option in every role's endpoint selector.
+    assert response.text.count(f'value="{created["id"]}"') >= 3
+
+
+@pytest.mark.integration
 def test_ai_config_delete_nonexistent_instance():
     """DELETE /api/settings/ai/instances/{id} for unknown id returns toast HTML."""
     response = client.delete("/api/settings/ai/instances/inst_nonexistent")
@@ -370,6 +407,10 @@ def test_ai_config_set_role_embed_persists_model_on_probe_failure(db_session):
     # OOB header refresh (§3): the saved model is swapped into the resting label.
     assert "role-model-label-embed" in resp.text
     assert "nomic-embed" in resp.text
+    # Regression guard — an embed model change used to leave the Embedding
+    # Index section's Dim/Model stale until a manual page refresh.
+    assert 'id="embed-index-dim" hx-swap-oob="true"' in resp.text
+    assert 'id="embed-index-model" hx-swap-oob="true"' in resp.text
 
     db_session.expire_all()
     settings = db_session.query(AppSettings).first()

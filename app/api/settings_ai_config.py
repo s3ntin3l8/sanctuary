@@ -182,6 +182,93 @@ def _model_options(models: list[str], selected: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Role cards — shared construction for the full-page GET and any mutation
+# (e.g. adding an endpoint) that needs to OOB-refresh all three role cards.
+# ---------------------------------------------------------------------------
+
+_ROLE_META = [
+    (
+        "chat",
+        "Chat",
+        "summary_model",
+        "forum",
+        "Powers case briefs, chat answers, and document summaries.",
+    ),
+    (
+        "embed",
+        "Embeddings",
+        "embed_model",
+        "scatter_plot",
+        "Powers semantic search and the vector index.",
+    ),
+    (
+        "ocr",
+        "OCR",
+        "ocr_model",
+        "document_scanner",
+        "Reads scanned or stamped PDFs when the Chandra engine is active.",
+    ),
+]
+
+
+async def build_role_cards(db) -> list[dict]:
+    """Build the three role cards (chat/embed/ocr): each resolves to its
+    active instance, stored model, live health, and discovered model options.
+
+    Shared by the full-page GET (`settings_page.settings_ai`) and
+    `create_instance` — a single source of truth so a newly added endpoint
+    (or any active-instance change) can be reflected via an OOB re-render
+    without duplicating this construction logic.
+    """
+    import asyncio
+
+    from app.services.ai_config import _resolve_active
+
+    resolved = {role: _resolve_active(db, role) for role, *_ in _ROLE_META}
+    inst_by_id = {inst["id"]: inst for inst in resolved.values() if inst.get("id")}
+    ids = list(inst_by_id)
+
+    # Discover models and probe health for each active instance up front so
+    # cards are populated without a manual Test/Discover. Deduped by id so a
+    # shared endpoint (e.g. chat+ocr on the same box) is only queried once.
+    if ids:
+        fetched, health_results = await asyncio.gather(
+            asyncio.gather(*[_fetch_models(inst_by_id[i]) for i in ids]),
+            asyncio.gather(
+                *[chat_provider.probe_health(config=inst_by_id[i]) for i in ids]
+            ),
+        )
+    else:
+        fetched, health_results = [], []
+    models_by_id = dict(zip(ids, fetched, strict=True))
+    health_by_id = dict(zip(ids, health_results, strict=True))
+
+    role_cards = []
+    for role, label, field, icon, hint in _ROLE_META:
+        inst = resolved[role]
+        aid = inst.get("id", "")
+        cats = models_by_id.get(aid, {})
+        role_cards.append(
+            {
+                "role": role,
+                "label": label,
+                "icon": icon,
+                "hint": hint,
+                "active_id": aid,
+                "model": inst.get(field, ""),
+                "options": _model_options(cats.get(role, []), inst.get(field, "")),
+                "health": (
+                    health_by_id.get(aid, {"ok": False, "detail": "Not tested"})
+                    if aid
+                    else {"ok": False, "detail": "No endpoint configured"}
+                ),
+                "embed_dim": inst.get("embed_dim") if role == "embed" else None,
+            }
+        )
+    return role_cards
+
+
+# ---------------------------------------------------------------------------
 # Instance CRUD
 # ---------------------------------------------------------------------------
 
@@ -221,12 +308,17 @@ async def create_instance(
 
     save_instance(db, instance)
     health = await _probe_instance(instance)
-    from app.services.ai_config import _get_ai_section
+    from app.services.ai_config import _get_ai_section, list_instances
 
     ai = _get_ai_section(db)
+    # This is the first endpoint the resolver has to choose from — role cards
+    # (which fall back to instances[0] when no active id is set) now resolve
+    # to it too, so OOB-refresh them in the same response rather than leaving
+    # the role selectors stale until a manual refresh.
+    role_cards = await build_role_cards(db)
     return templates.TemplateResponse(
         request,
-        "partials/settings/_ai_instance_row.html",
+        "partials/settings/_ai_instance_created.html",
         {
             "inst": instance,
             "health": health,
@@ -234,6 +326,8 @@ async def create_instance(
             "active_chat_id": ai.get("active_chat_id", ""),
             "active_embed_id": ai.get("active_embed_id", ""),
             "active_ocr_id": ai.get("active_ocr_id", ""),
+            "role_cards": role_cards,
+            "instances": list_instances(db),
         },
         headers={"HX-Reswap": "beforeend", "HX-Retarget": "#ai-instances"},
     )
@@ -466,6 +560,11 @@ async def set_role(
 
     warning = (_embed_dim_warning(db) if role == "embed" else "") + probe_warning
 
+    # A model/endpoint change on the embed role changes what get_embed_config
+    # resolves to — OOB-refresh the Embedding Index section's Dim/Model so it
+    # doesn't go stale until a manual page refresh.
+    embed_cfg = get_embed_config(db) if role == "embed" else None
+
     current_model = inst.get(field, "")
     if switching:
         saved_label = f"Switched to {inst.get('label', 'instance')}"
@@ -490,6 +589,7 @@ async def set_role(
             "options": options,
             "current_model": current_model,
             "model_dim": inst.get("embed_dim") if role == "embed" else None,
+            "embed_cfg": embed_cfg,
         },
     )
 

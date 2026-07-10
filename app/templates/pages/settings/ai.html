@@ -37,7 +37,7 @@
                 {% set health = instance_health.get(inst.id, {"ok": False, "detail": "Unreachable"}) %}
                 {% include "partials/settings/_ai_instance_row.html" %}
             {% else %}
-                <p class="text-sm text-on-surface-variant/60 italic">No endpoints configured. Add one above.</p>
+                <p id="ai-empty" class="text-sm text-on-surface-variant/60 italic">No endpoints configured. Add one above.</p>
             {% endfor %}
         </div>
     </div>
@@ -111,14 +111,14 @@
                 <div class="space-y-1.5">
                     <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Dim</label>
                     <p class="text-[10px] text-on-surface-variant/60 italic">From active embed instance</p>
-                    <span class="inline-flex items-center text-sm font-mono px-4 py-2 rounded-xl bg-surface-container-high/50 border border-outline-variant/20 text-on-surface-variant">
+                    <span id="embed-index-dim" class="inline-flex items-center text-sm font-mono px-4 py-2 rounded-xl bg-surface-container-high/50 border border-outline-variant/20 text-on-surface-variant">
                         {{ embed_cfg.embed_dim }}
                     </span>
                 </div>
                 <div class="flex-1 space-y-1.5">
                     <label class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Model</label>
                     <p class="text-[10px] text-on-surface-variant/60 italic">Drops and recreates the vector table.</p>
-                    <span class="inline-flex items-center text-sm font-mono px-4 py-2 rounded-xl bg-surface-container-high/50 border border-outline-variant/20 text-on-surface-variant truncate max-w-xs">
+                    <span id="embed-index-model" class="inline-flex items-center text-sm font-mono px-4 py-2 rounded-xl bg-surface-container-high/50 border border-outline-variant/20 text-on-surface-variant truncate max-w-xs">
                         {{ embed_cfg.embed_model or "—" }}
                     </span>
                 </div>

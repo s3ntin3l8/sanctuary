@@ -1,0 +1,16 @@
+{# Returned by create_instance. Context: inst, health, expanded,
+   active_chat_id, active_embed_id, active_ocr_id, role_cards, instances.
+
+   The new row is appended into #ai-instances via HX-Reswap: beforeend /
+   HX-Retarget: #ai-instances (set on the response headers) — everything
+   below is an out-of-band swap:
+     - drops the "No endpoints configured" placeholder, now that it's stale
+     - re-renders all three role cards, since a freshly added endpoint can
+       become active-by-fallback (see _resolve_active) and the role
+       selectors/health/Test/Discover must reflect that immediately #}
+{% include "partials/settings/_ai_instance_row.html" %}
+<p id="ai-empty" hx-swap-oob="delete"></p>
+{% for card in role_cards %}
+{% set oob = true %}
+{% include "partials/settings/_role_card.html" %}
+{% endfor %}

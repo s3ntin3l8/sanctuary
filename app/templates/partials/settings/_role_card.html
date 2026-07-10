@@ -1,6 +1,11 @@
-{# One role card (chat / embed / ocr). Requires context: card (dict), instances. #}
+{# One role card (chat / embed / ocr). Requires context: card (dict), instances.
+   Optional context: oob (bool) — when true, OOB-replaces the card by id
+   (used when another endpoint's mutation needs to refresh all three cards
+   at once, e.g. adding a new endpoint). #}
 {% set role = card.role %}
-<div class="p-5 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-3">
+<div id="role-card-{{ role }}"
+     {% if oob | default(false) %}hx-swap-oob="true"{% endif %}
+     class="p-5 bg-surface-container-low border border-outline-variant/10 rounded-2xl shadow-sm space-y-3">
 
     {# Header — role + the currently-configured model/endpoint at rest #}
     <div class="flex items-center gap-2 min-w-0">
