@@ -101,7 +101,7 @@ async def settings_parties(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/settings/ai", response_class=HTMLResponse)
 async def settings_ai(request: Request, db: Session = Depends(get_db)):
-    from app.services.ai_config import _resolve_active, list_instances
+    from app.services.ai_config import list_instances
 
     ai = _get_ai_section(db)
     instances = list_instances(db)
@@ -123,68 +123,12 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         inst["id"]: h for inst, h in zip(instances, health_results, strict=True)
     }
 
-    # Role-first cards: each role resolves to its active instance + stored model.
-    role_meta = [
-        (
-            "chat",
-            "Chat",
-            "summary_model",
-            "forum",
-            "Powers case briefs, chat answers, and document summaries.",
-        ),
-        (
-            "embed",
-            "Embeddings",
-            "embed_model",
-            "scatter_plot",
-            "Powers semantic search and the vector index.",
-        ),
-        (
-            "ocr",
-            "OCR",
-            "ocr_model",
-            "document_scanner",
-            "Reads scanned or stamped PDFs when the Chandra engine is active.",
-        ),
-    ]
-    # Discover each active instance's models up front so the dropdowns are
-    # populated on load. This is a /v1/models (or /api/tags) listing — it does
-    # NOT load a model into the endpoint. Deduped so a shared endpoint (e.g.
-    # chat+ocr on the same box) is queried once.
-    from app.api.settings_ai_config import _fetch_models, _model_options
+    # Role-first cards: each role resolves to its active instance + stored
+    # model. Shared with create_instance so a newly added endpoint's cards
+    # are constructed identically whether from a full GET or an OOB refresh.
+    from app.api.settings_ai_config import build_role_cards
 
-    resolved = {role: _resolve_active(db, role) for role, *_ in role_meta}
-    inst_by_id = {inst["id"]: inst for inst in resolved.values() if inst.get("id")}
-    ids = list(inst_by_id)
-    fetched = (
-        await asyncio.gather(*[_fetch_models(inst_by_id[i]) for i in ids])
-        if ids
-        else []
-    )
-    models_by_id = dict(zip(ids, fetched, strict=True))
-
-    role_cards = []
-    for role, label, field, icon, hint in role_meta:
-        inst = resolved[role]
-        aid = inst.get("id", "")
-        cats = models_by_id.get(aid, {})
-        role_cards.append(
-            {
-                "role": role,
-                "label": label,
-                "icon": icon,
-                "hint": hint,
-                "active_id": aid,
-                "model": inst.get(field, ""),
-                "options": _model_options(cats.get(role, []), inst.get(field, "")),
-                "health": (
-                    instance_health.get(aid, {"ok": False, "detail": "Not tested"})
-                    if aid
-                    else {"ok": False, "detail": "No endpoint configured"}
-                ),
-                "embed_dim": inst.get("embed_dim") if role == "embed" else None,
-            }
-        )
+    role_cards = await build_role_cards(db)
 
     return render_page(
         request,
