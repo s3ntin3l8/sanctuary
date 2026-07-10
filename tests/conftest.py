@@ -4,11 +4,15 @@ import os
 import tempfile
 
 os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
-# Run Celery tasks inline so the suite needs no broker/Redis. The standardized
-# ci-python.yml reusable workflow can't inject env vars, so the test suite owns
-# this default (matching what the bespoke CI used to set). setdefault lets a real
-# worker/dev run override it.
-os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
+# Run Celery tasks inline so the suite needs no broker/Redis. Force (not
+# setdefault) this: `make test`/`make lint` `-include .env` + `export`, so a
+# local .env with CELERY_TASK_ALWAYS_EAGER=false (set for `make run`/`make
+# worker` against a real broker) would otherwise leak into the test process
+# and silently disable eager mode — tasks whose .delay() isn't mocked (e.g.
+# metadata_task.delay() in process_document_task) then attempt a real Redis
+# connection and fail with a retry-limit RuntimeError. No test in this suite
+# exercises real (non-eager) dispatch, so there is nothing to opt out for.
+os.environ["CELERY_TASK_ALWAYS_EAGER"] = "true"
 
 
 def pytest_sessionfinish(session, exitstatus):

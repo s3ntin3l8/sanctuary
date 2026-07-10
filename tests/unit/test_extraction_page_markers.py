@@ -3,11 +3,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.ingestion.converters import (
-    _LAYOUT_MODEL_SPEC,
     _apply_glyph_fixes,
     _collect_pictures,
     _convert_in_subprocess,
     _extract_pdf_text_layer,
+    _layout_model_spec,
     _ocr_with_rotation_correction,
     _run_conversion,
     _substitute_picture_placeholders,
@@ -540,11 +540,11 @@ def test_leading_noise_strip_preserves_roman_numeral_markers():
 
 @pytest.mark.unit
 def test_layout_model_configured_to_egret_large():
-    """Layout model is set to EGRET_LARGE via the module-level constant.
+    """Layout model is set to EGRET_LARGE via the lazily-imported spec.
     Defensive: catches accidental model swap in PRs."""
     from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
 
-    assert _LAYOUT_MODEL_SPEC is DOCLING_LAYOUT_EGRET_LARGE
+    assert _layout_model_spec() is DOCLING_LAYOUT_EGRET_LARGE
 
 
 @pytest.mark.unit
