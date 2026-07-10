@@ -90,4 +90,4 @@ make migrate    # Run migrations
 ```
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
 
-**Testing — run serially.** The suite shares one SQLite test DB and has no per-process isolation. Run **one** `pytest`/`make test` at a time and wait for it; never launch overlapping runs (a `conftest.py` lock fails fast on the second). The DB is tmpfs-backed (`/dev/shm`) so a single run is disk-cheap.
+**Testing — one invocation at a time, parallel within it.** `pytest`/`make test` runs across CPU cores by default (pytest-xdist, `-n auto`); each worker gets its own tmpfs (`/dev/shm`) DB via a pid-based path, so workers of the *same* invocation don't contend. What's still forbidden is a **second, separate** `pytest`/`make test` invocation started while one is running — the suite has no cross-invocation isolation, and a `conftest.py` lock fails that second run fast instead of letting it silently contend on disk I/O.

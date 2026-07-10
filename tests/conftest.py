@@ -79,12 +79,20 @@ TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 # instead of silently piling on. It lives in conftest (not the Makefile) so it
 # fires for every entry point: `make test`, a bare `python -m pytest`, and the
 # pre-push hook.
+#
+# xdist workers (pytest -n auto) are coordinated subprocesses of ONE invocation,
+# not a second overlapping run — each gets its own tmpfs DB via the pid-based
+# path above, so they don't contend on a shared file. Only the controller (no
+# PYTEST_XDIST_WORKER env var) takes the lock; a second, separate `pytest -n
+# auto` invocation still collides on it exactly as before.
 _RUN_LOCK_PATH = os.path.join(tempfile.gettempdir(), "sanctuary-pytest.lock")
 _RUN_LOCK_FD: int | None = None
 
 
 def pytest_configure(config):
     global _RUN_LOCK_FD
+    if "PYTEST_XDIST_WORKER" in os.environ:
+        return
     fd = os.open(_RUN_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
