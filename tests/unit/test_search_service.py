@@ -118,3 +118,57 @@ def test_semantic_document_search_orders_by_returned_id_list(seeded):
         result = service.semantic_document_search("query", limit=5)
 
     assert [d.id for d in result] == [id_b, id_a]
+
+
+@pytest.mark.unit
+def test_search_all_merges_semantic_only_document_hit(seeded):
+    """A document with no keyword overlap but a semantic hit still surfaces
+    in search_all's documents — the merge CLAUDE.md describes but that
+    previously had no caller."""
+    service = SearchService(seeded)
+    case = service.db.query(Case).first()
+    batch = service.db.query(IngestBatch).first()
+    semantic_only = Document(
+        title="Completely unrelated title",
+        content="No keyword overlap with the query at all",
+        ingest_batch_id=batch.id,
+        case_id=case.id,
+    )
+    service.db.add(semantic_only)
+    service.db.commit()
+
+    with patch.object(
+        service, "_semantic_document_ids", return_value=[semantic_only.id]
+    ):
+        result = service.search_all("unterhalt", limit=30)
+
+    doc_ids = {d.id for d in result.documents}
+    assert semantic_only.id in doc_ids
+    # The keyword hit from the `seeded` fixture is still present.
+    assert any("Unterhalts" in d.title for d in result.documents)
+
+
+@pytest.mark.unit
+def test_search_all_documents_dedup_keyword_and_semantic_hit(seeded):
+    """A document matching both keyword and semantic search appears once."""
+    service = SearchService(seeded)
+    keyword_doc = (
+        service.db.query(Document).filter(Document.title.ilike("%Unterhalts%")).first()
+    )
+
+    with patch.object(service, "_semantic_document_ids", return_value=[keyword_doc.id]):
+        result = service.search_all("unterhalt", limit=30)
+
+    doc_ids = [d.id for d in result.documents]
+    assert doc_ids.count(keyword_doc.id) == 1
+
+
+@pytest.mark.unit
+def test_search_all_falls_back_to_keyword_only_when_semantic_empty(seeded):
+    """When the embedding layer has nothing to offer (provider down, dim
+    mismatch, etc. — `nearest_document_ids` already swallows those into an
+    empty list), search_all still surfaces keyword hits unaffected."""
+    service = SearchService(seeded)
+    with patch.object(service, "_semantic_document_ids", return_value=[]):
+        result = service.search_all("unterhalt", limit=30)
+    assert any("Unterhalts" in d.title for d in result.documents)

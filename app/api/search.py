@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
@@ -31,7 +32,7 @@ async def api_search(
         return {"documents": [], "cases": [], "contacts": [], "total": 0}
 
     search_service = SearchService(db)
-    result = search_service.search_all(q, limit=30)
+    result = await run_in_threadpool(search_service.search_all, q, limit=30)
     documents, cases = _filter_visible(db, user, result.documents, result.cases)
 
     # Simple JSON serialization
@@ -65,7 +66,7 @@ async def search_page(
     total = 0
 
     if q:
-        result = search_service.search_all(q, limit=100)
+        result = await run_in_threadpool(search_service.search_all, q, limit=100)
         documents, cases = _filter_visible(db, user, result.documents, result.cases)
 
         # Extract unique contacts from documents
