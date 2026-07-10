@@ -4,6 +4,14 @@ testpaths = ["tests"]
 # invocation (the standardized CI runs the console script, not `python -m
 # pytest`, so the CWD isn't auto-added).
 pythonpath = ["."]
+# Parallelize across CPU cores by default (pytest-xdist). Safe because each
+# worker gets its own tmpfs DB (pid-based path in tests/conftest.py) and only
+# the controller — not xdist workers — takes the single-run flock; see
+# tests/conftest.py for both. Verified stable across repeated full-suite runs
+# at -n 2/4/8 with no order-dependent failures. Override with `-n0` for a
+# single-process debugging run (`-p no:xdist` also disables the `-n` option
+# itself and errors on this addopts).
+addopts = "-n auto"
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
