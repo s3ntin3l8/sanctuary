@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings/maintenance", tags=["settings"])
 
+# Tables preserved across a workspace clear: the account, its per-user prefs,
+# global app/AI config (API keys, connected accounts, bootstrap_admin pin), and
+# the audit trail. Everything else is workspace/domain data and is wiped.
+_PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
+
 
 @router.post("/reset-enrichment", response_class=HTMLResponse)
 @limiter.limit("5/minute")
@@ -58,12 +63,15 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     except Exception as exc:
         logger.warning("Could not purge Celery queue: %s", exc)
 
-    # Wipe all domain tables; skip user_settings, audit_logs (preserve audit
-    # trail across clears), and the sqlite-vec virtual table.
+    # Wipe all domain tables; skip _PRESERVED_TABLES and the sqlite-vec virtual
+    # table. NOTE: "users" must stay in _PRESERVED_TABLES — user_settings has an
+    # ondelete="CASCADE" FK to users, and PRAGMA foreign_keys=ON is set on every
+    # connection (app/config.py), so deleting users would cascade-delete
+    # user_settings regardless of this skip list.
     db.execute(text("DELETE FROM document_vectors"))
     rows_deleted = 0
     for table in reversed(Base.metadata.sorted_tables):
-        if table.name in ("user_settings", "audit_logs"):
+        if table.name in _PRESERVED_TABLES:
             continue
         rows_deleted += db.execute(table.delete()).rowcount
     audit_service.record(db, AuditEventType.MAINTENANCE_CLEAR_ALL_DATA)
@@ -71,6 +79,24 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
 
     # Restore the _TRIAGE singleton — many ingest paths require this FK target.
     seed_triage_case(db)
+    # seed_triage_case early-returns without committing when _TRIAGE already
+    # exists (it doesn't here, since cases was just wiped, but don't rely on
+    # that) — ensure the session's write transaction is closed before VACUUM,
+    # which cannot run while any connection holds a write lock.
+    db.commit()
+
+    # Reclaim freed pages so the on-disk file (and the "DB size" stat) actually
+    # shrinks — SQLite does not shrink on DELETE without an explicit VACUUM.
+    # Use db.get_bind(), not the module-level `engine` import: the test suite
+    # rebinds SessionLocal to a separate test engine without touching
+    # app.config.engine, so a hardcoded `engine.connect()` here would silently
+    # VACUUM the wrong database (or the real dev DB) under test.
+    try:
+        with db.get_bind().connect() as conn:
+            conn.execution_options(isolation_level="AUTOCOMMIT")
+            conn.exec_driver_sql("VACUUM")
+    except Exception as exc:
+        logger.warning("VACUUM after clear-all-data failed: %s", exc)
 
     # Wipe filesystem artifacts.
     _SYSTEM_DIRS = {"_TRIAGE", "scans", "ai_debug"}

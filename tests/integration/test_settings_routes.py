@@ -9,12 +9,14 @@ Covers:
 - settings_page         (GET /settings/*)
 """
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import AppSettings, AuditLog, UserSettings
-from app.models.enums import AuditEventType
+from app.models.database import AppSettings, AuditLog, Case, Entity, User, UserSettings
+from app.models.enums import AuditEventType, EntityType
 
 client = TestClient(app)
 
@@ -45,18 +47,63 @@ def test_maintenance_reset_ai_enrichment(db_session):
 
 @pytest.mark.integration
 def test_maintenance_clear_all_data(db_session, sample_case):
-    """POST /api/settings/maintenance/clear-all-data returns 200 HTML and writes audit log."""
+    """POST /api/settings/maintenance/clear-all-data returns 200 HTML, writes an
+    audit log, wipes workspace data — and preserves the account, its settings,
+    and global app/AI config (regression test: the endpoint used to delete
+    `users`, which cascade-deleted `user_settings`, and deleted `app_settings`
+    outright, contradicting the UI's "preserves user settings, including
+    connected accounts and API keys" promise)."""
+    admin_id = db_session.query(User).filter_by(email="admin@localhost").one().id
+    app_settings_id = db_session.query(AppSettings).first().id
+    case_id = sample_case.id  # capture before the clear expires/deletes the row
+
+    # Bulk-insert enough workspace data that VACUUM has real, measurable free
+    # space to reclaim — a handful of rows leaves no freelist pages to shrink,
+    # which would let a broken/no-op VACUUM pass silently.
+    db_session.bulk_save_objects(
+        [
+            Entity(
+                case_id=case_id, type=EntityType.PERSON, name=f"Test Entity {i}" * 20
+            )
+            for i in range(3000)
+        ]
+    )
+    db_session.commit()
+
+    db_path = db_session.get_bind().url.database
+    size_before = os.path.getsize(db_path)
+
     response = client.post("/api/settings/maintenance/clear-all-data")
     assert response.status_code == 200
     assert "Cleared" in response.text
 
+    size_after = os.path.getsize(db_path)
+    assert size_after < size_before, (
+        f"clear-all-data must VACUUM and shrink the DB file: "
+        f"before={size_before} after={size_after}"
+    )
+
     db_session.expire_all()
+
     log = (
         db_session.query(AuditLog)
         .filter_by(event_type=AuditEventType.MAINTENANCE_CLEAR_ALL_DATA)
         .first()
     )
     assert log is not None, "Expected audit log entry for maintenance_clear_all_data"
+
+    # Workspace/domain data is gone.
+    assert db_session.query(Case).filter_by(id=case_id).first() is None
+
+    # Account, per-user settings, and global app/AI config survive.
+    admin = db_session.query(User).filter_by(id=admin_id).first()
+    assert admin is not None, "clear-all-data must not delete the users table"
+    assert (
+        db_session.query(UserSettings).filter_by(user_id=admin_id).first() is not None
+    ), "user_settings must survive (was cascade-deleted via users FK)"
+    assert (
+        db_session.query(AppSettings).filter_by(id=app_settings_id).first() is not None
+    ), "app_settings (AI config / API keys / connected accounts) must survive"
 
 
 # ---------------------------------------------------------------------------
