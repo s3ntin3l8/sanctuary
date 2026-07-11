@@ -80,8 +80,9 @@ def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> No
 def process_document_task(self, doc_id: int):
     """EXTRACT-only: run Docling conversion, then hand off METADATA to the ai queue.
 
-    This task is pinned to the `ingest` queue (concurrency=1) so heavy
-    Docling/OCR work doesn't share a slot with LLM calls. On every terminal
+    This task is pinned to the `ingest` queue (concurrency configurable via
+    Settings, default 4 — see get_ocr_concurrency) so heavy Docling/OCR work
+    doesn't share a slot with LLM calls. On every terminal
     exit (success or failure) it checks the OCR->chat barrier
     (claim_batch_for_metadata_phase): once every doc in the batch has a
     terminal EXTRACT, metadata_task is dispatched for the whole batch at

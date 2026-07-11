@@ -16,6 +16,7 @@ from app.services.timezone_service import get_timezone_choices
 from app.services.user_settings_service import (
     get_ai_debug_redact,
     get_extraction_engine,
+    get_ocr_concurrency,
     get_party_identity,
     get_worker_concurrency,
 )
@@ -143,6 +144,7 @@ async def settings_ai(request: Request, db: Session = Depends(get_db)):
         embed_cfg=embed_cfg,
         extraction_engine=get_extraction_engine(db),
         worker_concurrency=get_worker_concurrency(db),
+        ocr_concurrency=get_ocr_concurrency(db),
     )
 
 

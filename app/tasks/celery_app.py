@@ -119,8 +119,11 @@ celery_app.conf.update(
     task_eager_propagates=os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower()
     == "true",
     # Two-queue split: heavy Docling/Tesseract OCR is pinned to the `ingest`
-    # queue (concurrency=1), everything else (LLM calls, embeddings, light I/O)
-    # lands on `ai` (concurrency=2 to match LMStudio's two-slot capacity).
+    # queue (concurrency UI-controlled, default 4 — see get_ocr_concurrency /
+    # app/services/ocr_slots.py for the matching per-page semaphore),
+    # everything else (LLM calls, embeddings, light I/O) lands on `ai`
+    # (concurrency UI-controlled, default 2 to match LMStudio's two-slot
+    # capacity — see get_worker_concurrency).
     task_default_queue="ai",
     task_routes={
         "app.tasks.document_processing.process_document_task": {"queue": "ingest"},

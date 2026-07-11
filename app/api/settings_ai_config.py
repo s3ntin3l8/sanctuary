@@ -813,6 +813,37 @@ async def set_worker_concurrency_route(
     return HTMLResponse(_toast(True, msg))
 
 
+@router.post("/ocr-concurrency", response_class=HTMLResponse)
+async def set_ocr_concurrency_route(
+    concurrency: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Persist OCR-slot concurrency and apply it live (no restart).
+
+    Resizes the `ingest` worker's prefork pool AND republishes the limit
+    used by the per-page `ocr_slots.ocr_slot()` semaphore, so both halves of
+    the cap (documents-in-flight and total concurrent OCR-model calls) move
+    together.
+    """
+    from app.services.ocr_slots import set_limit as set_ocr_slot_limit
+    from app.services.user_settings_service import set_ocr_concurrency
+    from app.services.worker_control import apply_ocr_concurrency
+
+    try:
+        set_ocr_concurrency(db, concurrency)
+    except ValueError as e:
+        return HTMLResponse(_toast(False, str(e)), status_code=400)
+
+    set_ocr_slot_limit(concurrency)
+    res = apply_ocr_concurrency(concurrency)
+    msg = (
+        f"OCR concurrency → {concurrency} (applied live)"
+        if res["live"]
+        else f"Saved ({concurrency}); applies on next worker start"
+    )
+    return HTMLResponse(_toast(True, msg))
+
+
 # ---------------------------------------------------------------------------
 # Debug log browser
 # ---------------------------------------------------------------------------

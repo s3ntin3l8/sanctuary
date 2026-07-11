@@ -80,8 +80,9 @@ class StageSpec:
 
 
 # Real dispatch dependencies (from the per-task .delay() chains):
-#   process_document_task: EXTRACT only (ingest queue, concurrency=1), then
-#     dispatches metadata_task on the ai queue and returns.
+#   process_document_task: EXTRACT only (ingest queue, concurrency configurable
+#     via Settings, default 4), then dispatches metadata_task on the ai queue
+#     and returns.
 #   metadata_task: METADATA, then fans out to BATCH_ANALYSIS (gated on all
 #     batch siblings' METADATA done) AND EMBEDDINGS (parallel).
 #   analyze_batch_task: BATCH_ANALYSIS → ENRICH per doc.
@@ -1271,12 +1272,14 @@ def recover_stuck_pending_dispatches(
       * No stage is currently RUNNING (running-state recovery owns those)
       * There IS a pending head stage that can resume the cascade
 
-    Special gate for EXTRACT (the first stage, FIFO ingest queue, concurrency=1):
-    "PENDING + ingest_date old + no stage RUNNING" is indistinguishable between
-    "dispatch was lost" and "dispatch is still waiting in the queue behind a
-    slow predecessor." Re-dispatching the latter caused a runaway loop (38
-    docs ingested, Chandra serialized → cron saw them all as stuck every 5
-    min, generated 900+ duplicate Chandra calls). To distinguish: if any
+    Special gate for EXTRACT (the first stage, FIFO ingest queue — concurrency
+    is configurable via Settings, default 4, but the same ordering concern
+    applies at any concurrency): "PENDING + ingest_date old + no stage
+    RUNNING" is indistinguishable between "dispatch was lost" and "dispatch is
+    still waiting in the queue behind a slow predecessor." Re-dispatching the
+    latter caused a runaway loop (38 docs ingested, Chandra serialized → cron
+    saw them all as stuck every 5 min, generated 900+ duplicate Chandra
+    calls). To distinguish: if any
     EXTRACT stage anywhere completed within `recent_extract_window_seconds`
     (or is currently running), the ingest worker is presumed alive and any
     PENDING EXTRACTs are queue-waiting; skip them. If no recent EXTRACT

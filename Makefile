@@ -52,7 +52,7 @@ _check-no-celery: ## Internal: refuse to start if celery beat/workers already ru
 run: _check-no-celery ## Start Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
@@ -60,7 +60,7 @@ run: _check-no-celery ## Start Redis, web server, ingest worker (OCR), AI worker
 run-stable: _check-no-celery ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
@@ -68,7 +68,7 @@ run-stable: _check-no-celery ## Start without --reload (use for ingestion/pipeli
 run-debug: _check-no-celery ## Start server with DEBUG logging (+ Redis + both workers)
 	docker compose up redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
-	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
@@ -77,13 +77,13 @@ server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
 worker: _check-no-celery ## Start both Celery workers (ingest + ai) and beat scheduler
-	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 & \
+	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
 worker-ingest: ## Start only the ingest (OCR) Celery worker
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1
+	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4
 
 worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
