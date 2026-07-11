@@ -42,7 +42,6 @@ make watch-css  # Watch/build Tailwind CSS (Terminal 3)
 make test       # Run all tests
 make seed       # Reset and seed database
 make migrate    # Run Alembic migrations
-make reset      # Wipe all data and re-run migrations
 ```
 
 By default, `CELERY_TASK_ALWAYS_EAGER=false` — start `make worker` before uploading documents, or set `CELERY_TASK_ALWAYS_EAGER=true` in `.env` to run tasks synchronously in-process (handy for local dev without Redis).
