@@ -449,6 +449,72 @@ async def add_request_id(request: Request, call_next):
     return response
 
 
+class AccessLogMiddleware:
+    """Outermost pure-ASGI request/response logger.
+
+    Registered last in the `app.add_middleware(...)` chain below, so it ends
+    up outermost (Starlette's `add_middleware` prepends -- the final call
+    lands right inside `ServerErrorMiddleware`, ahead of every other layer:
+    AuthGate, OriginGuard, `add_request_id`, SlowAPI, CORS, session, gzip,
+    and Starlette's own ExceptionMiddleware).
+
+    Exists to close an observability gap found in issue #98: `/triage/confirm`
+    intermittently returned a real, app-rendered `errors/500.html` in CI with
+    *zero* corresponding log line. Neither `add_request_id` (only logs on a
+    raised exception, or once `call_next` returns a response) nor
+    `server_error_handler` (only runs when Starlette's ExceptionMiddleware
+    actually dispatches to the registered 500 handler) fired -- meaning
+    whatever inner layer produced that response bypassed both logging paths.
+
+    This middleware doesn't depend on any inner layer's control flow: it
+    reads the response status directly off the raw `http.response.start`
+    ASGI message via a `send` wrapper, so it logs a 5xx regardless of *how*
+    the inner stack produced it. It also logs (and re-raises) any exception
+    that reaches this layer without a response ever being sent -- the true
+    outermost safety net, one layer inside `ServerErrorMiddleware`.
+    """
+
+    def __init__(self, app):
+        self.app = app
+        self._logger = logging.getLogger("app.access")
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "-")
+        path = scope.get("path", "-")
+        status_holder: dict = {}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            self._logger.error(
+                "Unhandled exception reached outermost logger on %s %s "
+                "(no response sent)",
+                method,
+                path,
+                exc_info=True,
+            )
+            raise
+
+        status = status_holder.get("status")
+        if status is None:
+            return
+        if status >= 500:
+            self._logger.error("access: %s %s -> %s", method, path, status)
+        elif status >= 400:
+            self._logger.warning("access: %s %s -> %s", method, path, status)
+        else:
+            self._logger.debug("access: %s %s -> %s", method, path, status)
+
+
 class OriginGuardMiddleware:
     """Block cross-origin browser mutations for localhost/no-auth deployments."""
 
@@ -615,6 +681,9 @@ app.add_middleware(SlowAPIMiddleware)
 app.middleware("http")(add_request_id)
 app.add_middleware(OriginGuardMiddleware)
 app.add_middleware(AuthGateMiddleware)
+# Must stay the LAST add_middleware(...) call so it remains outermost --
+# see AccessLogMiddleware's docstring for why.
+app.add_middleware(AccessLogMiddleware)
 
 # Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
