@@ -167,9 +167,16 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     expect(row).to_be_visible(timeout=15_000)
     expect(row).to_contain_text(case_id, timeout=5_000)
 
-    # Verify the doc landed on the target case via the API.
-    case_page = api_client.get(f"/cases/{case_id}")
-    assert case_page.status_code == 200
-    assert f"e2e-confirm-{suffix}" in case_page.text, (
-        f"Doc not visible on case {case_id}'s page after confirm"
+    # Verify the case cascade landed, via a direct DB check rather than the
+    # case page's rendered HTML: the case dashboard's default (and only
+    # server-rendered-text-searchable) view is the correspondence graph
+    # (CLAUDE.md: "Graph first"), which doesn't include the plain doc title
+    # as literal page text — confirmed by inspecting an actual failing run's
+    # response body, not assumed.
+    row_case_id = conn.execute(
+        "SELECT case_id FROM documents WHERE title LIKE ?", (f"%{suffix}%",)
+    ).fetchone()
+    assert row_case_id is not None, f"Seeded doc for suffix {suffix} not found"
+    assert row_case_id[0] == case_id, (
+        f"Doc's case_id is {row_case_id[0]!r}, expected {case_id!r} after confirm"
     )
