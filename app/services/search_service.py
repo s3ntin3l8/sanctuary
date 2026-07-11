@@ -53,18 +53,24 @@ class SearchService:
         self.entity_repo = EntityRepository(db)
 
     def search_all(self, query: str, limit: int = 50) -> SearchResult:
-        """Search across all entities."""
-        query_like = f"%{query}%"
+        """Search across all entities.
 
-        cases = self._search_cases(query_like, limit // 6)
-        documents = self._search_documents(query_like, limit // 6)
+        Documents merge keyword (substring) and semantic (vector) matches:
+        exact substring hits first (higher precision), then semantic-only
+        hits filling the remaining budget.
+        """
+        query_like = f"%{query}%"
+        doc_limit = limit // 6
+
+        cases = self._search_cases(query_like, doc_limit)
+        documents = self._search_documents_merged(query, query_like, doc_limit)
         deadlines = self._search_action_items(
-            query_like, limit // 6, ActionItemType.DEADLINE
+            query_like, doc_limit, ActionItemType.DEADLINE
         )
         hearings = self._search_action_items(
-            query_like, limit // 6, ActionItemType.COURT_DATE
+            query_like, doc_limit, ActionItemType.COURT_DATE
         )
-        costs = self._search_costs(query_like, limit // 6)
+        costs = self._search_costs(query_like, doc_limit)
 
         return SearchResult(
             cases=cases,
@@ -95,6 +101,33 @@ class SearchService:
             .limit(limit)
             .all()
         )
+
+    def _search_documents_merged(
+        self, query: str, query_like: str, limit: int
+    ) -> Sequence[Document]:
+        """Keyword substring matches first (higher precision), then
+        semantic-only matches filling any remaining budget.
+
+        Falls back to keyword-only results when the embedding provider is
+        unavailable — `semantic_document_search` already degrades to []
+        on any failure.
+        """
+        keyword_docs = list(self._search_documents(query_like, limit))
+        if len(keyword_docs) >= limit:
+            return keyword_docs
+
+        seen_ids = {d.id for d in keyword_docs}
+        semantic_docs = self.semantic_document_search(
+            query, limit=(limit - len(keyword_docs)) + len(seen_ids)
+        )
+        for doc in semantic_docs:
+            if len(keyword_docs) >= limit:
+                break
+            if doc.id not in seen_ids:
+                keyword_docs.append(doc)
+                seen_ids.add(doc.id)
+
+        return keyword_docs
 
     def _semantic_document_ids(self, query_text: str, k: int = 10) -> list[int]:
         """Return up to k document IDs ranked by vector similarity.
