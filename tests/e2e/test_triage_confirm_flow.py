@@ -161,15 +161,19 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     submit_button = form.locator("button[type='submit']")
     expect(submit_button).to_be_enabled(timeout=5_000)
 
-    # Capture whether the POST actually fires and with what payload —
-    # settles client-vs-server ambiguity in one run instead of more
-    # guessing if the DB assertion below still fails.
-    with page.expect_request("**/triage/confirm") as request_info:
+    # Capture the request AND response: a prior run confirmed the request
+    # fires with the right case_id, yet the DB assertion below still failed
+    # — meaning the server received it but something downstream of the
+    # cascade (e.g. reset_and_reenrich, called right after in the same
+    # request) may be throwing and rolling back the transaction, while
+    # HTMX/the browser only cares that *a* response came back, not its
+    # status. Check the response status/body directly rather than
+    # inferring from DB state alone.
+    with page.expect_response("**/triage/confirm") as response_info:
         submit_button.click()
-    sent_post_data = request_info.value.post_data
-    assert sent_post_data and f"case_id={case_id}" in sent_post_data, (
-        f"POST /triage/confirm didn't include the selected case_id; "
-        f"sent: {sent_post_data!r}"
+    resp = response_info.value
+    assert resp.status == 200, (
+        f"POST /triage/confirm returned {resp.status}: {resp.text()[:2000]!r}"
     )
 
     # confirm_bundle (service.py) with finalize=False — what action=assign_case
