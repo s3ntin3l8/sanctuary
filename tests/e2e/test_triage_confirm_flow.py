@@ -1,12 +1,19 @@
 """E2E: triage confirm flow.
 
-Journey: a doc lands in the Triage Inbox → user opens its expanded body →
-clicks Confirm with a target case → bundle row leaves the queue → doc
-appears under the case.
+Journey: a doc lands in the Triage Inbox with no AI-suggested case → user
+clicks "Route" → picks a target case in the modal → the case is cascaded
+onto the document and it appears under that case's page.
+
+Per document_ops.py's `confirm` route docstring, action=assign_case
+(what "Route" dispatches) "cascade[s] case_id, batch stays in triage" —
+by design, the bundle is NOT removed from the triage queue by this action
+(only action=confirm_bundle, gated on an AI-suggested case, does that).
+This test verifies the actual documented behavior: the case assignment
+lands, not that the row disappears.
 
 This pins the highest-frequency happy-path workflow described in
 CLAUDE.md (`Triage is a strategy session`). Drives the unified
-`/triage/document/{id}/confirm` endpoint via the UI.
+`/triage/confirm` endpoint via the UI.
 """
 
 import uuid
@@ -98,7 +105,7 @@ def _force_pipeline_completed(conn, suffix: str) -> None:
 
 
 def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
-    """Upload → triage → Route → pick case in modal → row gone, doc on case."""
+    """Upload → triage → Route → pick case in modal → case cascaded to doc."""
     conn, _cleanup = db_seed
     case_id, suffix = _seed_doc_and_case(api_client, db_seed)
 
@@ -145,16 +152,20 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     form.locator("select[name='case_id']").select_option(value=case_id)
     form.locator("button[type='submit']").click()
 
-    # The row should leave the queue. A page-wide text= locator isn't
-    # specific enough here: triage_row.html renders the row's expanded
-    # content (id="triage-row-expanded-{key}") as a SEPARATE sibling
-    # element that also contains the doc's filename and is only
-    # display:none'd, not removed — so a generic text search keeps
-    # matching it even after the actual row is gone. Scope to the row
-    # element itself, matching how it was located above.
-    expect(
-        page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}")
-    ).to_have_count(0, timeout=15_000)
+    # confirm_bundle (service.py) with finalize=False — what action=assign_case
+    # uses — cascades case_id onto every doc in the bundle but deliberately
+    # calls compute_review_reasons(doc, confirmed=False), so needs_review
+    # stays true and the bundle is NOT removed from triage. Only the other
+    # action, confirm_bundle (finalize=True, "Confirm bundle" button, gated
+    # on an AI suggestion), does that. So the row is expected to still be
+    # present here — updated via OOB swap to show the now-assigned case —
+    # not gone. The real behavior to verify is the case cascade itself,
+    # checked against the case's own page below.
+    row = (
+        page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}").first
+    )
+    expect(row).to_be_visible(timeout=15_000)
+    expect(row).to_contain_text(case_id, timeout=5_000)
 
     # Verify the doc landed on the target case via the API.
     case_page = api_client.get(f"/cases/{case_id}")
