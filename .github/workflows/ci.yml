@@ -87,6 +87,35 @@ jobs:
           done
       - name: Run E2E tests
         run: pytest -m e2e
+      - name: Capture runner process/resource state on failure
+        # Runs before "Stop app server" kills the uvicorn process, so a live
+        # process snapshot is still possible. Diagnostic only (issue #98: a
+        # traceback-less 500 with no server-side signal) — investigation
+        # already ruled out a stale/zombie uvicorn (runners are ephemeral,
+        # one-shot containers, each in its own netns) and host disk/memory
+        # pressure (OOMKilled=false, ample disk free at the time). This step
+        # exists so the *next* occurrence carries its own evidence instead of
+        # requiring a separate runner-side investigation.
+        if: failure()
+        run: |
+          echo "::group::ps aux"
+          ps aux
+          echo "::endgroup::"
+          echo "::group::listening sockets"
+          ss -tlnp || true
+          echo "::endgroup::"
+          echo "::group::processes on :8000"
+          lsof -i :8000 || true
+          echo "::endgroup::"
+          echo "::group::load/uptime"
+          uptime
+          echo "::endgroup::"
+          echo "::group::memory"
+          free -h
+          echo "::endgroup::"
+          echo "::group::disk"
+          df -h
+          echo "::endgroup::"
       - name: Show app server log
         # Server errors (e.g. an unhandled 500 from a route the browser
         # hit) never surface elsewhere — uvicorn's own stdout isn't
