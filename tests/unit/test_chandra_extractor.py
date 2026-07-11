@@ -23,7 +23,7 @@ _OCR_CFG = OcrConfig(
     label="test",
     base_url="http://ocr.local",
     provider="openai",
-    api_key="not-needed",
+    api_key="not-needed",  # pragma: allowlist secret
     ocr_model="chandra-ocr-2",
 )
 
