@@ -150,7 +150,27 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     form = page.locator("#bundle-confirm-form")
     expect(form).to_be_visible(timeout=5_000)
     form.locator("select[name='case_id']").select_option(value=case_id)
-    form.locator("button[type='submit']").click()
+
+    # The submit button is :disabled="!isNewCase && !bundleConfirm.suggested_case_id"
+    # (triage_bundle_confirm_modal.html) — the <select> has
+    # x-model="bundleConfirm.suggested_case_id", so selecting an option
+    # should clear that disabled state via Alpine's own reactivity. Assert
+    # it explicitly rather than assuming: if this fails, the problem is
+    # client-side reactivity, not the server; if it passes but the DB
+    # assertion below still fails, the problem is server-side.
+    submit_button = form.locator("button[type='submit']")
+    expect(submit_button).to_be_enabled(timeout=5_000)
+
+    # Capture whether the POST actually fires and with what payload —
+    # settles client-vs-server ambiguity in one run instead of more
+    # guessing if the DB assertion below still fails.
+    with page.expect_request("**/triage/confirm") as request_info:
+        submit_button.click()
+    sent_post_data = request_info.value.post_data
+    assert sent_post_data and f"case_id={case_id}" in sent_post_data, (
+        f"POST /triage/confirm didn't include the selected case_id; "
+        f"sent: {sent_post_data!r}"
+    )
 
     # confirm_bundle (service.py) with finalize=False — what action=assign_case
     # uses — cascades case_id onto every doc in the bundle but deliberately
