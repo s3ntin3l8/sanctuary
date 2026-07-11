@@ -16,5 +16,65 @@ jobs:
       # Measured ~70% locally (full suite, e2e skipped). Floor set below that for
       # margin; ratchet up as coverage grows. Codecov tracks the exact number.
       coverage-fail-under: "65"
+      # Route lint-and-test to the homelab self-hosted runner (idle, 8 cores) instead
+      # of GitHub-hosted. Safe here: repo is private with 0 forks, so no fork-PR
+      # code-execution risk.
+      runner: "gh-runner-01"
+      # mypy/pip-audit are newly wired up (see requirements-dev.txt) and have never
+      # run against this codebase. Advisory-only until each tool's baseline is clean,
+      # then flip to true to make them hard gates.
+      strict-checks: false
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  e2e:
+    # Sanctuary-specific (needs Redis + a live server), so it lives here rather
+    # than the shared ci-python.yml. Runs on the homelab runner: has Docker for
+    # Redis and a persistent Playwright browser cache across runs.
+    runs-on: gh-runner-01
+    timeout-minutes: 15
+    # Advisory until proven reliably green on the runner — a flaky E2E job
+    # should not block merges. Revisit once it's had a few clean weeks.
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      CELERY_TASK_ALWAYS_EAGER: "true"
+      # app/main.py refuses to boot with the default session secret while
+      # AUTH_ENABLED=true (the repo default) — a throwaway value scoped to this
+      # ephemeral CI run, not a real secret.
+      SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret"
+      AUTH_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Install Playwright browser
+        run: playwright install --with-deps chromium
+      - name: Start Redis
+        run: docker compose up redis -d --wait
+      - name: Run migrations
+        run: alembic upgrade head
+      - name: Start app server
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          echo $! > server.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000 >/dev/null && break
+            sleep 1
+          done
+      - name: Run E2E tests
+        run: pytest -m e2e
+      - name: Stop app server
+        if: always()
+        run: kill "$(cat server.pid)" 2>/dev/null || true
+      - name: Stop Redis
+        if: always()
+        run: docker compose stop redis
