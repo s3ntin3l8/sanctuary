@@ -43,11 +43,13 @@ def _seed_doc_and_case(api_client) -> tuple[str, int]:
         # upload_form.html's <input name="files" multiple>. Content includes
         # the suffix (not just the filename) so re-runs against a persistent
         # dev DB don't collide with a prior run's leftover doc on the
-        # content-hash duplicate check.
+        # content-hash duplicate check. Must be >= 30 non-whitespace chars —
+        # is_valid_docling_output() (converters.py) rejects shorter content
+        # as a likely near-empty/placeholder OCR result.
         files={
             "files": (
                 f"e2e-confirm-{suffix}.txt",
-                f"Test content {suffix}".encode(),
+                f"This is a test document body for e2e confirm flow {suffix}.".encode(),
                 "text/plain",
             )
         },
@@ -74,21 +76,23 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client):
         page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}").first
     )
 
-    # A freshly-uploaded doc has no AI-suggested case (no classifier runs in
-    # this e2e environment), so triage_row.html renders "Route" (action:
-    # assign_case) rather than "Confirm bundle" (action: confirm_bundle,
-    # which only renders when lead_sub.suggested_case_id is set). Both
-    # dispatch the same triage:open-bundle-confirm modal.
+    # A generic test doc's content won't semantically match any existing
+    # case, so triage_row.html renders "Route" (action: assign_case) rather
+    # than "Confirm bundle" (action: confirm_bundle, which only renders when
+    # lead_sub.suggested_case_id is set by the AI classifier). Both dispatch
+    # the same triage:open-bundle-confirm modal.
     #
     # The row's Route/Confirm branch is decided at the row's own render time
     # from the bundle's pipeline status; the small pipeline-agg span polls
-    # itself every 4s but does NOT re-render the row, so a still-"processing"
-    # row briefly shows neither button. Reload until it clears (~1s locally).
+    # itself every 4s but does NOT re-render the row. The pipeline runs
+    # extract -> metadata (an LLM call to classify/suggest a case) before
+    # either button appears — metadata alone can take tens of seconds
+    # depending on model load, so poll with a generous budget.
     route_button = row.get_by_role("button", name="Route")
-    for _ in range(10):
+    for _ in range(40):
         if route_button.is_visible():
             break
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(2_000)
         page.reload()
         row = (
             page.locator("[data-bundle-key]")
