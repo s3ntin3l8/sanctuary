@@ -116,9 +116,16 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     form.locator("select[name='case_id']").select_option(value=case_id)
     form.locator("button[type='submit']").click()
 
-    # The row should leave the queue. Bundle row IDs are stable, so wait for
-    # disappearance. Generous timeout because /triage/confirm runs sync.
-    expect(page.locator(f"text=e2e-confirm-{suffix}")).to_have_count(0, timeout=15_000)
+    # The row should leave the queue. A page-wide text= locator isn't
+    # specific enough here: triage_row.html renders the row's expanded
+    # content (id="triage-row-expanded-{key}") as a SEPARATE sibling
+    # element that also contains the doc's filename and is only
+    # display:none'd, not removed — so a generic text search keeps
+    # matching it even after the actual row is gone. Scope to the row
+    # element itself, matching how it was located above.
+    expect(
+        page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}")
+    ).to_have_count(0, timeout=15_000)
 
     # Verify the doc landed on the target case via the API.
     case_page = api_client.get(f"/cases/{case_id}")
