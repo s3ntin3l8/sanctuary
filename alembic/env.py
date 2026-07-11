@@ -28,12 +28,14 @@ target_metadata = Base.metadata
 def include_object(obj, name, type_, reflected, compare_to):
     """Exclude vec0 virtual tables and their shadow tables from autogenerate.
 
-    Both document_vectors and claim_vectors are vec0 virtual tables; vec0
-    creates several `*_chunks`, `*_info`, `*_rowids`, `*_vector_chunks*`
+    Both document_chunk_vectors and claim_vectors are vec0 virtual tables;
+    vec0 creates several `*_chunks`, `*_info`, `*_rowids`, `*_vector_chunks*`
     shadow tables alongside the parent table. None of them belong in
-    autogenerate output.
+    autogenerate output. (document_chunks — the real, non-vec0 table
+    document_chunk_vectors joins against — is NOT excluded; it's ordinary
+    SQLAlchemy metadata.)
     """
-    vec_prefixes = ("document_vectors", "claim_vectors")
+    vec_prefixes = ("document_chunk_vectors", "claim_vectors")
     if type_ == "table":
         return not any(
             name == prefix or name.startswith(prefix + "_") for prefix in vec_prefixes

@@ -34,6 +34,7 @@ class DocumentService:
             Claim,
             ClaimEvidence,
             Conversation,
+            DocumentChunk,
             DocumentPin,
             DocumentRelationship,
             Entity,
@@ -65,9 +66,24 @@ class DocumentService:
                 DocumentRelationship.to_document_id == doc_id,
             )
         ).delete(synchronize_session=False)
-        self.db.execute(
-            text("DELETE FROM document_vectors WHERE document_id = :id"),
-            {"id": doc_id},
+        # vec0 has no FK support, so the chunk_vectors rows must be purged
+        # explicitly before the document_chunks rows they reference by id.
+        chunk_ids = [
+            row[0]
+            for row in self.db.execute(
+                text("SELECT id FROM document_chunks WHERE document_id = :id"),
+                {"id": doc_id},
+            ).fetchall()
+        ]
+        if chunk_ids:
+            placeholders = ",".join(str(int(i)) for i in chunk_ids)
+            self.db.execute(
+                text(
+                    f"DELETE FROM document_chunk_vectors WHERE chunk_id IN ({placeholders})"
+                )
+            )
+        self.db.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).delete(
+            synchronize_session=False
         )
 
         # Conversation.scope_id is a polymorphic string with no FK; clean up

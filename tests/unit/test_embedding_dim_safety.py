@@ -5,8 +5,8 @@
    then marks EMBEDDINGS=FAILED — without that signal, the doc was previously
    marked COMPLETED with no vector, so search silently missed it.
 
-2. `verify_vec0_dim()` reads the existing `document_vectors` schema, parses
-   its declared dimension, and reports whether it matches `AI_EMBED_DIM`.
+2. `verify_vec0_dim()` reads the existing `document_chunk_vectors` schema,
+   parses its declared dimension, and reports whether it matches `AI_EMBED_DIM`.
    The startup hook uses this to fail loudly when the env var was changed
    without recreating the vec0 table.
 """

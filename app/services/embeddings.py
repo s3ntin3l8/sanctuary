@@ -12,8 +12,17 @@ from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
 
-# nomic-embed-text:v1.5 has an 8192-token context window; ~3 chars/token for German legal text
-_EMBED_MAX_CHARS = 22000
+# nomic-embed-text:v1.5 has an 8192-token context window; ~3 chars/token for
+# German legal text. Each Docling/OCR chunk is already section-sized, so this
+# is a per-chunk safety cap, not sized for whole-document context (contrast
+# the old whole-document _EMBED_MAX_CHARS=22000 budget this replaces).
+_CHUNK_EMBED_MAX_CHARS = 4000
+
+# A document's matching passage may not be its only high-ranked chunk, and
+# several chunks from the same document can appear before a different
+# document's best chunk — oversample so grouping/deduping by document still
+# yields k distinct documents.
+_CHUNK_RETRIEVAL_OVERSAMPLE = 5
 
 from app.services.ai_provider import embed_provider
 
@@ -25,58 +34,73 @@ def _serialize(vec: list[float]) -> bytes:
     return serialize_float32(vec)
 
 
-async def generate_embedding(doc_id: int):
-    """Generate and store the document embedding.
+def _chunks_to_embed(doc) -> list[str]:
+    """Return the chunk texts to embed for `doc`, each capped to
+    _CHUNK_EMBED_MAX_CHARS.
 
-    Raises on any failure (network error, JSON parse, dim mismatch, no vector) —
-    the caller (`generate_embedding_task`) catches and marks the stage failed.
-    Silent failure here was previously masking docs that never got an embedding
-    written but were still flagged COMPLETED, so search would miss them.
+    Falls back to fixed-size windows over doc.content when the document has
+    no chunk metadata (e.g. an extraction path that doesn't populate
+    doc.meta['chunks']), so passage-level retrieval still works.
     """
-    db = SessionLocal()
-    # Only recorded once the POST is actually attempted — a doc with no
-    # content (early return below) never called a model, so nothing to log.
-    attempted = False
-    run_started = time.perf_counter()
-    run_status = "error"
-    run_error: str | None = None
-    resp_len = 0
-    cfg = None
-    try:
-        embed_provider.reload_from_db(db)
-        cfg = get_embed_config(db)
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
-            return
+    raw_chunks = doc.meta.get("chunks", []) if doc.meta else []
+    texts = []
+    for chunk in raw_chunks:
+        t = (chunk.get("text") or "").strip()
+        if t:
+            texts.append(t[:_CHUNK_EMBED_MAX_CHARS])
 
-        content_snippet = ""
-        chunks = doc.meta.get("chunks", []) if doc.meta else []
-        if chunks:
-            current_len = 0
-            for chunk in chunks:
-                text = chunk.get("text", "")
-                if current_len + len(text) > _EMBED_MAX_CHARS:
-                    break
-                content_snippet += text + "\n\n"
-                current_len += len(text)
-            if not content_snippet:
-                content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
+    if not texts:
+        content = doc.content or ""
+        texts = [
+            content[i : i + _CHUNK_EMBED_MAX_CHARS]
+            for i in range(0, len(content), _CHUNK_EMBED_MAX_CHARS)
+        ]
 
-        if not content_snippet:
-            content_snippet = doc.content[:_EMBED_MAX_CHARS]
+    return texts
 
-        params = await embed_provider.get_embedding_params(
-            cfg.embed_model, content_snippet
+
+async def _embed_document_chunks(doc: Document, db, cfg) -> int:
+    """Embed and store every chunk for `doc`. Returns the number of chunks written.
+
+    Idempotent: clears any existing chunk rows (and their vec0 rows) for
+    this document first, so re-embedding on retry/re-ingestion never hits a
+    UNIQUE conflict or leaves orphaned rows. Nothing is committed until
+    every chunk succeeds — a mid-loop failure leaves no partial write.
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.models.database import DocumentChunk
+
+    texts = _chunks_to_embed(doc)
+    if not texts:
+        return 0
+
+    existing_ids = [
+        row[0]
+        for row in db.execute(
+            sa_text("SELECT id FROM document_chunks WHERE document_id = :doc_id"),
+            {"doc_id": doc.id},
+        ).fetchall()
+    ]
+    if existing_ids:
+        placeholders = ",".join(str(int(i)) for i in existing_ids)
+        db.execute(
+            sa_text(
+                f"DELETE FROM document_chunk_vectors WHERE chunk_id IN ({placeholders})"
+            )
         )
-        ptype = await embed_provider.get_type()
+        db.execute(
+            sa_text("DELETE FROM document_chunks WHERE document_id = :doc_id"),
+            {"doc_id": doc.id},
+        )
 
-        attempted = True
-        # Acquire the embed-family lock. The current policy treats embed as
-        # compatible with chandra and qwen (small model fits alongside), so
-        # this is a fast-path no-op — but the call site stays uniform if the
-        # user later swaps in a larger embedding model that needs exclusion.
-        with model_gate("embed", label=f"embed:doc:{doc_id}"):
-            async with track_ai_call_async(f"embed:doc:{doc_id}"):
+    written = 0
+    with model_gate("embed", label=f"embed:doc:{doc.id}"):
+        for idx, chunk_text in enumerate(texts):
+            params = await embed_provider.get_embedding_params(
+                cfg.embed_model, chunk_text
+            )
+            async with track_ai_call_async(f"embed:doc:{doc.id}:chunk:{idx}"):
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
                         params["url"], json=params["json"], headers=params["headers"]
@@ -84,41 +108,77 @@ async def generate_embedding(doc_id: int):
                     response.raise_for_status()
                     data = response.json()
 
-        embedding = None
-        if "embedding" in data:
-            embedding = data["embedding"]
-        elif (
-            "data" in data and isinstance(data["data"], list) and len(data["data"]) > 0
-        ):
-            embedding = data["data"][0].get("embedding")
+            embedding = None
+            if "embedding" in data:
+                embedding = data["embedding"]
+            elif (
+                "data" in data
+                and isinstance(data["data"], list)
+                and len(data["data"]) > 0
+            ):
+                embedding = data["data"][0].get("embedding")
 
-        if not embedding:
-            raise ValueError(f"Embedding provider returned no vector for doc {doc_id}")
-        if len(embedding) != cfg.embed_dim:
-            raise ValueError(
-                f"Embedding dim mismatch for doc {doc_id}: provider returned "
-                f"{len(embedding)}, config embed_dim={cfg.embed_dim}. "
-                "Check AI_EMBED_DIM matches the embedding model."
+            if not embedding:
+                raise ValueError(
+                    f"Embedding provider returned no vector for doc {doc.id} chunk {idx}"
+                )
+            if len(embedding) != cfg.embed_dim:
+                raise ValueError(
+                    f"Embedding dim mismatch for doc {doc.id} chunk {idx}: provider "
+                    f"returned {len(embedding)}, config embed_dim={cfg.embed_dim}. "
+                    "Check AI_EMBED_DIM matches the embedding model."
+                )
+
+            chunk_row = DocumentChunk(
+                document_id=doc.id, chunk_index=idx, text=chunk_text
             )
+            db.add(chunk_row)
+            db.flush()  # populate chunk_row.id for the vec0 insert below
 
-        from sqlalchemy import text
+            blob = _serialize(embedding)
+            db.execute(
+                sa_text(
+                    "INSERT INTO document_chunk_vectors(chunk_id, embedding) "
+                    "VALUES (:chunk_id, :embedding)"
+                ),
+                {"chunk_id": chunk_row.id, "embedding": blob},
+            )
+            written += 1
 
-        blob = _serialize(embedding)
-        # vec0 virtual tables don't honor INSERT OR REPLACE on conflict, so
-        # retries hit a UNIQUE-on-primary-key error. Explicit DELETE + INSERT
-        # makes the write idempotent for re-ingestion / pipeline retries.
-        db.execute(
-            text("DELETE FROM document_vectors WHERE document_id = :doc_id"),
-            {"doc_id": doc_id},
-        )
-        db.execute(
-            text(
-                "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
-            ),
-            {"doc_id": doc_id, "embedding": blob},
-        )
-        db.commit()
-        resp_len = len(embedding)
+    db.commit()
+    return written
+
+
+async def generate_embedding(doc_id: int):
+    """Generate and store chunk-level embeddings for a document.
+
+    Raises on any failure (network error, JSON parse, dim mismatch, no vector) —
+    the caller (`generate_embedding_task`) catches and marks the stage failed.
+    Silent failure here was previously masking docs that never got an embedding
+    written but were still flagged COMPLETED, so search would miss them.
+    """
+    db = SessionLocal()
+    # Only recorded once a provider call is actually attempted — a doc with
+    # no content (early return below) never called a model, so nothing to log.
+    attempted = False
+    run_started = time.perf_counter()
+    run_status = "error"
+    run_error: str | None = None
+    resp_len = 0
+    cfg = None
+    doc = None
+    ptype = None
+    try:
+        embed_provider.reload_from_db(db)
+        cfg = get_embed_config(db)
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
+            return
+
+        attempted = True
+        ptype = await embed_provider.get_type()
+        written = await _embed_document_chunks(doc, db, cfg)
+        resp_len = written
         run_status = "ok"
     except Exception as exc:
         run_error = str(exc)
@@ -142,17 +202,14 @@ async def generate_embedding(doc_id: int):
         db.close()
 
 
-def nearest_document_ids(query_text: str, db, *, k: int) -> list[int]:
-    """Return up to `k` document_ids whose stored embedding is nearest to
-    `query_text`, closest first.
+def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
+    """Return up to `k` chunk hits ranked by vector similarity, closest first.
 
+    Each hit is {chunk_id, document_id, chunk_index, text, distance}.
     Synchronous, best-effort: returns ``[]`` on any failure (provider down,
     dim mismatch, sqlite-vec unavailable) so callers can fall back gracefully.
-    Mirrors the embed+vec0 MATCH pattern in
-    ``SearchService._semantic_document_ids``; lives here so the document-vector
-    KNN has one home.
     """
-    from sqlalchemy import text
+    from sqlalchemy import text as sa_text
 
     from app.core.async_utils import run_async
 
@@ -177,23 +234,66 @@ def nearest_document_ids(query_text: str, db, *, k: int) -> list[int]:
             return []
         blob = _serialize(embedding)
         rows = db.execute(
-            text(
-                "SELECT document_id, distance FROM document_vectors "
+            sa_text(
+                "SELECT chunk_id, distance FROM document_chunk_vectors "
                 "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
             ),
             {"blob": blob, "k": k},
         ).fetchall()
-        return [row[0] for row in rows]
+        chunk_ids = [row[0] for row in rows]
+        if not chunk_ids:
+            return []
+        distances = {row[0]: row[1] for row in rows}
+
+        from app.models.database import DocumentChunk
+
+        chunk_rows = (
+            db.query(DocumentChunk).filter(DocumentChunk.id.in_(chunk_ids)).all()
+        )
+        by_id = {c.id: c for c in chunk_rows}
+        return [
+            {
+                "chunk_id": cid,
+                "document_id": by_id[cid].document_id,
+                "chunk_index": by_id[cid].chunk_index,
+                "text": by_id[cid].text,
+                "distance": distances[cid],
+            }
+            for cid in chunk_ids
+            if cid in by_id
+        ]
     except Exception as e:  # noqa: BLE001 — best-effort; never block the caller
-        logger.debug("nearest_document_ids unavailable: %s", e)
+        logger.debug("nearest_chunks unavailable: %s", e)
         return []
+
+
+def nearest_document_ids(query_text: str, db, *, k: int) -> list[int]:
+    """Return up to `k` document_ids ranked by their best-matching chunk,
+    closest first (deduped — a document may own several high-ranked chunks).
+
+    Synchronous, best-effort: returns ``[]`` on any failure. Mirrors the
+    embed+vec0 MATCH pattern in ``SearchService._semantic_document_ids``;
+    lives here so the document-vector KNN has one home.
+    """
+    hits = nearest_chunks(query_text, db, k=k * _CHUNK_RETRIEVAL_OVERSAMPLE)
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for hit in hits:
+        doc_id = hit["document_id"]
+        if doc_id in seen:
+            continue
+        seen.add(doc_id)
+        ordered.append(doc_id)
+        if len(ordered) >= k:
+            break
+    return ordered
 
 
 _REINDEX_BATCH_SIZE = 50
 
 
 async def reindex_all_docs(db, progress_cb=None) -> dict:
-    """Regenerate embeddings for all documents. Returns {total, reindexed, failed}.
+    """Regenerate chunk embeddings for all documents. Returns {total, reindexed, failed}.
 
     Paginated in batches of _REINDEX_BATCH_SIZE so a corpus of N thousand
     documents doesn't all sit in Python memory at once. Each doc still
@@ -205,8 +305,6 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
     HTMX polling UI advances. Best-effort: callback exceptions are
     swallowed so an SQLite write contention doesn't kill the reindex.
     """
-    from sqlalchemy import text
-
     # The user typically triggers reindex right after changing the embedding
     # model in settings — reload the provider config from DB so we use the
     # new model, not whatever was bound at app boot.
@@ -233,55 +331,8 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
             try:
                 if not doc.content or doc.content.startswith("Conversion failed:"):
                     continue
-                content_snippet = ""
-                chunks = doc.meta.get("chunks", []) if doc.meta else []
-                if chunks:
-                    current_len = 0
-                    for chunk in chunks:
-                        chunk_text = chunk.get("text", "")
-                        if current_len + len(chunk_text) > _EMBED_MAX_CHARS:
-                            break
-                        content_snippet += chunk_text + "\n\n"
-                        current_len += len(chunk_text)
-                    if not content_snippet:
-                        content_snippet = chunks[0].get("text", "")[:_EMBED_MAX_CHARS]
-                if not content_snippet:
-                    content_snippet = doc.content[:_EMBED_MAX_CHARS]
-                params = await embed_provider.get_embedding_params(
-                    cfg.embed_model, content_snippet
-                )
-                with model_gate("embed", label=f"embed:doc:{doc.id}"):
-                    async with track_ai_call_async(f"embed:doc:{doc.id}"):
-                        async with httpx.AsyncClient(timeout=60.0) as client:
-                            response = await client.post(
-                                params["url"],
-                                json=params["json"],
-                                headers=params["headers"],
-                            )
-                            response.raise_for_status()
-                            data = response.json()
-                embedding = data.get("embedding") or (
-                    data.get("data", [{}])[0].get("embedding")
-                    if data.get("data")
-                    else None
-                )
-                if embedding and len(embedding) == cfg.embed_dim:
-                    blob = _serialize(embedding)
-                    # See generate_embedding() above: vec0 doesn't honor INSERT OR
-                    # REPLACE; DELETE + INSERT keeps reindex idempotent.
-                    db.execute(
-                        text(
-                            "DELETE FROM document_vectors WHERE document_id = :doc_id"
-                        ),
-                        {"doc_id": doc.id},
-                    )
-                    db.execute(
-                        text(
-                            "INSERT INTO document_vectors(document_id, embedding) VALUES (:doc_id, :embedding)"
-                        ),
-                        {"doc_id": doc.id, "embedding": blob},
-                    )
-                    db.commit()
+                written = await _embed_document_chunks(doc, db, cfg)
+                if written:
                     reindexed += 1
                 else:
                     failed += 1
@@ -308,7 +359,7 @@ _VEC0_DIM_RE = __import__("re").compile(
 
 
 def verify_vec0_dim(db, expected_dim: int) -> tuple[bool, int | None]:
-    """Read the document_vectors vec0 schema and compare its declared dimension.
+    """Read the document_chunk_vectors vec0 schema and compare its declared dimension.
 
     Returns (matches, actual_dim). actual_dim is None if the schema can't be parsed.
     Used by the lifespan startup hook to fail loudly if AI_EMBED_DIM was changed
@@ -318,7 +369,7 @@ def verify_vec0_dim(db, expected_dim: int) -> tuple[bool, int | None]:
     from sqlalchemy import text
 
     row = db.execute(
-        text("SELECT sql FROM sqlite_master WHERE name = 'document_vectors'")
+        text("SELECT sql FROM sqlite_master WHERE name = 'document_chunk_vectors'")
     ).fetchone()
     if not row or not row[0]:
         return False, None

@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import bindparam, text
+from sqlalchemy import text
 
 from app.models.database import (
     ActionItem,
     Document,
+    DocumentChunk,
     DocumentPin,
     IngestBatch,
     UserReaction,
@@ -69,13 +70,16 @@ def test_delete_batch_removes_all_rows(db_session, sample_user):
             due_date=datetime.now(UTC),
         )
     )
-    # Vector row
+    # Chunk + vector row
+    chunk = DocumentChunk(document_id=docs[0].id, chunk_index=0, text="chunk text")
+    db_session.add(chunk)
+    db_session.flush()
     db_session.execute(
         text(
-            "INSERT INTO document_vectors(document_id, embedding) "
+            "INSERT INTO document_chunk_vectors(chunk_id, embedding) "
             "VALUES (:id, vec_f32(:vec))"
         ),
-        {"id": docs[0].id, "vec": "[" + ",".join(["0.0"] * 768) + "]"},
+        {"id": chunk.id, "vec": "[" + ",".join(["0.0"] * 768) + "]"},
     )
     db_session.commit()
 
@@ -102,11 +106,14 @@ def test_delete_batch_removes_all_rows(db_session, sample_user):
         .count()
         == 0
     )
+    assert (
+        db_session.query(DocumentChunk)
+        .filter(DocumentChunk.document_id.in_(doc_ids))
+        .count()
+        == 0
+    )
     vec_count = db_session.execute(
-        text(
-            "SELECT count(*) FROM document_vectors WHERE document_id IN :ids"
-        ).bindparams(bindparam("ids", expanding=True)),
-        {"ids": doc_ids},
+        text("SELECT count(*) FROM document_chunk_vectors")
     ).scalar()
     assert vec_count == 0
 

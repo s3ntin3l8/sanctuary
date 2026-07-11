@@ -703,17 +703,21 @@ async def rebuild_index(
     embed_provider.reload_from_db(db)
 
     try:
-        db.execute(text("DROP TABLE IF EXISTS document_vectors"))
+        db.execute(text("DROP TABLE IF EXISTS document_chunk_vectors"))
         db.execute(
             text(
-                f"CREATE VIRTUAL TABLE document_vectors USING vec0("
-                f"document_id INTEGER PRIMARY KEY, embedding float[{embed_dim}])",
+                f"CREATE VIRTUAL TABLE document_chunk_vectors USING vec0("
+                f"chunk_id INTEGER PRIMARY KEY, embedding float[{embed_dim}])",
             ),
         )
+        # document_chunks rows are about to be orphaned (their vec0 rows are
+        # gone and a full reindex is starting) — clear them so stale chunk
+        # text doesn't linger indefinitely.
+        db.execute(text("DELETE FROM document_chunks"))
         audit_service.record(db, AuditEventType.MAINTENANCE_REBUILD_INDEX)
         db.commit()
     except Exception as e:
-        logger.error(f"Failed to recreate document_vectors: {e}")
+        logger.error(f"Failed to recreate document_chunk_vectors: {e}")
         return HTMLResponse(_toast(False, f"DDL failed: {e}"))
 
     total = db.query(Document).filter(Document.content.isnot(None)).count()

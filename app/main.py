@@ -380,7 +380,7 @@ async def lifespan(app: FastAPI):
         )
 
     # vec0 cannot be ALTERed: if the active embed instance's dim diverges from the
-    # document_vectors schema, every embedding write fails the per-row dim guard.
+    # document_chunk_vectors schema, every embedding write fails the per-row dim guard.
     # Two cases:
     #   (a) stored dim is missing/unset (legacy, pre-auto-detect) → schema is the ground
     #       truth; sync it into the instance so the UI and per-write guard agree.
@@ -406,13 +406,13 @@ async def lifespan(app: FastAPI):
                 updated["embed_dim"] = actual
                 save_instance(vec_db, updated)
                 logging.getLogger(__name__).info(
-                    "Startup: set active embed instance dim to %s from document_vectors schema.",
+                    "Startup: set active embed instance dim to %s from document_chunk_vectors schema.",
                     actual,
                 )
             elif stored_dim:
                 # Case (b): explicit dim mismatch — user needs to rebuild.
                 logging.getLogger(__name__).error(
-                    "embed_dim=%s (active embed instance) but document_vectors schema "
+                    "embed_dim=%s (active embed instance) but document_chunk_vectors schema "
                     "declares dim=%s. vec0 can't be ALTERed — use Settings → AI → "
                     "Rebuild Index to recreate it.",
                     stored_dim,
