@@ -74,7 +74,7 @@ jobs:
           alembic upgrade head
       - name: Start app server
         run: |
-          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
           echo $! > server.pid
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8000 >/dev/null && break
@@ -82,6 +82,12 @@ jobs:
           done
       - name: Run E2E tests
         run: pytest -m e2e
+      - name: Show app server log
+        # Server errors (e.g. an unhandled 500 from a route the browser
+        # hit) never surface elsewhere — uvicorn's own stdout isn't
+        # otherwise visible in this job's log.
+        if: always()
+        run: cat server.log || true
       - name: Stop app server
         if: always()
         run: kill "$(cat server.pid)" 2>/dev/null || true
