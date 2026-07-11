@@ -479,7 +479,12 @@ async def create_case(
     case_id: str = Form(...),
     title: str = Form(...),
     jurisdiction: Jurisdiction = Form(Jurisdiction.DE),
-    court_name: str | None = Form(None),
+    # Required: proceedings.court_name is NOT NULL and the create-case form
+    # (create_case_modal.html) always sends it. This was previously typed as
+    # optional, which let a request without it slip past FastAPI's own
+    # validation into an unhandled sqlite IntegrityError (500) instead of a
+    # clean 422.
+    court_name: str = Form(...),
     db: Session = Depends(get_db),
 ):
     """Create a new case and its initial active proceeding."""
