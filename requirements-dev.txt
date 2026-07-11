@@ -18,3 +18,10 @@ playwright==1.61.0
 pytest-playwright==0.8.0
 pre-commit==4.6.0
 ruff==0.15.21
+
+# CI-only checks: the standardized ci-python.yml reusable workflow activates
+# mypy/detect-secrets/pip-audit steps by presence (`command -v` guards). Without
+# these, those steps silently no-op instead of failing loudly.
+mypy==2.2.0
+pip-audit==2.10.1
+detect-secrets==1.5.0

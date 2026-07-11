@@ -45,3 +45,12 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+# Advisory in CI (ci-python.yml runs mypy with continue-on-error until
+# strict-checks is flipped on). Start lenient: this codebase has never been
+# type-checked, so a strict baseline would be noise on day one. Tighten
+# (disallow_untyped_defs, etc.) incrementally as coverage grows.
+ignore_missing_imports = true
+exclude = ["^alembic/", "^tests/"]
