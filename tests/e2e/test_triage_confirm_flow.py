@@ -63,19 +63,29 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     marker = f"e2e-confirm-{suffix}"
     assert marker in body, f"Uploaded doc not visible in triage queue (no {marker!r})"
 
-    # The real pipeline (extract -> metadata, an LLM call to suggest a case)
-    # can take tens of seconds to minutes depending on the AI backend's
-    # reachability/load, which this test shouldn't be at the mercy of —
-    # mock_status() (triage_view.py) only needs pipeline_state to be out of
-    # {pending, running, partial} to unlock the Route/Confirm buttons, so
-    # force it directly rather than waiting on a real classification result.
-    # (test_case_graph.py / test_claim_status_transition.py apply the same
-    # principle: bypass the AI-dependent stages via direct seeding.)
-    # LIKE on the suffix, not an exact title match: extract_clean_title()
-    # (service.py) only normalizes the raw filename into the cleaned title
-    # once the extract stage actually runs, and whether that's synchronous
-    # by the time this line executes isn't guaranteed even under
-    # CELERY_TASK_ALWAYS_EAGER — LIKE matches either form.
+    _force_pipeline_completed(conn, suffix)
+
+    return case_id, suffix
+
+
+def _force_pipeline_completed(conn, suffix: str) -> None:
+    """Fast-forward the seeded doc's pipeline_state to 'completed'.
+
+    mock_status() (triage_view.py) only needs pipeline_state out of
+    {pending, running, partial} to unlock the Route/Confirm buttons, so
+    force it directly rather than waiting on a real classification result —
+    the extract -> metadata pipeline (an LLM call to suggest a case) can
+    take tens of seconds to minutes depending on the AI backend's
+    reachability/load, which this test shouldn't be at the mercy of.
+    (test_case_graph.py / test_claim_status_transition.py apply the same
+    principle: bypass the AI-dependent stages via direct seeding.)
+
+    LIKE on the suffix, not an exact title match: extract_clean_title()
+    (service.py) only normalizes the raw filename into the cleaned title
+    once the extract stage actually runs, and whether that's synchronous
+    with the /upload response isn't guaranteed even under
+    CELERY_TASK_ALWAYS_EAGER — LIKE matches either form.
+    """
     cur = conn.cursor()
     cur.execute(
         "UPDATE documents SET pipeline_state = 'completed' WHERE title LIKE ?",
@@ -86,11 +96,10 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     )
     conn.commit()
 
-    return case_id, suffix
-
 
 def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     """Upload → triage → Route → pick case in modal → row gone, doc on case."""
+    conn, _cleanup = db_seed
     case_id, suffix = _seed_doc_and_case(api_client, db_seed)
 
     page.goto("/triage")
@@ -104,9 +113,29 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     # case, so triage_row.html renders "Route" (action: assign_case) rather
     # than "Confirm bundle" (action: confirm_bundle, which only renders when
     # lead_sub.suggested_case_id is set by the AI classifier). Both dispatch
-    # the same triage:open-bundle-confirm modal. pipeline_state was already
-    # force-completed in _seed_doc_and_case, so no processing wait is needed.
-    row.get_by_role("button", name="Route").click()
+    # the same triage:open-bundle-confirm modal.
+    #
+    # The extract->metadata pipeline is still dispatched somewhat
+    # asynchronously even under CELERY_TASK_ALWAYS_EAGER (observed ~1s+
+    # lag locally), so a background task can race _seed_doc_and_case's
+    # fast-forward and revert pipeline_state back to running/pending after
+    # it already committed 'completed'. Re-apply the fast-forward on each
+    # retry rather than just waiting — a fixed budget fighting a fast local
+    # DB race, not the tens-of-seconds a real AI call would need.
+    route_button = row.get_by_role("button", name="Route")
+    for _ in range(10):
+        if route_button.is_visible():
+            break
+        _force_pipeline_completed(conn, suffix)
+        page.wait_for_timeout(1_000)
+        page.reload()
+        row = (
+            page.locator("[data-bundle-key]")
+            .filter(has_text=f"e2e-confirm-{suffix}")
+            .first
+        )
+        route_button = row.get_by_role("button", name="Route")
+    route_button.click()
 
     # The modal's non-batch form (#bundle-confirm-form) holds the case
     # picker <select> — no suggested_case_id means the picker branch
