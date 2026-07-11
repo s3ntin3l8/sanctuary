@@ -17,12 +17,13 @@ from playwright.sync_api import Page, expect
 pytestmark = pytest.mark.e2e
 
 
-def _seed_doc_and_case(api_client) -> tuple[str, int]:
+def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     """Create a target Case and a triage Document via the live API.
 
     Returns (case_id, doc_id). Uses unique IDs to avoid collision with
     leftover data from prior runs.
     """
+    conn, cleanup = db_seed
     suffix = uuid.uuid4().hex[:6].upper()
     case_id = f"E2E-CONF-{suffix}"
 
@@ -62,12 +63,35 @@ def _seed_doc_and_case(api_client) -> tuple[str, int]:
     marker = f"e2e-confirm-{suffix}"
     assert marker in body, f"Uploaded doc not visible in triage queue (no {marker!r})"
 
+    # The real pipeline (extract -> metadata, an LLM call to suggest a case)
+    # can take tens of seconds to minutes depending on the AI backend's
+    # reachability/load, which this test shouldn't be at the mercy of —
+    # mock_status() (triage_view.py) only needs pipeline_state to be out of
+    # {pending, running, partial} to unlock the Route/Confirm buttons, so
+    # force it directly rather than waiting on a real classification result.
+    # (test_case_graph.py / test_claim_status_transition.py apply the same
+    # principle: bypass the AI-dependent stages via direct seeding.)
+    # LIKE on the suffix, not an exact title match: extract_clean_title()
+    # (service.py) only normalizes the raw filename into the cleaned title
+    # once the extract stage actually runs, and whether that's synchronous
+    # by the time this line executes isn't guaranteed even under
+    # CELERY_TASK_ALWAYS_EAGER — LIKE matches either form.
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE documents SET pipeline_state = 'completed' WHERE title LIKE ?",
+        (f"%{suffix}%",),
+    )
+    assert cur.rowcount == 1, (
+        f"Expected to fast-forward exactly one doc, got {cur.rowcount}"
+    )
+    conn.commit()
+
     return case_id, suffix
 
 
-def test_triage_confirm_routes_doc_to_case(page: Page, api_client):
+def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     """Upload → triage → Route → pick case in modal → row gone, doc on case."""
-    case_id, suffix = _seed_doc_and_case(api_client)
+    case_id, suffix = _seed_doc_and_case(api_client, db_seed)
 
     page.goto("/triage")
     expect(page.locator(f"text=e2e-confirm-{suffix}")).to_be_visible(timeout=10_000)
@@ -80,27 +104,9 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client):
     # case, so triage_row.html renders "Route" (action: assign_case) rather
     # than "Confirm bundle" (action: confirm_bundle, which only renders when
     # lead_sub.suggested_case_id is set by the AI classifier). Both dispatch
-    # the same triage:open-bundle-confirm modal.
-    #
-    # The row's Route/Confirm branch is decided at the row's own render time
-    # from the bundle's pipeline status; the small pipeline-agg span polls
-    # itself every 4s but does NOT re-render the row. The pipeline runs
-    # extract -> metadata (an LLM call to classify/suggest a case) before
-    # either button appears — metadata alone can take tens of seconds
-    # depending on model load, so poll with a generous budget.
-    route_button = row.get_by_role("button", name="Route")
-    for _ in range(40):
-        if route_button.is_visible():
-            break
-        page.wait_for_timeout(2_000)
-        page.reload()
-        row = (
-            page.locator("[data-bundle-key]")
-            .filter(has_text=f"e2e-confirm-{suffix}")
-            .first
-        )
-        route_button = row.get_by_role("button", name="Route")
-    route_button.click()
+    # the same triage:open-bundle-confirm modal. pipeline_state was already
+    # force-completed in _seed_doc_and_case, so no processing wait is needed.
+    row.get_by_role("button", name="Route").click()
 
     # The modal's non-batch form (#bundle-confirm-form) holds the case
     # picker <select> — no suggested_case_id means the picker branch
