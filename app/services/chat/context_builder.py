@@ -1,15 +1,15 @@
 """Assemble prompt context strings for document-chat and case-chat."""
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.models.database import (
     ActionItem,
     Case,
-    Claim,
     ConversationMessage,
     Document,
 )
-from app.models.enums import ActionItemStatus, ClaimEvidenceRole, ClaimStatus
+from app.models.enums import ActionItemStatus
+from app.services.intelligence.claim_context import format_claims_for_case
 from app.services.intelligence.reaction_context import (
     format_reactions_for_case,
     format_reactions_for_document,
@@ -112,32 +112,7 @@ def build_case_chat_prompt(
         actions_block = "Open Action Items / Deadlines:\n" + "\n".join(lines)
 
     # Fetch open Claims (Wave 2A: scope via ClaimEvidence → Document join).
-    from app.repositories.claim import ClaimRepository
-
-    claims = list(
-        ClaimRepository(db).claims_for_case(
-            case.id, statuses=[ClaimStatus.ASSERTED, ClaimStatus.CONTESTED]
-        )
-    )[:15]
-    if claims:
-        # Eager-load evidence for the support/contest counts below.
-        db.query(Claim).options(joinedload(Claim.evidence)).filter(
-            Claim.id.in_([c.id for c in claims])
-        ).all()
-    claims_block = ""
-    if claims:
-        lines = []
-        for c in claims:
-            supports = sum(
-                1 for e in c.evidence if e.role == ClaimEvidenceRole.SUPPORTS
-            )
-            contests = sum(
-                1 for e in c.evidence if e.role == ClaimEvidenceRole.CONTESTS
-            )
-            lines.append(
-                f"  - [{c.status.value}] {c.claim_text} (Evidence: {supports} supports, {contests} contests)"
-            )
-        claims_block = "Contested or Asserted Claims (Truth Map):\n" + "\n".join(lines)
+    claims_block = format_claims_for_case(db, case.id)
 
     reactions_block = format_reactions_for_case(db, case.id)
 

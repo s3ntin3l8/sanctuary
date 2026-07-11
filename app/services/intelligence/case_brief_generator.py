@@ -20,6 +20,10 @@ from app.services.intelligence._court_identity import (
     is_third_party_default_name,
 )
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.claim_context import (
+    format_claims_for_case,
+    format_entities_for_case,
+)
 from app.services.intelligence.prompts import CASE_BRIEF_SYSTEM
 from app.services.intelligence.reaction_context import format_reactions_for_case
 from app.services.intelligence.schemas import CaseBrief
@@ -228,6 +232,8 @@ def _call_brief_sync(
     docs: list,
     action_items: list,
     reactions_context: str,
+    claims_context: str = "",
+    entities_context: str = "",
     model: str = "",
     db=None,
 ) -> dict:
@@ -276,6 +282,8 @@ Documents ({len(docs)}):
 
 Open action items:
 {action_lines}
+{("\n" + claims_context) if claims_context else ""}
+{("\n" + entities_context) if entities_context else ""}
 {("\n" + reactions_context) if reactions_context else ""}"""
 
     result = call_json_ai(
@@ -336,6 +344,8 @@ def generate(case_id: str) -> None:
         )
 
         reactions_context = format_reactions_for_case(db, case_id)
+        claims_context = format_claims_for_case(db, case_id)
+        entities_context = format_entities_for_case(db, case_id)
         from app.services.user_settings_service import get_party_identity
 
         party_identity = get_party_identity(db)
@@ -350,6 +360,8 @@ def generate(case_id: str) -> None:
                 docs,
                 action_items,
                 reactions_context,
+                claims_context=claims_context,
+                entities_context=entities_context,
                 model=cfg.summary_model,
                 db=db,
             )
