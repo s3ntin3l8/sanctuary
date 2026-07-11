@@ -45,6 +45,11 @@ jobs:
       # ephemeral CI run, not a real secret.
       SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       AUTH_ENABLED: "false"
+      # Without this, uvicorn's stdout is block-buffered and gets discarded on
+      # `kill` at job end — the "Show app server log" step below then shows a
+      # truncated log missing whatever was printed just before the process was
+      # killed (including a request's own unhandled-exception traceback).
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v6
       - name: Set up Python

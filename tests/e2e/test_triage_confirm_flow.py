@@ -15,17 +15,34 @@ This pins the highest-frequency happy-path workflow described in
 CLAUDE.md (`Triage is a strategy session`). Drives the unified
 `/triage/confirm` endpoint via the UI.
 
-KNOWN BUG (xfail below, not a test-authoring issue — every other wrong
-assumption in this file was fixed and verified against the real app):
-`POST /triage/confirm` returns 500 in this CI environment (no reachable
-AI backend). The traceback is `_summarize_document_sync` (ai_summary.py)
-re-raising after logging its own httpx.ConnectError, uncaught by whatever
-calls it as part of the confirm route's post-cascade re-enrichment
-(reset_and_reenrich -> enrich_document_task, or a nested call — the exact
-chain wasn't fully traced). This is a real reliability bug independent of
-testing: a case confirmation should not fail just because optional AI
-summary regeneration can't reach its backend. Tracked as a follow-up, not
-fixed here.
+FIXED (Issue #97): `POST /triage/confirm` used to intermittently 500 under
+concurrent CELERY_TASK_ALWAYS_EAGER load — NOT because of AI-backend
+reachability, despite that being the issue's original (incorrect) diagnosis.
+`_summarize_document_sync` (ai_summary.py) is not on this call path at all;
+its httpx.ConnectError traceback in the original CI logs was unrelated
+background upload-pipeline noise from a concurrent doc.
+
+The confirmed vulnerable code path: confirm_bundle's/confirm_document's own
+`db.commit()` in triage_confirmation.py, contended by concurrent EAGER
+background pipeline threads writing the same tables, can raise
+`sqlalchemy.exc.OperationalError: database is locked` — an unhandled
+exception that both 500'd the request and rolled back the case_id cascade
+(confirmed via a deterministic local repro forcing that exact commit to hit
+the lock). CI's original failures completed the whole 3-test e2e suite in
+~25s total, which rules out a full 60s `busy_timeout` wait on any single
+test — so in CI this was almost certainly the fast-failing case (a WAL
+snapshot-upgrade conflict, i.e. `database is locked` returned immediately
+because a stale read snapshot can't promote to a writer once a concurrent
+connection has committed), not a sustained lock hold running out the clock.
+Either sub-case is the same exception from the same call site, and the fix
+(below) handles both.
+
+Fixed by wrapping the cascade's mutate+commit in `retry_on_db_locked`
+(pipeline_status.py) — the existing codebase pattern for this exact class of
+contention. Note the mutations had to move *inside* the retried closure:
+retry_on_db_locked's own `db.rollback()` (on a caught lock error) expires
+the session's pending attribute changes, so retrying a bare `db.commit()`
+alone would silently no-op instead of re-applying the cascade.
 """
 
 import uuid
@@ -116,11 +133,6 @@ def _force_pipeline_completed(conn, suffix: str) -> None:
     conn.commit()
 
 
-@pytest.mark.xfail(
-    reason="POST /triage/confirm 500s when AI backend is unreachable — "
-    "https://github.com/s3ntin3l8/sanctuary/issues/97",
-    strict=False,
-)
 def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     """Upload → triage → Route → pick case in modal → case cascaded to doc."""
     conn, _cleanup = db_seed

@@ -132,47 +132,62 @@ def confirm_document(
     if not doc:
         return None
 
-    if title is not None:
-        doc.title = title
-    if case_id is not None:
-        doc.case_id = case_id
-    if originator_type is not None:
-        doc.originator_type = originator_type
-    if sender is not None:
-        doc.sender = sender
-    if internal_id is not None:
-        doc.internal_id = internal_id or None
-    if issued_date is not None:
-        doc.issued_date = issued_date
-    if received_date is not None:
-        doc.received_date = received_date
-    if significance_tier is not None:
-        doc.significance_tier = significance_tier
-    if document_type is not None:
-        doc.document_type = document_type
-
-    if finalize:
-        conf = dict(doc.extraction_confidence or {})
-        field_map = {
-            "originator": originator_type,
-            "sender": sender,
-            "issued_date": issued_date,
-            "significance_tier": significance_tier,
-            "document_type": document_type,
-        }
-        for key, val in field_map.items():
-            if val is not None:
-                conf[key] = "user_set"
-        doc.extraction_confidence = conf
-
     from app.services.ingestion.service import compute_review_reasons
+    from app.services.pipeline_status import retry_on_db_locked
 
-    reasons = compute_review_reasons(doc, confirmed=finalize)
-    doc.review_reasons = reasons
-    actionable = [r for r in reasons if r != "missing_parent"]
-    doc.needs_review = bool(actionable)
+    # The mutations live *inside* the retried closure, not just db.commit():
+    # retry_on_db_locked's db.rollback() (on a lock-contention retry) expires
+    # every attribute this session touched, discarding these not-yet-flushed
+    # assignments. Retrying a bare db.commit() after that rollback is a
+    # silent no-op — it "succeeds" (200) without ever writing case_id, which
+    # is worse than the original Issue #97 500 (data loss instead of a
+    # visible error). Redoing the assignments on each attempt keeps every
+    # retry idempotent and correct. A still-failing OperationalError after
+    # all retries is left to propagate (existing 500 handling) — this
+    # cascade isn't optional, unlike the best-effort skip-on-busy pattern
+    # used for the idempotent reload latch in bundle_ops.py.
+    def _apply_and_commit() -> None:
+        if title is not None:
+            doc.title = title
+        if case_id is not None:
+            doc.case_id = case_id
+        if originator_type is not None:
+            doc.originator_type = originator_type
+        if sender is not None:
+            doc.sender = sender
+        if internal_id is not None:
+            doc.internal_id = internal_id or None
+        if issued_date is not None:
+            doc.issued_date = issued_date
+        if received_date is not None:
+            doc.received_date = received_date
+        if significance_tier is not None:
+            doc.significance_tier = significance_tier
+        if document_type is not None:
+            doc.document_type = document_type
 
-    db.commit()
+        if finalize:
+            conf = dict(doc.extraction_confidence or {})
+            field_map = {
+                "originator": originator_type,
+                "sender": sender,
+                "issued_date": issued_date,
+                "significance_tier": significance_tier,
+                "document_type": document_type,
+            }
+            for key, val in field_map.items():
+                if val is not None:
+                    conf[key] = "user_set"
+            doc.extraction_confidence = conf
+
+        reasons = compute_review_reasons(doc, confirmed=finalize)
+        doc.review_reasons = reasons
+        actionable = [r for r in reasons if r != "missing_parent"]
+        doc.needs_review = bool(actionable)
+
+        db.commit()
+
+    retry_on_db_locked(_apply_and_commit, db)
     cleanup_orphaned_drafts(db)
     db.refresh(doc)
     return doc
@@ -194,6 +209,7 @@ def confirm_bundle(
     """
     from app.models.database import ActionItem, Proceeding
     from app.services.ingestion.service import compute_review_reasons
+    from app.services.pipeline_status import retry_on_db_locked
 
     batch_repo = IngestBatchRepository(db)
     batch = batch_repo.get(batch_id)
@@ -201,45 +217,60 @@ def confirm_bundle(
         return None
 
     docs = db.query(Document).filter(Document.ingest_batch_id == batch_id).all()
-
     case = db.query(Case).filter(Case.id == case_id).first()
-    if case and case.is_draft:
-        case.is_draft = False
-
-    if proceeding_id is not None:
-        proc = db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
-        if proc and proc.is_draft:
-            proc.is_draft = False
-
+    proc = (
+        db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
+        if proceeding_id is not None
+        else None
+    )
     doc_ids = [doc.id for doc in docs]
-    for doc in docs:
-        doc.case_id = case_id
-        if proceeding_id is not None:
-            doc.proceeding_id = proceeding_id
-        reasons = compute_review_reasons(doc, confirmed=finalize)
-        doc.review_reasons = reasons
-        actionable = [r for r in reasons if r != "missing_parent"]
-        doc.needs_review = bool(actionable)
-
-    # Cascade case/proceeding to ActionItems still parked under _TRIAGE.
-    if doc_ids:
-        orphaned = db.query(ActionItem).filter(
+    orphaned = (
+        db.query(ActionItem)
+        .filter(
             ActionItem.source_document_id.in_(doc_ids),
             ActionItem.case_id == "_TRIAGE",
         )
+        .all()
+        if doc_ids
+        else []
+    )
+
+    # See confirm_document's matching comment: the mutations below live
+    # inside the retried closure, not just db.commit() — retry_on_db_locked's
+    # db.rollback() (on a lock-contention retry) expires every attribute
+    # these objects carry, so a bare-commit retry would silently no-op
+    # instead of re-applying the cascade. Redoing the assignments on each
+    # attempt keeps every retry idempotent and correct.
+    def _apply_and_commit() -> None:
+        if case and case.is_draft:
+            case.is_draft = False
+        if proc and proc.is_draft:
+            proc.is_draft = False
+
+        for doc in docs:
+            doc.case_id = case_id
+            if proceeding_id is not None:
+                doc.proceeding_id = proceeding_id
+            reasons = compute_review_reasons(doc, confirmed=finalize)
+            doc.review_reasons = reasons
+            actionable = [r for r in reasons if r != "missing_parent"]
+            doc.needs_review = bool(actionable)
+
+        # Cascade case/proceeding to ActionItems still parked under _TRIAGE.
         for item in orphaned:
             item.case_id = case_id
             if proceeding_id is not None and item.proceeding_id is None:
                 item.proceeding_id = proceeding_id
 
-    batch.case_id = case_id
-    if proceeding_id is not None:
-        batch.proceeding_id = proceeding_id
+        batch.case_id = case_id
+        if proceeding_id is not None:
+            batch.proceeding_id = proceeding_id
+        if finalize:
+            batch.status = IngestBatchStatus.COMPLETED
 
-    if finalize:
-        batch.status = IngestBatchStatus.COMPLETED
+        db.commit()
 
-    db.commit()
+    retry_on_db_locked(_apply_and_commit, db)
     cleanup_orphaned_drafts(db)
     db.refresh(batch)
     return batch
