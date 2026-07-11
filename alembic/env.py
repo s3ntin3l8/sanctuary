@@ -74,15 +74,17 @@ def run_migrations_offline() -> None:
 
 
 def _load_extensions(dbapi_conn, _):
-    """Load sqlite-vec extension so vec0 virtual tables work in migrations."""
-    try:
-        import sqlite_vec
+    """Load sqlite-vec extension so vec0 virtual tables work in migrations.
 
-        dbapi_conn.enable_load_extension(True)
-        sqlite_vec.load(dbapi_conn)
-        dbapi_conn.enable_load_extension(False)
-    except Exception:
-        pass
+    No try/except: a real load failure here should fail the migration loudly,
+    not be silently swallowed — a migration that creates vec0 tables would
+    fail anyway (with a much less clear error) if this didn't work.
+    """
+    import sqlite_vec
+
+    dbapi_conn.enable_load_extension(True)
+    sqlite_vec.load(dbapi_conn)
+    dbapi_conn.enable_load_extension(False)
 
 
 def run_migrations_online() -> None:

@@ -137,8 +137,7 @@ async def nearest_claims(
     rows = db.execute(
         text(
             "SELECT claim_id, distance FROM claim_vectors "
-            "WHERE embedding MATCH :blob "
-            "ORDER BY distance LIMIT :k"
+            "WHERE embedding MATCH :blob AND k = :k"
         ),
         {"blob": blob, "k": fetch_k},
     ).fetchall()

@@ -176,14 +176,14 @@ def test_engine():
     from sqlalchemy import text
 
     def _load_extensions(dbapi_conn, _):
-        try:
-            import sqlite_vec
+        # No try/except: a real load failure here should raise immediately with
+        # a clear traceback, not be swallowed. The CREATE VIRTUAL TABLE below
+        # would fail anyway (with a much less clear error) if this didn't work.
+        import sqlite_vec
 
-            dbapi_conn.enable_load_extension(True)
-            sqlite_vec.load(dbapi_conn)
-            dbapi_conn.enable_load_extension(False)
-        except Exception:
-            pass
+        dbapi_conn.enable_load_extension(True)
+        sqlite_vec.load(dbapi_conn)
+        dbapi_conn.enable_load_extension(False)
 
         # Mirror production PRAGMA settings so cascade FK behaviour, etc. are
         # actually enforced under tests. Without this, `Document.case_id`'s
