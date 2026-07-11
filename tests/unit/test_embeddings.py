@@ -273,6 +273,20 @@ def test_nearest_document_ids_dedupes_multiple_chunk_hits_from_same_doc(
 
 
 @pytest.mark.unit
+def test_nearest_chunks_propagates_unexpected_exception(db_session):
+    """The narrowed except in nearest_chunks only degrades on provider-down
+    (httpx.HTTPError / RuntimeError) or a sqlite-vec OperationalError. An
+    unrelated bug must propagate instead of silently returning []."""
+    with patch(
+        "app.services.ai_provider.embed_provider.get_embedding_params",
+        new_callable=AsyncMock,
+        side_effect=TypeError("simulated unexpected bug"),
+    ):
+        with pytest.raises(TypeError, match="simulated unexpected bug"):
+            nearest_chunks("anything", db_session, k=5)
+
+
+@pytest.mark.unit
 def test_nearest_document_ids_dim_mismatch_returns_empty(db_session):
     """A wrong-dimension embedding is rejected (never reaches the vec query)."""
     resp = MagicMock()

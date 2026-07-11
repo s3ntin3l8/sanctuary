@@ -129,6 +129,7 @@ uvicorn==0.51.0
 websockets==16.1
 xlsxwriter==3.2.9
 sqlite-vec==0.1.9
+pysqlite3-binary==0.5.4.post2
 celery==5.6.3
 redis==8.0.1
 google-auth-oauthlib==1.4.0

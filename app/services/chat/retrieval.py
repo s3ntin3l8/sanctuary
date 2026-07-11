@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, DocumentChunk
@@ -88,7 +89,7 @@ async def retrieve_top_docs(
         rows = db.execute(
             text(
                 "SELECT chunk_id, distance FROM document_chunk_vectors "
-                "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
+                "WHERE embedding MATCH :blob AND k = :k"
             ),
             {"blob": blob, "k": k * _CHUNK_OVERSAMPLE},
         ).fetchall()
@@ -136,8 +137,16 @@ async def retrieve_top_docs(
             if doc_id in docs_by_id
         ]
 
-    except Exception as e:
-        logger.debug(f"Vector retrieval failed ({e}), falling back to recency")
+    except (httpx.HTTPError, RuntimeError, ValueError, OperationalError) as e:
+        # httpx.HTTPError / RuntimeError: embedding provider down or unreachable
+        # (detect_provider / get_embedding_params raise RuntimeError when no
+        # endpoint responds — see ai_provider.py). ValueError: dim mismatch or
+        # no chunk matches (raised above as intentional control-flow to reach
+        # this fallback). OperationalError: sqlite-vec query failure (e.g. host
+        # SQLite below the vec0 KNN floor). All are legitimate degrade-to-recency
+        # conditions. Anything else is an unexpected bug and should propagate
+        # instead of silently becoming a wrong-looking result.
+        logger.warning(f"Vector retrieval failed ({e}), falling back to recency")
         recency_query = db.query(Document).filter(Document.case_id == case_id)
         if proceeding_id:
             recency_query = recency_query.filter(

@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -94,6 +93,12 @@ def check_ollama():
 def check_sqlite_vec():
     print("[*] Checking sqlite-vec support...")
     try:
+        # Imported here, not at module top: app.config (imported above) swaps
+        # sqlite3 -> pysqlite3 as a side effect, and that swap must happen before
+        # this name is bound, or this check would silently exercise the host's
+        # stdlib sqlite3 instead of the bundled one.
+        import sqlite3
+
         import sqlite_vec
 
         conn = sqlite3.connect(":memory:")

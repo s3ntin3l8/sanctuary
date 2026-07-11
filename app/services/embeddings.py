@@ -2,6 +2,7 @@ import logging
 import time
 
 import httpx
+from sqlalchemy.exc import OperationalError
 
 from app.config import SessionLocal
 from app.models.database import Document
@@ -206,8 +207,10 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
     """Return up to `k` chunk hits ranked by vector similarity, closest first.
 
     Each hit is {chunk_id, document_id, chunk_index, text, distance}.
-    Synchronous, best-effort: returns ``[]`` on any failure (provider down,
-    dim mismatch, sqlite-vec unavailable) so callers can fall back gracefully.
+    Synchronous, best-effort: returns ``[]`` on provider-down or a sqlite-vec
+    query failure so callers can fall back gracefully. Dim-mismatch and
+    empty-result are handled by explicit early returns below, not this
+    fallback. Any other exception is an unexpected bug and propagates.
     """
     from sqlalchemy import text as sa_text
 
@@ -236,7 +239,7 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
         rows = db.execute(
             sa_text(
                 "SELECT chunk_id, distance FROM document_chunk_vectors "
-                "WHERE embedding MATCH :blob ORDER BY distance LIMIT :k"
+                "WHERE embedding MATCH :blob AND k = :k"
             ),
             {"blob": blob, "k": k},
         ).fetchall()
@@ -262,8 +265,10 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
             for cid in chunk_ids
             if cid in by_id
         ]
-    except Exception as e:  # noqa: BLE001 — best-effort; never block the caller
-        logger.debug("nearest_chunks unavailable: %s", e)
+    except (httpx.HTTPError, RuntimeError, OperationalError) as e:
+        # RuntimeError: detect_provider / get_embedding_params raise this when
+        # no AI endpoint responds — see ai_provider.py.
+        logger.warning("nearest_chunks unavailable: %s", e)
         return []
 
 
