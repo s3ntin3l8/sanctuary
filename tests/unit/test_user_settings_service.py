@@ -399,3 +399,83 @@ def test_set_worker_concurrency_records_audit(app_row, db_session):
         .first()
     )
     assert log is not None
+
+
+# ── ocr worker concurrency (global AppSettings) ──────────────────────────────
+
+
+@pytest.mark.unit
+def test_get_ocr_concurrency_default_when_unset(app_row, db_session):
+    from app.services.user_settings_service import (
+        DEFAULT_OCR_CONCURRENCY,
+        get_ocr_concurrency,
+    )
+
+    assert get_ocr_concurrency(db_session) == DEFAULT_OCR_CONCURRENCY
+
+
+@pytest.mark.unit
+def test_set_get_ocr_concurrency_roundtrip(app_row, db_session):
+    from app.services.user_settings_service import (
+        get_ocr_concurrency,
+        set_ocr_concurrency,
+    )
+
+    set_ocr_concurrency(db_session, 6)
+    db_session.refresh(app_row)
+    assert get_ocr_concurrency(db_session) == 6
+    assert app_row.settings_json["workers"]["ocr_concurrency"] == 6
+
+
+@pytest.mark.unit
+def test_ocr_and_ai_concurrency_are_independent(app_row, db_session):
+    """Setting one worker's concurrency must not disturb the other's key."""
+    from app.services.user_settings_service import (
+        get_worker_concurrency,
+        set_ocr_concurrency,
+        set_worker_concurrency,
+    )
+
+    set_worker_concurrency(db_session, 5)
+    set_ocr_concurrency(db_session, 7)
+    db_session.refresh(app_row)
+    assert get_worker_concurrency(db_session) == 5
+    assert app_row.settings_json["workers"]["ai_concurrency"] == 5
+    assert app_row.settings_json["workers"]["ocr_concurrency"] == 7
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad", [0, 17, -1, 2.5, "x", None])
+def test_set_ocr_concurrency_rejects_out_of_bounds(app_row, db_session, bad):
+    from app.services.user_settings_service import set_ocr_concurrency
+
+    with pytest.raises(ValueError):
+        set_ocr_concurrency(db_session, bad)
+
+
+@pytest.mark.unit
+def test_get_ocr_concurrency_clamps_invalid_stored(app_row, db_session):
+    """A corrupt/out-of-range stored value falls back to the default."""
+    from app.services.user_settings_service import (
+        DEFAULT_OCR_CONCURRENCY,
+        get_ocr_concurrency,
+    )
+
+    app_row.settings_json = {"workers": {"ocr_concurrency": 99}}
+    db_session.commit()
+    assert get_ocr_concurrency(db_session) == DEFAULT_OCR_CONCURRENCY
+
+
+@pytest.mark.unit
+def test_set_ocr_concurrency_records_audit(app_row, db_session):
+    from app.models.database import AuditLog
+    from app.models.enums import AuditEventType
+    from app.services.user_settings_service import set_ocr_concurrency
+
+    set_ocr_concurrency(db_session, 4)
+    log = (
+        db_session.query(AuditLog)
+        .filter_by(event_type=AuditEventType.SETTINGS_WORKERS_CHANGED)
+        .first()
+    )
+    assert log is not None

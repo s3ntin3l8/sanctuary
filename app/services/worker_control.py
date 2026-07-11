@@ -1,4 +1,4 @@
-"""Live Celery worker pool control — resize the `ai` worker without a restart.
+"""Live Celery worker pool control — resize workers without a restart.
 
 Uses Celery's remote-control API (the same pidbox bus already used by
 settings_maintenance's `control.purge()`). `--without-gossip/mingle/heartbeat`
@@ -11,17 +11,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Worker node-name prefix for the ai queue (compose runs `-n ai@%h`).
+# Worker node-name prefixes (compose/Makefile run `-n ai@%h` / `-n ingest@%h`).
 _AI_NODE_PREFIX = "ai@"
+_INGEST_NODE_PREFIX = "ingest@"
 
 
-def apply_ai_concurrency(target: int) -> dict:
-    """Resize every live `ai@` worker's prefork pool to `target` processes.
+def _resize_nodes(target: int, node_prefix: str) -> dict:
+    """Resize every live worker whose node name starts with `node_prefix`.
 
     Returns {"live": bool, "nodes": [{"node", "from", "to"}, ...]}.
-    `live` is False when no ai worker answered the control ping (stats() is
-    None/empty) — the caller persists the value regardless; it applies at the
-    worker's next boot via the entrypoint.
+    `live` is False when no matching worker answered the control ping
+    (stats() is None/empty) — the caller persists the value regardless; it
+    applies at the worker's next boot via the entrypoint.
     """
     from app.tasks.celery_app import celery_app
 
@@ -32,7 +33,7 @@ def apply_ai_concurrency(target: int) -> dict:
 
     applied: list[dict] = []
     for node, node_stats in stats.items():
-        if not node.startswith(_AI_NODE_PREFIX):
+        if not node.startswith(node_prefix):
             continue
         current = (node_stats.get("pool") or {}).get("max-concurrency")
         if not isinstance(current, int):
@@ -47,3 +48,13 @@ def apply_ai_concurrency(target: int) -> dict:
         logger.info("worker_control: resized %s pool %d -> %d", node, current, target)
 
     return {"live": bool(applied), "nodes": applied}
+
+
+def apply_ai_concurrency(target: int) -> dict:
+    """Resize every live `ai@` worker's prefork pool to `target` processes."""
+    return _resize_nodes(target, _AI_NODE_PREFIX)
+
+
+def apply_ocr_concurrency(target: int) -> dict:
+    """Resize every live `ingest@` worker's prefork pool to `target` processes."""
+    return _resize_nodes(target, _INGEST_NODE_PREFIX)

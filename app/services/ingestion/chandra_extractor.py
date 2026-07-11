@@ -34,6 +34,7 @@ from markdownify import markdownify
 from app.config import AI_READ_TIMEOUT
 from app.services.ai_config import OcrConfig
 from app.services.model_gate import model_gate
+from app.services.ocr_slots import ocr_slot
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +46,14 @@ CHANDRA_MAX_OUTPUT_TOKENS = 12384
 CHANDRA_TEMPERATURE = 0.0
 CHANDRA_TOP_P = 0.1
 
-# Page-parallel concurrency cap. vLLM batches concurrent requests, so this
-# is the per-document parallelism we ask for. 8 matches the benchmark
-# config which was stable against the 24GB single-GPU LMStudio setup.
-DEFAULT_PAGE_WORKERS = 8
+# Page-parallel concurrency cap, used only when the caller doesn't resolve
+# the "OCR Concurrency" Settings value (see get_ocr_concurrency in
+# app.services.user_settings_service). Kept in sync with that setting's
+# default by convention. The real global cap across documents is
+# app.services.ocr_slots — this just bounds a single document's own thread
+# pool so a lone large scan doesn't spin up more threads than there are
+# slots to fill.
+DEFAULT_PAGE_WORKERS = 4
 
 
 # Verbatim from chandra/prompts.py — the model is trained on this exact text,
@@ -292,13 +297,19 @@ def extract_with_chandra(
         idx, png = item
         page_started = time.perf_counter()
         try:
-            html = _ocr_one_page(
-                png,
-                url=url,
-                headers=headers,
-                model=ocr_config.ocr_model,
-                timeout=timeout,
-            )
+            # Global cross-document slot, held only for the network call —
+            # this is what lets N single-page documents (each with a
+            # thread pool of 1) still saturate N slots together, and lets
+            # a mixed batch (e.g. 1-page + 8-page) split the remaining
+            # slots instead of the big doc hogging up to 8 on its own.
+            with ocr_slot(label=f"{file_path}:page:{idx}"):
+                html = _ocr_one_page(
+                    png,
+                    url=url,
+                    headers=headers,
+                    model=ocr_config.ocr_model,
+                    timeout=timeout,
+                )
             md = _html_to_markdown(html)
             return idx, html, md, time.perf_counter() - page_started, None
         except Exception as exc:  # noqa: BLE001 — per-page resilience
@@ -318,7 +329,11 @@ def extract_with_chandra(
     # Hold the chandra family lock for the whole document so the per-page
     # ThreadPoolExecutor below shares one gate acquisition. This prevents
     # cross-family thrashing with qwen when the ai workers are also active
-    # — same-family OCR calls coalesce naturally on the loaded model.
+    # — same-family OCR calls (from this doc AND any other doc extracting
+    # concurrently) coalesce naturally on the loaded model. The actual
+    # cross-document concurrency cap is the per-page ocr_slot() semaphore
+    # inside _ocr_safe above, not this gate — chandra holders don't
+    # exclude each other here.
     with model_gate("chandra", label=f"chandra-extract:{file_path}"):
         with ThreadPoolExecutor(max_workers=workers) as pool:
             # executor.map preserves input order — needed for page ordering.

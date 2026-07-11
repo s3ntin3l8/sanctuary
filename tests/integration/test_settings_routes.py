@@ -468,6 +468,54 @@ def test_set_worker_concurrency_non_integer():
     assert response.status_code == 422
 
 
+@pytest.mark.integration
+def test_set_ocr_concurrency_valid(db_session):
+    """POST /api/settings/ai/ocr-concurrency persists + republishes the Redis
+    limit key + emits an audit event — independently of ai_concurrency."""
+    from unittest.mock import patch
+
+    with (
+        patch(
+            "app.services.worker_control.apply_ocr_concurrency",
+            return_value={"live": False, "nodes": []},
+        ),
+        patch("app.services.ocr_slots.set_limit") as set_limit,
+    ):
+        response = client.post(
+            "/api/settings/ai/ocr-concurrency", data={"concurrency": "5"}
+        )
+    assert response.status_code == 200
+    set_limit.assert_called_once_with(5)
+
+    db_session.expire_all()
+    settings = db_session.query(AppSettings).first()
+    assert settings.settings_json.get("workers", {}).get("ocr_concurrency") == 5
+    log = (
+        db_session.query(AuditLog)
+        .filter_by(event_type=AuditEventType.SETTINGS_WORKERS_CHANGED)
+        .first()
+    )
+    assert log is not None
+
+
+@pytest.mark.integration
+def test_set_ocr_concurrency_out_of_bounds():
+    """Out-of-range value is rejected with 400 (no worker call needed)."""
+    response = client.post(
+        "/api/settings/ai/ocr-concurrency", data={"concurrency": "99"}
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.integration
+def test_set_ocr_concurrency_non_integer():
+    """Non-integer form value is rejected by FastAPI coercion (422)."""
+    response = client.post(
+        "/api/settings/ai/ocr-concurrency", data={"concurrency": "abc"}
+    )
+    assert response.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Settings page renders
 # ---------------------------------------------------------------------------

@@ -30,13 +30,17 @@ services:
         condition: service_healthy
 
   # Two-queue split (see app/tasks/celery_app.py): heavy Docling/OCR is pinned to
-  # `ingest` (concurrency=1, serialized); LLM/embeddings/light I/O run on `ai`.
+  # `ingest` (concurrency UI-controlled, default 4 — see get_ocr_concurrency /
+  # app/services/ocr_slots.py for the matching per-page semaphore); LLM/
+  # embeddings/light I/O run on `ai`.
   # --max-tasks-per-child recycles pool children to cap RSS creep (Docling/torch);
   # --without-{gossip,mingle,heartbeat} trims chatter for this small static cluster.
+  # The entrypoint resolves --concurrency from the DB (UI-controlled, see
+  # docker/worker-ingest-entrypoint.sh) so a Settings change survives restarts.
   worker-ingest:
     build: .
     restart: unless-stopped
-    command: python -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=1 --max-tasks-per-child=20 --without-gossip --without-mingle --without-heartbeat
+    command: ["sh", "/app/docker/worker-ingest-entrypoint.sh"]
     env_file:
       - .env
     environment:

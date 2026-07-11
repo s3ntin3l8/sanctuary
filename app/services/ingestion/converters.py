@@ -780,13 +780,17 @@ def convert_file(
                 ChandraExtractionError,
                 extract_with_chandra,
             )
+            from app.services.user_settings_service import get_ocr_concurrency
 
             session = SessionLocal()
             try:
                 ocr_cfg = get_ocr_config(session)
+                page_workers = get_ocr_concurrency(session)
             finally:
                 session.close()
-            return extract_with_chandra(file_path, ocr_config=ocr_cfg)
+            return extract_with_chandra(
+                file_path, ocr_config=ocr_cfg, max_workers=page_workers
+            )
         except ChandraExtractionError as exc:
             logger.warning(
                 "Chandra extraction failed for %s — falling back to Docling: %s",

@@ -459,8 +459,8 @@ def get_worker_concurrency(db) -> int:
     """Return the configured `ai` Celery worker concurrency (1–16, default 2).
 
     Read at worker boot (via app.cli.worker_concurrency) so the DB is the single
-    source of truth, and shown in the Settings UI. Only the `ai` queue is
-    user-tunable; `ingest` stays serialized at 1 by design.
+    source of truth, and shown in the Settings UI. The `ingest` queue has its
+    own independent knob — see get_ocr_concurrency().
     """
     data = _get_or_create_app(db).settings_json or {}
     val = data.get("workers", {}).get("ai_concurrency")
@@ -487,6 +487,50 @@ def set_worker_concurrency(db, concurrency: int) -> None:
         db,
         AuditEventType.SETTINGS_WORKERS_CHANGED,
         payload={"ai_concurrency": concurrency},
+    )
+    db.commit()
+
+
+OCR_CONCURRENCY_MIN = 1
+OCR_CONCURRENCY_MAX = 16
+DEFAULT_OCR_CONCURRENCY = 4
+
+
+def get_ocr_concurrency(db) -> int:
+    """Return the configured global OCR-model slot count (1-16, default 4).
+
+    This caps two things together: the `ingest` Celery worker's prefork pool
+    (how many documents are extracted at once) and the per-page
+    ``ocr_slots.ocr_slot()`` semaphore (the total concurrent OCR-model HTTP
+    calls across all of those documents) — see app/services/ocr_slots.py.
+    Read at worker boot (via app.cli.ocr_concurrency) so the DB is the single
+    source of truth, and shown in the Settings UI.
+    """
+    data = _get_or_create_app(db).settings_json or {}
+    val = data.get("workers", {}).get("ocr_concurrency")
+    if isinstance(val, int) and OCR_CONCURRENCY_MIN <= val <= OCR_CONCURRENCY_MAX:
+        return val
+    return DEFAULT_OCR_CONCURRENCY
+
+
+def set_ocr_concurrency(db, concurrency: int) -> None:
+    """Persist the OCR-slot concurrency. Raises ValueError if out of bounds."""
+    if not isinstance(concurrency, int) or not (
+        OCR_CONCURRENCY_MIN <= concurrency <= OCR_CONCURRENCY_MAX
+    ):
+        raise ValueError(
+            f"Concurrency must be an integer {OCR_CONCURRENCY_MIN}–{OCR_CONCURRENCY_MAX}"
+        )
+    settings = _get_or_create_app(db)
+    data = dict(settings.settings_json or {})
+    workers = dict(data.get("workers", {}))
+    workers["ocr_concurrency"] = concurrency
+    data["workers"] = workers
+    settings.settings_json = data
+    audit_service.record(
+        db,
+        AuditEventType.SETTINGS_WORKERS_CHANGED,
+        payload={"ocr_concurrency": concurrency},
     )
     db.commit()
 
