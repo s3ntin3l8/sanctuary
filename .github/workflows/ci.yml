@@ -43,7 +43,7 @@ jobs:
       # app/main.py refuses to boot with the default session secret while
       # AUTH_ENABLED=true (the repo default) — a throwaway value scoped to this
       # ephemeral CI run, not a real secret.
-      SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret"
+      SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       AUTH_ENABLED: "false"
     steps:
       - uses: actions/checkout@v6
@@ -59,9 +59,19 @@ jobs:
       - name: Install Playwright browser
         run: playwright install --with-deps chromium
       - name: Start Redis
-        run: docker compose up redis -d --wait
+        # web/worker-* services declare `env_file: .env`, which doesn't exist in CI
+        # (gitignored). `up redis` alone tolerates the missing file, but `stop`
+        # validates the whole compose model, so touch a harmless empty one up front.
+        run: |
+          touch .env
+          docker compose up redis -d --wait
       - name: Run migrations
-        run: alembic upgrade head
+        # DATA_DIR.mkdir() in app/config.py only fires if something imports
+        # app.config; alembic/env.py doesn't reliably trigger that, so sqlite
+        # fails to open data/sanctuary.db on a fresh checkout without this.
+        run: |
+          mkdir -p data
+          alembic upgrade head
       - name: Start app server
         run: |
           uvicorn app.main:app --host 127.0.0.1 --port 8000 &
