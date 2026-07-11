@@ -36,7 +36,7 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         db.commit()
 
     async def mock_emb_async_impl(doc_id):
-        pass  # embedding stored in document_vectors; mocked out here
+        pass  # chunk embeddings stored in document_chunk_vectors; mocked out here
 
     mock_res = {"content": mock_markdown, "metadata": {"pages": 1}, "chunks": []}
 

@@ -212,6 +212,9 @@ class Document(Base):
     pins = relationship(
         "DocumentPin", back_populates="document", cascade="all, delete-orphan"
     )
+    chunks = relationship(
+        "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
+    )
     reactions = relationship(
         "UserReaction", back_populates="document", cascade="all, delete-orphan"
     )
@@ -910,6 +913,29 @@ class DocumentPin(Base):
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
     document = relationship("Document", back_populates="pins")
+
+
+class DocumentChunk(Base):
+    """A section-level slice of a document's extracted text.
+
+    Embedded individually in the `document_chunk_vectors` vec0 table for
+    passage-level retrieval — `id` here is that table's `chunk_id`. vec0
+    can't hold an FK, so the two tables are linked by convention (this id),
+    not a declared constraint; writers must keep them in lockstep.
+    """
+
+    __tablename__ = "document_chunks"
+    __table_args__ = (Index("ix_document_chunks_document", "document_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+
+    document = relationship("Document", back_populates="chunks")
 
 
 class User(Base):

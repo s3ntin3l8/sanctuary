@@ -31,7 +31,8 @@ _PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
 @router.post("/reset-enrichment", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
-    vectors_cleared = db.execute(text("DELETE FROM document_vectors")).rowcount
+    db.execute(text("DELETE FROM document_chunk_vectors"))
+    vectors_cleared = db.execute(text("DELETE FROM document_chunks")).rowcount
 
     result = db.execute(
         text(
@@ -68,7 +69,7 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     # ondelete="CASCADE" FK to users, and PRAGMA foreign_keys=ON is set on every
     # connection (app/config.py), so deleting users would cascade-delete
     # user_settings regardless of this skip list.
-    db.execute(text("DELETE FROM document_vectors"))
+    db.execute(text("DELETE FROM document_chunk_vectors"))
     rows_deleted = 0
     for table in reversed(Base.metadata.sorted_tables):
         if table.name in _PRESERVED_TABLES:

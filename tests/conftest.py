@@ -197,7 +197,7 @@ def test_engine():
     with engine.connect() as conn:
         conn.execute(
             text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS document_vectors USING vec0(document_id INTEGER PRIMARY KEY, embedding float[768])"
+                "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunk_vectors USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[768])"
             )
         )
         conn.commit()
@@ -359,13 +359,14 @@ def cleanup_per_test(db_session):
     db_session.rollback()
     for table in reversed(Base.metadata.sorted_tables):
         db_session.execute(table.delete())
-    # The document_vectors vec0 table is created manually (not in Base.metadata),
-    # so the loop above never clears it. Without this, a committed embedding row
-    # leaks into later tests and collides on document_id (rowids are reused after
-    # the wipe) — e.g. a fresh doc reusing id=1 fails its document_vectors INSERT.
+    # The document_chunk_vectors vec0 table is created manually (not in
+    # Base.metadata), so the loop above never clears it. Without this, a
+    # committed embedding row leaks into later tests and collides on
+    # chunk_id (rowids are reused after the wipe) — e.g. a fresh chunk
+    # reusing id=1 fails its document_chunk_vectors INSERT.
     from sqlalchemy import text as _sa_text
 
-    db_session.execute(_sa_text("DELETE FROM document_vectors"))
+    db_session.execute(_sa_text("DELETE FROM document_chunk_vectors"))
     db_session.commit()
     # Drop identity-mapped instances of the just-wiped rows so re-seeding the
     # AppSettings singleton doesn't collide with a stale in-session object.
