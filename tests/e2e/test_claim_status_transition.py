@@ -27,29 +27,49 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
 
     resp = api_client.post(
         "/cases",
-        data={"case_id": case_id, "title": f"E2E Claim {suffix}"},
+        data={
+            "case_id": case_id,
+            "title": f"E2E Claim {suffix}",
+            "court_name": "AG Hamburg",
+        },
         follow_redirects=False,
     )
     assert resp.status_code in (200, 303)
 
     now = datetime.now().isoformat(sep=" ")
     cur = conn.cursor()
+    # status is NOT NULL with only an ORM-side (Python) default — raw SQL
+    # bypasses that, so it must be supplied explicitly here. Enum-backed
+    # columns store the member NAME (uppercase), not StrEnum's lowercase
+    # .value, EXCEPT pipeline_state, which opts into .value via
+    # values_callable — see app/models/database.py.
     cur.execute(
         """INSERT INTO documents
            (title, case_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state)
-           VALUES (?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state, status)
+           VALUES (?, ?, 'OWN', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
         (f"Claim Source {suffix}", case_id, now),
     )
     source_doc_id = cur.lastrowid
+    # claims has no case_id/source_document_id column — Wave 2A
+    # (d2c4f9a1b6e8_drop_claim_case_columns) made claims global/cross-case.
+    # Case context lives entirely on ClaimEvidence: claims_for_case() (see
+    # app/repositories/claim.py) joins ClaimEvidence -> Document.case_id, and
+    # a ClaimEvidence(role=ASSERTS) row is the canonical "originated by" link
+    # (claims_asserted_by_document()).
     cur.execute(
         """INSERT INTO claims
-           (case_id, source_document_id, claim_text, claim_type, status,
-            first_made_at, last_updated_at)
-           VALUES (?, ?, ?, 'factual', 'asserted', ?, ?)""",
-        (case_id, source_doc_id, f"Test claim {suffix}", now, now),
+           (claim_text, claim_type, status, first_made_at, last_updated_at)
+           VALUES (?, 'FACTUAL', 'ASSERTED', ?, ?)""",
+        (f"Test claim {suffix}", now, now),
     )
     claim_id = cur.lastrowid
+    cur.execute(
+        """INSERT INTO claim_evidence
+           (claim_id, document_id, role, confidence, ingest_date)
+           VALUES (?, ?, 'ASSERTS', 'AI_DETECTED', ?)""",
+        (claim_id, source_doc_id, now),
+    )
     conn.commit()
 
     proc_row = conn.execute(
@@ -73,7 +93,9 @@ def test_asserted_claim_can_be_marked_established(page: Page, api_client, db_see
     """ASSERTED → ESTABLISHED transition swaps the claim card in place."""
     case_id, claim_id = _seed_case_with_claim(api_client, db_seed)
 
-    page.goto(f"/cases/{case_id}?view=truthmap")
+    # dashboard.js reads ?view= directly into Alpine state with no mapping;
+    # the truth-map pane's x-show checks view === 'truth' (not 'truthmap').
+    page.goto(f"/cases/{case_id}?view=truth")
 
     card = page.locator(f"#claim-card-{claim_id}")
     expect(card).to_be_visible(timeout=10_000)

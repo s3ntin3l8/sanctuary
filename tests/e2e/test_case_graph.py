@@ -46,26 +46,31 @@ def _seed_case_with_two_docs(api_client, db_seed) -> tuple[str, list[int]]:
 
     now = datetime.now().isoformat(sep=" ")
     cur = conn.cursor()
+    # status is NOT NULL with only an ORM-side (Python) default — raw SQL
+    # bypasses that, so it must be supplied explicitly here. Enum-backed
+    # columns store the member NAME (uppercase), not StrEnum's lowercase
+    # .value, EXCEPT pipeline_state, which opts into .value via
+    # values_callable — see app/models/database.py.
     cur.execute(
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state)
-           VALUES (?, ?, ?, 'court', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state, status)
+           VALUES (?, ?, ?, 'COURT', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
         (f"Graph Doc A {suffix}", case_id, proceeding_id, now),
     )
     doc_a = cur.lastrowid
     cur.execute(
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
-            needs_review, court_relay, thread_open, page_count, pipeline_state)
-           VALUES (?, ?, ?, 'own', 'standalone', ?, 0, 0, 0, 1, 'completed')""",
+            needs_review, court_relay, thread_open, page_count, pipeline_state, status)
+           VALUES (?, ?, ?, 'OWN', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
         (f"Graph Doc B {suffix}", case_id, proceeding_id, now),
     )
     doc_b = cur.lastrowid
     cur.execute(
         """INSERT INTO document_relationships
            (from_document_id, to_document_id, relationship_type, confidence, ingest_date)
-           VALUES (?, ?, 'replies_to', 'ai_detected', ?)""",
+           VALUES (?, ?, 'REPLIES_TO', 'AI_DETECTED', ?)""",
         (doc_b, doc_a, now),
     )
     conn.commit()
@@ -93,9 +98,9 @@ def test_case_dashboard_renders_graph_svg_with_nodes(page: Page, api_client, db_
     graph = page.locator("#graph-container, .case-graph, svg").first
     expect(graph).to_be_visible(timeout=10_000)
 
-    # Each seeded document should render as a node. The graph uses
-    # data-doc-id attributes on its rendered group elements; if those attrs
-    # change, this test will surface the contract drift.
+    # Each seeded document should render as a node. correspondence_graph.html
+    # sets data-id="{{ node.id }}" (node.id == doc.id) on rendered node
+    # groups; if that attribute changes, this test will surface the drift.
     for doc_id in doc_ids:
-        node = page.locator(f"[data-doc-id='{doc_id}']").first
+        node = page.locator(f"[data-id='{doc_id}']").first
         expect(node).to_be_attached(timeout=5_000)
