@@ -499,6 +499,19 @@ class AccessLogMiddleware:
         method = scope.get("method", "-")
         path = scope.get("path", "-")
 
+        if method in _MUTATING_METHODS:
+            # Entry marker for mutating requests only (GETs would flood
+            # production logs). Exists to settle a still-open question from
+            # #98's second recurrence: even with the send_wrapper fix below
+            # and a `BaseException` catch, a confirmed CI 500 produced no
+            # `access:`/exception line at all. That means either (a) the
+            # request never reached this middleware's self.app(...) call, or
+            # (b) it did, but exited some other way (e.g. Starlette's
+            # ServerErrorMiddleware, which sits *outside* this middleware).
+            # This line's presence or absence in the next occurrence's log
+            # settles (a) vs (b) directly.
+            self._logger.info("access: entry %s %s", method, path)
+
         async def send_wrapper(message):
             # Log at the moment the status line goes out, not after
             # self.app(...) returns. Issue #98's 500 was rendered and sent to
