@@ -81,6 +81,49 @@ jobs:
         run: |
           touch .env
           docker compose up db redis -d --wait
+      - name: Diagnose container network reachability
+        # Temporary (see PR #107 discussion): the migrations step below has been
+        # hitting a persistent "connection refused" against localhost:5432 despite
+        # docker compose reporting the db container healthy. This narrows down
+        # whether published container ports are reachable from this runner's own
+        # shell at all (e.g. runner-is-itself-a-container / Docker-outside-of-
+        # Docker topology, where sibling containers' published ports land on the
+        # host, not the runner's netns) or whether it's specific to the db
+        # service/port. redis (6379) is a second fixed-port compose-published
+        # service never otherwise exercised over the network in this job
+        # (CELERY_TASK_ALWAYS_EAGER=true bypasses the broker), so it's a clean
+        # second data point.
+        run: |
+          echo "== docker ps =="
+          docker ps
+          echo "== docker compose port db 5432 =="
+          docker compose port db 5432 || true
+          echo "== docker compose port redis 6379 =="
+          docker compose port redis 6379 || true
+          echo "== python socket connect: 127.0.0.1:5432 =="
+          python3 -c "
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.settimeout(3)
+          try:
+              s.connect(('127.0.0.1', 5432))
+              print('CONNECTED')
+          except OSError as e:
+              print(f'FAILED: {e}')
+          "
+          echo "== python socket connect: 127.0.0.1:6379 =="
+          python3 -c "
+          import socket
+          s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          s.settimeout(3)
+          try:
+              s.connect(('127.0.0.1', 6379))
+              print('CONNECTED')
+          except OSError as e:
+              print(f'FAILED: {e}')
+          "
+          echo "== docker network inspect (bridge gateway/subnet) =="
+          docker network inspect "$(docker compose ps -q db | xargs docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')" --format '{{range .IPAM.Config}}{{.Subnet}} gw={{.Gateway}}{{end}}' || true
       - name: Run migrations
         # docker compose's --wait above only confirms the container's own
         # healthcheck (pg_isready run inside the container) passed -- on this
