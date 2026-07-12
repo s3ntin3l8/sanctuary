@@ -472,6 +472,19 @@ class AccessLogMiddleware:
     the inner stack produced it. It also logs (and re-raises) any exception
     that reaches this layer without a response ever being sent -- the true
     outermost safety net, one layer inside `ServerErrorMiddleware`.
+
+    Two follow-up fixes (from a second, still-unexplained #98 recurrence
+    *after* this middleware first shipped -- see the issue thread): the
+    5xx/4xx line is logged from inside `send_wrapper`, at the instant
+    `http.response.start` goes out, not after `self.app(...)` returns --
+    a handler that does work after sending the response (e.g. this repo's
+    confirm route dispatching a `CELERY_TASK_ALWAYS_EAGER` background task
+    right after responding) could otherwise leave the log line unwritten
+    for a while, or the process could be killed in that window before it's
+    ever written. And the outer guard catches `BaseException`, not just
+    `Exception` -- `asyncio.CancelledError` is a `BaseException` and would
+    otherwise reach the client's response (or lack thereof) with no log
+    line at all.
     """
 
     def __init__(self, app):
@@ -485,16 +498,34 @@ class AccessLogMiddleware:
 
         method = scope.get("method", "-")
         path = scope.get("path", "-")
-        status_holder: dict = {}
 
         async def send_wrapper(message):
+            # Log at the moment the status line goes out, not after
+            # self.app(...) returns. Issue #98's 500 was rendered and sent to
+            # the client, yet went unlogged: the app's post-response work
+            # (this repo's confirm route dispatches a CELERY_TASK_ALWAYS_EAGER
+            # background thread right after responding) can occupy the
+            # coroutine for a while after `send` has already delivered the
+            # response, or CI can kill the process in that window. Logging
+            # from inside send_wrapper means the line is written as soon as
+            # the response exists, independent of whatever the app does next.
             if message["type"] == "http.response.start":
-                status_holder["status"] = message["status"]
+                status = message["status"]
+                if status >= 500:
+                    self._logger.error("access: %s %s -> %s", method, path, status)
+                elif status >= 400:
+                    self._logger.warning("access: %s %s -> %s", method, path, status)
+                else:
+                    self._logger.debug("access: %s %s -> %s", method, path, status)
             await send(message)
 
         try:
             await self.app(scope, receive, send_wrapper)
-        except Exception:
+        except BaseException:
+            # BaseException, not Exception: asyncio.CancelledError (raised
+            # when a request is cancelled under load, e.g. client disconnect
+            # or server shutdown mid-request) is a BaseException and would
+            # otherwise slip past this guard unlogged and unre-raised-loudly.
             self._logger.error(
                 "Unhandled exception reached outermost logger on %s %s "
                 "(no response sent)",
@@ -503,16 +534,6 @@ class AccessLogMiddleware:
                 exc_info=True,
             )
             raise
-
-        status = status_holder.get("status")
-        if status is None:
-            return
-        if status >= 500:
-            self._logger.error("access: %s %s -> %s", method, path, status)
-        elif status >= 400:
-            self._logger.warning("access: %s %s -> %s", method, path, status)
-        else:
-            self._logger.debug("access: %s %s -> %s", method, path, status)
 
 
 class OriginGuardMiddleware:

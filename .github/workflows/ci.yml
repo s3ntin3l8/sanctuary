@@ -101,11 +101,18 @@ jobs:
           echo "::group::ps aux"
           ps aux
           echo "::endgroup::"
-          echo "::group::listening sockets"
-          ss -tlnp || true
-          echo "::endgroup::"
-          echo "::group::processes on :8000"
-          lsof -i :8000 || true
+          echo "::group::listening sockets (port 8000 in hex is 1F40)"
+          # ss/lsof aren't installed on this runner (confirmed: both
+          # "command not found" in a prior #98 capture) -- /proc/net/tcp
+          # needs neither. local_address is "<hex IP>:<hex port>"; keep the
+          # header plus any matching row so the trailing "inode" column can
+          # be cross-referenced to a PID via
+          # `ls -l /proc/*/fd 2>/dev/null | grep 'socket:\[<inode>\]'` if
+          # ever needed.
+          head -1 /proc/net/tcp
+          if ! grep -i ':1F40 ' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+            echo "(nothing on :8000)"
+          fi
           echo "::endgroup::"
           echo "::group::load/uptime"
           uptime
