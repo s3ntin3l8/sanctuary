@@ -82,7 +82,21 @@ jobs:
           touch .env
           docker compose up db redis -d --wait
       - name: Run migrations
-        run: alembic upgrade head
+        # docker compose's --wait above only confirms the container's own
+        # healthcheck (pg_isready run inside the container) passed -- on this
+        # loaded, persistent self-hosted runner that can report healthy an
+        # instant before the host-side port mapping actually accepts external
+        # connections, so a bare one-shot `alembic upgrade head` can hit a
+        # transient "connection refused". Retry with backoff rather than
+        # failing the whole job on that race (mirrors the app server step's
+        # own curl-retry loop below).
+        run: |
+          for i in $(seq 1 10); do
+            alembic upgrade head && exit 0
+            echo "alembic upgrade head failed (attempt $i/10), retrying..."
+            sleep 2
+          done
+          exit 1
       - name: Start app server
         run: |
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
