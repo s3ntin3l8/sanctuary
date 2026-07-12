@@ -36,15 +36,14 @@ You can use the provided `Makefile` for common development tasks:
 
 ```bash
 make setup      # Install dependencies and hooks
-make run        # Start FastAPI server (http://127.0.0.1:8000)
-make worker     # Start Celery worker (Terminal 2 — required for AI pipeline)
-make watch-css  # Watch/build Tailwind CSS (Terminal 3)
+make run        # Start FastAPI server (http://127.0.0.1:8000) + both Celery workers + beat scheduler
+make watch-css  # Watch/build Tailwind CSS (Terminal 2)
 make test       # Run all tests
 make seed       # Reset and seed database
 make migrate    # Run Alembic migrations
 ```
 
-By default, `CELERY_TASK_ALWAYS_EAGER=false` — start `make worker` before uploading documents, or set `CELERY_TASK_ALWAYS_EAGER=true` in `.env` to run tasks synchronously in-process (handy for local dev without Redis).
+By default, `CELERY_TASK_ALWAYS_EAGER=false` — `make run` already starts the ingest/AI workers and beat scheduler for you, or set `CELERY_TASK_ALWAYS_EAGER=true` in `.env` to run tasks synchronously in-process (handy for local dev without Redis). To run the web server and workers as separate processes instead, use `make server` + `make worker` in two terminals.
 
 ## Docker Deployment
 
@@ -53,13 +52,17 @@ The fastest way to deploy the full stack:
 ```bash
 cp .env.example .env
 # Note: Update AI_BASE_URL to http://host.docker.internal:11434 if using local AI
-docker-compose up -d
+docker compose up -d
+# or: make prod (same thing; make prod-down to stop)
 ```
+
+For a self-contained deployment that terminates HTTPS itself (Traefik + Let's Encrypt, no separate reverse proxy needed), use `docker-compose.traefik.yml` instead — see the header comment in that file and the "Traefik" section at the bottom of `.env.example`.
 
 ## Configuration
 
 | Environment Variable | Default | Description |
 |---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `sanctuary` / `sanctuary` / `sanctuary` | Credentials for the bundled `db` service (Docker Compose); change before exposing it beyond localhost |
 | `DATABASE_URL` | `postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary` | Database connection string |
 | `AI_PROVIDER` | `ollama` | AI backend: `ollama`, `lmstudio`, `openai`, or `auto` |
 | `AI_BASE_URL` | `http://127.0.0.1:11434` | Base URL for the AI provider |

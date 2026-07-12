@@ -16,7 +16,7 @@ Companion document to `docs/specs/00_vision.md` §7. Covers both scopes of AI ch
 | API — `POST /api/chat/conversations` + `POST /api/chat/conversations/{id}/messages` (SSE) | ✅ |
 | Service — `stream_answer()` async generator with SSE protocol | ✅ |
 | Context builder — `build_case_chat_prompt()` + `build_document_chat_prompt()` | ✅ |
-| Semantic retrieval — `retrieve_top_docs()` via sqlite-vec + recency fallback | ✅ |
+| Semantic retrieval — `retrieve_top_docs()` via pgvector chunk search + recency fallback | ✅ |
 | User-reaction integration — `format_reactions_for_case/document()` | ✅ |
 | System prompts — `DOC_CHAT_SYSTEM` + `CASE_CHAT_SYSTEM` with citation rules | ✅ |
 | Citation extraction — `[DOC:<id>]` regex → `context_document_ids` JSON | ✅ |
@@ -27,7 +27,7 @@ Companion document to `docs/specs/00_vision.md` §7. Covers both scopes of AI ch
 | Keyboard `/` → focus chat input; `Esc` → close; `hud-prefill-chat` event | ✅ |
 | `Case.ai_brief` in case context | ✅ |
 | `UserReaction` rows in context (both scopes) | ✅ |
-| Semantic retrieval — top K=6 documents via `document_vectors` sqlite-vec | ✅ |
+| Semantic retrieval — top K=6 documents via `document_chunks.embedding` pgvector | ✅ |
 | `ActionItem` rows in case context | ✅ |
 | `Claim` rows in case context | ✅ |
 | Citation links open Document HUD **at the cited passage** | ✅ |
@@ -213,7 +213,7 @@ Includes:
 - **Retrieved Documents:** Top 6 semantically relevant documents with their key passages.
 - **User Reactions:** Chronological reactions for documents in the case.
 
-Document retrieval (`retrieve_top_docs`): embeds the query, searches `document_vectors` (sqlite-vec `WHERE embedding MATCH :blob ORDER BY distance LIMIT 6`), filters to `case_id`, returns `RetrievalHit` objects. If embeddings fail (model unavailable), falls back to the 6 most recent documents by `issued_date`.
+Document retrieval (`retrieve_top_docs`): embeds the query, ranks `document_chunks.embedding` by pgvector `<->` (L2) distance, filters matches to `case_id` (and `proceeding_id` if scoped), then rolls the top-ranked chunks up to their owning documents (top 6). Each hit surfaces the actual matched passage(s), not a whole-document average. If embeddings fail (model unavailable) or the query errors, falls back to the 6 most recent documents by `issued_date`.
 
 ### Document chat (`build_document_chat_prompt`)
 

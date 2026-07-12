@@ -77,14 +77,15 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 ## Run
 ```bash
 make setup      # Install/Update
-make run        # Terminal 1: App
-make worker     # Terminal 2: Celery worker (required when CELERY_TASK_ALWAYS_EAGER=false)
-make watch-css  # Terminal 3: CSS
+make run        # App + both Celery workers + beat scheduler (Terminal 1)
+make watch-css  # Terminal 2: CSS
 make seed       # Seed Data
 make test       # Run Tests
 make lint       # Pre-commit hooks
 make migrate    # Run migrations
 ```
+`make run` starts everything needed for the AI pipeline in one process group — no separate worker terminal needed (default `CELERY_TASK_ALWAYS_EAGER=false`). To run the web server and workers as separate processes instead (e.g. to restart one without the other), use `make server` + `make worker` in two terminals. `make worker-ingest` / `make worker-ai` start a single queue standalone.
+
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
 
 **Testing.** `pytest`/`make test` runs across CPU cores by default (pytest-xdist, `-n auto`); each worker starts its own dedicated Postgres+pgvector container (`testcontainers`, session-scoped fixture in `tests/conftest.py`) on a random host port, so workers of the same invocation — and separate, overlapping `pytest` invocations — never contend on a shared database. Requires a working Docker socket.

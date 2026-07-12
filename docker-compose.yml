@@ -1,23 +1,25 @@
 services:
   db:
     image: pgvector/pgvector:pg17
+    container_name: sanctuary-db
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=sanctuary
-      - POSTGRES_PASSWORD=sanctuary
-      - POSTGRES_DB=sanctuary
+      - POSTGRES_USER=${POSTGRES_USER:-sanctuary}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sanctuary}
+      - POSTGRES_DB=${POSTGRES_DB:-sanctuary}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sanctuary"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sanctuary}"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
+    container_name: sanctuary-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -31,6 +33,7 @@ services:
 
   web:
     build: .
+    container_name: sanctuary-web
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -38,7 +41,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
-      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -59,12 +62,13 @@ services:
   # docker/worker-ingest-entrypoint.sh) so a Settings change survives restarts.
   worker-ingest:
     build: .
+    container_name: sanctuary-worker-ingest
     restart: unless-stopped
     command: ["sh", "/app/docker/worker-ingest-entrypoint.sh"]
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -83,12 +87,13 @@ services:
   # docker/worker-ai-entrypoint.sh) so a Settings change survives restarts.
   worker-ai:
     build: .
+    container_name: sanctuary-worker-ai
     restart: unless-stopped
     command: ["sh", "/app/docker/worker-ai-entrypoint.sh"]
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
@@ -98,6 +103,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # --- Alternative: single combined worker ----------------------------------
+  # For a lighter single-box deployment, replace worker-ingest + worker-ai
+  # above with ONE service consuming both queues plus beat (keep the same
+  # env_file/environment/volumes/depends_on as above):
+  #
+  #   worker:
+  #     command: >
+  #       python -m celery -A app.tasks.celery_app worker -B
+  #       -n worker@%h --loglevel=INFO -Q ingest,ai --concurrency=4
+  #       --without-gossip --without-mingle --without-heartbeat
+  #
+  # Trade-off: --concurrency is a fixed value here, not the DB-driven
+  # per-queue default the entrypoint scripts resolve, and the Settings UI's
+  # live concurrency sliders can't resize it — worker_control.py
+  # (app/services/worker_control.py) targets nodes named `ingest@`/`ai@`
+  # specifically, and this node is neither. Change --concurrency above and
+  # restart the container instead.
+  # ---------------------------------------------------------------------------
 
 volumes:
   db_data:

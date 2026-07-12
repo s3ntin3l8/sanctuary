@@ -1,7 +1,7 @@
 # =============================================================================
 # The Sanctuary — self-contained Traefik + Let's Encrypt deployment
 #
-#   cp .env.traefik.example .env      # set SANCTUARY_DOMAIN + ACME_EMAIL first
+#   cp .env.example .env   # then fill in the "Traefik" section at the bottom
 #   docker compose -f docker-compose.traefik.yml up -d
 #
 # Traefik terminates TLS on :443 (auto-cert via Let's Encrypt HTTP-01) and
@@ -12,6 +12,7 @@
 services:
   traefik:
     image: traefik:v3.3
+    container_name: sanctuary-traefik
     restart: unless-stopped
     command:
       # Discover containers via Docker labels; nothing is exposed unless opted in.
@@ -40,8 +41,27 @@ services:
     networks:
       - proxy
 
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: sanctuary-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-sanctuary}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-sanctuary}
+      - POSTGRES_DB=${POSTGRES_DB:-sanctuary}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sanctuary}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal
+
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
+    container_name: sanctuary-redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -55,6 +75,7 @@ services:
 
   web:
     build: .
+    container_name: sanctuary-web
     restart: unless-stopped
     # --proxy-headers + --forwarded-allow-ips lets the app trust Traefik's
     # X-Forwarded-Proto / X-Forwarded-For (correct scheme + real client IP for
@@ -66,6 +87,7 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     # Reach an Ollama/LMStudio server running on the Docker host.
@@ -83,16 +105,28 @@ services:
       - proxy
       - internal
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
-  worker:
+  # Two-queue split (see app/tasks/celery_app.py): heavy Docling/OCR is pinned to
+  # `ingest` (concurrency UI-controlled, default 4 — see get_ocr_concurrency /
+  # app/services/ocr_slots.py for the matching per-page semaphore); LLM/
+  # embeddings/light I/O run on `ai`.
+  # --max-tasks-per-child recycles pool children to cap RSS creep (Docling/torch);
+  # --without-{gossip,mingle,heartbeat} trims chatter for this small static cluster.
+  # The entrypoint resolves --concurrency from the DB (UI-controlled, see
+  # docker/worker-ingest-entrypoint.sh) so a Settings change survives restarts.
+  worker-ingest:
     build: .
+    container_name: sanctuary-worker-ingest
     restart: unless-stopped
-    command: python -m celery -A app.tasks.celery_app worker --loglevel=INFO -Q celery
+    command: ["sh", "/app/docker/worker-ingest-entrypoint.sh"]
     env_file:
       - .env
     environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     extra_hosts:
@@ -102,15 +136,66 @@ services:
     networks:
       - internal
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
+
+  # Also hosts the beat scheduler via -B (5-min pipeline-recovery cron, gmail
+  # sync, scan polling, …). Exactly one beat may run cluster-wide, so ONLY this
+  # service carries -B — worker-ingest must not. Beat runs in the worker's main
+  # process, unaffected by --max-tasks-per-child child recycling.
+  # The entrypoint resolves --concurrency from the DB (UI-controlled, see
+  # docker/worker-ai-entrypoint.sh) so a Settings change survives restarts.
+  worker-ai:
+    build: .
+    container_name: sanctuary-worker-ai
+    restart: unless-stopped
+    command: ["sh", "/app/docker/worker-ai-entrypoint.sh"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # --- Alternative: single combined worker ----------------------------------
+  # For a lighter single-box deployment, replace worker-ingest + worker-ai
+  # above with ONE service consuming both queues plus beat (keep the same
+  # env_file/environment/extra_hosts/volumes/networks/depends_on as above):
+  #
+  #   worker:
+  #     command: >
+  #       python -m celery -A app.tasks.celery_app worker -B
+  #       -n worker@%h --loglevel=INFO -Q ingest,ai --concurrency=4
+  #       --without-gossip --without-mingle --without-heartbeat
+  #
+  # Trade-off: --concurrency is a fixed value here, not the DB-driven
+  # per-queue default the entrypoint scripts resolve, and the Settings UI's
+  # live concurrency sliders can't resize it — worker_control.py
+  # (app/services/worker_control.py) targets nodes named `ingest@`/`ai@`
+  # specifically, and this node is neither. Change --concurrency above and
+  # restart the container instead.
+  # ---------------------------------------------------------------------------
 
 networks:
   # Public-facing network shared between Traefik and the web app.
   proxy:
-  # Internal network: app <-> redis <-> worker, never reachable from outside.
+  # Internal network: app <-> redis <-> db <-> worker, never reachable from outside.
   internal:
 
 volumes:
+  db_data:
   redis_data:
   letsencrypt:
