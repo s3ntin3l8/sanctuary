@@ -228,6 +228,64 @@ def test_access_log_middleware_logs_cancelled_error(caplog):
     )
 
 
+def test_access_log_middleware_logs_entry_for_mutating_requests_only(caplog):
+    """A mutating request must log an entry marker; a GET must not.
+
+    Diagnostic addition for #98's still-open second recurrence: even with
+    the send-time logging and BaseException guard above, a confirmed CI 500
+    produced *no* log line at all -- not the entry marker, not the access
+    line, not the exception line. That leaves two possibilities: the request
+    never reached this middleware's `self.app(...)` call, or it did but
+    exited some other way (e.g. Starlette's ServerErrorMiddleware, outside
+    this middleware). This entry marker's presence or absence in the next
+    occurrence settles which. Scoped to mutating methods only (POST/PUT/
+    PATCH/DELETE) so routine GET traffic doesn't flood production logs.
+    """
+    import anyio
+
+    from app.main import AccessLogMiddleware
+
+    async def inner_app_noop(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+    async def run(method):
+        middleware = AccessLogMiddleware(inner_app_noop)
+        scope = {
+            "type": "http",
+            "method": method,
+            "scheme": "http",
+            "path": "/triage/confirm",
+            "headers": [(b"host", b"testserver")],
+        }
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            pass
+
+        await middleware(scope, receive, send)
+
+    with caplog.at_level("INFO"):
+        anyio.run(run, "POST")
+    assert any(
+        r.levelno == logging.INFO and "entry" in r.message and "POST" in r.message
+        for r in caplog.records
+    ), (
+        "Mutating request did not log an entry marker. Log records: "
+        f"{[r.message for r in caplog.records]}"
+    )
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        anyio.run(run, "GET")
+    assert not any("entry" in r.message for r in caplog.records), (
+        "GET request logged an entry marker -- should be scoped to mutating "
+        f"methods only. Log records: {[r.message for r in caplog.records]}"
+    )
+
+
 def test_cross_origin_mutating_request_is_blocked():
     import anyio
 
