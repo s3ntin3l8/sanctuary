@@ -7,7 +7,7 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed reset migrate lint clean redis _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed migrate lint clean redis _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -105,20 +105,6 @@ seed: ## Reset database and seed with advanced triage combinations (backs up rea
 	fi
 	rm -f data/sanctuary.db
 	$(PYTHON) scripts/seed_dummy_data.py
-
-reset: ## Delete all data (database, files, vectors) and start fresh
-	@echo "Resetting data..."
-	rm -f data/sanctuary.db*
-	rm -rf data/_TRIAGE
-	rm -rf data/ai_debug
-	rm -rf data/scans/*
-	# Delete all case directories (ADV-XXX-X)
-	find data -maxdepth 1 -type d -name "ADV-*" -exec rm -rf {} +
-	# Ensure scan directories exist
-	mkdir -p data/scans/incoming data/scans/processing data/scans/processed data/scans/failed
-	@echo "Data cleared. Running migrations..."
-	$(MAKE) migrate
-	@echo "Reset complete."
 
 migrate: ## Run database migrations (auto-backs up data/sanctuary.db first)
 	@if [ -f data/sanctuary.db ]; then \
