@@ -13,6 +13,13 @@ from app.models.database import (
 
 config = context.config
 
+# Let DATABASE_URL redirect migrations to a different DB than alembic.ini's
+# hardcoded default (sqlite:///data/sanctuary.db) -- e.g. a throwaway e2e DB.
+# Opt-in only: alembic.ini's own url is used unchanged when this is unset, so
+# existing `alembic upgrade head` / `make migrate` invocations are unaffected.
+if os.getenv("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+
 # Only configure logging if we are running standalone (not via the app)
 if config.config_file_name is not None and not os.getenv("SANCTUARY_APP"):
     fileConfig(config.config_file_name)
