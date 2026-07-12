@@ -133,12 +133,29 @@ def setup_logging():
         root.addHandler(file_handler)
 
     root.setLevel(level)
+    root.disabled = False
 
     # Hijack all existing loggers to propagate to root and use our format
     for name in logging.root.manager.loggerDict:
         target = logging.getLogger(name)
         target.handlers = []
         target.propagate = True
+        # `disabled` is separate from `level`/`propagate` and isn't reset by
+        # either. Found via #98: this module's own lifespan re-runs alembic
+        # migrations in-process (see run_migrations below), and alembic's
+        # env.py calls `logging.config.fileConfig(alembic.ini)`, which
+        # defaults to disable_existing_loggers=True -- silently killing
+        # every logger already registered at that point (app.main,
+        # app.access, ...) that alembic.ini's own [loggers] section doesn't
+        # list. This function is called again right after migrations
+        # specifically to recover from that (see "logging re-verified"
+        # below), but without this line it only reset level/handlers/
+        # propagate, leaving `.disabled` permanently True -- so every
+        # app.main-based logger (add_request_id, server_error_handler,
+        # AccessLogMiddleware) silently dropped every message for the rest
+        # of the process's life, which is why #98's 500s produced zero log
+        # output despite multiple rounds of added instrumentation.
+        target.disabled = False
 
         # Suppress noisy INFO-only libraries at non-DEBUG levels
         if (
@@ -284,6 +301,16 @@ async def lifespan(app: FastAPI):
     # Run migrations so the schema exists even on a fresh/deleted DB.
     from alembic import command
     from alembic.config import Config as AlembicConfig
+
+    # Tells alembic/env.py this is an in-process call, not a standalone
+    # `alembic` CLI invocation, so it skips `fileConfig(alembic.ini)` --
+    # that call defaults to disable_existing_loggers=True, which silently
+    # kills every logger already registered at this point (app.main,
+    # app.access, ...). setup_logging()'s `disabled` reset below is a second
+    # line of defense in case this ever gets bypassed (e.g. a bare `alembic`
+    # CLI run elsewhere in the same process) -- see its comment for the
+    # full mechanism.
+    os.environ.setdefault("SANCTUARY_APP", "1")
 
     alembic_cfg = AlembicConfig(str(Path(__file__).parent.parent / "alembic.ini"))
     command.upgrade(alembic_cfg, "head")
