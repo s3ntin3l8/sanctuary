@@ -724,7 +724,7 @@ async def rebuild_index(
         logger.error(
             f"Failed to resize document_chunks.embedding to dim={embed_dim}: {e}"
         )
-        return HTMLResponse(_toast(False, f"DDL failed: {e}"))
+        return HTMLResponse(_toast(False, "Index resize failed — see server log"))
 
     total = db.query(Document).filter(Document.content.isnot(None)).count()
     set_reindex_running(db, total=total, embed_dim=embed_dim)

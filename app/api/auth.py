@@ -29,8 +29,19 @@ _GENERIC_LOGIN_ERROR = "Invalid email or password."
 
 
 def _safe_next(next_url: str | None) -> str:
-    """Allow only same-site relative redirects (block open-redirects)."""
-    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+    """Allow only same-site relative redirects (block open-redirects).
+
+    Rejects any leading "//" (protocol-relative) or "/\\" — browsers
+    normalize a leading backslash to a forward slash, so "/\\evil.com"
+    would otherwise be treated as relative here but resolve as
+    protocol-relative in the browser.
+    """
+    if (
+        next_url
+        and next_url.startswith("/")
+        and not next_url.startswith("//")
+        and not next_url.startswith("/\\")
+    ):
         return next_url
     return "/"
 

@@ -117,8 +117,12 @@ DORMANCY_DAYS = 90
 # draft-refresh path in get_or_create_case_from_reference.
 
 # Matches "X ./. Y (Matter)" where the parens contain the matter (not just
-# the eA marker). Captures: parties, matter.
-_PAREN_MATTER_RE = re.compile(r"^(.+?\s+\./\.\s+.+?)\s+\((?!eA\)$)([^()]+?)\)\s*$")
+# the eA marker). Split into two bounded regexes below (see
+# _split_paren_matter) rather than one regex with two unbounded lazy `.+?`
+# groups either side of a literal separator — that shape is a CodeQL
+# py/polynomial-redos hit (ambiguous backtracking on adversarial input).
+_TRAILING_PAREN_RE = re.compile(r"\(([^()]+)\)\s*$")
+_PARTIES_SEP_RE = re.compile(r"\s+\./\.\s+")
 # Matches a leading internal_id-like prefix the AI sometimes echoes, e.g.
 # "8372/25 - " or "8372-25: ". Both slash and dash digit-separators.
 _INTERNAL_ID_PREFIX_RE = re.compile(r"^\d{3,5}[/-]\d{2,4}\s*[-:/]\s*")
@@ -129,7 +133,28 @@ _EA_TRAILING_DASH_RE = re.compile(r"\s*[-–]\s*eA\s*$", re.IGNORECASE)
 _EA_FULL_NAME_RE = re.compile(
     r"\s*[-–,(]?\s*einstweilige[r]?\s+Anordnung\s*\)?\s*$", re.IGNORECASE
 )
-_TRAILING_PUNCT_RE = re.compile(r"[\s\-–:/,;]+$")
+_TRAILING_PUNCT_CHARS = " \t\n\r\v\f-–:/,;"
+
+
+def _split_paren_matter(s: str) -> tuple[str, str] | None:
+    """If `s` ends in a non-eA parenthetical matter preceded by an
+    "X ./. Y" party pair, return (parties, matter); else None.
+
+    Equivalent to matching `^(.+?\\s+\\./\\.\\s+.+?)\\s+\\((?!eA\\)$)([^()]+?)\\)\\s*$`
+    in one pass, but as two bounded regexes plus a substring check — avoids
+    the ambiguous backtracking of two unbounded lazy groups around a shared
+    literal (CodeQL py/polynomial-redos).
+    """
+    m = _TRAILING_PAREN_RE.search(s)
+    if not m:
+        return None
+    matter = m.group(1).strip()
+    if matter == "eA":
+        return None
+    prefix = s[: m.start()].rstrip()
+    if not _PARTIES_SEP_RE.search(prefix):
+        return None
+    return prefix, matter
 
 
 def _normalize_case_title(title: str | None) -> str | None:
@@ -175,13 +200,13 @@ def _normalize_case_title(title: str | None) -> str | None:
     s = _INTERNAL_ID_PREFIX_RE.sub("", s, count=1).lstrip()
 
     # 3. Strip trailing punctuation/whitespace.
-    s = _TRAILING_PUNCT_RE.sub("", s)
+    s = s.rstrip(_TRAILING_PUNCT_CHARS)
 
     # 4. Paren-style matter → dash-style. Only fires for "X ./. Y (Matter)";
     #    matter-only titles like "Kindesunterhalt" are untouched.
-    m = _PAREN_MATTER_RE.match(s)
-    if m:
-        parties, matter = m.group(1).strip(), m.group(2).strip()
+    split = _split_paren_matter(s)
+    if split:
+        parties, matter = split
         s = f"{parties} - {matter}"
 
     # 5. Re-append eA in canonical form.

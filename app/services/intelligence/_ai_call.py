@@ -3,6 +3,7 @@
 import fcntl
 import json
 import logging
+import os
 import re
 import time
 import traceback
@@ -131,7 +132,7 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
             folder.mkdir(parents=True, exist_ok=True)
             return folder / filename
 
-    filename = f"misc_{debug_label}.md"
+    filename = f"misc_{os.path.basename(debug_label)}.md"
     folder = debug_dir / "unbatched"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / filename

@@ -177,7 +177,7 @@ async def upload_document(
                 logger.error(
                     f"EML ingest failed for {file.filename}: {e}", exc_info=True
                 )
-                results.append(_row_error(file.filename, str(e)))
+                results.append(_row_error(file.filename, "Upload failed"))
             continue
 
         try:
@@ -205,7 +205,7 @@ async def upload_document(
         except Exception as e:
             error_count += 1
             logger.error(f"Upload failed for file {file.filename}: {e}", exc_info=True)
-            results.append(_row_error(file.filename, f"Upload failed: {e}"))
+            results.append(_row_error(file.filename, "Upload failed"))
 
     if success_count == 0 and error_count > 0:
         return HTMLResponse(
