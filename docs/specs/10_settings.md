@@ -21,7 +21,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | AI provider auto-detection (`ai_provider.py`) — Ollama / LMStudio / OpenAI discriminated by API fingerprinting | ✅ |
 | `GET /api/settings/ai/models` — live model list from connected provider | ✅ |
 | `POST /api/settings/ai/config` — save base URL, provider, API key, models, user context | ✅ |
-| `POST /api/settings/ai/rebuild-index` — drop + recreate `document_vectors`, reindex all docs | ✅ |
+| `POST /api/settings/ai/rebuild-index` — resize `document_chunks.embedding` column, reindex all docs | ✅ |
 | `POST /api/settings/ai/reindex` — quick reindex without DDL change | ✅ |
 | `POST /api/settings/ai/test` — connection probe, returns inline HTMX toast | ✅ |
 | `POST /api/settings/appearance/theme` — persist theme to `settings_json.theme` | ✅ |
@@ -164,11 +164,11 @@ On reconnect (token refresh), the callback overwrites the previous credentials. 
 | **API Key** | Only visible/required for OpenAI. LMStudio/Ollama use `"not-needed"`. |
 | **Summary Model** | `<select>` populated by `GET /api/settings/ai/models` from the live provider. Default: `qwen3.5:9b`. |
 | **Embedding Model** | Separate `<select>` from the same model list. Default: `nomic-embed-text:v1.5`. |
-| **Embedding Dimensions** | Integer field. Default: 768 (matches `nomic-embed-text`). Must match the model's actual output size; mismatch causes `vec0` errors. |
+| **Embedding Dimensions** | Integer field. Default: 768 (matches `nomic-embed-text`). Must match the model's actual output size; mismatch causes pgvector dimension errors. |
 | **User Context** | Optional free-text injected into all AI prompts as extra context (e.g. "This is a German family law case"). |
 | **[Save Config]** | POST to `/api/settings/ai/config`. Saves and calls `ai_provider.reload_from_db(db)`. |
 | **[Reindex]** | POST to `/api/settings/ai/reindex`. Quick reindex of all documents using current embed model (no DDL change). |
-| **[Rebuild Index]** | POST to `/api/settings/ai/rebuild-index`. Drops and recreates `document_vectors` virtual table with new `embed_dim`, then reindexes all documents. **Destructive** — use when changing embedding model or dimensions. |
+| **[Rebuild Index]** | POST to `/api/settings/ai/rebuild-index`. Clears `document_chunks` and resizes its `embedding` column (`ALTER COLUMN ... TYPE vector(N)`) to the new `embed_dim`, then reindexes all documents. **Destructive** — use when changing embedding model or dimensions. |
 
 ---
 
@@ -199,7 +199,7 @@ Theme is applied at page load from `settings_json.theme`; the CSS variable switc
 | **Database Stats** | Read-only: DB file size (MB), document count, case count, claim count, cost count. Computed by `settings_page.py:_stats()` on each page load. |
 | **Reset Enrichment** | POST to `/api/settings/maintenance/reset-enrichment`. Wipes AI-generated fields (summary, significance tier, cost_delta, etc.) on all documents and re-queues them for enrichment. Use when switching AI models. |
 
-Database vacuum is **not exposed** in v1 — the SQLite WAL auto-checkpoints; explicit vacuum is a non-goal.
+Database vacuum is **not exposed** in v1 — Postgres autovacuum handles this; explicit vacuum is a non-goal.
 
 ---
 
@@ -208,7 +208,7 @@ Database vacuum is **not exposed** in v1 — the SQLite WAL auto-checkpoints; ex
 | Gap | Remediation |
 |---|---|
 | `app/api/settings_ai.py` (39 LoC) is dead code — declares `prefix="/api/settings/ai"` with `/test` and `/reindex` but is **not imported** in `app/main.py` or `app/api/__init__.py` | Delete the file as part of "clean as you go". No runtime impact since it was never registered. |
-| Database vacuum not exposed | Non-goal for v1 — SQLite WAL auto-checkpoints; add `VACUUM` endpoint only if storage concerns arise. |
+| Database vacuum not exposed | Non-goal for v1 — Postgres autovacuum handles this; add a manual `VACUUM` endpoint only if storage concerns arise. |
 | Multi-user settings | Non-goal for v1 — `user_id = "single_user"` is hard-coded everywhere. |
 
 ---
@@ -282,7 +282,7 @@ No other code changes are required for this spec.
 - All four `/settings/*` page routes return 200 without authentication.
 - `POST /api/settings/ai/config` saves and reloads the AI provider; subsequent `/test` reflects the new provider.
 - OAuth flow completes without `state` mismatch; `gmail_connected_at` appears in settings page post-callback.
-- `POST /api/settings/ai/rebuild-index` with a new `embed_dim` recreates `document_vectors` at the new dimension; all documents reindexed.
+- `POST /api/settings/ai/rebuild-index` with a new `embed_dim` resizes `document_chunks.embedding` to the new dimension; all documents reindexed.
 - `app/api/settings_ai.py` removed; `pytest -q` green; `/api/settings/ai/test` still returns 200 (served by `settings_ai_config.py`).
 - Theme persistence: switching to "light" in Appearance persists across page reloads.
 

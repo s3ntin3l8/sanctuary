@@ -7,7 +7,13 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up _check-no-celery
+# Single source of truth for the two-queue Celery split (see app/tasks/celery_app.py).
+CELERY := $(PYTHON) -m celery -A app.tasks.celery_app
+INGEST_WORKER := $(CELERY) worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4
+AI_WORKER := $(CELERY) worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+BEAT := $(CELERY) beat --loglevel=INFO
+
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -18,12 +24,12 @@ test-e2e: ## Run E2E tests (requires running server on localhost:8000)
 
 test-e2e-isolated: db-up ## Run E2E tests against a fully throwaway server + DB (mirrors CI; never touches your dev data)
 	@echo "Resetting throwaway e2e DB..."
-	@docker compose exec -T db psql -U sanctuary -d postgres -c "DROP DATABASE IF EXISTS sanctuary_test_e2e" >/dev/null
-	@docker compose exec -T db psql -U sanctuary -d postgres -c "CREATE DATABASE sanctuary_test_e2e" >/dev/null
+	@docker compose exec -T db psql -U $(POSTGRES_USER) -d postgres -c "DROP DATABASE IF EXISTS sanctuary_test_e2e" >/dev/null
+	@docker compose exec -T db psql -U $(POSTGRES_USER) -d postgres -c "CREATE DATABASE sanctuary_test_e2e" >/dev/null
 	@echo "Migrating throwaway DB..."
-	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(ALEMBIC) upgrade head
+	@DATABASE_URL="postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/sanctuary_test_e2e" $(ALEMBIC) upgrade head
 	@echo "Starting throwaway app server..."
-	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" \
+	@DATABASE_URL="postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/sanctuary_test_e2e" \
 	 CELERY_TASK_ALWAYS_EAGER=true \
 	 AUTH_ENABLED=false \
 	 SESSION_SECRET="e2e-isolated-ephemeral-not-a-real-secret" \
@@ -31,7 +37,7 @@ test-e2e-isolated: db-up ## Run E2E tests against a fully throwaway server + DB 
 	 echo $$! > /tmp/sanctuary_test_e2e_server.pid; \
 	 trap 'kill "$$(cat /tmp/sanctuary_test_e2e_server.pid)" 2>/dev/null; rm -f /tmp/sanctuary_test_e2e_server.pid' EXIT INT TERM; \
 	 for i in $$(seq 1 30); do curl -sf http://127.0.0.1:8000 >/dev/null && break; sleep 1; done; \
-	 DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(PYTEST) -m e2e; \
+	 DATABASE_URL="postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/sanctuary_test_e2e" $(PYTEST) -m e2e; \
 	 status=$$?; \
 	 echo "--- throwaway server log (tail) ---"; tail -50 /tmp/sanctuary_test_e2e_server.log || true; \
 	 exit $$status
@@ -42,9 +48,12 @@ export
 # Defaults if not set in .env
 HOST ?= 127.0.0.1
 PORT ?= 8000
+POSTGRES_USER ?= sanctuary
+POSTGRES_PASSWORD ?= sanctuary
+POSTGRES_DB ?= sanctuary
 
 help: ## Show this help message
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .venv: ## Create virtual environment
 	@test -n "$(PYTHON_EXE)" || (echo "ERROR: No python3.12/python3/python found on PATH. Install Python 3.12 first." && exit 1)
@@ -64,6 +73,13 @@ redis: ## Start Redis (Docker)
 db-up: ## Start Postgres (Docker)
 	docker compose up db -d --wait
 
+prod: ## Start the full stack via Docker Compose (docker-compose.yml + docker-compose.override.yml, if present)
+	docker compose pull
+	docker compose up -d
+
+prod-down: ## Stop the stack started by `make prod`
+	docker compose down
+
 _check-no-celery: ## Internal: refuse to start if celery beat/workers already running
 	@if pgrep -f "celery -A app.tasks.celery_app (beat|worker)" >/dev/null 2>&1; then \
 		echo "ERROR: celery beat or worker already running:"; \
@@ -72,44 +88,41 @@ _check-no-celery: ## Internal: refuse to start if celery beat/workers already ru
 		exit 1; \
 	fi
 
-run: _check-no-celery ## Start Postgres+Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
-	docker compose up db redis -d --wait
+run: _check-no-celery db-up redis ## Start Postgres+Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
-	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
+	$(INGEST_WORKER) & \
+	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+	$(AI_WORKER)
 
-run-stable: _check-no-celery ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
-	docker compose up db redis -d --wait
+run-stable: _check-no-celery db-up redis ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
-	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
+	$(INGEST_WORKER) & \
+	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+	$(AI_WORKER)
 
-run-debug: _check-no-celery ## Start server with DEBUG logging (+ Postgres, Redis, both workers)
-	docker compose up db redis -d --wait
+run-debug: _check-no-celery db-up redis ## Start server with DEBUG logging (+ Postgres, Redis, both workers)
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
-	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
-	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
+	LOG_LEVEL=debug DEBUG=True $(INGEST_WORKER) & \
+	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
-	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+	LOG_LEVEL=debug DEBUG=True $(AI_WORKER)
 
 server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
 worker: _check-no-celery ## Start both Celery workers (ingest + ai) and beat scheduler
-	@$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
-	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
+	@$(INGEST_WORKER) & \
+	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+	$(AI_WORKER)
 
 worker-ingest: ## Start only the ingest (OCR) Celery worker
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4
+	$(INGEST_WORKER)
 
 worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
-	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+	$(AI_WORKER)
 
 watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
