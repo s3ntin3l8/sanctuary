@@ -70,6 +70,7 @@ class IngestionError(Exception):
 
 def _unique_upload_path(directory, filename: str) -> str:
     """Return a non-existing path in directory while preserving the display name."""
+    filename = os.path.basename(filename)
     candidate = directory / filename
     if not candidate.exists():
         return str(candidate)

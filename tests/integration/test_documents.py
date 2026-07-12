@@ -89,6 +89,47 @@ def test_upload_auto_case_matching(db_session, mock_dispatch_task):
 
 
 @pytest.mark.integration
+def test_upload_generic_failure_shows_generic_message_not_raw_exception(
+    db_session, monkeypatch
+):
+    """An unexpected exception during ingest must not leak its raw text into
+    the response (py/stack-trace-exposure) — only a generic error row."""
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("db connection string: postgres://secret@host/db")
+
+    monkeypatch.setattr("app.api.documents.ingest_file", _boom)
+
+    response = client.post(
+        "/upload",
+        files=[("files", ("test_doc.pdf", b"%PDF-1.4 test", "application/pdf"))],
+    )
+    assert response.status_code == 400
+    assert "Upload failed" in response.text
+    assert "postgres://secret" not in response.text
+
+
+@pytest.mark.integration
+def test_upload_eml_generic_failure_shows_generic_message_not_raw_exception(
+    db_session, monkeypatch
+):
+    def _boom(*args, **kwargs):
+        raise RuntimeError("db connection string: postgres://secret@host/db")
+
+    monkeypatch.setattr("app.api.documents.ingest_raw_email", _boom)
+
+    response = client.post(
+        "/upload",
+        files=[
+            ("files", ("test_email.eml", b"From: a@b.com\n\nbody", "message/rfc822"))
+        ],
+    )
+    assert response.status_code == 400
+    assert "Upload failed" in response.text
+    assert "postgres://secret" not in response.text
+
+
+@pytest.mark.integration
 def test_upload_status_returns_inflight_row_with_polling(db_session):
     from app.models.enums import PipelineState, StageStatus
 

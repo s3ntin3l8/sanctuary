@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from app.api.auth import _safe_next
 from app.core import security
 from app.main import app
 from app.models.enums import UserRole
@@ -11,6 +12,29 @@ from app.services import auth_service
 def _client() -> TestClient:
     # follow_redirects=False so we can assert the 303 → /login behaviour.
     return TestClient(app, follow_redirects=False)
+
+
+# --- open-redirect guard -----------------------------------------------------
+
+
+def test_safe_next_allows_relative_path():
+    assert _safe_next("/cases/ADV-1") == "/cases/ADV-1"
+
+
+def test_safe_next_blocks_protocol_relative():
+    assert _safe_next("//evil.com") == "/"
+
+
+def test_safe_next_blocks_backslash_protocol_relative():
+    """'/\\evil.com' is browser-normalized to '//evil.com' (protocol-relative)
+    even though it passes a naive startswith('/') check."""
+    assert _safe_next("/\\evil.com") == "/"
+    assert _safe_next("/\\/evil.com") == "/"
+
+
+def test_safe_next_blocks_absolute_and_missing():
+    assert _safe_next("https://evil.com") == "/"
+    assert _safe_next(None) == "/"
 
 
 # --- password hashing ------------------------------------------------------

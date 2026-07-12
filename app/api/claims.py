@@ -265,7 +265,7 @@ async def batch_merge_proposals(
     if case is None:
         return HTMLResponse("<p>Case not found</p>", status_code=404)
     if action not in ("confirm", "dismiss"):
-        return HTMLResponse(f"Unknown action: {action}", status_code=422)
+        return HTMLResponse("Unknown action", status_code=422)
 
     pending_ids = [
         pid
@@ -377,7 +377,7 @@ async def update_claim_status(
     try:
         target = ClaimStatus(status)
     except ValueError:
-        return HTMLResponse(f"Unknown status: {status}", status_code=422)
+        return HTMLResponse("Unknown status", status_code=422)
 
     svc = ClaimService(db)
     try:

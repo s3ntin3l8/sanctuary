@@ -9,6 +9,8 @@ Covers two recurring problems we hit in the live data:
   returned as-is, never refreshed.
 """
 
+import time
+
 import pytest
 
 from app.models.database import Case
@@ -272,6 +274,24 @@ def test_normalize_caps_at_120_chars_preserving_eA():
     assert out is not None
     assert len(out) <= 120
     assert out.endswith(" (eA)")
+
+
+@pytest.mark.unit
+def test_normalize_handles_pathological_input_fast():
+    """Regression for CodeQL py/polynomial-redos: adversarial titles that
+    used to risk catastrophic backtracking in the old single-regex
+    paren/matter split and trailing-punctuation strip must stay linear."""
+    pathological_inputs = [
+        "A ./. B (" + "x" * 5000,  # unterminated paren group
+        ("- " * 5000) + "end",  # long run of trailing-punct-like chars
+        ("A ./. B " * 500) + "(" + "x" * 200 + ")",  # repeated separator
+        " " * 50000 + "(" + "x" * 100 + ")",  # long whitespace run before paren
+        "./. " * 20000,  # many separator occurrences, no valid boundary
+    ]
+    for s in pathological_inputs:
+        start = time.monotonic()
+        _normalize_case_title(s)
+        assert time.monotonic() - start < 1.0
 
 
 # ---------------------------------------------------------------------------

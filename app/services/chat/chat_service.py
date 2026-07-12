@@ -121,7 +121,12 @@ async def stream_answer(
                     )
                 else:
                     logger.error("Chat stream error: %s", e)
-                    yield _sse({"type": "token", "t": f"\n\n[Stream error: {e}]"})
+                    yield _sse(
+                        {
+                            "type": "token",
+                            "t": "\n\n[Stream error — see server log]",
+                        }
+                    )
 
     cited_ids, cited_refs = _extract_citations(full_response)
 

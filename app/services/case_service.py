@@ -117,8 +117,28 @@ DORMANCY_DAYS = 90
 # draft-refresh path in get_or_create_case_from_reference.
 
 # Matches "X ./. Y (Matter)" where the parens contain the matter (not just
-# the eA marker). Captures: parties, matter.
-_PAREN_MATTER_RE = re.compile(r"^(.+?\s+\./\.\s+.+?)\s+\((?!eA\)$)([^()]+?)\)\s*$")
+# the eA marker). Split below (see _split_paren_matter) into a bounded regex
+# for the trailing paren group plus a plain substring scan for the "./."
+# separator — a regex with two unbounded `\s+` runs around a literal is
+# itself a CodeQL py/polynomial-redos hit (quadratic on long whitespace runs),
+# so the separator check is deliberately not a regex at all.
+_TRAILING_PAREN_RE = re.compile(r"\(([^()]+)\)\s*$")
+
+
+def _has_boundaried_dot_slash_dot(s: str) -> bool:
+    """True if `s` contains "./." with a whitespace char immediately on both
+    sides. Plain str.find loop, not regex — a `\\s+\\./\\.\\s+` pattern is
+    itself quadratic on adversarial input (long runs of whitespace)."""
+    start = 0
+    while True:
+        idx = s.find("./.", start)
+        if idx == -1:
+            return False
+        if idx > 0 and s[idx - 1].isspace() and s[idx + 3 : idx + 4].isspace():
+            return True
+        start = idx + 1
+
+
 # Matches a leading internal_id-like prefix the AI sometimes echoes, e.g.
 # "8372/25 - " or "8372-25: ". Both slash and dash digit-separators.
 _INTERNAL_ID_PREFIX_RE = re.compile(r"^\d{3,5}[/-]\d{2,4}\s*[-:/]\s*")
@@ -129,7 +149,28 @@ _EA_TRAILING_DASH_RE = re.compile(r"\s*[-–]\s*eA\s*$", re.IGNORECASE)
 _EA_FULL_NAME_RE = re.compile(
     r"\s*[-–,(]?\s*einstweilige[r]?\s+Anordnung\s*\)?\s*$", re.IGNORECASE
 )
-_TRAILING_PUNCT_RE = re.compile(r"[\s\-–:/,;]+$")
+_TRAILING_PUNCT_CHARS = " \t\n\r\v\f-–:/,;"
+
+
+def _split_paren_matter(s: str) -> tuple[str, str] | None:
+    """If `s` ends in a non-eA parenthetical matter preceded by an
+    "X ./. Y" party pair, return (parties, matter); else None.
+
+    Equivalent to matching `^(.+?\\s+\\./\\.\\s+.+?)\\s+\\((?!eA\\)$)([^()]+?)\\)\\s*$`
+    in one pass, but as a bounded regex plus a substring scan — avoids the
+    ambiguous backtracking of two unbounded lazy groups around a shared
+    literal (CodeQL py/polynomial-redos).
+    """
+    m = _TRAILING_PAREN_RE.search(s)
+    if not m:
+        return None
+    matter = m.group(1).strip()
+    if matter == "eA":
+        return None
+    prefix = s[: m.start()].rstrip()
+    if not _has_boundaried_dot_slash_dot(prefix):
+        return None
+    return prefix, matter
 
 
 def _normalize_case_title(title: str | None) -> str | None:
@@ -175,13 +216,13 @@ def _normalize_case_title(title: str | None) -> str | None:
     s = _INTERNAL_ID_PREFIX_RE.sub("", s, count=1).lstrip()
 
     # 3. Strip trailing punctuation/whitespace.
-    s = _TRAILING_PUNCT_RE.sub("", s)
+    s = s.rstrip(_TRAILING_PUNCT_CHARS)
 
     # 4. Paren-style matter → dash-style. Only fires for "X ./. Y (Matter)";
     #    matter-only titles like "Kindesunterhalt" are untouched.
-    m = _PAREN_MATTER_RE.match(s)
-    if m:
-        parties, matter = m.group(1).strip(), m.group(2).strip()
+    split = _split_paren_matter(s)
+    if split:
+        parties, matter = split
         s = f"{parties} - {matter}"
 
     # 5. Re-append eA in canonical form.
