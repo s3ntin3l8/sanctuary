@@ -86,7 +86,16 @@ jobs:
             sleep 1
           done
       - name: Run E2E tests
-        run: pytest -m e2e
+        # TEMPORARY DIAGNOSTIC (issue #98) -- -n0 disables xdist so the 3
+        # e2e tests run as 1 client against the shared uvicorn instead of 8
+        # concurrent xdist workers. Every local "can't reproduce" attempt
+        # was single-test already (i.e. effectively serial); CI's default
+        # 8-way concurrency is the one untested variable. If this branch's
+        # e2e runs come back consistently green across several reruns,
+        # concurrent-client contention is confirmed as the trigger. This
+        # line must NOT be merged to main as-is -- revert to `pytest -m e2e`
+        # once the discriminator experiment concludes either way.
+        run: pytest -m e2e -n0
       - name: Capture runner process/resource state on failure
         # Runs before "Stop app server" kills the uvicorn process, so a live
         # process snapshot is still possible. Diagnostic only (issue #98: a
