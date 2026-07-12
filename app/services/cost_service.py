@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.timezone import to_naive
+from app.core.timezone import ensure_utc
 from app.models.database import CostSignal, Document, LegalCost
 from app.models.enums import (
     CostCategory,
@@ -249,7 +249,7 @@ def _ensure_cost_signal(
 
     issued_at = doc.issued_date or doc.ingest_date
     if issued_at is not None:
-        issued_at = to_naive(issued_at)
+        issued_at = ensure_utc(issued_at)
 
     amount = cost_delta.get("amount")
     if amount is not None:

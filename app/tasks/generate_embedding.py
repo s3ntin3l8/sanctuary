@@ -122,7 +122,7 @@ def reindex_all_embeddings_task(self):
     UserSettings.reindex_job so the HTMX poller in Settings → AI can render
     a live bar.
 
-    The HTTP route handles the vec0 DDL (drop + recreate) synchronously
+    The HTTP route handles the embedding-column resize DDL synchronously
     before dispatching this task, so this task only loops over docs.
     """
     from app.dependencies import get_db_session

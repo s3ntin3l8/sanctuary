@@ -212,9 +212,9 @@ def test_count_new_since_zero_when_no_new_docs(db_session, case_a):
 def _stale_iso(minutes_ago: int) -> str:
     from datetime import timedelta
 
-    from app.core.timezone import naive_utc_now
+    from app.core.timezone import now_utc
 
-    return (naive_utc_now() - timedelta(minutes=minutes_ago)).isoformat()
+    return (now_utc() - timedelta(minutes=minutes_ago)).isoformat()
 
 
 def test_recover_stale_reindex_job_flips_old_running(app_row, db_session):

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.exc import OperationalError
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import AppSettings, UserSettings
 from app.models.enums import AuditEventType
 from app.services import audit_service
@@ -58,7 +58,7 @@ def get_last_viewed(case_id: str, db, user_id: int | None) -> datetime | None:
 def mark_viewed(case_id: str, db, user_id: int, *, now: datetime | None = None) -> None:
     """Record that the user just viewed this case (best-effort)."""
     if now is None:
-        now = naive_utc_now()
+        now = now_utc()
     try:
         settings = _get_or_create_user(db, user_id)
         current = dict(settings.settings_json or {})
@@ -100,7 +100,7 @@ def set_active_proceeding(
 def mark_home_visit(db, user_id: int, *, now: datetime | None = None) -> None:
     """Record that the user just visited the home page (best-effort)."""
     if now is None:
-        now = naive_utc_now()
+        now = now_utc()
     try:
         settings = _get_or_create_user(db, user_id)
         current = dict(settings.settings_json or {})
@@ -234,7 +234,7 @@ def set_dedup_running(case_id: str, db, *, total: int = 0) -> None:
         "status": "running",
         "total": total,
         "processed": 0,
-        "started_at": naive_utc_now().isoformat(),
+        "started_at": now_utc().isoformat(),
         "ended_at": None,
     }
     settings.settings_json = {**(settings.settings_json or {}), "dedup_jobs": jobs}
@@ -272,7 +272,7 @@ def set_dedup_result(
         "status": "failed" if failed else "done",
         "stats": stats or {},
         "started_at": prior.get("started_at"),
-        "ended_at": naive_utc_now().isoformat(),
+        "ended_at": now_utc().isoformat(),
     }
     settings.settings_json = {**(settings.settings_json or {}), "dedup_jobs": jobs}
     db.flush()
@@ -297,7 +297,7 @@ def set_reindex_running(db, *, total: int, embed_dim: int) -> None:
             "total": total,
             "reindexed": 0,
             "failed": 0,
-            "started_at": naive_utc_now().isoformat(),
+            "started_at": now_utc().isoformat(),
             "ended_at": None,
             "embed_dim": embed_dim,
             "error": None,
@@ -328,7 +328,7 @@ def set_reindex_done(db) -> None:
     settings = _get_or_create_app(db)
     job = dict((settings.settings_json or {}).get("reindex_job") or {})
     job["status"] = "done"
-    job["ended_at"] = naive_utc_now().isoformat()
+    job["ended_at"] = now_utc().isoformat()
     settings.settings_json = {**(settings.settings_json or {}), "reindex_job": job}
     db.flush()
 
@@ -337,7 +337,7 @@ def set_reindex_failed(db, error: str) -> None:
     settings = _get_or_create_app(db)
     job = dict((settings.settings_json or {}).get("reindex_job") or {})
     job["status"] = "failed"
-    job["ended_at"] = naive_utc_now().isoformat()
+    job["ended_at"] = now_utc().isoformat()
     job["error"] = error[:500]
     settings.settings_json = {**(settings.settings_json or {}), "reindex_job": job}
     db.flush()
@@ -353,7 +353,7 @@ def _is_stale(started_at_iso: str | None) -> bool:
         started = datetime.fromisoformat(started_at_iso)
     except (TypeError, ValueError):
         return False
-    return naive_utc_now() - started > timedelta(seconds=STALE_JOB_THRESHOLD_SECONDS)
+    return now_utc() - started > timedelta(seconds=STALE_JOB_THRESHOLD_SECONDS)
 
 
 def recover_stale_reindex_job(db) -> bool:

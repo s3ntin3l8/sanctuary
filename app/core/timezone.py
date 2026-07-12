@@ -32,20 +32,6 @@ def ensure_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
-def to_naive(dt: datetime) -> datetime:
-    """Convert timezone-aware datetime to naive (strip timezone)."""
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        return dt.replace(tzinfo=None)
-    return dt
-
-
-def naive_utc_now() -> datetime:
-    """Current UTC time as a tz-naive datetime, matching how DateTime columns are stored."""
-    return to_naive(now_utc())
-
-
 def to_iso(dt: datetime) -> str | None:
     """Convert datetime to ISO string, handling naive datetimes."""
     if dt is None:

@@ -25,7 +25,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 | Task queue | Celery + Redis (background AI pipeline) |
 | Frontend | HTMX + Alpine.js |
 | Styling | Tailwind CSS v4 (semantic design tokens) |
-| Database | SQLite + Alembic migrations + `sqlite-vec` |
+| Database | PostgreSQL + Alembic migrations + `pgvector` |
 | AI | Local Ollama / LM Studio / OpenAI-compatible — auto-detected |
 | Ingestion | Docling (PDF → Markdown) & EML Parser |
 
@@ -60,7 +60,7 @@ docker-compose up -d
 
 | Environment Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `sqlite:///./data/sanctuary.db` | Database connection string |
+| `DATABASE_URL` | `postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary` | Database connection string |
 | `AI_PROVIDER` | `ollama` | AI backend: `ollama`, `lmstudio`, `openai`, or `auto` |
 | `AI_BASE_URL` | `http://127.0.0.1:11434` | Base URL for the AI provider |
 | `AI_SUMMARY_MODEL` | `qwen3.5-9b-16k:latest` | Model for document analysis and summaries |
@@ -92,7 +92,7 @@ Tokens are defined in `static/input.css`. Light mode is the default. Dark mode a
 
 ## Database Schema
 
-The database uses SQLite with the following primary tables.
+The database uses PostgreSQL with the following primary tables.
 
 ### Document Fields
 
@@ -289,16 +289,15 @@ Per-court Aktenzeichen live on `Proceeding.az_court` — one case has one procee
 
 ### Vector Search
 
-Embeddings live in a `sqlite-vec` virtual table separate from the main schema:
+Embeddings live as `pgvector` columns directly on `document_chunks.embedding` and
+`claims.embedding` — no separate vector table:
 
-```sql
-CREATE VIRTUAL TABLE document_vectors USING vec0(
-    document_id INTEGER PRIMARY KEY,
-    embedding float[768]   -- dimension set by AI_EMBED_DIM (default 768)
-);
+```python
+embedding: Mapped[list[float] | None] = mapped_column(Vector(AI_EMBED_DIM), nullable=True)
 ```
 
-KNN queries use `WHERE embedding MATCH :blob ORDER BY distance LIMIT :k`.
+Dimension is set by `AI_EMBED_DIM` (default 768) and baked into the column at migration
+time. KNN queries use pgvector's `<->` (L2 distance) operator, HNSW-indexed.
 
 ### User Settings Fields
 

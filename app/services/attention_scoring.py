@@ -1,5 +1,4 @@
-from datetime import datetime
-
+from app.core.timezone import now_utc
 from app.models.database import ActionItem, IngestBatch
 from app.models.enums import ActionItemType, SignificanceTier
 
@@ -9,9 +8,7 @@ def score_action_item(item: ActionItem) -> int:
 
     Higher score means more urgent/significant.
     """
-    now = datetime.now()
-    # Ensure due_date is compared correctly (both offset-naive or both offset-aware)
-    # Project seems to use offset-naive datetime.now()
+    now = now_utc()
     due_date = item.due_date
     if due_date is None:
         return 0
@@ -57,7 +54,7 @@ def score_triage_batch(batch: IngestBatch) -> int:
 
     Higher score means it should be triaged sooner.
     """
-    now = datetime.now()
+    now = now_utc()
     age_days = (now - batch.received_at).days
 
     # Older batches get higher score

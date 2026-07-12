@@ -20,7 +20,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 * **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
 * **Frontend:** HTMX + Alpine.js
 * **Styling:** Tailwind CSS v4 (`static/input.css` dual light/dark tokens)
-* **DB:** SQLite + Alembic + `sqlite-vec`
+* **DB:** PostgreSQL + Alembic + `pgvector`
 * **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
 * **Rate limiting:** `slowapi`
@@ -43,16 +43,13 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 
 ## Vector search
 
-Embeddings are stored as f32 blobs in the `document_vectors` sqlite-vec virtual table:
+Embeddings live as `pgvector` columns directly on their owning tables — no separate vector table:
 
-```sql
-CREATE VIRTUAL TABLE document_vectors USING vec0(
-    document_id INTEGER PRIMARY KEY,
-    embedding float[768]
-);
+```python
+embedding: Mapped[list[float] | None] = mapped_column(Vector(AI_EMBED_DIM), nullable=True)
 ```
 
-Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text). KNN queries use `WHERE embedding MATCH :blob ORDER BY distance LIMIT :k`. The `alembic/env.py` loads the sqlite-vec extension before running migrations. Search merges vector results with `ilike` results in `app/services/search_service.py`.
+on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embedding` (semantic claim dedup). Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text) and baked into the column at migration time; changing it requires clearing the column and resizing (`ALTER TABLE ... ALTER COLUMN embedding TYPE vector(N)`, see Settings → AI → Rebuild Index). KNN queries use pgvector's `<->` (L2) operator via SQLAlchemy's `Column.l2_distance(vec)`, HNSW-indexed. Search merges vector results with `ilike` results in `app/services/search_service.py`.
 
 ## Routes
 
@@ -90,4 +87,4 @@ make migrate    # Run migrations
 ```
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
 
-**Testing — one invocation at a time, parallel within it.** `pytest`/`make test` runs across CPU cores by default (pytest-xdist, `-n auto`); each worker gets its own tmpfs (`/dev/shm`) DB via a pid-based path, so workers of the *same* invocation don't contend. What's still forbidden is a **second, separate** `pytest`/`make test` invocation started while one is running — the suite has no cross-invocation isolation, and a `conftest.py` lock fails that second run fast instead of letting it silently contend on disk I/O.
+**Testing.** `pytest`/`make test` runs across CPU cores by default (pytest-xdist, `-n auto`); each worker starts its own dedicated Postgres+pgvector container (`testcontainers`, session-scoped fixture in `tests/conftest.py`) on a random host port, so workers of the same invocation — and separate, overlapping `pytest` invocations — never contend on a shared database. Requires a working Docker socket.

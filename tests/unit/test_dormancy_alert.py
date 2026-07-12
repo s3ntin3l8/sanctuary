@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 from app.models.enums import ProceedingStatus
@@ -66,7 +66,7 @@ def test_no_active_proceedings_returns_none():
 def test_recent_activity_returns_none():
     proc = make_proceeding()
     case = make_case([proc])
-    recent = datetime.now() - timedelta(days=10)
+    recent = datetime.now(UTC) - timedelta(days=10)
     db = make_db({proc.id: recent})
     assert _compute_dormancy_alert(case, db) is None
 
@@ -74,7 +74,7 @@ def test_recent_activity_returns_none():
 def test_silent_120_days_returns_alert():
     proc = make_proceeding(court_name="AG Berlin", az="001 F 1/24")
     case = make_case([proc])
-    old = datetime.now() - timedelta(days=120)
+    old = datetime.now(UTC) - timedelta(days=120)
     db = make_db({proc.id: old})
     result = _compute_dormancy_alert(case, db)
     assert result is not None
@@ -92,7 +92,7 @@ def test_exactly_dormancy_threshold_not_triggered():
     """Exactly DORMANCY_DAYS days is NOT past threshold (strictly >)."""
     proc = make_proceeding()
     case = make_case([proc])
-    boundary = datetime.now() - timedelta(days=DORMANCY_DAYS)
+    boundary = datetime.now(UTC) - timedelta(days=DORMANCY_DAYS)
     db = make_db({proc.id: boundary})
     result = _compute_dormancy_alert(case, db)
     assert result is None
@@ -102,7 +102,7 @@ def test_one_past_dormancy_threshold_triggers():
     """DORMANCY_DAYS + 1 days should trigger."""
     proc = make_proceeding(court_name="LG Hamburg", az="312 O 100/23")
     case = make_case([proc])
-    old = datetime.now() - timedelta(days=DORMANCY_DAYS + 1)
+    old = datetime.now(UTC) - timedelta(days=DORMANCY_DAYS + 1)
     db = make_db({proc.id: old})
     result = _compute_dormancy_alert(case, db)
     assert result is not None
@@ -114,8 +114,8 @@ def test_fallback_to_started_at_when_no_docs():
     proc = make_proceeding(
         court_name="OLG Frankfurt",
         az="5 UF 200/24",
-        started_at=datetime.now() - timedelta(days=150),
-        ingest_date=datetime.now() - timedelta(days=200),
+        started_at=datetime.now(UTC) - timedelta(days=150),
+        ingest_date=datetime.now(UTC) - timedelta(days=200),
     )
     case = make_case([proc])
     db = make_db({})  # no rows returned from the GROUP BY query
@@ -133,8 +133,8 @@ def test_multiple_procs_picks_most_dormant():
 
     db = make_db(
         {
-            proc1.id: datetime.now() - timedelta(days=100),
-            proc2.id: datetime.now() - timedelta(days=200),
+            proc1.id: datetime.now(UTC) - timedelta(days=100),
+            proc2.id: datetime.now(UTC) - timedelta(days=200),
         }
     )
 

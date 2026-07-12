@@ -118,9 +118,9 @@ async def login_submit(
 
     if new_hash:
         user.password_hash = new_hash
-    from app.core.timezone import naive_utc_now
+    from app.core.timezone import now_utc
 
-    user.last_login_at = naive_utc_now()
+    user.last_login_at = now_utc()
     db.commit()
 
     # Session fixation: drop any prior session before writing the new identity.

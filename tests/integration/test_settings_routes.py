@@ -9,10 +9,9 @@ Covers:
 - settings_page         (GET /settings/*)
 """
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.main import app
 from app.models.database import AppSettings, AuditLog, Case, Entity, User, UserSettings
@@ -70,16 +69,20 @@ def test_maintenance_clear_all_data(db_session, sample_case):
     )
     db_session.commit()
 
-    db_path = db_session.get_bind().url.database
-    size_before = os.path.getsize(db_path)
+    def _db_size() -> int:
+        return db_session.execute(
+            text("SELECT pg_database_size(current_database())")
+        ).scalar()
+
+    size_before = _db_size()
 
     response = client.post("/api/settings/maintenance/clear-all-data")
     assert response.status_code == 200
     assert "Cleared" in response.text
 
-    size_after = os.path.getsize(db_path)
+    size_after = _db_size()
     assert size_after < size_before, (
-        f"clear-all-data must VACUUM and shrink the DB file: "
+        f"clear-all-data must VACUUM FULL and shrink the database: "
         f"before={size_before} after={size_after}"
     )
 

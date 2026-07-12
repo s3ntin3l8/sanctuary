@@ -11,7 +11,7 @@ a page reload.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -36,7 +36,7 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
     )
     assert resp.status_code in (200, 303)
 
-    now = datetime.now().isoformat(sep=" ")
+    now = datetime.now(UTC)
     cur = conn.cursor()
     # status is NOT NULL with only an ORM-side (Python) default — raw SQL
     # bypasses that, so it must be supplied explicitly here. Enum-backed
@@ -47,10 +47,11 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
         """INSERT INTO documents
            (title, case_id, originator_type, role, ingest_date,
             needs_review, court_relay, thread_open, page_count, pipeline_state, status)
-           VALUES (?, ?, 'OWN', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
+           VALUES (%s, %s, 'OWN', 'STANDALONE', %s, false, false, false, 1, 'completed', 'ACTIVE')
+           RETURNING id""",
         (f"Claim Source {suffix}", case_id, now),
     )
-    source_doc_id = cur.lastrowid
+    source_doc_id = cur.fetchone()[0]
     # claims has no case_id/source_document_id column — Wave 2A
     # (d2c4f9a1b6e8_drop_claim_case_columns) made claims global/cross-case.
     # Case context lives entirely on ClaimEvidence: claims_for_case() (see
@@ -59,31 +60,32 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
     # (claims_asserted_by_document()).
     cur.execute(
         """INSERT INTO claims
-           (claim_text, claim_type, status, first_made_at, last_updated_at)
-           VALUES (?, 'FACTUAL', 'ASSERTED', ?, ?)""",
+           (claim_text, claim_type, status, is_precedent, first_made_at, last_updated_at)
+           VALUES (%s, 'FACTUAL', 'ASSERTED', false, %s, %s)
+           RETURNING id""",
         (f"Test claim {suffix}", now, now),
     )
-    claim_id = cur.lastrowid
+    claim_id = cur.fetchone()[0]
     cur.execute(
         """INSERT INTO claim_evidence
            (claim_id, document_id, role, confidence, ingest_date)
-           VALUES (?, ?, 'ASSERTS', 'AI_DETECTED', ?)""",
+           VALUES (%s, %s, 'ASSERTS', 'AI_DETECTED', %s)""",
         (claim_id, source_doc_id, now),
     )
     conn.commit()
 
     proc_row = conn.execute(
-        "SELECT id FROM proceedings WHERE case_id = ?", (case_id,)
+        "SELECT id FROM proceedings WHERE case_id = %s", (case_id,)
     ).fetchone()
     proceeding_id = proc_row[0] if proc_row else None
 
     def _cleanup(c):
-        c.execute("DELETE FROM claim_evidence WHERE claim_id = ?", (claim_id,))
-        c.execute("DELETE FROM claims WHERE id = ?", (claim_id,))
-        c.execute("DELETE FROM documents WHERE id = ?", (source_doc_id,))
+        c.execute("DELETE FROM claim_evidence WHERE claim_id = %s", (claim_id,))
+        c.execute("DELETE FROM claims WHERE id = %s", (claim_id,))
+        c.execute("DELETE FROM documents WHERE id = %s", (source_doc_id,))
         if proceeding_id:
-            c.execute("DELETE FROM proceedings WHERE id = ?", (proceeding_id,))
-        c.execute("DELETE FROM cases WHERE id = ?", (case_id,))
+            c.execute("DELETE FROM proceedings WHERE id = %s", (proceeding_id,))
+        c.execute("DELETE FROM cases WHERE id = %s", (case_id,))
 
     cleanup.append(_cleanup)
     return case_id, claim_id

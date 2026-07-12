@@ -15,10 +15,16 @@ was silently swallowed for the rest of the process's life, which is why
 added instrumentation (#99/#100/#102).
 
 This test reproduces the real mechanism directly -- an actual alembic
-`command.upgrade()` against a scratch on-disk sqlite db and a copy of the
-real alembic.ini -- rather than mocking the disable, since the point is to
-prove `setup_logging()` recovers from whatever alembic's own config does,
-not to assert a hand-picked logging.config call.
+`command.upgrade()` against a scratch Postgres database -- rather than
+mocking the disable, since the point is to prove `setup_logging()` recovers
+from whatever alembic's own config does, not to assert a hand-picked
+logging.config call. The scratch database is a dedicated testcontainers
+Postgres (not the shared `test_engine` from conftest.py, whose schema is
+already built via `Base.metadata.create_all` and has no `alembic_version`
+table): `alembic upgrade head` needs a genuinely empty database to run
+against. The real `alembic.ini` is used unmodified — env.py's own
+DATABASE_URL env-var override (see alembic/env.py) points it at the scratch
+database, so this test doesn't need to hand-edit the ini file's URL line.
 
 A full app-boot end-to-end version of this (real lifespan, real
 AccessLogMiddleware, real request) was verified manually in an isolated
@@ -35,9 +41,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_setup_logging_recovers_loggers_disabled_by_alembic(tmp_path, monkeypatch):
+def test_setup_logging_recovers_loggers_disabled_by_alembic(monkeypatch):
     from alembic import command
     from alembic.config import Config as AlembicConfig
+    from testcontainers.postgres import PostgresContainer
 
     # SANCTUARY_APP normally makes alembic/env.py skip fileConfig() entirely
     # -- unset it here to exercise the actual bug path (a bare `alembic`
@@ -45,45 +52,44 @@ def test_setup_logging_recovers_loggers_disabled_by_alembic(tmp_path, monkeypatc
     # SANCTUARY_APP guard was added).
     monkeypatch.delenv("SANCTUARY_APP", raising=False)
 
-    scratch_db = tmp_path / "regression.db"
-    scratch_ini = tmp_path / "alembic.ini"
-    ini_text = (REPO_ROOT / "alembic.ini").read_text()
-    ini_text = ini_text.replace(
-        "sqlalchemy.url = sqlite:///data/sanctuary.db",
-        f"sqlalchemy.url = sqlite:///{scratch_db}",
-    )
-    ini_text = ini_text.replace(
-        "script_location = %(here)s/alembic",
-        f"script_location = {REPO_ROOT / 'alembic'}",
-    )
-    scratch_ini.write_text(ini_text)
+    with PostgresContainer(
+        "pgvector/pgvector:pg17",
+        username="sanctuary",
+        password="sanctuary",
+        dbname="sanctuary_logging_regression",
+        driver="psycopg",
+    ) as pg:
+        # alembic/env.py overrides alembic.ini's sqlalchemy.url from
+        # DATABASE_URL when set — point this run at the scratch container
+        # without touching the real ini file's contents.
+        monkeypatch.setenv("DATABASE_URL", pg.get_connection_url())
 
-    # A logger that stands in for app.main/app.access: it must already be
-    # registered before alembic's fileConfig() runs, matching how app.main's
-    # module-level `logger = logging.getLogger(__name__)` and
-    # AccessLogMiddleware's `logging.getLogger("app.access")` are both
-    # created well before the lifespan's migration call.
-    marker = logging.getLogger("app._regression_marker_98")
-    assert marker.disabled is False, "sanity: logger should start enabled"
+        # A logger that stands in for app.main/app.access: it must already be
+        # registered before alembic's fileConfig() runs, matching how app.main's
+        # module-level `logger = logging.getLogger(__name__)` and
+        # AccessLogMiddleware's `logging.getLogger("app.access")` are both
+        # created well before the lifespan's migration call.
+        marker = logging.getLogger("app._regression_marker_98")
+        assert marker.disabled is False, "sanity: logger should start enabled"
 
-    alembic_cfg = AlembicConfig(str(scratch_ini))
-    command.upgrade(alembic_cfg, "head")
+        alembic_cfg = AlembicConfig(str(REPO_ROOT / "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
 
-    assert marker.disabled is True, (
-        "Expected alembic's own fileConfig() call to disable a pre-existing "
-        "logger not listed in alembic.ini's [loggers] section. If this now "
-        "fails, alembic.ini or alembic/env.py changed and this test's "
-        "premise needs re-checking -- don't just delete the assertion."
-    )
+        assert marker.disabled is True, (
+            "Expected alembic's own fileConfig() call to disable a pre-existing "
+            "logger not listed in alembic.ini's [loggers] section. If this now "
+            "fails, alembic.ini or alembic/env.py changed and this test's "
+            "premise needs re-checking -- don't just delete the assertion."
+        )
 
-    from app.main import setup_logging
+        from app.main import setup_logging
 
-    setup_logging()
+        setup_logging()
 
-    assert marker.disabled is False, (
-        "setup_logging() must reset `.disabled`, not just level/handlers/"
-        "propagate -- otherwise any fileConfig()/dictConfig() call anywhere "
-        "in the process (alembic's own in-process migration re-run being "
-        "the concrete case from #98) permanently silences app logging for "
-        "every logger that already existed at that point."
-    )
+        assert marker.disabled is False, (
+            "setup_logging() must reset `.disabled`, not just level/handlers/"
+            "propagate -- otherwise any fileConfig()/dictConfig() call anywhere "
+            "in the process (alembic's own in-process migration re-run being "
+            "the concrete case from #98) permanently silences app logging for "
+            "every logger that already existed at that point."
+        )

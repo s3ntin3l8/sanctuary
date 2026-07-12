@@ -7,7 +7,7 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -16,12 +16,14 @@ test: ## Run all tests (excludes E2E)
 test-e2e: ## Run E2E tests (requires running server on localhost:8000)
 	$(PYTEST) -m e2e
 
-test-e2e-isolated: ## Run E2E tests against a fully throwaway server + DB (mirrors CI; never touches data/sanctuary.db)
-	@rm -f /dev/shm/sanctuary_test_e2e.db
+test-e2e-isolated: db-up ## Run E2E tests against a fully throwaway server + DB (mirrors CI; never touches your dev data)
+	@echo "Resetting throwaway e2e DB..."
+	@docker compose exec -T db psql -U sanctuary -d postgres -c "DROP DATABASE IF EXISTS sanctuary_test_e2e" >/dev/null
+	@docker compose exec -T db psql -U sanctuary -d postgres -c "CREATE DATABASE sanctuary_test_e2e" >/dev/null
 	@echo "Migrating throwaway DB..."
-	@DATABASE_URL="sqlite:////dev/shm/sanctuary_test_e2e.db" $(ALEMBIC) upgrade head
+	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(ALEMBIC) upgrade head
 	@echo "Starting throwaway app server..."
-	@DATABASE_URL="sqlite:////dev/shm/sanctuary_test_e2e.db" \
+	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" \
 	 CELERY_TASK_ALWAYS_EAGER=true \
 	 AUTH_ENABLED=false \
 	 SESSION_SECRET="e2e-isolated-ephemeral-not-a-real-secret" \
@@ -29,7 +31,7 @@ test-e2e-isolated: ## Run E2E tests against a fully throwaway server + DB (mirro
 	 echo $$! > /tmp/sanctuary_test_e2e_server.pid; \
 	 trap 'kill "$$(cat /tmp/sanctuary_test_e2e_server.pid)" 2>/dev/null; rm -f /tmp/sanctuary_test_e2e_server.pid' EXIT INT TERM; \
 	 for i in $$(seq 1 30); do curl -sf http://127.0.0.1:8000 >/dev/null && break; sleep 1; done; \
-	 DATABASE_URL="sqlite:////dev/shm/sanctuary_test_e2e.db" $(PYTEST) -m e2e; \
+	 DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(PYTEST) -m e2e; \
 	 status=$$?; \
 	 echo "--- throwaway server log (tail) ---"; tail -50 /tmp/sanctuary_test_e2e_server.log || true; \
 	 exit $$status
@@ -59,6 +61,9 @@ setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait
 
+db-up: ## Start Postgres (Docker)
+	docker compose up db -d --wait
+
 _check-no-celery: ## Internal: refuse to start if celery beat/workers already running
 	@if pgrep -f "celery -A app.tasks.celery_app (beat|worker)" >/dev/null 2>&1; then \
 		echo "ERROR: celery beat or worker already running:"; \
@@ -67,8 +72,8 @@ _check-no-celery: ## Internal: refuse to start if celery beat/workers already ru
 		exit 1; \
 	fi
 
-run: _check-no-celery ## Start Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
-	docker compose up redis -d --wait
+run: _check-no-celery ## Start Postgres+Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
+	docker compose up db redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
@@ -76,15 +81,15 @@ run: _check-no-celery ## Start Redis, web server, ingest worker (OCR), AI worker
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
 run-stable: _check-no-celery ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
-	docker compose up redis -d --wait
+	docker compose up db redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(PYTHON) -m celery -A app.tasks.celery_app worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 
-run-debug: _check-no-celery ## Start server with DEBUG logging (+ Redis + both workers)
-	docker compose up redis -d --wait
+run-debug: _check-no-celery ## Start server with DEBUG logging (+ Postgres, Redis, both workers)
+	docker compose up db redis -d --wait
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
 	LOG_LEVEL=debug DEBUG=True $(PYTHON) -m celery -A app.tasks.celery_app worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4 & \
 	$(PYTHON) -m celery -A app.tasks.celery_app beat --loglevel=INFO & \
@@ -115,28 +120,17 @@ test-unit: ## Run unit tests
 test-integration: ## Run integration tests
 	$(PYTEST) --ignore=tests/e2e -m integration
 
-seed: ## Reset database and seed with advanced triage combinations (backs up real DB first)
-	@if [ -f data/sanctuary.db ]; then \
-		BACKUP="data/sanctuary.db.bak.$$(date +%Y%m%d_%H%M%S)"; \
-		cp data/sanctuary.db "$$BACKUP"; \
-		echo "✓ Backup: $$BACKUP"; \
-	fi
-	rm -f data/sanctuary.db
+seed: db-up ## Reset database (drop+recreate schema) and seed with advanced triage combinations
+	$(ALEMBIC) downgrade base
+	$(ALEMBIC) upgrade head
 	$(PYTHON) scripts/seed_dummy_data.py
 
-migrate: ## Run database migrations (auto-backs up data/sanctuary.db first)
-	@if [ -f data/sanctuary.db ]; then \
-		BACKUP="data/sanctuary.db.bak.$$(date +%Y%m%d_%H%M%S)"; \
-		cp data/sanctuary.db "$$BACKUP"; \
-		echo "✓ Backup: $$BACKUP"; \
-	fi
+migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head
 
 lint: ## Run pre-commit hooks on all files
 	$(PRECOMMIT) run --all-files
 
-clean: ## Clean up temporary files (keeps only the 5 most recent DB backups)
+clean: ## Clean up temporary files
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -f test_sanctuary.db
-	@ls -t data/sanctuary.db.bak.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true

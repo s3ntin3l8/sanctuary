@@ -2,9 +2,8 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import cast
 
-from sqlalchemy.engine import CursorResult
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.database import ActionItem
@@ -137,7 +136,6 @@ def create_from_payload(
             # (a hearing showing up as "court_date" in the rescheduling notice
             # but "deadline" in the original Ladung). The tombstone persists so
             # a later-processing older doc can't re-insert the stale date.
-            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
             updated = (
                 db.query(ActionItem)
@@ -165,7 +163,7 @@ def create_from_payload(
                 # enriches later (reverse-processing-order case). on_conflict
                 # is a no-op if a tombstone with the same key already exists.
                 sentinel_stmt = (
-                    sqlite_insert(ActionItem)
+                    pg_insert(ActionItem)
                     .values(
                         case_id=case_id,
                         source_document_id=None,
@@ -221,13 +219,11 @@ def create_from_payload(
         if desc and desc.strip() in _PLACEHOLDER_DESCS:
             desc = None
 
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
         raw_addressee = (action.get("addressee") or "").strip().lower() or None
         addressee = raw_addressee if raw_addressee in VALID_ADDRESSEES else None
 
         stmt = (
-            sqlite_insert(ActionItem)
+            pg_insert(ActionItem)
             .values(
                 case_id=case_id,
                 proceeding_id=proceeding_id,
@@ -243,8 +239,13 @@ def create_from_payload(
             .on_conflict_do_nothing(
                 index_elements=["case_id", "due_date", "action_type"]
             )
+            # psycopg/Postgres don't populate .rowcount reliably for an
+            # INSERT ... ON CONFLICT DO NOTHING (it reports -1 whether or
+            # not the row landed) — RETURNING + fetchone() is the only
+            # reliable way to tell "inserted" from "conflicted, skipped".
+            .returning(ActionItem.id)
         )
-        if cast(CursorResult, db.execute(stmt)).rowcount > 0:
+        if db.execute(stmt).fetchone() is not None:
             count += 1
 
     if count:

@@ -13,7 +13,7 @@ def _set_stages(db, doc, stages: dict):
 
     def _dt(v):
         if isinstance(v, str):
-            return datetime.fromisoformat(v.replace("Z", "+00:00")).replace(tzinfo=None)
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
         return v
 
     for stage_key, stage_data in stages.items():

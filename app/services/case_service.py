@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.constants import CASE_STATUS_META
+from app.core.timezone import now_utc
 from app.models.database import (
     ActionItem,
     Case,
@@ -822,7 +823,7 @@ class CaseService:
         last_visit = get_last_viewed(case_id, self.db, user_id)
         new_docs = count_new_since(case_id, last_visit, self.db)
 
-        now = datetime.now()
+        now = now_utc()
         return {
             "case": case,
             "documents": documents,
@@ -1072,7 +1073,7 @@ class CaseService:
         all_cases = self.case_repo.get_all_sorted_by_date(
             include_drafts=True, visible_ids=visible
         )
-        now = datetime.now()
+        now = now_utc()
 
         from app.services.user_settings_service import get_last_home_visit
 
@@ -1122,7 +1123,7 @@ class CaseService:
         cases, total = self.case_repo.get_paginated(
             page=page, per_page=per_page, include_drafts=True, visible_ids=visible
         )
-        now = datetime.now()
+        now = now_utc()
 
         from app.services.user_settings_service import get_last_home_visit
 
@@ -1499,7 +1500,7 @@ class CaseService:
 
 def _compute_dormancy_alert(case, db) -> str | None:
     """Return a textual alert when an active proceeding has been silent past the threshold."""
-    now = datetime.now()
+    now = now_utc()
     active_procs = [
         p for p in (case.proceedings or []) if p.status == ProceedingStatus.ACTIVE
     ]

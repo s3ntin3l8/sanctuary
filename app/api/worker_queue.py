@@ -1,7 +1,6 @@
 import logging
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -16,17 +15,6 @@ from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/worker/queue", tags=["worker-queue"])
-
-
-# Read endpoints have a sub-second latency budget. Override the connection's
-# global busy_timeout (60s, see app/config.py) so a contended read fails fast
-# with OperationalError instead of holding the HTTP connection open. The UI
-# layer surfaces the failure as a "Worker busy — retry" state.
-_READ_BUSY_TIMEOUT_MS = 1000
-
-
-def _fail_fast_reads(db: Session) -> None:
-    db.execute(text(f"PRAGMA busy_timeout = {_READ_BUSY_TIMEOUT_MS}"))
 
 
 def _get_queue_docs(
@@ -227,7 +215,6 @@ def compute_queue_counts(db: Session) -> dict[str, int]:
 
 @router.get("/badge")
 async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
-    _fail_fast_reads(db)
     counts = compute_queue_counts(db)
     return templates.TemplateResponse(
         request,
@@ -241,7 +228,6 @@ async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/panel")
 async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db)):
-    _fail_fast_reads(db)
     running, pending, failed = _get_queue_docs(db)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()

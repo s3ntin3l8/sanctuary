@@ -11,7 +11,7 @@ for dismiss/delete.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
@@ -538,7 +538,7 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
                     if d.significance_tier is not None
                     else 99,
                     0 if d.role == DocumentRole.COVER_LETTER else 1,
-                    d.ingest_date or datetime.min,
+                    d.ingest_date or datetime.min.replace(tzinfo=UTC),
                 )
             )
         doc_ids = [d.id for d in bundle.documents]

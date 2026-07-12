@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import (
     ActionItem,
     ClaimEvidence,
@@ -66,7 +66,7 @@ _ACTOR_KIND_FALLBACK: dict[str, str] = {
 @dataclass(frozen=True)
 class TimelineEvent:
     id: str  # globally unique within case, e.g. "doc-42", "action-7", "cost-3"
-    date: datetime  # sort key; naive UTC like all DB datetimes
+    date: datetime  # sort key; tz-aware UTC like all DB datetimes
     actor: str  # own | court | opposing | third | unknown
     kind: str  # filing | order | statement | report | relay | payment
     #           | hearing | deadline | pending | milestone
@@ -113,11 +113,11 @@ class CaseTimelineService:
         Returns a dict with:
           events        — list[TimelineEvent] sorted ascending by date
           month_buckets — list[dict] with keys: key, label, total, critical, future, max_total
-          today         — datetime (naive UTC, midnight)
+          today         — datetime (tz-aware UTC, midnight)
           total_count   — int
           quiet_gaps    — dict[event_id, int] gap in days before this event in same month
         """
-        today = naive_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
         events: list[TimelineEvent] = []
 
         self._add_document_events(case_id, today, events)

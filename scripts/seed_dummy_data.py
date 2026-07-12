@@ -17,13 +17,11 @@ Bundles seeded (all scoped to ADV-024-A / ADV-031-B / ADV-100-X)
 11  COMPLETED     batch.status=COMPLETED → must NOT appear in triage feed
 """
 
-import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-os.environ.setdefault("SQLALCHEMY_DATABASE_URL", "sqlite:///./data/sanctuary.db")
 
 from app.config import SessionLocal, engine
 from app.models.database import (
@@ -68,6 +66,23 @@ _alembic_command.stamp(_AlembicConfig("alembic.ini"), "head")
 
 db = SessionLocal()
 now = datetime.now(UTC).replace(second=0, microsecond=0)
+
+# ── Bootstrap admin (owns seeded UserReactions — user_id is NOT NULL) ──────
+from app.models.enums import UserRole
+from app.services import auth_service
+
+_admin = auth_service.get_user_by_email(db, "admin@localhost")
+if _admin is None:
+    _admin = auth_service.create_user(
+        db,
+        email="admin@localhost",
+        password="devpassword123",
+        role=UserRole.ADMIN,
+        display_name="Administrator",
+    )
+    db.commit()
+auth_service.set_bootstrap_admin_id(db, _admin.id)
+db.commit()
 
 # ── Idempotency: remove prior seed data ────────────────────────────────────
 # Delete in dependency order so FK constraints aren't violated.
@@ -995,19 +1010,25 @@ b9_true = make_doc(
 db.add_all(
     [
         UserReaction(
+            user_id=_admin.id,
             document_id=b9_lies.id,
             reaction=UserReactionType.LIES,
             notes="Widerspricht Reisekostenabrechnung Anlage S1",
         ),
         UserReaction(
-            document_id=b9_needs_proof.id, reaction=UserReactionType.NEEDS_PROOF
+            user_id=_admin.id,
+            document_id=b9_needs_proof.id,
+            reaction=UserReactionType.NEEDS_PROOF,
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=b9_precedent.id,
             reaction=UserReactionType.PRECEDENT,
             notes="BGH XII ZB 601/15 — maßgeblich für §1671-Auslegung",
         ),
-        UserReaction(document_id=b9_true.id, reaction=UserReactionType.TRUE),
+        UserReaction(
+            user_id=_admin.id, document_id=b9_true.id, reaction=UserReactionType.TRUE
+        ),
     ]
 )
 db.commit()
@@ -1533,16 +1554,19 @@ case_a.total_cost_exposure = 16900000  # cents — 169.000 €
 db.add_all(
     [
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_klageerwiderung.id,
             reaction=UserReactionType.LIES,
             notes="Leistungsfähigkeit bestritten — widerspricht Kontoauszügen",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_jugendamt.id,
             reaction=UserReactionType.NEEDS_PROOF,
             notes="Einkommensauskunft fehlt — Rückfrage senden",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_pkh.id,
             reaction=UserReactionType.TRUE,
             notes="PKH rechtskräftig bewilligt",
@@ -2820,36 +2844,43 @@ db.add_all(
 db.add_all(
     [
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_sv_gutachten.id,
             reaction=UserReactionType.TRUE,
             notes="SV-Gutachten bestätigt unsere Kernthese — starkes Beweismittel.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_beweisangebot.id,
             reaction=UserReactionType.LIES,
             notes="Beklagter bestreitet Leistungsfähigkeit obwohl Kontoauszüge Gegenteil belegen.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_vb_bericht.id,
             reaction=UserReactionType.NEEDS_PROOF,
             notes="VB empfiehlt Wechselmodell ohne konkrete Begründung — vertiefen.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_beweisbeschluss.id,
             reaction=UserReactionType.TRUE,
             notes="Beweisbeschluss — SV-Antrag erfolgreich.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_olg_jugendamt.id,
             reaction=UserReactionType.PRECEDENT,
             notes="OLG-Jugendamt Wechselmodell-Empfehlung — faktisches Novum, zitieren.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_gehaltsabrechnung.id,
             reaction=UserReactionType.LIES,
             notes="Kurzarbeit-Argument widerlegt durch SV-Gutachten und Kontoauszüge.",
         ),
         UserReaction(
+            user_id=_admin.id,
             document_id=p8_duplik.id,
             reaction=UserReactionType.TRUE,
             notes="Duplik präzise — SV-Befund gut eingearbeitet.",

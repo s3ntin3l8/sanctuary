@@ -17,7 +17,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import Claim, ClaimEvidence, ClaimMergeProposal
 from app.models.enums import ClaimEvidenceRole, ProposalConfidence, ProposalStatus
 from app.services.ai_config import get_chat_config
@@ -78,9 +78,9 @@ def propose_merges_for_new_claim(
     """Compare `new_claim` against the top-K nearest existing claims and
     create a ClaimMergeProposal for each high-confidence match.
 
-    Commits after each proposal so SQLite's WAL write lock isn't held
-    across the slow AI judge calls — otherwise concurrent Celery writers
-    (extract / enrich tasks) hit `database is locked` past busy_timeout.
+    Commits after each proposal so no write transaction is held open across
+    the slow AI judge calls — otherwise concurrent Celery writers (extract /
+    enrich tasks) touching the same rows would block or hit a deadlock.
 
     Returns the proposals created (empty list if none).
     """
@@ -159,7 +159,7 @@ def propose_merges_for_new_claim(
                 ),
                 rationale=f"intra-doc auto-merge: {verdict.rationale}",
                 status=ProposalStatus.PENDING,
-                proposed_at=naive_utc_now(),
+                proposed_at=now_utc(),
             )
             db.add(auto_prop)
             db.flush()
@@ -179,7 +179,7 @@ def propose_merges_for_new_claim(
             confidence=confidence_map.get(verdict.confidence, ProposalConfidence.LOW),
             rationale=verdict.rationale,
             status=ProposalStatus.PENDING,
-            proposed_at=naive_utc_now(),
+            proposed_at=now_utc(),
         )
         db.add(prop)
         db.commit()  # release the write lock before the next judge call
@@ -363,7 +363,7 @@ async def find_duplicates_for_case(
                     confidence=confidence_map.get(j.confidence, ProposalConfidence.LOW),
                     rationale=j.rationale,
                     status=ProposalStatus.PENDING,
-                    proposed_at=naive_utc_now(),
+                    proposed_at=now_utc(),
                 )
             )
             db.commit()

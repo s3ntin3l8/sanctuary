@@ -249,10 +249,9 @@ async def lifespan(app: FastAPI):
         scan_dir.mkdir(parents=True, exist_ok=True)
 
     # Skip every production-DB side effect under pytest. The conftest creates
-    # the test schema via Base.metadata.create_all on a separate engine, so
-    # running migrations / seeding / recovery against the hardcoded
-    # alembic.ini URL (sqlite:///data/sanctuary.db) would race with `make run`'s
-    # WAL locks and cause hangs or "readonly database" errors.
+    # the test schema via Base.metadata.create_all on a separate test database,
+    # so running migrations / seeding / recovery against the dev DATABASE_URL
+    # here would race with a concurrently running `make run` / worker.
     if os.getenv("PYTEST_CURRENT_TEST"):
         yield
         return
@@ -320,8 +319,8 @@ async def lifespan(app: FastAPI):
     logging.getLogger(__name__).info("Migrations complete, logging re-verified.")
 
     # Seed singletons that production code paths depend on. Required for FK
-    # enforcement (PRAGMA foreign_keys=ON) — any ingest into the triage inbox
-    # references case_id="_TRIAGE" and would 500 without this row.
+    # enforcement — any ingest into the triage inbox references
+    # case_id="_TRIAGE" and would 500 without this row.
     from app.dependencies import SessionLocal
     from app.services.case_service import seed_triage_case
 
@@ -409,9 +408,11 @@ async def lifespan(app: FastAPI):
             "Pipeline recovery on startup (stuck pending): %s", pending_stats
         )
 
-    # vec0 cannot be ALTERed: if the active embed instance's dim diverges from the
-    # document_chunk_vectors schema, every embedding write fails the per-row dim guard.
-    # Two cases:
+    # Changing embed dim requires clearing document_chunks.embedding before the
+    # column can be ALTERed to a new vector(N) — existing rows at the old
+    # dimension can't coexist with a new declared width. If the active embed
+    # instance's dim diverges from the column's declared width, every
+    # embedding write fails the per-row dim guard. Two cases:
     #   (a) stored dim is missing/unset (legacy, pre-auto-detect) → schema is the ground
     #       truth; sync it into the instance so the UI and per-write guard agree.
     #   (b) stored dim was explicitly set but differs from schema → user changed embed
@@ -421,14 +422,14 @@ async def lifespan(app: FastAPI):
         get_instance,
         save_instance,
     )
-    from app.services.embeddings import verify_vec0_dim
+    from app.services.embeddings import verify_embedding_dim
 
     with SessionLocal() as vec_db:
         ai = _get_ai_section(vec_db)
         active_id = ai.get("active_embed_id")
         inst = get_instance(vec_db, active_id) if active_id else None
         stored_dim = inst.get("embed_dim") if inst else None  # None = never probed
-        ok, actual = verify_vec0_dim(vec_db, stored_dim or 0)
+        ok, actual = verify_embedding_dim(vec_db, stored_dim or 0)
         if actual is not None and stored_dim != actual:
             if not stored_dim and inst is not None:
                 # Case (a): dim was never stored — sync from schema silently.
@@ -436,15 +437,15 @@ async def lifespan(app: FastAPI):
                 updated["embed_dim"] = actual
                 save_instance(vec_db, updated)
                 logging.getLogger(__name__).info(
-                    "Startup: set active embed instance dim to %s from document_chunk_vectors schema.",
+                    "Startup: set active embed instance dim to %s from document_chunks.embedding schema.",
                     actual,
                 )
             elif stored_dim:
                 # Case (b): explicit dim mismatch — user needs to rebuild.
                 logging.getLogger(__name__).error(
-                    "embed_dim=%s (active embed instance) but document_chunk_vectors schema "
-                    "declares dim=%s. vec0 can't be ALTERed — use Settings → AI → "
-                    "Rebuild Index to recreate it.",
+                    "embed_dim=%s (active embed instance) but document_chunks.embedding "
+                    "declares dim=%s. Use Settings → AI → Rebuild Index to clear and "
+                    "re-embed at the new dimension.",
                     stored_dim,
                     actual,
                 )

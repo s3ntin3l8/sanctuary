@@ -381,9 +381,9 @@ def test_mark_retrying_writes_record_shape(db_session):
     initialize(doc, batched=False, db=db_session)
     db_session.commit()
 
-    from datetime import datetime
+    from datetime import UTC, datetime
 
-    next_at_dt = datetime(2026, 5, 6, 18, 32, 11)
+    next_at_dt = datetime(2026, 5, 6, 18, 32, 11, tzinfo=UTC)
 
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
     mark_retrying(
@@ -492,7 +492,7 @@ def test_schedule_retry_computes_next_at_from_countdown(db_session):
     db_session.commit()
 
     mark_started(doc.id, PipelineStage.EXTRACT, db_session)
-    before = datetime.now(UTC).replace(tzinfo=None)
+    before = datetime.now(UTC)
     schedule_retry(
         doc.id,
         PipelineStage.EXTRACT,
@@ -502,7 +502,7 @@ def test_schedule_retry_computes_next_at_from_countdown(db_session):
         max_attempts=3,
         countdown=60,
     )
-    after = datetime.now(UTC).replace(tzinfo=None)
+    after = datetime.now(UTC)
 
     db_session.refresh(doc)
     rec = stages_dict(doc)[PipelineStage.EXTRACT.value]
@@ -1452,7 +1452,7 @@ def test_recover_unclaimed_ready_batches_ignores_already_claimed(
         PipelineStage.METADATA.value: StageStatus.COMPLETED.value,
     }
     batch, _docs = _seed_batch_with_docs(db_session, case_id="_RU3", doc_stages=[ready])
-    claimed_at = datetime.now(UTC).replace(tzinfo=None)
+    claimed_at = datetime.now(UTC)
     batch.analysis_queued_at = claimed_at
     db_session.commit()
 
@@ -1695,7 +1695,7 @@ def test_recover_unclaimed_ready_metadata_phases_ignores_already_claimed(
     batch, _docs = _seed_batch_with_docs(
         db_session, case_id="_RM3", doc_stages=[extracted]
     )
-    claimed_at = datetime.now(UTC).replace(tzinfo=None)
+    claimed_at = datetime.now(UTC)
     batch.metadata_phase_queued_at = claimed_at
     db_session.commit()
 

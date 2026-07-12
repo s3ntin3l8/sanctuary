@@ -13,16 +13,15 @@ from app.models.database import (
 
 config = context.config
 
-# Let DATABASE_URL redirect migrations to a different DB than alembic.ini's
-# hardcoded default (sqlite:///data/sanctuary.db) -- e.g. a throwaway e2e DB.
-# Opt-in only: alembic.ini's own url is used unchanged when this is unset, so
-# existing `alembic upgrade head` / `make migrate` invocations are unaffected.
-if os.getenv("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
-
 # Only configure logging if we are running standalone (not via the app)
 if config.config_file_name is not None and not os.getenv("SANCTUARY_APP"):
     fileConfig(config.config_file_name)
+
+# DATABASE_URL (same env var the app itself reads, app/config.py) takes
+# precedence over alembic.ini's sqlalchemy.url, so `alembic upgrade head`
+# targets whatever database the app is actually configured against.
+if os.getenv("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 target_metadata = Base.metadata
 
@@ -30,29 +29,6 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-
-
-def include_object(obj, name, type_, reflected, compare_to):
-    """Exclude vec0 virtual tables and their shadow tables from autogenerate.
-
-    Both document_chunk_vectors and claim_vectors are vec0 virtual tables;
-    vec0 creates several `*_chunks`, `*_info`, `*_rowids`, `*_vector_chunks*`
-    shadow tables alongside the parent table. None of them belong in
-    autogenerate output. (document_chunks — the real, non-vec0 table
-    document_chunk_vectors joins against — is NOT excluded; it's ordinary
-    SQLAlchemy metadata.)
-    """
-    vec_prefixes = ("document_chunk_vectors", "claim_vectors")
-    if type_ == "table":
-        return not any(
-            name == prefix or name.startswith(prefix + "_") for prefix in vec_prefixes
-        )
-    if type_ == "index":
-        return not (
-            name.startswith("sqlite_butoindex_")
-            or any(name.startswith(prefix + "_") for prefix in vec_prefixes)
-        )
-    return True
 
 
 def run_migrations_offline() -> None:
@@ -73,25 +49,10 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        include_object=include_object,
     )
 
     with context.begin_transaction():
         context.run_migrations()
-
-
-def _load_extensions(dbapi_conn, _):
-    """Load sqlite-vec extension so vec0 virtual tables work in migrations.
-
-    No try/except: a real load failure here should fail the migration loudly,
-    not be silently swallowed — a migration that creates vec0 tables would
-    fail anyway (with a much less clear error) if this didn't work.
-    """
-    import sqlite_vec
-
-    dbapi_conn.enable_load_extension(True)
-    sqlite_vec.load(dbapi_conn)
-    dbapi_conn.enable_load_extension(False)
 
 
 def run_migrations_online() -> None:
@@ -101,21 +62,16 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    from sqlalchemy import event as sa_event
-
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    sa_event.listen(connectable, "connect", _load_extensions)
 
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True,
-            include_object=include_object,
         )
 
         with context.begin_transaction():

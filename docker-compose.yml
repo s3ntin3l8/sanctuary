@@ -1,4 +1,21 @@
 services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=sanctuary
+      - POSTGRES_PASSWORD=sanctuary
+      - POSTGRES_DB=sanctuary
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sanctuary"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -21,11 +38,14 @@ services:
       - .env
     environment:
       - HOST=0.0.0.0
+      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
       - ./data:/app/data
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -44,11 +64,14 @@ services:
     env_file:
       - .env
     environment:
+      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
       - ./data:/app/data
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -65,13 +88,17 @@ services:
     env_file:
       - .env
     environment:
+      - DATABASE_URL=postgresql+psycopg://sanctuary:sanctuary@db:5432/sanctuary
       - REDIS_URL=redis://redis:6379/0
       - CELERY_TASK_ALWAYS_EAGER=false
     volumes:
       - ./data:/app/data
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
 volumes:
+  db_data:
   redis_data:

@@ -5,8 +5,8 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import text
 
+from app.config import AI_EMBED_DIM
 from app.models.database import Case, Claim
 from app.models.enums import CaseStatus, ClaimStatus, ClaimType
 from app.services.claim_embedding import upsert_claim_embedding
@@ -14,15 +14,6 @@ from app.services.claim_embedding import upsert_claim_embedding
 
 @pytest.fixture
 def claim_in_case(db_session):
-    # claim_vectors is a vec0 virtual table created at runtime by migrations,
-    # not by Base.metadata.create_all(). Ensure it exists for these tests.
-    db_session.execute(
-        text(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS claim_vectors "
-            "USING vec0(claim_id INTEGER PRIMARY KEY, embedding float[1024])"
-        )
-    )
-    db_session.commit()
     case = Case(id="EMB-001", title="Embed test", status=CaseStatus.INTAKE)
     db_session.add(case)
     db_session.commit()
@@ -76,7 +67,7 @@ def test_retry_failed_claim_embeddings_recovers_eligible_claims(
     db_session.commit()
     claim_id = claim_in_case.id
 
-    fake_vec = [0.01] * 1024
+    fake_vec = [0.01] * AI_EMBED_DIM
     with (
         patch(
             "app.services.claim_embedding.embed_claim_text",
@@ -118,7 +109,7 @@ def test_retry_failed_claim_embeddings_respects_cooldown(db_session, claim_in_ca
     with (
         patch(
             "app.services.claim_embedding.embed_claim_text",
-            new=AsyncMock(return_value=[0.01] * 1024),
+            new=AsyncMock(return_value=[0.01] * AI_EMBED_DIM),
         ) as mock_embed,
         patch("app.config.SessionLocal", return_value=db_session),
         patch.object(db_session, "close", return_value=None),
@@ -140,9 +131,8 @@ def test_upsert_claim_embedding_clears_failure_on_success(db_session, claim_in_c
     claim_in_case.embedding_failed_at = datetime(2026, 5, 22, 18, 0, tzinfo=UTC)
     db_session.commit()
 
-    # 1024-dim vector matches the embed_dim of the claim_vectors test table
-    # created in the fixture (vec0 enforces dim on insert).
-    fake_vec = [0.01] * 1024
+    # Must match Claim.embedding's declared pgvector dimension (AI_EMBED_DIM).
+    fake_vec = [0.01] * AI_EMBED_DIM
 
     with patch(
         "app.services.claim_embedding.embed_claim_text",

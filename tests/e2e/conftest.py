@@ -2,21 +2,21 @@
 
 E2E tests run against a live server. Two ways to provide one:
 
-1. Your own dev server + dev DB (`data/sanctuary.db`) -- start it first:
+1. Your own dev server + dev DB (the default `sanctuary` Postgres database)
+   -- start it first:
        make run
    Then in a second terminal:
        make test-e2e
    Or override the base URL: `make test-e2e PLAYWRIGHT_OPTIONS="--base-url=http://localhost:8001"`.
 
 2. A throwaway, fully isolated server + DB (mirrors CI's e2e job) -- never
-   touches `data/sanctuary.db`:
+   touches your dev data:
        make test-e2e-isolated
    Use this whenever you don't want test data landing in your real dev DB
    (this is what a stray/manual local repro should always use instead).
 """
 
 import os
-from pathlib import Path
 
 import httpx
 import pytest
@@ -63,42 +63,35 @@ def api_client():
         yield client
 
 
-def _e2e_db_path() -> Path:
-    """Resolve the sqlite file this fixture's raw connection should target.
-
-    Must always point at the exact same database the live server (whatever
-    `E2E_BASE_URL` answers) is using, or seeded rows / assertions silently
-    operate on the wrong file. Defaults to `data/sanctuary.db` -- matching
-    `make run`'s own default (app/config.py) -- for the documented
-    `make run` + `make test-e2e` workflow. Set DATABASE_URL (as
-    `make test-e2e-isolated` does, pointing at a throwaway DB) to redirect
-    both the server and this fixture together; never change one without the
-    other.
-    """
-    database_url = os.getenv("DATABASE_URL")
-    if database_url and database_url.startswith("sqlite:///"):
-        return Path(database_url.removeprefix("sqlite:///"))
-
-    project_root = Path(__file__).parent.parent.parent
-    return project_root / "data" / "sanctuary.db"
-
-
 @pytest.fixture
 def db_seed():
-    """Direct sqlite3 connection for seeding rows the API can't create
+    """Direct psycopg connection for seeding rows the API can't create
     (Claims/DocumentRelationships are AI-driven; no public POST endpoint).
+
+    Connects to the same DATABASE_URL the live server (whatever
+    `E2E_BASE_URL` answers) is using -- set DATABASE_URL (as
+    `make test-e2e-isolated` does, pointing at a throwaway DB) to redirect
+    both the server and this fixture together; never change one without the
+    other. Foreign keys are always enforced by Postgres — no PRAGMA needed.
 
     The tests own unique IDs (uuid suffixes) so they don't collide with
     real data, but each test still cleans up with `cleanup_callbacks`.
     """
-    import sqlite3
+    import psycopg
 
-    db_path = _e2e_db_path()
-    if not db_path.exists():
-        pytest.skip(f"E2E DB not found at {db_path} — run `make migrate` first")
+    database_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary",
+    )
+    # psycopg.connect() doesn't understand SQLAlchemy's "+psycopg" dialect
+    # suffix — strip it back to a plain postgresql:// DSN.
+    dsn = database_url.replace("postgresql+psycopg://", "postgresql://")
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn = psycopg.connect(dsn, connect_timeout=3)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"E2E DB not reachable at {dsn} — run `make db-up` first ({exc})")
+
     cleanup_callbacks: list = []
     try:
         yield conn, cleanup_callbacks

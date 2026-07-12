@@ -1,7 +1,5 @@
-import fcntl
 import logging
 import os
-import tempfile
 
 os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
 # Run Celery tasks inline so the suite needs no broker/Redis. Force (not
@@ -50,70 +48,6 @@ from app.models.enums import (
     Jurisdiction,
     OriginatorType,
 )
-
-
-def _test_db_path() -> str:
-    """RAM-backed test DB path.
-
-    `/dev/shm` is tmpfs on Linux, so the suite never fsyncs to disk. Combined
-    with the single-run lock below this removes the disk-I/O contention that
-    once wedged overlapping `pytest` runs in uninterruptible `D` state. The pid
-    in the name is defense-in-depth against stale-file collisions.
-    """
-    base = (
-        "/dev/shm"
-        if os.path.isdir("/dev/shm") and os.access("/dev/shm", os.W_OK)
-        else tempfile.gettempdir()
-    )
-    return os.path.join(base, f"sanctuary_test_{os.getpid()}.db")
-
-
-TEST_DB_PATH = _test_db_path()
-TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
-
-# --- Single-run lock --------------------------------------------------------
-# The suite shares ONE on-disk SQLite database and has no per-process isolation.
-# Overlapping `pytest` processes contend on that file; an earlier incident piled
-# up ~14 concurrent runs and wedged the machine on disk I/O (D-state, un-killable
-# from userspace). This lock makes a second concurrent run fail fast — loudly —
-# instead of silently piling on. It lives in conftest (not the Makefile) so it
-# fires for every entry point: `make test`, a bare `python -m pytest`, and the
-# pre-push hook.
-#
-# xdist workers (pytest -n auto) are coordinated subprocesses of ONE invocation,
-# not a second overlapping run — each gets its own tmpfs DB via the pid-based
-# path above, so they don't contend on a shared file. Only the controller (no
-# PYTEST_XDIST_WORKER env var) takes the lock; a second, separate `pytest -n
-# auto` invocation still collides on it exactly as before.
-_RUN_LOCK_PATH = os.path.join(tempfile.gettempdir(), "sanctuary-pytest.lock")
-_RUN_LOCK_FD: int | None = None
-
-
-def pytest_configure(config):
-    global _RUN_LOCK_FD
-    if "PYTEST_XDIST_WORKER" in os.environ:
-        return
-    fd = os.open(_RUN_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o644)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(fd)
-        pytest.exit(
-            "another test run is active — the suite shares one SQLite DB and "
-            "must run serially; run one invocation at a time and wait for it",
-            returncode=2,
-        )
-    _RUN_LOCK_FD = fd
-
-
-def pytest_unconfigure(config):
-    global _RUN_LOCK_FD
-    if _RUN_LOCK_FD is not None:
-        try:
-            fcntl.flock(_RUN_LOCK_FD, fcntl.LOCK_UN)
-            os.close(_RUN_LOCK_FD)
-        finally:
-            _RUN_LOCK_FD = None
 
 
 def _seed_bootstrap_admin(db):
@@ -170,48 +104,51 @@ def isolate_data_dir(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def test_engine():
-    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-    # Create virtual tables manually as Base.metadata.create_all doesn't support them
+    """Session-scoped Postgres+pgvector engine, one dedicated container per
+    pytest process.
+
+    Each `pytest -n auto` xdist worker is a separate OS process, so this
+    session fixture runs once per worker — each gets its OWN container
+    (testcontainers picks a random host port), never a shared database. That
+    gives the same isolation the old pid-named SQLite file gave, without a
+    coordination dance across worker processes. It also means two separate,
+    overlapping `pytest` invocations no longer contend on anything (each
+    spins up its own container on its own port), so the old single-run
+    fcntl lock is gone — there's nothing left to serialize.
+    """
     from sqlalchemy import event as sa_event
     from sqlalchemy import text
+    from testcontainers.postgres import PostgresContainer
 
-    def _load_extensions(dbapi_conn, _):
-        # No try/except: a real load failure here should raise immediately with
-        # a clear traceback, not be swallowed. The CREATE VIRTUAL TABLE below
-        # would fail anyway (with a much less clear error) if this didn't work.
-        import sqlite_vec
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    with PostgresContainer(
+        "pgvector/pgvector:pg17",
+        username="sanctuary",
+        password="sanctuary",
+        dbname=f"sanctuary_test_{worker_id}",
+        driver="psycopg",
+    ) as pg:
+        engine = create_engine(pg.get_connection_url(), pool_pre_ping=True)
 
-        dbapi_conn.enable_load_extension(True)
-        sqlite_vec.load(dbapi_conn)
-        dbapi_conn.enable_load_extension(False)
+        # Extension must exist before any connection tries to register the
+        # pgvector type. Dispose the pool afterward so the connection that
+        # created it (opened before the listener below existed) isn't reused
+        # without ever running register_vector — every connection from here
+        # on is fresh and goes through the "connect" event.
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+        engine.dispose()
 
-        # Mirror production PRAGMA settings so cascade FK behaviour, etc. are
-        # actually enforced under tests. Without this, `Document.case_id`'s
-        # ondelete=SET NULL is advisory in tests and bugs slip through CI.
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
+        @sa_event.listens_for(engine, "connect")
+        def _register_pgvector(dbapi_conn, _):
+            from pgvector.psycopg import register_vector
 
-    sa_event.listen(engine, "connect", _load_extensions)
+            register_vector(dbapi_conn)
 
-    with engine.connect() as conn:
-        conn.execute(
-            text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunk_vectors USING vec0(chunk_id INTEGER PRIMARY KEY, embedding float[768])"
-            )
-        )
-        conn.commit()
-    Base.metadata.create_all(bind=engine)
-    yield engine
-    # Remove the DB and its WAL/shared-memory sidecars (tmpfs, so they'd vanish
-    # on reboot anyway, but keep /dev/shm tidy between runs).
-    for suffix in ("", "-wal", "-shm"):
-        path = TEST_DB_PATH + suffix
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        Base.metadata.create_all(bind=engine)
+        yield engine
+        engine.dispose()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -348,10 +285,14 @@ def auth_enabled(monkeypatch):
 def cleanup_per_test(db_session):
     """Clean up data after each test, then re-seed the `_TRIAGE` singleton.
 
-    With FK enforcement on (PRAGMA foreign_keys=ON in test_engine), every
+    With FK enforcement (real ON DELETE CASCADE/SET NULL constraints), every
     Document/IngestBatch row that uses `case_id="_TRIAGE"` requires a real
     Case row. The wipe removes it; this re-seeds so the next test starts
-    in the same state production lifespan would.
+    in the same state production lifespan would. document_chunks.embedding
+    lives on the same row as the rest of the chunk (no separate vector
+    table), so the table loop below clears it along with everything else —
+    and Postgres sequences don't reuse ids after a wipe, so there's no
+    stale-id collision risk the way SQLite's rowid reuse once had.
     """
     from app.services.case_service import seed_triage_case
 
@@ -359,14 +300,6 @@ def cleanup_per_test(db_session):
     db_session.rollback()
     for table in reversed(Base.metadata.sorted_tables):
         db_session.execute(table.delete())
-    # The document_chunk_vectors vec0 table is created manually (not in
-    # Base.metadata), so the loop above never clears it. Without this, a
-    # committed embedding row leaks into later tests and collides on
-    # chunk_id (rowids are reused after the wipe) — e.g. a fresh chunk
-    # reusing id=1 fails its document_chunk_vectors INSERT.
-    from sqlalchemy import text as _sa_text
-
-    db_session.execute(_sa_text("DELETE FROM document_chunk_vectors"))
     db_session.commit()
     # Drop identity-mapped instances of the just-wiped rows so re-seeding the
     # AppSettings singleton doesn't collide with a stale in-session object.

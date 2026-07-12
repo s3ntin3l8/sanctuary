@@ -16,10 +16,6 @@ jobs:
       # Measured ~70% locally (full suite, e2e skipped). Floor set below that for
       # margin; ratchet up as coverage grows. Codecov tracks the exact number.
       coverage-fail-under: "65"
-      # Route lint-and-test to the homelab self-hosted runner (idle, 8 cores) instead
-      # of GitHub-hosted. Safe here: repo is private with 0 forks, so no fork-PR
-      # code-execution risk.
-      runner: "gh-runner-01"
       # mypy/pip-audit are newly wired up (see requirements-dev.txt). This is a single
       # combined gate for both. mypy baseline is now clean (app/models/database.py
       # migrated to Mapped[]/mapped_column(), 0 errors across app/). pip-audit is NOT
@@ -34,9 +30,8 @@ jobs:
 
   e2e:
     # Sanctuary-specific (needs Redis + a live server), so it lives here rather
-    # than the shared ci-python.yml. Runs on the homelab runner: has Docker for
-    # Redis and a persistent Playwright browser cache across runs.
-    runs-on: gh-runner-01
+    # than the shared ci-python.yml.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # Advisory until proven reliably green on the runner — a flaky E2E job
     # should not block merges. Revisit once it's had a few clean weeks.
@@ -50,6 +45,17 @@ jobs:
       # ephemeral CI run, not a real secret.
       SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       AUTH_ENABLED: "false"
+      # Matches docker-compose.yml's `db` service (published on the default
+      # Postgres port) — explicit here so this job doesn't depend on the
+      # app's own DATABASE_URL default staying in sync.
+      DATABASE_URL: "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary"
+      # Without these, get_or_create_bootstrap_admin (app/services/auth_service.py)
+      # has no admin to resolve on this fresh DB and no creds to seed one from, so
+      # get_current_user (app/dependencies.py) 303-redirects every authenticated
+      # request to /signup -- even with AUTH_ENABLED=false. Throwaway CI-only
+      # creds, not real secrets.
+      BOOTSTRAP_ADMIN_EMAIL: "e2e-admin@ci.local" # pragma: allowlist secret
+      BOOTSTRAP_ADMIN_PASSWORD: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       # Without this, uvicorn's stdout is block-buffered and gets discarded on
       # `kill` at job end — the "Show app server log" step below then shows a
       # truncated log missing whatever was printed just before the process was
@@ -68,20 +74,15 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Install Playwright browser
         run: playwright install --with-deps chromium
-      - name: Start Redis
+      - name: Start Postgres + Redis
         # web/worker-* services declare `env_file: .env`, which doesn't exist in CI
-        # (gitignored). `up redis` alone tolerates the missing file, but `stop`
+        # (gitignored). `up db redis` alone tolerates the missing file, but `stop`
         # validates the whole compose model, so touch a harmless empty one up front.
         run: |
           touch .env
-          docker compose up redis -d --wait
+          docker compose up db redis -d --wait
       - name: Run migrations
-        # DATA_DIR.mkdir() in app/config.py only fires if something imports
-        # app.config; alembic/env.py doesn't reliably trigger that, so sqlite
-        # fails to open data/sanctuary.db on a fresh checkout without this.
-        run: |
-          mkdir -p data
-          alembic upgrade head
+        run: alembic upgrade head
       - name: Start app server
         run: |
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
@@ -137,6 +138,6 @@ jobs:
       - name: Stop app server
         if: always()
         run: kill "$(cat server.pid)" 2>/dev/null || true
-      - name: Stop Redis
+      - name: Stop Postgres + Redis
         if: always()
-        run: docker compose stop redis
+        run: docker compose stop db redis

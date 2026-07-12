@@ -1,10 +1,10 @@
 """Retrieve the top-K documents for a case given a query string.
 
-Uses passage-level (chunk) vector embeddings (`document_chunk_vectors`
-sqlite-vec table, joined through `document_chunks`). Each hit surfaces the
-chunk(s) that actually matched the query — the precise passage, not a
-whole-document average — falling back to the document's static AI-curated
-key_passages when vector retrieval is unavailable.
+Uses passage-level (chunk) vector embeddings (`document_chunks.embedding`,
+pgvector). Each hit surfaces the chunk(s) that actually matched the query —
+the precise passage, not a whole-document average — falling back to the
+document's static AI-curated key_passages when vector retrieval is
+unavailable.
 """
 
 import logging
@@ -62,14 +62,12 @@ async def retrieve_top_docs(
     """
     from app.services.ai_config import get_embed_config
     from app.services.ai_provider import embed_provider
-    from app.services.embeddings import _serialize
 
     embed_provider.reload_from_db(db)
     cfg = get_embed_config(db)
 
     try:
         import httpx
-        from sqlalchemy import text
 
         params = await embed_provider.get_embedding_params(cfg.embed_model, query)
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -85,14 +83,14 @@ async def retrieve_top_docs(
         if not embedding or len(embedding) != cfg.embed_dim:
             raise ValueError("embedding dimension mismatch or empty")
 
-        blob = _serialize(embedding)
-        rows = db.execute(
-            text(
-                "SELECT chunk_id, distance FROM document_chunk_vectors "
-                "WHERE embedding MATCH :blob AND k = :k"
-            ),
-            {"blob": blob, "k": k * _CHUNK_OVERSAMPLE},
-        ).fetchall()
+        distance = DocumentChunk.embedding.l2_distance(embedding)
+        rows = (
+            db.query(DocumentChunk.id)
+            .filter(DocumentChunk.embedding.isnot(None))
+            .order_by(distance)
+            .limit(k * _CHUNK_OVERSAMPLE)
+            .all()
+        )
 
         ranked_chunk_ids = [row[0] for row in rows]
         if not ranked_chunk_ids:
@@ -142,10 +140,10 @@ async def retrieve_top_docs(
         # (detect_provider / get_embedding_params raise RuntimeError when no
         # endpoint responds — see ai_provider.py). ValueError: dim mismatch or
         # no chunk matches (raised above as intentional control-flow to reach
-        # this fallback). OperationalError: sqlite-vec query failure (e.g. host
-        # SQLite below the vec0 KNN floor). All are legitimate degrade-to-recency
-        # conditions. Anything else is an unexpected bug and should propagate
-        # instead of silently becoming a wrong-looking result.
+        # this fallback). OperationalError: pgvector query failure. All are
+        # legitimate degrade-to-recency conditions. Anything else is an
+        # unexpected bug and should propagate instead of silently becoming a
+        # wrong-looking result.
         logger.warning(f"Vector retrieval failed ({e}), falling back to recency")
         recency_query = db.query(Document).filter(Document.case_id == case_id)
         if proceeding_id:

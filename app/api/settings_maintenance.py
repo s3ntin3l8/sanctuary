@@ -34,7 +34,8 @@ _PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
 @router.post("/reset-enrichment", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
-    db.execute(text("DELETE FROM document_chunk_vectors"))
+    # embedding lives on the document_chunks row itself, so deleting the
+    # chunk rows drops their vectors too.
     vectors_cleared = cast(
         CursorResult, db.execute(text("DELETE FROM document_chunks"))
     ).rowcount
@@ -69,12 +70,10 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     except Exception as exc:
         logger.warning("Could not purge Celery queue: %s", exc)
 
-    # Wipe all domain tables; skip _PRESERVED_TABLES and the sqlite-vec virtual
-    # table. NOTE: "users" must stay in _PRESERVED_TABLES — user_settings has an
-    # ondelete="CASCADE" FK to users, and PRAGMA foreign_keys=ON is set on every
-    # connection (app/config.py), so deleting users would cascade-delete
-    # user_settings regardless of this skip list.
-    db.execute(text("DELETE FROM document_chunk_vectors"))
+    # Wipe all domain tables; skip _PRESERVED_TABLES. NOTE: "users" must stay
+    # in _PRESERVED_TABLES — user_settings has an ondelete="CASCADE" FK to
+    # users, so deleting users would cascade-delete user_settings regardless
+    # of this skip list.
     rows_deleted = 0
     for table in reversed(Base.metadata.sorted_tables):
         if table.name in _PRESERVED_TABLES:
@@ -91,12 +90,15 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     # which cannot run while any connection holds a write lock.
     db.commit()
 
-    # Reclaim freed pages so the on-disk file (and the "DB size" stat) actually
-    # shrinks — SQLite does not shrink on DELETE without an explicit VACUUM.
-    # Use db.get_bind(), not the module-level `engine` import: the test suite
-    # rebinds SessionLocal to a separate test engine without touching
-    # app.config.engine, so a hardcoded `engine.connect()` here would silently
-    # VACUUM the wrong database (or the real dev DB) under test.
+    # Reclaim freed pages so the "DB size" stat actually shrinks — Postgres
+    # doesn't return space to the OS on DELETE, and even a plain VACUUM only
+    # marks it reusable rather than shrinking the relation files. VACUUM FULL
+    # rewrites each table and does shrink them; safe to run here since every
+    # table was just emptied. Use db.get_bind(), not the module-level `engine`
+    # import: the test suite rebinds SessionLocal to a separate test engine
+    # without touching app.config.engine, so a hardcoded `engine.connect()`
+    # here would silently VACUUM the wrong database (or the real dev DB) under
+    # test. VACUUM can't run inside a transaction block, hence AUTOCOMMIT.
     try:
         bind = db.get_bind()
         conn_cm = (
@@ -104,7 +106,7 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
         )
         with conn_cm as conn:
             conn.execution_options(isolation_level="AUTOCOMMIT")
-            conn.exec_driver_sql("VACUUM")
+            conn.exec_driver_sql("VACUUM FULL")
     except Exception as exc:
         logger.warning("VACUUM after clear-all-data failed: %s", exc)
 
