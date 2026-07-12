@@ -120,7 +120,10 @@ def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None)
     m = _LABEL_RE.match(debug_label)
     if m:
         kind, scope_id, _ = m.groups()
-        filename = f"{kind}_{scope_id}.md"
+        # scope_id is often a user-influenced Case.id/doc title fragment —
+        # basename it so an embedded "/" or ".." can't escape debug_dir when
+        # pathlib joins it below (CodeQL py/path-injection).
+        filename = f"{kind}_{os.path.basename(scope_id)}.md"
         if ingest_batch_id is not None:
             folder = debug_dir / f"ib-{ingest_batch_id:04d}"
             folder.mkdir(parents=True, exist_ok=True)

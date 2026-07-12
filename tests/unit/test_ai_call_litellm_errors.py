@@ -142,3 +142,13 @@ def test_scope_file_misc_fallback_basenames_the_label(tmp_path):
     assert traversal.parent == tmp_path / "unbatched"
     assert ".." not in traversal.name
     assert "/" not in traversal.name
+
+
+@pytest.mark.unit
+def test_scope_file_matched_branch_basenames_scope_id(tmp_path):
+    """The doc/batch/case-matched branch's scope_id is often a
+    user-influenced Case.id fragment — it must be basename()'d too, not
+    just the misc fallback label (py/path-injection)."""
+    traversal = _scope_file(tmp_path, "case_../../../etc/passwd_brief")
+    assert traversal == tmp_path / "case_passwd.md"
+    assert ".." not in str(traversal.relative_to(tmp_path))
