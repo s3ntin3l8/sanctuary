@@ -16,10 +16,6 @@ jobs:
       # Measured ~70% locally (full suite, e2e skipped). Floor set below that for
       # margin; ratchet up as coverage grows. Codecov tracks the exact number.
       coverage-fail-under: "65"
-      # Route lint-and-test to the homelab self-hosted runner (idle, 8 cores) instead
-      # of GitHub-hosted. Safe here: repo is private with 0 forks, so no fork-PR
-      # code-execution risk.
-      runner: "gh-runner-01"
       # mypy/pip-audit are newly wired up (see requirements-dev.txt). This is a single
       # combined gate for both. mypy baseline is now clean (app/models/database.py
       # migrated to Mapped[]/mapped_column(), 0 errors across app/). pip-audit is NOT
@@ -34,9 +30,8 @@ jobs:
 
   e2e:
     # Sanctuary-specific (needs Redis + a live server), so it lives here rather
-    # than the shared ci-python.yml. Runs on the homelab runner: has Docker for
-    # Redis and a persistent Playwright browser cache across runs.
-    runs-on: gh-runner-01
+    # than the shared ci-python.yml.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     # Advisory until proven reliably green on the runner — a flaky E2E job
     # should not block merges. Revisit once it's had a few clean weeks.
@@ -52,9 +47,7 @@ jobs:
       AUTH_ENABLED: "false"
       # Matches docker-compose.yml's `db` service (published on the default
       # Postgres port) — explicit here so this job doesn't depend on the
-      # app's own DATABASE_URL default staying in sync, and to avoid
-      # colliding with any other Postgres already running on this persistent
-      # self-hosted runner.
+      # app's own DATABASE_URL default staying in sync.
       DATABASE_URL: "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary"
       # Without this, uvicorn's stdout is block-buffered and gets discarded on
       # `kill` at job end — the "Show app server log" step below then shows a
