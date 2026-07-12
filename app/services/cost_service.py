@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -348,7 +349,7 @@ class CostService:
     def get_cost_summary(self, case_id: str) -> CostSummary:
         """Get cost summary for a case."""
         costs = self.get_costs_by_case(case_id)
-        return CostSummary(costs)
+        return CostSummary(list(costs))
 
     def get_all_costs(self) -> Sequence[LegalCost]:
         """Get all costs."""
@@ -361,7 +362,7 @@ class CostService:
         costs = self.get_all_costs()
         global_summary = self.get_global_cost_summary()
 
-        costs_by_case = {}
+        costs_by_case: dict[str, dict[str, Any]] = {}
         for cost in costs:
             if cost.case_id not in costs_by_case:
                 case = self.db.query(Case).filter(Case.id == cost.case_id).first()
@@ -388,7 +389,7 @@ class CostService:
     def get_global_cost_summary(self) -> CostSummary:
         """Get cost summary across all cases."""
         costs = self.get_all_costs()
-        return CostSummary(costs)
+        return CostSummary(list(costs))
 
     def get_costs_by_status(self, status: CostStatus) -> Sequence[LegalCost]:
         """Get costs by payment status."""

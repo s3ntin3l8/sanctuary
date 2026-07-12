@@ -13,9 +13,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -338,7 +339,7 @@ def claim_stage_for_dispatch(doc_id: int, stage: PipelineStage, db: Session) -> 
             "pending": StageStatus.PENDING.value,
         },
     )
-    if result.rowcount == 0:
+    if cast(CursorResult, result).rowcount == 0:
         db.commit()
         return False
 
@@ -1479,7 +1480,7 @@ def _update_stage(
         ),
         params,
     )
-    if result.rowcount == 0:
+    if cast(CursorResult, result).rowcount == 0:
         # Guard: document may have been deleted between task dispatch and
         # execution (stale Celery task). If it's gone, skip the INSERT
         # rather than raising an IntegrityError on the FK constraint.

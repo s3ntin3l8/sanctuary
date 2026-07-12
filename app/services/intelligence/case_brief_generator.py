@@ -3,6 +3,7 @@
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session, defer
 
@@ -115,7 +116,7 @@ def _compute_parties(
         name = _canonical_name(name, own_self, own_parties, opposing_parties)
         role_counts[name][str(doc.originator_type)] += 1
 
-    result = []
+    result: list[dict[str, Any]] = []
     court_role_key = str(OriginatorType.COURT)
     third_party_role_key = str(OriginatorType.THIRD_PARTY)
     for name, counts in role_counts.items():
@@ -142,7 +143,7 @@ def _compute_parties(
         else:
             non_court = {r: c for r, c in counts.items() if r != court_role_key}
             best_pool = non_court if non_court else counts
-            canonical_role = max(best_pool, key=best_pool.get)
+            canonical_role = max(best_pool, key=lambda r: best_pool[r])
         result.append(
             {
                 "name": name,
@@ -352,7 +353,10 @@ def generate(case_id: str) -> None:
         own_self: str = party_identity.get("own_self", "")
         own_parties: list[str] = party_identity.get("own_parties", [])
         # Load per-case opposing parties (may be empty before first brief)
-        case_opposing: list[str] = case.opposing_parties or []
+        # Case.opposing_parties is typed dict[str, Any] | None in database.py
+        # (generic JSON column type) but case_service.set_case_opposing_parties
+        # always stores a list[str] at runtime — see app/services/case_service.py:81.
+        case_opposing: list[str] = case.opposing_parties or []  # type: ignore[assignment]
 
         try:
             result = _call_brief_sync(
@@ -373,7 +377,10 @@ def generate(case_id: str) -> None:
                 own_parties=own_parties,
                 opposing_parties=case_opposing,
             )
-            case.parties = parties
+            # Case.parties is typed dict[str, Any] | None in database.py (generic
+            # JSON column type) but is always stored/read as a list[dict] at
+            # runtime — see app/api/cases.py:538, app/services/case_service.py:65-68.
+            case.parties = parties  # type: ignore[assignment]
 
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:

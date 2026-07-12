@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import threading
+from typing import overload
 
 from app.config import INGEST_CONVERSION_TIMEOUT
 
@@ -56,6 +57,10 @@ _GLYPH_MAP = {
 }
 
 
+@overload
+def _apply_glyph_fixes(text: str) -> str: ...
+@overload
+def _apply_glyph_fixes(text: None) -> None: ...
 def _apply_glyph_fixes(text: str | None) -> str | None:
     """Fix common Docling extraction artifacts like GLYPH(cmap:df00)."""
     if not text:
@@ -192,14 +197,14 @@ def parse_eml_file(file_path: str) -> str:
             if content_type == "text/plain":
                 try:
                     payload = part.get_payload(decode=True)
-                    if payload:
+                    if isinstance(payload, bytes) and payload:
                         content.append(payload.decode("utf-8", errors="ignore"))
                 except Exception as e:
                     logger.debug(f"Failed to decode email part: {e}")
     else:
         try:
             payload = msg.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes) and payload:
                 content.append(payload.decode("utf-8", errors="ignore"))
         except Exception as e:
             logger.debug(f"Failed to decode email payload: {e}")
@@ -226,6 +231,7 @@ def _build_converter(force_full_page_ocr: bool = False):
             LayoutOptions,
             PdfPipelineOptions,
             TableFormerMode,
+            TableStructureOptions,
             TesseractCliOcrOptions,
         )
         from docling.document_converter import (
@@ -235,7 +241,13 @@ def _build_converter(force_full_page_ocr: bool = False):
 
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_table_structure = True
-        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        # `table_structure_options` is typed as the base `BaseTableStructureOptions`
+        # on PdfPipelineOptions (it also accepts TableStructureV2Options /
+        # GraniteVisionTableStructureOptions), but the field defaults to a
+        # `TableStructureOptions()` instance, which is the only variant with a
+        # `.mode` attribute. Narrow so mypy can see it's safe.
+        if isinstance(pipeline_options.table_structure_options, TableStructureOptions):
+            pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
         pipeline_options.do_ocr = True
         pipeline_options.ocr_options = TesseractCliOcrOptions(
             lang=["deu", "eng"],
@@ -734,7 +746,7 @@ def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
 
 
 def convert_file(
-    file_path: str, timeout: int = None, *, engine: str = "docling"
+    file_path: str, timeout: int | None = None, *, engine: str = "docling"
 ) -> dict:
     """Convert file to markdown and extract structural metadata.
 

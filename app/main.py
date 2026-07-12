@@ -83,7 +83,10 @@ class SuccessfulAccessFilter(logging.Filter):
         else:
             status = getattr(record, "status_code", None)
         try:
-            if status is not None and 200 <= int(status) < 400:
+            # status's real type is whatever uvicorn/logging puts in record.args
+            # or record.status_code — inherently untyped upstream. The except
+            # below already handles anything int() can't convert.
+            if status is not None and 200 <= int(status) < 400:  # type: ignore[call-overload]
                 record.levelno = logging.DEBUG
                 record.levelname = "DEBUG"
         except (TypeError, ValueError):
@@ -891,7 +894,10 @@ templates.env.filters["safe_markdown"] = render_markdown
 templates.env.filters["render_highlighted"] = render_highlighted
 
 # Rate limiter setup
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# slowapi's handler is typed for RateLimitExceeded specifically; Starlette's
+# add_exception_handler wants a generic Exception handler. This is slowapi's
+# own documented registration pattern — a stub mismatch, not a real bug.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 # Error page defaults

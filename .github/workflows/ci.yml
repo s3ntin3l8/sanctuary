@@ -20,9 +20,14 @@ jobs:
       # of GitHub-hosted. Safe here: repo is private with 0 forks, so no fork-PR
       # code-execution risk.
       runner: "gh-runner-01"
-      # mypy/pip-audit are newly wired up (see requirements-dev.txt) and have never
-      # run against this codebase. Advisory-only until each tool's baseline is clean,
-      # then flip to true to make them hard gates.
+      # mypy/pip-audit are newly wired up (see requirements-dev.txt). This is a single
+      # combined gate for both. mypy baseline is now clean (app/models/database.py
+      # migrated to Mapped[]/mapped_column(), 0 errors across app/). pip-audit is NOT
+      # clean yet — 18 known vulnerabilities across 8 packages (cryptography, mako,
+      # pillow, pip, pydantic-settings, starlette, transformers, virtualenv) as of
+      # 2026-07-12; several imply major-version bumps (pillow 10→12, transformers
+      # 4→5) that need their own compatibility pass. Flip to true once pip-audit is
+      # also clean.
       strict-checks: false
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

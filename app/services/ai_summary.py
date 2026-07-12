@@ -289,15 +289,16 @@ def _apply_proceeding_extraction(
     else:
         if not current_proc.az_court and extracted_az:
             current_proc.az_court = extracted_az
+        extracted_court_name = data.get("court_name")
         if (
             (
                 not current_proc.court_name
                 or current_proc.court_name in ("Unknown Court", "General")
             )
-            and data.get("court_name")
-            and _looks_like_court(data.get("court_name"))
+            and extracted_court_name
+            and _looks_like_court(extracted_court_name)
         ):
-            current_proc.court_name = data.get("court_name")
+            current_proc.court_name = extracted_court_name
         if not current_proc.subject_matter and data.get("subject_matter"):
             current_proc.subject_matter = data.get("subject_matter")
         if extracted_level and current_proc.court_level in (
@@ -681,8 +682,14 @@ def generate_summary_sync(
     return result.model_dump()
 
 
-def _summarize_document_sync(doc_id: int, db: Session) -> Document:
-    """Synchronous wrapper for fire-and-forget background summary generation."""
+def _summarize_document_sync(doc_id: int, db: Session) -> Document | None:
+    """Synchronous wrapper for fire-and-forget background summary generation.
+
+    Returns None only when doc_id doesn't resolve to a row (e.g. deleted
+    between task dispatch and execution). When the doc exists but has no
+    content or failed conversion, the (unmodified) Document is still
+    returned — AI summarization is just skipped.
+    """
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc or not doc.content or doc.content.startswith("Conversion failed:"):
         return doc

@@ -118,7 +118,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
             .group_by(ActionItem.case_id)
             .all()
         )
-        return dict(results)
+        return {row[0]: row[1] for row in results}
 
     # --- creation + transitions --------------------------------------------
 

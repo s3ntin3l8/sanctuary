@@ -1,12 +1,15 @@
 """Data & Maintenance settings endpoints."""
 
+import contextlib
 import logging
 import shutil
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session
 
 from app import config as cfg
@@ -32,7 +35,9 @@ _PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
 @limiter.limit("5/minute")
 def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
     db.execute(text("DELETE FROM document_chunk_vectors"))
-    vectors_cleared = db.execute(text("DELETE FROM document_chunks")).rowcount
+    vectors_cleared = cast(
+        CursorResult, db.execute(text("DELETE FROM document_chunks"))
+    ).rowcount
 
     result = db.execute(
         text(
@@ -42,7 +47,7 @@ def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
             "WHERE 1=1"
         )
     )
-    docs_reset = result.rowcount
+    docs_reset = cast(CursorResult, result).rowcount
     audit_service.record(db, AuditEventType.MAINTENANCE_RESET_AI_ENRICHMENT)
     db.commit()
 
@@ -74,7 +79,7 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     for table in reversed(Base.metadata.sorted_tables):
         if table.name in _PRESERVED_TABLES:
             continue
-        rows_deleted += db.execute(table.delete()).rowcount
+        rows_deleted += cast(CursorResult, db.execute(table.delete())).rowcount
     audit_service.record(db, AuditEventType.MAINTENANCE_CLEAR_ALL_DATA)
     db.commit()
 
@@ -93,7 +98,11 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
     # app.config.engine, so a hardcoded `engine.connect()` here would silently
     # VACUUM the wrong database (or the real dev DB) under test.
     try:
-        with db.get_bind().connect() as conn:
+        bind = db.get_bind()
+        conn_cm = (
+            bind.connect() if isinstance(bind, Engine) else contextlib.nullcontext(bind)
+        )
+        with conn_cm as conn:
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.exec_driver_sql("VACUUM")
     except Exception as exc:

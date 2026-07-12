@@ -41,8 +41,10 @@ def _user_settings(db, user_id: int) -> UserSettings | None:
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
 
 
-def get_last_viewed(case_id: str, db, user_id: int) -> datetime | None:
+def get_last_viewed(case_id: str, db, user_id: int | None) -> datetime | None:
     """Return the datetime the user last viewed this case, or None."""
+    if user_id is None:
+        return None
     settings = _user_settings(db, user_id)
     if not settings or not settings.settings_json:
         return None

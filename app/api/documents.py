@@ -2,11 +2,14 @@ import logging
 import os
 from datetime import datetime
 from html import escape
+from typing import cast
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import UploadFile as FastAPIUploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config import templates
 from app.core.rate_limit import limiter
@@ -65,11 +68,13 @@ async def upload_document(
     user: User = Depends(get_current_user),
 ):
     form = await request.form()
-    files = form.getlist("files")
+    files = [f for f in form.getlist("files") if isinstance(f, StarletteUploadFile)]
     case_id_raw = form.get("case_id")
-    case_id = case_id_raw if case_id_raw else None
+    case_id = case_id_raw if isinstance(case_id_raw, str) and case_id_raw else None
     parent_id_raw = form.get("parent_id")
-    parent_id = int(parent_id_raw) if parent_id_raw else None
+    parent_id = (
+        int(parent_id_raw) if isinstance(parent_id_raw, str) and parent_id_raw else None
+    )
 
     if not files or all(not f.filename for f in files):
         if request.headers.get("hx-request"):
@@ -88,13 +93,15 @@ async def upload_document(
     # Non-EML files share a single manual batch; EML files create their own batch
     # via ingest_raw_email (same path as Gmail import).
     non_eml_files = [
-        f for f in valid_files if os.path.splitext(f.filename)[1].lower() != ".eml"
+        f
+        for f in valid_files
+        if os.path.splitext(cast(str, f.filename))[1].lower() != ".eml"
     ]
     ingest_batch_id = None
     if non_eml_files:
         ingest_batch_id = create_manual_upload_batch(
             db,
-            filenames=[f.filename for f in non_eml_files],
+            filenames=[cast(str, f.filename) for f in non_eml_files],
             case_id=case_id,
             owner_id=user.id,
         )
@@ -175,7 +182,7 @@ async def upload_document(
 
         try:
             doc = await ingest_file(
-                file,
+                cast(FastAPIUploadFile, file),
                 case_id,
                 db,
                 parent_id,
@@ -501,7 +508,9 @@ async def hud_toggle_reaction(
     # OOB row refresh for triage (selector misses gracefully outside triage)
     from app.services.triage_oob_render import render_row_targeted_oob
 
-    response.body += render_row_targeted_oob(request, doc, db).encode()
+    response.body = (
+        bytes(response.body) + render_row_targeted_oob(request, doc, db).encode()
+    )
 
     if notes is not None and notes.strip():
         from app.helpers import toast_trigger
@@ -878,11 +887,13 @@ async def promote_cost_delta(
             detail="No cost signal found for this document and no amount override given",
         )
 
-    amount = (
-        float(amount_override)
-        if amount_override is not None
-        else float(signal.amount or 0)
-    )
+    if amount_override is not None:
+        amount = float(amount_override)
+    else:
+        # Guaranteed non-None: the guard above raises when both signal and
+        # amount_override are None, and amount_override is None in this branch.
+        assert signal is not None
+        amount = float(signal.amount or 0)
     description = (
         (signal.description if signal else None) or doc.title or "Cost from document"
     )

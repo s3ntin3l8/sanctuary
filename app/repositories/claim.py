@@ -42,7 +42,7 @@ class ClaimRepository(BaseRepository[Claim]):
             .group_by(Document.case_id)
             .all()
         )
-        return dict(results)
+        return {k: v for k, v in results if k is not None}
 
     def claims_for_case(
         self, case_id: str, statuses: list[ClaimStatus] | None = None

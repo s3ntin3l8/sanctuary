@@ -32,7 +32,7 @@ def _resolve_owner_id(db: Session, owner_id: int | None) -> int | None:
         from app.services import auth_service
 
         admin = auth_service.get_or_create_bootstrap_admin(db)
-        return admin.id
+        return admin.id if admin is not None else None
     except Exception:  # pragma: no cover - defensive
         return None
 
@@ -313,7 +313,12 @@ def ingest_raw_email(
         }
         linked = False
         for entry in batch.attachment_manifest:
-            doc_id = filename_to_doc_id.get(entry.get("filename"))
+            entry_filename = entry.get("filename")
+            doc_id = (
+                filename_to_doc_id.get(entry_filename)
+                if entry_filename is not None
+                else None
+            )
             if doc_id is not None:
                 entry["doc_id"] = doc_id
                 linked = True

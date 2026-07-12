@@ -1,7 +1,9 @@
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.models.database import IngestBatch
@@ -124,4 +126,4 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             {"now": datetime.now(UTC), "batch_id": batch_id},
         )
         self.db.commit()
-        return result.rowcount == 1
+        return cast(CursorResult, result).rowcount == 1

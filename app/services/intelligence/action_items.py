@@ -2,7 +2,9 @@
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.models.database import ActionItem
@@ -163,7 +165,7 @@ def create_from_payload(
                 # enriches later (reverse-processing-order case). on_conflict
                 # is a no-op if a tombstone with the same key already exists.
                 sentinel_stmt = (
-                    sqlite_insert(ActionItem.__table__)
+                    sqlite_insert(ActionItem)
                     .values(
                         case_id=case_id,
                         source_document_id=None,
@@ -225,7 +227,7 @@ def create_from_payload(
         addressee = raw_addressee if raw_addressee in VALID_ADDRESSEES else None
 
         stmt = (
-            sqlite_insert(ActionItem.__table__)
+            sqlite_insert(ActionItem)
             .values(
                 case_id=case_id,
                 proceeding_id=proceeding_id,
@@ -242,7 +244,7 @@ def create_from_payload(
                 index_elements=["case_id", "due_date", "action_type"]
             )
         )
-        if db.execute(stmt).rowcount > 0:
+        if cast(CursorResult, db.execute(stmt)).rowcount > 0:
             count += 1
 
     if count:

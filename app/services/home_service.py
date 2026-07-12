@@ -87,7 +87,7 @@ class HomeService:
 
         last_home_visit = get_last_home_visit(self.db, user_id)
 
-        delta_cases = []
+        delta_cases: list[dict[str, Any]] = []
         sig_values = {
             SignificanceTier.CRITICAL: 4,
             SignificanceTier.SIGNIFICANT: 3,
@@ -121,14 +121,17 @@ class HomeService:
                     .all()
                 )
                 for d in rows:
-                    new_docs_by_case[d.case_id].append(d)
+                    # case_id can't be None here: the query above filters it to
+                    # be in case_ids (a list of real case ids).
+                    if d.case_id is not None:
+                        new_docs_by_case[d.case_id].append(d)
 
             # Single batched query for new ActionItem counts per case.
             from sqlalchemy import func as sa_func
 
             action_counts: dict[str, int] = dict.fromkeys(case_ids, 0)
             if case_ids:
-                rows = (
+                action_count_rows = (
                     self.db.query(ActionItem.case_id, sa_func.count(ActionItem.id))
                     .filter(
                         ActionItem.case_id.in_(case_ids),
@@ -137,7 +140,7 @@ class HomeService:
                     .group_by(ActionItem.case_id)
                     .all()
                 )
-                for case_id, n in rows:
+                for case_id, n in action_count_rows:
                     action_counts[case_id] = n
 
             for case in cases_with_new_docs:

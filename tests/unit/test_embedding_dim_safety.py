@@ -23,6 +23,7 @@ async def test_dim_mismatch_raises(db_session):
     from app.models.database import Case, Document, IngestBatch
     from app.models.enums import IngestBatchSourceType
     from app.services import embeddings as emb_module
+    from app.services.ai_provider import ProviderType
 
     case = Case(id="EMB-DIM-1", title="t")
     db_session.add(case)
@@ -53,7 +54,7 @@ async def test_dim_mismatch_raises(db_session):
         patch("httpx.AsyncClient") as mock_client,
     ):
         mock_params.return_value = {"url": "x", "json": {}, "headers": {}}
-        mock_get_type.return_value = "ollama"
+        mock_get_type.return_value = ProviderType.OLLAMA
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(
             return_value=fake_response
         )

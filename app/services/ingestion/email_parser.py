@@ -152,11 +152,11 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                 and "attachment" not in content_disposition
             ):
                 payload = part.get_payload(decode=True)
-                if payload:
+                if isinstance(payload, bytes) and payload:
                     body += payload.decode(errors="ignore")
     else:
         payload = msg.get_payload(decode=True)
-        if payload:
+        if isinstance(payload, bytes) and payload:
             body = payload.decode(errors="ignore")
 
     attachment_manifest = _parse_attachment_manifest(body) if body else []

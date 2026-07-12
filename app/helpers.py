@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Request
-from sqlalchemy import or_
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from app.config import templates
@@ -25,7 +25,7 @@ def build_sidebar_counts(db: Session, owner_id: int | None = None) -> dict:
     )
     loose_q = db.query(Document).filter(
         Document.ingest_batch_id.is_(None),
-        or_(Document.case_id == "_TRIAGE", Document.needs_review),
+        or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
     )
     if owner_id is not None:
         batch_q = batch_q.filter(IngestBatch.owner_id == owner_id)
@@ -177,12 +177,12 @@ def _build_notifications(db: Session, user=None) -> dict:
     )
     # Pending docs = per-user triage inbox.
     pending_q = db.query(Document).filter(
-        or_(Document.case_id == "_TRIAGE", Document.needs_review)
+        or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True))
     )
     if user is not None:
         pending_q = pending_q.filter(Document.owner_id == user.id)
     else:
-        pending_q = pending_q.filter(False)
+        pending_q = pending_q.filter(false())
     pending_docs = pending_q.order_by(Document.ingest_date.desc()).limit(5).all()
     overdue_costs = (
         _case_scope(

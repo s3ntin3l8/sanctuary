@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ from app.models.database import Document, IngestBatch
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
 from app.models.schemas import (
     AISummarySchema,
+    CostDeltaKind,
     CostDeltaSchema,
     KeyPassageSchema,
 )
@@ -251,11 +253,18 @@ def _apply_enrichment(doc: Document, result: dict, db=None) -> None:
             direction = (cost_delta.get("direction") or "none").lower()
             if direction not in VALID_COST_DIRECTIONS:
                 direction = "none"
-            # Infer kind from direction when the AI response pre-dates the kind field
-            kind = cost_delta.get("kind") or (
-                "invoice_court"
-                if direction in {"incoming", "outgoing"}
-                else "cost_ruling"
+            # Infer kind from direction when the AI response pre-dates the kind field.
+            # Not whitelisted here (unlike direction above) because CostDeltaSchema's
+            # Pydantic validation already rejects any value outside CostDeltaKind —
+            # an invalid AI-emitted kind raises, and is caught by the except below.
+            kind = cast(
+                CostDeltaKind,
+                cost_delta.get("kind")
+                or (
+                    "invoice_court"
+                    if direction in {"incoming", "outgoing"}
+                    else "cost_ruling"
+                ),
             )
             validated_delta = CostDeltaSchema(
                 kind=kind,
@@ -368,7 +377,12 @@ def enrich(doc_id: int) -> None:
         from app.services.user_settings_service import get_party_identity
 
         party_identity = get_party_identity(db)
-        case_opposing = get_case_opposing_parties(doc.case_id, db)
+        # get_case_opposing_parties requires a str case_id; a doc not yet
+        # assigned to a case (case_id is None) has no case-level opposing
+        # parties to look up — skip the call (it would return [] anyway).
+        case_opposing = (
+            get_case_opposing_parties(doc.case_id, db) if doc.case_id else []
+        )
         party_context = format_party_context(
             own_self=party_identity.get("own_self", ""),
             own_parties=party_identity.get("own_parties", []),
@@ -411,14 +425,18 @@ def enrich(doc_id: int) -> None:
             doc.originator_type == OriginatorType.COURT and not doc.court_relay
         )
         if is_court_source:
-            create_from_payload(
-                case_id,
-                doc_id,
-                proceeding_id,
-                result.get("action_items") or [],
-                db,
-                source_doc_date=issued_date,
-            )
+            # create_from_payload no-ops for a falsy case_id anyway (docs not
+            # yet assigned to a case have nothing to attach action items to);
+            # guard here so the call site matches its str (non-Optional) signature.
+            if case_id:
+                create_from_payload(
+                    case_id,
+                    doc_id,
+                    proceeding_id,
+                    result.get("action_items") or [],
+                    db,
+                    source_doc_date=issued_date,
+                )
         else:
             purged = purge_action_items_from_doc(doc_id, db)
             if purged:

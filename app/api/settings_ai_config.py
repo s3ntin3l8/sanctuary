@@ -3,6 +3,7 @@
 import json
 import logging
 from html import escape
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -287,7 +288,7 @@ async def create_instance(
     from app.services.ai_config import _make_id
 
     inst_id = _make_id()
-    instance = {
+    instance: dict[str, Any] = {
         "id": inst_id,
         "label": label.strip() or "New Instance",
         "base_url": base_url.strip().rstrip("/"),
@@ -385,8 +386,9 @@ async def save_instance_route(
 
     ai = _get_ai_section(db)
     dim_warning = ""
-    if ai.get("active_embed_id") == instance_id and instance.get("embed_dim"):
-        dim_ok, actual_dim = verify_vec0_dim(db, instance["embed_dim"])
+    embed_dim = instance.get("embed_dim")
+    if ai.get("active_embed_id") == instance_id and embed_dim:
+        dim_ok, actual_dim = verify_vec0_dim(db, int(embed_dim))
         if not dim_ok and actual_dim is not None:
             dim_warning = (
                 f"Vector index dim mismatch: index={actual_dim}, "

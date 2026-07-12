@@ -22,11 +22,11 @@ class ProceedingRepository(BaseRepository[Proceeding]):
             .all()
         )
 
-    def get_paginated(
+    def get_paginated(  # type: ignore[override]  # ProceedingRepository intentionally specializes the generic base signature for Proceeding-specific filters
         self,
         page: int = 1,
         per_page: int = 20,
-        case_id: str | None = None,
+        case_id: str | None = None,  # type: ignore[override]  # ProceedingRepository intentionally specializes the generic base signature for Proceeding-specific filters
         status: ProceedingStatus | None = None,
     ) -> tuple[Sequence[Proceeding], int]:
         """Get paginated proceedings with total count."""

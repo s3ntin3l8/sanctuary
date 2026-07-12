@@ -2,10 +2,14 @@ import copy
 import json
 import logging
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 import httpx
 
 from app.config import AI_API_KEY, AI_BASE_URL, AI_PROVIDER
+
+if TYPE_CHECKING:
+    from app.services.ai_config import ChatConfig, EmbedConfig, OcrConfig
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +176,7 @@ class AIProvider:
 
     def reload_from_db(self, db) -> None:
         """Refresh connection config from the active instance for this role."""
+        cfg: ChatConfig | EmbedConfig | OcrConfig
         if self._role == "chat":
             from app.services.ai_config import get_chat_config
 

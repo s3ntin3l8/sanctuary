@@ -48,6 +48,11 @@ class ExtractionResult(TypedDict):
     confidence: str
 
 
+class DateExtractionResult(TypedDict):
+    value: datetime | None
+    confidence: str
+
+
 def extract_case_id(filename: str, content: str) -> ExtractionResult:
     """Extract case ID from filename and content."""
     value = None
@@ -118,7 +123,7 @@ def _parse_date_string(date_str: str) -> datetime | None:
     return None
 
 
-def extract_issued_date(content: str, filename: str) -> ExtractionResult:
+def extract_issued_date(content: str, filename: str) -> DateExtractionResult:
     """Extract the date on the document itself (Datum:, Date: header, Bescheiddatum)."""
     value = None
     confidence = "low"

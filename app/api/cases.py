@@ -333,7 +333,7 @@ async def confirm_draft_case(
     db.refresh(first_doc)
     cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
     ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=cases
+        db, first_doc, mode="review", context="embedded", cases=list(cases)
     )
     from app.config import templates as _templates
 
@@ -349,7 +349,7 @@ async def confirm_draft_case(
         render_triage_header_stats_oob,
     )
 
-    response.body += (
+    response.body = bytes(response.body) + (
         render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
     ).encode("utf-8")
 
@@ -412,7 +412,7 @@ async def reject_draft_case(
     db.refresh(first_doc)
     cases = CaseRepository(db).list_for_picker()
     ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=cases
+        db, first_doc, mode="review", context="embedded", cases=list(cases)
     )
     from app.config import templates as _templates
 
@@ -428,7 +428,7 @@ async def reject_draft_case(
         render_triage_header_stats_oob,
     )
 
-    response.body += (
+    response.body = bytes(response.body) + (
         render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
     ).encode("utf-8")
     response.headers["HX-Trigger"] = json.dumps(
