@@ -60,8 +60,8 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
     # (claims_asserted_by_document()).
     cur.execute(
         """INSERT INTO claims
-           (claim_text, claim_type, status, first_made_at, last_updated_at)
-           VALUES (%s, 'FACTUAL', 'ASSERTED', %s, %s)
+           (claim_text, claim_type, status, is_precedent, first_made_at, last_updated_at)
+           VALUES (%s, 'FACTUAL', 'ASSERTED', false, %s, %s)
            RETURNING id""",
         (f"Test claim {suffix}", now, now),
     )

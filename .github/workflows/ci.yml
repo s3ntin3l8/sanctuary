@@ -49,6 +49,13 @@ jobs:
       # Postgres port) — explicit here so this job doesn't depend on the
       # app's own DATABASE_URL default staying in sync.
       DATABASE_URL: "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary"
+      # Without these, get_or_create_bootstrap_admin (app/services/auth_service.py)
+      # has no admin to resolve on this fresh DB and no creds to seed one from, so
+      # get_current_user (app/dependencies.py) 303-redirects every authenticated
+      # request to /signup -- even with AUTH_ENABLED=false. Throwaway CI-only
+      # creds, not real secrets.
+      BOOTSTRAP_ADMIN_EMAIL: "e2e-admin@ci.local" # pragma: allowlist secret
+      BOOTSTRAP_ADMIN_PASSWORD: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       # Without this, uvicorn's stdout is block-buffered and gets discarded on
       # `kill` at job end — the "Show app server log" step below then shows a
       # truncated log missing whatever was printed just before the process was
@@ -75,20 +82,7 @@ jobs:
           touch .env
           docker compose up db redis -d --wait
       - name: Run migrations
-        # Known issue, not a transient race: db/redis containers are unreachable
-        # via localhost from this runner's own shell at all (confirmed via a raw
-        # socket connect against both -- see #108), most likely because
-        # gh-runner-01 is itself a Docker container and docker compose's
-        # sibling containers publish ports on the host, not the runner's own
-        # netns. A retry loop can't fix that, but it's cheap insurance against a
-        # genuine future timing race if/when #108 is resolved, so it stays.
-        run: |
-          for i in $(seq 1 10); do
-            alembic upgrade head && exit 0
-            echo "alembic upgrade head failed (attempt $i/10), retrying..."
-            sleep 2
-          done
-          exit 1
+        run: alembic upgrade head
       - name: Start app server
         run: |
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
