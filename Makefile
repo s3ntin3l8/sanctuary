@@ -7,7 +7,7 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e seed migrate lint clean redis db-up _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -15,6 +15,26 @@ test: ## Run all tests (excludes E2E)
 
 test-e2e: ## Run E2E tests (requires running server on localhost:8000)
 	$(PYTEST) -m e2e
+
+test-e2e-isolated: db-up ## Run E2E tests against a fully throwaway server + DB (mirrors CI; never touches your dev data)
+	@echo "Resetting throwaway e2e DB..."
+	@docker compose exec -T db psql -U sanctuary -d postgres -c "DROP DATABASE IF EXISTS sanctuary_test_e2e" >/dev/null
+	@docker compose exec -T db psql -U sanctuary -d postgres -c "CREATE DATABASE sanctuary_test_e2e" >/dev/null
+	@echo "Migrating throwaway DB..."
+	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(ALEMBIC) upgrade head
+	@echo "Starting throwaway app server..."
+	@DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" \
+	 CELERY_TASK_ALWAYS_EAGER=true \
+	 AUTH_ENABLED=false \
+	 SESSION_SECRET="e2e-isolated-ephemeral-not-a-real-secret" \
+	 $(UVICORN) app.main:app --host 127.0.0.1 --port 8000 > /tmp/sanctuary_test_e2e_server.log 2>&1 & \
+	 echo $$! > /tmp/sanctuary_test_e2e_server.pid; \
+	 trap 'kill "$$(cat /tmp/sanctuary_test_e2e_server.pid)" 2>/dev/null; rm -f /tmp/sanctuary_test_e2e_server.pid' EXIT INT TERM; \
+	 for i in $$(seq 1 30); do curl -sf http://127.0.0.1:8000 >/dev/null && break; sleep 1; done; \
+	 DATABASE_URL="postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary_test_e2e" $(PYTEST) -m e2e; \
+	 status=$$?; \
+	 echo "--- throwaway server log (tail) ---"; tail -50 /tmp/sanctuary_test_e2e_server.log || true; \
+	 exit $$status
 
 -include .env
 export

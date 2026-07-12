@@ -1,12 +1,19 @@
 """E2E test fixtures.
 
-E2E tests run against a live server. Start the app first:
-    make run
+E2E tests run against a live server. Two ways to provide one:
 
-Then in a second terminal:
-    make test-e2e
+1. Your own dev server + dev DB (the default `sanctuary` Postgres database)
+   -- start it first:
+       make run
+   Then in a second terminal:
+       make test-e2e
+   Or override the base URL: `make test-e2e PLAYWRIGHT_OPTIONS="--base-url=http://localhost:8001"`.
 
-Or override the base URL: `make test-e2e PLAYWRIGHT_OPTIONS="--base-url=http://localhost:8001"`.
+2. A throwaway, fully isolated server + DB (mirrors CI's e2e job) -- never
+   touches your dev data:
+       make test-e2e-isolated
+   Use this whenever you don't want test data landing in your real dev DB
+   (this is what a stray/manual local repro should always use instead).
 """
 
 import os
@@ -61,14 +68,15 @@ def db_seed():
     """Direct psycopg connection for seeding rows the API can't create
     (Claims/DocumentRelationships are AI-driven; no public POST endpoint).
 
-    Connects to the same DATABASE_URL the live `make run` server uses.
-    Foreign keys are always enforced by Postgres — no PRAGMA needed.
+    Connects to the same DATABASE_URL the live server (whatever
+    `E2E_BASE_URL` answers) is using -- set DATABASE_URL (as
+    `make test-e2e-isolated` does, pointing at a throwaway DB) to redirect
+    both the server and this fixture together; never change one without the
+    other. Foreign keys are always enforced by Postgres — no PRAGMA needed.
 
     The tests own unique IDs (uuid suffixes) so they don't collide with
     real data, but each test still cleans up with `cleanup_callbacks`.
     """
-    import os
-
     import psycopg
 
     database_url = os.getenv(
