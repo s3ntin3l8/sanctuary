@@ -50,7 +50,14 @@ def ensure_sub_groups_initialized(db: Session, batch_id: int) -> list[BatchSubGr
         else:
             children_of.setdefault(d.parent_id, []).append(d)
 
-    roots.sort(key=lambda d: (_SIG_ORDER.get(d.significance_tier, 99), d.id or 0))
+    roots.sort(
+        key=lambda d: (
+            _SIG_ORDER.get(d.significance_tier, 99)
+            if d.significance_tier is not None
+            else 99,
+            d.id or 0,
+        )
+    )
 
     if not roots:
         roots = list(docs)

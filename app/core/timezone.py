@@ -54,8 +54,11 @@ def to_iso(dt: datetime) -> str | None:
     return dt.isoformat()
 
 
-def parse_datetime(value: str) -> datetime:
-    """Parse ISO datetime string, returning timezone-aware in default tz."""
+def parse_datetime(value: str) -> datetime | None:
+    """Parse ISO datetime string, returning timezone-aware in default tz.
+
+    Returns None when `value` is empty or not a valid ISO datetime string.
+    """
     if not value:
         return None
     try:
@@ -83,7 +86,7 @@ def format_datetime(dt: datetime, fmt: str = "%d.%m.%Y %H:%M") -> str | None:
     return dt.strftime(fmt)
 
 
-def compare_dates(dt1: datetime, dt2: datetime) -> int:
+def compare_dates(dt1: datetime | None, dt2: datetime | None) -> int:
     """Compare two datetimes safely. Returns -1, 0, or 1."""
     dt1 = ensure_tz(dt1) if dt1 else None
     dt2 = ensure_tz(dt2) if dt2 else None

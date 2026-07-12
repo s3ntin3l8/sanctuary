@@ -167,7 +167,7 @@ class CaseTimelineService:
             if doc_ids
             else []
         )
-        claim_counts: dict[int, int] = dict(claim_rows)
+        claim_counts: dict[int, int] = {row[0]: row[1] for row in claim_rows}
 
         # Bulk-query relationship counts (both directions)
         from_rows = (

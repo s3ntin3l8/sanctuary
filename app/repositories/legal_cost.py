@@ -72,6 +72,8 @@ class LegalCostRepository(BaseRepository[LegalCost]):
             .filter(LegalCost.case_id == case_id)
             .first()
         )
+        if result is None:
+            return {"net": 0, "gross": 0, "paid": 0, "reimbursed": 0}
         return {
             "net": result.net or 0,
             "gross": result.gross or 0,
@@ -151,16 +153,16 @@ class LegalCostRepository(BaseRepository[LegalCost]):
         self, cost_id: int, status: CostStatus, paid_at: datetime | None = None
     ) -> LegalCost | None:
         """Update cost status."""
-        updates = {"status": status}
+        updates: dict[str, CostStatus | datetime] = {"status": status}
         if paid_at:
             updates["paid_at"] = paid_at
         return self.update(cost_id, **updates)
 
-    def get_paginated(
+    def get_paginated(  # type: ignore[override]  # LegalCostRepository intentionally specializes the generic base signature for LegalCost-specific filters
         self,
         page: int = 1,
         per_page: int = 20,
-        case_id: str | None = None,
+        case_id: str | None = None,  # type: ignore[override]  # LegalCostRepository intentionally specializes the generic base signature for LegalCost-specific filters
         status: CostStatus | None = None,
     ) -> tuple[Sequence[LegalCost], int]:
         """Get paginated costs with total count."""

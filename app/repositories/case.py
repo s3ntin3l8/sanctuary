@@ -146,15 +146,15 @@ class CaseRepository(BaseRepository[Case]):
             self.db.refresh(case)
         return case
 
-    def exists(self, case_id: str) -> bool:
+    def exists(self, case_id: str) -> bool:  # type: ignore[override]  # CaseRepository intentionally specializes the generic base signature for Case-specific filters
         """Check if case exists."""
         return self.get_by_id(case_id) is not None
 
-    def get_all(self) -> Sequence[Case]:
+    def get_all(self) -> Sequence[Case]:  # type: ignore[override]  # CaseRepository intentionally specializes the generic base signature for Case-specific filters
         """Get all cases."""
         return self.db.query(Case).all()
 
-    def get_paginated(
+    def get_paginated(  # type: ignore[override]  # CaseRepository intentionally specializes the generic base signature for Case-specific filters
         self,
         page: int = 1,
         per_page: int = 20,

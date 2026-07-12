@@ -9,7 +9,7 @@ from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.models.database import Document
-from app.models.enums import PipelineState
+from app.models.enums import PipelineStage, PipelineState
 from app.services.ai_inflight import count_inflight
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 
@@ -155,7 +155,7 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
     batch_buckets: dict[tuple, int] = {}
 
     def _add_stage(doc: Document, stage: str, executing: bool) -> None:
-        spec = STAGE_REGISTRY.get(stage) if stage else None
+        spec = STAGE_REGISTRY.get(PipelineStage(stage)) if stage else None
         if spec and spec.dispatch_arg == "batch_id" and doc.ingest_batch_id is not None:
             key = (stage, doc.ingest_batch_id)
             if key in batch_buckets:

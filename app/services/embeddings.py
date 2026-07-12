@@ -194,7 +194,10 @@ async def generate_embedding(doc_id: int):
                 batch_id=doc.ingest_batch_id if doc else None,
                 case_id=doc.case_id if doc else None,
                 model=cfg.embed_model,
-                provider=ptype,
+                # ptype is only None if get_type() raised before assigning it
+                # (attempted=True is set first) — fall back to the configured
+                # provider string so the run is still logged.
+                provider=ptype.value if ptype is not None else cfg.provider,
                 duration_ms=int((time.perf_counter() - run_started) * 1000),
                 response_len=resp_len,
                 status=run_status,

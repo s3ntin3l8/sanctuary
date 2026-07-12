@@ -10,7 +10,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from app.constants import SIG_ORDER as _SIG_ORDER
-from app.models.database import Document
+from app.models.database import BatchSubGroup, Document
 from app.models.enums import (
     DocumentRole,
     PipelineState,
@@ -58,7 +58,9 @@ def _pick_lead_doc(group: list[tuple[int, Document]]) -> Document | None:
     return min(
         docs,
         key=lambda d: (
-            _SIG_ORDER.get(d.significance_tier, 99),
+            _SIG_ORDER.get(d.significance_tier, 99)
+            if d.significance_tier is not None
+            else 99,
             1 if d.role == DocumentRole.COVER_LETTER else 0,
             d.id or 0,
         ),
@@ -143,7 +145,7 @@ def _build_sub_bundles_manual(bundle) -> list[SubBundleView]:
     from collections import defaultdict
 
     groups_by_sgid: dict[int, list] = defaultdict(list)
-    sg_meta: dict[int, object] = {}
+    sg_meta: dict[int, BatchSubGroup] = {}
 
     for d in sorted(
         bundle.documents, key=lambda x: (x.sub_group_sort_order or 0, x.id)

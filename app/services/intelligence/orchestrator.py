@@ -2,8 +2,10 @@
 
 import logging
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.services.pipeline_status import _GATE_BLOCK_SKIP_REASONS
@@ -60,7 +62,7 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
         {"now": datetime.now(UTC), "batch_id": batch_id},
     )
     db.commit()
-    return result.rowcount == 1
+    return cast(CursorResult, result).rowcount == 1
 
 
 def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
@@ -104,7 +106,7 @@ def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
         {"now": datetime.now(UTC), "batch_id": batch_id},
     )
     db.commit()
-    return result.rowcount == 1
+    return cast(CursorResult, result).rowcount == 1
 
 
 def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
@@ -160,7 +162,7 @@ def claim_case_brief_for_dispatch(case_id: str, db: Session) -> bool:
         {"now": datetime.now(UTC), "case_id": case_id, **reason_params},
     )
     db.commit()
-    return result.rowcount == 1
+    return cast(CursorResult, result).rowcount == 1
 
 
 def release_case_brief_claim(case_id: str, db: Session) -> None:

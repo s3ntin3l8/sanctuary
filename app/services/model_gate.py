@@ -39,6 +39,7 @@ import logging
 import time
 import uuid
 from collections.abc import Generator
+from typing import cast
 
 import redis
 
@@ -251,7 +252,11 @@ def model_gate(
             # ingest queue can't starve qwen forever.
             if family == "qwen" and not queue_defer_exhausted:
                 try:
-                    pending_ingest = client.llen(_INGEST_QUEUE_NAME)
+                    # redis-py's CoreCommands mixin is shared between the
+                    # sync and async clients, so its stubs type llen() as
+                    # returning Awaitable[int] | int even though this is
+                    # the sync client and always returns a plain int here.
+                    pending_ingest = cast(int, client.llen(_INGEST_QUEUE_NAME))
                 except (redis.RedisError, OSError) as exc:
                     _maybe_warn(exc)
                     pending_ingest = 0
@@ -356,7 +361,9 @@ def inflight_by_family() -> dict[str, int]:
     try:
         client = _get_client()
         for key in client.scan_iter(match=_CALL_KEY_PREFIX + "*", count=100):
-            family = client.get(key)
+            # Same shared sync/async stub wart as above: get() is typed as
+            # Awaitable[Any] | Any on the stubs but this is the sync client.
+            family = cast("str | None", client.get(key))
             if family:
                 out[family] = out.get(family, 0) + 1
     except (redis.RedisError, OSError) as exc:

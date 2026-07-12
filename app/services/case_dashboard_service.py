@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime
+from typing import Literal, cast
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -105,24 +106,36 @@ class CaseDashboardService:
         # Compute is_deletable: empty AND not the sole remaining proceeding.
         if len(proceedings) > 1:
             proc_ids = [p.id for p in proceedings]
-            batch_counts = dict(
-                self.db.query(IngestBatch.proceeding_id, func.count(IngestBatch.id))
+            batch_counts: dict[int, int] = {
+                row[0]: row[1]
+                for row in self.db.query(
+                    IngestBatch.proceeding_id, func.count(IngestBatch.id)
+                )
                 .filter(IngestBatch.proceeding_id.in_(proc_ids))
                 .group_by(IngestBatch.proceeding_id)
                 .all()
-            )
-            action_counts = dict(
-                self.db.query(ActionItem.proceeding_id, func.count(ActionItem.id))
+                if row[0] is not None
+            }
+            action_counts: dict[int, int] = {
+                row[0]: row[1]
+                for row in self.db.query(
+                    ActionItem.proceeding_id, func.count(ActionItem.id)
+                )
                 .filter(ActionItem.proceeding_id.in_(proc_ids))
                 .group_by(ActionItem.proceeding_id)
                 .all()
-            )
-            cost_counts = dict(
-                self.db.query(LegalCost.proceeding_id, func.count(LegalCost.id))
+                if row[0] is not None
+            }
+            cost_counts: dict[int, int] = {
+                row[0]: row[1]
+                for row in self.db.query(
+                    LegalCost.proceeding_id, func.count(LegalCost.id)
+                )
                 .filter(LegalCost.proceeding_id.in_(proc_ids))
                 .group_by(LegalCost.proceeding_id)
                 .all()
-            )
+                if row[0] is not None
+            }
             for p in proceedings:
                 p.is_deletable = (
                     p.doc_count == 0
@@ -172,7 +185,9 @@ class CaseDashboardService:
             reaction_map = self._reaction_map_for_proceeding(active_proceeding.id)
             payload = CaseGraphService(self.db).build_payload(
                 active_proceeding.id,
-                significance_filter,
+                # significance_filter is route-validated (FilterQuery regex) to be
+                # one of these three literals before it reaches this call.
+                cast(Literal["critical", "significant+", "all"], significance_filter),
                 new_doc_ids=new_doc_ids,
                 reaction_map=reaction_map,
             )

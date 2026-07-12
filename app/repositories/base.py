@@ -19,7 +19,7 @@ class BaseRepository[ModelType: Base]:
         query = self.db.query(self.model)
         if options:
             query = query.options(*options)
-        return query.filter(self.model.id == id).first()
+        return query.filter(self.model.id == id).first()  # type: ignore[attr-defined]  # Base declares no PK; every concrete subclass defines its own `id` column (str for Case, int elsewhere)
 
     def get_by(self, options: list | None = None, **filters) -> ModelType | None:
         """Get single record by arbitrary filters."""

@@ -76,7 +76,7 @@ def _get_system_health_signals(db: Session) -> list[dict[str, Any]]:
 
 
 def _get_case_clock_signals(db: Session) -> list[dict[str, Any]]:
-    signals = []
+    signals: list[dict[str, Any]] = []
 
     # Case Clock Window (Simulated example)
     # "ADV-024-A entering typical hearing window (Jul–Nov)"

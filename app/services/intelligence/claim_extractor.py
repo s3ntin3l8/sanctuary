@@ -275,8 +275,8 @@ def _apply_claims(
     # Pass 2: embed + dedup for each newly created claim. Reload each claim
     # after the commit (SQLAlchemy expires objects on commit).
     for claim_id in new_claim_ids:
-        claim = db.get(Claim, claim_id)
-        if not claim:
+        reloaded_claim = db.get(Claim, claim_id)
+        if not reloaded_claim:
             continue
         try:
             asyncio.run(upsert_claim_embedding(claim_id, db))
@@ -285,7 +285,7 @@ def _apply_claims(
                 "Doc %s: failed to embed new claim %s: %s", doc.id, claim_id, exc
             )
         try:
-            propose_merges_for_new_claim(claim, db)
+            propose_merges_for_new_claim(reloaded_claim, db)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "Doc %s: dedup judge failed for claim %s: %s", doc.id, claim_id, exc
@@ -307,7 +307,7 @@ def extract(doc_id: int) -> str | None:
         doc = db.query(Document).filter(Document.id == doc_id).first()
         if not doc:
             logger.warning(f"Doc {doc_id} not found for claim extraction")
-            return
+            return None
 
         if doc.significance_tier not in ELIGIBLE_TIERS:
             reason = f"ineligible_tier:{doc.significance_tier}"
@@ -415,3 +415,5 @@ def extract(doc_id: int) -> str | None:
         raise
     finally:
         db.close()
+
+    return None

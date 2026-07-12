@@ -491,13 +491,15 @@ def _create_document(
 async def ingest_file(
     file: UploadFile,
     case_id: str | None = None,
-    db: Session = None,
-    parent_id: int = None,
+    db: Session | None = None,
+    parent_id: int | None = None,
     skip_processing: bool = False,
     ingest_batch_id: int | None = None,
     owner_id: int | None = None,
 ) -> Document:
     """Save uploaded file, optionally process it."""
+    if db is None:
+        raise ValueError("ingest_file requires a database session.")
     file_path: str | None = None
 
     try:

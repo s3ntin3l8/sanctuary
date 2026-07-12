@@ -220,7 +220,8 @@ def save_instance(db, instance: dict) -> None:
     """Create or update an instance (matched by id)."""
     from app.services.app_settings_service import _get_or_create
 
-    existing = get_instance(db, instance.get("id"))
+    instance_id = instance.get("id")
+    existing = get_instance(db, instance_id) if instance_id else None
     settings = _get_or_create(db)
     data = dict(settings.settings_json or {})
     ai = dict(data.get("ai", {}))

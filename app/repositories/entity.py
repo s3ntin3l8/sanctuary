@@ -17,11 +17,11 @@ class EntityRepository(BaseRepository[Entity]):
         """Get all entities for a case."""
         return self.db.query(Entity).filter(Entity.case_id == case_id).all()
 
-    def get_paginated(
+    def get_paginated(  # type: ignore[override]  # EntityRepository intentionally specializes the generic base signature for Entity-specific filters
         self,
         page: int = 1,
         per_page: int = 50,
-        case_id: str | None = None,
+        case_id: str | None = None,  # type: ignore[override]  # EntityRepository intentionally specializes the generic base signature for Entity-specific filters
         entity_type: EntityType | None = None,
     ) -> tuple[Sequence[Entity], int]:
         """Get paginated entities with total count."""

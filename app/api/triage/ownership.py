@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from starlette.datastructures import FormData
 
 from app.dependencies import get_current_user, get_db
 from app.models.database import Document, IngestBatch, User
@@ -44,7 +45,7 @@ async def require_triage_object_owner(
         try:
             form = await request.form()  # cached by Starlette; routes re-read safely
         except Exception:
-            form = {}
+            form = FormData()
         doc_id = doc_id or form.get("doc_id")
         batch_id = batch_id or form.get("batch_id")
 

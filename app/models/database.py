@@ -1,6 +1,7 @@
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import event, inspect
 
@@ -12,7 +13,6 @@ def _utcnow():
 from sqlalchemy import (
     JSON,
     Boolean,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -28,7 +28,13 @@ from sqlalchemy import (
 from sqlalchemy import (
     text as _sa_text,
 )
-from sqlalchemy.orm import declarative_base, relationship, validates
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    validates,
+)
 
 from app.core.validators import normalize_case_id
 from app.models.enums import (
@@ -64,7 +70,9 @@ from app.models.enums import (
     UserRole,
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Document(Base):
@@ -80,111 +88,121 @@ class Document(Base):
         Index("ix_documents_sub_group", "sub_group_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False, index=True)
-    content = Column(Text, nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The user who ingested this document. INVARIANT: owner_id governs visibility
     # ONLY in the no-case triage view. Once a document has a real case, visibility
     # is case-driven (access_service.can_view_case = owner OR share). NEVER filter
     # a case-context document query by owner_id — it would break shared-case access
     # (a shared editor must see documents the case owner ingested). No DB-level FK
     # (avoids a SQLite recreate of this heavily-referenced table).
-    owner_id = Column(Integer, nullable=True, index=True)
-    case_id = Column(
+    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    case_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    file_path = Column(String, nullable=True)
-    original_filename = Column(String, nullable=True)
-    content_hash = Column(String(64), nullable=True, index=True)  # SHA-256 hex digest
-    originator_type = Column(
+    file_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )  # SHA-256 hex digest
+    originator_type: Mapped[OriginatorType] = mapped_column(
         SAEnum(OriginatorType), default=OriginatorType.UNKNOWN, nullable=False
     )
-    internal_id = Column(
+    internal_id: Mapped[str | None] = mapped_column(
         String, nullable=True, index=True
     )  # lawyer's file ref, e.g. "8124-25"
-    az_court = Column(
+    az_court: Mapped[str | None] = mapped_column(
         String, nullable=True, index=True
     )  # AI-extracted court Aktenzeichen, e.g. "003 F 426/25" — kept on the
     # doc as a fallback hint for the metadata review HUD when no Proceeding
     # has been linked yet. The Proceeding row is the authoritative source
     # once one exists.
-    sender = Column(
+    sender: Mapped[str | None] = mapped_column(
         String, nullable=True, index=True
     )  # "Via: Email from [Sender] on [Date]"
-    received_date = Column(
+    received_date: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )  # When the physical document was received
-    issued_date = Column(
+    issued_date: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, index=True
     )  # Date on the document itself (Datum:, Date: header, Bescheiddatum)
-    ingest_date = Column(DateTime, default=_utcnow)
-    needs_review = Column(Boolean, default=True, index=True)
-    status = Column(
+    ingest_date: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, nullable=True
+    )
+    needs_review: Mapped[bool | None] = mapped_column(
+        Boolean, default=True, index=True, nullable=True
+    )
+    status: Mapped[DocumentStatus] = mapped_column(
         SAEnum(DocumentStatus),
         default=DocumentStatus.ACTIVE,
         nullable=False,
         index=True,
     )
-    review_reasons = Column(
-        JSON, default=list
+    review_reasons: Mapped[list[Any] | None] = mapped_column(
+        JSON, default=list, nullable=True
     )  # e.g. ["missing_case_id", "missing_sender"]
 
     # Pipeline tracking
-    pipeline_state = Column(
+    pipeline_state: Mapped[PipelineState] = mapped_column(
         SAEnum(PipelineState, values_callable=lambda obj: [e.value for e in obj]),
         default=PipelineState.PENDING,
         nullable=False,
     )
     # AI Management Summary fields
-    ai_summary = Column(
+    ai_summary: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True
     )  # {"legal_significance": "...", "required_action": "...", "financial_impact": "..."}
-    ai_summary_created_at = Column(DateTime, nullable=True)
-    ai_summary_approved_at = Column(
+    ai_summary_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    ai_summary_approved_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )  # timestamp when human approved
 
     # Extracted cost candidates (RVG, GKG, EUR amounts, Streitwert)
-    cost_candidates = Column(
+    cost_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )  # [{"type": "rvg_position", "value": "...", ...}]
 
     # Extraction confidence scores (high/medium/low per field)
-    extraction_confidence = Column(
+    extraction_confidence: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True
     )  # {"sender": "high", "date": "medium", "case_id": "high", "originator": "low"}
 
     # Structural metadata (page counts, headings, chunking info)
-    meta = Column(JSON, nullable=True)
+    meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    page_count = Column(Integer, nullable=False, default=0)
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Self-referential relationship for 'Russian Doll' nesting
-    parent_id = Column(
+    parent_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    sub_group_id = Column(
+    sub_group_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("batch_sub_groups.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    sub_group_sort_order = Column(Integer, nullable=True, default=0)
+    sub_group_sort_order: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=0
+    )
 
     # Phase 1: bundle / proceeding grouping
-    ingest_batch_id = Column(
+    ingest_batch_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("ingest_batches.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    proceeding_id = Column(
+    proceeding_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("proceedings.id", ondelete="SET NULL"),
         nullable=True,
@@ -192,46 +210,64 @@ class Document(Base):
     )
 
     # Phase 1: structural and intelligence fields
-    role = Column(SAEnum(DocumentRole), default=DocumentRole.STANDALONE, nullable=False)
-    court_relay = Column(Boolean, default=False, nullable=False)
-    attributed_originator = Column(String, nullable=True)  # true author, if routed
-    document_type = Column(SAEnum(DocumentType), nullable=True)
-    significance_tier = Column(SAEnum(SignificanceTier), nullable=True, index=True)
-    thread_open = Column(Boolean, default=False, nullable=False)
+    role: Mapped[DocumentRole] = mapped_column(
+        SAEnum(DocumentRole), default=DocumentRole.STANDALONE, nullable=False
+    )
+    court_relay: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    attributed_originator: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # true author, if routed
+    document_type: Mapped[DocumentType | None] = mapped_column(
+        SAEnum(DocumentType), nullable=True
+    )
+    significance_tier: Mapped[SignificanceTier | None] = mapped_column(
+        SAEnum(SignificanceTier), nullable=True, index=True
+    )
+    thread_open: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Phase 1-B: AI-annotated reading
-    key_passages = Column(JSON, nullable=True)  # list of {text, rationale, span}
+    key_passages: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )  # list of {text, rationale, span}
 
-    children = relationship(
+    children: Mapped[list["Document"]] = relationship(
         "Document", back_populates="parent", cascade="all, delete-orphan"
     )
-    parent = relationship("Document", back_populates="children", remote_side=[id])
-    sub_group = relationship("BatchSubGroup", back_populates="documents")
-    ingest_batch = relationship("IngestBatch", back_populates="documents")
-    proceeding = relationship("Proceeding", back_populates="documents")
-    pins = relationship(
+    parent: Mapped["Document | None"] = relationship(
+        "Document", back_populates="children", remote_side=[id]
+    )
+    sub_group: Mapped["BatchSubGroup | None"] = relationship(
+        "BatchSubGroup", back_populates="documents"
+    )
+    ingest_batch: Mapped["IngestBatch | None"] = relationship(
+        "IngestBatch", back_populates="documents"
+    )
+    proceeding: Mapped["Proceeding | None"] = relationship(
+        "Proceeding", back_populates="documents"
+    )
+    pins: Mapped[list["DocumentPin"]] = relationship(
         "DocumentPin", back_populates="document", cascade="all, delete-orphan"
     )
-    chunks = relationship(
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
         "DocumentChunk", back_populates="document", cascade="all, delete-orphan"
     )
-    reactions = relationship(
+    reactions: Mapped[list["UserReaction"]] = relationship(
         "UserReaction", back_populates="document", cascade="all, delete-orphan"
     )
-    claim_evidence = relationship(
+    claim_evidence: Mapped[list["ClaimEvidence"]] = relationship(
         "ClaimEvidence", back_populates="document", cascade="all, delete-orphan"
     )
-    stage_rows = relationship(
+    stage_rows: Mapped[list["DocumentPipelineStage"]] = relationship(
         "DocumentPipelineStage",
         back_populates="document",
         cascade="all, delete-orphan",
     )
-    cost_signals = relationship(
+    cost_signals: Mapped[list["CostSignal"]] = relationship(
         "CostSignal",
         back_populates="source_document",
         cascade="all, delete-orphan",
     )
-    legal_costs = relationship(
+    legal_costs: Mapped[list["LegalCost"]] = relationship(
         "LegalCost",
         back_populates="source_document",
         foreign_keys="[LegalCost.source_document_id]",
@@ -258,23 +294,23 @@ class Document(Base):
 class DocumentPipelineStage(Base):
     __tablename__ = "document_pipeline_stages"
 
-    document_id = Column(
+    document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,
     )
-    stage = Column(String, primary_key=True, nullable=False)
-    status = Column(String, nullable=False)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    error = Column(Text, nullable=True)
-    reason = Column(String, nullable=True)
-    attempt = Column(Integer, nullable=True)
-    max_attempts = Column(Integer, nullable=True)
-    next_at = Column(DateTime, nullable=True)
+    stage: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    document = relationship("Document", back_populates="stage_rows")
+    document: Mapped["Document"] = relationship("Document", back_populates="stage_rows")
 
     __table_args__ = (
         Index("ix_dps_status", "status"),
@@ -379,45 +415,65 @@ def move_document_file_on_assignment(mapper, connection, target):
 class Case(Base):
     __tablename__ = "cases"
 
-    id = Column(
+    id: Mapped[str] = mapped_column(
         String, primary_key=True, index=True
     )  # Internal lead ID, e.g. ADV-992-K
-    title = Column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
     # Owning user. NULL only transiently during the ownership migration backfill;
     # enforced not-null afterwards. Filtering is applied at the route/repository
     # layer (see app.services.access_service.visible_case_ids) — never as a model
     # default, so background workers see all cases.
-    owner_id = Column(
+    owner_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    status = Column(SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False)
-    jurisdiction = Column(SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False)
-    ingest_date = Column(DateTime, default=_utcnow)
-    closed_at = Column(DateTime, nullable=True)
-    is_draft = Column(Boolean, default=False, nullable=False)
-    pending_close = Column(Boolean, default=False, nullable=False)
+    status: Mapped[CaseStatus] = mapped_column(
+        SAEnum(CaseStatus), default=CaseStatus.INTAKE, nullable=False
+    )
+    jurisdiction: Mapped[Jurisdiction] = mapped_column(
+        SAEnum(Jurisdiction), default=Jurisdiction.DE, nullable=False
+    )
+    ingest_date: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, nullable=True
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pending_close: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    case_type = Column(SAEnum(CaseType), default=CaseType.CIVIL, nullable=False)
+    case_type: Mapped[CaseType] = mapped_column(
+        SAEnum(CaseType), default=CaseType.CIVIL, nullable=False
+    )
     # Pre-ruling: assume we lose and must pay opposing counsel (worst case).
     # Family cases default to False (§81 FamFG Kostenteilung is the norm).
-    assume_worst_case = Column(Boolean, default=True, nullable=False)
+    assume_worst_case: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
 
     # Phase 1: cumulative AI intelligence + parties + exposure
-    ai_brief = Column(JSON, nullable=True)  # living AI understanding of the case
-    ai_brief_updated_at = Column(DateTime, nullable=True)
+    ai_brief: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )  # living AI understanding of the case
+    ai_brief_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     # Atomic CAS slot for "brief dispatch in flight". NULL = idle. Set to now()
     # by claim_case_brief_for_dispatch() when readiness is satisfied; cleared
     # to NULL by the brief task on terminal exit (success or final failure).
     # Mirrors IngestBatch.analysis_queued_at — see app/services/intelligence/
     # orchestrator.py for the claim mechanism.
-    brief_queued_at = Column(DateTime, nullable=True, index=True)
-    parties = Column(JSON, nullable=True)  # known actors and their roles
-    opposing_parties = Column(JSON, nullable=True)  # per-case opposing party names
-    total_cost_exposure = Column(
+    brief_queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
+    parties: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )  # known actors and their roles
+    opposing_parties: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )  # per-case opposing party names
+    total_cost_exposure: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )  # running total in cents
 
-    proceedings = relationship(
+    proceedings: Mapped[list["Proceeding"]] = relationship(
         "Proceeding", back_populates="case", cascade="all, delete-orphan"
     )
 
@@ -435,30 +491,42 @@ class Proceeding(Base):
         Index("ix_proceedings_case_status", "case_id", "status"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    court_name = Column(String, nullable=False)  # "Amtsgericht Hamburg"
-    court_level = Column(SAEnum(ProceedingCourtLevel), nullable=False)
-    subject_matter = Column(String, nullable=True)  # "§ 1671 BGB, custody"
-    az_court = Column(String, nullable=True)  # court file number e.g. "003 F 426/25"
-    status = Column(
+    court_name: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # "Amtsgericht Hamburg"
+    court_level: Mapped[ProceedingCourtLevel] = mapped_column(
+        SAEnum(ProceedingCourtLevel), nullable=False
+    )
+    subject_matter: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # "§ 1671 BGB, custody"
+    az_court: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # court file number e.g. "003 F 426/25"
+    status: Mapped[ProceedingStatus] = mapped_column(
         SAEnum(ProceedingStatus), default=ProceedingStatus.ACTIVE, nullable=False
     )
-    started_at = Column(DateTime, nullable=True)
-    ended_at = Column(DateTime, nullable=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
     # AI-suggested proceedings start as drafts; flipped to False on user
     # confirmation in /triage/confirm. Mirrors Case.is_draft.
-    is_draft = Column(Boolean, default=False, nullable=False)
+    is_draft: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    case = relationship("Case", back_populates="proceedings")
-    documents = relationship("Document", back_populates="proceeding")
-    cost_signals = relationship(
+    case: Mapped["Case"] = relationship("Case", back_populates="proceedings")
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="proceeding"
+    )
+    cost_signals: Mapped[list["CostSignal"]] = relationship(
         "CostSignal", back_populates="proceeding", cascade="all, delete-orphan"
     )
 
@@ -476,56 +544,68 @@ class IngestBatch(Base):
         Index("ix_ingest_batches_received", "received_at"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     # The user who ingested this batch (upload / gmail / scan-folder). Drives the
     # per-user triage inbox. No DB-level FK (avoids a SQLite table recreate);
     # enforced/used at the app layer. NULL only for legacy/unowned rows.
-    owner_id = Column(Integer, nullable=True, index=True)
-    source_type = Column(SAEnum(IngestBatchSourceType), nullable=False)
-    received_at = Column(DateTime, default=_utcnow, nullable=False)
-    sender_email = Column(String, nullable=True)
-    subject = Column(String, nullable=True)
-    raw_source_path = Column(String, nullable=True)  # path to original .eml/scan
-    message_id = Column(String, index=True, nullable=True)
-    case_id = Column(
+    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    source_type: Mapped[IngestBatchSourceType] = mapped_column(
+        SAEnum(IngestBatchSourceType), nullable=False
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    sender_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_source_path: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # path to original .eml/scan
+    message_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    case_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    proceeding_id = Column(
+    proceeding_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("proceedings.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    status = Column(
+    status: Mapped[IngestBatchStatus] = mapped_column(
         SAEnum(IngestBatchStatus),
         default=IngestBatchStatus.PENDING,
         nullable=False,
     )
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
-    analysis_queued_at = Column(DateTime, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    analysis_queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Atomic CAS slot for the OCR->chat barrier: NULL until every doc in the
     # batch has a terminal EXTRACT, then set by claim_batch_for_metadata_phase()
     # so metadata_task dispatches for the whole batch at once instead of each
     # doc triggering its own chat call the moment its own EXTRACT finishes.
     # Mirrors analysis_queued_at — see app/services/intelligence/orchestrator.py.
-    metadata_phase_queued_at = Column(DateTime, nullable=True)
-    source_hash = Column(String, index=True, nullable=True)
-    meta = Column(JSON, nullable=True)
-    detected_actions = Column(JSON, nullable=True)
-    attachment_manifest = Column(
+    metadata_phase_queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    source_hash: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    detected_actions: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    attachment_manifest: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )  # [{filename, timestamp, source_label, doc_id}]
-    email_note = Column(
+    email_note: Mapped[str | None] = mapped_column(
         Text, nullable=True
     )  # prose from lawyer's forwarding note (stripped, ≤800 chars)
 
-    case = relationship("Case")
-    proceeding = relationship("Proceeding")
-    documents = relationship("Document", back_populates="ingest_batch")
-    sub_groups = relationship(
+    case: Mapped["Case | None"] = relationship("Case")
+    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="ingest_batch"
+    )
+    sub_groups: Mapped[list["BatchSubGroup"]] = relationship(
         "BatchSubGroup",
         back_populates="batch",
         order_by="BatchSubGroup.sort_order",
@@ -565,19 +645,27 @@ class BatchSubGroup(Base):
     __tablename__ = "batch_sub_groups"
     __table_args__ = (Index("ix_batch_sub_groups_batch", "batch_id"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    batch_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    batch_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("ingest_batches.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    label = Column(String, nullable=True)  # None = auto-derived from lead doc title
-    sort_order = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    label: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # None = auto-derived from lead doc title
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    batch = relationship("IngestBatch", back_populates="sub_groups")
-    documents = relationship("Document", back_populates="sub_group")
+    batch: Mapped["IngestBatch"] = relationship(
+        "IngestBatch", back_populates="sub_groups"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="sub_group"
+    )
 
 
 class DocumentRelationship(Base):
@@ -599,30 +687,38 @@ class DocumentRelationship(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    from_document_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    from_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    to_document_id = Column(
+    to_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    relationship_type = Column(SAEnum(RelationshipType), nullable=False)
-    confidence = Column(
+    relationship_type: Mapped[RelationshipType] = mapped_column(
+        SAEnum(RelationshipType), nullable=False
+    )
+    confidence: Mapped[RelationshipConfidence] = mapped_column(
         SAEnum(RelationshipConfidence),
         default=RelationshipConfidence.AI_DETECTED,
         nullable=False,
     )
-    notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    from_document = relationship("Document", foreign_keys=[from_document_id])
-    to_document = relationship("Document", foreign_keys=[to_document_id])
+    from_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[from_document_id]
+    )
+    to_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[to_document_id]
+    )
 
 
 class ActionItem(Base):
@@ -642,52 +738,56 @@ class ActionItem(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    proceeding_id = Column(
+    proceeding_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("proceedings.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    source_document_id = Column(
+    source_document_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
 
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    due_date = Column(DateTime, nullable=False, index=True)
-    action_type = Column(
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    due_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    action_type: Mapped[ActionItemType] = mapped_column(
         SAEnum(ActionItemType),
         default=ActionItemType.DEADLINE,
         nullable=False,
     )
-    status = Column(
+    status: Mapped[ActionItemStatus] = mapped_column(
         SAEnum(ActionItemStatus), default=ActionItemStatus.OPEN, nullable=False
     )
-    location = Column(String, nullable=True)  # for court_date entries
+    location: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # for court_date entries
     # Whom the action is directed at: "user" (or own-side lawyer) | "opposing"
     # | "third_party" (expert, agency, etc.) | "court" | NULL when AI can't tell.
     # The UI defaults to addressee IN ('user', NULL); the toggle shows all.
-    addressee = Column(String, nullable=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    addressee: Mapped[str | None] = mapped_column(String, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
     # Tombstone flag — True when this item was replaced by a later reschedule
     # (Terminsverlegung / Umladung). DISMISSED status removes it from default
     # UI view; superseded=True guards against re-insertion by older docs that
     # enrich after the rescheduling notice.
-    superseded = Column(Boolean, nullable=False, default=False)
+    superseded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    case = relationship("Case")
-    proceeding = relationship("Proceeding")
-    source_document = relationship("Document")
+    case: Mapped["Case"] = relationship("Case")
+    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
+    source_document: Mapped["Document | None"] = relationship("Document")
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -708,26 +808,36 @@ class Claim(Base):
     __tablename__ = "claims"
     __table_args__ = (Index("ix_claims_status", "status"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    claim_text = Column(Text, nullable=False)
-    claim_type = Column(SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False)
-    status = Column(SAEnum(ClaimStatus), default=ClaimStatus.ASSERTED, nullable=False)
-    is_precedent = Column(Boolean, default=False, nullable=False)
-    first_made_at = Column(DateTime, default=_utcnow, nullable=False)
-    last_updated_at = Column(
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_type: Mapped[ClaimType] = mapped_column(
+        SAEnum(ClaimType), default=ClaimType.FACTUAL, nullable=False
+    )
+    status: Mapped[ClaimStatus] = mapped_column(
+        SAEnum(ClaimStatus), default=ClaimStatus.ASSERTED, nullable=False
+    )
+    is_precedent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    first_made_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    last_updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
     )
-    dismissed_at = Column(DateTime, nullable=True, index=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
     # Last time embed_claim_text failed for this claim. NULL = embedding is
     # current. Set by upsert_claim_embedding when the embedding endpoint
     # returns a failure (LM Studio model not loaded, dim mismatch, etc.).
     # Cleared on successful re-embed. Provides persistent signal that
     # dedup is degraded for this claim — a future maintenance task can
     # query WHERE embedding_failed_at IS NOT NULL to retry.
-    embedding_failed_at = Column(DateTime, nullable=True, index=True)
+    embedding_failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
 
-    evidence = relationship(
+    evidence: Mapped[list["ClaimEvidence"]] = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
     )
 
@@ -741,30 +851,36 @@ class ClaimEvidence(Base):
         Index("ix_claim_evidence_document", "document_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    claim_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    document_id = Column(
+    document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    role = Column(SAEnum(ClaimEvidenceRole), nullable=False)
-    excerpt = Column(Text, nullable=True)
-    confidence = Column(
+    role: Mapped[ClaimEvidenceRole] = mapped_column(
+        SAEnum(ClaimEvidenceRole), nullable=False
+    )
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[RelationshipConfidence] = mapped_column(
         SAEnum(RelationshipConfidence),
         default=RelationshipConfidence.AI_DETECTED,
         nullable=False,
     )
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    claim = relationship("Claim", back_populates="evidence")
-    document = relationship("Document", back_populates="claim_evidence")
+    claim: Mapped["Claim"] = relationship("Claim", back_populates="evidence")
+    document: Mapped["Document"] = relationship(
+        "Document", back_populates="claim_evidence"
+    )
 
 
 class ClaimMergeProposal(Base):
@@ -789,27 +905,33 @@ class ClaimMergeProposal(Base):
         Index("ix_claim_merge_proposals_existing_claim", "existing_claim_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    new_claim_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    new_claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
         nullable=False,
     )
-    existing_claim_id = Column(
+    existing_claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
         nullable=False,
     )
-    confidence = Column(SAEnum(ProposalConfidence), nullable=False)
-    rationale = Column(Text, nullable=True)
-    status = Column(
+    confidence: Mapped[ProposalConfidence] = mapped_column(
+        SAEnum(ProposalConfidence), nullable=False
+    )
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[ProposalStatus] = mapped_column(
         SAEnum(ProposalStatus), default=ProposalStatus.PENDING, nullable=False
     )
-    proposed_at = Column(DateTime, default=_utcnow, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
+    proposed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    new_claim = relationship("Claim", foreign_keys=[new_claim_id])
-    existing_claim = relationship("Claim", foreign_keys=[existing_claim_id])
+    new_claim: Mapped["Claim"] = relationship("Claim", foreign_keys=[new_claim_id])
+    existing_claim: Mapped["Claim"] = relationship(
+        "Claim", foreign_keys=[existing_claim_id]
+    )
 
 
 class ClaimEvidenceProposal(Base):
@@ -835,29 +957,39 @@ class ClaimEvidenceProposal(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    target_claim_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    target_claim_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("claims.id", ondelete="CASCADE"),
         nullable=False,
     )
-    source_document_id = Column(
+    source_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
     )
-    proposed_role = Column(SAEnum(ClaimEvidenceRole), nullable=False)
-    excerpt = Column(Text, nullable=True)
-    rationale = Column(Text, nullable=True)
-    confidence = Column(SAEnum(ProposalConfidence), nullable=False)
-    status = Column(
+    proposed_role: Mapped[ClaimEvidenceRole] = mapped_column(
+        SAEnum(ClaimEvidenceRole), nullable=False
+    )
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[ProposalConfidence] = mapped_column(
+        SAEnum(ProposalConfidence), nullable=False
+    )
+    status: Mapped[ProposalStatus] = mapped_column(
         SAEnum(ProposalStatus), default=ProposalStatus.PENDING, nullable=False
     )
-    proposed_at = Column(DateTime, default=_utcnow, nullable=False)
-    resolved_at = Column(DateTime, nullable=True)
+    proposed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    target_claim = relationship("Claim", foreign_keys=[target_claim_id])
-    source_document = relationship("Document", foreign_keys=[source_document_id])
+    target_claim: Mapped["Claim"] = relationship(
+        "Claim", foreign_keys=[target_claim_id]
+    )
+    source_document: Mapped["Document"] = relationship(
+        "Document", foreign_keys=[source_document_id]
+    )
 
 
 class UserReaction(Base):
@@ -873,18 +1005,22 @@ class UserReaction(Base):
         Index("ix_user_reactions_reaction", "reaction"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
-    user_id = Column(
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    reaction = Column(SAEnum(UserReactionType), nullable=False)
-    notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    reaction: Mapped[UserReactionType] = mapped_column(
+        SAEnum(UserReactionType), nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    document = relationship("Document", back_populates="reactions")
+    document: Mapped["Document"] = relationship("Document", back_populates="reactions")
 
 
 class DocumentPin(Base):
@@ -900,19 +1036,23 @@ class DocumentPin(Base):
         Index("ix_document_pins_passage", "passage_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id"), nullable=False, index=True
     )
-    passage_id = Column(String(12), nullable=False)
-    note = Column(Text, nullable=True)
-    user_id = Column(
+    passage_id: Mapped[str] = mapped_column(String(12), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
+    )
 
-    document = relationship("Document", back_populates="pins")
+    document: Mapped["Document"] = relationship("Document", back_populates="pins")
 
 
 class DocumentChunk(Base):
@@ -927,15 +1067,17 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     __table_args__ = (Index("ix_document_chunks_document", "document_id"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
-    chunk_index = Column(Integer, nullable=False)
-    text = Column(Text, nullable=False)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    document = relationship("Document", back_populates="chunks")
+    document: Mapped["Document"] = relationship("Document", back_populates="chunks")
 
 
 class User(Base):
@@ -952,22 +1094,32 @@ class User(Base):
         UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     # URL/filesystem-safe unique slug — names this user's scan-ingest subfolder
     # (data/scans/incoming/<username>/). Generated from display_name/email.
-    username = Column(String, unique=True, nullable=True, index=True)
-    password_hash = Column(String, nullable=True)
-    display_name = Column(String, nullable=True)
-    role = Column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-    token_version = Column(Integer, default=0, nullable=False)
+    username: Mapped[str | None] = mapped_column(
+        String, unique=True, nullable=True, index=True
+    )
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(UserRole), default=UserRole.USER, nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, index=True
+    )
+    token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # OIDC linkage (Phase 2) — `sub` + issuer of the external identity.
-    oidc_subject = Column(String, nullable=True, index=True)
-    oidc_issuer = Column(String, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
-    last_login_at = Column(DateTime, nullable=True)
+    oidc_subject: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    oidc_issuer: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     @validates("email")
     def _normalize_email(self, key, value):
@@ -984,23 +1136,27 @@ class AppSettings(Base):
 
     __tablename__ = "app_settings"
 
-    id = Column(Integer, primary_key=True)
-    settings_json = Column(JSON, default=lambda: {})
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    settings_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, default=lambda: {}, nullable=True
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=True
+    )
 
 
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
         index=True,
     )
-    settings_json = Column(
+    settings_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON,
         default=lambda: {
             "theme": "dark",
@@ -1010,8 +1166,11 @@ class UserSettings(Base):
                 "documents": True,
             },
         },
+        nullable=True,
     )
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=True
+    )
 
 
 class CaseShare(Base):
@@ -1028,33 +1187,43 @@ class CaseShare(Base):
         Index("ix_case_shares_user", "user_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(String, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
+        String, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    permission = Column(SAEnum(CaseAccessLevel), nullable=False)
-    granted_by = Column(
+    permission: Mapped[CaseAccessLevel] = mapped_column(
+        SAEnum(CaseAccessLevel), nullable=False
+    )
+    granted_by: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
-    id = Column(Integer, primary_key=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False, index=True
+    )
     # The acting user, when a request drove the event. NULL for system/worker
     # events; `actor_label` then names the non-user actor ("system", "celery").
-    actor_user_id = Column(
+    actor_user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    actor_label = Column(String, nullable=True)
-    event_type = Column(SAEnum(AuditEventType), nullable=False, index=True)
-    target_type = Column(String, nullable=True)
-    target_id = Column(String, nullable=True)
-    payload = Column(JSON, nullable=True)
+    actor_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    event_type: Mapped[AuditEventType] = mapped_column(
+        SAEnum(AuditEventType), nullable=False, index=True
+    )
+    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class LegalCost(Base):
@@ -1077,71 +1246,89 @@ class LegalCost(Base):
         Index("ix_legal_costs_case_proceeding", "case_id", "proceeding_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    proceeding_id = Column(
+    proceeding_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("proceedings.id"), nullable=True, index=True
     )
 
-    category = Column(SAEnum(CostCategory), nullable=False)
-    status = Column(
+    category: Mapped[CostCategory] = mapped_column(SAEnum(CostCategory), nullable=False)
+    status: Mapped[CostStatus] = mapped_column(
         SAEnum(CostStatus), default=CostStatus.OFFEN, nullable=False, index=True
     )
 
     # Human-readable label, e.g. "Verfahrensgebühr 1. Instanz"
-    title = Column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
     # Statutory position reference, e.g. "Nr. 3100 VV RVG" or "KV GKG Nr. 1210"
-    rvg_position = Column(String, nullable=True)
+    rvg_position: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Amounts in EUR
-    amount_net = Column(Float, nullable=False)  # Nettobetrag
-    vat_rate = Column(Float, default=0.0)  # 0.19 for lawyer, 0.0 for court
-    amount_gross = Column(Float, nullable=False)  # Bruttobetrag (net + VAT)
-    amount_paid = Column(Float, default=0.0)  # Bereits bezahlt von uns
-    amount_reimbursed = Column(Float, default=0.0)  # Vom Gegner erstattet
+    amount_net: Mapped[float] = mapped_column(Float, nullable=False)  # Nettobetrag
+    vat_rate: Mapped[float | None] = mapped_column(
+        Float, default=0.0, nullable=True
+    )  # 0.19 for lawyer, 0.0 for court
+    amount_gross: Mapped[float] = mapped_column(
+        Float, nullable=False
+    )  # Bruttobetrag (net + VAT)
+    amount_paid: Mapped[float | None] = mapped_column(
+        Float, default=0.0, nullable=True
+    )  # Bereits bezahlt von uns
+    amount_reimbursed: Mapped[float | None] = mapped_column(
+        Float, default=0.0, nullable=True
+    )  # Vom Gegner erstattet
 
     # German-specific metadata
-    streitwert = Column(Float, nullable=True)  # Streitwert basis for this position
-    gebuehren_faktor = Column(
+    streitwert: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # Streitwert basis for this position
+    gebuehren_faktor: Mapped[float | None] = mapped_column(
         Float, nullable=True
     )  # RVG factor, e.g. 1.3 for Verfahrensgebühr
-    is_reimbursable = Column(Boolean, default=True)  # Erstattungsfähig nach §91 ZPO
+    is_reimbursable: Mapped[bool | None] = mapped_column(
+        Boolean, default=True, nullable=True
+    )  # Erstattungsfähig nach §91 ZPO
 
     # Dates
-    issued_at = Column(
+    issued_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, index=True
     )  # Rechnung / Kostenfestsetzung
-    due_at = Column(DateTime, nullable=True, index=True)  # Fälligkeitsdatum
-    paid_at = Column(DateTime, nullable=True, index=True)  # Bezahlt am
+    due_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )  # Fälligkeitsdatum
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )  # Bezahlt am
 
-    source_document_id = Column(
+    source_document_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
     )
     # Vorschuss row points to the final-invoice row it offsets (null until reconciled)
-    offsets_cost_id = Column(
+    offsets_cost_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("legal_costs.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
     # True when this row was auto-materialized by cost_service.materialize_cost_signal
-    auto_created = Column(Boolean, default=False, nullable=False)
-    notes = Column(Text, nullable=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    auto_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    case = relationship("Case")
-    proceeding = relationship("Proceeding")
-    source_document = relationship(
+    case: Mapped["Case"] = relationship("Case")
+    proceeding: Mapped["Proceeding | None"] = relationship("Proceeding")
+    source_document: Mapped["Document | None"] = relationship(
         "Document", back_populates="legal_costs", foreign_keys=[source_document_id]
     )
-    offsets_cost = relationship(
+    offsets_cost: Mapped["LegalCost | None"] = relationship(
         "LegalCost",
         primaryjoin="LegalCost.offsets_cost_id == LegalCost.id",
         foreign_keys="[LegalCost.offsets_cost_id]",
@@ -1170,40 +1357,52 @@ class CostSignal(Base):
         Index("ix_cost_signals_proc_type", "proceeding_id", "signal_type"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    proceeding_id = Column(
+    proceeding_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("proceedings.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
     )
-    source_document_id = Column(
+    source_document_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
     )
-    signal_type = Column(
+    signal_type: Mapped[CostSignalType] = mapped_column(
         SAEnum(CostSignalType, values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
         index=True,
     )
 
-    amount = Column(Float, nullable=True)  # Streitwert value or PKH monthly rate
-    allocation = Column(JSON, nullable=True)  # cost_ruling: {"loser": 1.0} etc.
-    description = Column(Text, nullable=True)
+    amount: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # Streitwert value or PKH monthly rate
+    allocation: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )  # cost_ruling: {"loser": 1.0} etc.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    issued_at = Column(DateTime, nullable=True, index=True)
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    issued_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True
+    )
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    case = relationship("Case")
-    proceeding = relationship("Proceeding", back_populates="cost_signals")
-    source_document = relationship("Document", back_populates="cost_signals")
+    case: Mapped["Case"] = relationship("Case")
+    proceeding: Mapped["Proceeding | None"] = relationship(
+        "Proceeding", back_populates="cost_signals"
+    )
+    source_document: Mapped["Document"] = relationship(
+        "Document", back_populates="cost_signals"
+    )
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):
@@ -1214,16 +1413,22 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (Index("ix_conversations_scope", "scope_type", "scope_id"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    scope_type = Column(String, nullable=False)  # "document" | "case"
-    scope_id = Column(String, nullable=False)  # doc id (str) or case id (ADV-024-A)
-    title = Column(String, nullable=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope_type: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # "document" | "case"
+    scope_id: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # doc id (str) or case id (ADV-024-A)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    messages = relationship(
+    messages: Mapped[list["ConversationMessage"]] = relationship(
         "ConversationMessage",
         back_populates="conversation",
         cascade="all, delete-orphan",
@@ -1243,19 +1448,25 @@ class ConversationMessage(Base):
         Index("ix_conversation_messages_conversation", "conversation_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("conversations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    role = Column(String, nullable=False)  # "user" | "assistant"
-    content = Column(Text, nullable=False)
-    context_document_ids = Column(JSON, nullable=True)  # [doc_id, ...] cited
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    context_document_ids: Mapped[list[Any] | None] = mapped_column(
+        JSON, nullable=True
+    )  # [doc_id, ...] cited
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    conversation = relationship("Conversation", back_populates="messages")
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="messages"
+    )
 
 
 class Entity(Base):
@@ -1269,31 +1480,35 @@ class Entity(Base):
     __tablename__ = "entities"
     __table_args__ = (Index("ix_entities_case_type", "case_id", "type"),)
 
-    id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    case_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
-    type = Column(SAEnum(EntityType), nullable=False, index=True)
-    name = Column(String, nullable=False, index=True)
+    type: Mapped[EntityType] = mapped_column(
+        SAEnum(EntityType), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
 
     # Source tracking
-    source_document_id = Column(
+    source_document_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("documents.id", ondelete="SET NULL"),
         nullable=True,
     )
 
     # Additional metadata (confidence, positions, extracted context)
-    extra_data = Column(JSON, nullable=True)
+    extra_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
-    ingest_date = Column(DateTime, default=_utcnow, nullable=False)
+    ingest_date: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
 
-    case = relationship("Case")
-    source_document = relationship("Document")
+    case: Mapped["Case"] = relationship("Case")
+    source_document: Mapped["Document | None"] = relationship("Document")
 
     @validates("case_id")
     def validate_case_id(self, key, case_id):

@@ -497,7 +497,14 @@ def _apply_batch_results(
                 claimed_ids.add(child.id)
                 child.role = DocumentRole.ENCLOSURE
                 child.parent_id = cover_letter_doc_id
-                _add_encloses_edge(db, existing_edges, cover_letter_doc_id, child.id)
+                # cover_letter_doc_id can be None here (AI omitted it, or it was
+                # normalized to None above for pointing outside the batch) — an
+                # ENCLOSES edge needs a real from_document_id, so skip the edge
+                # write rather than violate the NOT NULL constraint on commit.
+                if cover_letter_doc_id is not None:
+                    _add_encloses_edge(
+                        db, existing_edges, cover_letter_doc_id, child.id
+                    )
                 batch_orig = parse_originator_type(encl.get("originator_type"))
                 if (
                     batch_orig
@@ -767,7 +774,12 @@ def analyze(batch_id: int) -> bool:
 
         party_identity = get_party_identity(db)
         batch_case_id = docs[0].case_id if docs else None
-        case_opposing = get_case_opposing_parties(batch_case_id, db)
+        # get_case_opposing_parties requires a str case_id; a batch not yet
+        # assigned to a case has no case-level opposing parties to look up —
+        # skip the call (it would return [] anyway).
+        case_opposing = (
+            get_case_opposing_parties(batch_case_id, db) if batch_case_id else []
+        )
         party_context = format_party_context(
             own_self=party_identity.get("own_self", ""),
             own_parties=party_identity.get("own_parties", []),

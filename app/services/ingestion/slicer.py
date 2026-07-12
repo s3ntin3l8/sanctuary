@@ -263,7 +263,7 @@ async def _ai_cut_judgments(
         results = await asyncio.gather(*tasks, return_exceptions=True)
     out = {}
     for (page_num, _, _), result in zip(candidates, results, strict=False):
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
             out[page_num] = {
                 "is_new_document": False,
                 "confidence": "low",
@@ -293,6 +293,9 @@ def prepare(batch_id: int) -> None:
             )
             return
 
+        if not batch.raw_source_path:
+            logger.error("prepare_slicing: batch %d has no raw_source_path", batch_id)
+            return
         pdf_path = Path(batch.raw_source_path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found at {pdf_path}")
@@ -317,7 +320,9 @@ def prepare(batch_id: int) -> None:
                 long = max(w, h)
                 if long > _THUMBNAIL_LONG_EDGE:
                     scale = _THUMBNAIL_LONG_EDGE / long
-                    img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+                    img = img.resize(
+                        (int(w * scale), int(h * scale)), Image.Resampling.LANCZOS
+                    )
 
                 thumb_path = thumbs_dir / f"page_{i + 1}.png"
                 img.save(str(thumb_path))

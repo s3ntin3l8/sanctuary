@@ -84,7 +84,7 @@ def find_next_review_doc(db: Session, after_doc_id: int) -> Document | None:
             .filter(
                 Document.ingest_batch_id == current.ingest_batch_id,
                 Document.id != after_doc_id,
-                or_(Document.case_id == "_TRIAGE", Document.needs_review),
+                or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
             )
             .order_by(Document.ingest_date.asc())
             .first()

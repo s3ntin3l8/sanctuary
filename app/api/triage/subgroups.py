@@ -41,8 +41,8 @@ def _render_picker(request: Request, batch_id: int, db: Session) -> str:
 @router.post("/triage/bundle/{batch_id}/set-cover")
 def triage_set_cover_letter(
     batch_id: int,
+    request: Request,
     doc_id: int = Form(...),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """Mark a document as cover letter of its sub-group."""
@@ -57,7 +57,7 @@ def triage_set_cover_letter(
 @router.post("/triage/bundle/{batch_id}/new-group")
 def triage_create_sub_group(
     batch_id: int,
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Create a new empty sub-group at the end of this batch's group list."""
@@ -73,10 +73,10 @@ def triage_create_sub_group(
 @router.post("/triage/bundle/{batch_id}/rename-group")
 def triage_rename_sub_group(
     batch_id: int,
+    request: Request,
     sub_group_id: str = Form(""),
     lead_doc_id: str = Form(""),
     label: str = Form(""),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """Rename a sub-group label. Empty label clears to auto-derived.
@@ -103,9 +103,9 @@ def triage_rename_sub_group(
 @router.post("/triage/bundle/{batch_id}/delete-group")
 def triage_delete_sub_group(
     batch_id: int,
+    request: Request,
     sub_group_id: str = Form(""),
     lead_doc_id: str = Form(""),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """Delete a sub-group. Docs reassign to the next remaining group, or
@@ -132,10 +132,10 @@ def triage_delete_sub_group(
 @router.post("/triage/bundle/{batch_id}/reorder")
 def triage_reorder_documents(
     batch_id: int,
+    request: Request,
     sub_group_id: str = Form(""),
     lead_doc_id: str = Form(""),
     doc_ids: str = Form(...),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """Update document ordering and sub-group membership after drag-drop.
@@ -162,7 +162,7 @@ def triage_reorder_documents(
 @router.post("/triage/bundle/{batch_id}/reset-groups")
 def triage_reset_sub_groups(
     batch_id: int,
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Remove manual sub-groups, reverting this batch to auto-grouped mode."""

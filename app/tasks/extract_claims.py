@@ -94,7 +94,16 @@ def extract_claims_task(self, doc_id: int):
     db = get_db_session()
     try:
         doc = db.query(Document).filter(Document.id == doc_id).first()
-        stages = stages_dict(doc) if doc else {}
+        if doc is None:
+            mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="document_not_found")
+            logger.info("Doc #%d: claims skipped (document_not_found)", doc_id)
+            _trigger_case_brief(doc_id)
+            return {
+                "status": "skipped",
+                "doc_id": doc_id,
+                "reason": "document_not_found",
+            }
+        stages = stages_dict(doc)
         enrich_status = stages.get(PipelineStage.ENRICH.value, {}).get("status")
         if enrich_status != StageStatus.COMPLETED.value:
             mark_skipped(

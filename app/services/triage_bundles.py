@@ -23,6 +23,7 @@ from app.models.database import (
     Document,
     DocumentRelationship,
     IngestBatch,
+    Proceeding,
 )
 from app.models.enums import (
     DocumentRole,
@@ -52,7 +53,7 @@ class BundleView:
     suggested_case_title: str | None = None
     suggested_case_is_draft: bool = False
     suggested_case_exists: bool = False
-    proceeding: object | None = None
+    proceeding: Proceeding | None = None
     proof_doc_ids: set = field(default_factory=set)
     documents: list[Document] = field(default_factory=list)
     action_items: list = field(default_factory=list)
@@ -258,7 +259,7 @@ def _build_bundles(
                 ),
                 Document.case_id == "_TRIAGE",
                 and_(
-                    Document.needs_review,
+                    Document.needs_review.is_(True),
                     or_(
                         IngestBatch.id.is_(None),
                         IngestBatch.status != IngestBatchStatus.COMPLETED,
@@ -281,19 +282,19 @@ def _build_bundles(
                     if batch.case_id and batch.case_id != "_TRIAGE"
                     else None
                 )
-                bundle_kwargs = {
-                    "key": key,
-                    "batch_id": batch.id,
-                    "source_type": batch.source_type,
-                    "subject": batch.subject,
-                    "sender_email": batch.sender_email,
-                    "received_at": batch.received_at,
-                    "confirmed_case_id": confirmed,
-                    "proceeding": batch.proceeding,
-                }
-                if include_sub_groups:
-                    bundle_kwargs["sub_groups"] = list(batch.sub_groups or [])
-                bundles[key] = BundleView(**bundle_kwargs)
+                bundles[key] = BundleView(
+                    key=key,
+                    batch_id=batch.id,
+                    source_type=batch.source_type,
+                    subject=batch.subject,
+                    sender_email=batch.sender_email,
+                    received_at=batch.received_at,
+                    confirmed_case_id=confirmed,
+                    proceeding=batch.proceeding,
+                    sub_groups=list(batch.sub_groups or [])
+                    if include_sub_groups
+                    else [],
+                )
             bundles[key].documents.append(doc)
             bundle = bundles[key]
             if (
@@ -413,7 +414,7 @@ def get_triage_filter_options(db: Session, owner_id: int | None = None) -> dict:
     bundles = _build_bundles(db, include_sub_groups=False, owner_id=owner_id)
 
     case_ids: dict[str, str] = {}
-    proceeding_opts: dict[int, str] = {}
+    proceeding_opts: dict[str, str] = {}
     pipeline_labels_present: set[str] = set()
 
     for b in bundles.values():
@@ -494,7 +495,10 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
             .all()
         )
         for item in items:
-            action_items_by_doc.setdefault(item.source_document_id, []).append(item)
+            # source_document_id can't be None here: the query above filters it
+            # to be in all_doc_ids (a set of real document ids).
+            if item.source_document_id is not None:
+                action_items_by_doc.setdefault(item.source_document_id, []).append(item)
 
         # --- Batch 3: Proof-of relationships ------------------------------
         proof_rows = (
@@ -530,7 +534,9 @@ def enrich_bundles(db: Session, bundles: list[BundleView]) -> None:
             # tiebreaker so the user's eye lands on high-impact docs first.
             bundle.documents.sort(
                 key=lambda d: (
-                    _SIG_ORDER.get(d.significance_tier, 99),
+                    _SIG_ORDER.get(d.significance_tier, 99)
+                    if d.significance_tier is not None
+                    else 99,
                     0 if d.role == DocumentRole.COVER_LETTER else 1,
                     d.ingest_date or datetime.min,
                 )

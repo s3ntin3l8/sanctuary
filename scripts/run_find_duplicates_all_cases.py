@@ -7,6 +7,7 @@ Run with: PYTHONPATH=. .venv/bin/python scripts/run_find_duplicates_all_cases.py
 
 from __future__ import annotations
 
+import asyncio
 import sys
 
 from sqlalchemy import text
@@ -17,7 +18,7 @@ from app.models.enums import ProposalStatus
 from app.services.intelligence.claim_dedup_judge import find_duplicates_for_case
 
 
-def main() -> int:
+async def main() -> int:
     db = SessionLocal()
     try:
         cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.id).all()
@@ -45,7 +46,7 @@ def main() -> int:
             print(f"\n{'=' * 80}")
             print(f"Running find-duplicates for {cid} ({n} claims)…")
             print(f"{'=' * 80}")
-            stats = find_duplicates_for_case(cid, db, k=3)
+            stats = await find_duplicates_for_case(cid, db, k=3)
             db.commit()
             print(
                 f"  scanned={stats['scanned']}  judge_calls={stats['judge_calls']}  "
@@ -90,4 +91,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

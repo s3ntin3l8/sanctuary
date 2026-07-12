@@ -3,6 +3,7 @@
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session, defer
 
@@ -115,7 +116,7 @@ def _compute_parties(
         name = _canonical_name(name, own_self, own_parties, opposing_parties)
         role_counts[name][str(doc.originator_type)] += 1
 
-    result = []
+    result: list[dict[str, Any]] = []
     court_role_key = str(OriginatorType.COURT)
     third_party_role_key = str(OriginatorType.THIRD_PARTY)
     for name, counts in role_counts.items():
@@ -142,7 +143,7 @@ def _compute_parties(
         else:
             non_court = {r: c for r, c in counts.items() if r != court_role_key}
             best_pool = non_court if non_court else counts
-            canonical_role = max(best_pool, key=best_pool.get)
+            canonical_role = max(best_pool, key=lambda r: best_pool[r])
         result.append(
             {
                 "name": name,

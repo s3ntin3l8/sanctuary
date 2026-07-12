@@ -466,6 +466,10 @@ def _signals_by_proceeding(case_id: str, db: Session) -> dict[int, dict]:
     )
 
     for row in rows:
+        if row.proceeding_id is None:
+            # Unreachable: query filters CostSignal.proceeding_id.isnot(None)
+            # above. Guard is here purely to narrow the type for mypy.
+            continue
         slot = out.setdefault(
             row.proceeding_id,
             {"streitwert": None, "ruling_allocation": None},
@@ -794,7 +798,7 @@ class CaseService:
         self.entity_repo = EntityRepository(db)
         self.cost_repo = LegalCostRepository(db)
 
-    def get_case_with_summary(self, case_id: str, user_id: int) -> dict | None:
+    def get_case_with_summary(self, case_id: str, user_id: int | None) -> dict | None:
         """Get case with all related data."""
         from app.services.user_settings_service import count_new_since, get_last_viewed
 
@@ -903,6 +907,10 @@ class CaseService:
             for d in (
                 self.db.query(Document).filter(Document.id.in_(last_doc_ids)).all()
             ):
+                if d.case_id is None:
+                    # Unreachable: these ids came from the case_id.in_(case_ids)
+                    # subquery above. Guard is here purely to narrow the type.
+                    continue
                 last_doc_by_case[d.case_id] = d
 
         # 1 query: top-significance among the last 20 docs per case via
@@ -996,7 +1004,7 @@ class CaseService:
         days_since = (
             (now - last_doc.ingest_date).days
             if last_doc
-            else (now - case.ingest_date).days
+            else (now - (case.ingest_date or now)).days
         )
 
         # Get active proceeding name (uses joinedload from caller's query).
@@ -1006,8 +1014,8 @@ class CaseService:
 
         proceeding_name = active_proc.court_name if active_proc else "General"
 
-        # Extract client and opposing names from the parties list
-        parties = case.parties or []
+        # Extract client and opposing names from the parties list.
+        parties: list[dict[str, Any]] = case.parties or []
         client_name = "Unknown"
         opposing_name = "Unknown"
 
@@ -1316,7 +1324,7 @@ class CaseService:
             evidenced_by_case = (
                 self.db.query(ClaimEvidence.claim_id)
                 .filter(ClaimEvidence.document_id.in_(doc_ids))
-                .subquery()
+                .scalar_subquery()
             )
             still_evidenced_elsewhere = (
                 self.db.query(ClaimEvidence.claim_id)
@@ -1324,7 +1332,7 @@ class CaseService:
                     ClaimEvidence.claim_id.in_(evidenced_by_case),
                     ClaimEvidence.document_id.notin_(doc_ids),
                 )
-                .subquery()
+                .scalar_subquery()
             )
             self.db.query(Claim).filter(
                 Claim.id.in_(evidenced_by_case),
@@ -1552,6 +1560,11 @@ def backfill_case_types(db: Session) -> dict[str, int]:
             continue
         if case.case_type != CaseType.CIVIL:
             counts["skipped"] += 1
+            continue
+        if proc.az_court is None:
+            # Unreachable: query filters Proceeding.az_court.isnot(None)
+            # above. Guard is here purely to narrow the type for mypy.
+            counts["errors"] += 1
             continue
         before = case.case_type
         _maybe_set_case_type_from_az(case, proc.az_court)

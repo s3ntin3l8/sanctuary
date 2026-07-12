@@ -194,7 +194,9 @@ async def confirm_document(
     )
 
     cases = CaseRepository(db).list_for_picker()
-    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
+    ctx = build_hud_context(
+        db, doc, mode="review", context="embedded", cases=list(cases)
+    )
     ctx["tier_requeue_prompt"] = tier_requeue_prompt
     response = templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
     # Targeted OOB: update only the affected card + bundle footer + badge.
@@ -205,7 +207,7 @@ async def confirm_document(
         request, db, owner_id=request.state.current_user.id
     )
 
-    response.body += (targeted_oob + global_oob).encode("utf-8")
+    response.body = bytes(response.body) + (targeted_oob + global_oob).encode("utf-8")
 
     # Confirm-and-next: if the doc is now out of triage, tell the client which
     # doc to advance to. Alpine listener picks this up from the HX-Trigger
@@ -481,6 +483,12 @@ async def batch_confirm(
                     db.refresh(d)
                 reset_and_reenrich(db, pre_triage_docs)
         else:
+            # doc_id can't be None here: line 451 already skipped keys where
+            # both batch_id and doc_id are None, and this branch means batch_id
+            # is falsy.
+            if doc_id is None:
+                skipped_count += 1
+                continue
             pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
             updated_doc = _confirm_document(db, doc_id, case_id=case_id, finalize=True)
             if updated_doc and proceeding_id:
@@ -585,6 +593,11 @@ async def batch_assign(
                     db.refresh(d)
                 reset_and_reenrich(db, pre_triage_docs)
         else:
+            # doc_id can't be None here: line 570 already skipped keys where
+            # both batch_id and doc_id are None, and this branch means batch_id
+            # is falsy.
+            if doc_id is None:
+                continue
             pre_case = db.query(Document.case_id).filter(Document.id == doc_id).scalar()
             updated_doc = _confirm_document(db, doc_id, case_id=case_id, finalize=False)
             if updated_doc and parsed_proceeding_id:

@@ -98,7 +98,9 @@ def triage_doc_hud(
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     cases = CaseRepository(db).list_for_picker()
-    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
+    ctx = build_hud_context(
+        db, doc, mode="review", context="embedded", cases=list(cases)
+    )
     return templates.TemplateResponse(request, "partials/triage/_doc_hud.html", ctx)
 
 

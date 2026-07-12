@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import cmp_to_key
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.timezone import compare_dates
 from app.models.database import (
     Claim,
     ClaimEvidence,
@@ -81,6 +83,13 @@ class EvidenceRow:
     evidence: ClaimEvidence
     document: Document
     reactions: list[UserReaction] = field(default_factory=list)
+
+
+def _compare_evidence_rows_by_date(a: EvidenceRow, b: EvidenceRow) -> int:
+    return compare_dates(
+        a.document.issued_date or a.document.ingest_date,
+        b.document.issued_date or b.document.ingest_date,
+    )
 
 
 @dataclass
@@ -185,7 +194,7 @@ class ClaimService:
                     )
                     for ev in claim.evidence
                 ],
-                key=lambda r: r.document.issued_date or r.document.ingest_date,
+                key=cmp_to_key(_compare_evidence_rows_by_date),
             )
             groups_by_status[claim.status].append(
                 ClaimRow(claim=claim, evidence=evidence_rows)

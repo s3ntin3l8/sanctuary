@@ -7,8 +7,10 @@ Source of truth for which document_types start a thread: `document_enricher.THRE
 """
 
 import logging
+from typing import cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.models.database import Document, DocumentRelationship
@@ -54,9 +56,11 @@ def scan_and_close_threads(db: Session) -> int:
     """
     type_names_sql = ", ".join(f"'{t.name}'" for t in THREAD_OPEN_TYPES)
 
-    closed = db.execute(
-        text(
-            f"""
+    closed = cast(
+        CursorResult,
+        db.execute(
+            text(
+                f"""
             UPDATE documents
             SET thread_open = 0
             WHERE thread_open = 1
@@ -68,12 +72,15 @@ def scan_and_close_threads(db: Session) -> int:
                   AND confidence = 'USER_CONFIRMED'
               )
             """
-        )
+            )
+        ),
     ).rowcount
 
-    reopened = db.execute(
-        text(
-            f"""
+    reopened = cast(
+        CursorResult,
+        db.execute(
+            text(
+                f"""
             UPDATE documents
             SET thread_open = 1
             WHERE thread_open = 0
@@ -85,7 +92,8 @@ def scan_and_close_threads(db: Session) -> int:
                   AND confidence = 'USER_CONFIRMED'
               )
             """
-        )
+            )
+        ),
     ).rowcount
 
     db.commit()

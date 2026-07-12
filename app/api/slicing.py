@@ -114,6 +114,8 @@ async def slicing_confirm(
     except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid cuts JSON") from None
 
+    if not batch.raw_source_path:
+        raise HTTPException(status_code=409, detail="Source PDF no longer available")
     pdf_path = Path(batch.raw_source_path)
     if not pdf_path.exists():
         raise HTTPException(status_code=409, detail="Source PDF no longer available")

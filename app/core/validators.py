@@ -19,6 +19,8 @@ def validate_case_id(case_id: str | None) -> str | None:
     if not case_id:
         return None
     case_id = normalize_case_id(case_id)
+    if not case_id:
+        return None
     if case_id == "_TRIAGE":
         return "_TRIAGE"
     if CASE_ID_PATTERN.match(case_id):

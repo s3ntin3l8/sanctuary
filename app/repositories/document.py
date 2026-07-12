@@ -33,7 +33,7 @@ class DocumentRepository(BaseRepository[Document]):
     def get_triage_documents(self, options: list | None = None) -> Sequence[Document]:
         """Get documents in triage inbox or needing review."""
         query = self.db.query(Document).filter(
-            or_(Document.case_id == "_TRIAGE", Document.needs_review)
+            or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True))
         )
         if options:
             query = query.options(*options)
@@ -47,7 +47,7 @@ class DocumentRepository(BaseRepository[Document]):
         """Get documents needing review."""
         return (
             self.db.query(Document)
-            .filter(Document.needs_review)
+            .filter(Document.needs_review.is_(True))
             .order_by(Document.ingest_date.desc())
             .all()
         )
@@ -118,11 +118,11 @@ class DocumentRepository(BaseRepository[Document]):
             .group_by(Document.case_id)
             .all()
         )
-        return dict(results)
+        return {k: v for k, v in results if k is not None}
 
     def count_pending_review(self) -> int:
         """Count documents needing review."""
-        return self.db.query(Document).filter(Document.needs_review).count()
+        return self.db.query(Document).filter(Document.needs_review.is_(True)).count()
 
     def update_case(self, doc_id: int, case_id: str) -> Document | None:
         """Update document's case. Does NOT clear needs_review — that requires explicit confirmation."""
@@ -182,11 +182,11 @@ class DocumentRepository(BaseRepository[Document]):
             q = q.filter(Document.significance_tier.in_(tiers))
         return q.order_by(Document.issued_date.desc().nullslast()).limit(limit).all()
 
-    def get_paginated(
+    def get_paginated(  # type: ignore[override]  # DocumentRepository intentionally specializes the generic base signature for Document-specific filters
         self,
         page: int = 1,
         per_page: int = 20,
-        case_id: str | None = None,
+        case_id: str | None = None,  # type: ignore[override]  # DocumentRepository intentionally specializes the generic base signature for Document-specific filters
         needs_review: bool | None = None,
     ) -> tuple[Sequence[Document], int]:
         """Get paginated documents with total count."""

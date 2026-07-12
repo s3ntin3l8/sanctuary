@@ -249,6 +249,8 @@ async def mark_cost_reimbursed(
 
     reimburse_amount = amount if amount is not None else target_cost.amount_gross
     cost = cost_service.mark_as_reimbursed(cost_id, reimburse_amount)
+    if not cost:
+        raise HTTPException(status_code=404, detail="Cost not found")
 
     recompute_total_cost_exposure(cost.case_id, db)
 
