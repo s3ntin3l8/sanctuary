@@ -226,6 +226,32 @@ def test_post_status_claim_not_in_case_returns_404(db_session, tm_case, tm_doc):
     assert response.status_code == 404
 
 
+@pytest.mark.integration
+def test_post_status_invalid_value_returns_422(db_session, tm_case, tm_claim_asserted):
+    """A status string that isn't a ClaimStatus member (not just a
+    disallowed transition) hits the enum-parse branch, not transition_status."""
+    db_session.commit()
+
+    response = client.post(
+        f"/cases/{tm_case.id}/claims/{tm_claim_asserted.id}/status",
+        data={"status": "not-a-real-status"},
+    )
+    assert response.status_code == 422
+    assert response.text == "Unknown status"
+
+
+@pytest.mark.integration
+def test_merge_batch_invalid_action_returns_422(db_session, tm_case):
+    db_session.commit()
+
+    response = client.post(
+        f"/cases/{tm_case.id}/claims/proposals/merge/batch",
+        data={"action": "not-a-real-action"},
+    )
+    assert response.status_code == 422
+    assert response.text == "Unknown action"
+
+
 # ---------------------------------------------------------------------------
 # Case dashboard — Truth Map tab rendered on page load
 # ---------------------------------------------------------------------------

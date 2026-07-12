@@ -285,6 +285,8 @@ def test_normalize_handles_pathological_input_fast():
         "A ./. B (" + "x" * 5000,  # unterminated paren group
         ("- " * 5000) + "end",  # long run of trailing-punct-like chars
         ("A ./. B " * 500) + "(" + "x" * 200 + ")",  # repeated separator
+        " " * 50000 + "(" + "x" * 100 + ")",  # long whitespace run before paren
+        "./. " * 20000,  # many separator occurrences, no valid boundary
     ]
     for s in pathological_inputs:
         start = time.monotonic()

@@ -344,6 +344,28 @@ def test_ai_config_delete_nonexistent_instance():
 
 
 @pytest.mark.integration
+def test_rebuild_index_ddl_failure_returns_generic_toast(db_session, monkeypatch):
+    """POST /api/settings/ai/rebuild-index must not leak the raw DDL/DB
+    exception into the toast (py/stack-trace-exposure) — only a generic
+    failure message, with the real error logged server-side."""
+    from sqlalchemy.orm import Session as SASession
+
+    original_execute = SASession.execute
+
+    def _flaky_execute(self, statement, *args, **kwargs):
+        if "ALTER TABLE" in str(statement):
+            raise RuntimeError("db connection string: postgres://secret@host/db")
+        return original_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(SASession, "execute", _flaky_execute)
+
+    response = client.post("/api/settings/ai/rebuild-index")
+    assert response.status_code == 200
+    assert "Index resize failed" in response.text
+    assert "postgres://secret" not in response.text
+
+
+@pytest.mark.integration
 def test_ai_config_set_role_invalid_role():
     """POST /api/settings/ai/role/{role} with invalid role returns 400."""
     response = client.post(

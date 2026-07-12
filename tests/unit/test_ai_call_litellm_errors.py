@@ -13,6 +13,7 @@ import pytest
 from app.services.intelligence._ai_call import (
     _parse_litellm_error_code,
     _parse_litellm_error_summary,
+    _scope_file,
     is_transient_backend_error,
 )
 
@@ -120,3 +121,24 @@ def test_is_transient_backend_error_rejects_genuine_client_errors():
 
     # Bare HTTP error with no body summary — no markers, treat as client-side.
     assert is_transient_backend_error(_make_status_error("HTTP 400 [400]")) is False
+
+
+@pytest.mark.unit
+def test_scope_file_recognized_label_shapes(tmp_path):
+    assert _scope_file(tmp_path, "doc_123_x").name == "doc_123.md"
+    assert _scope_file(tmp_path, "case_ADV-1-A_x") == tmp_path / "case_ADV-1-A.md"
+
+
+@pytest.mark.unit
+def test_scope_file_misc_fallback_basenames_the_label(tmp_path):
+    """A debug_label that doesn't match the doc/batch/case shape falls back
+    to a "misc_<label>.md" filename — the label must be basename()'d so a
+    label containing path separators can't escape the unbatched folder
+    (py/path-injection)."""
+    result = _scope_file(tmp_path, "not_a_recognized_shape")
+    assert result == tmp_path / "unbatched" / "misc_not_a_recognized_shape.md"
+
+    traversal = _scope_file(tmp_path, "../../etc/passwd")
+    assert traversal.parent == tmp_path / "unbatched"
+    assert ".." not in traversal.name
+    assert "/" not in traversal.name

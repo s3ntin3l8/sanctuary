@@ -117,12 +117,28 @@ DORMANCY_DAYS = 90
 # draft-refresh path in get_or_create_case_from_reference.
 
 # Matches "X ./. Y (Matter)" where the parens contain the matter (not just
-# the eA marker). Split into two bounded regexes below (see
-# _split_paren_matter) rather than one regex with two unbounded lazy `.+?`
-# groups either side of a literal separator — that shape is a CodeQL
-# py/polynomial-redos hit (ambiguous backtracking on adversarial input).
+# the eA marker). Split below (see _split_paren_matter) into a bounded regex
+# for the trailing paren group plus a plain substring scan for the "./."
+# separator — a regex with two unbounded `\s+` runs around a literal is
+# itself a CodeQL py/polynomial-redos hit (quadratic on long whitespace runs),
+# so the separator check is deliberately not a regex at all.
 _TRAILING_PAREN_RE = re.compile(r"\(([^()]+)\)\s*$")
-_PARTIES_SEP_RE = re.compile(r"\s+\./\.\s+")
+
+
+def _has_boundaried_dot_slash_dot(s: str) -> bool:
+    """True if `s` contains "./." with a whitespace char immediately on both
+    sides. Plain str.find loop, not regex — a `\\s+\\./\\.\\s+` pattern is
+    itself quadratic on adversarial input (long runs of whitespace)."""
+    start = 0
+    while True:
+        idx = s.find("./.", start)
+        if idx == -1:
+            return False
+        if idx > 0 and s[idx - 1].isspace() and s[idx + 3 : idx + 4].isspace():
+            return True
+        start = idx + 1
+
+
 # Matches a leading internal_id-like prefix the AI sometimes echoes, e.g.
 # "8372/25 - " or "8372-25: ". Both slash and dash digit-separators.
 _INTERNAL_ID_PREFIX_RE = re.compile(r"^\d{3,5}[/-]\d{2,4}\s*[-:/]\s*")
@@ -141,8 +157,8 @@ def _split_paren_matter(s: str) -> tuple[str, str] | None:
     "X ./. Y" party pair, return (parties, matter); else None.
 
     Equivalent to matching `^(.+?\\s+\\./\\.\\s+.+?)\\s+\\((?!eA\\)$)([^()]+?)\\)\\s*$`
-    in one pass, but as two bounded regexes plus a substring check — avoids
-    the ambiguous backtracking of two unbounded lazy groups around a shared
+    in one pass, but as a bounded regex plus a substring scan — avoids the
+    ambiguous backtracking of two unbounded lazy groups around a shared
     literal (CodeQL py/polynomial-redos).
     """
     m = _TRAILING_PAREN_RE.search(s)
@@ -152,7 +168,7 @@ def _split_paren_matter(s: str) -> tuple[str, str] | None:
     if matter == "eA":
         return None
     prefix = s[: m.start()].rstrip()
-    if not _PARTIES_SEP_RE.search(prefix):
+    if not _has_boundaried_dot_slash_dot(prefix):
         return None
     return prefix, matter
 
