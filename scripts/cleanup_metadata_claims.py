@@ -25,8 +25,8 @@ import re
 import sys
 
 from app.config import SessionLocal
-from app.models.database import Claim
-from app.models.enums import ClaimStatus
+from app.models.database import Claim, ClaimEvidence
+from app.models.enums import ClaimEvidenceRole, ClaimStatus
 
 # Patterns that match pure metadata/letterhead claims.
 # Each pattern is anchored on the typical claim shape "the X is Y"
@@ -90,6 +90,19 @@ def main(apply: bool) -> int:
             .order_by(Claim.id)
             .all()
         )
+        # Originating document per claim — the ASSERTS evidence row is the
+        # canonical "originated by" link (Claim.source_document_id no longer
+        # exists; see ClaimRepository.claims_asserted_by_document).
+        source_doc_by_claim: dict[int, int] = {
+            row[0]: row[1]
+            for row in db.query(ClaimEvidence.claim_id, ClaimEvidence.document_id)
+            .filter(
+                ClaimEvidence.claim_id.in_([c.id for c in refuted]),
+                ClaimEvidence.role == ClaimEvidenceRole.ASSERTS,
+            )
+            .all()
+        }
+
         candidates: list[tuple[Claim, str]] = []
         kept: list[Claim] = []
         for c in refuted:
@@ -109,7 +122,7 @@ def main(apply: bool) -> int:
         )
         for c, pat in candidates:
             print(
-                f"  #{c.id:>4}  doc={c.source_document_id:>3}  type={c.claim_type.value:<11}  {c.claim_text[:90]}"
+                f"  #{c.id:>4}  doc={source_doc_by_claim.get(c.id, '?'):>3}  type={c.claim_type.value:<11}  {c.claim_text[:90]}"
             )
             print(f"        matched: {pat}")
 
@@ -117,7 +130,7 @@ def main(apply: bool) -> int:
         print(f"{'=' * 80}\nKEPT (preserved as legitimate REFUTED signal)\n{'=' * 80}")
         for c in kept:
             print(
-                f"  #{c.id:>4}  doc={c.source_document_id:>3}  type={c.claim_type.value:<11}  {c.claim_text[:90]}"
+                f"  #{c.id:>4}  doc={source_doc_by_claim.get(c.id, '?'):>3}  type={c.claim_type.value:<11}  {c.claim_text[:90]}"
             )
 
         if not apply:

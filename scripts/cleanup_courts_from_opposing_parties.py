@@ -110,7 +110,7 @@ def cleanup(dry_run: bool = False) -> None:
         for case in cases:
             removed = _strip_courts_from_opposing(case)
             if removed:
-                kept = [n for n in case.opposing_parties if n not in removed]
+                kept = [n for n in (case.opposing_parties or []) if n not in removed]
                 opposing_changes.append((case.id, removed, kept))
 
         # Pass 2: case.parties — surgical court-name updates only.
@@ -156,13 +156,13 @@ def cleanup(dry_run: bool = False) -> None:
             return
 
         for case_id, _removed, kept in opposing_changes:
-            case = db.query(Case).filter(Case.id == case_id).first()
-            if case:
-                case.opposing_parties = kept
+            case_obj = db.query(Case).filter(Case.id == case_id).first()
+            if case_obj:
+                case_obj.opposing_parties = kept
         for case_id, _old, new_list in parties_changes:
-            case = db.query(Case).filter(Case.id == case_id).first()
-            if case:
-                case.parties = new_list
+            case_obj = db.query(Case).filter(Case.id == case_id).first()
+            if case_obj:
+                case_obj.parties = new_list
 
         db.commit()
         print(

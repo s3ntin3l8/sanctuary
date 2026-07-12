@@ -463,10 +463,10 @@ class Case(Base):
     brief_queued_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, index=True
     )
-    parties: Mapped[dict[str, Any] | None] = mapped_column(
+    parties: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )  # known actors and their roles
-    opposing_parties: Mapped[dict[str, Any] | None] = mapped_column(
+    opposing_parties: Mapped[list[str] | None] = mapped_column(
         JSON, nullable=True
     )  # per-case opposing party names
     total_cost_exposure: Mapped[int] = mapped_column(

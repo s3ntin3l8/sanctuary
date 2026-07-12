@@ -1,7 +1,7 @@
 import logging
 import re
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -61,21 +61,11 @@ def get_case_opposing_parties(case_id: str, db: Session) -> list[str]:
     if not case:
         return []
     if case.opposing_parties:
-        # NOTE: Case.opposing_parties is declared `dict[str, Any] | None` in
-        # database.py, but every producer (api/cases.py:save_opposing_parties,
-        # set_case_opposing_parties below) stores a `list[str]` — the column
-        # annotation is stale/too-narrow for a JSON column used both ways
-        # across the codebase. Cast rather than reshape; see report.
-        opposing = cast(list[str], case.opposing_parties)
-        return [p for p in opposing if p and str(p).strip()]
+        return [p for p in case.opposing_parties if p and str(p).strip()]
     if case.parties:
-        # Same stale-annotation situation: Case.parties is actually a
-        # `list[dict[str, Any]]` at runtime (see
-        # case_brief_generator._compute_parties, which is the sole writer).
-        parties = cast(list[dict[str, Any]], case.parties)
         return [
             p["name"]
-            for p in parties
+            for p in case.parties
             if isinstance(p, dict) and p.get("name") and p.get("role") == "opposing"
         ]
     return []
@@ -88,11 +78,7 @@ def set_case_opposing_parties(case_id: str, parties: list[str], db: Session) -> 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         return
-    # See NOTE in get_case_opposing_parties: the column is annotated
-    # `dict[str, Any] | None` but is always a `list[str]` at runtime.
-    case.opposing_parties = cast(
-        Any, [p.strip() for p in parties if p and str(p).strip()]
-    )
+    case.opposing_parties = [p.strip() for p in parties if p and str(p).strip()]
     db.flush()
 
 
@@ -1029,12 +1015,7 @@ class CaseService:
         proceeding_name = active_proc.court_name if active_proc else "General"
 
         # Extract client and opposing names from the parties list.
-        # NOTE: Case.parties is annotated `dict[str, Any] | None` in
-        # database.py, but is always a `list[dict[str, Any]]` at runtime
-        # (see NOTE in get_case_opposing_parties above).
-        parties: list[dict[str, Any]] = (
-            cast("list[dict[str, Any]] | None", case.parties) or []
-        )
+        parties: list[dict[str, Any]] = case.parties or []
         client_name = "Unknown"
         opposing_name = "Unknown"
 

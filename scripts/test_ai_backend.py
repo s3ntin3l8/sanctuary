@@ -10,19 +10,19 @@ sys.path.append(str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 from app.config import AI_EMBED_MODEL, AI_SUMMARY_MODEL
-from app.services.ai_provider import ai_provider
+from app.services.ai_provider import chat_provider, embed_provider
 
 
 async def test_backend():
     print("--- AI Backend Test ---")
-    ptype = await ai_provider.get_type()
+    ptype = await chat_provider.get_type()
     print(f"Provider: {ptype}")
-    print(f"Base URL: {ai_provider.base_url}")
+    print(f"Base URL: {chat_provider.base_url}")
     print("-" * 30)
 
     # 1. Test Generation
     print("\n1. Testing Text Generation...")
-    params = await ai_provider.get_generate_params(
+    params = await chat_provider.get_generate_params(
         model=AI_SUMMARY_MODEL,
         prompt="Say 'Backend test successful' in one sentence.",
         stream=True,
@@ -40,7 +40,7 @@ async def test_backend():
             async for line in response.aiter_lines():
                 if not line:
                     continue
-                chunk = ai_provider.parse_stream_line(line, ptype)
+                chunk = chat_provider.parse_stream_line(line, ptype)
                 if chunk and "response" in chunk:
                     full_response += chunk["response"]
                     print(chunk["response"], end="", flush=True)
@@ -52,7 +52,7 @@ async def test_backend():
 
     # 2. Test Embedding
     print("\n2. Testing Embeddings...")
-    params = await ai_provider.get_embedding_params(
+    params = await embed_provider.get_embedding_params(
         model=AI_EMBED_MODEL, prompt="Test embedding"
     )
     try:

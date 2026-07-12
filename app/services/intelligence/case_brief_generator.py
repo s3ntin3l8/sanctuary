@@ -353,10 +353,7 @@ def generate(case_id: str) -> None:
         own_self: str = party_identity.get("own_self", "")
         own_parties: list[str] = party_identity.get("own_parties", [])
         # Load per-case opposing parties (may be empty before first brief)
-        # Case.opposing_parties is typed dict[str, Any] | None in database.py
-        # (generic JSON column type) but case_service.set_case_opposing_parties
-        # always stores a list[str] at runtime — see app/services/case_service.py:81.
-        case_opposing: list[str] = case.opposing_parties or []  # type: ignore[assignment]
+        case_opposing: list[str] = case.opposing_parties or []
 
         try:
             result = _call_brief_sync(
@@ -377,10 +374,7 @@ def generate(case_id: str) -> None:
                 own_parties=own_parties,
                 opposing_parties=case_opposing,
             )
-            # Case.parties is typed dict[str, Any] | None in database.py (generic
-            # JSON column type) but is always stored/read as a list[dict] at
-            # runtime — see app/api/cases.py:538, app/services/case_service.py:65-68.
-            case.parties = parties  # type: ignore[assignment]
+            case.parties = parties
 
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:
