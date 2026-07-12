@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.timezone import now_utc
 from app.models.database import ActionItem, Case, Document, IngestBatch
 from app.models.enums import (
     ActionItemStatus,
@@ -21,7 +22,7 @@ class HomeService:
 
     def get_home_data(self, user_id: int) -> dict[str, Any]:
         """Aggregate all data for the Home page dashboard."""
-        now = datetime.now()
+        now = now_utc()
 
         # Per-user isolation: regular users see only their own cases' data;
         # admins (owner=None) see everything. Triage (pre-case-assignment) is a

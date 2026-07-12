@@ -10,7 +10,7 @@ and that nodes appear when documents exist.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -39,12 +39,12 @@ def _seed_case_with_two_docs(api_client, db_seed) -> tuple[str, list[int]]:
     assert resp.status_code in (200, 303)
 
     proc_row = conn.execute(
-        "SELECT id FROM proceedings WHERE case_id = ?", (case_id,)
+        "SELECT id FROM proceedings WHERE case_id = %s", (case_id,)
     ).fetchone()
     assert proc_row, "Proceeding not auto-created"
     proceeding_id = proc_row[0]
 
-    now = datetime.now().isoformat(sep=" ")
+    now = datetime.now(UTC)
     cur = conn.cursor()
     # status is NOT NULL with only an ORM-side (Python) default — raw SQL
     # bypasses that, so it must be supplied explicitly here. Enum-backed
@@ -55,34 +55,36 @@ def _seed_case_with_two_docs(api_client, db_seed) -> tuple[str, list[int]]:
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
             needs_review, court_relay, thread_open, page_count, pipeline_state, status)
-           VALUES (?, ?, ?, 'COURT', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
+           VALUES (%s, %s, %s, 'COURT', 'STANDALONE', %s, false, false, false, 1, 'completed', 'ACTIVE')
+           RETURNING id""",
         (f"Graph Doc A {suffix}", case_id, proceeding_id, now),
     )
-    doc_a = cur.lastrowid
+    doc_a = cur.fetchone()[0]
     cur.execute(
         """INSERT INTO documents
            (title, case_id, proceeding_id, originator_type, role, ingest_date,
             needs_review, court_relay, thread_open, page_count, pipeline_state, status)
-           VALUES (?, ?, ?, 'OWN', 'STANDALONE', ?, 0, 0, 0, 1, 'completed', 'ACTIVE')""",
+           VALUES (%s, %s, %s, 'OWN', 'STANDALONE', %s, false, false, false, 1, 'completed', 'ACTIVE')
+           RETURNING id""",
         (f"Graph Doc B {suffix}", case_id, proceeding_id, now),
     )
-    doc_b = cur.lastrowid
+    doc_b = cur.fetchone()[0]
     cur.execute(
         """INSERT INTO document_relationships
            (from_document_id, to_document_id, relationship_type, confidence, ingest_date)
-           VALUES (?, ?, 'REPLIES_TO', 'AI_DETECTED', ?)""",
+           VALUES (%s, %s, 'REPLIES_TO', 'AI_DETECTED', %s)""",
         (doc_b, doc_a, now),
     )
     conn.commit()
 
     def _cleanup(c):
         c.execute(
-            "DELETE FROM document_relationships WHERE from_document_id IN (?, ?) OR to_document_id IN (?, ?)",
+            "DELETE FROM document_relationships WHERE from_document_id IN (%s, %s) OR to_document_id IN (%s, %s)",
             (doc_a, doc_b, doc_a, doc_b),
         )
-        c.execute("DELETE FROM documents WHERE id IN (?, ?)", (doc_a, doc_b))
-        c.execute("DELETE FROM proceedings WHERE id = ?", (proceeding_id,))
-        c.execute("DELETE FROM cases WHERE id = ?", (case_id,))
+        c.execute("DELETE FROM documents WHERE id IN (%s, %s)", (doc_a, doc_b))
+        c.execute("DELETE FROM proceedings WHERE id = %s", (proceeding_id,))
+        c.execute("DELETE FROM cases WHERE id = %s", (case_id,))
 
     cleanup.append(_cleanup)
     return case_id, [doc_a, doc_b]

@@ -327,10 +327,10 @@ def bundle_pipeline_status(
             if fire_reload:
                 meta["reload_fired"] = fired
                 batch.meta = meta
-                # Celery workers write to ingest_batches concurrently, so
-                # SQLite's single-writer lock can transiently lock us out.
+                # Celery workers write to ingest_batches concurrently, so a
+                # deadlock/serialization conflict can transiently lock us out.
                 # The latch is idempotent — next poll retries — so brief
-                # retry + skip-on-busy avoids 500s without losing correctness.
+                # retry + skip-on-conflict avoids 500s without losing correctness.
                 try:
                     retry_on_db_locked(lambda: db.commit(), db)
                 except OperationalError:

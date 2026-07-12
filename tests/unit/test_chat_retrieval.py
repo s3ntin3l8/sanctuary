@@ -1,24 +1,18 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import text
 
 from app.models.database import Case, Document, DocumentChunk
 from app.models.enums import CaseStatus, Jurisdiction
 from app.services.chat.retrieval import retrieve_top_docs
-from app.services.embeddings import _serialize
 
 
 def _seed_chunk(db_session, doc, chunk_index, chunk_text, vec):
-    chunk = DocumentChunk(document_id=doc.id, chunk_index=chunk_index, text=chunk_text)
+    chunk = DocumentChunk(
+        document_id=doc.id, chunk_index=chunk_index, text=chunk_text, embedding=vec
+    )
     db_session.add(chunk)
     db_session.flush()
-    db_session.execute(
-        text(
-            "INSERT INTO document_chunk_vectors(chunk_id, embedding) VALUES (:id, :e)"
-        ),
-        {"id": chunk.id, "e": _serialize(vec)},
-    )
     return chunk
 
 
@@ -131,7 +125,7 @@ async def test_retrieve_top_docs_excludes_other_case_chunks(
     # fallback (KNN matched a chunk, but the case-scoping filter rejected it —
     # the code's own "no chunk matches in this case" ValueError, one of the
     # intentional degrade conditions) — confirm it's *that* reason, not an
-    # unrelated provider/sqlite failure masquerading as the same empty result.
+    # unrelated provider/pgvector failure masquerading as the same empty result.
     assert hits == []
     assert "no chunk matches in this case" in caplog.text
 
@@ -169,7 +163,7 @@ async def test_retrieve_top_docs_propagates_unexpected_exception(
     db_session, sample_case
 ):
     """The narrowed except only degrades on known conditions (provider down,
-    dim mismatch, no matches, sqlite-vec failure). An unrelated bug — a
+    dim mismatch, no matches, pgvector failure). An unrelated bug — a
     TypeError here — must propagate instead of silently becoming a
     recency-fallback result, or a real regression would be indistinguishable
     from "no matches"."""

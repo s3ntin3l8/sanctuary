@@ -26,7 +26,7 @@ class DocumentService:
 
     def delete_document(self, doc_id: int) -> bool:
         """Delete document and all dependent rows from the database and filesystem."""
-        from sqlalchemy import func, or_, text
+        from sqlalchemy import func, or_
 
         from app.core.paths import resolve_storage_path
         from app.models.database import (
@@ -49,8 +49,10 @@ class DocumentService:
         file_path = doc.file_path
         ingest_batch_id = doc.ingest_batch_id
 
-        # Remove non-nullable FK dependents first (SQLite FK enforcement is off, but
-        # explicit cleanup prevents orphan rows from being recalled by AI later).
+        # Remove FK dependents first. UserReaction/DocumentPin's FK to documents
+        # has no ON DELETE CASCADE, so the DB would reject the document delete
+        # below if these still referenced it; ClaimEvidence does cascade, but
+        # deleting it explicitly here too keeps this cleanup self-contained.
         self.db.query(UserReaction).filter(UserReaction.document_id == doc_id).delete(
             synchronize_session=False
         )
@@ -66,22 +68,8 @@ class DocumentService:
                 DocumentRelationship.to_document_id == doc_id,
             )
         ).delete(synchronize_session=False)
-        # vec0 has no FK support, so the chunk_vectors rows must be purged
-        # explicitly before the document_chunks rows they reference by id.
-        chunk_ids = [
-            row[0]
-            for row in self.db.execute(
-                text("SELECT id FROM document_chunks WHERE document_id = :id"),
-                {"id": doc_id},
-            ).fetchall()
-        ]
-        if chunk_ids:
-            placeholders = ",".join(str(int(i)) for i in chunk_ids)
-            self.db.execute(
-                text(
-                    f"DELETE FROM document_chunk_vectors WHERE chunk_id IN ({placeholders})"
-                )
-            )
+        # embedding lives on the document_chunks row itself, so deleting the
+        # chunk rows drops their vectors too.
         self.db.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).delete(
             synchronize_session=False
         )

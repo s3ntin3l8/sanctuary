@@ -97,9 +97,9 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
             "No account is linked to this identity. Ask an administrator for access.",
         )
 
-    from app.core.timezone import naive_utc_now
+    from app.core.timezone import now_utc
 
-    user.last_login_at = naive_utc_now()
+    user.last_login_at = now_utc()
     db.commit()
 
     request.session.clear()

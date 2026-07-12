@@ -333,8 +333,8 @@ def enrich(doc_id: int) -> None:
     """Run AI enrichment for a single document.
 
     Three-phase design to avoid holding a DB session open during the AI call
-    (which takes 10–60 s and would otherwise cause SQLite write-lock contention
-    when multiple workers race to commit their results simultaneously):
+    (which takes 10–60 s and would otherwise hold row locks against other
+    workers racing to commit their results against the same rows):
       1. Read phase  — fetch all needed data, close session.
       2. AI phase    — call the model with no session held.
       3. Write phase — open a fresh session, apply results, commit, close.

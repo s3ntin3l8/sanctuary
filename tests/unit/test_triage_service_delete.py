@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import text
 
+from app.config import AI_EMBED_DIM
 from app.models.database import (
     ActionItem,
     Document,
@@ -71,16 +71,13 @@ def test_delete_batch_removes_all_rows(db_session, sample_user):
         )
     )
     # Chunk + vector row
-    chunk = DocumentChunk(document_id=docs[0].id, chunk_index=0, text="chunk text")
-    db_session.add(chunk)
-    db_session.flush()
-    db_session.execute(
-        text(
-            "INSERT INTO document_chunk_vectors(chunk_id, embedding) "
-            "VALUES (:id, vec_f32(:vec))"
-        ),
-        {"id": chunk.id, "vec": "[" + ",".join(["0.0"] * 768) + "]"},
+    chunk = DocumentChunk(
+        document_id=docs[0].id,
+        chunk_index=0,
+        text="chunk text",
+        embedding=[0.0] * AI_EMBED_DIM,
     )
+    db_session.add(chunk)
     db_session.commit()
 
     assert delete_bundle(db_session, batch_id=batch_id) is True
@@ -112,10 +109,6 @@ def test_delete_batch_removes_all_rows(db_session, sample_user):
         .count()
         == 0
     )
-    vec_count = db_session.execute(
-        text("SELECT count(*) FROM document_chunk_vectors")
-    ).scalar()
-    assert vec_count == 0
 
 
 @pytest.mark.unit

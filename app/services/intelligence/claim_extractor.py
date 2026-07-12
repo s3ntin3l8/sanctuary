@@ -19,7 +19,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import (
     Claim,
     ClaimEvidenceProposal,
@@ -153,8 +153,9 @@ def _apply_claims(
 
     # Pass 1: create all claims + evidence rows (each create_claim flushes
     # immediately, which starts a write transaction). Collect IDs so we can
-    # reload claims after committing — the commit releases the write lock
-    # before any embedding HTTP calls, preventing SQLITE_BUSY contention.
+    # reload claims after committing — the commit releases any row locks
+    # before any embedding HTTP calls, avoiding contention with other
+    # concurrent writers.
     new_claim_ids: list[int] = []
     for item in result.get("new_claims") or []:
         claim_text = (item.get("claim_text") or "").strip()
@@ -259,17 +260,17 @@ def _apply_claims(
                 rationale=None,
                 confidence=confidence_default,
                 status=ProposalStatus.PENDING,
-                proposed_at=naive_utc_now(),
+                proposed_at=now_utc(),
             )
         )
     db.flush()
 
     # Commit claims + evidence + proposals before embedding. Each
     # create_claim calls flush() which starts a write transaction; holding
-    # that open during an embedding HTTP call (up to 60 s) blocks every
-    # other concurrent writer past busy_timeout. Committing here releases
-    # the write lock; embedding and dedup calls each manage their own
-    # short-lived write transactions.
+    # that open during an embedding HTTP call (up to 60 s) would hold row
+    # locks against every other concurrent writer touching the same rows.
+    # Committing here releases them; embedding and dedup calls each manage
+    # their own short-lived write transactions.
     db.commit()
 
     # Pass 2: embed + dedup for each newly created claim. Reload each claim
@@ -342,7 +343,7 @@ def extract(doc_id: int) -> str | None:
 
         from app.models.database import ClaimEvidence
 
-        cutoff = naive_utc_now() - timedelta(seconds=_RECENT_EXTRACTION_WINDOW_SECS)
+        cutoff = now_utc() - timedelta(seconds=_RECENT_EXTRACTION_WINDOW_SECS)
         recent = (
             db.query(ClaimEvidence.ingest_date)
             .filter(

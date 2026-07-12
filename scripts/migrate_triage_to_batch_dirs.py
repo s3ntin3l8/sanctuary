@@ -15,35 +15,13 @@ from pathlib import Path
 # Allow running as a top-level script
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.config import DATA_DIR
+from app.config import DATA_DIR, SessionLocal
 from app.models.database import Document
-
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR / 'sanctuary.db'}"
 
 
 def get_db_session():
     """Return a new SQLAlchemy session. Caller is responsible for closing it."""
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-    # Load sqlite-vec extension the same way alembic/env.py does
-    try:
-        import sqlite_vec  # noqa: F401
-        from sqlalchemy import event as sa_event
-
-        @sa_event.listens_for(engine, "connect")
-        def load_sqlite_vec(dbapi_conn, _):
-            dbapi_conn.enable_load_extension(True)
-            sqlite_vec.load(dbapi_conn)
-            dbapi_conn.enable_load_extension(False)
-    except ImportError:
-        pass
-
-    Session = sessionmaker(bind=engine)
-    return Session()
+    return SessionLocal()
 
 
 def run_migration(dry_run: bool = True) -> tuple[int, int]:

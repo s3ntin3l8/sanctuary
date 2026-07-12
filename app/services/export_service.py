@@ -28,7 +28,6 @@ _TABLES = [
     "legal_costs",
     "user_reactions",
     "document_pins",
-    "saved_searches",
     "conversations",
     "conversation_messages",
     "audit_logs",
@@ -45,7 +44,12 @@ def build_export_zip(db: Session) -> tuple[bytes, dict]:
         # --- DB tables ---
         for table in _TABLES:
             try:
-                rows = db.execute(text(f"SELECT * FROM {table}")).mappings().all()  # noqa: S608 — table names are literals
+                # Postgres aborts the whole transaction on any failed statement
+                # (unlike SQLite, which just fails that one query) — a
+                # SAVEPOINT scopes the failure to this table alone so a
+                # missing/renamed table doesn't poison every query after it.
+                with db.begin_nested():
+                    rows = db.execute(text(f"SELECT * FROM {table}")).mappings().all()  # noqa: S608 — table names are literals
             except Exception:
                 continue
             table_counts[table] = len(rows)

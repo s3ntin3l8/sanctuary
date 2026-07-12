@@ -5,10 +5,10 @@
    then marks EMBEDDINGS=FAILED — without that signal, the doc was previously
    marked COMPLETED with no vector, so search silently missed it.
 
-2. `verify_vec0_dim()` reads the existing `document_chunk_vectors` schema,
-   parses its declared dimension, and reports whether it matches `AI_EMBED_DIM`.
-   The startup hook uses this to fail loudly when the env var was changed
-   without recreating the vec0 table.
+2. `verify_embedding_dim()` reads the existing `document_chunks.embedding`
+   column's declared pgvector dimension and reports whether it matches
+   `AI_EMBED_DIM`. The startup hook uses this to fail loudly when the env var
+   was changed without resizing the column.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -64,20 +64,20 @@ async def test_dim_mismatch_raises(db_session):
 
 
 @pytest.mark.unit
-def test_verify_vec0_dim_match(db_session):
-    """When the vec0 table dimension matches AI_EMBED_DIM, return (True, dim)."""
-    from app.services.embeddings import verify_vec0_dim
+def test_verify_embedding_dim_match(db_session):
+    """When the column dimension matches AI_EMBED_DIM, return (True, dim)."""
+    from app.services.embeddings import verify_embedding_dim
 
-    ok, dim = verify_vec0_dim(db_session, expected_dim=768)
+    ok, dim = verify_embedding_dim(db_session, expected_dim=768)
     assert ok is True
     assert dim == 768
 
 
 @pytest.mark.unit
-def test_verify_vec0_dim_mismatch(db_session):
+def test_verify_embedding_dim_mismatch(db_session):
     """When the env var differs from the schema, return (False, actual_dim)."""
-    from app.services.embeddings import verify_vec0_dim
+    from app.services.embeddings import verify_embedding_dim
 
-    ok, dim = verify_vec0_dim(db_session, expected_dim=512)
+    ok, dim = verify_embedding_dim(db_session, expected_dim=512)
     assert ok is False
     assert dim == 768

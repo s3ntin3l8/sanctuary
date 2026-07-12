@@ -56,7 +56,7 @@ def dispatch_task(task: Any, *args: Any, **kwargs: Any) -> None:
 def _record_dispatch_failure(label: str, args: tuple, exc: BaseException) -> None:
     """Mark the doc's stage failed when a dispatch silently dies.
 
-    Without this, EAGER + concurrent dispatch losers (SQLite busy, import
+    Without this, EAGER + concurrent dispatch losers (DB write conflicts, import
     errors, etc.) leave stages stuck in PENDING with no UI signal.
     Best-effort: if we can't map label→stage or extract a doc_id, just exit.
 

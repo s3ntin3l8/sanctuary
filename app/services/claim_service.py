@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from functools import cmp_to_key
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.timezone import compare_dates
+from app.core.timezone import compare_dates, now_utc
 from app.models.database import (
     Claim,
     ClaimEvidence,
@@ -426,7 +425,7 @@ class ClaimService:
         if claim is None:
             raise ValueError(f"Claim {claim_id} not found")
 
-        now = datetime.now()
+        now = now_utc()
         claim.dismissed_at = now
         self._db.query(ClaimEvidenceProposal).filter(
             ClaimEvidenceProposal.target_claim_id == claim_id,

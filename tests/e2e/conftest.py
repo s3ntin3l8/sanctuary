@@ -58,22 +58,32 @@ def api_client():
 
 @pytest.fixture
 def db_seed():
-    """Direct sqlite3 connection for seeding rows the API can't create
+    """Direct psycopg connection for seeding rows the API can't create
     (Claims/DocumentRelationships are AI-driven; no public POST endpoint).
+
+    Connects to the same DATABASE_URL the live `make run` server uses.
+    Foreign keys are always enforced by Postgres — no PRAGMA needed.
 
     The tests own unique IDs (uuid suffixes) so they don't collide with
     real data, but each test still cleans up with `cleanup_callbacks`.
     """
-    import sqlite3
-    from pathlib import Path
+    import os
 
-    project_root = Path(__file__).parent.parent.parent
-    db_path = project_root / "data" / "sanctuary.db"
-    if not db_path.exists():
-        pytest.skip(f"E2E DB not found at {db_path} — run `make migrate` first")
+    import psycopg
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON")
+    database_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary",
+    )
+    # psycopg.connect() doesn't understand SQLAlchemy's "+psycopg" dialect
+    # suffix — strip it back to a plain postgresql:// DSN.
+    dsn = database_url.replace("postgresql+psycopg://", "postgresql://")
+
+    try:
+        conn = psycopg.connect(dsn, connect_timeout=3)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"E2E DB not reachable at {dsn} — run `make db-up` first ({exc})")
+
     cleanup_callbacks: list = []
     try:
         yield conn, cleanup_callbacks

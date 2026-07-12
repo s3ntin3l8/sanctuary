@@ -12,7 +12,6 @@ from app.core.timezone import (
     now_utc,
     parse_datetime,
     to_iso,
-    to_naive,
 )
 
 
@@ -59,20 +58,6 @@ def test_ensure_utc_with_naive():
 @pytest.mark.unit
 def test_ensure_utc_with_none():
     result = ensure_utc(None)
-    assert result is None
-
-
-@pytest.mark.unit
-def test_to_naive():
-    dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-    result = to_naive(dt)
-    assert result.tzinfo is None
-    assert result.year == 2024
-
-
-@pytest.mark.unit
-def test_to_naive_with_none():
-    result = to_naive(None)
     assert result is None
 
 

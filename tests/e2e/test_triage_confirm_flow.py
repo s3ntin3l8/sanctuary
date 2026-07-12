@@ -124,7 +124,7 @@ def _force_pipeline_completed(conn, suffix: str) -> None:
     """
     cur = conn.cursor()
     cur.execute(
-        "UPDATE documents SET pipeline_state = 'completed' WHERE title LIKE ?",
+        "UPDATE documents SET pipeline_state = 'completed' WHERE title LIKE %s",
         (f"%{suffix}%",),
     )
     assert cur.rowcount == 1, (
@@ -234,7 +234,7 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     # as literal page text — confirmed by inspecting an actual failing run's
     # response body, not assumed.
     row_case_id = conn.execute(
-        "SELECT case_id FROM documents WHERE title LIKE ?", (f"%{suffix}%",)
+        "SELECT case_id FROM documents WHERE title LIKE %s", (f"%{suffix}%",)
     ).fetchone()
     assert row_case_id is not None, f"Seeded doc for suffix {suffix} not found"
     assert row_case_id[0] == case_id, (

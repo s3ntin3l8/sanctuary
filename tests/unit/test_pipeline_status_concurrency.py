@@ -14,10 +14,9 @@ implementation is stomp-proof under concurrent writes.
 import threading
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
-from app.models.database import Base, Case, Document
+from app.models.database import Case, Document
 from app.models.enums import (
     CaseStatus,
     Jurisdiction,
@@ -30,35 +29,9 @@ from app.services.pipeline_status import initialize, mark_completed, mark_starte
 
 
 @pytest.fixture
-def concurrent_engine(tmp_path):
-    db_file = tmp_path / "concurrent_test.db"
-    engine = create_engine(
-        f"sqlite:///{db_file}",
-        connect_args={"check_same_thread": False},
-    )
-    try:
-        import sqlite_vec
-
-        with engine.connect() as conn:
-            conn.connection.enable_load_extension(True)
-            sqlite_vec.load(conn.connection)
-            conn.connection.enable_load_extension(False)
-    except Exception:
-        pass
-
-    Base.metadata.create_all(engine)
-    return engine
-
-
-@pytest.fixture
-def concurrent_session_factory(concurrent_engine):
-    return sessionmaker(autocommit=False, autoflush=False, bind=concurrent_engine)
-
-
-@pytest.fixture
-def staged_doc(concurrent_session_factory):
+def staged_doc(db_session_factory):
     """A document with all pipeline stages set to PENDING."""
-    Session = concurrent_session_factory
+    Session = db_session_factory
     db = Session()
     try:
         case = Case(
@@ -87,10 +60,10 @@ def staged_doc(concurrent_session_factory):
         db.close()
 
 
-def test_concurrent_stage_writes_do_not_stomp(staged_doc, concurrent_session_factory):
+def test_concurrent_stage_writes_do_not_stomp(staged_doc, db_session_factory):
     """Four threads each completing a different stage — all must survive in the DB."""
     doc_id = staged_doc
-    Session = concurrent_session_factory
+    Session = db_session_factory
 
     target_stages = [
         PipelineStage.ENRICH,
@@ -149,10 +122,10 @@ def test_concurrent_stage_writes_do_not_stomp(staged_doc, concurrent_session_fac
         )
 
 
-def test_concurrent_started_then_completed(staged_doc, concurrent_session_factory):
+def test_concurrent_started_then_completed(staged_doc, db_session_factory):
     """mark_started followed by mark_completed from concurrent threads — final state is completed."""
     doc_id = staged_doc
-    Session = concurrent_session_factory
+    Session = db_session_factory
 
     results: list[str] = []
     lock = threading.Lock()

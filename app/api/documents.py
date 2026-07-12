@@ -601,8 +601,8 @@ async def retry_pipeline_stage(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Unknown stage: {stage}") from exc
 
-    # Take SQLite writer lock on this row before reading stages so a concurrent
-    # worker can't mark_started between our guard check and reset_stage.
+    # Row-lock this document before reading stages so a concurrent worker
+    # can't mark_started between our guard check and reset_stage.
     _lock_row_for_retry(doc_id, db)
     db.refresh(doc)
     stages = stages_dict(doc)
@@ -675,7 +675,7 @@ async def retry_pipeline_all(
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     def _do_reset():
-        # Take SQLite writer lock before reading stages so a concurrent worker
+        # Row-lock this document before reading stages so a concurrent worker
         # can't mark_started between the guard check and reset_all_stages.
         _lock_row_for_retry(doc_id, db)
         db.refresh(doc)
@@ -740,18 +740,18 @@ async def retry_pipeline_all(
 
 
 def _lock_row_for_retry(doc_id: int, db: Session) -> None:
-    """Acquire SQLite's writer lock on a documents row via a no-op UPDATE.
+    """Take a row-level lock on this document before reading its stage rows.
 
-    SQLite serializes write transactions, so subsequent reads in the same
-    transaction see the latest committed state and no other writer can change
-    the row until we commit. Closes the read-check-write race in the retry
-    endpoints — without this, a Celery worker could mark_started on an upstream
-    stage between the guard check and reset_stage.
+    `SELECT ... FOR UPDATE` blocks any other transaction from locking or
+    updating this same row until we commit/rollback, so subsequent reads in
+    this transaction are guaranteed current. Closes the read-check-write race
+    in the retry endpoints — without this, a Celery worker could mark_started
+    on an upstream stage between the guard check and reset_stage.
     """
     from sqlalchemy import text
 
     db.execute(
-        text("UPDATE documents SET id = id WHERE id = :doc_id"),
+        text("SELECT id FROM documents WHERE id = :doc_id FOR UPDATE"),
         {"doc_id": doc_id},
     )
 

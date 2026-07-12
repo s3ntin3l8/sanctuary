@@ -90,25 +90,29 @@ def check_ollama():
         )
 
 
-def check_sqlite_vec():
-    print("[*] Checking sqlite-vec support...")
+def check_pgvector():
+    print("[*] Checking Postgres + pgvector...")
     try:
-        # Imported here, not at module top: app.config (imported above) swaps
-        # sqlite3 -> pysqlite3 as a side effect, and that swap must happen before
-        # this name is bound, or this check would silently exercise the host's
-        # stdlib sqlite3 instead of the bundled one.
-        import sqlite3
+        from sqlalchemy import text
 
-        import sqlite_vec
+        from app.config import SQLALCHEMY_DATABASE_URL, engine
 
-        conn = sqlite3.connect(":memory:")
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-        print("    [✓] sqlite-vec extension LOADED successfully")
-        print(f"    [✓] Extension path: {sqlite_vec.loadable_path()}")
-    except (ImportError, sqlite3.OperationalError, Exception) as e:
-        print(f"    [✗] sqlite-vec check FAILED: {e}")
-        print("    [!] Ensure 'sqlite-vec' is installed (pip install sqlite-vec).")
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            print(f"    [✓] Connected to {SQLALCHEMY_DATABASE_URL}")
+            ext = conn.execute(
+                text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+            ).fetchone()
+            if ext:
+                print(f"    [✓] pgvector extension installed (v{ext[0]})")
+            else:
+                print(
+                    "    [✗] pgvector extension not installed in this database "
+                    "(run `make migrate` — the baseline migration creates it)."
+                )
+    except Exception as e:
+        print(f"    [✗] Postgres/pgvector check FAILED: {e}")
+        print("    [!] Make sure Postgres is running (`make db-up`) and migrated.")
 
 
 def main():
@@ -117,7 +121,7 @@ def main():
     print()
     check_ollama()
     print()
-    check_sqlite_vec()
+    check_pgvector()
     print("\n====================================")
 
 

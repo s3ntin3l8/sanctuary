@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app import config as cfg
 from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
 from app.models.database import User
@@ -40,12 +39,13 @@ def _display_settings(db, user_id: int) -> dict:
 
 
 def _stats(db):
+    from sqlalchemy import text
+
     from app.models.database import Case, Claim, Document, LegalCost
 
-    db_path = cfg.DATA_DIR / "sanctuary.db"
-    db_size = db_path.stat().st_size if db_path.exists() else 0
+    db_size = db.execute(text("SELECT pg_database_size(current_database())")).scalar()
     return {
-        "db_size_mb": round(db_size / 1024 / 1024, 2),
+        "db_size_mb": round((db_size or 0) / 1024 / 1024, 2),
         "doc_count": db.query(Document).count(),
         "case_count": db.query(Case).count(),
         "claim_count": db.query(Claim).count(),

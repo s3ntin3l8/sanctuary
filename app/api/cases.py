@@ -48,7 +48,7 @@ async def case_directory(
     user: User = Depends(get_current_user),
 ):
     from app.constants import CASE_STATUS_META
-    from app.core.timezone import naive_utc_now
+    from app.core.timezone import now_utc
 
     case_service = CaseService(db)
 
@@ -60,7 +60,7 @@ async def case_directory(
         data = case_service.get_all_cases_directory(user.id)
 
     case_titles = {c["id"]: c["title"] for c in data["cases"]}
-    now = naive_utc_now()
+    now = now_utc()
 
     return render_page(
         request,
@@ -482,7 +482,7 @@ async def create_case(
     # Required: proceedings.court_name is NOT NULL and the create-case form
     # (create_case_modal.html) always sends it. This was previously typed as
     # optional, which let a request without it slip past FastAPI's own
-    # validation into an unhandled sqlite IntegrityError (500) instead of a
+    # validation into an unhandled DB IntegrityError (500) instead of a
     # clean 422.
     court_name: str = Form(...),
     db: Session = Depends(get_db),

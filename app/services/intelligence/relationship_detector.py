@@ -26,7 +26,7 @@ MAX_CANDIDATES = 20
 # recency window is always full, so without a reservation the semantic half could
 # never contribute.
 _SEMANTIC_SLOTS = 6
-# vec0 KNN is global; over-fetch then prune to this case/tier/prior-id.
+# pgvector KNN is global; over-fetch then prune to this case/tier/prior-id.
 _KNN_OVERFETCH = 6
 
 

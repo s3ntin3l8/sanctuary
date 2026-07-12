@@ -18,6 +18,7 @@ playwright==1.61.0
 pytest-playwright==0.8.0
 pre-commit==4.6.0
 ruff==0.15.21
+testcontainers[postgres]==4.14.2
 
 # CI-only checks: the standardized ci-python.yml reusable workflow activates
 # mypy/detect-secrets/pip-audit steps by presence (`command -v` guards). Without

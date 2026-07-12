@@ -50,6 +50,12 @@ jobs:
       # ephemeral CI run, not a real secret.
       SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       AUTH_ENABLED: "false"
+      # Matches docker-compose.yml's `db` service (published on the default
+      # Postgres port) — explicit here so this job doesn't depend on the
+      # app's own DATABASE_URL default staying in sync, and to avoid
+      # colliding with any other Postgres already running on this persistent
+      # self-hosted runner.
+      DATABASE_URL: "postgresql+psycopg://sanctuary:sanctuary@localhost:5432/sanctuary"
       # Without this, uvicorn's stdout is block-buffered and gets discarded on
       # `kill` at job end — the "Show app server log" step below then shows a
       # truncated log missing whatever was printed just before the process was
@@ -68,20 +74,15 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Install Playwright browser
         run: playwright install --with-deps chromium
-      - name: Start Redis
+      - name: Start Postgres + Redis
         # web/worker-* services declare `env_file: .env`, which doesn't exist in CI
-        # (gitignored). `up redis` alone tolerates the missing file, but `stop`
+        # (gitignored). `up db redis` alone tolerates the missing file, but `stop`
         # validates the whole compose model, so touch a harmless empty one up front.
         run: |
           touch .env
-          docker compose up redis -d --wait
+          docker compose up db redis -d --wait
       - name: Run migrations
-        # DATA_DIR.mkdir() in app/config.py only fires if something imports
-        # app.config; alembic/env.py doesn't reliably trigger that, so sqlite
-        # fails to open data/sanctuary.db on a fresh checkout without this.
-        run: |
-          mkdir -p data
-          alembic upgrade head
+        run: alembic upgrade head
       - name: Start app server
         run: |
           uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
@@ -137,6 +138,6 @@ jobs:
       - name: Stop app server
         if: always()
         run: kill "$(cat server.pid)" 2>/dev/null || true
-      - name: Stop Redis
+      - name: Stop Postgres + Redis
         if: always()
-        run: docker compose stop redis
+        run: docker compose stop db redis

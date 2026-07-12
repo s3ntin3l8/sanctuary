@@ -11,6 +11,7 @@ from app.constants import (
     COST_CATEGORY_META,
     COST_STATUS_META,
 )
+from app.core.timezone import now_utc
 from app.dependencies import get_db
 from app.helpers import build_cost_summary, render_page
 from app.models.database import Case, CostSignal, LegalCost
@@ -130,7 +131,7 @@ async def costs_page(request: Request, db: Session = Depends(get_db)):
     }
 
     # Compute overdue and upcoming costs for the alerts
-    now = datetime.now()
+    now = now_utc()
     pending = cost_service.get_pending_costs()
     overdue_costs = [c for c in pending if c.due_at and c.due_at < now]
     upcoming_costs = [

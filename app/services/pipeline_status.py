@@ -20,7 +20,7 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.core.timezone import naive_utc_now, to_naive
+from app.core.timezone import ensure_utc, now_utc
 from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
@@ -305,7 +305,7 @@ def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
         db,
         status=StageStatus.RUNNING,
         extra_sets={
-            "started_at": naive_utc_now(),
+            "started_at": now_utc(),
             "attempt": None,
             "max_attempts": None,
             "next_at": None,
@@ -373,7 +373,7 @@ def mark_completed(
         stage,
         db,
         status=StageStatus.COMPLETED,
-        extra_sets={"completed_at": naive_utc_now(), "error": None},
+        extra_sets={"completed_at": now_utc(), "error": None},
         commit=commit,
     )
 
@@ -392,7 +392,7 @@ def mark_failed(
         db,
         status=StageStatus.FAILED,
         extra_sets={
-            "completed_at": naive_utc_now(),
+            "completed_at": now_utc(),
             "error": error,
             "attempt": None,
             "max_attempts": None,
@@ -449,7 +449,7 @@ def schedule_retry(
     Used at every Celery `self.retry(...)` site — keeps the call shape uniform
     so the UI sees a consistent "Retrying STAGE (attempt/max) in Ns" record.
     """
-    next_at = to_naive(datetime.now(UTC) + timedelta(seconds=countdown))
+    next_at = ensure_utc(datetime.now(UTC) + timedelta(seconds=countdown))
     mark_retrying(
         doc_id,
         stage,
@@ -482,7 +482,7 @@ def mark_failed_with_cascade(
             db,
             status=StageStatus.FAILED,
             extra_sets={
-                "completed_at": naive_utc_now(),
+                "completed_at": now_utc(),
                 "error": f"upstream {stage.value} failed",
             },
             commit=False,
@@ -715,7 +715,7 @@ def recover_orphaned_running_stages(
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchStatus
 
-    cutoff = naive_utc_now() - timedelta(seconds=min_age_seconds)
+    cutoff = now_utc() - timedelta(seconds=min_age_seconds)
 
     # Worker-activity probe: is any stage showing forward progress recently?
     # We sample globally because the relevant signal is "are workers making
@@ -728,9 +728,7 @@ def recover_orphaned_running_stages(
     # Without this bypass, the probe would find the candidate stage's own
     # RUNNING row as "recent activity" and refuse to reset it.
     if min_age_seconds > 0:
-        activity_cutoff = naive_utc_now() - timedelta(
-            seconds=recent_activity_window_seconds
-        )
+        activity_cutoff = now_utc() - timedelta(seconds=recent_activity_window_seconds)
         workers_recently_active = (
             db.execute(
                 text(
@@ -775,10 +773,7 @@ def recover_orphaned_running_stages(
             started_at = val.get("started_at")
             if started_at:
                 try:
-                    parsed = datetime.fromisoformat(started_at)
-                    # stages_dict emits naive UTC; compare on the same plane.
-                    if parsed.tzinfo is not None:
-                        parsed = parsed.replace(tzinfo=None)
+                    parsed = ensure_utc(datetime.fromisoformat(started_at))
                     if parsed > cutoff:
                         continue
                 except (ValueError, TypeError):
@@ -1293,7 +1288,7 @@ def recover_stuck_pending_dispatches(
 
     from app.models.database import Document
 
-    cutoff = naive_utc_now() - timedelta(seconds=max_age_seconds)
+    cutoff = now_utc() - timedelta(seconds=max_age_seconds)
 
     candidates = (
         db.query(Document)
@@ -1310,9 +1305,7 @@ def recover_stuck_pending_dispatches(
     # currently running, or completed recently, the worker is processing
     # the queue and PENDING EXTRACTs are queue-waiting, not lost. See
     # docstring for the runaway-loop incident this gate prevents.
-    extract_window_cutoff = naive_utc_now() - timedelta(
-        seconds=recent_extract_window_seconds
-    )
+    extract_window_cutoff = now_utc() - timedelta(seconds=recent_extract_window_seconds)
     ingest_worker_alive = (
         db.execute(
             text(
@@ -1533,16 +1526,29 @@ def _update_stage(
 
 
 def is_db_locked(exc: Exception) -> bool:
-    """True when an OperationalError represents a SQLITE_BUSY / locked-database error."""
-    return "database is locked" in str(exc).lower()
+    """True when an OperationalError represents a transient write-write
+    conflict worth retrying: SQLite's SQLITE_BUSY (legacy — "database is
+    locked") or Postgres's deadlock/serialization-failure errors (SQLSTATE
+    40P01 / 40001 — two concurrent writers both touched the same document's
+    stage rows and one lost the conflict). Postgres surfaces these via
+    `psycopg.errors.DeadlockDetected` / `SerializationFailure`, wrapped by
+    SQLAlchemy as `OperationalError` like everything else DBAPI-level.
+    """
+    msg = str(exc).lower()
+    return (
+        "database is locked" in msg
+        or "deadlock detected" in msg
+        or "could not serialize access" in msg
+    )
 
 
 def retry_on_db_locked(fn, db, *, attempts: int = 3, base_backoff: float = 0.05):
-    """Run `fn()` with rollback+retry on SQLITE_BUSY_SNAPSHOT.
+    """Run `fn()` with rollback+retry on a transient write-write conflict.
 
-    WAL-mode SQLite returns "database is locked" immediately when a read
-    snapshot can't upgrade to writer (Celery worker committed in between).
-    busy_timeout doesn't apply to snapshot conflicts — rollback + retry does.
+    Two Celery workers (or a worker + an interactive request) committing
+    against the same document's stage rows at the same moment can lose to a
+    deadlock or serialization conflict — rollback + retry recovers instead of
+    surfacing a 500/409 for what's really just contention.
 
     Returns fn's return value, or re-raises the final OperationalError so the
     caller can decide between 409 and skip-and-continue.

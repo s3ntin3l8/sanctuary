@@ -1,11 +1,12 @@
 import logging
+import re
 import time
 
 import httpx
 from sqlalchemy.exc import OperationalError
 
 from app.config import SessionLocal
-from app.models.database import Document
+from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
 from app.services.ai_run_index import record_run
@@ -26,13 +27,6 @@ _CHUNK_EMBED_MAX_CHARS = 4000
 _CHUNK_RETRIEVAL_OVERSAMPLE = 5
 
 from app.services.ai_provider import embed_provider
-
-
-def _serialize(vec: list[float]) -> bytes:
-    """Convert a float list to sqlite-vec f32 blob."""
-    from sqlite_vec import serialize_float32
-
-    return serialize_float32(vec)
 
 
 def _chunks_to_embed(doc) -> list[str]:
@@ -63,37 +57,16 @@ def _chunks_to_embed(doc) -> list[str]:
 async def _embed_document_chunks(doc: Document, db, cfg) -> int:
     """Embed and store every chunk for `doc`. Returns the number of chunks written.
 
-    Idempotent: clears any existing chunk rows (and their vec0 rows) for
-    this document first, so re-embedding on retry/re-ingestion never hits a
-    UNIQUE conflict or leaves orphaned rows. Nothing is committed until
-    every chunk succeeds — a mid-loop failure leaves no partial write.
+    Idempotent: clears any existing chunk rows for this document first, so
+    re-embedding on retry/re-ingestion never hits a UNIQUE conflict or leaves
+    stale rows behind. Nothing is committed until every chunk succeeds — a
+    mid-loop failure leaves no partial write.
     """
-    from sqlalchemy import text as sa_text
-
-    from app.models.database import DocumentChunk
-
     texts = _chunks_to_embed(doc)
     if not texts:
         return 0
 
-    existing_ids = [
-        row[0]
-        for row in db.execute(
-            sa_text("SELECT id FROM document_chunks WHERE document_id = :doc_id"),
-            {"doc_id": doc.id},
-        ).fetchall()
-    ]
-    if existing_ids:
-        placeholders = ",".join(str(int(i)) for i in existing_ids)
-        db.execute(
-            sa_text(
-                f"DELETE FROM document_chunk_vectors WHERE chunk_id IN ({placeholders})"
-            )
-        )
-        db.execute(
-            sa_text("DELETE FROM document_chunks WHERE document_id = :doc_id"),
-            {"doc_id": doc.id},
-        )
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).delete()
 
     written = 0
     with model_gate("embed", label=f"embed:doc:{doc.id}"):
@@ -130,19 +103,13 @@ async def _embed_document_chunks(doc: Document, db, cfg) -> int:
                     "Check AI_EMBED_DIM matches the embedding model."
                 )
 
-            chunk_row = DocumentChunk(
-                document_id=doc.id, chunk_index=idx, text=chunk_text
-            )
-            db.add(chunk_row)
-            db.flush()  # populate chunk_row.id for the vec0 insert below
-
-            blob = _serialize(embedding)
-            db.execute(
-                sa_text(
-                    "INSERT INTO document_chunk_vectors(chunk_id, embedding) "
-                    "VALUES (:chunk_id, :embedding)"
-                ),
-                {"chunk_id": chunk_row.id, "embedding": blob},
+            db.add(
+                DocumentChunk(
+                    document_id=doc.id,
+                    chunk_index=idx,
+                    text=chunk_text,
+                    embedding=embedding,
+                )
             )
             written += 1
 
@@ -210,13 +177,11 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
     """Return up to `k` chunk hits ranked by vector similarity, closest first.
 
     Each hit is {chunk_id, document_id, chunk_index, text, distance}.
-    Synchronous, best-effort: returns ``[]`` on provider-down or a sqlite-vec
+    Synchronous, best-effort: returns ``[]`` on provider-down or a pgvector
     query failure so callers can fall back gracefully. Dim-mismatch and
     empty-result are handled by explicit early returns below, not this
     fallback. Any other exception is an unexpected bug and propagates.
     """
-    from sqlalchemy import text as sa_text
-
     from app.core.async_utils import run_async
 
     if not query_text:
@@ -238,35 +203,30 @@ def nearest_chunks(query_text: str, db, *, k: int) -> list[dict]:
         )
         if not embedding or len(embedding) != cfg.embed_dim:
             return []
-        blob = _serialize(embedding)
-        rows = db.execute(
-            sa_text(
-                "SELECT chunk_id, distance FROM document_chunk_vectors "
-                "WHERE embedding MATCH :blob AND k = :k"
-            ),
-            {"blob": blob, "k": k},
-        ).fetchall()
-        chunk_ids = [row[0] for row in rows]
-        if not chunk_ids:
-            return []
-        distances = {row[0]: row[1] for row in rows}
 
-        from app.models.database import DocumentChunk
-
-        chunk_rows = (
-            db.query(DocumentChunk).filter(DocumentChunk.id.in_(chunk_ids)).all()
+        distance = DocumentChunk.embedding.l2_distance(embedding)
+        rows = (
+            db.query(
+                DocumentChunk.id,
+                DocumentChunk.document_id,
+                DocumentChunk.chunk_index,
+                DocumentChunk.text,
+                distance.label("distance"),
+            )
+            .filter(DocumentChunk.embedding.isnot(None))
+            .order_by(distance)
+            .limit(k)
+            .all()
         )
-        by_id = {c.id: c for c in chunk_rows}
         return [
             {
-                "chunk_id": cid,
-                "document_id": by_id[cid].document_id,
-                "chunk_index": by_id[cid].chunk_index,
-                "text": by_id[cid].text,
-                "distance": distances[cid],
+                "chunk_id": row.id,
+                "document_id": row.document_id,
+                "chunk_index": row.chunk_index,
+                "text": row.text,
+                "distance": row.distance,
             }
-            for cid in chunk_ids
-            if cid in by_id
+            for row in rows
         ]
     except (httpx.HTTPError, RuntimeError, OperationalError) as e:
         # RuntimeError: detect_provider / get_embedding_params raise this when
@@ -280,7 +240,7 @@ def nearest_document_ids(query_text: str, db, *, k: int) -> list[int]:
     closest first (deduped — a document may own several high-ranked chunks).
 
     Synchronous, best-effort: returns ``[]`` on any failure. Mirrors the
-    embed+vec0 MATCH pattern in ``SearchService._semantic_document_ids``;
+    embed+pgvector KNN pattern in ``SearchService._semantic_document_ids``;
     lives here so the document-vector KNN has one home.
     """
     hits = nearest_chunks(query_text, db, k=k * _CHUNK_RETRIEVAL_OVERSAMPLE)
@@ -305,13 +265,13 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
 
     Paginated in batches of _REINDEX_BATCH_SIZE so a corpus of N thousand
     documents doesn't all sit in Python memory at once. Each doc still
-    commits independently (vec0 requires DELETE+INSERT for idempotency).
-    Progress is logged at INFO every batch so the user can tail the log.
+    commits independently (idempotent re-embed: existing chunk rows for the
+    doc are cleared before the new ones are written).
 
     progress_cb(reindexed: int, failed: int) is called at each batch
     boundary; the Celery wrapper uses this to update UserSettings so the
     HTMX polling UI advances. Best-effort: callback exceptions are
-    swallowed so an SQLite write contention doesn't kill the reindex.
+    swallowed so a transient DB hiccup doesn't kill the reindex.
     """
     # The user typically triggers reindex right after changing the embedding
     # model in settings — reload the provider config from DB so we use the
@@ -361,27 +321,33 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
     return {"total": total, "reindexed": reindexed, "failed": failed}
 
 
-_VEC0_DIM_RE = __import__("re").compile(
-    r"embedding\s+float\s*\[\s*(\d+)\s*\]", __import__("re").IGNORECASE
-)
+_VECTOR_DIM_RE = re.compile(r"vector\((\d+)\)", re.IGNORECASE)
 
 
-def verify_vec0_dim(db, expected_dim: int) -> tuple[bool, int | None]:
-    """Read the document_chunk_vectors vec0 schema and compare its declared dimension.
+def verify_embedding_dim(db, expected_dim: int) -> tuple[bool, int | None]:
+    """Read document_chunks.embedding's declared pgvector dimension and compare
+    it to expected_dim.
 
-    Returns (matches, actual_dim). actual_dim is None if the schema can't be parsed.
-    Used by the lifespan startup hook to fail loudly if AI_EMBED_DIM was changed
-    without recreating the vec0 table — vec0 can't be ALTERed, so a mismatch
-    silently breaks every embedding write at the per-write dim guard.
+    Returns (matches, actual_dim). actual_dim is None if the column can't be
+    introspected (e.g. table missing). Used by the lifespan startup hook to
+    catch a stale AI_EMBED_DIM/embed model: a pgvector column can only change
+    dimension once it's empty (see settings_ai_config's rebuild-index path),
+    so a mismatch here means every embedding write is about to fail the
+    per-write dim guard until Settings → Rebuild Index runs.
     """
     from sqlalchemy import text
 
     row = db.execute(
-        text("SELECT sql FROM sqlite_master WHERE name = 'document_chunk_vectors'")
+        text(
+            "SELECT format_type(a.atttypid, a.atttypmod) "
+            "FROM pg_attribute a "
+            "WHERE a.attrelid = 'document_chunks'::regclass "
+            "AND a.attname = 'embedding' AND NOT a.attisdropped"
+        )
     ).fetchone()
     if not row or not row[0]:
         return False, None
-    match = _VEC0_DIM_RE.search(row[0])
+    match = _VECTOR_DIM_RE.search(row[0])
     if not match:
         return False, None
     actual = int(match.group(1))

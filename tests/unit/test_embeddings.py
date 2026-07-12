@@ -1,27 +1,15 @@
-import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import text
 
 from app.config import AI_EMBED_DIM
 from app.models.database import Document, DocumentChunk
 from app.services.embeddings import (
     _chunks_to_embed,
-    _serialize,
     generate_embedding,
     nearest_chunks,
     nearest_document_ids,
 )
-
-
-def test_serialize_roundtrip():
-    vec = [0.1, 0.2, 0.3, 0.4]
-    blob = _serialize(vec)
-    assert isinstance(blob, bytes)
-    assert len(blob) == 4 * len(vec)
-    recovered = list(struct.unpack(f"{len(vec)}f", blob))
-    assert all(abs(a - b) < 1e-6 for a, b in zip(recovered, vec, strict=False))
 
 
 def test_chunks_to_embed_uses_doc_meta_chunks():
@@ -76,13 +64,8 @@ async def test_generate_embedding_success(db_session, sample_document):
     )
     assert len(chunks) == 1
     assert chunks[0].text == sample_document.content
-
-    row = db_session.execute(
-        text("SELECT embedding FROM document_chunk_vectors WHERE chunk_id = :cid"),
-        {"cid": chunks[0].id},
-    ).fetchone()
-    assert row is not None
-    assert len(row[0]) == 4 * AI_EMBED_DIM
+    assert chunks[0].embedding is not None
+    assert len(chunks[0].embedding) == AI_EMBED_DIM
 
 
 @pytest.mark.asyncio
@@ -138,9 +121,8 @@ async def test_generate_embedding_failure_propagates(db_session, sample_document
 @pytest.mark.unit
 async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_document):
     """Re-running generate_embedding for a doc that already has chunks must
-    not raise UNIQUE on document_chunk_vectors, and must not leave
-    duplicate/orphaned rows behind — vec0 ignores INSERT OR REPLACE so the
-    code must DELETE before INSERT.
+    not leave duplicate/orphaned rows behind — the code clears existing
+    chunk rows for the doc before re-embedding.
     """
     mock_embedding = [0.1] * AI_EMBED_DIM
 
@@ -152,8 +134,6 @@ async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_docu
         ),
         patch("app.services.embeddings.SessionLocal", lambda: db_session),
     ):
-        # Two calls back-to-back — second would raise UNIQUE if the code
-        # weren't doing DELETE-then-INSERT.
         await generate_embedding(sample_document.id)
         await generate_embedding(sample_document.id)
 
@@ -163,11 +143,7 @@ async def test_generate_embedding_is_idempotent_on_retry(db_session, sample_docu
         .all()
     )
     assert len(chunks) == 1  # not 2 — no duplicate chunk rows
-
-    vector_count = db_session.execute(
-        text("SELECT count(*) FROM document_chunk_vectors")
-    ).scalar()
-    assert vector_count == 1  # no orphaned vec0 row from the first embed
+    assert chunks[0].embedding is not None
 
 
 @pytest.mark.unit
@@ -194,24 +170,16 @@ def test_nearest_document_ids_empty_query_short_circuits(db_session):
 
 @pytest.mark.unit
 def test_nearest_document_ids_returns_match(db_session, sample_case):
-    """Success path: embed the query, vec0 MATCH returns the doc owning the
+    """Success path: embed the query, pgvector KNN returns the doc owning the
     chunk whose stored vector is identical (distance 0)."""
     doc = Document(title="Vektor", content="x", case_id=sample_case.id)
     db_session.add(doc)
     db_session.commit()
     db_session.refresh(doc)
 
-    chunk = DocumentChunk(document_id=doc.id, chunk_index=0, text="x")
-    db_session.add(chunk)
-    db_session.flush()
-
     vec = [0.1] * AI_EMBED_DIM
-    db_session.execute(
-        text(
-            "INSERT INTO document_chunk_vectors(chunk_id, embedding) VALUES (:id, :e)"
-        ),
-        {"id": chunk.id, "e": _serialize(vec)},
-    )
+    chunk = DocumentChunk(document_id=doc.id, chunk_index=0, text="x", embedding=vec)
+    db_session.add(chunk)
     db_session.commit()
 
     resp = MagicMock()
@@ -244,15 +212,10 @@ def test_nearest_document_ids_dedupes_multiple_chunk_hits_from_same_doc(
 
     vec = [0.1] * AI_EMBED_DIM
     for idx in range(3):
-        chunk = DocumentChunk(document_id=doc.id, chunk_index=idx, text=f"chunk {idx}")
-        db_session.add(chunk)
-        db_session.flush()
-        db_session.execute(
-            text(
-                "INSERT INTO document_chunk_vectors(chunk_id, embedding) VALUES (:id, :e)"
-            ),
-            {"id": chunk.id, "e": _serialize(vec)},
+        chunk = DocumentChunk(
+            document_id=doc.id, chunk_index=idx, text=f"chunk {idx}", embedding=vec
         )
+        db_session.add(chunk)
     db_session.commit()
 
     resp = MagicMock()
@@ -275,7 +238,7 @@ def test_nearest_document_ids_dedupes_multiple_chunk_hits_from_same_doc(
 @pytest.mark.unit
 def test_nearest_chunks_propagates_unexpected_exception(db_session):
     """The narrowed except in nearest_chunks only degrades on provider-down
-    (httpx.HTTPError / RuntimeError) or a sqlite-vec OperationalError. An
+    (httpx.HTTPError / RuntimeError) or a pgvector OperationalError. An
     unrelated bug must propagate instead of silently returning []."""
     with patch(
         "app.services.ai_provider.embed_provider.get_embedding_params",
@@ -288,7 +251,7 @@ def test_nearest_chunks_propagates_unexpected_exception(db_session):
 
 @pytest.mark.unit
 def test_nearest_document_ids_dim_mismatch_returns_empty(db_session):
-    """A wrong-dimension embedding is rejected (never reaches the vec query)."""
+    """A wrong-dimension embedding is rejected (never reaches the vector query)."""
     resp = MagicMock()
     resp.json.return_value = {"embedding": [0.1, 0.2, 0.3]}  # wrong dim
     resp.raise_for_status = MagicMock()

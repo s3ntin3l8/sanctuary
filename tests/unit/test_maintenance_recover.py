@@ -11,12 +11,12 @@ from datetime import timedelta
 
 import pytest
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import AppSettings
 
 
 def _stale_iso(minutes_ago: int) -> str:
-    return (naive_utc_now() - timedelta(minutes=minutes_ago)).isoformat()
+    return (now_utc() - timedelta(minutes=minutes_ago)).isoformat()
 
 
 @pytest.fixture

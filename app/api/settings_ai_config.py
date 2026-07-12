@@ -380,15 +380,16 @@ async def save_instance_route(
     embed_provider.reload_from_db(db)
     ocr_provider.reload_from_db(db)
 
-    # Warn if this is the active embed instance and dim no longer matches vec0
+    # Warn if this is the active embed instance and dim no longer matches the
+    # document_chunks.embedding column
     from app.services.ai_config import _get_ai_section
-    from app.services.embeddings import verify_vec0_dim
+    from app.services.embeddings import verify_embedding_dim
 
     ai = _get_ai_section(db)
     dim_warning = ""
     embed_dim = instance.get("embed_dim")
     if ai.get("active_embed_id") == instance_id and embed_dim:
-        dim_ok, actual_dim = verify_vec0_dim(db, int(embed_dim))
+        dim_ok, actual_dim = verify_embedding_dim(db, int(embed_dim))
         if not dim_ok and actual_dim is not None:
             dim_warning = (
                 f"Vector index dim mismatch: index={actual_dim}, "
@@ -487,11 +488,11 @@ def _provider_for(role: str):
 
 
 def _embed_dim_warning(db) -> str:
-    """Rebuild-index warning HTML when the active embed dim != vec0 dim."""
-    from app.services.embeddings import verify_vec0_dim
+    """Rebuild-index warning HTML when the active embed dim != the stored column dim."""
+    from app.services.embeddings import verify_embedding_dim
 
     cfg = get_embed_config(db)
-    dim_ok, actual_dim = verify_vec0_dim(db, cfg.embed_dim)
+    dim_ok, actual_dim = verify_embedding_dim(db, cfg.embed_dim)
     if dim_ok:
         return ""
     actual = actual_dim or "unknown"
@@ -676,9 +677,10 @@ async def rebuild_index(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Drop+recreate the vec0 table, then dispatch the embedding reindex
-    as a Celery task. The response is a polling fragment that the browser
-    refreshes against /rebuild-index/status every 4s.
+    """Resize document_chunks.embedding to the new dimension, then dispatch
+    the embedding reindex as a Celery task. The response is a polling
+    fragment that the browser refreshes against /rebuild-index/status
+    every 4s.
     """
     from app.models.database import Document
     from app.services.user_settings_service import (
@@ -705,21 +707,23 @@ async def rebuild_index(
     embed_provider.reload_from_db(db)
 
     try:
-        db.execute(text("DROP TABLE IF EXISTS document_chunk_vectors"))
+        # A pgvector column can only be widened/narrowed to a new dimension
+        # once every row is NULL/empty — clear the chunks (and their
+        # embeddings, same row) before the ALTER so it's a metadata-only
+        # change, not a rewrite against mismatched-width data.
+        db.execute(text("DELETE FROM document_chunks"))
         db.execute(
             text(
-                f"CREATE VIRTUAL TABLE document_chunk_vectors USING vec0("
-                f"chunk_id INTEGER PRIMARY KEY, embedding float[{embed_dim}])",
-            ),
+                f"ALTER TABLE document_chunks ALTER COLUMN embedding "
+                f"TYPE vector({embed_dim})"
+            )
         )
-        # document_chunks rows are about to be orphaned (their vec0 rows are
-        # gone and a full reindex is starting) — clear them so stale chunk
-        # text doesn't linger indefinitely.
-        db.execute(text("DELETE FROM document_chunks"))
         audit_service.record(db, AuditEventType.MAINTENANCE_REBUILD_INDEX)
         db.commit()
     except Exception as e:
-        logger.error(f"Failed to recreate document_chunk_vectors: {e}")
+        logger.error(
+            f"Failed to resize document_chunks.embedding to dim={embed_dim}: {e}"
+        )
         return HTMLResponse(_toast(False, f"DDL failed: {e}"))
 
     total = db.query(Document).filter(Document.content.isnot(None)).count()

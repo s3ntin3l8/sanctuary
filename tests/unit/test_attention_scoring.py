@@ -1,6 +1,6 @@
 """Unit tests for attention scoring (home dashboard prioritization)."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -15,7 +15,7 @@ def _item(
     due = (
         None
         if days_from_now is None
-        else datetime.now() + timedelta(days=days_from_now)
+        else datetime.now(UTC) + timedelta(days=days_from_now)
     )
     item = ActionItem(due_date=due, action_type=action_type)
     item.source_document = doc
@@ -42,7 +42,7 @@ def test_overdue_scores_above_baseline():
 def test_due_today_scores_900():
     # +1 hour → delta.days == 0 → "today" band.
     item = _item()
-    item.due_date = datetime.now() + timedelta(hours=1)
+    item.due_date = datetime.now(UTC) + timedelta(hours=1)
     assert score_action_item(item) == 900
 
 
@@ -85,7 +85,7 @@ def test_critical_source_document_boost():
 
 def _batch(*, age_days, doc_count=0, case_id=None):
     batch = IngestBatch(
-        received_at=datetime.now() - timedelta(days=age_days, hours=12),
+        received_at=datetime.now(UTC) - timedelta(days=age_days, hours=12),
         case_id=case_id,
     )
     batch.documents = [Document(title=f"d{i}") for i in range(doc_count)]

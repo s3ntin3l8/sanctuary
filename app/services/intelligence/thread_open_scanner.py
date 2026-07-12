@@ -62,8 +62,8 @@ def scan_and_close_threads(db: Session) -> int:
             text(
                 f"""
             UPDATE documents
-            SET thread_open = 0
-            WHERE thread_open = 1
+            SET thread_open = false
+            WHERE thread_open = true
               AND document_type IN ({type_names_sql})
               AND id IN (
                 SELECT DISTINCT to_document_id
@@ -82,8 +82,8 @@ def scan_and_close_threads(db: Session) -> int:
             text(
                 f"""
             UPDATE documents
-            SET thread_open = 1
-            WHERE thread_open = 0
+            SET thread_open = true
+            WHERE thread_open = false
               AND document_type IN ({type_names_sql})
               AND id NOT IN (
                 SELECT DISTINCT to_document_id

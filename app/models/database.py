@@ -3,7 +3,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import event, inspect
+
+from app.config import AI_EMBED_DIM
 
 
 def _utcnow():
@@ -11,9 +14,7 @@ def _utcnow():
 
 
 from sqlalchemy import (
-    JSON,
     Boolean,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -23,11 +24,12 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy import (
-    Enum as SAEnum,
+    Enum as _SAEnumBase,
 )
 from sqlalchemy import (
     text as _sa_text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -35,6 +37,27 @@ from sqlalchemy.orm import (
     relationship,
     validates,
 )
+from sqlalchemy.types import DateTime as _DateTimeBase
+
+# Postgres-native replacements applied via name shadowing so every existing
+# `mapped_column(JSON, ...)` / `mapped_column(DateTime, ...)` / `SAEnum(SomeEnum)`
+# call site below is unchanged, but resolves to the Postgres-correct type:
+#   - JSON -> JSONB (native Postgres storage/indexing; the app never relies on
+#     json_extract-style SQL, so JSONB's key-reordering is harmless)
+#   - DateTime -> DateTime(timezone=True) (the app always passes tz-aware
+#     datetimes — e.g. _utcnow below — and a naive `timestamp` column would
+#     silently drop/reject the tzinfo)
+#   - SAEnum -> Enum(..., native_enum=False) (keeps the SQLite-era VARCHAR+CHECK
+#     semantics; Postgres native ENUM can't ALTER TYPE ADD VALUE inside a
+#     transaction, which breaks batch-style enum-extension migrations)
+JSON = JSONB
+DateTime = _DateTimeBase(timezone=True)
+
+
+def SAEnum(*args, **kwargs):
+    kwargs.setdefault("native_enum", False)
+    return _SAEnumBase(*args, **kwargs)
+
 
 from app.core.validators import normalize_case_id
 from app.models.enums import (
@@ -95,9 +118,10 @@ class Document(Base):
     # ONLY in the no-case triage view. Once a document has a real case, visibility
     # is case-driven (access_service.can_view_case = owner OR share). NEVER filter
     # a case-context document query by owner_id — it would break shared-case access
-    # (a shared editor must see documents the case owner ingested). No DB-level FK
-    # (avoids a SQLite recreate of this heavily-referenced table).
-    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # (a shared editor must see documents the case owner ingested).
+    owner_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     case_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="SET NULL"),
@@ -546,9 +570,10 @@ class IngestBatch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     # The user who ingested this batch (upload / gmail / scan-folder). Drives the
-    # per-user triage inbox. No DB-level FK (avoids a SQLite table recreate);
-    # enforced/used at the app layer. NULL only for legacy/unowned rows.
-    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # per-user triage inbox. NULL only for legacy/unowned rows.
+    owner_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     source_type: Mapped[IngestBatchSourceType] = mapped_column(
         SAEnum(IngestBatchSourceType), nullable=False
     )
@@ -836,6 +861,12 @@ class Claim(Base):
     embedding_failed_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, index=True
     )
+    # Semantic-dedup vector (pgvector, HNSW-indexed). Plain nullable column —
+    # no separate vector table — so it's written/cleared alongside the claim
+    # row itself; see app/services/claim_embedding.py.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(AI_EMBED_DIM), nullable=True
+    )
 
     evidence: Mapped[list["ClaimEvidence"]] = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
@@ -899,7 +930,7 @@ class ClaimMergeProposal(Base):
         Index(
             "ix_claim_merge_proposals_status_pending",
             "status",
-            sqlite_where=_sa_text("status = 'PENDING'"),
+            postgresql_where=_sa_text("status = 'PENDING'"),
         ),
         Index("ix_claim_merge_proposals_new_claim", "new_claim_id"),
         Index("ix_claim_merge_proposals_existing_claim", "existing_claim_id"),
@@ -948,7 +979,7 @@ class ClaimEvidenceProposal(Base):
         Index(
             "ix_claim_evidence_proposals_status_pending",
             "status",
-            sqlite_where=_sa_text("status = 'PENDING'"),
+            postgresql_where=_sa_text("status = 'PENDING'"),
         ),
         Index("ix_claim_evidence_proposals_target_claim", "target_claim_id"),
         Index(
@@ -1058,10 +1089,10 @@ class DocumentPin(Base):
 class DocumentChunk(Base):
     """A section-level slice of a document's extracted text.
 
-    Embedded individually in the `document_chunk_vectors` vec0 table for
-    passage-level retrieval — `id` here is that table's `chunk_id`. vec0
-    can't hold an FK, so the two tables are linked by convention (this id),
-    not a declared constraint; writers must keep them in lockstep.
+    `embedding` holds the passage-level vector for semantic retrieval
+    (pgvector, HNSW-indexed). It's a plain nullable column on this row — no
+    separate vector table, no id-convention linkage — so deleting the chunk
+    (which cascades from the document) drops the embedding with it.
     """
 
     __tablename__ = "document_chunks"
@@ -1075,6 +1106,9 @@ class DocumentChunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     ingest_date: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(AI_EMBED_DIM), nullable=True
     )
 
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")

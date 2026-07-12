@@ -6,7 +6,7 @@ Jinja template is pure rendering with no logic.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy.orm import Session, joinedload
@@ -327,7 +327,11 @@ class CaseGraphService:
         # issued_date ASC NULLS LAST, id ASC.
         all_timeline_docs = sorted(
             list(visible_docs) + list(external_doc_map.values()),
-            key=lambda d: (d.issued_date is None, d.issued_date or datetime.min, d.id),
+            key=lambda d: (
+                d.issued_date is None,
+                d.issued_date or datetime.min.replace(tzinfo=UTC),
+                d.id,
+            ),
         )
 
         # ------------------------------------------------------------------

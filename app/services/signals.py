@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import Case, Document
 from app.models.enums import CaseStatus, PipelineState, ProceedingStatus
 
@@ -87,7 +87,7 @@ def _get_case_clock_signals(db: Session) -> list[dict[str, Any]]:
 
 def _get_dormancy_signals(db: Session) -> list[dict[str, Any]]:
     signals = []
-    now = datetime.now()
+    now = now_utc()
 
     # Only check active cases
     active_cases = db.query(Case).filter(Case.status != CaseStatus.CLOSED).all()

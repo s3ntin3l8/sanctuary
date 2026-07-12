@@ -1,21 +1,14 @@
 import io
-import os
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import UploadFile
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
+from app.config import SessionLocal, engine
 from app.models.database import Base, Case
 from app.services.ingestion.service import ingest_file
-
-# Setup test DB
-DB_URL = "sqlite:///./test_verify.db"
-engine = create_engine(DB_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def setup_db():
@@ -83,10 +76,6 @@ async def test_normalization():
 
             db.close()
         # tmp_data and all its contents (TEST-001/, _TRIAGE/) are removed automatically
-
-    # test_verify.db lives outside the temp dir so clean it up explicitly
-    if os.path.exists("./test_verify.db"):
-        os.remove("./test_verify.db")
 
 
 if __name__ == "__main__":

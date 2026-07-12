@@ -1,10 +1,9 @@
 """Wave 2B: claim-level embeddings for semantic dedup and pre-extraction
 context. Mirrors the document-level pipeline in app/services/embeddings.py.
 
-The claim_vectors vec0 virtual table holds one row per claim; embeddings
-are written on insert and rewritten on text update. Similarity queries
-power the dedup judge's top-K nearest lookup and the extractor's
-pre-extraction context.
+Claim.embedding (pgvector, HNSW-indexed) holds one vector per claim; it's
+written on insert and rewritten on text update. Similarity queries power the
+dedup judge's top-K nearest lookup and the extractor's pre-extraction context.
 """
 
 from __future__ import annotations
@@ -23,13 +22,6 @@ from app.services.intelligence._ai_call import _parse_litellm_error_summary
 from app.services.model_gate import model_gate
 
 logger = logging.getLogger(__name__)
-
-
-def _serialize(vec: list[float]) -> bytes:
-    """sqlite-vec f32 blob format."""
-    from sqlite_vec import serialize_float32
-
-    return serialize_float32(vec)
 
 
 async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
@@ -78,8 +70,8 @@ async def embed_claim_text(claim_text: str, db: Session) -> list[float] | None:
 
 
 async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
-    """Embed `claim_id`'s text and write to claim_vectors. Idempotent
-    (DELETE + INSERT — vec0 doesn't honor ON CONFLICT).
+    """Embed `claim_id`'s text and store it on the claim row. Idempotent —
+    overwrites whatever embedding was there before.
 
     Records failure on the Claim via embedding_failed_at so the system has
     persistent signal — a periodic maintenance task can find these and
@@ -93,17 +85,7 @@ async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
         claim.embedding_failed_at = datetime.now(UTC)
         db.commit()
         return False
-    blob = _serialize(embedding)
-    db.execute(
-        text("DELETE FROM claim_vectors WHERE claim_id = :cid"),
-        {"cid": claim_id},
-    )
-    db.execute(
-        text(
-            "INSERT INTO claim_vectors(claim_id, embedding) VALUES (:cid, :embedding)"
-        ),
-        {"cid": claim_id, "embedding": blob},
-    )
+    claim.embedding = embedding
     claim.embedding_failed_at = None
     db.commit()
     return True
@@ -128,28 +110,27 @@ async def nearest_claims(
     embedding = await embed_claim_text(query_text, db)
     if embedding is None:
         return []
-    blob = _serialize(embedding)
 
-    # vec0 KNN is fastest as a standalone MATCH query, then we filter the
-    # results in Python (or via a follow-up join). We over-fetch a bit for
-    # case-scoping headroom.
+    # pgvector KNN, then filter in Python (or via a follow-up join). We
+    # over-fetch a bit for case-scoping headroom.
     fetch_k = k * 4 if case_id else k
-    rows = db.execute(
-        text(
-            "SELECT claim_id, distance FROM claim_vectors "
-            "WHERE embedding MATCH :blob AND k = :k"
-        ),
-        {"blob": blob, "k": fetch_k},
-    ).fetchall()
+    distance = Claim.embedding.l2_distance(embedding)
+    rows = (
+        db.query(Claim.id, distance.label("distance"))
+        .filter(Claim.embedding.isnot(None))
+        .order_by(distance)
+        .limit(fetch_k)
+        .all()
+    )
 
     if exclude_claim_id is not None:
-        rows = [r for r in rows if r[0] != exclude_claim_id]
+        rows = [r for r in rows if r.id != exclude_claim_id]
 
     if not case_id:
-        return [(r[0], r[1]) for r in rows[:k]]
+        return [(r.id, r.distance) for r in rows[:k]]
 
     # Filter to claims with evidence in this case.
-    candidate_ids = [r[0] for r in rows]
+    candidate_ids = [r.id for r in rows]
     if not candidate_ids:
         return []
     in_case_ids = {
@@ -165,7 +146,7 @@ async def nearest_claims(
             {"ids": candidate_ids, "cid": case_id},
         ).fetchall()
     }
-    return [(cid, dist) for cid, dist in rows if cid in in_case_ids][:k]
+    return [(r.id, r.distance) for r in rows if r.id in in_case_ids][:k]
 
 
 def _expanding_int_list(name: str):

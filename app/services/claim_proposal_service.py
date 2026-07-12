@@ -5,7 +5,7 @@ Two flavors:
 - `confirm_merge(proposal_id)` — collapses `new_claim` into `existing_claim`.
   All ClaimEvidence rows pointing at the new claim are repointed to the
   existing claim (deduped against same-document/same-role rows). The
-  new claim is then deleted; its claim_vectors row goes with it.
+  new claim is then deleted; its embedding goes with it (same row).
 
 - `confirm_evidence(proposal_id)` — writes the proposed ClaimEvidence
   row, then runs the same status-transition logic that used to live in
@@ -21,10 +21,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.timezone import naive_utc_now
+from app.core.timezone import now_utc
 from app.models.database import (
     Claim,
     ClaimEvidence,
@@ -41,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return naive_utc_now()
+    return now_utc()
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +82,7 @@ def confirm_merge(proposal_id: int, db: Session) -> ClaimMergeProposal | None:
             ev.claim_id = existing.id
             existing_keys.add((ev.document_id, ev.role))
 
-    # Drop the new claim's vector blob (cascade FK only on integer keys).
-    db.execute(
-        text("DELETE FROM claim_vectors WHERE claim_id = :cid"),
-        {"cid": new_claim.id},
-    )
+    # embedding lives on the claim row itself, so deleting it drops the vector too.
     db.delete(new_claim)
 
     prop.status = ProposalStatus.CONFIRMED

@@ -1,11 +1,11 @@
 """Pin: FastAPI lifespan must skip production-DB side effects under pytest.
 
-The lifespan calls `command.upgrade(alembic_cfg, "head")` against the URL hard-
-coded in `alembic.ini` (`sqlite:///data/sanctuary.db`). When the dev server is
-running, WAL locks make pytest's TestClient either hang or fail with
-"attempt to write a readonly database". The conftest already creates the
-test schema via `Base.metadata.create_all(bind=test_engine)`, so running
-migrations from the lifespan during tests is redundant *and* dangerous.
+The lifespan calls `command.upgrade(alembic_cfg, "head")` against the dev
+DATABASE_URL. When the dev server is running concurrently, this would race
+its connections. The conftest already creates the test schema via
+`Base.metadata.create_all(bind=test_engine)` on a separate test database, so
+running migrations from the lifespan during tests is redundant *and*
+dangerous.
 
 Guard: skip migrations + seeding + recovery when `PYTEST_CURRENT_TEST` is set
 (pytest sets this automatically per test).
@@ -63,7 +63,7 @@ def test_lifespan_runs_migrations_when_not_in_tests(monkeypatch):
         lambda db, **kwargs: {},
     )
     monkeypatch.setattr(
-        "app.services.embeddings.verify_vec0_dim", lambda db, dim: (True, dim)
+        "app.services.embeddings.verify_embedding_dim", lambda db, dim: (True, dim)
     )
 
     async def run():

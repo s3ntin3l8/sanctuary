@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import ActionItem
 from app.models.enums import ActionItemStatus, ActionItemType
 from app.repositories.base import BaseRepository
@@ -55,7 +56,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
         action_type: ActionItemType | None = None,
     ) -> Sequence[ActionItem]:
         """Open action items due in the next `days` days."""
-        now = datetime.now()
+        now = now_utc()
         future = now + timedelta(days=days)
         q = (
             self.db.query(ActionItem)
@@ -71,7 +72,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
         self,
         action_type: ActionItemType | None = None,
     ) -> Sequence[ActionItem]:
-        now = datetime.now()
+        now = now_utc()
         q = (
             self.db.query(ActionItem)
             .filter(ActionItem.status == ActionItemStatus.OPEN)
@@ -143,7 +144,7 @@ class ActionItemRepository(BaseRepository[ActionItem]):
             proceeding_id=proceeding_id,
             source_document_id=source_document_id,
             status=ActionItemStatus.OPEN,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def mark_completed(self, item_id: int) -> ActionItem | None:
