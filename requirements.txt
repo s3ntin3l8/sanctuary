@@ -64,7 +64,7 @@ networkx==3.6.1
 numpy==2.5.1
 ocrmac==1.0.1; sys_platform == 'darwin'
 omegaconf==2.3.1
-opencv-python==4.13.0.92
+opencv-python==5.0.0.93
 openpyxl==3.1.5
 packaging==26.2
 pandas==3.0.3
