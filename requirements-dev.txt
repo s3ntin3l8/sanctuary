@@ -23,6 +23,6 @@ testcontainers[postgres]==4.14.2
 # CI-only checks: the standardized ci-python.yml reusable workflow activates
 # mypy/detect-secrets/pip-audit steps by presence (`command -v` guards). Without
 # these, those steps silently no-op instead of failing loudly.
-mypy==2.2.0
+mypy==2.3.0
 pip-audit==2.10.1
 detect-secrets==1.5.0
