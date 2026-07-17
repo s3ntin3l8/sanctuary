@@ -14,7 +14,7 @@ alembic==1.18.5
 aiofiles==25.1.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.14.1
+anyio==4.14.2
 attrs==26.1.0
 beautifulsoup4==4.15.0
 certifi==2026.6.17
@@ -35,7 +35,7 @@ exceptiongroup==1.3.1
 # Faker + polyfactory are transitive deps of docling[standard] (polyfactory is
 # behind docling-slim's `standard` extra; Faker is polyfactory's dep). Pinned
 # here to keep the resolve deterministic — not directly imported by this app.
-Faker==40.28.1
+Faker==40.31.0
 fastapi==0.139.0
 filelock==3.29.7
 filetype==1.2.0
@@ -94,7 +94,7 @@ onnxruntime==1.27.0
 rapidocr==3.9.1
 slowapi==0.1.10
 referencing==0.37.0
-regex==2026.6.28
+regex==2026.7.10
 requests==2.34.2
 rich==15.0.0
 rpds-py==2026.6.3
