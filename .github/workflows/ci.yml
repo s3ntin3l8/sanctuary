@@ -62,7 +62,7 @@ jobs:
       # killed (including a request's own unhandled-exception traceback).
       PYTHONUNBUFFERED: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
