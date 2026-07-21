@@ -17,7 +17,7 @@ pytest-xdist==3.8.0
 playwright==1.61.0
 pytest-playwright==0.8.0
 pre-commit==4.6.0
-ruff==0.15.21
+ruff==0.15.22
 testcontainers[postgres]==4.14.2
 
 # CI-only checks: the standardized ci-python.yml reusable workflow activates
