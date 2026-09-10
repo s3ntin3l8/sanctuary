@@ -148,27 +148,30 @@ indexes: ix_user_reactions_document (document_id)
 
 ```python
 class ClaimType(StrEnum):
-    FACTUAL   = "factual"
-    LEGAL     = "legal"
+    FACTUAL = "factual"
+    LEGAL = "legal"
     PROCEDURAL = "procedural"
 
+
 class ClaimStatus(StrEnum):
-    ASSERTED   = "asserted"    # AI extracted; no known contest
-    CONTESTED  = "contested"   # AI found evidence contesting it
-    REFUTED    = "refuted"     # AI found direct refutation
-    ESTABLISHED = "established" # User confirmed as settled
+    ASSERTED = "asserted"  # AI extracted; no known contest
+    CONTESTED = "contested"  # AI found evidence contesting it
+    REFUTED = "refuted"  # AI found direct refutation
+    ESTABLISHED = "established"  # User confirmed as settled
+
 
 class ClaimEvidenceRole(StrEnum):
-    SUPPORTS       = "supports"        # ✓
-    CONTESTS       = "contests"        # ⚠
-    REFUTES        = "refutes"         # ✕
+    SUPPORTS = "supports"  # ✓
+    CONTESTS = "contests"  # ⚠
+    REFUTES = "refutes"  # ✕
     CITES_AS_PROOF = "cites_as_proof"  # 📎
 
+
 class UserReactionType(StrEnum):
-    LIES       = "lies"        # 🚩
-    TRUE       = "true"        # ✅
-    NEEDS_PROOF = "needs_proof" # 🔍
-    PRECEDENT  = "precedent"   # ⚖️
+    LIES = "lies"  # 🚩
+    TRUE = "true"  # ✅
+    NEEDS_PROOF = "needs_proof"  # 🔍
+    PRECEDENT = "precedent"  # ⚖️
 ```
 
 ---
@@ -253,25 +256,28 @@ Returns `TruthMapView(case_id, filter, groups: list[ClaimGroup], open_claim_coun
 ```python
 @dataclass
 class EvidenceRow:
-    evidence:  ClaimEvidence
-    document:  Document
-    reactions: list[UserReaction]   # doc-scoped reactions on the evidence document
+    evidence: ClaimEvidence
+    document: Document
+    reactions: list[UserReaction]  # doc-scoped reactions on the evidence document
+
 
 @dataclass
 class ClaimRow:
-    claim:    Claim
+    claim: Claim
     evidence: list[EvidenceRow]
+
 
 @dataclass
 class ClaimGroup:
     status: ClaimStatus
     claims: list[ClaimRow]
 
+
 @dataclass
 class TruthMapView:
-    case_id:          str
-    filter:           TruthMapFilter    # "open" | "established" | "refuted" | "all"
-    groups:           list[ClaimGroup]
+    case_id: str
+    filter: TruthMapFilter  # "open" | "established" | "refuted" | "all"
+    groups: list[ClaimGroup]
     open_claim_count: int
 ```
 
