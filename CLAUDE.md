@@ -46,7 +46,9 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 Embeddings live as `pgvector` columns directly on their owning tables — no separate vector table:
 
 ```python
-embedding: Mapped[list[float] | None] = mapped_column(Vector(AI_EMBED_DIM), nullable=True)
+embedding: Mapped[list[float] | None] = mapped_column(
+    Vector(AI_EMBED_DIM), nullable=True
+)
 ```
 
 on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embedding` (semantic claim dedup). Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text) and baked into the column at migration time; changing it requires clearing the column and resizing (`ALTER TABLE ... ALTER COLUMN embedding TYPE vector(N)`, see Settings → AI → Rebuild Index). KNN queries use pgvector's `<->` (L2) operator via SQLAlchemy's `Column.l2_distance(vec)`, HNSW-indexed. Search merges vector results with `ilike` results in `app/services/search_service.py`.

@@ -296,7 +296,9 @@ Embeddings live as `pgvector` columns directly on `document_chunks.embedding` an
 `claims.embedding` — no separate vector table:
 
 ```python
-embedding: Mapped[list[float] | None] = mapped_column(Vector(AI_EMBED_DIM), nullable=True)
+embedding: Mapped[list[float] | None] = mapped_column(
+    Vector(AI_EMBED_DIM), nullable=True
+)
 ```
 
 Dimension is set by `AI_EMBED_DIM` (default 768) and baked into the column at migration

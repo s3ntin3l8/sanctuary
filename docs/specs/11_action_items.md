@@ -193,7 +193,15 @@ The alert string is injected into the AI Brief context and surfaces in the case 
 
 Case Clock signals use the same `Signal` dataclass as other dashboard signals:
 ```python
-{"id": ..., "kind": "case_clock", "severity": "info", "title": "...", "detail": "...", "action": None, "link": "..."}
+{
+    "id": ...,
+    "kind": "case_clock",
+    "severity": "info",
+    "title": "...",
+    "detail": "...",
+    "action": None,
+    "link": "...",
+}
 ```
 
 Until the signal list is populated, the Case Clock section in the right-column panel is empty (renders nothing due to the `{% if signals %}` guard).
