@@ -95,17 +95,17 @@ ADV-024-A  Musterklage GmbH vs. XY   [AG Hamburg ▾]   [critical] [significant+
 ```python
 @dataclass
 class GraphPayload:
-    lanes:        list[dict]   # Four swim-lane definitions: key, label, color
-    nodes:        list[dict]   # Document nodes: position, styling, metadata
-    bundles:      list[dict]   # Court-relay bundle headers + collapsed children
-    edges:        list[dict]   # Bezier path data per relationship
-    proof_badges: dict         # doc_id → ATTACHES_AS_PROOF count
-    svg_width:    int          # Viewport width (lanes × 225 px)
-    svg_height:   int          # Viewport height (rows × 80 px)
-    node_counts:  dict         # Per-tier counts (critical/significant/informational/admin_standalone/admin_relay)
-    filter:       str          # Active filter: "critical" | "significant+" | "all"
-    node_count:   int          # Total visible nodes
-    edge_count:   int          # Total visible edges (used for Timeline auto-fallback)
+    lanes: list[dict]  # Four swim-lane definitions: key, label, color
+    nodes: list[dict]  # Document nodes: position, styling, metadata
+    bundles: list[dict]  # Court-relay bundle headers + collapsed children
+    edges: list[dict]  # Bezier path data per relationship
+    proof_badges: dict  # doc_id → ATTACHES_AS_PROOF count
+    svg_width: int  # Viewport width (lanes × 225 px)
+    svg_height: int  # Viewport height (rows × 80 px)
+    node_counts: dict  # Per-tier counts (critical/significant/informational/admin_standalone/admin_relay)
+    filter: str  # Active filter: "critical" | "significant+" | "all"
+    node_count: int  # Total visible nodes
+    edge_count: int  # Total visible edges (used for Timeline auto-fallback)
 ```
 
 `edge_count` doubles as the Timeline fallback signal: when `edge_count == 0` on first visit and no persisted view preference exists, `case_dashboard_service.py` defaults to `active_view = 'timeline'`.
