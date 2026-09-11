@@ -86,3 +86,9 @@ benchmarks/*/outputs/
 # Local deployment overlay (host-specific; not committed)
 docker-compose.override.yaml
 docker-compose.override.yml
+
+# Developer worktrees (per AGENTS.md make wt convention)
+.wt/
+
+# Agent workspace / superpowers plans scratch
+docs/superpowers/
