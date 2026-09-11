@@ -31,15 +31,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "transformers"
         update-types: ["version-update:semver-major"]
-      # Transitive deps capped by held frameworks: docling pins typer<0.22 and
-      # transformers pins tokenizers<=0.23.0 — let the frameworks drive them.
+      # Transitive deps capped by held frameworks: docling-core pins
+      # typer<0.25.0 and transformers pins tokenizers<=0.23.0 — let the
+      # frameworks drive them. (huggingface-hub's upper bound now flows
+      # through transformers 5.x's <2.0 cap, so no explicit ignore needed.)
       - dependency-name: "typer"
       - dependency-name: "tokenizers"
-      # transformers (4.57.x) pins huggingface-hub<1.0 and docling-core pins
-      # semchunk<4.0.0 — their majors can't install while those frameworks are
-      # held, so let the frameworks drive them (minor/patch still flow).
-      - dependency-name: "huggingface-hub"
-        update-types: ["version-update:semver-major"]
+      # docling-core's chunking extras pin semchunk<4.0.0 — same pattern.
       - dependency-name: "semchunk"
         update-types: ["version-update:semver-major"]
       # docling is the ingestion engine — upgrade the family in lockstep, by hand.
