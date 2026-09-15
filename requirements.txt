@@ -126,7 +126,7 @@ typing_extensions==4.16.0
 tzdata==2026.3
 urllib3==2.7.0
 uvicorn==0.52.4
-websockets==16.1
+websockets==17.1
 xlsxwriter==3.2.9
 psycopg[binary]==3.3.5
 pgvector==0.5.0
