@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.timezone import now_utc
 from app.models.database import Claim, ClaimEvidence, Document
 from app.models.enums import (
     ClaimEvidenceRole,
@@ -58,7 +59,14 @@ def _make_claim(
 # stale-cleanup branch is actually entered (otherwise extract() short-circuits
 # with reason="recent_extraction" — which is the intended behaviour for
 # dispatch-race scenarios but defeats tests that want to exercise cleanup).
-_PRE_DEBOUNCE = datetime.now() - timedelta(hours=1)
+#
+# Must be tz-aware UTC, matching claim_extractor.extract()'s cutoff
+# (now_utc() - 300s, claim_extractor.py:346). A naive datetime.now() here
+# is local wall-clock time; on a UTC+2 host that lands ~1h in the *future*
+# relative to UTC, which stays inside the debounce window instead of past
+# it and silently defeats the backdating (verified in CEST; passes on UTC
+# CI runners where local time equals UTC).
+_PRE_DEBOUNCE = now_utc() - timedelta(hours=1)
 
 
 @pytest.fixture
