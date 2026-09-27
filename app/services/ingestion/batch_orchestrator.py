@@ -260,18 +260,33 @@ def ingest_raw_email(
         )
 
         if existing_doc:
+            # Leave it where it is: don't move it into this batch and don't
+            # re-run its pipeline. This is the same PDF already ingested
+            # (from an earlier email, forward, or reply-with-attachment) —
+            # moving it here would tear it out of whatever batch/case it may
+            # already be triaged or confirmed into, and re-dispatching would
+            # burn a full re-extraction for content already extracted.
             logger.info(
-                "Batch #%d: attachment %r is a duplicate of doc #%d — re-linking",
+                "Batch #%d: attachment %r is a duplicate of doc #%d already "
+                "in batch #%s — leaving it in place, not re-processing",
                 batch.id,
                 att["filename"],
                 existing_doc.id,
+                existing_doc.ingest_batch_id,
             )
-            existing_doc.ingest_batch_id = batch.id
-            docs_to_process.append(existing_doc)
             continue
 
         safe_name = _sanitize_filename(att["filename"])
         att_path = case_dir / f"{batch.id}_{safe_name}"
+        if att_path.exists():
+            # Two attachments in the same email sharing a filename would
+            # otherwise silently overwrite each other on disk — give the
+            # second (and any further) one a disambiguating suffix.
+            stem, suffix = att_path.stem, att_path.suffix
+            n = 2
+            while att_path.exists():
+                att_path = case_dir / f"{stem}_{n}{suffix}"
+                n += 1
         with open(att_path, "wb") as f:
             f.write(att["content"])
 

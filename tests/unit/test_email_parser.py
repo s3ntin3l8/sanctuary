@@ -157,6 +157,88 @@ def test_parse_rfc822_attachment_with_no_filename():
     assert result["attachments"][0]["filename"] is None
 
 
+# --- Content-ID vs. attachment disposition ---
+
+
+def test_parse_rfc822_content_id_without_attachment_disposition_is_inline():
+    """A Content-ID part with no attachment disposition (a cid:-referenced
+    signature image, no filename) stays inline and out of the attachment
+    list — unchanged baseline behaviour."""
+    msg = MIMEMultipart("related")
+    msg["From"] = "sig@example.com"
+    msg["Message-ID"] = "<inline-001@mail>"
+    msg.attach(MIMEText("See my signature below.", "plain"))
+    part = MIMEApplication(b"\x89PNG fake logo bytes")
+    part["Content-ID"] = "<logo123>"
+    msg.attach(part)
+    result = parse_rfc822(msg.as_bytes())
+    assert len(result["attachments"]) == 0
+    assert "See my signature" in result["body"]
+
+
+def test_parse_rfc822_content_id_with_explicit_attachment_disposition_kept():
+    """A part with both a Content-ID *and* an explicit `attachment`
+    disposition (some clients, e.g. Apple Mail, do this for ordinary
+    attachments) must not be silently dropped."""
+    pdf_bytes = b"%PDF-1.4 real attachment despite Content-ID"
+    msg = MIMEMultipart()
+    msg["From"] = "applemail@example.com"
+    msg["Message-ID"] = "<cid-attach-001@mail>"
+    msg.attach(MIMEText("See attached.", "plain"))
+    part = MIMEApplication(pdf_bytes, Name="Klageschrift.pdf")
+    part["Content-Disposition"] = 'attachment; filename="Klageschrift.pdf"'
+    part["Content-ID"] = "<F0A1B2@apple>"
+    msg.attach(part)
+    result = parse_rfc822(msg.as_bytes())
+    assert len(result["attachments"]) == 1
+    assert result["attachments"][0]["filename"] == "Klageschrift.pdf"
+    assert result["attachments"][0]["content"] == pdf_bytes
+
+
+# --- HTML-only body fallback ---
+
+
+def test_parse_rfc822_html_only_multipart_falls_back_to_converted_text():
+    """No text/plain part anywhere (HTML-only email) — the text/html part
+    is converted to text instead of leaving body empty, which would
+    otherwise produce a 0-document triage batch for a no-attachment email."""
+    msg = MIMEMultipart("alternative")
+    msg["From"] = "html@example.com"
+    msg["Message-ID"] = "<html-001@mail>"
+    msg.attach(MIMEText("<p>Wichtiger <b>Hinweis</b> zum Verfahren.</p>", "html"))
+    result = parse_rfc822(msg.as_bytes())
+    assert result["body"].strip()
+    assert "Wichtiger" in result["body"]
+    assert "Hinweis" in result["body"]
+
+
+def test_parse_rfc822_html_only_non_multipart_falls_back():
+    """A bare (non-multipart) text/html message, no wrapper at all."""
+    raw = (
+        b"From: html2@example.com\n"
+        b"Subject: Plain HTML\n"
+        b"Message-ID: <html-002@mail>\n"
+        b"Content-Type: text/html\n"
+        b"\n"
+        b"<html><body>Bitte <strong>antworten</strong> Sie zeitnah.</body></html>"
+    )
+    result = parse_rfc822(raw)
+    assert "antworten" in result["body"]
+
+
+def test_parse_rfc822_prefers_text_plain_over_html_when_both_present():
+    """multipart/alternative with both parts — text/plain still wins, HTML
+    is only a fallback when there's no text/plain at all."""
+    msg = MIMEMultipart("alternative")
+    msg["From"] = "both@example.com"
+    msg["Message-ID"] = "<both-001@mail>"
+    msg.attach(MIMEText("Plain text version.", "plain"))
+    msg.attach(MIMEText("<p>HTML version.</p>", "html"))
+    result = parse_rfc822(msg.as_bytes())
+    assert "Plain text version." in result["body"]
+    assert "HTML version" not in result["body"]
+
+
 # --- parse_email_date fallbacks ---
 
 
