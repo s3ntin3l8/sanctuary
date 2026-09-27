@@ -1,6 +1,7 @@
 import logging
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -136,6 +137,40 @@ def analyze_batch_task(self, batch_id: int):
             db.close()
         logger.info(
             "Batch #%d: batch_analysis failed — still enqueueing enrich for %d doc(s)",
+            batch_id,
+            len(doc_ids),
+        )
+        for doc_id in doc_ids:
+            _enrich_if_pending(doc_id)
+        return {"status": "failed", "batch_id": batch_id, "error": str(e)}
+    except SoftTimeLimitExceeded as e:
+        # An Exception subclass — must come before the generic branch below
+        # or it would be treated as a retryable system error, racing
+        # self.retry()'s countdown against the imminent hard kill.
+        logger.error("Batch #%d: soft time limit exceeded: %s", batch_id, e)
+        from app.config import SessionLocal
+
+        db = SessionLocal()
+        try:
+            from app.models.database import IngestBatch
+
+            batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
+            if batch:
+                batch.analysis_queued_at = None
+
+            for doc_id in doc_ids:
+                mark_failed(
+                    doc_id,
+                    PipelineStage.BATCH_ANALYSIS,
+                    db,
+                    error=f"soft time limit exceeded: {e}",
+                )
+            db.commit()
+        finally:
+            db.close()
+        logger.info(
+            "Batch #%d: batch_analysis failed (soft time limit) — still "
+            "enqueueing enrich for %d doc(s)",
             batch_id,
             len(doc_ids),
         )

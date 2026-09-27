@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from celery.exceptions import Retry
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 
 from app.tasks.generate_case_brief import (
     generate_case_brief_task,
@@ -124,6 +124,33 @@ def test_generate_case_brief_success_does_not_mark_failed(db_session, sample_cas
 
 
 @pytest.mark.unit
+def test_generate_case_brief_soft_time_limit_marks_failed_without_retry(
+    db_session, sample_case
+):
+    """PR3a: unlike every other exception branch, a soft time limit must not
+    attempt self.retry() at all — it means "wrap up now," not "try again."""
+    with (
+        patch(
+            "app.services.intelligence.case_brief_generator.generate",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch(
+            "app.services.intelligence.case_brief_generator.mark_brief_failed"
+        ) as mock_mark_failed,
+        patch("app.tasks.generate_case_brief._release_brief_claim"),
+        patch.object(generate_case_brief_task, "retry") as mock_retry,
+    ):
+        result = generate_case_brief_task.run(sample_case.id)
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_mark_failed.assert_called_once_with(
+        sample_case.id,
+        f"soft time limit exceeded: {SoftTimeLimitExceeded('simulated')}",
+    )
+
+
+@pytest.mark.unit
 def test_refresh_case_brief_retries_once_on_timeout_then_marks_failed(
     db_session, sample_case
 ):
@@ -195,6 +222,31 @@ def test_refresh_case_brief_retries_generic_exception_then_fails(
 
     assert result["status"] == "failed"
     mock_mark_failed.assert_called_once_with(sample_case.id, "boom")
+
+
+@pytest.mark.unit
+def test_refresh_case_brief_soft_time_limit_marks_failed_without_retry(
+    db_session, sample_case
+):
+    with (
+        patch(
+            "app.services.intelligence.case_brief_generator.generate",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch(
+            "app.services.intelligence.case_brief_generator.mark_brief_failed"
+        ) as mock_mark_failed,
+        patch("app.tasks.generate_case_brief._release_brief_claim"),
+        patch.object(refresh_case_brief_task, "retry") as mock_retry,
+    ):
+        result = refresh_case_brief_task.run(sample_case.id)
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_mark_failed.assert_called_once_with(
+        sample_case.id,
+        f"soft time limit exceeded: {SoftTimeLimitExceeded('simulated')}",
+    )
 
 
 @pytest.mark.unit

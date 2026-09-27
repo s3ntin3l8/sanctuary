@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Generator
@@ -188,6 +189,41 @@ def _get_acquire_script(client: redis.Redis) -> redis.commands.core.Script:
     return _acquire_script
 
 
+# Heartbeat: without this, a held gate's sentinel TTL (_SENTINEL_TTL_SECONDS,
+# ~AI_READ_TIMEOUT + 120s) can lapse mid-call on a document whose actual work
+# — e.g. many chandra OCR pages, each waiting its own turn on ocr_slot() —
+# legitimately runs far longer than a single HTTP call's timeout. Once the
+# sentinel expires, a waiting qwen acquirer is free to steal the gate out
+# from under the still-running chandra call. Refresh at most every TTL/3 so
+# at least two heartbeats land before expiry even if one is delayed.
+_HEARTBEAT_INTERVAL_DIVISOR = 3
+
+
+def _run_heartbeat(
+    sentinel_key: str,
+    family: str,
+    label: str | None,
+    stop: threading.Event,
+    interval: float,
+) -> None:
+    """Background thread body: periodically refresh sentinel_key's TTL until
+    `stop` is set. The sentinel key is a per-call UUID (see model_gate), so
+    refreshing our own key has no ownership race with any other call."""
+    while not stop.wait(interval):
+        try:
+            refreshed = _get_client().expire(sentinel_key, _SENTINEL_TTL_SECONDS)
+            if not refreshed:
+                logger.warning(
+                    "model_gate: heartbeat found %s's %s sentinel already "
+                    "expired — it may have lost the gate mid-call",
+                    label or "<unlabeled>",
+                    family,
+                )
+                return
+        except (redis.RedisError, OSError) as exc:
+            _maybe_warn(exc)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -228,6 +264,8 @@ def model_gate(
     call_id = uuid.uuid4().hex
     sentinel_key = _CALL_KEY_PREFIX + call_id
     acquired = False
+    heartbeat_stop: threading.Event | None = None
+    heartbeat_thread: threading.Thread | None = None
 
     deadline = time.monotonic() + timeout
     backoff = _BACKOFF_INITIAL
@@ -317,6 +355,20 @@ def model_gate(
                         family,
                         waited,
                     )
+                heartbeat_stop = threading.Event()
+                heartbeat_thread = threading.Thread(
+                    target=_run_heartbeat,
+                    args=(
+                        sentinel_key,
+                        family,
+                        label,
+                        heartbeat_stop,
+                        _SENTINEL_TTL_SECONDS / _HEARTBEAT_INTERVAL_DIVISOR,
+                    ),
+                    daemon=True,
+                    name=f"model_gate-heartbeat-{family}",
+                )
+                heartbeat_thread.start()
                 yield sentinel_key
                 return
 
@@ -339,6 +391,10 @@ def model_gate(
             time.sleep(min(backoff, max(0.0, deadline - now)))
             backoff = min(backoff * _BACKOFF_GROWTH, _BACKOFF_MAX)
     finally:
+        if heartbeat_stop is not None:
+            heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=2.0)
         if acquired:
             try:
                 _get_client().delete(sentinel_key)

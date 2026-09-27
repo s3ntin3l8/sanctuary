@@ -794,6 +794,194 @@ def test_recover_orphaned_resets_stale_running_when_workers_idle(db_session):
     assert result["stages_reset"] == 1
 
 
+@pytest.mark.unit
+def test_recover_orphaned_resets_running_past_provable_cutoff_despite_active_workers(
+    db_session,
+):
+    """PR3a: a RUNNING row older than task_time_limit + grace is provably
+    dead — Celery would already have hard-killed whoever held it — so it
+    must be reset even when the workers_recently_active probe would
+    otherwise protect it forever. Reproduces the gap where a hard-killed
+    worker's stage stayed RUNNING indefinitely as long as anything else
+    in the system kept making progress."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.config import CELERY_TASK_TIME_LIMIT
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R8", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Doc A: RUNNING far past task_time_limit + grace — provably orphaned.
+    dead = Document(
+        title="hard-killed.pdf",
+        content="x",
+        case_id="_TR_R8",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(dead)
+    db_session.flush()
+    initialize(dead, batched=False, db=db_session)
+    dead.pipeline_state = "running"
+    long_dead = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        seconds=CELERY_TASK_TIME_LIMIT + 600
+    )
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, started_at=:started "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "started": long_dead,
+            "id": dead.id,
+            "stage": PipelineStage.ENRICH.value,
+        },
+    )
+
+    # Doc B: proves workers are alive (recent completion) — would normally
+    # block the heuristic gate from resetting anything.
+    alive = Document(
+        title="recently-active.pdf",
+        content="x",
+        case_id="_TR_R8",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(alive)
+    db_session.flush()
+    initialize(alive, batched=False, db=db_session)
+    alive.pipeline_state = "partial"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages "
+            "SET status=:status, completed_at=:done "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "done": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            "id": alive.id,
+            "stage": PipelineStage.BATCH_ANALYSIS.value,
+        },
+    )
+    db_session.expire(dead, ["stage_rows"])
+    db_session.expire(alive, ["stage_rows"])
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    # The provably-dead stage must reset despite the active-workers probe.
+    assert result["docs_reset"] == 1
+    assert result["stages_reset"] == 1
+
+    db_session.refresh(dead)
+    rec = stages_dict(dead)[PipelineStage.ENRICH.value]
+    assert rec["status"] == StageStatus.PENDING.value
+
+
+@pytest.mark.unit
+def test_recover_orphaned_resets_retrying_past_lost_retry_cutoff_despite_active_workers(
+    db_session,
+):
+    """PR3a: a RETRYING row whose own next_at promise is more than the grace
+    period in the past means the scheduled retry dispatch was lost — this is
+    provable independent of task_time_limit or global activity, and must
+    reset even when other workers are actively making progress."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    case = Case(
+        id="_TR_R9", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Doc A: RETRYING with next_at long past — the retry dispatch was lost.
+    lost = Document(
+        title="lost-retry.pdf",
+        content="x",
+        case_id="_TR_R9",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(lost)
+    db_session.flush()
+    initialize(lost, batched=False, db=db_session)
+    lost.pipeline_state = "running"
+    long_past = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=20)
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, error=:err, "
+            "attempt=:att, max_attempts=:max, next_at=:nxt "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RETRYING.value,
+            "err": "boom",
+            "att": 2,
+            "max": 3,
+            "nxt": long_past,
+            "id": lost.id,
+            "stage": PipelineStage.EXTRACT.value,
+        },
+    )
+
+    # Doc B: proves workers are alive.
+    alive = Document(
+        title="recently-active.pdf",
+        content="x",
+        case_id="_TR_R9",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(alive)
+    db_session.flush()
+    initialize(alive, batched=False, db=db_session)
+    alive.pipeline_state = "partial"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages "
+            "SET status=:status, completed_at=:done "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "done": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            "id": alive.id,
+            "stage": PipelineStage.BATCH_ANALYSIS.value,
+        },
+    )
+    db_session.expire(lost, ["stage_rows"])
+    db_session.expire(alive, ["stage_rows"])
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert result["docs_reset"] == 1
+    assert result["stages_reset"] == 1
+
+    db_session.refresh(lost)
+    rec = stages_dict(lost)[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.PENDING.value
+    assert "next_at" not in rec
+
+
 # ---------------------------------------------------------------------------
 # recover_stuck_pending_dispatches — EAGER+reload hazard recovery
 # ---------------------------------------------------------------------------

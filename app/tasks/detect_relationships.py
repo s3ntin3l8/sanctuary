@@ -1,6 +1,7 @@
 import logging
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage, StageStatus
@@ -238,6 +239,28 @@ def detect_relationships_task(self, doc_id: int):
             db.close()
         logger.info(
             "Doc #%d: relationships failed — still dispatching claims",
+            doc_id,
+        )
+        _dispatch_claims_safely(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except SoftTimeLimitExceeded as e:
+        # An Exception subclass — must come before the generic branch below
+        # or it would be treated as a retryable system error, racing
+        # self.retry()'s countdown against the imminent hard kill.
+        logger.error(f"Doc {doc_id} relationships soft time limit exceeded: {e}")
+        db = get_db_session()
+        try:
+            mark_failed(
+                doc_id,
+                PipelineStage.RELATIONSHIPS,
+                db,
+                error=f"soft time limit exceeded: {e}",
+            )
+        finally:
+            db.close()
+        logger.info(
+            "Doc #%d: relationships failed (soft time limit) — still "
+            "dispatching claims",
             doc_id,
         )
         _dispatch_claims_safely(doc_id)
