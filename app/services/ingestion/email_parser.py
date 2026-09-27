@@ -4,6 +4,8 @@ import re
 from datetime import datetime
 from email.policy import default
 
+from markdownify import markdownify
+
 # Matches beA/court-email attachment manifest lines:
 # "SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt""
 _MANIFEST_LINE_RE = re.compile(
@@ -123,6 +125,7 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     msg = email.message_from_bytes(raw_bytes, policy=default)
 
     body = ""
+    html_body = ""
     attachments = []
 
     if msg.is_multipart():
@@ -130,11 +133,19 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
             if part.is_multipart():
                 continue
             content_disposition = str(part.get("Content-Disposition", ""))
+            disposition_type = content_disposition.split(";", 1)[0].strip().lower()
             filename = part.get_filename()
             content_id = part.get("Content-ID", "")
-            # Parts with a Content-ID are inline-embedded (logos, signatures) — skip.
-            is_attachment = not content_id and (
-                "attachment" in content_disposition
+            # A Content-ID usually means inline-embedded (logos, signatures
+            # referenced by the HTML body via cid:) — but only when the part
+            # doesn't *also* explicitly declare itself an attachment. Some
+            # mail clients (e.g. Apple Mail) set a Content-ID on ordinary
+            # attachments too; treating every Content-ID as inline silently
+            # drops those.
+            is_explicit_attachment = disposition_type == "attachment"
+            is_inline_by_content_id = bool(content_id) and not is_explicit_attachment
+            is_attachment = not is_inline_by_content_id and (
+                is_explicit_attachment
                 or (
                     filename
                     and part.get_content_maintype() not in ("text", "multipart")
@@ -147,17 +158,38 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
                         "content": part.get_payload(decode=True),
                     }
                 )
-            elif (
-                part.get_content_type() == "text/plain"
-                and "attachment" not in content_disposition
-            ):
+            elif part.get_content_type() == "text/plain" and not is_explicit_attachment:
                 payload = part.get_payload(decode=True)
                 if isinstance(payload, bytes) and payload:
                     body += payload.decode(errors="ignore")
+            elif part.get_content_type() == "text/html" and not is_explicit_attachment:
+                payload = part.get_payload(decode=True)
+                if isinstance(payload, bytes) and payload:
+                    html_body += payload.decode(errors="ignore")
     else:
         payload = msg.get_payload(decode=True)
         if isinstance(payload, bytes) and payload:
-            body = payload.decode(errors="ignore")
+            decoded = payload.decode(errors="ignore")
+            if msg.get_content_type() == "text/html":
+                html_body = decoded
+            else:
+                body = decoded
+
+    # No text/plain part anywhere (HTML-only email) — fall back to the HTML
+    # body converted to text instead of discarding it. Without this, an
+    # HTML-only email with no attachments produces a 0-document batch that
+    # never surfaces in triage (email_parser.py's body branch in
+    # batch_orchestrator.py only fires when body.strip() is truthy).
+    if not body.strip() and html_body.strip():
+        # escape_underscores=False: this text feeds plain-text regexes
+        # (_MANIFEST_LINE_RE, _BOILERPLATE_RE below) and is stored as the
+        # document body — it is never rendered as markdown, so markdownify's
+        # default backslash-escaping of underscores would corrupt attachment
+        # filenames (e.g. "SCHR_ LG_26.PDF" -> "SCHR\_ LG\_26.PDF") and break
+        # the manifest-to-document filename correlation in batch_orchestrator.
+        body = markdownify(
+            html_body, heading_style="ATX", strip=["div"], escape_underscores=False
+        )
 
     attachment_manifest = _parse_attachment_manifest(body) if body else []
     email_note = _extract_email_note(body) if body else ""
