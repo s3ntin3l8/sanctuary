@@ -25,6 +25,40 @@ PORT = int(os.getenv("PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 INGEST_CONVERSION_TIMEOUT = int(os.getenv("INGEST_CONVERSION_TIMEOUT", "600"))
 
+# Celery per-task deadlines. task_time_limit is the hard kill (SIGKILL —
+# no chance for the task to clean up); task_soft_time_limit raises
+# SoftTimeLimitExceeded inside the task first, giving it a chance to mark
+# its pipeline stage failed and return cleanly before the hard kill would
+# otherwise fire. The gap between them is deliberately generous: the
+# worst-case *legitimate* wait a pipeline task can hit is a ~30min
+# model_gate acquire plus a ~10min AI_READ_TIMEOUT call (~40min), so the
+# soft limit needs comfortable headroom above that, and the hard limit
+# needs headroom above the soft one for the cleanup itself to run.
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))  # 60 min
+CELERY_TASK_SOFT_TIME_LIMIT = int(
+    os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3000")
+)  # 50 min
+# Redis visibility_timeout: with task_acks_late=True, a message becomes
+# visible again (and gets redelivered to another worker) after this many
+# seconds even if the original task is still running. Must exceed
+# task_time_limit — otherwise a task running right up against its own hard
+# limit can be redelivered and run twice before the first copy is killed.
+CELERY_BROKER_VISIBILITY_TIMEOUT = int(
+    os.getenv("CELERY_BROKER_VISIBILITY_TIMEOUT", "4000")
+)
+assert (
+    CELERY_TASK_SOFT_TIME_LIMIT
+    < CELERY_TASK_TIME_LIMIT
+    < CELERY_BROKER_VISIBILITY_TIMEOUT
+), (
+    "Celery timeout misconfiguration: soft_time_limit "
+    f"({CELERY_TASK_SOFT_TIME_LIMIT}) must be < task_time_limit "
+    f"({CELERY_TASK_TIME_LIMIT}) must be < broker visibility_timeout "
+    f"({CELERY_BROKER_VISIBILITY_TIMEOUT}) — otherwise a task can be hard-"
+    "killed before it gets the soft-limit warning, or redelivered to "
+    "another worker while the original is still legitimately running."
+)
+
 AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 AI_SUMMARY_MODEL = os.getenv("AI_SUMMARY_MODEL", "qwen3.5:9b")
 AI_EMBED_MODEL = os.getenv("AI_EMBED_MODEL", "nomic-embed-text:v1.5")

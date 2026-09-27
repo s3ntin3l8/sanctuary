@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from celery.exceptions import Retry
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 
 from app.tasks.analyze_batch import analyze_batch_task
 
@@ -88,6 +88,45 @@ def test_analyze_batch_retries_once_on_timeout_then_enqueues_enrich(
     assert mock_enrich_if_pending.call_count == len(docs)
     mock_enrich_if_pending.assert_any_call(docs[0].id)
     mock_enrich_if_pending.assert_any_call(docs[1].id)
+
+
+@pytest.mark.unit
+def test_analyze_batch_soft_time_limit_fails_without_retry_and_enqueues_enrich(
+    db_session, batch_with_docs
+):
+    """PR3a: a soft time limit must not retry — it means "wrap up now" — but
+    must still mark every doc's BATCH_ANALYSIS failed, clear the batch's
+    analysis claim, and enqueue enrich per doc, exactly like the other
+    exhaustion branches above."""
+    batch, docs = batch_with_docs
+
+    with (
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.batch_analyzer.analyze",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch.object(analyze_batch_task, "retry") as mock_retry,
+        patch("app.tasks.analyze_batch._enrich_if_pending") as mock_enrich_if_pending,
+    ):
+        result = analyze_batch_task.run(batch.id)
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    assert mock_enrich_if_pending.call_count == len(docs)
+
+    db_session.expire_all()
+    from app.models.database import IngestBatch
+    from app.services.pipeline_status import stages_dict
+
+    for doc in docs:
+        db_session.refresh(doc)
+        assert stages_dict(doc)["batch_analysis"]["status"] == "failed"
+    refreshed_batch = (
+        db_session.query(IngestBatch).filter(IngestBatch.id == batch.id).first()
+    )
+    assert refreshed_batch.analysis_queued_at is None
 
 
 @pytest.mark.unit

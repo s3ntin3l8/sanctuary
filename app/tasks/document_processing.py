@@ -2,6 +2,7 @@ import logging
 import time
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.dependencies import get_db_session
@@ -160,6 +161,23 @@ def process_document_task(self, doc_id: int):
                 error_msg += f" ({e.detail})"
             mark_failed_with_cascade(doc_id, PipelineStage.EXTRACT, db, error=error_msg)
             logger.warning(f"Document {doc_id} ingestion failed: {e}")
+            _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
+            return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+        except SoftTimeLimitExceeded as e:
+            # celery.exceptions.SoftTimeLimitExceeded is an Exception
+            # subclass — without this explicit branch ahead of the generic
+            # one below, it would be treated as a retryable system error,
+            # racing self.retry()'s countdown against the imminent hard
+            # task_time_limit kill. No retry: the soft limit means "wrap up
+            # now," so cascade the failure and return cleanly instead.
+            db.rollback()
+            logger.error(f"Document {doc_id} soft time limit exceeded: {e}")
+            mark_failed_with_cascade(
+                doc_id,
+                PipelineStage.EXTRACT,
+                db,
+                error=f"soft time limit exceeded: {e}",
+            )
             _trigger_metadata_phase_barrier(doc_id, doc.ingest_batch_id, db)
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         except Exception as e:
@@ -477,6 +495,39 @@ def _run_phase1_summary(doc_id: int) -> None:
             finally:
                 db2.close()
     except BaseException as e:
+        # This outer handler is normally only reached by a genuine
+        # BaseException-not-Exception (worker killed by signal) — every
+        # per-attempt Exception is already handled and returns above,
+        # inside the loop. SoftTimeLimitExceeded breaks that assumption:
+        # it can fire during the time.sleep() backoff between retry
+        # attempts, which sits outside any per-attempt try/except, so it
+        # lands here despite being an Exception subclass. Unlike a true
+        # worker-kill (left uncascaded so recovery can resume it — that's
+        # a crash, not a content failure), a soft time limit means this
+        # genuinely took too long: cascade it like any other terminal
+        # METADATA failure so CLAIMS doesn't stay stuck and the case brief
+        # isn't blocked.
+        if isinstance(e, SoftTimeLimitExceeded):
+            _db = get_db_session()
+            try:
+                mark_failed_with_cascade(
+                    doc_id,
+                    PipelineStage.METADATA,
+                    _db,
+                    error=f"soft time limit exceeded: {e}",
+                    cascade=_METADATA_FAILURE_CASCADE,
+                )
+            except Exception:
+                pass
+            finally:
+                _db.close()
+            # Don't re-raise: the whole point of catching this is to finish
+            # gracefully. Returning lets metadata_task proceed through its
+            # normal post-failure flow (attempt the batch claim, trigger the
+            # case brief) instead of aborting via an uncaught exception —
+            # unlike the true-crash branch below, this isn't a worker dying,
+            # it's this doc's METADATA genuinely taking too long.
+            return
         if not isinstance(e, Exception):
             _db = get_db_session()
             try:

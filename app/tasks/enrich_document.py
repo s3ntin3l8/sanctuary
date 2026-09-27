@@ -1,6 +1,7 @@
 import logging
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
@@ -219,6 +220,14 @@ def enrich_document_task(self, doc_id: int):
             e,
         )
         _fail_enrich_terminally(doc_id, f"HTTP {e.response.status_code}: {e}")
+        _trigger_cost_rollup(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
+    except SoftTimeLimitExceeded as e:
+        # An Exception subclass — must come before the generic branch below
+        # or it would be treated as a retryable system error, racing
+        # self.retry()'s countdown against the imminent hard kill.
+        logger.error(f"Doc {doc_id} enrich soft time limit exceeded: {e}")
+        _fail_enrich_terminally(doc_id, f"soft time limit exceeded: {e}")
         _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:

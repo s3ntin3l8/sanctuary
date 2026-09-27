@@ -149,6 +149,55 @@ def test_enrich_failure_cascades_and_triggers_case_brief(db_session, sample_docu
 
 
 @pytest.mark.unit
+def test_enrich_soft_time_limit_cascades_and_triggers_case_brief(
+    db_session, sample_document
+):
+    """PR3a: a soft time limit must cascade ENRICH's failure downstream and
+    trigger the case brief on the first attempt — same terminal outcome as
+    the retries-exhausted path above, but without ever calling self.retry()."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    _set_doc_stages(
+        db_session, sample_document, {"batch_analysis": {"status": "completed"}}
+    )
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.document_enricher.enrich",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch(
+            "app.tasks.detect_relationships.detect_relationships_task.delay"
+        ) as mock_detect_delay,
+        patch(
+            "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+        ) as mock_brief_delay,
+        patch("app.tasks.enrich_document._trigger_cost_rollup"),
+        patch.object(enrich_document_task, "retry") as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        enrich_document_task.request.update({"retries": 0})
+        try:
+            result = enrich_document_task.run(sample_document.id)
+        finally:
+            enrich_document_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_detect_delay.assert_not_called()
+
+    from app.services.pipeline_status import stages_dict
+
+    db_session.expire(sample_document, ["stage_rows"])
+    stages = stages_dict(sample_document)
+    assert stages["enrich"]["status"] == "failed"
+    assert stages["relationships"]["status"] == "failed"
+    assert stages["claims"]["status"] == "failed"
+    mock_brief_delay.assert_called_once_with(sample_document.case_id)
+
+
+@pytest.mark.unit
 def test_enrich_skipped_when_batch_analysis_pending(db_session, sample_document):
     """Primary gate: ENRICH must defer (reset to PENDING, not SKIPPED) with
     reason=batch_analysis_not_completed when batch_analysis is not yet terminal.
@@ -564,6 +613,44 @@ def test_detect_relationships_retries_connect_error_with_backoff_then_fails(
 
 
 @pytest.mark.unit
+def test_detect_relationships_soft_time_limit_fails_without_retry_and_dispatches_claims(
+    db_session, sample_document
+):
+    """PR3a: a soft time limit must not retry — it means "wrap up now" — but
+    must still mark RELATIONSHIPS failed and dispatch claims, exactly like
+    the retry-exhausted branches above."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    _ready_for_relationships(db_session, sample_document)
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.relationship_detector.detect",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch(
+            "app.tasks.detect_relationships._dispatch_claims_safely"
+        ) as mock_dispatch_claims,
+        patch.object(detect_relationships_task, "retry") as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+
+        detect_relationships_task.request.update({"retries": 0})
+        try:
+            result = detect_relationships_task.run(sample_document.id)
+        finally:
+            detect_relationships_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_mark_failed.assert_called_once()
+    mock_dispatch_claims.assert_called_once_with(sample_document.id)
+
+
+@pytest.mark.unit
 def test_extract_claims_refreshes_review_reasons_on_success(
     db_session, sample_document
 ):
@@ -675,4 +762,52 @@ def test_extract_claims_failure_triggers_case_brief(db_session, sample_document)
             extract_claims_task.request.clear()
 
     assert result["status"] == "failed"
+    mock_trigger_brief.assert_called_once_with(sample_document.id)
+
+
+@pytest.mark.unit
+def test_extract_claims_soft_time_limit_fails_without_retry_and_triggers_case_brief(
+    db_session, sample_document
+):
+    """PR3a: a soft time limit must not retry — it means "wrap up now" — but
+    must still mark CLAIMS failed and trigger the case brief, exactly like
+    the retries-exhausted branch above."""
+    from datetime import datetime
+
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    from app.models.enums import PipelineStage, StageStatus
+
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
+    sample_document.ai_summary_created_at = datetime.now(UTC)
+    db_session.commit()
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.claim_extractor.extract",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch(
+            "app.services.intelligence.orchestrator.trigger_case_brief_if_ready"
+        ) as mock_trigger_brief,
+        patch.object(extract_claims_task, "retry") as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        extract_claims_task.request.update({"retries": 0})
+        try:
+            result = extract_claims_task.run(sample_document.id)
+        finally:
+            extract_claims_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_mark_failed.assert_called_once()
     mock_trigger_brief.assert_called_once_with(sample_document.id)

@@ -26,6 +26,15 @@ from app.models.enums import PipelineStage, PipelineState, StageStatus
 
 logger = logging.getLogger(__name__)
 
+# Grace periods for recover_orphaned_running_stages' provable-orphan checks
+# (see that function's docstring). Buffer past the authoritative deadline
+# (task_time_limit for a RUNNING row, next_at for a RETRYING one) to absorb
+# clock skew and the time it takes Celery's own kill/redelivery to land —
+# not a tuning knob for "how patient to be," since these checks fire in
+# addition to, not instead of, the softer heuristic gates.
+_ORPHAN_PROVABLE_GRACE_SECONDS = 300
+_RETRY_LOST_GRACE_SECONDS = 300
+
 # SQL injection hardening: whitelist of allowed extra_sets keys in _update_stage()
 _ALLOWED_EXTRA_KEYS = frozenset(
     {
@@ -723,10 +732,27 @@ def recover_orphaned_running_stages(
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
+    from app.config import CELERY_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchStatus
 
     cutoff = now_utc() - timedelta(seconds=min_age_seconds)
+
+    # Provable threshold, independent of the heuristic gates below: past
+    # task_time_limit (+ grace for the kill/redelivery to actually land),
+    # Celery would already have hard-killed whatever worker held this stage
+    # — there is no legitimate way for a RUNNING row to still be alive here,
+    # no matter what any *other* worker in the system is doing. This closes
+    # a gap the workers_recently_active probe can't: as long as anything
+    # else in the system shows progress, that probe alone would never reset
+    # a stage abandoned by a hard-killed worker, however old it gets.
+    _PROVABLE_ORPHAN_CUTOFF = now_utc() - timedelta(
+        seconds=CELERY_TASK_TIME_LIMIT + _ORPHAN_PROVABLE_GRACE_SECONDS
+    )
+    # A RETRYING row's own next_at is an explicit promise of when its retry
+    # will fire — past that (plus grace for dispatch jitter), the dispatch
+    # was lost, independent of task_time_limit or any global activity probe.
+    _LOST_RETRY_CUTOFF = now_utc() - timedelta(seconds=_RETRY_LOST_GRACE_SECONDS)
 
     # Worker-activity probe: is any stage showing forward progress recently?
     # We sample globally because the relevant signal is "are workers making
@@ -777,10 +803,45 @@ def recover_orphaned_running_stages(
         for key, val in stages.items():
             if not isinstance(val, dict):
                 continue
-            if val.get("status") not in _IN_FLIGHT:
+            status = val.get("status")
+            if status not in _IN_FLIGHT:
                 continue
-            # Skip stages that started recently — they're presumed alive.
-            # started_at is stored as an ISO string by stages_dict.
+
+            # Provable check first, independent of the heuristic gates below
+            # and of min_age_seconds: past the authoritative deadline for
+            # this row's status, it cannot legitimately still be in flight,
+            # no matter what any *other* worker in the system is doing right
+            # now. A RUNNING row past task_time_limit (+grace) means Celery
+            # already killed whoever held it; a RETRYING row past its own
+            # next_at (+grace) means the scheduled retry dispatch was lost.
+            if status == StageStatus.RUNNING.value:
+                started_at = val.get("started_at")
+                if started_at:
+                    try:
+                        if (
+                            ensure_utc(datetime.fromisoformat(started_at))
+                            < _PROVABLE_ORPHAN_CUTOFF
+                        ):
+                            stuck.append(key)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+            elif status == StageStatus.RETRYING.value:
+                next_at = val.get("next_at")
+                if next_at:
+                    try:
+                        if (
+                            ensure_utc(datetime.fromisoformat(next_at))
+                            < _LOST_RETRY_CUTOFF
+                        ):
+                            stuck.append(key)
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+
+            # Heuristic gates (see docstring): skip stages that started
+            # recently — they're presumed alive. started_at is stored as an
+            # ISO string by stages_dict.
             started_at = val.get("started_at")
             if started_at:
                 try:

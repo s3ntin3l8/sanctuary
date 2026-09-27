@@ -48,7 +48,13 @@ after_setup_logger.connect(_suppress_httpx_noise)
 after_setup_logger.connect(_setup_worker_logging)
 after_setup_task_logger.connect(_suppress_httpx_noise)
 
-from app.config import REDIS_URL, SCAN_POLL_INTERVAL_SECONDS
+from app.config import (
+    CELERY_BROKER_VISIBILITY_TIMEOUT,
+    CELERY_TASK_SOFT_TIME_LIMIT,
+    CELERY_TASK_TIME_LIMIT,
+    REDIS_URL,
+    SCAN_POLL_INTERVAL_SECONDS,
+)
 
 celery_app = Celery(
     "sanctuary",
@@ -108,10 +114,25 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=3600,
+    task_time_limit=CELERY_TASK_TIME_LIMIT,
+    # Raises SoftTimeLimitExceeded inside the task so it gets a chance to
+    # mark its own pipeline stage failed and return cleanly, rather than
+    # running uncontrolled until the hard kill below (which gives the task
+    # no chance to clean up at all — acks_late + reject_on_worker_lost then
+    # redelivers it to another worker, but the DB-visible stage stays stuck
+    # at RUNNING until the 30-min orphan sweep notices).
+    task_soft_time_limit=CELERY_TASK_SOFT_TIME_LIMIT,
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    # Redis visibility_timeout must exceed task_time_limit — see
+    # app/config.py's assertion for why. Without this, kombu's Redis
+    # transport defaults to a 3600s visibility_timeout regardless of
+    # task_time_limit, so the two silently drifted out of the safe
+    # relationship if either was ever tuned independently.
+    broker_transport_options={
+        "visibility_timeout": CELERY_BROKER_VISIBILITY_TIMEOUT,
+    },
     task_always_eager=os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true",
     # Propagate exceptions from eagerly-executed tasks so cascade failures are
     # visible in logs rather than silently captured in EagerResult. Has no effect
