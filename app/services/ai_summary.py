@@ -713,7 +713,13 @@ def _summarize_document_sync(doc_id: int, db: Session) -> Document | None:
         logger.error(
             f"Failed to generate summary for doc {doc_id} (sync): {e}", exc_info=True
         )
-        doc.ai_summary = {"error": str(e)}
+        if not doc.ai_summary_created_at:
+            # Only stamp a placeholder error when there's no real summary
+            # yet. ai_summary_created_at is set exclusively by the ENRICH
+            # stage's document_enricher — a later METADATA retry (e.g. after
+            # a full pipeline retry) failing must not clobber a valid
+            # 3-bullet summary ENRICH already produced.
+            doc.ai_summary = {"error": str(e)}
         db.commit()
         raise
 

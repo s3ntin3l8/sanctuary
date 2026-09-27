@@ -10,69 +10,6 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-def _trigger_case_brief(doc_id: int) -> None:
-    """Fan-in trigger: dispatch the case brief if THIS doc is the last sibling
-    in its case to finish CLAIMS.
-
-    Called from every exit path of extract_claims_task. Uses an atomic SQL
-    CAS (claim_case_brief_for_dispatch) on cases.brief_queued_at — readiness
-    predicate is "every doc in the case has CLAIMS in completed/failed/
-    skipped." Only the winning caller dispatches. Race-free by construction;
-    no Redis lock, no DB-status-string guard. Mirrors the claim_batch_for_
-    analysis pattern in orchestrator.py.
-    """
-    from app.config import SessionLocal
-    from app.models.database import Document
-    from app.services.intelligence.orchestrator import (
-        claim_case_brief_for_dispatch,
-    )
-    from app.tasks.generate_case_brief import generate_case_brief_task
-
-    db = SessionLocal()
-    try:
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if not doc or not doc.case_id or doc.case_id == "_TRIAGE":
-            return
-        case_id = doc.case_id
-
-        if not claim_case_brief_for_dispatch(case_id, db):
-            # Either the readiness predicate isn't satisfied yet (a sibling
-            # is still PENDING/RUNNING/RETRYING) or another worker won the
-            # claim. Either way, this caller does not dispatch.
-            logger.debug(
-                "Case %s brief not claimed by doc %d — siblings pending or already claimed",
-                case_id,
-                doc_id,
-            )
-            return
-    except Exception as e:
-        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
-        return
-    finally:
-        db.close()
-
-    try:
-        generate_case_brief_task.delay(case_id)
-        logger.info(
-            "Case %s: all docs CLAIMS-terminal — dispatched brief (triggered by doc %d)",
-            case_id,
-            doc_id,
-        )
-    except Exception as e:
-        # Dispatch failed after the claim succeeded — release the claim so
-        # a subsequent trigger (e.g. recovery, manual refresh) can re-fire.
-        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
-        db = SessionLocal()
-        try:
-            from app.services.intelligence.orchestrator import (
-                release_case_brief_claim,
-            )
-
-            release_case_brief_claim(case_id, db)
-        finally:
-            db.close()
-
-
 @celery_app.task(
     bind=True, max_retries=3, name="app.tasks.extract_claims.extract_claims_task"
 )
@@ -82,6 +19,7 @@ def extract_claims_task(self, doc_id: int):
     from app.models.database import Document
     from app.models.enums import StageStatus
     from app.services.intelligence.claim_extractor import extract
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
     from app.services.pipeline_status import (
         mark_completed,
         mark_failed,
@@ -97,7 +35,7 @@ def extract_claims_task(self, doc_id: int):
         if doc is None:
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="document_not_found")
             logger.info("Doc #%d: claims skipped (document_not_found)", doc_id)
-            _trigger_case_brief(doc_id)
+            trigger_case_brief_if_ready(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -110,7 +48,7 @@ def extract_claims_task(self, doc_id: int):
                 doc_id, PipelineStage.CLAIMS, db, reason="enrich_not_completed"
             )
             logger.info("Doc #%d: claims skipped (enrich_not_completed)", doc_id)
-            _trigger_case_brief(doc_id)
+            trigger_case_brief_if_ready(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -119,7 +57,7 @@ def extract_claims_task(self, doc_id: int):
         if not doc.ai_summary_created_at:
             mark_skipped(doc_id, PipelineStage.CLAIMS, db, reason="missing_ai_summary")
             logger.info("Doc #%d: claims skipped (missing_ai_summary)", doc_id)
-            _trigger_case_brief(doc_id)
+            trigger_case_brief_if_ready(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -169,7 +107,7 @@ def extract_claims_task(self, doc_id: int):
         finally:
             db.close()
         logger.info("Doc #%d: claims failed — still triggering case brief", doc_id)
-        _trigger_case_brief(doc_id)
+        trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
@@ -179,7 +117,7 @@ def extract_claims_task(self, doc_id: int):
         finally:
             db.close()
         logger.info("Doc #%d: claims failed — still triggering case brief", doc_id)
-        _trigger_case_brief(doc_id)
+        trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
@@ -189,7 +127,7 @@ def extract_claims_task(self, doc_id: int):
         finally:
             db.close()
         logger.info("Doc #%d: claims failed — still triggering case brief", doc_id)
-        _trigger_case_brief(doc_id)
+        trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()
@@ -211,5 +149,5 @@ def extract_claims_task(self, doc_id: int):
         doc_id,
         f"skipped ({skipped})" if skipped else "complete",
     )
-    _trigger_case_brief(doc_id)
+    trigger_case_brief_if_ready(doc_id)
     return {"status": "success", "doc_id": doc_id}

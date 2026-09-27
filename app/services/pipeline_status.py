@@ -11,6 +11,7 @@ are derived from it so they stay in sync automatically.
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
@@ -466,6 +467,8 @@ def mark_failed_with_cascade(
     stage: PipelineStage,
     db: Session,
     error: str = "",
+    *,
+    cascade: Sequence[PipelineStage] | None = None,
 ) -> None:
     """Mark `stage` failed and propagate failure to its per-doc downstream stages.
 
@@ -473,9 +476,17 @@ def mark_failed_with_cascade(
     (e.g. EXTRACT fails → METADATA, ENRICH, … cannot proceed).
     The cascade is not sticky — a successful retry naturally overwrites cascaded
     failed states as each stage runs and calls mark_started/mark_completed.
+
+    `cascade` overrides the default `_DOWNSTREAM[stage]` list. Needed for
+    METADATA specifically: its registry downstream includes BATCH_ANALYSIS,
+    correct for reset_stage's retry-everything semantics, but wrong for a
+    terminal give-up cascade — BATCH_ANALYSIS is a batch-shared stage (one
+    analyze_batch_task per batch, not per doc), so marking this one doc's row
+    FAILED would poison claim_batch_for_analysis's readiness check for every
+    sibling and silently skip analyze() for the whole batch.
     """
     mark_failed(doc_id, stage, db, error=error, commit=False)
-    for downstream in _DOWNSTREAM.get(stage, []):
+    for downstream in cascade if cascade is not None else _DOWNSTREAM.get(stage, []):
         _update_stage(
             doc_id,
             downstream,

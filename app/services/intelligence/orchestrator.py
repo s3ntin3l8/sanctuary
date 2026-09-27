@@ -174,3 +174,62 @@ def release_case_brief_claim(case_id: str, db: Session) -> None:
         {"case_id": case_id},
     )
     db.commit()
+
+
+def trigger_case_brief_if_ready(doc_id: int) -> None:
+    """Fan-in trigger: dispatch the case brief if `doc_id` was the last
+    sibling in its case to reach a CLAIMS-terminal state.
+
+    Uses the atomic claim_case_brief_for_dispatch CAS on cases.brief_queued_at
+    — readiness predicate is "every doc in the case has CLAIMS in
+    completed/failed/skipped-by-policy." Only the winning caller dispatches.
+
+    Called from every exit path of extract_claims_task, and from any other
+    site that resolves a doc's CLAIMS stage without going through that task
+    — e.g. a cascade that fails METADATA or ENRICH and, via
+    mark_failed_with_cascade, sets CLAIMS straight to FAILED. Without this
+    call there, that doc's CLAIMS becomes terminal but nothing ever pokes
+    the brief CAS for it, and if it happens to be the last sibling the case
+    never gets a brief.
+    """
+    from app.config import SessionLocal
+    from app.models.database import Document
+    from app.tasks.generate_case_brief import generate_case_brief_task
+
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc or not doc.case_id or doc.case_id == "_TRIAGE":
+            return
+        case_id = doc.case_id
+
+        if not claim_case_brief_for_dispatch(case_id, db):
+            logger.debug(
+                "Case %s brief not claimed by doc %d — siblings pending or "
+                "already claimed",
+                case_id,
+                doc_id,
+            )
+            return
+    except Exception as e:
+        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        return
+    finally:
+        db.close()
+
+    try:
+        generate_case_brief_task.delay(case_id)
+        logger.info(
+            "Case %s: all docs CLAIMS-terminal — dispatched brief (triggered by doc %d)",
+            case_id,
+            doc_id,
+        )
+    except Exception as e:
+        # Dispatch failed after the claim succeeded — release the claim so
+        # a subsequent trigger (e.g. recovery, manual refresh) can re-fire.
+        logger.warning("Could not trigger case brief for doc %d: %s", doc_id, e)
+        db = SessionLocal()
+        try:
+            release_case_brief_claim(case_id, db)
+        finally:
+            db.close()

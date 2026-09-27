@@ -177,7 +177,14 @@ def detect(doc_id: int) -> str | None:
     """Detect relationships from doc_id to prior documents in the same case.
 
     Returns a non-empty skip reason if the stage was intentionally skipped,
-    None if it ran successfully, or an error string if an exception occurred.
+    or None if it ran successfully. Raises on AI-call or write-phase failure
+    — the caller (detect_relationships_task) is responsible for retry/
+    failure handling, matching the pattern used by enrich_document_task and
+    metadata_task. This used to catch every exception here and return it as
+    an "error: ..." string, which detect_relationships_task's own retry
+    logic never saw (it only fires on a raised exception) and which got
+    recorded as RELATIONSHIPS=SKIPPED — a transient timeout was silently
+    treated the same as an intentional skip, with no retry.
     """
     # Phase 1: read
     db: Session = SessionLocal()
@@ -223,12 +230,9 @@ def detect(doc_id: int) -> str | None:
     finally:
         db.close()
 
-    # Phase 2: AI call — no DB session held
-    try:
-        result = _call_relationship_detector_sync(doc, candidates, model=model)
-    except Exception as e:
-        logger.exception(f"Doc {doc_id}: failed relationship detection: {e}")
-        return f"error: {str(e)}"
+    # Phase 2: AI call — no DB session held. Let exceptions propagate; the
+    # caller decides retry vs. terminal failure.
+    result = _call_relationship_detector_sync(doc, candidates, model=model)
 
     # Phase 3: write
     relationships = result.get("relationships") or []
@@ -289,9 +293,8 @@ def detect(doc_id: int) -> str | None:
             f"Doc {doc_id}: relationship detection complete, {new_count} new links created"
         )
         return None
-    except Exception as e:
+    except Exception:
         db.rollback()
-        logger.exception(f"Doc {doc_id}: failed relationship detection: {e}")
-        return f"error: {str(e)}"
+        raise
     finally:
         db.close()

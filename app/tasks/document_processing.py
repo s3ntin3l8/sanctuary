@@ -19,6 +19,24 @@ _TRANSIENT_AI_ERRORS = (
     httpx.ReadError,
 )
 
+# METADATA's terminal-failure cascade must exclude BATCH_ANALYSIS, unlike
+# STAGE_REGISTRY's generic downstream list (which reset_stage correctly uses
+# in full — a retry legitimately wants BATCH_ANALYSIS redone too).
+# BATCH_ANALYSIS is a batch-shared stage: one analyze_batch_task call covers
+# every doc in the batch, not one call per doc. Marking this one doc's
+# batch_analysis row FAILED would make claim_batch_for_analysis's readiness
+# check (every doc's batch_analysis still unresolved) permanently false for
+# the whole batch, and would trip metadata_task's "batch_already_done"
+# fallback for healthy siblings — promoting their batch_analysis to
+# COMPLETED without analyze() ever running, silently losing cover-letter
+# detection and action-item extraction for the entire batch.
+_METADATA_FAILURE_CASCADE = (
+    PipelineStage.ENRICH,
+    PipelineStage.RELATIONSHIPS,
+    PipelineStage.CLAIMS,
+    PipelineStage.ENTITIES,
+)
+
 
 def dispatch_metadata_phase(batch_id: int, db) -> None:
     """Dispatch metadata_task for every doc in a batch at once.
@@ -244,11 +262,20 @@ def metadata_task(doc_id: int):
             .get(PipelineStage.METADATA.value, {})
             .get("status", "pending")
         )
-        if metadata_status == "failed":
+        metadata_failed = metadata_status == "failed"
+        if metadata_failed:
+            # Don't return early: a terminal (completed-or-failed) METADATA
+            # still counts toward claim_batch_for_analysis's readiness check,
+            # and this doc may be the last sibling the batch is waiting on.
+            # Returning here used to leave the batch permanently unclaimed
+            # until the 5-minute recovery sweep picked it up. This doc's own
+            # downstream (ENRICH/RELATIONSHIPS/CLAIMS/ENTITIES) is already
+            # terminal via mark_failed_with_cascade in _run_phase1_summary,
+            # so the embeddings dispatch below is still skipped for it.
             logger.warning(
-                f"Doc {doc_id}: METADATA failed after retries — skipping downstream dispatch"
+                f"Doc {doc_id}: METADATA failed after retries — "
+                "attempting batch claim, then stopping"
             )
-            return {"status": "metadata_failed", "doc_id": doc_id}
 
         # Batch analysis gate: when every doc in this batch has completed METADATA,
         # claim and dispatch the batch analyzer. Uses an atomic CAS so only one
@@ -309,6 +336,20 @@ def metadata_task(doc_id: int):
             finally:
                 db_batch.close()
 
+        if metadata_failed:
+            # This doc's own downstream is already terminal (cascaded in
+            # _run_phase1_summary) — make sure the case brief CAS gets
+            # poked for it, since nothing else on this path will. Without
+            # this, a doc whose METADATA fails and who happens to be the
+            # last sibling to reach a CLAIMS-terminal state would never
+            # trigger the brief.
+            from app.services.intelligence.orchestrator import (
+                trigger_case_brief_if_ready,
+            )
+
+            trigger_case_brief_if_ready(doc_id)
+            return {"status": "metadata_failed", "doc_id": doc_id}
+
         # Embeddings — claim before dispatch for the same fan-out protection.
         db_emb = get_db_session()
         try:
@@ -360,6 +401,7 @@ def _run_phase1_summary(doc_id: int) -> None:
     from app.services.pipeline_status import (
         mark_completed,
         mark_failed,
+        mark_failed_with_cascade,
         mark_started,
         schedule_retry,
     )
@@ -381,7 +423,13 @@ def _run_phase1_summary(doc_id: int) -> None:
             except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
                 if isinstance(e, SA_OperationalError) and not is_db_locked(e):
                     db2.rollback()
-                    mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
+                    mark_failed_with_cascade(
+                        doc_id,
+                        PipelineStage.METADATA,
+                        db2,
+                        error=str(e),
+                        cascade=_METADATA_FAILURE_CASCADE,
+                    )
                     logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
                     return
                 last_error = e
@@ -417,7 +465,13 @@ def _run_phase1_summary(doc_id: int) -> None:
                         db_start.close()
             except Exception as e:
                 db2.rollback()
-                mark_failed(doc_id, PipelineStage.METADATA, db2, error=str(e))
+                mark_failed_with_cascade(
+                    doc_id,
+                    PipelineStage.METADATA,
+                    db2,
+                    error=str(e),
+                    cascade=_METADATA_FAILURE_CASCADE,
+                )
                 logger.warning(f"Phase 1 summary failed for doc {doc_id}: {e}")
                 return
             finally:
@@ -441,11 +495,12 @@ def _run_phase1_summary(doc_id: int) -> None:
     # All transient retries exhausted
     db2 = get_db_session()
     try:
-        mark_failed(
+        mark_failed_with_cascade(
             doc_id,
             PipelineStage.METADATA,
             db2,
             error=f"timeout after {_METADATA_MAX_RETRIES} attempts: {last_error}",
+            cascade=_METADATA_FAILURE_CASCADE,
         )
         logger.warning(
             f"Doc {doc_id}: METADATA failed after {_METADATA_MAX_RETRIES} attempts: {last_error}"

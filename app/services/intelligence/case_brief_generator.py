@@ -379,8 +379,31 @@ def generate(case_id: str) -> None:
             logger.info(f"Case {case_id} brief generated successfully")
         except Exception as e:
             logger.error(f"Case {case_id} brief generation failed: {e}", exc_info=True)
-            case.ai_brief = {"status": "failed", "error": str(e)}
+            db.rollback()
+            raise
 
         db.commit()
+    finally:
+        db.close()
+
+
+def mark_brief_failed(case_id: str, error: str) -> None:
+    """Record a terminal brief-generation failure so the UI doesn't show a
+    stuck "processing" state forever (set by _mark_processing above).
+
+    generate() used to write this itself and swallow the exception, which
+    meant the task's own retry logic (httpx.ReadTimeout gets one retry,
+    other exceptions retry with backoff up to max_retries) never actually
+    ran — generate() never raised, so those except clauses were dead code.
+    generate() now re-raises on failure; the task calls this only on its own
+    terminal-failure branches (retries exhausted), once it actually knows
+    this was the last attempt.
+    """
+    db = SessionLocal()
+    try:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if case:
+            case.ai_brief = {"status": "failed", "error": error}
+            db.commit()
     finally:
         db.close()
