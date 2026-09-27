@@ -263,9 +263,11 @@ def ingest_raw_email(
             # Leave it where it is: don't move it into this batch and don't
             # re-run its pipeline. This is the same PDF already ingested
             # (from an earlier email, forward, or reply-with-attachment) —
-            # moving it here would tear it out of whatever batch/case it may
-            # already be triaged or confirmed into, and re-dispatching would
-            # burn a full re-extraction for content already extracted.
+            # moving it here would tear it out of its original batch and
+            # re-dispatching would burn a full re-extraction for content
+            # already extracted. (The lookup above is scoped to case_id ==
+            # "_TRIAGE", so this never matches a doc already confirmed into
+            # a real case — only an earlier still-untriaged duplicate.)
             logger.info(
                 "Batch #%d: attachment %r is a duplicate of doc #%d already "
                 "in batch #%s — leaving it in place, not re-processing",
@@ -320,6 +322,27 @@ def ingest_raw_email(
 
     if docs_to_process:
         batch.status = IngestBatchStatus.PROCESSING
+    elif has_attachments:
+        # Every attachment was either a duplicate already ingested elsewhere,
+        # empty, or unnamed — this email adds nothing new, and the body was
+        # never captured as a fallback (it's discarded whenever attachments
+        # are present). Committing an empty batch here would just be
+        # rediscovered as "orphaned (0 docs)" on the next ingest of the same
+        # Message-ID — which now happens routinely, since the Gmail sync
+        # watermark overlap deliberately refetches recent messages — and
+        # repeatedly deleted-and-recreated under a new batch ID every time.
+        # Roll back everything this call did (this batch, its manifest, and —
+        # if this call itself started by deleting a prior orphaned batch for
+        # the same Message-ID — that delete too) and report a clean no-op.
+        db.rollback()
+        logger.info(
+            "Email from=%s subject=%r produced no new documents (every "
+            "attachment already ingested elsewhere) — discarding, nothing "
+            "committed",
+            sender,
+            subject,
+        )
+        return None
 
     # Link manifest entries to their Document IDs now that all docs are flushed.
     if batch.attachment_manifest:

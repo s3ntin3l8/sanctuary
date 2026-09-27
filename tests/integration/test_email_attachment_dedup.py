@@ -4,6 +4,11 @@
 - A duplicate attachment (same content hash, already ingested from an
   earlier email) must not be moved into the new batch or re-dispatched
   through the pipeline — it stays exactly where it is.
+- An email whose *only* content would have been duplicate attachments
+  must not persist an empty batch — self-review on this PR found that
+  doing so, combined with the Gmail-sync watermark-overlap fix (which
+  deliberately refetches recent messages), churns a brand new batch ID
+  on every refetch of the same message.
 - Two attachments sharing a filename within the *same* email must not
   overwrite each other on disk.
 """
@@ -12,7 +17,7 @@ import email.message
 
 import pytest
 
-from app.models.database import Document
+from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 
@@ -66,22 +71,56 @@ def test_duplicate_attachment_across_emails_is_not_moved_or_reprocessed(db_sessi
     second_batch = ingest_raw_email(
         db_session, second_raw, source_type=IngestBatchSourceType.EMAIL
     )
-    assert second_batch is not None
-    assert second_batch.id != first_batch.id
+    # Its only attachment is a full duplicate and the body is discarded
+    # (attachments present) — there is nothing new to keep, so no batch is
+    # persisted at all (same "nothing to do" contract as ingest_scanned_file
+    # returning None for a duplicate scan).
+    assert second_batch is None
 
     # The original document must still belong to its original batch.
     db_session.refresh(first_docs[0])
     assert first_docs[0].ingest_batch_id == first_batch.id
+    assert original_doc_id == first_docs[0].id
 
-    # The second batch must not contain a copy of the duplicate attachment —
-    # it neither creates a new Document nor re-links the existing one.
-    second_docs = (
-        db_session.query(Document)
-        .filter(Document.ingest_batch_id == second_batch.id)
-        .all()
+
+@pytest.mark.integration
+def test_reingesting_same_duplicate_only_email_does_not_churn_batch_ids(db_session):
+    """Re-ingesting the exact same email (same Message-ID) whose only
+    attachment duplicates an already-ingested document must not spawn a new
+    batch row every time. Before this fix, an all-duplicate-attachments
+    batch stayed committed with 0 docs, which ingest_raw_email's own
+    orphaned-batch cleanup then deleted-and-recreated on every re-ingest of
+    that Message-ID — and the Gmail-sync watermark-overlap fix in this same
+    PR deliberately re-ingests recent messages on every sync tick."""
+    pdf_bytes = b"%PDF-1.4 already-ingested content"
+
+    original_raw = _build_email(
+        "<original@example.com>", "Original", [("schriftsatz.pdf", pdf_bytes)]
     )
-    assert original_doc_id not in {d.id for d in second_docs}
-    assert len(second_docs) == 0
+    original_batch = ingest_raw_email(
+        db_session, original_raw, source_type=IngestBatchSourceType.EMAIL
+    )
+    assert original_batch is not None
+
+    dup_raw = _build_email(
+        "<repeat-me@example.com>",
+        "Weiterleitung mit gleichem Anhang",
+        [("schriftsatz.pdf", pdf_bytes)],
+    )
+    batch_count_before = db_session.query(IngestBatch).count()
+
+    for _ in range(3):
+        result = ingest_raw_email(
+            db_session, dup_raw, source_type=IngestBatchSourceType.EMAIL
+        )
+        assert result is None
+
+    batch_count_after = db_session.query(IngestBatch).count()
+    assert batch_count_after == batch_count_before, (
+        f"Batch count grew from {batch_count_before} to {batch_count_after} "
+        f"across 3 re-ingests of the same duplicate-only email — expected no "
+        f"new batches to be left behind."
+    )
 
 
 @pytest.mark.integration

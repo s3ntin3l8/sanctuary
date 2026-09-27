@@ -181,7 +181,15 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     # never surfaces in triage (email_parser.py's body branch in
     # batch_orchestrator.py only fires when body.strip() is truthy).
     if not body.strip() and html_body.strip():
-        body = markdownify(html_body, heading_style="ATX", strip=["div"])
+        # escape_underscores=False: this text feeds plain-text regexes
+        # (_MANIFEST_LINE_RE, _BOILERPLATE_RE below) and is stored as the
+        # document body — it is never rendered as markdown, so markdownify's
+        # default backslash-escaping of underscores would corrupt attachment
+        # filenames (e.g. "SCHR_ LG_26.PDF" -> "SCHR\_ LG\_26.PDF") and break
+        # the manifest-to-document filename correlation in batch_orchestrator.
+        body = markdownify(
+            html_body, heading_style="ATX", strip=["div"], escape_underscores=False
+        )
 
     attachment_manifest = _parse_attachment_manifest(body) if body else []
     email_note = _extract_email_note(body) if body else ""
