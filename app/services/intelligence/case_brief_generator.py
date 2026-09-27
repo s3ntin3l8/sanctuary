@@ -399,6 +399,16 @@ def mark_brief_failed(case_id: str, error: str) -> None:
     terminal-failure branches (retries exhausted), once it actually knows
     this was the last attempt.
     """
+    # Local import, not the module-level one generate() uses above: a
+    # module-level `from app.config import SessionLocal` binds once at
+    # whatever time this module first gets imported — which can happen
+    # during pytest collection, before the test harness's session-scoped
+    # fixture repoints app.config.SessionLocal at the test database. Same
+    # class of bug found and fixed in gmail_sync.py (PR1) and
+    # analyze_batch.py (PR2's acceptance test) — this one surfaced when a
+    # new test exercised this function directly for the first time.
+    from app.config import SessionLocal
+
     db = SessionLocal()
     try:
         case = db.query(Case).filter(Case.id == case_id).first()

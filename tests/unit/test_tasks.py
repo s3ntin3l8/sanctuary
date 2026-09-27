@@ -443,6 +443,126 @@ def test_detect_relationships_refreshes_review_reasons_on_success(
     assert sample_document.needs_review is True
 
 
+def _ready_for_relationships(db_session, doc):
+    """Set up a doc so it clears detect_relationships_task's ENRICH gate and
+    reaches the detect() call itself."""
+    from datetime import UTC, datetime
+
+    from app.models.enums import PipelineStage, StageStatus
+
+    _set_doc_stages(
+        db_session,
+        doc,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
+    doc.ai_summary_created_at = datetime.now(UTC)
+    db_session.commit()
+
+
+@pytest.mark.unit
+def test_detect_relationships_retries_once_on_timeout_then_fails(
+    db_session, sample_document
+):
+    """New in PR2: detect_relationships_task previously had no explicit
+    httpx.ReadTimeout handler, so a timeout fell into the generic Exception
+    branch and failed immediately with no retry — same class of bug as
+    relationship_detector.detect() swallowing errors as a skip reason."""
+    import httpx
+    from celery.exceptions import Retry
+
+    _ready_for_relationships(db_session, sample_document)
+
+    retry_sentinel = Retry(exc=httpx.ReadTimeout("simulated"))
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.relationship_detector.detect",
+            side_effect=httpx.ReadTimeout("simulated"),
+        ),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch(
+            "app.tasks.detect_relationships._dispatch_claims_safely"
+        ) as mock_dispatch_claims,
+        patch.object(
+            detect_relationships_task, "retry", side_effect=retry_sentinel
+        ) as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+
+        detect_relationships_task.request.update({"retries": 0})
+        try:
+            with pytest.raises(Retry):
+                detect_relationships_task.run(sample_document.id)
+        finally:
+            detect_relationships_task.request.clear()
+        mock_retry.assert_called_once()
+        mock_mark_failed.assert_not_called()
+        mock_dispatch_claims.assert_not_called()
+
+        detect_relationships_task.request.update({"retries": 1})
+        try:
+            result = detect_relationships_task.run(sample_document.id)
+        finally:
+            detect_relationships_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_mark_failed.assert_called_once()
+    mock_dispatch_claims.assert_called_once_with(sample_document.id)
+
+
+@pytest.mark.unit
+def test_detect_relationships_retries_connect_error_with_backoff_then_fails(
+    db_session, sample_document
+):
+    """New in PR2: ConnectError/ConnectTimeout used to fail immediately with
+    no retry, unlike the equivalent branches in enrich_document.py and
+    analyze_batch.py."""
+    import httpx
+    from celery.exceptions import Retry
+
+    _ready_for_relationships(db_session, sample_document)
+
+    retry_sentinel = Retry(exc=httpx.ConnectError("simulated"))
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch(
+            "app.services.intelligence.relationship_detector.detect",
+            side_effect=httpx.ConnectError("simulated"),
+        ),
+        patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
+        patch(
+            "app.tasks.detect_relationships._dispatch_claims_safely"
+        ) as mock_dispatch_claims,
+        patch.object(
+            detect_relationships_task, "retry", side_effect=retry_sentinel
+        ) as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+
+        detect_relationships_task.request.update({"retries": 0})
+        try:
+            with pytest.raises(Retry):
+                detect_relationships_task.run(sample_document.id)
+        finally:
+            detect_relationships_task.request.clear()
+        mock_retry.assert_called_once()
+        mock_mark_failed.assert_not_called()
+
+        detect_relationships_task.request.update(
+            {"retries": detect_relationships_task.max_retries}
+        )
+        try:
+            result = detect_relationships_task.run(sample_document.id)
+        finally:
+            detect_relationships_task.request.clear()
+
+    assert result["status"] == "failed"
+    mock_mark_failed.assert_called_once()
+    mock_dispatch_claims.assert_called_once_with(sample_document.id)
+
+
 @pytest.mark.unit
 def test_extract_claims_refreshes_review_reasons_on_success(
     db_session, sample_document
