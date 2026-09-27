@@ -277,7 +277,13 @@ def sync_gmail_for_user(self, user_id: int):
             # *other* message in the mailbox forever. It stays tracked in
             # gmail_failed_message_ids instead, so it's still retried (see
             # the top of this function) without gating anything else.
-            failed_ids = still_failed_ids + new_failed_ids
+            #
+            # A message can appear in both still_failed_ids (retried from
+            # last run) and new_failed_ids (also inside this run's normal
+            # window) if it keeps failing — dedupe (keeping first occurrence)
+            # so one persistently-broken message doesn't eat two slots of
+            # the tracked-failures cap for itself.
+            failed_ids = list(dict.fromkeys(still_failed_ids + new_failed_ids))
             if len(failed_ids) > _MAX_TRACKED_FAILURES:
                 logger.warning(
                     "Gmail sync: %d tracked failures for user %d exceeds the "
@@ -381,7 +387,18 @@ def run_gmail_backfill(self, user_id: int, days: int = 90):
                 # failures on the floor — the next incremental tick (or
                 # another backfill) will retry them.
                 prior = list(sj.get("gmail_failed_message_ids") or [])
-                merged = (prior + new_failed_ids)[-_MAX_TRACKED_FAILURES:]
+                merged = list(dict.fromkeys(prior + new_failed_ids))
+                if len(merged) > _MAX_TRACKED_FAILURES:
+                    logger.warning(
+                        "Gmail backfill: %d tracked failures for user %d "
+                        "exceeds the cap of %d — dropping the oldest %d "
+                        "(they will no longer be auto-retried)",
+                        len(merged),
+                        user_id,
+                        _MAX_TRACKED_FAILURES,
+                        len(merged) - _MAX_TRACKED_FAILURES,
+                    )
+                    merged = merged[-_MAX_TRACKED_FAILURES:]
                 new_json = dict(settings.settings_json or {})
                 new_json["gmail_failed_message_ids"] = merged
                 settings.settings_json = new_json

@@ -337,8 +337,8 @@ def ingest_raw_email(
         db.rollback()
         logger.info(
             "Email from=%s subject=%r produced no new documents (every "
-            "attachment already ingested elsewhere) — discarding, nothing "
-            "committed",
+            "attachment was a duplicate, empty, or unnamed) — discarding, "
+            "nothing committed",
             sender,
             subject,
         )

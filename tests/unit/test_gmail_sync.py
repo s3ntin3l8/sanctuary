@@ -24,6 +24,11 @@ class _FakeLockClient:
 
     def __init__(self):
         self.store: dict[str, str] = {}
+        # Track direct calls separately from what the registered script does
+        # internally (via self.store) — a real atomic EVAL never gives the
+        # caller a chance to invoke plain GET/DELETE in between.
+        self.direct_get_calls = 0
+        self.direct_delete_calls = 0
 
     def set(self, key, value, nx=False, ex=None):
         if nx and key in self.store:
@@ -32,9 +37,11 @@ class _FakeLockClient:
         return True
 
     def get(self, key):
+        self.direct_get_calls += 1
         return self.store.get(key)
 
     def delete(self, key):
+        self.direct_delete_calls += 1
         self.store.pop(key, None)
 
     def register_script(self, script_body):
@@ -278,10 +285,13 @@ def test_lock_degrades_open_when_redis_unavailable(gmail_user, db_session):
 
 
 @pytest.mark.unit
-def test_lock_release_is_atomic_and_never_deletes_someone_elses_lock(gmail_user):
-    """Release must be a compare-and-delete, not GET-then-DELETE: if the TTL
-    lapsed and another run already re-acquired the key under a different
-    token, releasing our (stale) handle must not delete their lock."""
+def test_lock_release_never_deletes_someone_elses_lock(gmail_user):
+    """If the TTL lapsed and another run already re-acquired the key under a
+    different token, releasing our (stale) handle must not delete their
+    lock. (A single-process test can't reproduce the actual timing race a
+    GET-then-DELETE has — see the next test for that half of the guarantee —
+    but the outcome must still be correct when the token has already
+    changed by the time release runs.)"""
     fake_client = _FakeLockClient()
 
     with patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client):
@@ -293,6 +303,29 @@ def test_lock_release_is_atomic_and_never_deletes_someone_elses_lock(gmail_user)
         # Our __exit__ just ran and tried to release with our own (stale)
         # token — the other run's lock must have survived.
         assert fake_client.store.get(key) == "someone-elses-token"
+
+
+@pytest.mark.unit
+def test_lock_release_uses_a_single_atomic_call_not_separate_get_and_delete(
+    gmail_user,
+):
+    """The actual atomicity guarantee: release must never issue GET and
+    DELETE as two separate round trips (that gap is the TOCTOU window a
+    single-process test can't otherwise reproduce timing for). It must
+    compare-and-delete inside one opaque call (register_script(...)(...))
+    instead, so there is no gap for another process to land in."""
+    fake_client = _FakeLockClient()
+
+    with patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client):
+        with gmail_sync._user_sync_lock(gmail_user.id):
+            pass
+
+    # This is what a GET-then-DELETE implementation would necessarily do —
+    # and what the pre-fix code did. The atomic script path does its
+    # compare-and-delete against fake_client.store directly, inside the
+    # script closure, never through these tracked public methods.
+    assert fake_client.direct_get_calls == 0
+    assert fake_client.direct_delete_calls == 0
 
 
 @pytest.mark.unit
