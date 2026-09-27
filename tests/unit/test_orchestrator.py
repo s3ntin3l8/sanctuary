@@ -175,3 +175,150 @@ def test_release_allows_re_claim(db_session, case_with_three_docs):
     db_session.refresh(case)
     assert case.brief_queued_at is None
     assert claim_case_brief_for_dispatch("ORCH-001", db_session) is True
+
+
+# ---------------------------------------------------------------------------
+# trigger_case_brief_if_ready — extracted in PR2 from extract_claims.py's
+# private _trigger_case_brief so enrich_document.py's cascade path and
+# document_processing.py's metadata-failed path can call the same fan-in
+# trigger. These tests exercise the function itself (previously only
+# exercised indirectly, with the function mocked out, by the tasks that
+# call it).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_dispatches_when_all_docs_terminal(
+    db_session, case_with_three_docs
+):
+    from unittest.mock import patch
+
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    case, docs = case_with_three_docs
+    for d in docs:
+        _set_claims(db_session, d.id, "completed")
+
+    with patch(
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+    ) as mock_delay:
+        trigger_case_brief_if_ready(docs[0].id)
+
+    mock_delay.assert_called_once_with(case.id)
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_does_not_dispatch_when_a_sibling_is_pending(
+    db_session, case_with_three_docs
+):
+    from unittest.mock import patch
+
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    case, docs = case_with_three_docs
+    _set_claims(db_session, docs[0].id, "completed")
+    # docs[1], docs[2] have no CLAIMS row at all — not terminal.
+
+    with patch(
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+    ) as mock_delay:
+        trigger_case_brief_if_ready(docs[0].id)
+
+    mock_delay.assert_not_called()
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_no_op_for_unknown_doc():
+    from unittest.mock import patch
+
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    with patch(
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+    ) as mock_delay:
+        trigger_case_brief_if_ready(999_999_999)
+
+    mock_delay.assert_not_called()
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_no_op_for_triage_doc(db_session):
+    from unittest.mock import patch
+
+    from app.models.database import Document
+    from app.models.enums import OriginatorType
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    doc = Document(
+        title="Triage doc",
+        content="x",
+        case_id="_TRIAGE",
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    with patch(
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+    ) as mock_delay:
+        trigger_case_brief_if_ready(doc.id)
+
+    mock_delay.assert_not_called()
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_swallows_claim_lookup_errors(
+    db_session, case_with_three_docs
+):
+    """The claim-lookup phase (querying the Document, calling the CAS) is
+    wrapped in a broad except — a DB hiccup here must not propagate up into
+    whatever pipeline task called this as a side effect of its own
+    terminal-state transition."""
+    from unittest.mock import patch
+
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    case, docs = case_with_three_docs
+    for d in docs:
+        _set_claims(db_session, d.id, "completed")
+
+    with (
+        patch(
+            "app.services.intelligence.orchestrator.claim_case_brief_for_dispatch",
+            side_effect=RuntimeError("simulated DB error"),
+        ),
+        patch(
+            "app.tasks.generate_case_brief.generate_case_brief_task.delay"
+        ) as mock_delay,
+    ):
+        trigger_case_brief_if_ready(docs[0].id)  # must not raise
+
+    mock_delay.assert_not_called()
+
+
+@pytest.mark.unit
+def test_trigger_case_brief_releases_claim_when_dispatch_fails(
+    db_session, case_with_three_docs
+):
+    """If the CAS is won but .delay() itself raises (broker down), the claim
+    must be released so a later trigger (recovery, manual refresh) can
+    re-fire — otherwise the case's brief_queued_at stays set forever with no
+    brief ever generated."""
+    from unittest.mock import patch
+
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+
+    case, docs = case_with_three_docs
+    for d in docs:
+        _set_claims(db_session, d.id, "completed")
+
+    with patch(
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay",
+        side_effect=RuntimeError("broker unavailable"),
+    ):
+        trigger_case_brief_if_ready(docs[0].id)  # must not raise
+
+    db_session.expire_all()
+    refreshed = db_session.query(Case).filter(Case.id == case.id).first()
+    assert refreshed.brief_queued_at is None

@@ -474,3 +474,62 @@ def test_detects_relationships_across_proceedings(db_session, sample_case):
     )
     assert len(rels) == 1
     assert rels[0].to_document_id == doc_p1.id
+
+
+@pytest.mark.unit
+def test_detect_reraises_on_ai_call_failure(db_session, proceeding_with_docs):
+    """New in PR2: detect() used to catch every exception (AI-call and
+    write-phase) and return an "error: ..." string instead of raising, so
+    detect_relationships_task's own retry/fail logic never ran — a
+    transient timeout was recorded the same as an intentional skip. It must
+    now propagate."""
+    from app.services.intelligence.relationship_detector import detect
+
+    _, _, _, new_doc = proceeding_with_docs
+
+    with (
+        patch(
+            "app.services.intelligence.relationship_detector._call_relationship_detector_sync",
+            side_effect=RuntimeError("simulated AI failure"),
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="simulated AI failure"):
+            detect(new_doc.id)
+
+
+@pytest.mark.unit
+def test_detect_reraises_and_rolls_back_on_write_phase_failure(
+    db_session, proceeding_with_docs
+):
+    """Same as above, for a failure during the write phase (phase 3)."""
+    from app.services.intelligence.relationship_detector import detect
+
+    _, prior1, _, new_doc = proceeding_with_docs
+
+    ai_result = {
+        "relationships": [
+            {
+                "to_document_id": prior1.id,
+                "relationship_type": "references",
+                "confidence": "high",
+                "notes": "cites the prior filing",
+            }
+        ]
+    }
+
+    with (
+        patch(
+            "app.services.intelligence.relationship_detector.SessionLocal",
+            return_value=db_session,
+        ),
+        patch.object(db_session, "close"),
+        patch.object(
+            db_session, "commit", side_effect=RuntimeError("simulated write failure")
+        ),
+        patch(
+            "app.services.intelligence.relationship_detector._call_relationship_detector_sync",
+            return_value=ai_result,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="simulated write failure"):
+            detect(new_doc.id)

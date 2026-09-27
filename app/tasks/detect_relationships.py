@@ -130,6 +130,41 @@ def detect_relationships_task(self, doc_id: int):
 
     try:
         skipped = detect(doc_id)
+    except httpx.ReadTimeout as e:
+        if self.request.retries < 1:
+            logger.info("Doc #%d: relationships timeout — retrying once in 90s", doc_id)
+            db = get_db_session()
+            try:
+                from app.services.pipeline_status import schedule_retry
+
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.RELATIONSHIPS,
+                    db,
+                    error=f"timeout: {e}",
+                    attempt=self.request.retries + 1,
+                    max_attempts=1,
+                    countdown=90,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=90, max_retries=1) from e
+        logger.warning(
+            "Doc #%d: relationships timeout after retry (%s) — marking failed",
+            doc_id,
+            e,
+        )
+        db = get_db_session()
+        try:
+            mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=f"timeout: {e}")
+        finally:
+            db.close()
+        logger.info(
+            "Doc #%d: relationships failed — still dispatching claims",
+            doc_id,
+        )
+        _dispatch_claims_safely(doc_id)
+        return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except SA_OperationalError as e:
         if is_db_locked(e) and self.request.retries < self.max_retries:
             countdown = 30 * (self.request.retries + 1)
@@ -170,7 +205,32 @@ def detect_relationships_task(self, doc_id: int):
         _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-        logger.error("Doc #%d: AI backend unreachable: %s", doc_id, e)
+        if self.request.retries < self.max_retries:
+            countdown = 30 * (self.request.retries + 1)
+            logger.warning(
+                "Doc #%d: AI backend unreachable (%s) — retry %d in %ds",
+                doc_id,
+                e,
+                self.request.retries + 1,
+                countdown,
+            )
+            db = get_db_session()
+            try:
+                from app.services.pipeline_status import schedule_retry
+
+                schedule_retry(
+                    doc_id,
+                    PipelineStage.RELATIONSHIPS,
+                    db,
+                    error=str(e),
+                    attempt=self.request.retries + 1,
+                    max_attempts=self.max_retries,
+                    countdown=countdown,
+                )
+            finally:
+                db.close()
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.error("Doc #%d: AI backend unreachable after all retries: %s", doc_id, e)
         db = get_db_session()
         try:
             mark_failed(doc_id, PipelineStage.RELATIONSHIPS, db, error=str(e))

@@ -34,7 +34,10 @@ def generate_case_brief_task(self, case_id: str):
     failure) — but NOT on Celery retry, so a parallel trigger can't race in
     during the retry countdown.
     """
-    from app.services.intelligence.case_brief_generator import generate
+    from app.services.intelligence.case_brief_generator import (
+        generate,
+        mark_brief_failed,
+    )
 
     try:
         generate(case_id)
@@ -51,11 +54,13 @@ def generate_case_brief_task(self, case_id: str):
         logger.warning(
             "Case %s brief timeout after retry (%s) — marking failed", case_id, e
         )
+        mark_brief_failed(case_id, f"timeout: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Case {case_id} brief generation failed: {e}")
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1)) from e
+        mark_brief_failed(case_id, str(e))
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     finally:
         # Only released on terminal exit. `self.retry()` raises celery.Retry
@@ -73,7 +78,10 @@ def generate_case_brief_task(self, case_id: str):
 )
 def refresh_case_brief_task(self, case_id: str):
     """Manual refresh triggered from dashboard UI."""
-    from app.services.intelligence.case_brief_generator import generate
+    from app.services.intelligence.case_brief_generator import (
+        generate,
+        mark_brief_failed,
+    )
 
     try:
         generate(case_id)
@@ -86,11 +94,13 @@ def refresh_case_brief_task(self, case_id: str):
             logger.info("Case %s brief refresh timeout — retrying once in 90s", case_id)
             raise self.retry(exc=e, countdown=90, max_retries=1) from e
         logger.warning("Case %s brief refresh timeout after retry (%s)", case_id, e)
+        mark_brief_failed(case_id, f"timeout: {e}")
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Case {case_id} brief refresh failed: {e}")
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=30) from e
+        mark_brief_failed(case_id, str(e))
         return {"status": "failed", "case_id": case_id, "error": str(e)}
     finally:
         if not _is_retry_in_flight(self):

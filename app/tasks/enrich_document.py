@@ -19,7 +19,6 @@ def enrich_document_task(self, doc_id: int):
     from app.services.intelligence.document_enricher import enrich
     from app.services.pipeline_status import (
         mark_completed,
-        mark_failed,
         mark_skipped,
         mark_started,
         reset_stage,
@@ -118,11 +117,8 @@ def enrich_document_task(self, doc_id: int):
         logger.warning(
             "Doc #%d: enrich timeout after retry (%s) — marking failed", doc_id, e
         )
-        db = get_db_session()
-        try:
-            mark_failed(doc_id, PipelineStage.ENRICH, db, error=f"timeout: {e}")
-        finally:
-            db.close()
+        _fail_enrich_terminally(doc_id, f"timeout: {e}")
+        _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except httpx.ConnectError as e:
         # Backend not yet reachable (startup race, proxy restarting, etc.)
@@ -161,11 +157,8 @@ def enrich_document_task(self, doc_id: int):
             chat_provider.base_url,
             e,
         )
-        db = get_db_session()
-        try:
-            mark_failed(doc_id, PipelineStage.ENRICH, db, error=f"connect: {e}")
-        finally:
-            db.close()
+        _fail_enrich_terminally(doc_id, f"connect: {e}")
+        _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except httpx.HTTPStatusError as e:
         # 4xx = client-side error — the exact same request will always fail.
@@ -186,16 +179,8 @@ def enrich_document_task(self, doc_id: int):
                 e.response.status_code,
                 e,
             )
-            db = get_db_session()
-            try:
-                mark_failed(
-                    doc_id,
-                    PipelineStage.ENRICH,
-                    db,
-                    error=f"HTTP {e.response.status_code}: {e}",
-                )
-            finally:
-                db.close()
+            _fail_enrich_terminally(doc_id, f"HTTP {e.response.status_code}: {e}")
+            _trigger_cost_rollup(doc_id)
             return {"status": "failed", "doc_id": doc_id, "error": str(e)}
         # 5xx OR transient 4xx — retry with backoff. Call self.retry()
         # directly here rather than re-raising; a sibling `except Exception`
@@ -233,22 +218,7 @@ def enrich_document_task(self, doc_id: int):
             self.max_retries,
             e,
         )
-        db = get_db_session()
-        try:
-            mark_failed(
-                doc_id,
-                PipelineStage.ENRICH,
-                db,
-                error=f"HTTP {e.response.status_code}: {e}",
-            )
-        finally:
-            db.close()
-        logger.info(
-            "Doc #%d: enrich failed permanently — still dispatching relationships",
-            doc_id,
-        )
-        _dispatch_safely(doc_id, PipelineStage.RELATIONSHIPS)
-        _dispatch_safely(doc_id, PipelineStage.ENTITIES)
+        _fail_enrich_terminally(doc_id, f"HTTP {e.response.status_code}: {e}")
         _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
@@ -271,17 +241,7 @@ def enrich_document_task(self, doc_id: int):
             raise self.retry(exc=e, countdown=countdown) from e
 
         # All retries exhausted — terminal failure.
-        db = get_db_session()
-        try:
-            mark_failed(doc_id, PipelineStage.ENRICH, db, error=str(e))
-        finally:
-            db.close()
-        logger.info(
-            "Doc #%d: enrich failed permanently — still dispatching relationships",
-            doc_id,
-        )
-        _dispatch_safely(doc_id, PipelineStage.RELATIONSHIPS)
-        _dispatch_safely(doc_id, PipelineStage.ENTITIES)
+        _fail_enrich_terminally(doc_id, str(e))
         _trigger_cost_rollup(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
@@ -351,6 +311,32 @@ def _dispatch_if_pending(doc_id: int, stage: PipelineStage) -> None:
         db.close()
     if claimed:
         _dispatch_safely(doc_id, stage)
+
+
+def _fail_enrich_terminally(doc_id: int, error: str) -> None:
+    """Mark ENRICH failed and cascade the failure to RELATIONSHIPS/CLAIMS/
+    ENTITIES, then make sure the case-brief CAS gets a chance to fire for
+    this doc.
+
+    Called from every ENRICH exhausted-retries branch. Dispatching
+    RELATIONSHIPS/ENTITIES afterward (the previous behaviour on two of these
+    branches) was actively counterproductive: detect_relationships_task's
+    own ENRICH gate sees ENRICH != completed and re-skips with a gate-block
+    reason ("enrich_not_completed") — which claim_case_brief_for_dispatch
+    treats as "still in flight, will retry," undoing the cascade's terminal
+    FAILED state. The cascade alone is sufficient; nothing downstream should
+    be (re-)dispatched for this doc once ENRICH is terminally failed.
+    """
+    from app.dependencies import get_db_session
+    from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
+    from app.services.pipeline_status import mark_failed_with_cascade
+
+    db = get_db_session()
+    try:
+        mark_failed_with_cascade(doc_id, PipelineStage.ENRICH, db, error=error)
+    finally:
+        db.close()
+    trigger_case_brief_if_ready(doc_id)
 
 
 def _trigger_cost_rollup(doc_id: int) -> None:

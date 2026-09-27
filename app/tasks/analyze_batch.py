@@ -4,7 +4,6 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.models.database import Document
 from app.models.enums import PipelineStage
 from app.tasks.celery_app import celery_app
@@ -17,6 +16,7 @@ logger = logging.getLogger(__name__)
 )
 def analyze_batch_task(self, batch_id: int):
     """Run batch-level AI analysis (cover-letter detection + action items), then enqueue per-doc enrichment."""
+    from app.config import SessionLocal
     from app.services.intelligence.batch_analyzer import analyze
     from app.services.pipeline_status import (
         mark_completed,
@@ -83,6 +83,13 @@ def analyze_batch_task(self, batch_id: int):
             db.commit()
         finally:
             db.close()
+        logger.info(
+            "Batch #%d: batch_analysis failed — still enqueueing enrich for %d doc(s)",
+            batch_id,
+            len(doc_ids),
+        )
+        for doc_id in doc_ids:
+            _enrich_if_pending(doc_id)
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except httpx.ConnectError as e:
         if self.request.retries < self.max_retries:
@@ -127,6 +134,13 @@ def analyze_batch_task(self, batch_id: int):
             db.commit()
         finally:
             db.close()
+        logger.info(
+            "Batch #%d: batch_analysis failed — still enqueueing enrich for %d doc(s)",
+            batch_id,
+            len(doc_ids),
+        )
+        for doc_id in doc_ids:
+            _enrich_if_pending(doc_id)
         return {"status": "failed", "batch_id": batch_id, "error": str(e)}
     except Exception as e:
         logger.error(f"Batch {batch_id} analysis failed: {e}", exc_info=True)
@@ -230,11 +244,22 @@ def _batch_analysis_started_at(doc_id: int, db: Session) -> str | None:
 
 
 def _enrich_completed_before(doc_id: int, cutoff_iso: str, db: Session) -> bool:
-    """Return True if this doc's ENRICH completed before cutoff_iso."""
+    """Return True if this doc's ENRICH *successfully completed* before
+    cutoff_iso.
+
+    Status-filtered to 'completed' — not just "has a completed_at" — because
+    mark_failed also stamps completed_at (it's the stage's exit timestamp,
+    not a success marker). Without this filter, a doc whose ENRICH was
+    cascade-failed earlier (e.g. by mark_failed_with_cascade on a METADATA
+    failure) would have its terminal FAILED state silently reset back to
+    PENDING here — undoing the cascade and re-running a doc through ENRICH's
+    own gate, which just skips it again for the same reason with no further
+    cascade, permanently stranding RELATIONSHIPS/CLAIMS/ENTITIES.
+    """
     row = db.execute(
         text(
             "SELECT completed_at FROM document_pipeline_stages "
-            "WHERE document_id = :doc_id AND stage = 'enrich'"
+            "WHERE document_id = :doc_id AND stage = 'enrich' AND status = 'completed'"
         ),
         {"doc_id": doc_id},
     ).fetchone()
@@ -253,6 +278,7 @@ def _enrich_if_pending(doc_id: int) -> None:
     Uses claim_stage_for_dispatch instead of a read-then-dispatch so that
     concurrent callers don't all dispatch enrich at the same time.
     """
+    from app.config import SessionLocal
     from app.models.enums import PipelineStage
     from app.services.pipeline_status import claim_stage_for_dispatch
 

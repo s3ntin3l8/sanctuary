@@ -1,9 +1,13 @@
 """Integration tests for the extract_claims → generate_case_brief task chain.
 
-Post-redesign (2026-05-22): _trigger_case_brief is a fan-in trigger. It only
-dispatches the brief task when EVERY doc in the case has CLAIMS in a terminal
-state (completed/failed/skipped), via the atomic claim_case_brief_for_dispatch
-orchestrator. Tests must set up CLAIMS pipeline rows accordingly.
+Post-redesign (2026-05-22): trigger_case_brief_if_ready
+(app.services.intelligence.orchestrator — moved here in PR2 of the
+2026-09-27 ingestion audit so enrich_document.py and document_processing.py
+can call the same fan-in trigger on their own terminal-failure cascades) is
+a fan-in trigger. It only dispatches the brief task when EVERY doc in the
+case has CLAIMS in a terminal state (completed/failed/skipped), via the
+atomic claim_case_brief_for_dispatch orchestrator. Tests must set up CLAIMS
+pipeline rows accordingly.
 """
 
 from unittest.mock import patch
@@ -57,9 +61,9 @@ def test_extract_claims_task_enqueues_brief_when_last_sibling_done(db_session):
             "app.tasks.generate_case_brief.generate_case_brief_task.delay"
         ) as mock_delay,
     ):
-        from app.tasks.extract_claims import _trigger_case_brief
+        from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
 
-        _trigger_case_brief(doc_id)
+        trigger_case_brief_if_ready(doc_id)
 
     mock_delay.assert_called_once_with("BRIEF-001")
 
@@ -100,9 +104,9 @@ def test_extract_claims_task_skips_brief_while_sibling_pending(db_session):
             "app.tasks.generate_case_brief.generate_case_brief_task.delay"
         ) as mock_delay,
     ):
-        from app.tasks.extract_claims import _trigger_case_brief
+        from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
 
-        _trigger_case_brief(me.id)
+        trigger_case_brief_if_ready(me.id)
 
     mock_delay.assert_not_called()
 
@@ -142,10 +146,10 @@ def test_extract_claims_task_dedups_concurrent_triggers(db_session):
             "app.tasks.generate_case_brief.generate_case_brief_task.delay"
         ) as mock_delay,
     ):
-        from app.tasks.extract_claims import _trigger_case_brief
+        from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
 
-        _trigger_case_brief(doc_a.id)
-        _trigger_case_brief(doc_b.id)
+        trigger_case_brief_if_ready(doc_a.id)
+        trigger_case_brief_if_ready(doc_b.id)
 
     mock_delay.assert_called_once_with("BRIEF-003")
 
@@ -173,8 +177,8 @@ def test_extract_claims_task_skips_brief_for_triage(db_session):
             "app.tasks.generate_case_brief.generate_case_brief_task.delay"
         ) as mock_delay,
     ):
-        from app.tasks.extract_claims import _trigger_case_brief
+        from app.services.intelligence.orchestrator import trigger_case_brief_if_ready
 
-        _trigger_case_brief(doc_id)
+        trigger_case_brief_if_ready(doc_id)
 
     mock_delay.assert_not_called()
