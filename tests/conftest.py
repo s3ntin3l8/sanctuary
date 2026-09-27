@@ -30,6 +30,7 @@ def pytest_sessionfinish(session, exitstatus):
     atexit.register(lambda: logging.disable(logging.CRITICAL))
 
 
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -478,25 +479,55 @@ def mock_converter():
 
 @pytest.fixture(autouse=True)
 def mock_phase4_celery_tasks():
-    """Prevent Phase 4 Celery tasks from connecting to Redis during tests."""
-    with (
-        patch("app.tasks.analyze_batch.analyze_batch_task.delay"),
-        patch("app.tasks.enrich_document.enrich_document_task.delay"),
-        patch("app.tasks.detect_relationships.detect_relationships_task.delay"),
-        patch("app.tasks.extract_claims.extract_claims_task.delay"),
-        patch("app.tasks.thread_open_scan.thread_open_scan_task.delay"),
-        patch("app.tasks.enrich_document.enrich_document_task.apply_async"),
-        patch("app.tasks.analyze_batch.analyze_batch_task.apply_async"),
-        patch("app.tasks.extract_claims.extract_claims_task.apply_async"),
-        patch("app.tasks.scan_ingest.scan_folder_tick_task.delay"),
-        patch("app.tasks.scan_ingest.scan_folder_tick_task.apply_async"),
-        patch("app.tasks.prepare_slicing.prepare_slicing_task.delay"),
-        patch("app.tasks.prepare_slicing.prepare_slicing_task.apply_async"),
-        patch("app.tasks.generate_case_brief.generate_case_brief_task.delay"),
-        patch("app.tasks.generate_case_brief.generate_case_brief_task.apply_async"),
-        patch("app.tasks.generate_case_brief.refresh_case_brief_task.delay"),
-        patch("app.tasks.generate_case_brief.refresh_case_brief_task.apply_async"),
-    ):
+    """Prevent Phase 4 Celery tasks from connecting to Redis during tests.
+
+    Under CELERY_TASK_ALWAYS_EAGER=true, an unmocked .delay()/.apply_async()
+    doesn't just skip a broker round-trip — it runs the task body inline in
+    the test process, real AI/httpx calls included. Every task dispatched
+    from inside another task's body (not just the ones tests call directly)
+    needs a stub here, or a test that reaches it transitively can hit a real
+    AI backend.
+
+    Uses ExitStack rather than one parenthesized `with (...)` — the list is
+    long enough to trip CPython's nested-block limit ("too many statically
+    nested blocks") on a single with-statement.
+    """
+    targets = [
+        "app.tasks.analyze_batch.analyze_batch_task.delay",
+        "app.tasks.enrich_document.enrich_document_task.delay",
+        "app.tasks.detect_relationships.detect_relationships_task.delay",
+        "app.tasks.extract_claims.extract_claims_task.delay",
+        "app.tasks.thread_open_scan.thread_open_scan_task.delay",
+        "app.tasks.enrich_document.enrich_document_task.apply_async",
+        "app.tasks.analyze_batch.analyze_batch_task.apply_async",
+        "app.tasks.extract_claims.extract_claims_task.apply_async",
+        "app.tasks.scan_ingest.scan_folder_tick_task.delay",
+        "app.tasks.scan_ingest.scan_folder_tick_task.apply_async",
+        "app.tasks.prepare_slicing.prepare_slicing_task.delay",
+        "app.tasks.prepare_slicing.prepare_slicing_task.apply_async",
+        "app.tasks.generate_case_brief.generate_case_brief_task.delay",
+        "app.tasks.generate_case_brief.generate_case_brief_task.apply_async",
+        "app.tasks.generate_case_brief.refresh_case_brief_task.delay",
+        "app.tasks.generate_case_brief.refresh_case_brief_task.apply_async",
+        # Dispatched from inside process_document_task/metadata_task/enrich's
+        # bodies — see the docstring above for why these need stubs too.
+        "app.tasks.document_processing.metadata_task.delay",
+        "app.tasks.document_processing.metadata_task.apply_async",
+        "app.tasks.generate_embedding.generate_embedding_task.delay",
+        "app.tasks.generate_embedding.generate_embedding_task.apply_async",
+        "app.tasks.extract_entities.extract_entities_task.delay",
+        "app.tasks.extract_entities.extract_entities_task.apply_async",
+        # claim_dedup_task is different: its only call site is the
+        # /api/claims dedup route (api/claims.py) via dispatch_task(), not
+        # another task's body. Still needs a stub — dispatch_task() runs
+        # apply_async() on a background thread that executes inline under
+        # CELERY_TASK_ALWAYS_EAGER, same risk as the task-body cases above.
+        "app.tasks.claim_dedup.claim_dedup_task.apply_async",
+        "app.tasks.claim_dedup.claim_dedup_task.delay",
+    ]
+    with ExitStack() as stack:
+        for target in targets:
+            stack.enter_context(patch(target))
         yield
 
 
