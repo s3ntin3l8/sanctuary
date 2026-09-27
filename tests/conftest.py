@@ -517,6 +517,11 @@ def mock_phase4_celery_tasks():
         "app.tasks.generate_embedding.generate_embedding_task.apply_async",
         "app.tasks.extract_entities.extract_entities_task.delay",
         "app.tasks.extract_entities.extract_entities_task.apply_async",
+        # claim_dedup_task is different: its only call site is the
+        # /api/claims dedup route (api/claims.py) via dispatch_task(), not
+        # another task's body. Still needs a stub — dispatch_task() runs
+        # apply_async() on a background thread that executes inline under
+        # CELERY_TASK_ALWAYS_EAGER, same risk as the task-body cases above.
         "app.tasks.claim_dedup.claim_dedup_task.apply_async",
         "app.tasks.claim_dedup.claim_dedup_task.delay",
     ]
