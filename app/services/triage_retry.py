@@ -21,12 +21,26 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> Non
       claim_batch_for_analysis CAS, not a per-doc claim — multiple docs in
       the same retry wave can independently compute BATCH_ANALYSIS as their
       head stage, so a per-doc claim wouldn't prevent duplicate dispatch.
-    - Every other stage (EXTRACT, ENRICH, RELATIONSHIPS, CLAIMS, ENTITIES,
-      EMBEDDINGS) mark_starts unconditionally and relies on the dispatcher's
-      pre-claim for dedup, via the same claim_stage_for_dispatch primitive
-      every cascade dispatcher already uses.
+    - EMBEDDINGS gets its own check: generate_embedding_task defers unclaimed
+      (leaving the stage PENDING) when METADATA isn't yet terminal, so
+      pre-claiming it in that situation would leave it stuck RUNNING and
+      break metadata_task's later re-claim. But pre-claiming it when
+      METADATA already IS terminal is fine — the task won't defer. So: if
+      METADATA isn't terminal, don't dispatch EMBEDDINGS at all here;
+      metadata_task's own cascade will claim and dispatch it once METADATA
+      completes. This is a stage-*state* check, not just a stage-identity
+      one, so it isn't expressed via StageSpec.self_claims.
+    - Every other stage (EXTRACT, ENRICH, RELATIONSHIPS, CLAIMS, ENTITIES)
+      mark_starts unconditionally and relies on the dispatcher's pre-claim
+      for dedup, via the same claim_stage_for_dispatch primitive every
+      cascade dispatcher already uses.
     """
-    from app.services.pipeline_status import STAGE_REGISTRY, claim_stage_for_dispatch
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import (
+        STAGE_REGISTRY,
+        claim_stage_for_dispatch,
+        stages_dict,
+    )
     from app.tasks.dispatch import dispatch_task
 
     spec = STAGE_REGISTRY[stage]
@@ -39,7 +53,34 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> Non
 
     stage_label = stage.value if hasattr(stage, "value") else stage
 
-    if spec.dispatch_arg == "batch_id":
+    if stage == PipelineStage.EMBEDDINGS:
+        from app.models.database import Document
+
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        metadata_status = (
+            stages_dict(doc).get("metadata", {}).get("status") if doc else None
+        )
+        if metadata_status not in (
+            StageStatus.COMPLETED.value,
+            StageStatus.FAILED.value,
+            StageStatus.SKIPPED.value,
+        ):
+            logger.info(
+                "dispatch_pipeline_retry: doc %d METADATA not yet terminal "
+                "(status=%s) — not dispatching EMBEDDINGS, metadata_task's "
+                "own cascade will claim it once METADATA completes",
+                doc_id,
+                metadata_status,
+            )
+            return
+        if not claim_stage_for_dispatch(doc_id, stage, db):
+            logger.info(
+                "dispatch_pipeline_retry: %s already claimed for doc %d — skipping",
+                stage_label,
+                doc_id,
+            )
+            return
+    elif spec.dispatch_arg == "batch_id":
         from app.services.intelligence.orchestrator import claim_batch_for_analysis
 
         if not claim_batch_for_analysis(arg, db):

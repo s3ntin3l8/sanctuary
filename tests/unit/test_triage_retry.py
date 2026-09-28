@@ -110,18 +110,38 @@ def test_dispatch_pipeline_retry_extract_skips_when_already_claimed(
 
 
 @pytest.mark.unit
-def test_dispatch_pipeline_retry_embeddings_dispatches_unclaimed(
+def test_dispatch_pipeline_retry_embeddings_not_dispatched_before_metadata_terminal(
     db_session, mock_dispatch_task
 ):
-    """EMBEDDINGS is self_claims=True: generate_embedding_task defers
-    unclaimed (leaves the stage PENDING) when METADATA isn't yet terminal,
-    so metadata_task's own cascade can re-claim it later. Pre-claiming here
-    would leave the stage RUNNING on defer instead of PENDING, permanently
-    breaking that later re-claim and silently losing the embedding forever —
-    reproduces a regression caught in PR4 review: dispatch_batch_retry fires
-    EMBEDDINGS in parallel with a head-stage retry that can land well before
-    METADATA is terminal again."""
+    """generate_embedding_task defers unclaimed (leaves the stage PENDING)
+    when METADATA isn't yet terminal, so metadata_task's own cascade can
+    claim and dispatch it once METADATA completes. Pre-claiming EMBEDDINGS
+    here while METADATA is still pending would leave the stage RUNNING on
+    defer instead of PENDING, permanently breaking that later re-claim and
+    silently losing the embedding forever — reproduces a regression caught
+    in PR4 review: dispatch_batch_retry fires EMBEDDINGS in parallel with a
+    head-stage retry that can land well before METADATA is terminal again.
+    The fix: don't dispatch EMBEDDINGS at all while METADATA isn't terminal,
+    rather than dispatching it unclaimed (which just re-adds the same
+    problem via the recovery sweep instead)."""
     doc = _make_doc(db_session)  # METADATA starts pending
+
+    dispatch_pipeline_retry(doc.id, None, PipelineStage.EMBEDDINGS, db_session)
+
+    mock_dispatch_task.assert_not_called()
+    db_session.expire(doc, ["stage_rows"])
+    assert stages_dict(doc)["embeddings"]["status"] == StageStatus.PENDING.value
+
+
+@pytest.mark.unit
+def test_dispatch_pipeline_retry_embeddings_claims_and_dispatches_when_metadata_terminal(
+    db_session, mock_dispatch_task
+):
+    """Once METADATA is terminal, generate_embedding_task won't defer, so
+    it's safe (and necessary, for dedup) to pre-claim EMBEDDINGS before
+    dispatching it, same as any other non-self-claiming stage."""
+    doc = _make_doc(db_session)
+    mark_completed(doc.id, PipelineStage.METADATA, db_session)
 
     dispatch_pipeline_retry(doc.id, None, PipelineStage.EMBEDDINGS, db_session)
 
@@ -129,7 +149,7 @@ def test_dispatch_pipeline_retry_embeddings_dispatches_unclaimed(
         "app.tasks.generate_embedding.generate_embedding_task", doc.id
     )
     db_session.expire(doc, ["stage_rows"])
-    assert stages_dict(doc)["embeddings"]["status"] == StageStatus.PENDING.value
+    assert stages_dict(doc)["embeddings"]["status"] == StageStatus.RUNNING.value
 
 
 @pytest.mark.unit
