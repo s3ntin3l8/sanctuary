@@ -39,6 +39,7 @@ def triage_page(
     user: User = Depends(get_current_user),
 ):
     from app.models.database import Proceeding
+    from app.services import access_service
 
     filter_options = get_triage_filter_options(db, owner_id=user.id)
 
@@ -56,30 +57,35 @@ def triage_page(
     slicing_queue = get_slicing_queue(db, owner_id=user.id)
     # The assign picker lists only cases this user may file into (own + editor
     # shares; admins see all) — avoids leaking other users' case titles.
-    from app.services import access_service
-
-    all_cases = [
-        c
-        for c in CaseRepository(db).list_for_picker()
-        if access_service.can_edit_case(db, user, c)
-    ]
+    all_cases = CaseRepository(db).list_for_picker(owner_id=user.id)
     total_docs = sum(b.doc_count for b in bundles)
 
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
 
-    proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
+    # Same picker-scoping rationale as list_for_picker above — this feeds the
+    # same confirm-modal <select>, and an unfiltered query leaked every
+    # user's court name/Aktenzeichen through the rendered <option> tags.
+    editable = access_service.editable_case_ids(db, user)
+    proceedings_query = db.query(Proceeding).order_by(Proceeding.court_name.asc())
+    if editable is not None:
+        proceedings_query = proceedings_query.filter(Proceeding.case_id.in_(editable))
+    proceedings = proceedings_query.all()
 
-    drafts_pending = db.query(Case).filter(Case.is_draft.is_(True)).count()
+    drafts_query = db.query(Case).filter(Case.is_draft.is_(True))
+    if editable is not None:
+        drafts_query = drafts_query.filter(Case.id.in_(editable))
+    drafts_pending = drafts_query.count()
     first_draft_doc_id = None
     if drafts_pending:
-        _row = (
+        draft_doc_query = (
             db.query(Document.id)
             .join(Case, Case.id == Document.case_id)
             .filter(Case.is_draft.is_(True))
-            .order_by(Document.id.asc())
-            .first()
         )
+        if editable is not None:
+            draft_doc_query = draft_doc_query.filter(Case.id.in_(editable))
+        _row = draft_doc_query.order_by(Document.id.asc()).first()
         if _row:
             first_draft_doc_id = _row[0]
 

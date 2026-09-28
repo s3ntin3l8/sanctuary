@@ -417,6 +417,12 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
         doc.az_court = az_court
 
     if doc.case_id == "_TRIAGE":
+        from app.models.database import User
+        from app.services import access_service
+
+        owner = db.get(User, doc.owner_id) if doc.owner_id is not None else None
+        editable = access_service.editable_case_ids(db, owner)
+
         matching_case = None
         matching_proceeding = None
 
@@ -433,31 +439,35 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
                 )
 
         if not matching_case and az_court:
-            matching_proceeding = (
-                db.query(Proceeding).filter(Proceeding.az_court == az_court).first()
-            )
+            # internal_id/az_court came straight out of AI-extracted document
+            # text — the same "sniffed from content" vector ingest_file's/
+            # _apply_script_extractors' guards close. Filtering by editable
+            # case ids *inside* the query (rather than checking after
+            # .first()) matters here: an Aktenzeichen is shared by both
+            # sides of the same lawsuit, so an unfiltered query could match
+            # a different user's Proceeding row first and shadow the
+            # owner's own legitimate match.
+            proc_query = db.query(Proceeding).filter(Proceeding.az_court == az_court)
+            if editable is not None:
+                proc_query = proc_query.filter(Proceeding.case_id.in_(editable))
+            matching_proceeding = proc_query.first()
             if matching_proceeding:
                 matching_case = matching_proceeding.case
 
-        # internal_id/az_court came straight out of AI-extracted document
-        # text — the same "sniffed from content" vector ingest_file's/
-        # _apply_script_extractors' guards close. A match against an
-        # existing case the doc's owner can't edit must not move the doc
-        # there, and must not fall through to the auto-create-draft branch
-        # either: get_or_create_case_from_reference does its own
-        # `Case.id == internal_id` lookup, which would just re-find and
-        # reattach the same blocked case (a `Case.id` collision can't create
-        # a second row with that id).
+        # A match against an existing case the doc's owner can't edit (the
+        # internal_id path above isn't pre-filtered like az_court is, since
+        # Case.id is a primary key — no shadowing is possible there, a plain
+        # post-fetch check is enough) must not move the doc there, and must
+        # not fall through to the auto-create-draft branch either:
+        # get_or_create_case_from_reference does its own `Case.id ==
+        # internal_id` lookup, which would just re-find and reattach the
+        # same blocked case (a `Case.id` collision can't create a second row
+        # with that id).
         case_access_denied = False
-        if matching_case:
-            from app.models.database import User
-            from app.services import access_service
-
-            owner = db.get(User, doc.owner_id) if doc.owner_id is not None else None
-            if not access_service.can_edit_case(db, owner, matching_case):
-                case_access_denied = True
-                matching_case = None
-                matching_proceeding = None
+        if matching_case and not (editable is None or matching_case.id in editable):
+            case_access_denied = True
+            matching_case = None
+            matching_proceeding = None
 
         if matching_case:
             doc.case_id = matching_case.id

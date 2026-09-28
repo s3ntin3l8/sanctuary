@@ -127,8 +127,12 @@ async def test_ingest_file_uses_batch_subfolder_in_triage(tmp_path):
     upload.seek = AsyncMock()
 
     db = MagicMock()
-    # No duplicate found
+    # No duplicate found — stub both the single-filter (real case) and
+    # double-filter (_TRIAGE, which adds an owner_id scope) query chains.
     db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.filter.return_value.first.return_value = (
+        None
+    )
 
     with (
         patch("app.services.ingestion.service.DATA_DIR", tmp_path),
@@ -166,8 +170,12 @@ async def test_ingest_file_without_batch_id_uses_flat_triage(tmp_path):
     upload.seek = AsyncMock()
 
     db = MagicMock()
-    # No duplicate found
+    # No duplicate found — stub both the single-filter (real case) and
+    # double-filter (_TRIAGE, which adds an owner_id scope) query chains.
     db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.filter.return_value.first.return_value = (
+        None
+    )
 
     with (
         patch("app.services.ingestion.service.DATA_DIR", tmp_path),

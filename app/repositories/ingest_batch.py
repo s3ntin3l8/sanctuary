@@ -46,17 +46,32 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             .all()
         )
 
-    def get_by_message_id(self, message_id: str) -> IngestBatch | None:
+    def get_by_message_id(
+        self, message_id: str, owner_id: int | None
+    ) -> IngestBatch | None:
+        """Scoped by owner_id: two users both ingesting the same email (e.g.
+        both CC'd) must get their own batch, not collide into one — and the
+        caller of this method deletes/replaces the returned row when it's an
+        orphan, so an unscoped match here could delete another user's batch."""
         return (
             self.db.query(IngestBatch)
-            .filter(IngestBatch.message_id == message_id)
+            .filter(
+                IngestBatch.message_id == message_id,
+                IngestBatch.owner_id == owner_id,
+            )
             .first()
         )
 
-    def get_by_source_hash(self, source_hash: str) -> IngestBatch | None:
+    def get_by_source_hash(
+        self, source_hash: str, owner_id: int | None
+    ) -> IngestBatch | None:
+        """Scoped by owner_id — same reasoning as get_by_message_id."""
         return (
             self.db.query(IngestBatch)
-            .filter(IngestBatch.source_hash == source_hash)
+            .filter(
+                IngestBatch.source_hash == source_hash,
+                IngestBatch.owner_id == owner_id,
+            )
             .first()
         )
 

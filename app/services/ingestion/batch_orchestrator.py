@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pypdfium2 as pdfium
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import DATA_DIR
@@ -48,22 +49,34 @@ def _sanitize_filename(name: str) -> str:
 
 
 def _try_assign_case_from_subject(
-    db: Session, batch: IngestBatch, subject: str
+    db: Session, batch: IngestBatch, subject: str, owner_id: int | None
 ) -> None:
     """Set batch.case_id / batch.proceeding_id from the email subject line if possible.
 
     Tries internal_id (lawyer's file number, e.g. '8372/25') first — it maps 1:1 to
     Case.id per CLAUDE.md.  Falls back to az_court (court Aktenzeichen) if present.
     Only sets fields when a matching DB row is found; never creates records here.
+
+    Auto-filing a batch into a case is a write to that case, so both paths
+    are restricted to the owner's *editable* cases (owned ∪ EDITOR shares).
+    The az_court path filters inside the query rather than checking after
+    `.first()`: an Aktenzeichen is shared by both sides of the same lawsuit,
+    so an unfiltered query could match a different user's Proceeding row
+    first and shadow the owner's own legitimate match — a check-after-fetch
+    would then just fail closed instead of finding the right one.
     """
-    from app.models.database import Case, Proceeding
+    from app.models.database import Case, Proceeding, User
+    from app.services import access_service
 
     internal_id = extract_internal_id_from_subject(subject)
     az_court = extract_az_court_from_subject(subject)
 
+    owner = db.get(User, owner_id) if owner_id is not None else None
+    editable = access_service.editable_case_ids(db, owner)
+
     if internal_id:
         case = db.query(Case).filter(Case.id == internal_id).first()
-        if case:
+        if case and (editable is None or case.id in editable):
             batch.case_id = case.id
             if az_court:
                 proc = (
@@ -84,7 +97,10 @@ def _try_assign_case_from_subject(
             return
 
     if az_court:
-        proc = db.query(Proceeding).filter(Proceeding.az_court == az_court).first()
+        proc_query = db.query(Proceeding).filter(Proceeding.az_court == az_court)
+        if editable is not None:
+            proc_query = proc_query.filter(Proceeding.case_id.in_(editable))
+        proc = proc_query.first()
         if proc:
             batch.case_id = proc.case_id
             batch.proceeding_id = proc.id
@@ -111,7 +127,7 @@ def ingest_raw_email(
 
     source_hash = None
     if msg_id:
-        existing = batch_repo.get_by_message_id(msg_id)
+        existing = batch_repo.get_by_message_id(msg_id, owner_id)
         if existing:
             doc_count = (
                 db.query(Document)
@@ -141,6 +157,7 @@ def ingest_raw_email(
             .filter(
                 IngestBatch.source_type == IngestBatchSourceType.EMAIL,
                 IngestBatch.source_hash == fallback_hash,
+                IngestBatch.owner_id == owner_id,
             )
             .first()
         )
@@ -185,11 +202,34 @@ def ingest_raw_email(
     if raw_note:
         batch.email_note = raw_note
 
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Two concurrent requests for the same email (e.g. Gmail sync racing
+        # a manual re-sync) both passed the SELECT-based duplicate check
+        # above before either committed — the new UNIQUE(owner_id,
+        # message_id/source_hash) constraint is the real guard here. Losing
+        # this race isn't an error: the winner's batch is the correct
+        # result, so recover it and return that instead of propagating.
+        db.rollback()
+        existing = (
+            batch_repo.get_by_message_id(msg_id, owner_id)
+            if msg_id
+            else batch_repo.get_by_source_hash(source_hash, owner_id)
+            if source_hash
+            else None
+        )
+        if existing is not None:
+            logger.info(
+                "Email batch race: lost to concurrent insert — reusing batch #%d",
+                existing.id,
+            )
+            return existing
+        raise
 
     # Attempt to auto-assign case from the email subject so downstream stages
     # receive a case_id/proceeding_id without waiting for AI metadata.
-    _try_assign_case_from_subject(db, batch, subject)
+    _try_assign_case_from_subject(db, batch, subject, owner_id)
 
     logger.info(
         "Email batch #%d created: from=%s subject=%r attachments=%d",
@@ -252,10 +292,14 @@ def ingest_raw_email(
             continue
         att_hash = hashlib.sha256(att["content"]).hexdigest()
 
-        # Check for duplicate within the same case (_TRIAGE)
+        # Check for duplicate within the same user's own _TRIAGE.
         existing_doc = (
             db.query(Document)
-            .filter(Document.content_hash == att_hash, Document.case_id == "_TRIAGE")
+            .filter(
+                Document.content_hash == att_hash,
+                Document.case_id == "_TRIAGE",
+                Document.owner_id == owner_id,
+            )
             .first()
         )
 
@@ -266,8 +310,12 @@ def ingest_raw_email(
             # moving it here would tear it out of its original batch and
             # re-dispatching would burn a full re-extraction for content
             # already extracted. (The lookup above is scoped to case_id ==
-            # "_TRIAGE", so this never matches a doc already confirmed into
-            # a real case — only an earlier still-untriaged duplicate.)
+            # "_TRIAGE" and owner_id == owner_id, so this never matches a doc
+            # already confirmed into a real case, or another user's
+            # still-untriaged duplicate — cross-user hash collisions would
+            # otherwise silently drop this user's own copy of the
+            # attachment, since it's the same content_hash but a document
+            # they can't see.)
             logger.info(
                 "Batch #%d: attachment %r is a duplicate of doc #%d already "
                 "in batch #%s — leaving it in place, not re-processing",
@@ -394,7 +442,7 @@ def ingest_scanned_file(
     owner_id = _resolve_owner_id(db, owner_id)
     batch_repo = IngestBatchRepository(db)
 
-    existing = batch_repo.get_by_source_hash(source_hash)
+    existing = batch_repo.get_by_source_hash(source_hash, owner_id)
     if existing:
         logger.info("Scan duplicate: hash already in batch #%d — skipping", existing.id)
         return None
@@ -406,7 +454,17 @@ def ingest_scanned_file(
         raw_source_path=str(pdf_path),
     )
     batch.source_hash = source_hash
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # Same race as ingest_raw_email: a concurrent scan-loop run for the
+        # same file could pass the SELECT-based check above before either
+        # commits. Losing the race just means the file was already ingested.
+        db.rollback()
+        logger.info(
+            "Scan duplicate (race): hash already ingested by a concurrent run — skipping"
+        )
+        return None
 
     logger.info("Scan batch #%d created: file=%s", batch.id, pdf_path.name)
 
