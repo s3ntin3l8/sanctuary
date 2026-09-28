@@ -1,4 +1,3 @@
-import concurrent.futures
 import html
 import logging
 import os
@@ -6,11 +5,7 @@ import re
 import threading
 from typing import overload
 
-from app.config import INGEST_CONVERSION_TIMEOUT
-
 logger = logging.getLogger(__name__)
-
-CONVERSION_TIMEOUT = INGEST_CONVERSION_TIMEOUT  # seconds
 
 
 def _layout_model_spec():
@@ -29,10 +24,6 @@ def _layout_model_spec():
     from docling.datamodel.pipeline_options import DOCLING_LAYOUT_EGRET_LARGE
 
     return DOCLING_LAYOUT_EGRET_LARGE
-
-
-class TimeoutError(Exception):
-    pass
 
 
 _allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx", ".xlsx", ".eml"}
@@ -564,7 +555,7 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
     recovered = 0
     # Skip picture recovery when the standard pass produced essentially nothing
     # but image placeholders — that's the sandwich-PDF signal, and the
-    # _convert_in_subprocess fallback handles those by reading the full PDF
+    # _convert_document fallback handles those by reading the full PDF
     # text layer (which gives cleaner full-document text than piecemeal
     # picture-region recovery would).
     if ext == ".pdf" and pictures_by_page and not _is_image_only_output(markdown):
@@ -693,12 +684,22 @@ def _ocr_with_rotation_correction(file_path: str) -> tuple[str, list, dict]:
     return combined, [], metadata
 
 
-def _convert_in_subprocess(file_path: str) -> dict:
-    """Run the full Docling conversion + chunking in a worker subprocess.
+def _convert_document(file_path: str) -> dict:
+    """Run the full Docling conversion + chunking inline, on the calling
+    thread.
 
-    Each subprocess lazy-initializes its own DocumentConverter on first call
-    and reuses it for the rest of its lifetime. Defined at module scope so it
-    pickles cleanly into the worker.
+    Runs directly on the Celery task's own thread rather than behind a
+    thread-pool timeout wrapper: `future.result(timeout=...)` only stops the
+    *caller* from waiting, it doesn't stop the underlying thread, so a single
+    hung conversion used to permanently wedge that worker child's one-thread
+    executor — every later document routed to the same child would then fail
+    a fresh timeout without the conversion ever starting. Celery's own
+    task_time_limit/task_soft_time_limit (app/tasks/celery_app.py) now
+    enforce the deadline instead: a hard-killed child is a clean process
+    exit, and Celery/billiard replaces it automatically. `_get_converter()`
+    lazy-initializes on first call and is reused for the rest of the
+    process's lifetime, so only a replaced (hard-killed) child pays that
+    cold-load cost again.
 
     When the standard pass produces only image placeholders (scanned PDF whose
     pages the layout model classified as pictures rather than text), we first
@@ -729,38 +730,23 @@ def _convert_in_subprocess(file_path: str) -> dict:
     return {"content": markdown, "metadata": metadata, "chunks": chunks}
 
 
-_conversion_executor: concurrent.futures.ThreadPoolExecutor | None = None
-_executor_lock = threading.Lock()
-
-
-def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
-    """Lazy-init a single-worker thread pool for serialising conversions."""
-    global _conversion_executor
-    if _conversion_executor is None:
-        with _executor_lock:
-            if _conversion_executor is None:
-                _conversion_executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="docling"
-                )
-    return _conversion_executor
-
-
-def convert_file(
-    file_path: str, timeout: int | None = None, *, engine: str = "docling"
-) -> dict:
+def convert_file(file_path: str, *, engine: str = "docling") -> dict:
     """Convert file to markdown and extract structural metadata.
 
     ``engine`` controls PDF extraction: ``"chandra"`` routes through the
     Chandra-OCR vision pipeline (active OCR instance from settings); anything
-    else uses the existing Docling+Tesseract subprocess. Non-PDF formats
+    else uses the existing Docling+Tesseract pipeline. Non-PDF formats
     always use the existing path — Chandra is image-based and adds nothing
     for text-native formats. If Chandra extraction raises (no OCR model
     configured, endpoint unreachable, all pages failed) we fall back to
     Docling so a misconfigured OCR endpoint never bricks ingestion.
-    """
-    if timeout is None:
-        timeout = CONVERSION_TIMEOUT
 
+    Runs synchronously on the caller's thread — the caller (process_document_
+    task) enforces the deadline via Celery's task_time_limit/soft_time_limit,
+    not this function. Callers outside a Celery task have no bound at all;
+    there are currently none in production (the only reachable caller is
+    process_uploaded_document, always invoked from process_document_task).
+    """
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".eml":
@@ -824,12 +810,7 @@ def convert_file(
                 "model": ocr_cfg.ocr_model if ocr_cfg else None,
             }
 
-    executor = _get_executor()
-    future = executor.submit(_convert_in_subprocess, file_path)
-    try:
-        result = future.result(timeout=timeout)
-    except concurrent.futures.TimeoutError:
-        raise TimeoutError(f"Conversion timed out after {timeout} seconds") from None
+    result = _convert_document(file_path)
 
     if chandra_failure is not None:
         result.setdefault("metadata", {})

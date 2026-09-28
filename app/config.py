@@ -23,7 +23,6 @@ SQLALCHEMY_DATABASE_URL = os.getenv(
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-INGEST_CONVERSION_TIMEOUT = int(os.getenv("INGEST_CONVERSION_TIMEOUT", "600"))
 
 # Celery per-task deadlines. task_time_limit is the hard kill (SIGKILL —
 # no chance for the task to clean up); task_soft_time_limit raises
@@ -67,6 +66,16 @@ AI_USER_CONTEXT = os.getenv("AI_USER_CONTEXT", "")
 # Read timeout (seconds) for streaming AI calls. Local inference on long prompts
 # can easily exceed 60s; the default of 600s gives slow local models headroom.
 AI_READ_TIMEOUT = float(os.getenv("AI_READ_TIMEOUT", "600"))
+# Chandra OCR's own per-document wall-clock budget. Each page call already
+# has its own AI_READ_TIMEOUT-bounded HTTP client timeout, but a many-page
+# document run through a handful of page-parallel workers has no overall cap
+# otherwise — extraction just keeps going, round after round, however long
+# that takes. Deliberately well under CELERY_TASK_SOFT_TIME_LIMIT: giving up
+# gracefully here returns whatever pages did complete, instead of the whole
+# task later being hard-killed by Celery and losing all of that OCR work.
+CHANDRA_DOCUMENT_DEADLINE_SECONDS = float(
+    os.getenv("CHANDRA_DOCUMENT_DEADLINE_SECONDS", "1500")
+)  # 25 min
 
 # AI Provider Configuration. Registered instances always store "auto" (the UI
 # no longer exposes a manual picker — API shape is probed at runtime); this env

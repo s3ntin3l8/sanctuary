@@ -54,7 +54,7 @@ def test_convert_file_docling_engine_never_touches_ocr_concurrency():
     """Non-Chandra engine must not import/call get_ocr_concurrency at all."""
     with patch("app.services.user_settings_service.get_ocr_concurrency") as get_conc:
         with patch(
-            "app.services.ingestion.converters._convert_in_subprocess",
+            "app.services.ingestion.converters._convert_document",
             return_value={"content": "x", "metadata": {"pages": 1}, "chunks": []},
         ):
             convert_file("doc.pdf", engine="docling")
