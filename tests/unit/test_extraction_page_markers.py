@@ -5,7 +5,7 @@ import pytest
 from app.services.ingestion.converters import (
     _apply_glyph_fixes,
     _collect_pictures,
-    _convert_in_subprocess,
+    _convert_document,
     _extract_pdf_text_layer,
     _layout_model_spec,
     _ocr_with_rotation_correction,
@@ -13,6 +13,30 @@ from app.services.ingestion.converters import (
     _substitute_picture_placeholders,
     is_valid_docling_output,
 )
+
+
+@pytest.mark.unit
+def test_no_thread_pool_executor_on_conversion_path():
+    """PR3b: the module-level singleton ThreadPoolExecutor(max_workers=1) that
+    used to wrap _convert_document (then named _convert_in_subprocess) was
+    removed. future.result(timeout=...) only stopped the *caller* from
+    waiting -- it never killed the underlying thread -- so a single hung
+    conversion permanently wedged that worker child's one conversion slot;
+    every later document routed to the same child would then fail a fresh
+    timeout without its own conversion ever starting. Celery's own
+    task_time_limit/task_soft_time_limit now enforce the deadline instead: a
+    hard kill is a clean process exit, and Celery/billiard replaces the
+    child automatically."""
+    import app.services.ingestion.converters as converters_module
+
+    assert "_get_executor" not in vars(converters_module)
+    assert "_conversion_executor" not in vars(converters_module)
+    assert "_executor_lock" not in vars(converters_module)
+    # The module previously shadowed the builtin TimeoutError with its own
+    # class to signal "conversion exceeded its app-level timeout" -- that
+    # concept no longer exists on this path, so the name should be fully gone
+    # from the module's own namespace (not merely inherited from builtins).
+    assert "TimeoutError" not in vars(converters_module)
 
 
 def _fake_picture(page_no: int, left=0.0, top=100.0, right=100.0, bottom=0.0):
@@ -96,7 +120,7 @@ def test_ocr_fallback_metadata_set():
             {"pages": 1, "ocr_fallback": True},
         )
 
-        result = _convert_in_subprocess("test.pdf")
+        result = _convert_document("test.pdf")
         assert result.get("metadata", {}).get("ocr_fallback") is True
         assert "Real text" in result["content"]
         mock_rot.assert_called_once_with("test.pdf")
@@ -115,7 +139,7 @@ def test_sandwich_pdf_uses_text_layer_not_ocr():
         mock_run.return_value = ("<!-- image -->", [], {"pages": 1})
         mock_tl.return_value = "--- PAGE 1 ---\n\nSehr geehrte Damen und Herren,"
 
-        result = _convert_in_subprocess("sandwich.pdf")
+        result = _convert_document("sandwich.pdf")
 
         assert result["metadata"].get("pdf_text_layer") is True
         assert result["metadata"].get("ocr_fallback") is None
@@ -145,7 +169,7 @@ def test_no_text_layer_uses_rotation_corrected_ocr():
             {"pages": 1, "ocr_fallback": True},
         )
 
-        result = _convert_in_subprocess("scanned.pdf")
+        result = _convert_document("scanned.pdf")
 
         assert result["metadata"].get("ocr_fallback") is True
         assert result["metadata"].get("pdf_text_layer") is None
@@ -206,7 +230,7 @@ def test_no_ocr_fallback_for_short_text_with_page_markers():
         short_content = "--- PAGE 1 ---\n\nShort native text"
         mock_run.return_value = (short_content, [], {"pages": 1})
 
-        result = _convert_in_subprocess("test.pdf")
+        result = _convert_document("test.pdf")
 
         # Should NOT have ocr_fallback flag
         assert result.get("metadata", {}).get("ocr_fallback") is not True
@@ -551,7 +575,7 @@ def test_layout_model_configured_to_egret_large():
 def test_run_conversion_skips_picture_recovery_on_image_only_output():
     """When the standard docling pass produces only image placeholders (the
     sandwich-PDF signal), picture recovery is skipped so the whole-document
-    text-layer fallback in _convert_in_subprocess can handle it cleanly."""
+    text-layer fallback in _convert_document can handle it cleanly."""
     mock_conv = MagicMock()
     mock_res = MagicMock()
     mock_doc = MagicMock()

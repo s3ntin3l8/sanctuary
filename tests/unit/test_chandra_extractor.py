@@ -8,6 +8,7 @@ Redis, and PDF rendering are all mocked — this is not an integration test.
 """
 
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -79,14 +80,13 @@ def test_max_workers_param_overrides_default():
         gate,
         slot,
         patch(
-            "app.services.ingestion.chandra_extractor.ThreadPoolExecutor"
+            "app.services.ingestion.chandra_extractor.ThreadPoolExecutor",
+            wraps=ThreadPoolExecutor,
         ) as pool_cls,
     ):
-        pool_cls.return_value.__enter__.return_value.map.return_value = iter(
-            [(1, "<p>a</p>", "a", 0.1, None), (2, "<p>b</p>", "b", 0.1, None)]
-        )
-        extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=2)
+        result = extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=2)
     pool_cls.assert_called_once_with(max_workers=2)
+    assert result["metadata"]["page_failures"] == []
 
 
 @pytest.mark.unit
@@ -101,12 +101,10 @@ def test_workers_capped_at_page_count_even_with_higher_setting():
         gate,
         slot,
         patch(
-            "app.services.ingestion.chandra_extractor.ThreadPoolExecutor"
+            "app.services.ingestion.chandra_extractor.ThreadPoolExecutor",
+            wraps=ThreadPoolExecutor,
         ) as pool_cls,
     ):
-        pool_cls.return_value.__enter__.return_value.map.return_value = iter(
-            [(1, "<p>a</p>", "a", 0.1, None)]
-        )
         extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=4)
     pool_cls.assert_called_once_with(max_workers=1)
 
@@ -117,3 +115,59 @@ def test_model_gate_held_once_for_whole_document_not_per_page():
     with render, ocr_page, gate as gate_mock, slot:
         extract_with_chandra("doc.pdf", ocr_config=_OCR_CFG, max_workers=8)
     gate_mock.assert_called_once_with("chandra", label="chandra-extract:doc.pdf")
+
+
+@pytest.mark.unit
+def test_document_deadline_returns_partial_result_for_pages_still_in_flight():
+    """PR3b: a many-page document has no overall wall-clock cap otherwise —
+    each page's own httpx timeout only bounds that one page. A document_
+    deadline that elapses while some pages are still in flight must return
+    the pages that did complete plus a failure marker for the rest, rather
+    than blocking until every page is done."""
+    import threading
+
+    page_count = 3
+    release = threading.Event()
+    pngs = [f"page-{i}".encode() for i in range(page_count)]
+    slow_png = pngs[-1]
+
+    def _one_slow_page(png_bytes, *, url, headers, model, timeout):
+        if png_bytes == slow_png:
+            # Blocks past the tiny document_deadline below, simulating a
+            # page call still in flight when the document-level budget
+            # runs out; the other two pages return immediately.
+            release.wait(timeout=5)
+            return "<p>late</p>"
+        return "<p>fast</p>"
+
+    with (
+        patch(
+            "app.services.ingestion.chandra_extractor._render_pdf_to_pngs",
+            return_value=pngs,
+        ),
+        patch(
+            "app.services.ingestion.chandra_extractor._ocr_one_page",
+            side_effect=_one_slow_page,
+        ),
+        patch(
+            "app.services.ingestion.chandra_extractor.model_gate",
+            side_effect=_fake_gate,
+        ),
+        patch(
+            "app.services.ingestion.chandra_extractor.ocr_slot", side_effect=_fake_gate
+        ),
+    ):
+        try:
+            result = extract_with_chandra(
+                "doc.pdf",
+                ocr_config=_OCR_CFG,
+                max_workers=page_count,
+                document_deadline=0.2,
+            )
+        finally:
+            release.set()
+
+    assert result["metadata"]["pages"] == page_count
+    assert result["metadata"]["page_failures"] == [page_count]
+    assert "document deadline exceeded" in result["content"]
+    assert result["content"].count("fast") == page_count - 1
