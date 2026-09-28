@@ -351,16 +351,18 @@ class CostService:
         costs = self.get_costs_by_case(case_id)
         return CostSummary(list(costs))
 
-    def get_all_costs(self) -> Sequence[LegalCost]:
-        """Get all costs."""
-        return self.cost_repo.get_all()
+    def get_all_costs(self, case_ids: set[str] | None = None) -> Sequence[LegalCost]:
+        """Get all costs, optionally restricted to `case_ids` (None = unrestricted)."""
+        if case_ids is None:
+            return self.cost_repo.get_all()
+        return self.db.query(LegalCost).filter(LegalCost.case_id.in_(case_ids)).all()
 
-    def get_costs_for_page(self) -> dict:
+    def get_costs_for_page(self, case_ids: set[str] | None = None) -> dict:
         """Get all costs with grouping for page rendering."""
         from app.models.database import Case
 
-        costs = self.get_all_costs()
-        global_summary = self.get_global_cost_summary()
+        costs = self.get_all_costs(case_ids)
+        global_summary = self.get_global_cost_summary(case_ids)
 
         costs_by_case: dict[str, dict[str, Any]] = {}
         for cost in costs:
@@ -386,18 +388,23 @@ class CostService:
             "global_summary": global_summary,
         }
 
-    def get_global_cost_summary(self) -> CostSummary:
-        """Get cost summary across all cases."""
-        costs = self.get_all_costs()
+    def get_global_cost_summary(self, case_ids: set[str] | None = None) -> CostSummary:
+        """Get cost summary across all cases (or `case_ids`, if given)."""
+        costs = self.get_all_costs(case_ids)
         return CostSummary(list(costs))
 
     def get_costs_by_status(self, status: CostStatus) -> Sequence[LegalCost]:
         """Get costs by payment status."""
         return self.cost_repo.get_by_status(status)
 
-    def get_pending_costs(self) -> Sequence[LegalCost]:
-        """Get costs pending payment."""
-        return self.cost_repo.get_pending()
+    def get_pending_costs(
+        self, case_ids: set[str] | None = None
+    ) -> Sequence[LegalCost]:
+        """Get costs pending payment, optionally restricted to `case_ids`."""
+        pending = self.cost_repo.get_pending()
+        if case_ids is None:
+            return pending
+        return [c for c in pending if c.case_id in case_ids]
 
     def create_cost(
         self,

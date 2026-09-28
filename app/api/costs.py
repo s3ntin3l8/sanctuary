@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.api.access_guards import require_cost_access, require_cost_signal_access
 from app.config import templates
 from app.constants import (
     CASE_STATUS_META,
@@ -12,10 +13,11 @@ from app.constants import (
     COST_STATUS_META,
 )
 from app.core.timezone import now_utc
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.helpers import build_cost_summary, render_page
-from app.models.database import Case, CostSignal, LegalCost
+from app.models.database import Case, CostSignal, LegalCost, Proceeding, User
 from app.models.enums import CaseStatus, CostCategory, CostStatus
+from app.services import access_service
 from app.services.case_service import (
     build_case_level_costs,
     build_proceeding_exposure,
@@ -117,22 +119,25 @@ def _parse_vat_rate(value: str) -> float:
 
 
 @router.get("")
-async def costs_page(request: Request, db: Session = Depends(get_db)):
+async def costs_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    visible = access_service.visible_case_ids(db, user)
     cost_service = CostService(db)
-    data = cost_service.get_costs_for_page()
+    data = cost_service.get_costs_for_page(visible)
 
     # Dropdown only needs cases the user is likely to assign new costs to.
     # Closed cases still render their existing rows (joined elsewhere by case_id).
-    case_titles = {
-        c.id: c.title
-        for c in db.query(Case.id, Case.title)
-        .filter(Case.status != CaseStatus.CLOSED)
-        .all()
-    }
+    case_query = db.query(Case.id, Case.title).filter(Case.status != CaseStatus.CLOSED)
+    if visible is not None:
+        case_query = case_query.filter(Case.id.in_(visible))
+    case_titles = {c.id: c.title for c in case_query.all()}
 
     # Compute overdue and upcoming costs for the alerts
     now = now_utc()
-    pending = cost_service.get_pending_costs()
+    pending = cost_service.get_pending_costs(visible)
     overdue_costs = [c for c in pending if c.due_at and c.due_at < now]
     upcoming_costs = [
         c for c in pending if c.due_at and now <= c.due_at < now + timedelta(days=7)
@@ -155,8 +160,16 @@ async def costs_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/new")
-async def new_cost_page(request: Request, db: Session = Depends(get_db)):
-    all_cases = db.query(Case).order_by(Case.title.asc()).all()
+async def new_cost_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    editable = access_service.editable_case_ids(db, user)
+    case_query = db.query(Case).order_by(Case.title.asc())
+    if editable is not None:
+        case_query = case_query.filter(Case.id.in_(editable))
+    all_cases = case_query.all()
     return render_page(
         request,
         "pages/cost_form.html",
@@ -187,7 +200,16 @@ async def create_cost(
     is_reimbursable: bool = Form(True),
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    case = db.query(Case).filter(Case.id == case_id).first()
+    if not access_service.can_edit_case(db, user, case):
+        raise HTTPException(status_code=404, detail="Case not found")
+    if proceeding_id is not None:
+        proceeding = db.get(Proceeding, proceeding_id)
+        if proceeding is None or proceeding.case_id != case_id:
+            raise HTTPException(status_code=422, detail="Invalid proceeding_id")
+
     if amount_gross is None:
         amount_gross = amount_net * (1 + vat_rate)
 
@@ -224,6 +246,7 @@ async def mark_cost_paid(
     cost_id: int,
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    _cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
     cost_service = CostService(db)
     cost = cost_service.mark_as_paid(cost_id)
@@ -242,12 +265,9 @@ async def mark_cost_reimbursed(
     amount: float | None = Form(None),
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    target_cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
     cost_service = CostService(db)
-    target_cost = db.get(LegalCost, cost_id)
-    if not target_cost:
-        raise HTTPException(status_code=404, detail="Cost not found")
-
     reimburse_amount = amount if amount is not None else target_cost.amount_gross
     cost = cost_service.mark_as_reimbursed(cost_id, reimburse_amount)
     if not cost:
@@ -264,6 +284,7 @@ async def mark_cost_unpaid(
     cost_id: int,
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    _cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
     cost_service = CostService(db)
     cost = cost_service.mark_as_unpaid(cost_id)
@@ -281,6 +302,7 @@ async def mark_cost_unreimbursed(
     cost_id: int,
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    _cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
     cost_service = CostService(db)
     cost = cost_service.mark_as_unreimbursed(cost_id)
@@ -300,11 +322,8 @@ async def update_cost_field(
     value: str = Form(...),
     row_style: str = Form("standard"),
     db: Session = Depends(get_db),
+    cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
-    cost = db.get(LegalCost, cost_id)
-    if not cost:
-        raise HTTPException(status_code=404, detail="Cost not found")
-
     from app.services.cost_service import _derive_status
 
     if field == "title":
@@ -354,7 +373,10 @@ async def update_cost_field(
 
 @router.post("/signals/{signal_id}/auto-detect-role")
 async def auto_detect_cost_signal_role(
-    request: Request, signal_id: int, db: Session = Depends(get_db)
+    request: Request,
+    signal_id: int,
+    db: Session = Depends(get_db),
+    signal: CostSignal = Depends(require_cost_signal_access(edit=True)),
 ):
     """Re-side a cost-ruling signal by reading its source document via LLM.
 
@@ -366,9 +388,6 @@ async def auto_detect_cost_signal_role(
     """
     from app.services.intelligence.cost_ruling_sider import detect_cost_ruling_role
 
-    signal = db.get(CostSignal, signal_id)
-    if not signal:
-        raise HTTPException(status_code=404, detail="Cost signal not found")
     if signal.signal_type.value != "cost_ruling":
         raise HTTPException(status_code=422, detail="Signal is not a cost ruling")
 
@@ -397,6 +416,7 @@ async def update_cost_signal_client_role(
     signal_id: int,
     role: str = Form(...),
     db: Session = Depends(get_db),
+    signal: CostSignal = Depends(require_cost_signal_access(edit=True)),
 ):
     """Side a cost-ruling signal from the client's perspective.
 
@@ -407,10 +427,6 @@ async def update_cost_signal_client_role(
     """
     if role not in {"winner", "loser", "unset"}:
         raise HTTPException(status_code=422, detail="Invalid client_role")
-
-    signal = db.get(CostSignal, signal_id)
-    if not signal:
-        raise HTTPException(status_code=404, detail="Cost signal not found")
 
     allocation = dict(signal.allocation or {})
     if role == "unset":

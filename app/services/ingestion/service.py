@@ -12,8 +12,10 @@ from app.config import DATA_DIR
 from app.core.paths import resolve_storage_path, to_storage_path
 from app.core.validators import validate_case_id
 from app.models.database import (
+    Case,
     Document,
     OriginatorType,
+    User,
 )
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
 from app.models.schemas import (
@@ -422,9 +424,16 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     result_sender = extract_sender(content)
     result_internal_id = extract_internal_id(content)
     if result_case_id["value"]:
-        from app.models.database import Case as CaseModel
+        # Same guard as ingest_file's filename-sniff check: a case id
+        # sniffed from the filename or body content (Aktenzeichen etc.) must
+        # not silently move a document into a case its owner can't edit —
+        # this runs during background processing, after the upload-time
+        # check already applied, so it needs the same protection.
+        from app.services import access_service
 
-        if db.query(CaseModel).filter(CaseModel.id == result_case_id["value"]).first():
+        target_case = db.query(Case).filter(Case.id == result_case_id["value"]).first()
+        owner = db.get(User, doc.owner_id) if doc.owner_id is not None else None
+        if access_service.can_edit_case(db, owner, target_case):
             doc.case_id = result_case_id["value"]
 
     doc.sender = result_sender["value"]
@@ -539,6 +548,21 @@ async def ingest_file(
                     detail=f"Invalid case_id '{preliminary_case_id}'.",
                 )
             preliminary_case_id = validated
+            # The caller's own case_id was already access-checked by the route
+            # (see documents.py's /upload). A case_id sniffed from the filename
+            # was not — without this, naming a file after another user's case
+            # id would silently file it there. Fall back to _TRIAGE rather than
+            # erroring, since filename-sniffing is a best-effort convenience,
+            # not a hard requirement.
+            if not case_id and owner_id is not None:
+                from app.services import access_service
+
+                target_case = (
+                    db.query(Case).filter(Case.id == preliminary_case_id).first()
+                )
+                owner = db.get(User, owner_id)
+                if not access_service.can_edit_case(db, owner, target_case):
+                    preliminary_case_id = "_TRIAGE"
         if preliminary_case_id == "_TRIAGE" and ingest_batch_id is not None:
             case_dir = DATA_DIR / "_TRIAGE" / f"ib-{ingest_batch_id}"
         else:

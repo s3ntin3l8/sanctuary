@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.access_guards import require_case_access
 from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
@@ -108,13 +109,12 @@ async def case_brief_partial(
 @router.post("/{case_id}/brief/refresh")
 @limiter.limit("10/minute")
 async def case_brief_refresh(
-    request: Request, case_id: str, db: Session = Depends(get_db)
+    request: Request,
+    case_id: str,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Set brief to processing, enqueue refresh task, return spinner partial."""
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return HTMLResponse(content="<p>Case not found</p>", status_code=404)
-
     case.ai_brief = {"status": "processing"}
     db.commit()
 
@@ -211,12 +211,9 @@ async def update_case(
     case_type: CaseType = Form(None),
     assume_worst_case: bool = Form(None),
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Update a case and return HX-Refresh header."""
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
     if title is not None:
         if not title.strip():
             raise HTTPException(status_code=422, detail="Case title cannot be empty")
@@ -308,17 +305,12 @@ async def confirm_draft_case(
     case_id: str,
     context: str = "embedded",
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Confirm an AI-created draft case (flip is_draft=False)."""
     import json
 
     from app.models.database import Document as Doc
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        from fastapi import HTTPException
-
-        raise HTTPException(status_code=404, detail="Case not found")
 
     if case.is_draft:
         case.is_draft = False
@@ -390,15 +382,11 @@ async def reject_draft_case(
     case_id: str,
     context: str = "embedded",
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
     import json
 
-    from fastapi import HTTPException
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
     if not case.is_draft:
         raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
 
@@ -438,7 +426,11 @@ async def reject_draft_case(
 
 
 @router.delete("/{case_id}", response_model=None)
-async def delete_case(case_id: str, db: Session = Depends(get_db)):
+async def delete_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
+):
     """Delete a case and revert all its documents and batches to _TRIAGE."""
     result = _delete_case_via_service(case_id, db)
     return JSONResponse(
@@ -457,6 +449,7 @@ def purge_case(
     body: PurgeConfirm,
     request: Request,
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Hard-delete a case and erase its on-disk data directory."""
     expected = f"purge {case_id}"
@@ -486,6 +479,7 @@ async def create_case(
     # clean 422.
     court_name: str = Form(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Create a new case and its initial active proceeding."""
     # 1. Create the Case
@@ -494,6 +488,7 @@ async def create_case(
         title=title,
         status=CaseStatus.INTAKE,
         jurisdiction=jurisdiction,
+        owner_id=user.id,
     )
     db.add(new_case)
 
@@ -518,6 +513,7 @@ async def save_opposing_parties(
     case_id: str,
     opposing_parties: str = Form(""),
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Save the per-case opposing party list."""
     from app.services.case_service import set_case_opposing_parties
@@ -525,10 +521,7 @@ async def save_opposing_parties(
     parties = [p.strip() for p in opposing_parties.split(",") if p.strip()]
     set_case_opposing_parties(case_id, parties, db)
     db.commit()
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return Response(status_code=404)
+    db.refresh(case)
 
     return templates.TemplateResponse(
         request,
@@ -548,13 +541,10 @@ async def confirm_close_case(
     request: Request,
     case_id: str,
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Confirm an AI-suggested case closure: set status to CLOSED and cascade proceedings."""
     from datetime import UTC, datetime
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
 
     case.status = CaseStatus.CLOSED
     case.closed_at = datetime.now(UTC)
@@ -576,12 +566,9 @@ async def dismiss_close_case(
     request: Request,
     case_id: str,
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Dismiss an AI-suggested case closure: clear the pending flag, keep status unchanged."""
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Case not found")
-
     case.pending_close = False
     if case.ai_brief and isinstance(case.ai_brief, dict):
         brief = dict(case.ai_brief)
@@ -602,13 +589,10 @@ async def reenrich_case(
     request: Request,
     case_id: str,
     db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
 ):
     """Queue all documents in a case for re-enrichment using the current party identity."""
     from app.services.triage_confirmation import reset_and_reenrich
-
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        return Response(status_code=404)
 
     docs = db.query(Document).filter(Document.case_id == case_id).all()
     if docs:

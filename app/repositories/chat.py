@@ -10,15 +10,18 @@ class ChatRepository:
         self.db = db
 
     def get_or_create(
-        self, scope_type: str, scope_id: str, force_new: bool = False
+        self, scope_type: str, scope_id: str, user_id: int, force_new: bool = False
     ) -> Conversation:
-        """Return the most recent conversation for this scope, or create one."""
+        """Return the user's most recent conversation for this scope, or create
+        one. Scoped by user_id: two users chatting about the same case each
+        get their own conversation, never a shared one."""
         if not force_new:
             conv = (
                 self.db.query(Conversation)
                 .filter(
                     Conversation.scope_type == scope_type,
                     Conversation.scope_id == scope_id,
+                    Conversation.user_id == user_id,
                 )
                 .order_by(Conversation.ingest_date.desc())
                 .first()
@@ -28,6 +31,7 @@ class ChatRepository:
         conv = Conversation(
             scope_type=scope_type,
             scope_id=scope_id,
+            user_id=user_id,
             ingest_date=datetime.now(),
         )
         self.db.add(conv)
@@ -65,13 +69,16 @@ class ChatRepository:
             .all()
         )
 
-    def list_by_scope(self, scope_type: str, scope_id: str) -> list[Conversation]:
-        """List all conversations for a given scope."""
+    def list_by_scope(
+        self, scope_type: str, scope_id: str, user_id: int
+    ) -> list[Conversation]:
+        """List the user's own conversations for a given scope."""
         return (
             self.db.query(Conversation)
             .filter(
                 Conversation.scope_type == scope_type,
                 Conversation.scope_id == scope_id,
+                Conversation.user_id == user_id,
             )
             .order_by(Conversation.ingest_date.desc())
             .all()

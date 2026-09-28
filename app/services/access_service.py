@@ -40,6 +40,29 @@ def visible_case_ids(db: Session, user: User | None) -> set[str] | None:
     return owned | _shared_case_ids(db, user.id)
 
 
+def editable_case_ids(db: Session, user: User | None) -> set[str] | None:
+    """Case ids the user may edit (owner ∪ EDITOR shares).
+
+    Returns ``None`` as a sentinel meaning *unrestricted* (admin), same
+    convention as `visible_case_ids`.
+    """
+    if is_admin(user):
+        return None
+    if user is None:
+        return set()
+    owned = {row[0] for row in db.query(Case.id).filter(Case.owner_id == user.id).all()}
+    editor_shares = {
+        row[0]
+        for row in db.query(CaseShare.case_id)
+        .filter(
+            CaseShare.user_id == user.id,
+            CaseShare.permission == CaseAccessLevel.EDITOR,
+        )
+        .all()
+    }
+    return owned | editor_shares
+
+
 def _share_permission(
     db: Session, user_id: int, case_id: str
 ) -> CaseAccessLevel | None:

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.api.access_guards import require_proceeding_access
 from app.dependencies import get_current_user, get_db
-from app.models.database import User
+from app.models.database import Proceeding, User
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
 from app.repositories.proceeding import ProceedingRepository
 from app.services.case_service import CaseService
@@ -20,13 +21,10 @@ async def update_proceeding(
     subject_matter: str = Form(None),
     status: ProceedingStatus = Form(None),
     db: Session = Depends(get_db),
+    _proceeding: Proceeding = Depends(require_proceeding_access(edit=True)),
 ):
     """Update a proceeding and return HX-Refresh header."""
     repo = ProceedingRepository(db)
-    proceeding = repo.get(proceeding_id)
-    if not proceeding:
-        raise HTTPException(status_code=404, detail="Proceeding not found")
-
     update_data = {}
     if court_name is not None:
         update_data["court_name"] = court_name
@@ -51,6 +49,7 @@ async def delete_proceeding(
     proceeding_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    _proceeding: Proceeding = Depends(require_proceeding_access(edit=True)),
 ):
     """Delete an empty proceeding (no documents, batches, action items, or costs).
     Refuses to delete the last proceeding of a case."""
