@@ -104,11 +104,13 @@ def find_next_review_doc(
     Sibling-first: prefer another doc in the same bundle. Otherwise, the
     first doc in the next bundle. Returns None when the queue is clear.
 
-    ``owner_id`` restricts the fallback bundle scan to that user's own triage
-    inbox — without it, "next" could advance into a different user's
-    untriaged document. The sibling lookup doesn't need it: a batch has one
-    owner, so a sibling in the same batch as ``after_doc_id`` (already the
-    caller's own doc) is always the caller's own too.
+    ``owner_id`` restricts both the sibling lookup and the fallback bundle
+    scan to that user's own triage inbox. A batch has one owner, so a
+    sibling in the same batch as ``after_doc_id`` is always *that batch's*
+    owner's — but ``after_doc_id`` is not always the caller's own doc
+    anymore (an admin, or an EDITOR-shared user via ?context=triage, can
+    delete someone else's triage doc), so without this filter "next" could
+    still advance the caller into a different user's untriaged document.
     """
     from app.services.triage_bundles import get_triage_bundles
 
@@ -118,16 +120,14 @@ def find_next_review_doc(
         return None
 
     if current.ingest_batch_id:
-        sibling = (
-            db.query(Document)
-            .filter(
-                Document.ingest_batch_id == current.ingest_batch_id,
-                Document.id != after_doc_id,
-                or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
-            )
-            .order_by(Document.ingest_date.asc())
-            .first()
+        sibling_query = db.query(Document).filter(
+            Document.ingest_batch_id == current.ingest_batch_id,
+            Document.id != after_doc_id,
+            or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
         )
+        if owner_id is not None:
+            sibling_query = sibling_query.filter(Document.owner_id == owner_id)
+        sibling = sibling_query.order_by(Document.ingest_date.asc()).first()
         if sibling:
             return sibling
 

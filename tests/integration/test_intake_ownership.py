@@ -673,3 +673,45 @@ def test_delete_document_oob_scoped_to_requester_not_doc_owner(
         resp = client.delete(f"/document/{a_doc.id}?context=triage")
         assert resp.status_code == 200
         assert mock_badges.call_args.kwargs["owner_id"] == admin.id
+
+
+def test_delete_document_next_doc_advance_does_not_cross_into_other_users_sibling(
+    auth_enabled, db_session, two_users
+):
+    """An admin deleting A's triage doc must not have the 'advance to next
+    doc' trigger point at A's remaining sibling in the same batch — that
+    sibling shares A's batch (batches have one owner), but the *requester*
+    (admin) is not A, so it's still another user's document."""
+    import json
+
+    from app.models.enums import UserRole
+
+    a, _b = two_users
+    auth_service.create_user(
+        db_session,
+        email="admin-sib@example.com",
+        password="password123",
+        role=UserRole.ADMIN,
+    )
+    db_session.commit()
+
+    batch, doc1 = _triage_batch(db_session, a.id, "TwoDocBatch")
+    doc2 = Document(
+        title="TwoDocBatch doc 2",
+        owner_id=a.id,
+        case_id="_TRIAGE",
+        ingest_batch_id=batch.id,
+        status=DocumentStatus.ACTIVE,
+        needs_review=True,
+    )
+    db_session.add(doc2)
+    db_session.commit()
+
+    client = _client()
+    _login(client, "admin-sib@example.com")
+    resp = client.delete(f"/document/{doc1.id}?context=triage")
+    assert resp.status_code == 200
+
+    trigger = json.loads(resp.headers.get("HX-Trigger", "{}"))
+    advance = trigger.get("triage:advance")
+    assert advance is None or advance.get("next_doc_id") != doc2.id
