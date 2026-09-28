@@ -3,6 +3,8 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.api.access_guards import (
+    claim_access_allowed,
+    merge_proposal_access_allowed,
     require_case_access,
     require_claim_access,
     require_evidence_proposal_access,
@@ -11,7 +13,7 @@ from app.api.access_guards import (
 from app.config import templates
 from app.constants import ORIGINATOR_COLORS
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
 from app.models.database import (
     Case,
     Claim,
@@ -19,6 +21,7 @@ from app.models.database import (
     ClaimEvidenceProposal,
     ClaimMergeProposal,
     Document,
+    User,
 )
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, UserReactionType
 from app.services import claim_proposal_service as proposal_svc
@@ -255,14 +258,14 @@ async def batch_merge_proposals(
     action: str = Form(...),
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
+    user: User = Depends(get_current_user),
 ) -> HTMLResponse:
     """Bulk-confirm or bulk-dismiss every PENDING merge proposal for the case."""
     if action not in ("confirm", "dismiss"):
         return HTMLResponse("Unknown action", status_code=422)
 
-    pending_ids = [
-        pid
-        for (pid,) in db.query(ClaimMergeProposal.id)
+    candidates = (
+        db.query(ClaimMergeProposal)
         .join(ClaimEvidence, ClaimEvidence.claim_id == ClaimMergeProposal.new_claim_id)
         .join(Document, Document.id == ClaimEvidence.document_id)
         .filter(
@@ -271,6 +274,14 @@ async def batch_merge_proposals(
         )
         .distinct()
         .all()
+    )
+    # require_case_access(edit=True) on case_id only proves the caller can edit
+    # THIS case — a merge can span a second, unrelated case via the existing
+    # claim's own evidence, so each candidate still needs its own check.
+    pending_ids = [
+        p.id
+        for p in candidates
+        if merge_proposal_access_allowed(db, user, p, edit=True)
     ]
 
     for pid in pending_ids:
@@ -372,9 +383,16 @@ async def update_claim_status(
     status: str = Form(...),
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
+    user: User = Depends(get_current_user),
 ) -> HTMLResponse:
     claim = db.get(Claim, claim_id)
     if claim is None or not _claim_belongs_to_case(db, claim, case_id):
+        return HTMLResponse("<p>Claim not found</p>", status_code=404)
+    # require_case_access(edit=True) above only proves the caller can edit
+    # THIS case — claims are global (Claim's own docstring) and this mutates
+    # Claim.status everywhere it's evidenced, so every linked case also needs
+    # edit access, exactly like the other global-claim mutations in this file.
+    if not claim_access_allowed(db, user, claim_id, edit=True):
         return HTMLResponse("<p>Claim not found</p>", status_code=404)
 
     try:

@@ -43,12 +43,18 @@ _ALLOWLIST: dict[str, str] = {
     "POST /admin/users/{user_id}/reset-password": "admin-only via get_current_admin",
     "POST /admin/users/{user_id}/delete": "admin-only via get_current_admin",
     "POST /admin/users/{user_id}/reassign-cases": "admin-only via get_current_admin",
-    # Global AI-provider config, not a per-user/per-case resource — any
-    # authenticated user may configure it, consistent with the rest of
-    # /api/settings/*.
-    "POST /api/settings/ai/instances/{instance_id}": "global app config, not per-object",
-    "DELETE /api/settings/ai/instances/{instance_id}": "global app config, not per-object",
-    "POST /api/settings/ai/instances/{instance_id}/test": "global app config, not per-object",
+    # Global AI-provider config, not a per-user/per-case resource, so a
+    # per-object access_guards check doesn't apply here. It's a KNOWN GAP,
+    # not a deliberate "any user may" decision: any authenticated user can
+    # currently repoint chat/embed/OCR at an attacker-controlled endpoint and
+    # see other users' document content flow through it. Needs a role gate
+    # (get_current_admin), not this meta-test's kind of guard — tracked in
+    # https://github.com/s3ntin3l8/sanctuary/issues/161, out of scope here
+    # since it's a role check, not a case/doc ownership one, and predates
+    # this PR's route list.
+    "POST /api/settings/ai/instances/{instance_id}": "known gap, tracked in #161",
+    "DELETE /api/settings/ai/instances/{instance_id}": "known gap, tracked in #161",
+    "POST /api/settings/ai/instances/{instance_id}/test": "known gap, tracked in #161",
 }
 
 

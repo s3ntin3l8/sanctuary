@@ -12,8 +12,10 @@ from app.config import DATA_DIR
 from app.core.paths import resolve_storage_path, to_storage_path
 from app.core.validators import validate_case_id
 from app.models.database import (
+    Case,
     Document,
     OriginatorType,
+    User,
 )
 from app.models.enums import DocumentRole, IngestBatchSourceType, IngestBatchStatus
 from app.models.schemas import (
@@ -539,6 +541,21 @@ async def ingest_file(
                     detail=f"Invalid case_id '{preliminary_case_id}'.",
                 )
             preliminary_case_id = validated
+            # The caller's own case_id was already access-checked by the route
+            # (see documents.py's /upload). A case_id sniffed from the filename
+            # was not — without this, naming a file after another user's case
+            # id would silently file it there. Fall back to _TRIAGE rather than
+            # erroring, since filename-sniffing is a best-effort convenience,
+            # not a hard requirement.
+            if not case_id and owner_id is not None:
+                from app.services import access_service
+
+                target_case = (
+                    db.query(Case).filter(Case.id == preliminary_case_id).first()
+                )
+                owner = db.get(User, owner_id)
+                if not access_service.can_edit_case(db, owner, target_case):
+                    preliminary_case_id = "_TRIAGE"
         if preliminary_case_id == "_TRIAGE" and ingest_batch_id is not None:
             case_dir = DATA_DIR / "_TRIAGE" / f"ib-{ingest_batch_id}"
         else:

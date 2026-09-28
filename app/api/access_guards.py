@@ -272,14 +272,20 @@ def _check_case_ids(db: Session, user: User, case_ids: set[str], *, edit: bool) 
     return all(checks) if edit else any(checks)
 
 
-def _claim_access_allowed(
-    db: Session, user: User, claim_id: int, *, edit: bool
-) -> bool:
+def claim_access_allowed(db: Session, user: User, claim_id: int, *, edit: bool) -> bool:
     case_ids = claim_linked_case_ids(db, claim_id)
     if case_ids:
         return _check_case_ids(db, user, case_ids, edit=edit)
     owner_ids = claim_linked_owner_ids(db, claim_id)
-    return access_service.is_admin(user) or user.id in owner_ids
+    if not owner_ids:
+        return False
+    if access_service.is_admin(user):
+        return True
+    # Same view/edit asymmetry as _check_case_ids: view = owns at least one
+    # evidencing (still-untriaged) document; edit = owns *all* of them, so a
+    # claim evidenced from two different users' _TRIAGE documents can't be
+    # edited by either owner unilaterally.
+    return owner_ids == {user.id} if edit else user.id in owner_ids
 
 
 def require_claim_access(*, edit: bool = False):
@@ -300,7 +306,7 @@ def require_claim_access(*, edit: bool = False):
         user: User = Depends(get_current_user),
     ) -> Claim:
         claim = db.query(Claim).filter(Claim.id == claim_id).first()
-        if claim is None or not _claim_access_allowed(db, user, claim_id, edit=edit):
+        if claim is None or not claim_access_allowed(db, user, claim_id, edit=edit):
             raise HTTPException(status_code=404, detail="Not found")
         return claim
 
@@ -308,12 +314,27 @@ def require_claim_access(*, edit: bool = False):
     return _dep
 
 
-def require_merge_proposal_access(*, edit: bool = False):
-    """Resolve `proposal_id` (ClaimMergeProposal) from the path.
-
-    Confirming a merge mutates both sides (new_claim's evidence moves onto
+def merge_proposal_access_allowed(
+    db: Session, user: User, proposal: ClaimMergeProposal, *, edit: bool
+) -> bool:
+    """Confirming a merge mutates both sides (new_claim's evidence moves onto
     existing_claim, new_claim is deleted), so edit requires edit access to
-    every case linked to *either* claim."""
+    every case linked to *either* claim. Shared by require_merge_proposal_access
+    and the batch merge route (claims.py), which must apply the same rule
+    per-proposal rather than trusting the URL's case_id alone."""
+    new_allowed = claim_access_allowed(db, user, proposal.new_claim_id, edit=edit)
+    existing_allowed = claim_access_allowed(
+        db, user, proposal.existing_claim_id, edit=edit
+    )
+    return (
+        (new_allowed and existing_allowed)
+        if edit
+        else (new_allowed or existing_allowed)
+    )
+
+
+def require_merge_proposal_access(*, edit: bool = False):
+    """Resolve `proposal_id` (ClaimMergeProposal) from the path."""
 
     async def _dep(
         proposal_id: int = Path(...),
@@ -325,18 +346,9 @@ def require_merge_proposal_access(*, edit: bool = False):
             .filter(ClaimMergeProposal.id == proposal_id)
             .first()
         )
-        if proposal is None:
-            raise HTTPException(status_code=404, detail="Not found")
-        new_allowed = _claim_access_allowed(db, user, proposal.new_claim_id, edit=edit)
-        existing_allowed = _claim_access_allowed(
-            db, user, proposal.existing_claim_id, edit=edit
-        )
-        allowed = (
-            (new_allowed and existing_allowed)
-            if edit
-            else (new_allowed or existing_allowed)
-        )
-        if not allowed:
+        if proposal is None or not merge_proposal_access_allowed(
+            db, user, proposal, edit=edit
+        ):
             raise HTTPException(status_code=404, detail="Not found")
         return proposal
 
@@ -371,7 +383,7 @@ def require_evidence_proposal_access(*, edit: bool = False):
         doc_allowed = doc is not None and check_owned_or_case_access(
             db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=edit
         )
-        claim_allowed = _claim_access_allowed(
+        claim_allowed = claim_access_allowed(
             db, user, proposal.target_claim_id, edit=edit
         )
         allowed = (
@@ -387,9 +399,13 @@ def require_evidence_proposal_access(*, edit: bool = False):
 
 def require_conversation_access():
     """Resolve `conversation_id` from the path; 404 unless the requester owns
-    it. Conversations are per-user (Conversation.user_id), not shared within
-    a case — two users both viewing the same case each get their own chat
-    history for it."""
+    it AND still has view access to its scope (case/document) right now.
+    Conversations are per-user (Conversation.user_id), not shared within a
+    case — two users both viewing the same case each get their own chat
+    history for it. The scope re-check matters because a CaseShare can be
+    revoked after a conversation exists — ownership alone would let a user
+    keep chatting (and retrieving passages) from a case they no longer have
+    any access to."""
 
     async def _dep(
         conversation_id: int = Path(...),
@@ -397,9 +413,10 @@ def require_conversation_access():
         user: User = Depends(get_current_user),
     ) -> Conversation:
         conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-        if conv is None or not (
-            access_service.is_admin(user) or conv.user_id == user.id
-        ):
+        if conv is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        owns = access_service.is_admin(user) or conv.user_id == user.id
+        if not owns or not check_scope_access(db, user, conv.scope_type, conv.scope_id):
             raise HTTPException(status_code=404, detail="Not found")
         return conv
 

@@ -93,6 +93,29 @@ def test_document_original_404_for_non_owner(auth_enabled, db_session, two_users
     assert resp.status_code == 404
 
 
+def test_upload_filename_case_id_sniffing_cannot_plant_into_another_users_case(
+    auth_enabled, db_session, two_users, mock_dispatch_task
+):
+    """Naming a file after a real case id must not silently file it there
+    unless the uploader can edit that case — the case_id form field is
+    checked by the route, but ingest_file() also sniffs a case id straight
+    out of the filename when no case_id is submitted."""
+    a, b = two_users
+    _make_case(db_session, "ADV-999-Z", b.id)
+
+    client = _login("a@example.com")
+    file_content = b"forged content"
+    resp = client.post(
+        "/upload",
+        files=[("files", ("ADV-999-Z-forged-letter.txt", file_content, "text/plain"))],
+    )
+    assert resp.status_code in (200, 302, 303)
+
+    db_session.expire_all()
+    planted = db_session.query(Document).filter(Document.case_id == "ADV-999-Z").first()
+    assert planted is None
+
+
 # --- cases.py ----------------------------------------------------------------
 
 
@@ -372,7 +395,9 @@ def test_worker_queue_badge_counts_exclude_other_users_failures(
     client = _login("a@example.com")
     resp = client.get("/api/worker/queue/badge")
     assert resp.status_code == 200
-    assert "1" not in resp.text or "n_failed" not in resp.text
+    # The failed-count pill (bg-error) only renders when n_failed > 0 —
+    # its absence is the real signal that B's failure wasn't counted for A.
+    assert "bg-error" not in resp.text
 
 
 # --- claims.py -----------------------------------------------------------------
@@ -424,3 +449,140 @@ def test_claim_precedent_toggle_ok_for_owner(auth_enabled, db_session, two_users
     client = _login("a@example.com")
     resp = client.post(f"/claims/{claim.id}/precedent/toggle")
     assert resp.status_code == 200
+
+
+def test_update_claim_status_cannot_be_used_via_own_case_to_mutate_other_case_claim(
+    auth_enabled, db_session, two_users
+):
+    """A claim can be evidence-linked from documents in two different cases
+    (claims are global). Edit access to one linked case must not be enough
+    to mutate the claim's globally-shared status."""
+    from app.models.database import Claim, ClaimEvidence
+    from app.models.enums import ClaimEvidenceRole, ClaimStatus
+
+    a, b = two_users
+    case_a = _make_case(db_session, "PR5-CLAIM-A", a.id)
+    case_b = _make_case(db_session, "PR5-CLAIM-B", b.id)
+    doc_a = Document(title="A's doc", owner_id=a.id, case_id=case_a.id)
+    doc_b = Document(title="B's doc", owner_id=b.id, case_id=case_b.id)
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+    claim = Claim(claim_text="Shared fact", status=ClaimStatus.ASSERTED)
+    db_session.add(claim)
+    db_session.flush()
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=claim.id, document_id=doc_a.id, role=ClaimEvidenceRole.ASSERTS
+            ),
+            ClaimEvidence(
+                claim_id=claim.id,
+                document_id=doc_b.id,
+                role=ClaimEvidenceRole.SUPPORTS,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = _login("a@example.com")
+    resp = client.post(
+        f"/cases/{case_a.id}/claims/{claim.id}/status",
+        data={"status": ClaimStatus.ESTABLISHED.value},
+    )
+    assert resp.status_code == 404
+
+    db_session.expire_all()
+    assert db_session.get(Claim, claim.id).status == ClaimStatus.ASSERTED
+
+
+def test_batch_merge_proposal_cannot_confirm_via_unrelated_case_edit_access(
+    auth_enabled, db_session, two_users
+):
+    """Bulk-confirming merge proposals for a case the caller can edit must not
+    silently confirm a merge whose *other* claim only has evidence in a case
+    the caller can't touch."""
+    from app.models.database import Claim, ClaimEvidence, ClaimMergeProposal
+    from app.models.enums import (
+        ClaimEvidenceRole,
+        ClaimStatus,
+        ProposalConfidence,
+        ProposalStatus,
+    )
+
+    a, b = two_users
+    case_a = _make_case(db_session, "PR5-MERGE-A", a.id)
+    case_b = _make_case(db_session, "PR5-MERGE-B", b.id)
+    doc_a = Document(title="A's doc", owner_id=a.id, case_id=case_a.id)
+    doc_b = Document(title="B's doc", owner_id=b.id, case_id=case_b.id)
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+
+    new_claim = Claim(claim_text="New claim", status=ClaimStatus.ASSERTED)
+    existing_claim = Claim(claim_text="Existing claim", status=ClaimStatus.ASSERTED)
+    db_session.add_all([new_claim, existing_claim])
+    db_session.flush()
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=new_claim.id,
+                document_id=doc_a.id,
+                role=ClaimEvidenceRole.ASSERTS,
+            ),
+            ClaimEvidence(
+                claim_id=existing_claim.id,
+                document_id=doc_b.id,
+                role=ClaimEvidenceRole.ASSERTS,
+            ),
+        ]
+    )
+    proposal = ClaimMergeProposal(
+        new_claim_id=new_claim.id,
+        existing_claim_id=existing_claim.id,
+        confidence=ProposalConfidence.HIGH,
+        status=ProposalStatus.PENDING,
+    )
+    db_session.add(proposal)
+    db_session.commit()
+
+    client = _login("a@example.com")
+    resp = client.post(
+        f"/cases/{case_a.id}/claims/proposals/merge/batch", data={"action": "confirm"}
+    )
+    assert resp.status_code == 200
+
+    db_session.expire_all()
+    assert db_session.get(ClaimMergeProposal, proposal.id).status == (
+        ProposalStatus.PENDING
+    )
+    assert db_session.get(Claim, new_claim.id) is not None
+
+
+# --- chat.py conversation scope revocation --------------------------------------
+
+
+def test_conversation_inaccessible_after_case_share_revoked(
+    auth_enabled, db_session, two_users
+):
+    """A conversation created while B had a VIEWER share on the case must stop
+    working once that share is revoked — ownership of the Conversation row
+    alone shouldn't keep retrieving from a case B can no longer see."""
+    a, b = two_users
+    case = _make_case(db_session, "PR5-CHAT-REVOKE", a.id)
+    share = CaseShare(case_id=case.id, user_id=b.id, permission=CaseAccessLevel.VIEWER)
+    db_session.add(share)
+    db_session.commit()
+
+    client_b = _login("b@example.com")
+    create_resp = client_b.post(
+        "/api/chat/conversations",
+        json={"scope_type": "case", "scope_id": case.id},
+    )
+    assert create_resp.status_code == 200
+    conv_id = create_resp.json()["id"]
+    assert client_b.get(f"/api/chat/conversations/{conv_id}").status_code == 200
+
+    db_session.delete(db_session.get(CaseShare, share.id))
+    db_session.commit()
+
+    resp = client_b.get(f"/api/chat/conversations/{conv_id}")
+    assert resp.status_code == 404
