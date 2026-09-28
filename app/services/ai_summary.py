@@ -439,6 +439,26 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             if matching_proceeding:
                 matching_case = matching_proceeding.case
 
+        # internal_id/az_court came straight out of AI-extracted document
+        # text — the same "sniffed from content" vector ingest_file's/
+        # _apply_script_extractors' guards close. A match against an
+        # existing case the doc's owner can't edit must not move the doc
+        # there, and must not fall through to the auto-create-draft branch
+        # either: get_or_create_case_from_reference does its own
+        # `Case.id == internal_id` lookup, which would just re-find and
+        # reattach the same blocked case (a `Case.id` collision can't create
+        # a second row with that id).
+        case_access_denied = False
+        if matching_case:
+            from app.models.database import User
+            from app.services import access_service
+
+            owner = db.get(User, doc.owner_id) if doc.owner_id is not None else None
+            if not access_service.can_edit_case(db, owner, matching_case):
+                case_access_denied = True
+                matching_case = None
+                matching_proceeding = None
+
         if matching_case:
             doc.case_id = matching_case.id
             if matching_proceeding:
@@ -453,7 +473,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             )
             _cascade_case_to_batch(db, doc, matching_case, matching_proceeding)
 
-        elif internal_id:
+        elif internal_id and not case_access_denied:
             # No existing case matched — auto-create a draft for user confirmation.
             from app.services.case_service import get_or_create_case_from_reference
 
