@@ -323,7 +323,12 @@ async def confirm_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    cases = CaseRepository(db).list_for_picker(owner_id=first_doc.owner_id)
+    # Picker/badge/stats reflect the *requester's* own access (they're what
+    # renders in the requester's own browser), not the ingesting doc owner's
+    # — those diverge whenever an admin or an EDITOR-shared user, not the
+    # original owner, is the one confirming the draft.
+    requester_id = request.state.current_user.id
+    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
     ctx = build_hud_context(
         db, first_doc, mode="review", context="embedded", cases=list(cases)
     )
@@ -342,7 +347,8 @@ async def confirm_draft_case(
     )
 
     response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
+        render_sidebar_badges_oob(db, owner_id=requester_id)
+        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
     ).encode("utf-8")
 
     case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
@@ -398,7 +404,10 @@ async def reject_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    cases = CaseRepository(db).list_for_picker(owner_id=first_doc.owner_id)
+    # Same rationale as confirm_draft_case: scope to the requester, not the
+    # ingesting doc's owner — they diverge for admins/EDITOR shares.
+    requester_id = request.state.current_user.id
+    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
     ctx = build_hud_context(
         db, first_doc, mode="review", context="embedded", cases=list(cases)
     )
@@ -417,7 +426,8 @@ async def reject_draft_case(
     )
 
     response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db) + render_triage_header_stats_oob(request, db)
+        render_sidebar_badges_oob(db, owner_id=requester_id)
+        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
     ).encode("utf-8")
     response.headers["HX-Trigger"] = json.dumps(
         {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
