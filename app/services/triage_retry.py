@@ -7,8 +7,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage) -> None:
-    from app.services.pipeline_status import STAGE_REGISTRY
+def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> None:
+    """Dispatch (or re-dispatch) a stage's retry task, claiming it first.
+
+    Which claim primitive to use depends on the stage's dispatch convention
+    (see StageSpec.self_claims in pipeline_status.py):
+
+    - Self-claiming stages (METADATA) must be dispatched UNCLAIMED — the
+      task flips PENDING→RUNNING itself on entry. Pre-claiming here would
+      leave the stage RUNNING and the dispatched task would then see RUNNING
+      and skip as "already_claimed" — a permanent deadlock.
+    - Batch-shared stages (BATCH_ANALYSIS) use the batch-level
+      claim_batch_for_analysis CAS, not a per-doc claim — multiple docs in
+      the same retry wave can independently compute BATCH_ANALYSIS as their
+      head stage, so a per-doc claim wouldn't prevent duplicate dispatch.
+    - Every other stage (EXTRACT, ENRICH, RELATIONSHIPS, CLAIMS, ENTITIES,
+      EMBEDDINGS) mark_starts unconditionally and relies on the dispatcher's
+      pre-claim for dedup, via the same claim_stage_for_dispatch primitive
+      every cascade dispatcher already uses.
+    """
+    from app.services.pipeline_status import STAGE_REGISTRY, claim_stage_for_dispatch
     from app.tasks.dispatch import dispatch_task
 
     spec = STAGE_REGISTRY[stage]
@@ -18,6 +36,27 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage) -> None:
             "Cannot dispatch retry for %s — no %s available", stage, spec.dispatch_arg
         )
         return
+
+    stage_label = stage.value if hasattr(stage, "value") else stage
+
+    if spec.dispatch_arg == "batch_id":
+        from app.services.intelligence.orchestrator import claim_batch_for_analysis
+
+        if not claim_batch_for_analysis(arg, db):
+            logger.info(
+                "dispatch_pipeline_retry: batch %s analysis already claimed — skipping",
+                arg,
+            )
+            return
+    elif not spec.self_claims:
+        if not claim_stage_for_dispatch(doc_id, stage, db):
+            logger.info(
+                "dispatch_pipeline_retry: %s already claimed for doc %d — skipping",
+                stage_label,
+                doc_id,
+            )
+            return
+
     # Diagnostic: log every dispatch attempt so we can correlate which docs
     # actually got their tasks queued vs. which got lost in transit. When
     # recover_pipeline_task picks up "stuck dispatches" later, the missing
@@ -26,7 +65,7 @@ def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage) -> None:
         "dispatch_pipeline_retry: doc_id=%d batch_id=%s stage=%s task=%s",
         doc_id,
         batch_id,
-        stage.value if hasattr(stage, "value") else stage,
+        stage_label,
         spec.retry_task,
     )
     dispatch_task(spec.retry_task, arg)
@@ -60,11 +99,16 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     # Re-read after any rollback so ORM state reflects DB reality.
     db.refresh(batch)
 
-    # Bail out if any doc has a running stage
+    # Bail out if any doc has a running OR retrying stage — a RETRYING stage
+    # still has a live scheduled countdown; resetting it here would race the
+    # countdown's own eventual redispatch. A lost RETRYING row (the countdown
+    # never fires) is reclaimed by the PR3a orphan sweep, so this is safe to
+    # block on rather than needing its own recovery path here.
+    _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in batch.documents:
         stages = stages_dict(doc)
         if any(
-            v.get("status") == StageStatus.RUNNING.value
+            v.get("status") in _IN_FLIGHT
             for v in stages.values()
             if isinstance(v, dict)
         ):
@@ -73,6 +117,16 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     # Clear the cascade gate so the batch analysis can re-run
     batch.analysis_queued_at = None
     batch.status = IngestBatchStatus.PENDING
+    if full:
+        # metadata_phase_queued_at is a one-time CAS flag (see
+        # claim_batch_for_metadata_phase) — once set it never resets on its
+        # own. A full retry resets EXTRACT back to PENDING for every doc, so
+        # once they all complete EXTRACT again, claim_batch_for_metadata_phase
+        # would find the flag already set from the original run and refuse
+        # to fire, permanently stalling the whole batch's METADATA phase.
+        # Only `full` needs this: a partial retry leaves EXTRACT completed,
+        # so the phase already correctly fired once and must not fire again.
+        batch.metadata_phase_queued_at = None
     if batch.meta:
         meta = dict(batch.meta)
         meta.pop("reload_fired", None)
@@ -208,9 +262,9 @@ def dispatch_batch_retry(
 
     for doc_id, b_id, head, needs_emb in dispatch_items:
         if head is not None:
-            dispatch_pipeline_retry(doc_id, b_id, head)
+            dispatch_pipeline_retry(doc_id, b_id, head, db)
         if needs_emb:
-            dispatch_pipeline_retry(doc_id, b_id, PipelineStage.EMBEDDINGS)
+            dispatch_pipeline_retry(doc_id, b_id, PipelineStage.EMBEDDINGS, db)
 
     # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
     # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it

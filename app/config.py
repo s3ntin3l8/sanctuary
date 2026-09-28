@@ -152,6 +152,14 @@ SCAN_PROCESSING_DIR = SCAN_INGEST_ROOT / "processing"
 SCAN_PROCESSED_DIR = SCAN_INGEST_ROOT / "processed"
 SCAN_FAILED_DIR = SCAN_INGEST_ROOT / "failed"
 SCAN_POLL_INTERVAL_SECONDS = int(os.getenv("SCAN_POLL_INTERVAL_SECONDS", "30"))
+# A file is claimed into processing/ via an atomic rename, then either
+# archived to processed/ or moved to failed/ within one scan_and_ingest call
+# — normally a few seconds. A directory that's been sitting in processing/
+# longer than this was almost certainly abandoned by a worker that crashed
+# mid-claim; the sweeper moves it to failed/ so it isn't stranded invisibly.
+SCAN_PROCESSING_STALE_SECONDS = int(
+    os.getenv("SCAN_PROCESSING_STALE_SECONDS", "600")
+)  # 10 min
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

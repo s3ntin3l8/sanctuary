@@ -118,6 +118,50 @@ def test_ingested_attachment_is_stored_relative_and_served(
     assert b"%PDF" in response.content
 
 
+# ── Pipeline single-stage retry ──────────────────────────────────────────
+
+
+@pytest.mark.integration
+def test_retry_stage_happy_path_dispatches(db_session):
+    doc = _doc_with_stages(
+        db_session, enrich={"status": StageStatus.FAILED.value, "error": "boom"}
+    )
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
+
+    assert response.status_code == 200
+    db_session.refresh(doc)
+    assert stages_dict(doc)["enrich"]["status"] == StageStatus.PENDING.value
+    mock_dispatch.assert_called_once()
+    assert mock_dispatch.call_args[0][2] == PipelineStage.ENRICH
+
+
+@pytest.mark.integration
+def test_retry_stage_409_when_running(db_session):
+    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RUNNING.value})
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
+
+    assert response.status_code == 409
+    db_session.refresh(doc)
+    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RUNNING.value
+    mock_dispatch.assert_not_called()
+
+
+@pytest.mark.integration
+def test_retry_stage_409_when_retrying(db_session):
+    """PR4: a stage with a live scheduled retry countdown (RETRYING) must
+    block a manual retry of that same stage the same as RUNNING."""
+    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RETRYING.value})
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
+
+    assert response.status_code == 409
+    db_session.refresh(doc)
+    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RETRYING.value
+    mock_dispatch.assert_not_called()
+
+
 # ── Pipeline retry-all ────────────────────────────────────────────────────
 
 
@@ -187,6 +231,21 @@ def test_retry_all_409_when_running(db_session):
     assert b"still running" in response.content
     db_session.refresh(doc)
     assert stages_dict(doc)["enrich"]["status"] == StageStatus.RUNNING.value
+    mock_dispatch.assert_not_called()
+
+
+@pytest.mark.integration
+def test_retry_all_409_when_retrying(db_session):
+    """PR4: a stage with a live scheduled retry countdown (RETRYING) must
+    block retry-all the same as RUNNING — resetting it here would race the
+    countdown's own eventual redispatch."""
+    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RETRYING.value})
+    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/document/{doc.id}/pipeline/retry-all")
+
+    assert response.status_code == 409
+    db_session.refresh(doc)
+    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RETRYING.value
     mock_dispatch.assert_not_called()
 
 

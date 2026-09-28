@@ -11,6 +11,7 @@ case_service and the case-confirm/reject endpoints also need it on
 case-transition events.
 """
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, or_
@@ -25,6 +26,8 @@ from app.models.enums import IngestBatchStatus
 from app.repositories.document import DocumentRepository
 from app.repositories.ingest_batch import IngestBatchRepository
 from app.services.pipeline_status import stages_dict
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_case_title(
@@ -51,18 +54,39 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
     relationship/claims/entities stages run with the correct case context.
     Only processes docs whose METADATA completed successfully (failed metadata
     means no enrichment output would be meaningful).
+
+    Skips docs whose ENRICH is already RUNNING or RETRYING — resetting it out
+    from under an in-flight run would race the two dispatches. Known gap: if
+    the in-flight run reads doc.case_id before this case transition commits,
+    it produces output against the stale (pre-transition) case context and
+    nothing here re-triggers a fresh enrich afterward — tracked separately
+    rather than building a deferred-retry mechanism into this narrow path.
     """
-    from app.models.enums import PipelineStage
-    from app.services.pipeline_status import reset_stage
+    from app.models.enums import PipelineStage, StageStatus
+    from app.services.pipeline_status import claim_stage_for_dispatch, reset_stage
     from app.tasks.dispatch import dispatch_task
     from app.tasks.enrich_document import enrich_document_task
 
     for doc in docs:
-        metadata_status = stages_dict(doc).get("metadata", {}).get("status")
+        stages = stages_dict(doc)
+        metadata_status = stages.get("metadata", {}).get("status")
         if metadata_status != "completed":
             continue
+        enrich_status = stages.get("enrich", {}).get("status")
+        if enrich_status in (StageStatus.RUNNING.value, StageStatus.RETRYING.value):
+            logger.info(
+                "reset_and_reenrich: doc %d ENRICH already %s — skipping",
+                doc.id,
+                enrich_status,
+            )
+            continue
         reset_stage(doc.id, PipelineStage.ENRICH, db)
-        dispatch_task(enrich_document_task, doc.id)
+        # ENRICH is a caller-claimed stage (mark_starts unconditionally) —
+        # claim it before dispatch for the same double-dispatch protection
+        # every other cascade dispatcher uses, in case something else raced
+        # in between the status read above and reset_stage just now.
+        if claim_stage_for_dispatch(doc.id, PipelineStage.ENRICH, db):
+            dispatch_task(enrich_document_task, doc.id)
 
 
 def find_next_review_doc(db: Session, after_doc_id: int) -> Document | None:

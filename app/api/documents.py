@@ -607,13 +607,16 @@ async def retry_pipeline_stage(
     db.refresh(doc)
     stages = stages_dict(doc)
 
-    # Guard: reject if this stage itself is running
+    # Guard: reject if this stage itself is running or already scheduled to
+    # retry on its own (RETRYING) — resetting+redispatching over a live
+    # RETRYING countdown races the two dispatches. A lost RETRYING row is
+    # reclaimed by the PR3a orphan sweep, so this is safe to block on.
     current = stages.get(stage, {}).get("status")
-    if current == "running":
+    if current in ("running", "retrying"):
         return templates.TemplateResponse(
             request,
             "partials/_pipeline_stepper.html",
-            {"doc": doc, "retry_error": f"Stage '{stage}' is already running."},
+            {"doc": doc, "retry_error": f"Stage '{stage}' is already {current}."},
             status_code=409,
         )
 
@@ -646,7 +649,7 @@ async def retry_pipeline_stage(
     reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
-    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage, db)
 
     return templates.TemplateResponse(
         request,
@@ -680,10 +683,15 @@ async def retry_pipeline_all(
         _lock_row_for_retry(doc_id, db)
         db.refresh(doc)
         stages = stages_dict(doc)
+        # RETRYING is included alongside RUNNING: a stage with its own
+        # scheduled retry countdown still in flight would otherwise race
+        # reset_all_stages' PENDING reset against that countdown firing.
         running_stages = [
             key
             for key, val in stages.items()
-            if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+            if isinstance(val, dict)
+            and val.get("status")
+            in (StageStatus.RUNNING.value, StageStatus.RETRYING.value)
         ]
         if running_stages:
             return running_stages
@@ -732,7 +740,7 @@ async def retry_pipeline_all(
     # Kick off the pipeline from EXTRACT — process_document_task chains forward
     # to METADATA → PROCEEDING_ANALYSIS → ENRICH → … and dispatches EMBEDDINGS
     # in parallel, so a single dispatch covers every non-skipped stage.
-    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT, db)
 
     return templates.TemplateResponse(
         request, "partials/_pipeline_stepper.html", {"doc": doc}

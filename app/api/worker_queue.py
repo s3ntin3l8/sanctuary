@@ -261,14 +261,13 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
 @router.post("/retry-failed")
 @limiter.limit("5/minute")
 async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
-    import importlib
-
     from app.services.pipeline_status import (
         STAGE_REGISTRY,
         reset_failed_stages_only,
         retry_on_db_locked,
         stages_dict,
     )
+    from app.services.triage_retry import dispatch_pipeline_retry
     from app.tasks.dispatch import dispatch_task
 
     failed_docs = (
@@ -299,17 +298,19 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
             if pre_reset.get(stage.value, {}).get("status") == "failed"
         ]
         if failed_specs:
+            # earliest failed stage's own dispatch convention (self-claiming
+            # vs. pre-claimed vs. batch-shared) is honored by
+            # dispatch_pipeline_retry — in particular this dedupes
+            # BATCH_ANALYSIS via claim_batch_for_analysis, so multiple docs
+            # in the same batch sharing it as their earliest failed stage
+            # don't each independently dispatch analyze_batch_task.
             earliest = min(failed_specs, key=lambda s: s.order)
-            arg = doc.ingest_batch_id if earliest.dispatch_arg == "batch_id" else doc_id
-            module_name, func_name = earliest.retry_task.rsplit(".", 1)
-            task = getattr(importlib.import_module(module_name), func_name)
             logger.info(
-                "retry-failed: doc %d dispatching %s (earliest failed stage: %s)",
+                "retry-failed: doc %d dispatching earliest failed stage: %s",
                 doc_id,
-                func_name,
                 earliest.stage.value,
             )
-            dispatch_task(task, arg)
+            dispatch_pipeline_retry(doc_id, doc.ingest_batch_id, earliest.stage, db)
         else:
             # No recognised failed stage — fall back to head task (EXTRACT).
             from app.tasks.document_processing import process_document_task

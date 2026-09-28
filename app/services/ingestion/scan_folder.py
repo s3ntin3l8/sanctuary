@@ -15,6 +15,7 @@ from app.config import (
     SCAN_INCOMING_DIR,
     SCAN_PROCESSED_DIR,
     SCAN_PROCESSING_DIR,
+    SCAN_PROCESSING_STALE_SECONDS,
 )
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
 
@@ -112,12 +113,69 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
             return 0
         return 1
     except Exception as exc:
+        # ingest_scanned_file shares `db` across every file in this tick's
+        # scan_and_ingest loop — a DB-level failure (not just an application
+        # exception) leaves the session in a failed-transaction state where
+        # every subsequent query raises PendingRollbackError. Without this,
+        # one bad file poisons the session for the rest of the tick: every
+        # later file in the same incoming/ listing gets wrongly moved to
+        # failed/ with a misleading error, even though nothing was actually
+        # wrong with them.
+        db.rollback()
         logger.error(
             "scan_and_ingest: ingest failed for %s: %s", incoming_path.name, exc
         )
         failed_source = archive_dir or processing_batch_dir
         _fail_batch(failed_source, batch_id, str(exc))
         return 0
+
+
+def sweep_stale_processing_dirs(
+    *, stale_after_seconds: int = SCAN_PROCESSING_STALE_SECONDS
+) -> int:
+    """Move processing/ subdirectories abandoned by a crashed worker to failed/.
+
+    A file is claimed into processing/<batch_id>/ via an atomic rename in
+    _ingest_one, then either archived to processed/ or moved to failed/
+    within the same call — normally a few seconds, never more than a single
+    Docling-free ingest_scanned_file call. A directory still there past
+    stale_after_seconds was claimed by a worker that crashed (or was killed)
+    before reaching either terminal move, and would otherwise sit invisible
+    in processing/ forever — neither retried, failed, nor visible in the
+    triage/failed UI.
+    """
+    try:
+        candidates = sorted(SCAN_PROCESSING_DIR.iterdir())
+    except OSError:
+        return 0
+
+    now = time.time()
+    swept = 0
+    for entry in candidates:
+        if not entry.is_dir():
+            continue
+        try:
+            age = now - entry.stat().st_mtime
+        except OSError:
+            continue
+        if age < stale_after_seconds:
+            continue
+        batch_id = entry.name
+        logger.warning(
+            "scan_and_ingest: sweeping stale processing/ dir %s (age=%.0fs) — "
+            "likely abandoned by a crashed worker; move it back to incoming/ "
+            "to retry",
+            batch_id,
+            age,
+        )
+        _fail_batch(
+            entry,
+            batch_id,
+            f"Abandoned in processing/ for {age:.0f}s — likely a crashed "
+            "worker. Move the original file back to incoming/ to retry.",
+        )
+        swept += 1
+    return swept
 
 
 def scan_and_ingest(db: Session) -> int:
@@ -127,6 +185,7 @@ def scan_and_ingest(db: Session) -> int:
     user; files dropped directly in the root ``incoming/`` are attributed to the
     bootstrap admin (who can reassign the resulting case later).
     """
+    sweep_stale_processing_dirs()
     from app.models.database import User
     from app.services import auth_service
 
