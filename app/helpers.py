@@ -46,7 +46,7 @@ def build_sidebar_counts(db: Session, owner_id: int | None = None) -> dict:
     # that import helpers, so a top-level import here would cycle.
     from app.api.worker_queue import compute_queue_counts
 
-    queue_counts = compute_queue_counts(db)
+    queue_counts = compute_queue_counts(db, owner_id=owner_id)
     return {
         "triage_count": triage_count,
         "total_docs": total_docs,

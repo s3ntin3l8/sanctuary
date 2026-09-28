@@ -7,8 +7,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.api.access_guards import check_scope_access, require_conversation_access
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
+from app.dependencies import get_current_user, get_db
+from app.models.database import Conversation, User
 from app.repositories.chat import ChatRepository
 from app.services.chat.chat_service import stream_answer
 
@@ -37,14 +39,17 @@ def list_conversations(
     scope_type: str,
     scope_id: str,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    """List all conversations for a given scope."""
+    """List the caller's own conversations for a given scope."""
     if scope_type not in ("document", "case"):
         raise HTTPException(
             status_code=400, detail="scope_type must be 'document' or 'case'"
         )
+    if not check_scope_access(db, user, scope_type, scope_id):
+        raise HTTPException(status_code=404, detail="Not found")
     repo = ChatRepository(db)
-    convs = repo.list_by_scope(scope_type, scope_id)
+    convs = repo.list_by_scope(scope_type, scope_id, user.id)
     return [
         {
             "id": c.id,
@@ -56,12 +61,13 @@ def list_conversations(
 
 
 @router.get("/conversations/{conversation_id}")
-def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
+def get_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    conv: Conversation = Depends(require_conversation_access()),
+):
     """Get a specific conversation by ID."""
     repo = ChatRepository(db)
-    conv = repo.get(conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
     messages = repo.messages(conv.id)
     return {
         "id": conv.id,
@@ -82,14 +88,23 @@ def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/conversations")
-def get_or_create_conversation(req: ConversationRequest, db: Session = Depends(get_db)):
-    """Return the active conversation for a scope, creating one if needed."""
+def get_or_create_conversation(
+    req: ConversationRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the caller's active conversation for a scope, creating one if
+    needed."""
     if req.scope_type not in ("document", "case"):
         raise HTTPException(
             status_code=400, detail="scope_type must be 'document' or 'case'"
         )
+    if not check_scope_access(db, user, req.scope_type, req.scope_id):
+        raise HTTPException(status_code=404, detail="Not found")
     repo = ChatRepository(db)
-    conv = repo.get_or_create(req.scope_type, req.scope_id, force_new=req.force_new)
+    conv = repo.get_or_create(
+        req.scope_type, req.scope_id, user.id, force_new=req.force_new
+    )
     messages = repo.messages(conv.id)
     return {
         "id": conv.id,
@@ -114,6 +129,7 @@ def update_conversation_title(
     conversation_id: int,
     req: TitleRequest,
     db: Session = Depends(get_db),
+    _conv: Conversation = Depends(require_conversation_access()),
 ):
     """Update conversation title."""
     repo = ChatRepository(db)
@@ -124,7 +140,11 @@ def update_conversation_title(
 
 
 @router.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
+def delete_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    _conv: Conversation = Depends(require_conversation_access()),
+):
     """Delete a conversation and all its messages."""
     repo = ChatRepository(db)
     if not repo.delete(conversation_id):
@@ -139,13 +159,9 @@ async def send_message(
     request: Request,
     req: MessageRequest,
     db: Session = Depends(get_db),
+    conv: Conversation = Depends(require_conversation_access()),
 ):
     """Stream an AI answer for the given conversation. Returns text/event-stream."""
-    repo = ChatRepository(db)
-    conv = repo.get(conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
     if not req.content.strip():
         raise HTTPException(status_code=400, detail="Message content is empty")
 

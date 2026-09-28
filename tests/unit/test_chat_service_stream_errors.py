@@ -13,6 +13,7 @@ import pytest
 from app.models.database import Document
 from app.models.enums import OriginatorType
 from app.repositories.chat import ChatRepository
+from app.services import auth_service
 from app.services.ai_provider import ProviderType, chat_provider
 from app.services.chat.chat_service import stream_answer
 
@@ -32,8 +33,11 @@ async def test_stream_answer_generic_error_yields_generic_token(
     db_session.commit()
     db_session.refresh(doc)
 
+    admin = auth_service.get_user_by_email(db_session, "admin@localhost")
     repo = ChatRepository(db_session)
-    conv = repo.get_or_create(scope_type="document", scope_id=str(doc.id))
+    conv = repo.get_or_create(
+        scope_type="document", scope_id=str(doc.id), user_id=admin.id
+    )
 
     monkeypatch.setattr(chat_provider, "reload_from_db", lambda db: None)
     monkeypatch.setattr(

@@ -1,14 +1,16 @@
 import logging
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import or_
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query, Session
 
 from app.config import templates
 from app.core.rate_limit import limiter
-from app.dependencies import get_db
-from app.models.database import Document
+from app.dependencies import get_current_user, get_db
+from app.models.database import Document, User
 from app.models.enums import PipelineStage, PipelineState
+from app.services import access_service
 from app.services.ai_inflight import count_inflight
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 
@@ -17,22 +19,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/worker/queue", tags=["worker-queue"])
 
 
+def _visible_to(
+    query: Query, owner_id: int | None, visible_case_ids: set[str] | None
+) -> Query:
+    """Restrict a Document query to docs owned by `owner_id` or whose case is
+    in `visible_case_ids`. No-ops when `owner_id` is None (unauthenticated
+    context — matches build_sidebar_counts' unrestricted convention) or when
+    `visible_case_ids` is None (admin)."""
+    if owner_id is None or visible_case_ids is None:
+        return query
+    return query.filter(
+        or_(Document.owner_id == owner_id, Document.case_id.in_(visible_case_ids))
+    )
+
+
 def _get_queue_docs(
-    db: Session,
+    db: Session, owner_id: int | None = None
 ) -> tuple[list[Document], list[Document], list[Document]]:
-    """Return (running_docs, pending_docs, failed_docs) ordered for display.
+    """Return (running_docs, pending_docs, failed_docs) ordered for display,
+    restricted to what `owner_id` may see (None = unrestricted).
 
     PARTIAL docs (some stages done, some pending/running) are included in the
     running bucket so their active stages are visible in the panel.  Without
     this, a doc whose pipeline_state flips to PARTIAL mid-processing (e.g.
     between stage transitions) disappears from the queue entirely.
     """
+    visible_case_ids = (
+        access_service.visible_case_ids(db, db.get(User, owner_id))
+        if owner_id is not None
+        else None
+    )
     active = (
-        db.query(Document)
-        .filter(
-            Document.pipeline_state.in_(
-                [PipelineState.RUNNING, PipelineState.PARTIAL, PipelineState.PENDING]
-            )
+        _visible_to(
+            db.query(Document).filter(
+                Document.pipeline_state.in_(
+                    [
+                        PipelineState.RUNNING,
+                        PipelineState.PARTIAL,
+                        PipelineState.PENDING,
+                    ]
+                )
+            ),
+            owner_id,
+            visible_case_ids,
         )
         .order_by(Document.pipeline_state)
         .limit(50)
@@ -45,8 +74,11 @@ def _get_queue_docs(
     ]
     pending = [d for d in active if d.pipeline_state == PipelineState.PENDING]
     failed = (
-        db.query(Document)
-        .filter(Document.pipeline_state == PipelineState.FAILED)
+        _visible_to(
+            db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED),
+            owner_id,
+            visible_case_ids,
+        )
         .limit(20)
         .all()
     )
@@ -196,15 +228,16 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
     return items
 
 
-def compute_queue_counts(db: Session) -> dict[str, int]:
+def compute_queue_counts(db: Session, owner_id: int | None = None) -> dict[str, int]:
     """Single source of truth for worker-queue badge and popover counts.
 
     Stage-level counts (one per running/retrying stage, one per pending
     doc's first stage) so the rail badge matches the popover's "X Active"
     header exactly. n_failed stays per-document — a failed doc is one
-    failure regardless of which stage tripped it.
+    failure regardless of which stage tripped it. Restricted to what
+    `owner_id` may see (None = unrestricted).
     """
-    running, pending, failed = _get_queue_docs(db)
+    running, pending, failed = _get_queue_docs(db, owner_id)
     queue_items = _build_queue_items(running, pending)
     return {
         "n_executing": sum(1 for item in queue_items if item.get("executing")),
@@ -214,8 +247,12 @@ def compute_queue_counts(db: Session) -> dict[str, int]:
 
 
 @router.get("/badge")
-async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
-    counts = compute_queue_counts(db)
+async def worker_queue_badge(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    counts = compute_queue_counts(db, owner_id=user.id)
     return templates.TemplateResponse(
         request,
         "partials/_worker_queue_badge.html",
@@ -227,8 +264,12 @@ async def worker_queue_badge(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/panel")
-async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db)):
-    running, pending, failed = _get_queue_docs(db)
+async def worker_queue_panel_body(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    running, pending, failed = _get_queue_docs(db, owner_id=user.id)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
     # Executing vs queued counts derive directly from queue_items so badges
@@ -260,7 +301,11 @@ async def worker_queue_panel_body(request: Request, db: Session = Depends(get_db
 
 @router.post("/retry-failed")
 @limiter.limit("5/minute")
-async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
+async def retry_failed_docs(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     from app.services.pipeline_status import (
         STAGE_REGISTRY,
         reset_failed_stages_only,
@@ -270,9 +315,12 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
     from app.services.triage_retry import dispatch_pipeline_retry
     from app.tasks.dispatch import dispatch_task
 
-    failed_docs = (
-        db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED).all()
-    )
+    visible_case_ids = access_service.visible_case_ids(db, user)
+    failed_docs = _visible_to(
+        db.query(Document).filter(Document.pipeline_state == PipelineState.FAILED),
+        user.id,
+        visible_case_ids,
+    ).all()
     for doc in failed_docs:
         doc_id = doc.id
 
@@ -322,7 +370,7 @@ async def retry_failed_docs(request: Request, db: Session = Depends(get_db)):
             )
             dispatch_task(process_document_task, doc_id)
 
-    running, pending, failed = _get_queue_docs(db)
+    running, pending, failed = _get_queue_docs(db, owner_id=user.id)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()
     n_executing = sum(1 for item in queue_items if item.get("executing"))

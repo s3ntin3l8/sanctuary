@@ -11,6 +11,12 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
+from app.api.access_guards import (
+    check_owned_or_case_access,
+    require_action_item_access,
+    require_document_access,
+    require_pin_access,
+)
 from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
@@ -75,6 +81,18 @@ async def upload_document(
     parent_id = (
         int(parent_id_raw) if isinstance(parent_id_raw, str) and parent_id_raw else None
     )
+
+    # Uploading straight into an existing case requires edit rights on it —
+    # otherwise any authenticated user could add documents to a case they
+    # can't even view. Uploads with no case_id (or "_TRIAGE") land in the
+    # uploader's own triage queue, which needs no case check.
+    if case_id and case_id != "_TRIAGE":
+        from app.models.database import Case as _Case
+        from app.services import access_service
+
+        target_case = db.query(_Case).filter(_Case.id == case_id).first()
+        if not access_service.can_edit_case(db, user, target_case):
+            raise HTTPException(status_code=404, detail="Case not found")
 
     if not files or all(not f.filename for f in files):
         if request.headers.get("hx-request"):
@@ -238,7 +256,11 @@ async def upload_document(
 
 
 @router.get("/upload/status/{doc_id}")
-async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
+async def upload_status_row(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Self-replacing status row for the upload modal's per-file probe.
 
     Polls every 2 s from the row in /upload's response. While the doc's
@@ -246,9 +268,13 @@ async def upload_status_row(doc_id: int, db: Session = Depends(get_db)):
     current stage label). When the pipeline reaches a terminal state, returns
     a final row that disarms the polling (no hx-* attributes).
     """
+
     doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        # Row was deleted under us — return empty so the polling probe stops.
+    if not doc or not check_owned_or_case_access(
+        db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=False
+    ):
+        # Row was deleted (or isn't this user's) — return empty so the
+        # polling probe stops, same as the not-found case (no 403 leak).
         return HTMLResponse("")
 
     state = doc.pipeline_state.value if doc.pipeline_state else "pending"
@@ -331,13 +357,10 @@ async def delete_document(
     doc_id: int,
     context: str | None = None,
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
     """Delete a document and its associated file."""
     from app.services.document_service import DocumentService
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
 
     bundle_key = None
     if context == "triage":
@@ -421,14 +444,18 @@ async def document_detail(
     doc_id: int,
     context: str | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+
     doc = (
         db.query(Document)
         .options(joinedload(Document.proceeding))
         .filter(Document.id == doc_id)
         .first()
     )
-    if not doc:
+    if not doc or not check_owned_or_case_access(
+        db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=False
+    ):
         return templates.TemplateResponse(
             request,
             "errors/404.html",
@@ -477,6 +504,7 @@ async def hud_toggle_reaction(
     notes: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
     import json as _json
 
@@ -495,9 +523,6 @@ async def hud_toggle_reaction(
         repo.set_reaction(doc_id, reaction_enum, notes, user_id=user.id)
     db.commit()
 
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
     reactions = list(repo.get_by_document(doc_id))
     response = templates.TemplateResponse(
         request,
@@ -528,11 +553,8 @@ async def hud_approve_summary(
     doc_id: int,
     action: str,
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
     if action == "approve":
         doc.ai_summary_approved_at = datetime.now()
     elif action == "reject":
@@ -562,12 +584,9 @@ def get_pipeline_status(
     doc_id: int,
     view: str = "pill",
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access()),
 ):
     """Return the rendered pipeline status partial (pill or stepper)."""
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
     template = (
         "partials/_pipeline_stepper.html"
         if view == "stepper"
@@ -583,6 +602,7 @@ async def retry_pipeline_stage(
     doc_id: int,
     stage: str,
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
     """Retry a specific pipeline stage. Returns 409 if upstream is running."""
     from app.models.enums import PipelineStage
@@ -591,10 +611,6 @@ async def retry_pipeline_stage(
         get_upstream_blocking,
         reset_stage,
     )
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     try:
         pipeline_stage = PipelineStage(stage)
@@ -684,6 +700,7 @@ async def retry_pipeline_all(
     request: Request,
     doc_id: int,
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
     """Reset every non-skipped stage to PENDING and re-dispatch from EXTRACT.
 
@@ -692,10 +709,6 @@ async def retry_pipeline_all(
     """
     from app.models.enums import PipelineStage, StageStatus
     from app.services.pipeline_status import reset_all_stages, retry_on_db_locked
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     def _do_reset():
         # Row-lock this document before reading stages so a concurrent worker
@@ -797,11 +810,8 @@ async def create_pin(
     note: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
     repo = DocumentPinRepository(db)
     pin = repo.create(doc_id, passage_id, note, user_id=user.id)
     db.commit()
@@ -824,20 +834,22 @@ async def update_pin(
     pin_id: int,
     note: str | None = Form(None),
     db: Session = Depends(get_db),
+    pin=Depends(require_pin_access(edit=True)),
 ):
     repo = DocumentPinRepository(db)
-    pin = repo.update_note(pin_id, note)
-    if pin is None:
-        raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+    repo.update_note(pin_id, note)
     db.commit()
     return HTMLResponse("", status_code=204)
 
 
 @router.delete("/pin/{pin_id}")
-async def delete_pin(pin_id: int, db: Session = Depends(get_db)):
+async def delete_pin(
+    pin_id: int,
+    db: Session = Depends(get_db),
+    pin=Depends(require_pin_access(edit=True)),
+):
     repo = DocumentPinRepository(db)
-    if not repo.delete(pin_id):
-        raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+    repo.delete(pin_id)
     db.commit()
     return HTMLResponse("", status_code=200)
 
@@ -853,14 +865,10 @@ async def update_action_item_status(
     item_id: int,
     status: str = Form(...),
     db: Session = Depends(get_db),
+    item=Depends(require_action_item_access(edit=True)),
 ):
     """Update an action item's status (open / done / dismissed)."""
-    from app.models.database import ActionItem
     from app.models.enums import ActionItemStatus
-
-    item = db.get(ActionItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Action item not found")
 
     try:
         item.status = ActionItemStatus(status)
@@ -881,6 +889,7 @@ async def promote_cost_delta(
     vat_rate_override: float | None = Form(None),
     amount_override: float | None = Form(None),
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access(edit=True)),
 ):
     """Promote a doc's CostSignal into a LegalCost ledger row.
 
@@ -894,9 +903,6 @@ async def promote_cost_delta(
     from app.models.enums import CostCategory
     from app.services.case_service import recompute_total_cost_exposure
 
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
     if not doc.case_id:
         raise HTTPException(status_code=422, detail="Document has no case")
 
@@ -963,13 +969,10 @@ async def promote_cost_delta(
 async def document_original(
     doc_id: int,
     db: Session = Depends(get_db),
+    doc: Document = Depends(require_document_access()),
 ):
     from app.config import DATA_DIR
     from app.core.paths import resolve_storage_path
-
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
     if not doc.file_path:
         raise HTTPException(
