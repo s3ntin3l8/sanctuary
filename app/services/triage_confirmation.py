@@ -56,11 +56,18 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
     means no enrichment output would be meaningful).
 
     Skips docs whose ENRICH is already RUNNING or RETRYING — resetting it out
-    from under an in-flight run would race the two dispatches. Known gap: if
-    the in-flight run reads doc.case_id before this case transition commits,
-    it produces output against the stale (pre-transition) case context and
-    nothing here re-triggers a fresh enrich afterward — tracked separately
-    rather than building a deferred-retry mechanism into this narrow path.
+    from under an in-flight run would race the two dispatches. Two known
+    gaps, tracked as #157 rather than fixed here:
+    - If the in-flight run reads doc.case_id before this case transition
+      commits, it produces output against the stale (pre-transition) case
+      context and nothing here re-triggers a fresh enrich afterward.
+    - The status read above and the reset_stage()/claim_stage_for_dispatch()
+      calls below aren't atomic as a whole: a concurrent dispatcher could
+      claim ENRICH (pending->running) in the gap between the read and
+      reset_stage's unconditional UPDATE, which would then clobber that
+      claim back to pending and let this function's own claim succeed,
+      still yielding two dispatches. Same systemic shape as the read-then-
+      write pattern in documents.py's retry endpoints.
     """
     from app.models.enums import PipelineStage, StageStatus
     from app.services.pipeline_status import claim_stage_for_dispatch, reset_stage

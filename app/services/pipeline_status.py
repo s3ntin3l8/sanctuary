@@ -81,12 +81,25 @@ class StageSpec:
     downstream: tuple[PipelineStage, ...] = field(default_factory=tuple)
     retry_task: str = ""  # dotted Celery task name
     dispatch_arg: Literal["doc_id", "batch_id"] = "doc_id"
-    # True when the task atomically claims its own stage (pending→running) on
-    # entry, rather than relying on the dispatcher to pre-claim. Recovery must
-    # NOT pre-claim such stages: pre-claiming leaves the stage RUNNING and the
-    # dispatched task then self-claims, sees RUNNING, and skips as
-    # "already_claimed" — a permanent deadlock. Only metadata_task does this
-    # (its normal dispatcher, process_document_task, hands it off unclaimed).
+    # True when the dispatcher must hand this stage off UNCLAIMED (still
+    # PENDING) rather than pre-claiming it (pending→running) before dispatch.
+    # Two distinct task shapes need this:
+    #   - metadata_task atomically claims its own stage (pending→running) on
+    #     entry via claim_stage_for_dispatch. Pre-claiming here would leave
+    #     the stage RUNNING and the dispatched task's own claim attempt would
+    #     then see RUNNING and skip as "already_claimed" — a permanent
+    #     deadlock.
+    #   - generate_embedding_task gates on METADATA being terminal and, if
+    #     not, returns early WITHOUT calling mark_started — leaving the stage
+    #     PENDING so metadata_task's own claim_stage_for_dispatch cascade can
+    #     re-claim and redispatch it once METADATA actually completes. A
+    #     dispatcher that pre-claims here leaves the stage RUNNING on defer
+    #     instead of PENDING, so that later re-claim fails and the embedding
+    #     is silently lost forever. This bit specifically the retry path,
+    #     which fires EMBEDDINGS in parallel with a head-stage retry that can
+    #     land well before METADATA is terminal again.
+    # Either way, the task's own entry logic — not the dispatcher — is what
+    # decides whether this stage actually starts.
     self_claims: bool = False
 
 
@@ -143,6 +156,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         depends_on=(PipelineStage.METADATA,),
         downstream=(),
         retry_task="app.tasks.generate_embedding.generate_embedding_task",
+        self_claims=True,  # generate_embedding_task defers-unclaimed if METADATA isn't terminal yet — see StageSpec.self_claims
     ),
     PipelineStage.BATCH_ANALYSIS: StageSpec(
         stage=PipelineStage.BATCH_ANALYSIS,

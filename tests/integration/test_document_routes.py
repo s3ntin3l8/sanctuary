@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.database import Document, DocumentPipelineStage
-from app.models.enums import PipelineStage, StageStatus
+from app.models.database import Document, DocumentPipelineStage, IngestBatch
+from app.models.enums import IngestBatchSourceType, PipelineStage, StageStatus
 from app.services.pipeline_status import stages_dict
 
 client = TestClient(app)
@@ -160,6 +160,61 @@ def test_retry_stage_409_when_retrying(db_session):
     db_session.refresh(doc)
     assert stages_dict(doc)["enrich"]["status"] == StageStatus.RETRYING.value
     mock_dispatch.assert_not_called()
+
+
+def _batch_with_two_failed_batch_analysis_docs(db):
+    """Two sibling docs sharing a batch, both with batch_analysis FAILED —
+    the real shape analyze_batch_task leaves behind on a terminal failure
+    (it marks every sibling FAILED together, not independently)."""
+    batch = IngestBatch(source_type=IngestBatchSourceType.EMAIL)
+    db.add(batch)
+    db.flush()
+
+    docs = []
+    for _ in range(2):
+        doc = Document(title="Pipeline Doc", ingest_batch_id=batch.id)
+        db.add(doc)
+        db.flush()
+        for stage in PipelineStage:
+            status = (
+                StageStatus.FAILED.value
+                if stage == PipelineStage.BATCH_ANALYSIS
+                else StageStatus.COMPLETED.value
+            )
+            db.add(
+                DocumentPipelineStage(
+                    document_id=doc.id, stage=stage.value, status=status
+                )
+            )
+        docs.append(doc)
+    db.commit()
+    for doc in docs:
+        db.refresh(doc)
+    return batch, docs
+
+
+@pytest.mark.integration
+def test_retry_batch_analysis_stage_resets_all_failed_siblings_and_dispatches(
+    db_session,
+):
+    """PR4 review finding: BATCH_ANALYSIS is batch-shared. Retrying just the
+    one targeted document's stage left every OTHER sibling still FAILED, so
+    claim_batch_for_analysis's readiness predicate (requires no sibling
+    terminal) never succeeded and nothing was ever dispatched — a silent
+    200-but-nothing-happens regression. Every FAILED sibling must be reset
+    too, and the batch-level dispatch must actually fire."""
+    batch, docs = _batch_with_two_failed_batch_analysis_docs(db_session)
+
+    with patch("app.tasks.dispatch.dispatch_task") as mock_dispatch:
+        response = client.post(f"/document/{docs[0].id}/pipeline/batch_analysis/retry")
+
+    assert response.status_code == 200
+    mock_dispatch.assert_called_once_with(
+        "app.tasks.analyze_batch.analyze_batch_task", batch.id
+    )
+    for doc in docs:
+        db_session.refresh(doc)
+        assert stages_dict(doc)["batch_analysis"]["status"] == StageStatus.PENDING.value
 
 
 # ── Pipeline retry-all ────────────────────────────────────────────────────

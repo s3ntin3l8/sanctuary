@@ -256,7 +256,10 @@ def dispatch_batch_retry(
     """Dispatch Celery tasks from a plan built by reset_batch_for_retry.
 
     Must only be called after the DB transaction for the reset has committed.
-    Dispatch is fire-and-forget; errors are logged but not propagated.
+    The actual task dispatch (dispatch_task) is fire-and-forget. The claim
+    calls in front of it (claim_stage_for_dispatch, claim_batch_for_analysis)
+    are plain DB calls, not wrapped here — an OperationalError from one of
+    those does propagate out of this function.
     """
     from app.models.enums import PipelineStage
 

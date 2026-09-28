@@ -199,12 +199,12 @@ def test_pdf_is_ingested_from_archived_path(tmp_path):
 @pytest.mark.unit
 def test_ingest_failure_rolls_back_poisoned_session_for_next_file(db_session, tmp_path):
     """A DB-level failure (not just an application-level exception) leaves the
-    shared session in a failed-transaction state where every later query
-    raises PendingRollbackError until it's rolled back. scan_and_ingest shares
-    one session across every file in a tick's incoming/ listing — without a
-    rollback in _ingest_one's except handler, one bad file poisons the
-    session and every later file in the same tick gets wrongly marked failed
-    too, even though nothing was actually wrong with them."""
+    shared session's transaction in a failed state where every later query
+    raises until it's rolled back. scan_and_ingest shares one session across
+    every file in a tick's incoming/ listing — without a rollback in
+    _ingest_one's except handler, one bad file poisons the session and every
+    later file in the same tick gets wrongly marked failed too, even though
+    nothing was actually wrong with them."""
     from sqlalchemy import text as _sql_text
 
     from app.services.ingestion.scan_folder import scan_and_ingest
@@ -231,8 +231,8 @@ def test_ingest_failure_rolls_back_poisoned_session_for_next_file(db_session, tm
             db.execute(_sql_text("SELECT 1/0"))
             return None  # unreachable -- the execute above always raises
         # Second file: proves the session is usable again by running a real
-        # query against it. Without the fix, this itself raises
-        # PendingRollbackError, and this file would be wrongly failed too.
+        # query against it. Without the fix, this itself raises, and this
+        # file would be wrongly failed too.
         db.execute(_sql_text("SELECT 1"))
         return object()
 

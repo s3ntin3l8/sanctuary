@@ -645,8 +645,28 @@ async def retry_pipeline_stage(
             status_code=409,
         )
 
-    # Reset stage (and dependents) to PENDING and dispatch the appropriate task
-    reset_stage(doc_id, pipeline_stage, db)
+    # Reset stage (and dependents) to PENDING and dispatch the appropriate task.
+    #
+    # BATCH_ANALYSIS is batch-shared: analyze_batch_task marks every sibling
+    # document's batch_analysis FAILED simultaneously on terminal failure (it's
+    # one shared analysis run for the whole batch, not independent per-doc
+    # attempts), so after a failure every sibling is normally FAILED together.
+    # claim_batch_for_analysis's readiness predicate requires NONE of them to
+    # be terminal — resetting only this one doc would leave every other
+    # sibling still FAILED, so the claim inside dispatch_pipeline_retry would
+    # never succeed and nothing would ever get dispatched. Reset every FAILED
+    # sibling, matching what a batch-level retry converges to.
+    if pipeline_stage == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
+        siblings = (
+            db.query(Document)
+            .filter(Document.ingest_batch_id == doc.ingest_batch_id)
+            .all()
+        )
+        for sibling in siblings:
+            if stages_dict(sibling).get("batch_analysis", {}).get("status") == "failed":
+                reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db)
+    else:
+        reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
     dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage, db)
