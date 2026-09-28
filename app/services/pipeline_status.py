@@ -732,7 +732,7 @@ def recover_orphaned_running_stages(
 
     Returns {"docs_reset": N, "stages_reset": N, "batches_reset": N}.
     """
-    from app.config import CELERY_TASK_TIME_LIMIT
+    from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchStatus
 
@@ -746,8 +746,17 @@ def recover_orphaned_running_stages(
     # a gap the workers_recently_active probe can't: as long as anything
     # else in the system shows progress, that probe alone would never reset
     # a stage abandoned by a hard-killed worker, however old it gets.
+    #
+    # EXTRACT runs under its own, longer EXTRACT_TASK_TIME_LIMIT (see
+    # app/config.py — it can stack a model_gate wait, Chandra's OCR budget,
+    # and a Docling fallback pass in one task) — using the shared cutoff for
+    # it would treat a still-legitimately-running EXTRACT task as provably
+    # orphaned and steal its stage row out from under a live worker.
     _PROVABLE_ORPHAN_CUTOFF = now_utc() - timedelta(
         seconds=CELERY_TASK_TIME_LIMIT + _ORPHAN_PROVABLE_GRACE_SECONDS
+    )
+    _PROVABLE_ORPHAN_CUTOFF_EXTRACT = now_utc() - timedelta(
+        seconds=EXTRACT_TASK_TIME_LIMIT + _ORPHAN_PROVABLE_GRACE_SECONDS
     )
     # A RETRYING row's own next_at is an explicit promise of when its retry
     # will fire — past that (plus grace for dispatch jitter), the dispatch
@@ -818,9 +827,14 @@ def recover_orphaned_running_stages(
                 started_at = val.get("started_at")
                 if started_at:
                     try:
+                        stage_cutoff = (
+                            _PROVABLE_ORPHAN_CUTOFF_EXTRACT
+                            if key == PipelineStage.EXTRACT.value
+                            else _PROVABLE_ORPHAN_CUTOFF
+                        )
                         if (
                             ensure_utc(datetime.fromisoformat(started_at))
-                            < _PROVABLE_ORPHAN_CUTOFF
+                            < stage_cutoff
                         ):
                             stuck.append(key)
                             continue
