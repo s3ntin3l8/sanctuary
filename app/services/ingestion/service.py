@@ -424,9 +424,16 @@ def _apply_script_extractors(doc: Document, content: str, db: Session) -> None:
     result_sender = extract_sender(content)
     result_internal_id = extract_internal_id(content)
     if result_case_id["value"]:
-        from app.models.database import Case as CaseModel
+        # Same guard as ingest_file's filename-sniff check: a case id
+        # sniffed from the filename or body content (Aktenzeichen etc.) must
+        # not silently move a document into a case its owner can't edit —
+        # this runs during background processing, after the upload-time
+        # check already applied, so it needs the same protection.
+        from app.services import access_service
 
-        if db.query(CaseModel).filter(CaseModel.id == result_case_id["value"]).first():
+        target_case = db.query(Case).filter(Case.id == result_case_id["value"]).first()
+        owner = db.get(User, doc.owner_id) if doc.owner_id is not None else None
+        if access_service.can_edit_case(db, owner, target_case):
             doc.case_id = result_case_id["value"]
 
     doc.sender = result_sender["value"]
