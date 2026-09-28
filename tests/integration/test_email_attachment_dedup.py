@@ -150,3 +150,43 @@ def test_same_filename_attachments_in_one_email_do_not_collide_on_disk(db_sessio
 
     hashes = {d.content_hash for d in docs}
     assert len(hashes) == 2, "Documents must retain their own distinct content"
+
+
+@pytest.mark.integration
+def test_attachment_dedup_is_scoped_per_owner(db_session):
+    """The same PDF bytes arriving for two *different* users must not dedup
+    across them — B's copy would otherwise be silently dropped because A's
+    identical-hash document already sits in the shared _TRIAGE bucket, and B
+    can't see or access A's copy."""
+    from app.services import auth_service
+
+    a = auth_service.create_user(db_session, email="a@example.com", password="pw12345")
+    b = auth_service.create_user(db_session, email="b@example.com", password="pw12345")
+    db_session.commit()
+
+    pdf_bytes = b"%PDF-1.4 shared content both users happen to attach"
+
+    a_raw = _build_email(
+        "<a-msg@example.com>", "A's letter", [("schriftsatz.pdf", pdf_bytes)]
+    )
+    a_batch = ingest_raw_email(
+        db_session, a_raw, source_type=IngestBatchSourceType.EMAIL, owner_id=a.id
+    )
+    assert a_batch is not None
+
+    b_raw = _build_email(
+        "<b-msg@example.com>", "B's letter", [("schriftsatz.pdf", pdf_bytes)]
+    )
+    b_batch = ingest_raw_email(
+        db_session, b_raw, source_type=IngestBatchSourceType.EMAIL, owner_id=b.id
+    )
+    assert b_batch is not None, (
+        "B's email must still produce a batch+document of their own, not be "
+        "treated as a duplicate of A's unrelated document"
+    )
+
+    b_docs = (
+        db_session.query(Document).filter(Document.ingest_batch_id == b_batch.id).all()
+    )
+    assert len(b_docs) == 1
+    assert b_docs[0].owner_id == b.id

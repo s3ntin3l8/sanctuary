@@ -292,6 +292,6 @@ def test_ingest_batch_message_id(db_session):
     batch.message_id = "test-msg-id"
     db_session.commit()
 
-    found = repo.get_by_message_id("test-msg-id")
+    found = repo.get_by_message_id("test-msg-id", batch.owner_id)
     assert found is not None
     assert found.id == batch.id

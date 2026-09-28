@@ -236,3 +236,295 @@ def test_scan_folder_attributes_owner_by_subfolder(db_session, two_users):
     owner_ids = {owner for _name, owner in captured}
     assert len(captured) == 2
     assert owner_ids == {a.id, admin.id}
+
+
+# --- owner-scoped email dedup (PR6) -----------------------------------------
+
+
+def _build_email(
+    message_id: str | None,
+    subject: str,
+    body: str = "Ein Schreiben ohne Anhang.",
+) -> bytes:
+    import email.message
+
+    msg = email.message.EmailMessage()
+    msg["From"] = "lawyer@example.com"
+    msg["To"] = "client@example.com"
+    msg["Subject"] = subject
+    if message_id:
+        msg["Message-ID"] = message_id
+    msg.set_content(body)
+    return msg.as_bytes()
+
+
+def test_same_message_id_ingested_by_two_users_yields_two_batches(
+    db_session, two_users
+):
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, b = two_users
+    raw = _build_email("<shared-cc@example.com>", "CC'd to both of us")
+
+    a_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=a.id
+    )
+    b_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=b.id
+    )
+
+    assert a_batch is not None
+    assert b_batch is not None
+    assert a_batch.id != b_batch.id
+    assert a_batch.owner_id == a.id
+    assert b_batch.owner_id == b.id
+
+
+def test_orphan_reingest_does_not_touch_other_users_batch(db_session, two_users):
+    """An orphaned (0-doc) batch is deleted-and-recreated on re-ingest of the
+    same Message-ID — but only the *same user's* orphan. Before owner-scoping,
+    get_by_message_id could return the other user's batch here and delete it."""
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, b = two_users
+    raw = _build_email("<orphan-shared@example.com>", "No attachment, no body kept")
+
+    a_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=a.id
+    )
+    assert a_batch is not None
+    a_batch_id = a_batch.id
+
+    b_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=b.id
+    )
+    assert b_batch is not None
+    assert b_batch.id != a_batch_id
+
+    db_session.expire_all()
+    assert db_session.get(IngestBatch, a_batch_id) is not None, (
+        "A's batch must still exist — B's ingest must never delete it"
+    )
+
+
+def test_subject_internal_id_auto_assign_scoped_to_owner(db_session, two_users):
+    """A subject line referencing A's real case internal_id must not
+    auto-assign B's email into A's case."""
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, b = two_users
+    case = Case(
+        id="8372-25",
+        title="A's case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    raw = _build_email("<b-cant-see-this@example.com>", "8372/25 Klage")
+    b_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=b.id
+    )
+    assert b_batch is not None
+    assert b_batch.case_id in (None, "_TRIAGE")
+
+
+def test_subject_internal_id_auto_assign_still_works_for_owner(db_session, two_users):
+    """Sanity check for the fix above: the *owner* of the referenced case
+    still gets auto-assigned — this isn't just failing closed for everyone."""
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, _b = two_users
+    case = Case(
+        id="9001-25",
+        title="A's own case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    raw = _build_email("<a-owns-this@example.com>", "9001/25 Klage")
+    a_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=a.id
+    )
+    assert a_batch is not None
+    assert a_batch.case_id == "9001-25"
+
+
+def test_admin_auto_assign_still_works_across_owners(db_session, two_users):
+    """Admin ingesting an email is unrestricted — editable_case_ids returns
+    None for admin, so auto-assign still resolves against any user's case."""
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, _b = two_users
+    admin = auth_service.get_or_create_bootstrap_admin(db_session)
+    db_session.commit()
+
+    case = Case(
+        id="7654-25",
+        title="A's case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    raw = _build_email("<admin-ingest@example.com>", "7654/25 Klage")
+    admin_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=admin.id
+    )
+    assert admin_batch is not None
+    assert admin_batch.case_id == "7654-25"
+
+
+def test_shared_az_court_still_matches_owners_own_proceeding(db_session, two_users):
+    """A and B each have a Proceeding with the *same* Aktenzeichen (routine —
+    both sides of one lawsuit share it). Ingesting an email for A referencing
+    that az_court must match A's own proceeding/case, not shadow onto B's."""
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+    from app.services.ingestion.batch_orchestrator import ingest_raw_email
+
+    a, b = two_users
+    # Already in canonical form (normalize_az_court's output shape) so the
+    # value stored on the Proceeding rows and the value re-derived from the
+    # subject line via extract_az_court_from_subject match exactly.
+    az_court = "3 F 426/25"
+
+    case_a = Case(
+        id="AZ-CASE-A",
+        title="A's matter",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    case_b = Case(
+        id="AZ-CASE-B",
+        title="B's matter",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=b.id,
+    )
+    db_session.add_all(
+        [case_b, case_a]
+    )  # B first: an unfiltered query must not shadow A
+    db_session.flush()
+    proc_a = Proceeding(
+        case_id=case_a.id,
+        court_name="AG Testhausen",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+        az_court=az_court,
+    )
+    proc_b = Proceeding(
+        case_id=case_b.id,
+        court_name="AG Testhausen",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+        az_court=az_court,
+    )
+    db_session.add_all([proc_b, proc_a])  # same ordering rationale as above
+    db_session.commit()
+
+    raw = _build_email(
+        "<a-az-court@example.com>", f"Schreiben - {az_court}", "kein Az-Anker im Body"
+    )
+    a_batch = ingest_raw_email(
+        db_session, raw, source_type=IngestBatchSourceType.EMAIL, owner_id=a.id
+    )
+    assert a_batch is not None
+    assert a_batch.case_id == case_a.id
+    assert a_batch.proceeding_id == proc_a.id
+
+
+# --- batch/triage-confirm defense-in-depth (PR6) ----------------------------
+
+
+def test_batch_confirm_skips_bundle_with_inaccessible_suggested_case(
+    auth_enabled, db_session, two_users
+):
+    """A owns the bundle but its case_id somehow already points at a case A
+    can't edit (e.g. a stale row predating the ingest-time guards, or a
+    since-revoked share) — batch_confirm must skip it, not silently confirm
+    into a case A has no access to."""
+    a, b = two_users
+    case_b = Case(
+        id="STALE-SUGGESTION",
+        title="B's case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=b.id,
+    )
+    db_session.add(case_b)
+    db_session.commit()
+
+    a_batch, a_doc = _triage_batch(db_session, a.id, "StaleSuggestion")
+    a_doc.case_id = case_b.id
+    a_batch.case_id = case_b.id
+    db_session.commit()
+
+    client = _client()
+    _login(client, "a@example.com")
+    resp = client.post(
+        "/triage/batch/confirm", data={"bundle_keys": [f"batch-{a_batch.id}"]}
+    )
+    assert resp.status_code == 200
+
+    db_session.expire_all()
+    refreshed_batch = db_session.get(IngestBatch, a_batch.id)
+    assert refreshed_batch.status != IngestBatchStatus.COMPLETED
+
+
+def test_confirm_rejects_proceeding_id_from_a_different_case(
+    auth_enabled, db_session, two_users
+):
+    """proceeding_id must belong to the case_id being confirmed into — a
+    proceeding from an unrelated case must be rejected, not silently
+    attached."""
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+
+    a, _b = two_users
+    target_case = Case(
+        id="TARGET-CASE",
+        title="Target",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    other_case = Case(
+        id="OTHER-CASE-FOR-A",
+        title="Unrelated",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    db_session.add_all([target_case, other_case])
+    db_session.flush()
+    other_proc = Proceeding(
+        case_id=other_case.id,
+        court_name="AG Testhausen",
+        court_level=ProceedingCourtLevel.AG,
+        status=ProceedingStatus.ACTIVE,
+    )
+    db_session.add(other_proc)
+    db_session.commit()
+
+    a_batch, _a_doc = _triage_batch(db_session, a.id, "MismatchedProceeding")
+
+    client = _client()
+    _login(client, "a@example.com")
+    resp = client.post(
+        "/triage/confirm",
+        data={
+            "batch_id": str(a_batch.id),
+            "case_id": target_case.id,
+            "proceeding_id": str(other_proc.id),
+        },
+    )
+    assert resp.status_code == 422

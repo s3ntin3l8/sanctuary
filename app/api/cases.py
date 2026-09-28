@@ -323,7 +323,7 @@ async def confirm_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    cases = db.query(Case).filter(Case.id != "_TRIAGE").order_by(Case.title.asc()).all()
+    cases = CaseRepository(db).list_for_picker(owner_id=first_doc.owner_id)
     ctx = build_hud_context(
         db, first_doc, mode="review", context="embedded", cases=list(cases)
     )
@@ -398,7 +398,7 @@ async def reject_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    cases = CaseRepository(db).list_for_picker()
+    cases = CaseRepository(db).list_for_picker(owner_id=first_doc.owner_id)
     ctx = build_hud_context(
         db, first_doc, mode="review", context="embedded", cases=list(cases)
     )

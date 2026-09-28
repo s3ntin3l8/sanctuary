@@ -78,7 +78,7 @@ def render_triage_feed_oob(
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]
     reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
 
-    all_cases = CaseRepository(db).list_for_picker()
+    all_cases = CaseRepository(db).list_for_picker(owner_id=owner_id)
     proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
 
     return templates.get_template("partials/triage_feed.html").render(

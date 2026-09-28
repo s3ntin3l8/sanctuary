@@ -616,14 +616,18 @@ async def ingest_file(
                 detail=f"File content does not match extension. Expected {ext}, got {magic_ext}",
             )
 
-        existing = (
-            db.query(Document)
-            .filter(
-                Document.content_hash == content_hash,
-                Document.case_id == preliminary_case_id,
-            )
-            .first()
+        dup_query = db.query(Document).filter(
+            Document.content_hash == content_hash,
+            Document.case_id == preliminary_case_id,
         )
+        if preliminary_case_id == "_TRIAGE":
+            # _TRIAGE is a shared bucket across every user — without this,
+            # the 409 below would leak another user's document title/id.
+            # A real case_id doesn't need this: reaching one here already
+            # means the uploader has edit access to it (see the guard
+            # above), so seeing its other docs isn't a new disclosure.
+            dup_query = dup_query.filter(Document.owner_id == owner_id)
+        existing = dup_query.first()
         if existing:
             os.remove(file_path)
             raise HTTPException(

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
-from app.models.database import Case, Document, IngestBatch
+from app.models.database import Case, Document, IngestBatch, Proceeding
 from app.models.enums import OriginatorType
 from app.repositories.case import CaseRepository
 from app.services.hud_context import build_hud_context
@@ -85,6 +85,21 @@ def _require_editable_target(
 
     if not access_service.can_edit_case(db, request.state.current_user, case):
         raise HTTPException(status_code=403, detail="You cannot assign to that case")
+
+
+def _proceeding_belongs_to_case(
+    db: Session, proceeding_id: int | None, case_id: str | None
+) -> bool:
+    """True when proceeding_id is absent, or resolves to a Proceeding whose
+    own case_id matches case_id. Guards against a proceeding_id from one
+    case being attached to a doc/batch that's being assigned to a
+    different case."""
+    if proceeding_id is None:
+        return True
+    if not case_id:
+        return False
+    proc = db.query(Proceeding).filter(Proceeding.id == proceeding_id).first()
+    return proc is not None and proc.case_id == case_id
 
 
 @router.post("/triage/document/{doc_id}/confirm")
@@ -193,7 +208,7 @@ async def confirm_document(
         and stages_dict(doc).get("enrich", {}).get("status") in ("completed", "skipped")
     )
 
-    cases = CaseRepository(db).list_for_picker()
+    cases = CaseRepository(db).list_for_picker(owner_id=request.state.current_user.id)
     ctx = build_hud_context(
         db, doc, mode="review", context="embedded", cases=list(cases)
     )
@@ -214,7 +229,9 @@ async def confirm_document(
     # header and shifts focus.
     if not doc.needs_review and doc.case_id and doc.case_id != "_TRIAGE":
         trigger: dict = {}
-        next_doc = find_next_review_doc(db, doc.id)
+        next_doc = find_next_review_doc(
+            db, doc.id, owner_id=request.state.current_user.id
+        )
         if next_doc:
             trigger["triage:advance"] = {"next_doc_id": next_doc.id}
         else:
@@ -285,6 +302,10 @@ async def confirm(
             raise HTTPException(
                 status_code=422, detail=f"Invalid proceeding_id: {proceeding_id}"
             ) from exc
+    if not _proceeding_belongs_to_case(db, parsed_proceeding_id, case_id):
+        raise HTTPException(
+            status_code=422, detail="proceeding_id does not belong to case_id"
+        )
 
     finalize = action == "confirm_bundle"
 
@@ -440,6 +461,7 @@ async def batch_confirm(
     Bundles without a suggestion are skipped. Returns OOB swaps for all affected
     rows and fires `triage:batch-confirmed` with confirmed/skipped counts.
     """
+    from app.services import access_service
     from app.services.triage_confirmation import reset_and_reenrich
 
     confirmed_count = 0
@@ -461,6 +483,20 @@ async def batch_confirm(
         if not case_id:
             skipped_count += 1
             continue
+        target_case = db.query(Case).filter(Case.id == case_id).first()
+        if target_case is None or not access_service.can_edit_case(
+            db, request.state.current_user, target_case
+        ):
+            # Defense-in-depth: by construction this suggestion came from
+            # case_id/proceeding_id already written onto the bundle's own
+            # batch/doc, which the upstream auto-assign guards now only ever
+            # set to a case the owner can edit — but a stale row (e.g. from
+            # before those guards existed, or a since-revoked share) should
+            # still be refused here rather than silently confirmed.
+            skipped_count += 1
+            continue
+        if not _proceeding_belongs_to_case(db, proceeding_id, case_id):
+            proceeding_id = None
 
         if batch_id:
             pre_triage_docs = (
@@ -562,6 +598,10 @@ async def batch_assign(
             raise HTTPException(
                 status_code=422, detail=f"Invalid proceeding_id: {proceeding_id}"
             ) from exc
+    if not _proceeding_belongs_to_case(db, parsed_proceeding_id, case_id):
+        raise HTTPException(
+            status_code=422, detail="proceeding_id does not belong to case_id"
+        )
 
     assigned_count = 0
 

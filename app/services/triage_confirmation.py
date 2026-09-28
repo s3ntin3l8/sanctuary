@@ -96,11 +96,19 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
             dispatch_task(enrich_document_task, doc.id)
 
 
-def find_next_review_doc(db: Session, after_doc_id: int) -> Document | None:
+def find_next_review_doc(
+    db: Session, after_doc_id: int, owner_id: int | None = None
+) -> Document | None:
     """Find the next triage doc needing review after the given one.
 
     Sibling-first: prefer another doc in the same bundle. Otherwise, the
     first doc in the next bundle. Returns None when the queue is clear.
+
+    ``owner_id`` restricts the fallback bundle scan to that user's own triage
+    inbox — without it, "next" could advance into a different user's
+    untriaged document. The sibling lookup doesn't need it: a batch has one
+    owner, so a sibling in the same batch as ``after_doc_id`` (already the
+    caller's own doc) is always the caller's own too.
     """
     from app.services.triage_bundles import get_triage_bundles
 
@@ -123,7 +131,7 @@ def find_next_review_doc(db: Session, after_doc_id: int) -> Document | None:
         if sibling:
             return sibling
 
-    bundles = get_triage_bundles(db)
+    bundles = get_triage_bundles(db, owner_id=owner_id)
     seen_current_bundle = False
     for bundle in bundles:
         if any(d.id == after_doc_id for d in bundle.documents):
@@ -254,6 +262,12 @@ def confirm_bundle(
         if proceeding_id is not None
         else None
     )
+    if proc is not None and proc.case_id != case_id:
+        # Defense-in-depth: route-level callers already validate this, but a
+        # proceeding_id from a different case must never get cascaded onto
+        # every doc in this bundle even if a caller forgets to check.
+        proc = None
+        proceeding_id = None
     doc_ids = [doc.id for doc in docs]
     orphaned = (
         db.query(ActionItem)

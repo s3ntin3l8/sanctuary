@@ -56,13 +56,7 @@ def triage_page(
     slicing_queue = get_slicing_queue(db, owner_id=user.id)
     # The assign picker lists only cases this user may file into (own + editor
     # shares; admins see all) — avoids leaking other users' case titles.
-    from app.services import access_service
-
-    all_cases = [
-        c
-        for c in CaseRepository(db).list_for_picker()
-        if access_service.can_edit_case(db, user, c)
-    ]
+    all_cases = CaseRepository(db).list_for_picker(owner_id=user.id)
     total_docs = sum(b.doc_count for b in bundles)
 
     all_doc_ids = [doc.id for bundle in bundles for doc in bundle.documents]

@@ -97,7 +97,7 @@ def triage_doc_hud(
     if not doc:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
 
-    cases = CaseRepository(db).list_for_picker()
+    cases = CaseRepository(db).list_for_picker(owner_id=request.state.current_user.id)
     ctx = build_hud_context(
         db, doc, mode="review", context="embedded", cases=list(cases)
     )

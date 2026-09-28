@@ -374,7 +374,7 @@ async def delete_document(
     if context == "triage":
         from app.services.triage_confirmation import find_next_review_doc
 
-        next_doc = find_next_review_doc(db, doc_id)
+        next_doc = find_next_review_doc(db, doc_id, owner_id=doc.owner_id)
         if next_doc:
             next_doc_id = next_doc.id
 
@@ -470,14 +470,9 @@ async def document_detail(
         # gets prepended by build_hud_context.
         cases = None
         if mode == "review":
-            from app.models.database import Case as _Case
+            from app.repositories.case import CaseRepository
 
-            cases = (
-                db.query(_Case)
-                .filter(_Case.id != "_TRIAGE", _Case.is_draft.is_(False))
-                .order_by(_Case.title.asc())
-                .all()
-            )
+            cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
         ctx = build_hud_context(db, doc, mode=mode, context="embedded", cases=cases)
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 

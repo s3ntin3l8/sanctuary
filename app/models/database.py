@@ -566,6 +566,17 @@ class IngestBatch(Base):
     __table_args__ = (
         Index("ix_ingest_batches_case", "case_id"),
         Index("ix_ingest_batches_received", "received_at"),
+        # Dedup keys are per-owner, never global: two users independently
+        # ingesting the same email (e.g. both CC'd) or the same scanned file
+        # must each get their own batch. NULLs (the common case — most
+        # batches carry neither) are never equal to each other in Postgres,
+        # so this only actually constrains the rows that do set one.
+        UniqueConstraint(
+            "owner_id", "message_id", name="uq_ingest_batches_owner_message_id"
+        ),
+        UniqueConstraint(
+            "owner_id", "source_hash", name="uq_ingest_batches_owner_source_hash"
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
