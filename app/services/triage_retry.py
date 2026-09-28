@@ -119,8 +119,16 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
     actively running (caller treats as skip/409). Does NOT commit — the caller
     must commit before calling dispatch_batch_retry with the returned items.
 
-    dispatch_items is a list of (doc_id, batch_id, head_stage | None, needs_emb).
+    dispatch_items is a list of (doc_id, batch_id, head_stage | None).
     batch_fallback is True when no per-doc head was found (BATCH_ANALYSIS fallback).
+
+    Does not dispatch EMBEDDINGS itself: METADATA is unconditionally reset to
+    PENDING above for every doc (no per-stage skip exemption applies to it),
+    so it's never terminal at this point — dispatch_pipeline_retry's own
+    METADATA-terminal gate would always no-op an EMBEDDINGS dispatch made
+    here anyway. metadata_task's own claim_stage_for_dispatch cascade
+    dispatches EMBEDDINGS once METADATA completes, same as any other
+    non-retry completion.
     """
     from sqlalchemy import text as _text
 
@@ -280,14 +288,9 @@ def reset_batch_for_retry(batch, db, *, full: bool = False):
                     head = spec.stage
                     break
 
-        emb_status = new_stages.get(PipelineStage.EMBEDDINGS.value, {}).get("status")
-        needs_emb = emb_status not in (
-            StageStatus.COMPLETED.value,
-            StageStatus.SKIPPED.value,
-        )
-        dispatch_items.append((doc.id, batch.id, head, needs_emb))
+        dispatch_items.append((doc.id, batch.id, head))
 
-    batch_fallback = not any(head is not None for _, _, head, _ in dispatch_items)
+    batch_fallback = not any(head is not None for _, _, head in dispatch_items)
     return dispatch_items, batch_fallback
 
 
@@ -302,13 +305,9 @@ def dispatch_batch_retry(
     are plain DB calls, not wrapped here — an OperationalError from one of
     those does propagate out of this function.
     """
-    from app.models.enums import PipelineStage
-
-    for doc_id, b_id, head, needs_emb in dispatch_items:
+    for doc_id, b_id, head in dispatch_items:
         if head is not None:
             dispatch_pipeline_retry(doc_id, b_id, head, db)
-        if needs_emb:
-            dispatch_pipeline_retry(doc_id, b_id, PipelineStage.EMBEDDINGS, db)
 
     # Fallback: all per-doc cascade stages are already done but BATCH_ANALYSIS is still
     # pending — e.g. a batch-level retry after docs finished. The cascade won't fire it

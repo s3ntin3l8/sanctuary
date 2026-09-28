@@ -120,10 +120,12 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
             f"{stage.value} should be PENDING"
         )
 
-    # Head-of-cascade dispatch: only METADATA (head) + EMBEDDINGS (parallel branch).
-    # Downstream stages are handled by the natural cascade from each task.
+    # Head-of-cascade dispatch: only METADATA (head). Downstream stages
+    # (including EMBEDDINGS) are handled by metadata_task's own cascade once
+    # it actually completes — dispatching EMBEDDINGS here too would always
+    # no-op anyway, since METADATA is unconditionally reset to PENDING above.
     dispatched_stages = {call.args[2] for call in mock_dispatch.call_args_list}
-    assert dispatched_stages == {PipelineStage.METADATA, PipelineStage.EMBEDDINGS}
+    assert dispatched_stages == {PipelineStage.METADATA}
     assert PipelineStage.EXTRACT not in dispatched_stages
     assert PipelineStage.ENRICH not in dispatched_stages
 

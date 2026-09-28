@@ -156,11 +156,13 @@ def test_dispatch_pipeline_retry_embeddings_claims_and_dispatches_when_metadata_
 def test_embeddings_deferral_leaves_stage_reclaimable_after_metadata_completes(
     db_session,
 ):
-    """End-to-end reproduction of the EMBEDDINGS-stranding regression: after
-    dispatch_pipeline_retry hands EMBEDDINGS off unclaimed, the real deferred
-    task run must leave the stage PENDING (not RUNNING), so that
-    metadata_task's own claim_stage_for_dispatch cascade can successfully
-    re-claim and redispatch it once METADATA actually completes."""
+    """Confirms generate_embedding_task's own deferral contract, independent
+    of any dispatcher: when METADATA isn't yet terminal, the task must
+    return early WITHOUT calling mark_started, leaving the stage PENDING (not
+    RUNNING), so that metadata_task's own claim_stage_for_dispatch cascade
+    can successfully claim and dispatch it once METADATA actually completes.
+    This is what dispatch_pipeline_retry's own METADATA-terminal check
+    (tested above) exists to stay compatible with."""
     doc = _make_doc(db_session)  # METADATA starts pending
 
     # The task itself, run directly (dispatch_task/.delay is not the thing

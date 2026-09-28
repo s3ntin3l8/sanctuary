@@ -34,12 +34,12 @@ def generate_embedding_task(self, doc_id: int):
 
     # Dependency gate: METADATA must be terminal before EMBEDDINGS runs.
     # EMBEDDINGS reads doc.content (from EXTRACT) and uses doc.title
-    # (from METADATA). dispatch_batch_retry fires EMBEDDINGS in parallel
-    # with the head-stage retry — when head=EXTRACT, both get queued at
-    # once, and if the EMBEDDINGS worker picks up first it would run
-    # against stale or missing content. process_document_task already
-    # dispatches EMBEDDINGS only after METADATA-done, so this gate makes
-    # the retry path symmetric.
+    # (from METADATA). process_document_task already dispatches EMBEDDINGS
+    # only after METADATA-done; this gate is the safety net for any other
+    # caller (dispatch_pipeline_retry checks this same condition before
+    # dispatching, but a task run directly — e.g. by a stale queued message
+    # from before that check existed, or a future caller that doesn't go
+    # through dispatch_pipeline_retry — still needs its own defense here).
     #
     # Return early WITHOUT marking the stage — leave it PENDING so
     # process_document_task's claim_stage_for_dispatch (line 151-160)
