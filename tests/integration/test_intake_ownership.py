@@ -643,3 +643,33 @@ def test_confirm_draft_case_picker_uses_requester_identity_not_doc_owner(
         resp = client.post(f"/cases/{draft_case.id}/confirm-draft")
         assert resp.status_code == 200
         mock_picker.assert_called_once_with(owner_id=b.id)
+
+
+def test_delete_document_oob_scoped_to_requester_not_doc_owner(
+    auth_enabled, db_session, two_users
+):
+    """An admin deleting another user's untriaged document must have the OOB
+    re-render (next-doc, bundles, badges, feed) scoped to the admin's own
+    access — the response renders into the admin's browser, not the deleted
+    doc's owner's."""
+    from app.models.enums import UserRole
+
+    a, _b = two_users
+    admin = auth_service.create_user(
+        db_session,
+        email="admin-del@example.com",
+        password="password123",
+        role=UserRole.ADMIN,
+    )
+    db_session.commit()
+    _a_batch, a_doc = _triage_batch(db_session, a.id, "AdminDeletesThis")
+
+    client = _client()
+    _login(client, "admin-del@example.com")
+    with patch(
+        "app.services.triage_oob_render.render_sidebar_badges_oob"
+    ) as mock_badges:
+        mock_badges.return_value = ""
+        resp = client.delete(f"/document/{a_doc.id}?context=triage")
+        assert resp.status_code == 200
+        assert mock_badges.call_args.kwargs["owner_id"] == admin.id

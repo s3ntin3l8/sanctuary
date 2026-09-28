@@ -369,12 +369,20 @@ async def delete_document(
         else:
             bundle_key = f"loose-{doc.id}"
 
+    # Render/picker scoping below reflects the *requester's* own access, not
+    # the deleted doc's owner — they diverge whenever an admin (or, for a
+    # doc in a shared case, an EDITOR-shared user) deletes someone else's
+    # document: the OOB response renders into the requester's own browser,
+    # so "next doc to review" and the badge/count re-renders must be scoped
+    # to what the requester can see, not the person whose doc was deleted.
+    requester_id = request.state.current_user.id
+
     # Identify the next document to advance to before we delete the current one.
     next_doc_id = None
     if context == "triage":
         from app.services.triage_confirmation import find_next_review_doc
 
-        next_doc = find_next_review_doc(db, doc_id, owner_id=doc.owner_id)
+        next_doc = find_next_review_doc(db, doc_id, owner_id=requester_id)
         if next_doc:
             next_doc_id = next_doc.id
 
@@ -400,7 +408,7 @@ async def delete_document(
             render_triage_header_stats_oob,
         )
 
-        bundles = get_triage_bundles(db, owner_id=doc.owner_id)
+        bundles = get_triage_bundles(db, owner_id=requester_id)
 
         trigger = {}
         if next_doc_id:
@@ -409,12 +417,12 @@ async def delete_document(
             trigger["triage:clear"] = {}
 
         # Global synchronization: Sidebar badges and Triage status bar
-        global_oob = render_sidebar_badges_oob(db, owner_id=doc.owner_id)
-        global_oob += render_triage_header_stats_oob(request, db, owner_id=doc.owner_id)
+        global_oob = render_sidebar_badges_oob(db, owner_id=requester_id)
+        global_oob += render_triage_header_stats_oob(request, db, owner_id=requester_id)
 
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
-            res_content = render_triage_feed_oob(request, db, owner_id=doc.owner_id)
+            res_content = render_triage_feed_oob(request, db, owner_id=requester_id)
             res_content += global_oob
             response = HTMLResponse(res_content)
         else:
