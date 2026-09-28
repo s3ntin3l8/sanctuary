@@ -79,7 +79,20 @@ def render_triage_feed_oob(
     reactions_by_doc = get_reactions_by_doc_ids(db, all_doc_ids)
 
     all_cases = CaseRepository(db).list_for_picker(owner_id=owner_id)
-    proceedings = db.query(Proceeding).order_by(Proceeding.court_name.asc()).all()
+    # Same picker-scoping rationale as list_for_picker above — an unfiltered
+    # query here leaks every user's court name/Aktenzeichen through the
+    # rendered <option> tags in the confirm modal this OOB swap refreshes.
+    proceedings_query = db.query(Proceeding).order_by(Proceeding.court_name.asc())
+    if owner_id is not None:
+        from app.models.database import User
+        from app.services import access_service
+
+        editable = access_service.editable_case_ids(db, db.get(User, owner_id))
+        if editable is not None:
+            proceedings_query = proceedings_query.filter(
+                Proceeding.case_id.in_(editable)
+            )
+    proceedings = proceedings_query.all()
 
     return templates.get_template("partials/triage_feed.html").render(
         {

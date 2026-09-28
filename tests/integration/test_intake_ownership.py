@@ -528,3 +528,84 @@ def test_confirm_rejects_proceeding_id_from_a_different_case(
         },
     )
     assert resp.status_code == 422
+
+
+# --- triage page/OOB scoping (review-fix round) -----------------------------
+
+
+def test_triage_page_proceedings_picker_excludes_other_users_courts(
+    auth_enabled, db_session, two_users
+):
+    """The confirm-modal proceeding picker on GET /triage must not include
+    another user's court name/Aktenzeichen — it renders every Proceeding
+    row's data into <option> tags regardless of client-side JS filtering."""
+    from app.models.database import Proceeding
+    from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+
+    a, b = two_users
+    case_a = Case(
+        id="PICKER-A",
+        title="A's case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=a.id,
+    )
+    case_b = Case(
+        id="PICKER-B",
+        title="B's case",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+        owner_id=b.id,
+    )
+    db_session.add_all([case_a, case_b])
+    db_session.flush()
+    db_session.add_all(
+        [
+            Proceeding(
+                case_id=case_a.id,
+                court_name="AG Aachen A-Court",
+                court_level=ProceedingCourtLevel.AG,
+                status=ProceedingStatus.ACTIVE,
+            ),
+            Proceeding(
+                case_id=case_b.id,
+                court_name="AG Berlin B-Secret-Court",
+                court_level=ProceedingCourtLevel.AG,
+                status=ProceedingStatus.ACTIVE,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    client = _client()
+    _login(client, "a@example.com")
+    body = client.get("/triage").text
+    assert "AG Aachen A-Court" in body
+    assert "AG Berlin B-Secret-Court" not in body
+
+
+def test_delete_document_triage_oob_counts_scoped_to_owner(
+    auth_enabled, db_session, two_users
+):
+    """The sidebar/header OOB re-renders after a triage delete must reflect
+    only the deleting user's own remaining triage count, not every user's."""
+    a, b = two_users
+    _triage_batch(db_session, a.id, "AKeep1")
+    a_batch2, a_doc2 = _triage_batch(db_session, a.id, "ADelete")
+    _triage_batch(db_session, b.id, "BOne")
+    _triage_batch(db_session, b.id, "BTwo")
+    _triage_batch(db_session, b.id, "BThree")
+
+    client = _client()
+    _login(client, "a@example.com")
+    resp = client.delete(f"/document/{a_doc2.id}?context=triage")
+    assert resp.status_code == 200
+
+    # A has 1 remaining triage doc; B (untouched) has 3. A scoped-count
+    # renders "1"; an unscoped count would render "4" (1 + 3) instead.
+    body = resp.text
+    assert (
+        '<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">1</span>'
+        in body
+    )
+    assert ">4<" not in body

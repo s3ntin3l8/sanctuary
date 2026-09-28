@@ -400,7 +400,7 @@ async def delete_document(
             render_triage_header_stats_oob,
         )
 
-        bundles = get_triage_bundles(db)
+        bundles = get_triage_bundles(db, owner_id=doc.owner_id)
 
         trigger = {}
         if next_doc_id:
@@ -409,12 +409,12 @@ async def delete_document(
             trigger["triage:clear"] = {}
 
         # Global synchronization: Sidebar badges and Triage status bar
-        global_oob = render_sidebar_badges_oob(db)
-        global_oob += render_triage_header_stats_oob(request, db)
+        global_oob = render_sidebar_badges_oob(db, owner_id=doc.owner_id)
+        global_oob += render_triage_header_stats_oob(request, db, owner_id=doc.owner_id)
 
         if not bundles:
             # Entire queue is now empty — swap the full feed to show empty state message.
-            res_content = render_triage_feed_oob(request, db)
+            res_content = render_triage_feed_oob(request, db, owner_id=doc.owner_id)
             res_content += global_oob
             response = HTMLResponse(res_content)
         else:
