@@ -124,3 +124,51 @@ def test_slicing_confirm_idempotency_guard(db_session, tmp_path):
 
     docs = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).all()
     assert docs == []
+
+
+@pytest.mark.unit
+def test_slicing_confirm_locks_batch_row_with_select_for_update(
+    db_session, test_engine, tmp_path
+):
+    """F3.6: the idempotency guard must be a real row lock, not just a
+    refresh -- a plain db.refresh() lets two concurrent confirms both
+    observe AWAITING_SLICING and both proceed to slice (the bug this
+    replaces; the old code's own comment claimed FOR UPDATE semantics that
+    the code never actually implemented). A TestClient can't reproduce the
+    race directly (both requests run sequentially on one event loop), so
+    this asserts the mechanism itself: the batch SELECT the endpoint issues
+    is a real `SELECT ... FOR UPDATE`."""
+    from sqlalchemy import event
+
+    batch = _create_scan_batch(db_session, tmp_path, page_count=1)
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(test_engine, "before_cursor_execute", _capture)
+    try:
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        client = TestClient(app, raise_server_exceptions=False)
+        client.post(
+            f"/ingest/slice/{batch.id}/confirm",
+            data={"cuts": "[]"},
+            follow_redirects=False,
+        )
+    finally:
+        event.remove(test_engine, "before_cursor_execute", _capture)
+
+    batch_selects = [
+        s
+        for s in statements
+        if "ingest_batches" in s.lower() and s.lower().lstrip().startswith("select")
+    ]
+    assert batch_selects, "expected at least one SELECT against ingest_batches"
+    assert any("for update" in s.lower() for s in batch_selects), (
+        "slicing_confirm's batch lookup must use SELECT ... FOR UPDATE — "
+        f"got: {batch_selects}"
+    )

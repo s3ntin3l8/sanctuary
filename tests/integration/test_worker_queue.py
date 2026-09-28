@@ -57,15 +57,23 @@ def _make_failed_doc(db_session, sample_case) -> Document:
 @pytest.mark.integration
 def test_retry_failed_succeeds_after_one_lock(app_client, db_session, sample_case):
     """A single transient db lock is retried; dispatch fires exactly once."""
+    from app.services import pipeline_status as _pipeline_status_module
+
     _make_failed_doc(db_session, sample_case)
 
     call_count = 0
+    real_reset = _pipeline_status_module.reset_failed_stages_only
 
     def flaky_reset(doc_id, db):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
             raise OperationalError("database is locked", None, None)
+        # Perform the real reset so the stage row is actually PENDING by the
+        # time dispatch_pipeline_retry's claim_stage_for_dispatch runs —
+        # a fake that only simulates success/failure without touching the
+        # DB would make that claim correctly (and misleadingly) no-op.
+        real_reset(doc_id, db)
 
     with (
         patch(
@@ -107,14 +115,19 @@ def test_retry_failed_dispatch_count_matches_reset_successes(
     app_client, db_session, sample_case
 ):
     """dispatch_task fires once per successfully-reset doc, never for skipped docs."""
+    from app.services import pipeline_status as _pipeline_status_module
+
     doc1 = _make_failed_doc(db_session, sample_case)
     doc2 = _make_failed_doc(db_session, sample_case)
 
     always_fail_ids: set[int] = {doc2.id}
+    real_reset = _pipeline_status_module.reset_failed_stages_only
 
     def selective_reset(doc_id, db):
         if doc_id in always_fail_ids:
             raise OperationalError("database is locked", None, None)
+        # Perform the real reset -- see test_retry_failed_succeeds_after_one_lock.
+        real_reset(doc_id, db)
 
     with (
         patch(

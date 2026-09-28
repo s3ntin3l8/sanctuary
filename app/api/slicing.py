@@ -95,10 +95,14 @@ async def slicing_confirm(
 ):
     from app.services.ingestion.cover_letter_wiring import wire_cover_letter
 
-    batch = _get_batch(batch_id, db)
-
-    # Idempotency guard — serialize with SELECT … FOR UPDATE semantics via explicit check inside tx
-    db.refresh(batch)
+    # Idempotency guard — a real row lock, not just a refresh. A second
+    # concurrent confirm blocks here until the first commits or rolls back,
+    # then sees the batch's final status instead of both requests racing
+    # into duplicate slicing (double-submit, or two tabs open on the same
+    # review page).
+    batch = db.get(IngestBatch, batch_id, with_for_update=True)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
     if batch.status != IngestBatchStatus.AWAITING_SLICING:
         return RedirectResponse("/triage", status_code=303)
 

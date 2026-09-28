@@ -607,13 +607,16 @@ async def retry_pipeline_stage(
     db.refresh(doc)
     stages = stages_dict(doc)
 
-    # Guard: reject if this stage itself is running
+    # Guard: reject if this stage itself is running or already scheduled to
+    # retry on its own (RETRYING) — resetting+redispatching over a live
+    # RETRYING countdown races the two dispatches. A lost RETRYING row is
+    # reclaimed by the PR3a orphan sweep, so this is safe to block on.
     current = stages.get(stage, {}).get("status")
-    if current == "running":
+    if current in ("running", "retrying"):
         return templates.TemplateResponse(
             request,
             "partials/_pipeline_stepper.html",
-            {"doc": doc, "retry_error": f"Stage '{stage}' is already running."},
+            {"doc": doc, "retry_error": f"Stage '{stage}' is already {current}."},
             status_code=409,
         )
 
@@ -642,11 +645,31 @@ async def retry_pipeline_stage(
             status_code=409,
         )
 
-    # Reset stage (and dependents) to PENDING and dispatch the appropriate task
-    reset_stage(doc_id, pipeline_stage, db)
+    # Reset stage (and dependents) to PENDING and dispatch the appropriate task.
+    #
+    # BATCH_ANALYSIS is batch-shared: analyze_batch_task marks every sibling
+    # document's batch_analysis FAILED simultaneously on terminal failure (it's
+    # one shared analysis run for the whole batch, not independent per-doc
+    # attempts), so after a failure every sibling is normally FAILED together.
+    # claim_batch_for_analysis's readiness predicate requires NONE of them to
+    # be terminal — resetting only this one doc would leave every other
+    # sibling still FAILED, so the claim inside dispatch_pipeline_retry would
+    # never succeed and nothing would ever get dispatched. Reset every FAILED
+    # sibling, matching what a batch-level retry converges to.
+    if pipeline_stage == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
+        siblings = (
+            db.query(Document)
+            .filter(Document.ingest_batch_id == doc.ingest_batch_id)
+            .all()
+        )
+        for sibling in siblings:
+            if stages_dict(sibling).get("batch_analysis", {}).get("status") == "failed":
+                reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db)
+    else:
+        reset_stage(doc_id, pipeline_stage, db)
     db.refresh(doc)
 
-    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, pipeline_stage, db)
 
     return templates.TemplateResponse(
         request,
@@ -680,10 +703,15 @@ async def retry_pipeline_all(
         _lock_row_for_retry(doc_id, db)
         db.refresh(doc)
         stages = stages_dict(doc)
+        # RETRYING is included alongside RUNNING: a stage with its own
+        # scheduled retry countdown still in flight would otherwise race
+        # reset_all_stages' PENDING reset against that countdown firing.
         running_stages = [
             key
             for key, val in stages.items()
-            if isinstance(val, dict) and val.get("status") == StageStatus.RUNNING.value
+            if isinstance(val, dict)
+            and val.get("status")
+            in (StageStatus.RUNNING.value, StageStatus.RETRYING.value)
         ]
         if running_stages:
             return running_stages
@@ -732,7 +760,7 @@ async def retry_pipeline_all(
     # Kick off the pipeline from EXTRACT — process_document_task chains forward
     # to METADATA → PROCEEDING_ANALYSIS → ENRICH → … and dispatches EMBEDDINGS
     # in parallel, so a single dispatch covers every non-skipped stage.
-    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT)
+    dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT, db)
 
     return templates.TemplateResponse(
         request, "partials/_pipeline_stepper.html", {"doc": doc}
