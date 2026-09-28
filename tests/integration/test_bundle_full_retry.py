@@ -104,10 +104,12 @@ def test_full_retry_resets_extract_and_dispatches_it(
         == StageStatus.PENDING.value
     )
 
-    # Only EXTRACT (head) + EMBEDDINGS (parallel) should be dispatched
+    # Only EXTRACT (head) should be dispatched -- the cascade from EXTRACT
+    # through METADATA reaches EMBEDDINGS naturally once METADATA completes;
+    # dispatching it here too would always no-op, since METADATA is
+    # unconditionally reset to PENDING by a full retry.
     dispatched_stages = {call.args[2] for call in mock_dispatch.call_args_list}
-    assert PipelineStage.EXTRACT in dispatched_stages
-    assert PipelineStage.EMBEDDINGS in dispatched_stages
+    assert dispatched_stages == {PipelineStage.EXTRACT}
 
 
 @pytest.mark.integration

@@ -1547,16 +1547,15 @@ def test_recover_stuck_pending_dispatches_metadata_without_preclaim(
 
 
 @pytest.mark.unit
-def test_only_metadata_and_embeddings_self_claim_in_registry():
-    """Guard: METADATA (atomic pending->running CAS on entry) and EMBEDDINGS
-    (defers unclaimed, leaving the stage PENDING, when METADATA isn't yet
-    terminal) are the only stages a dispatcher must hand off unclaimed —
-    every other stage's task mark_starts unconditionally and relies on the
-    dispatcher's own pre-claim for dedup. See StageSpec.self_claims."""
+def test_only_metadata_self_claims_in_registry():
+    """Guard: METADATA is the only self-claiming stage (others mark_started).
+    EMBEDDINGS is a related but distinct case (defers unclaimed based on
+    METADATA's state, not its own identity) — handled directly in
+    dispatch_pipeline_retry rather than via this flag. See StageSpec.self_claims."""
     from app.services.pipeline_status import STAGE_REGISTRY, PipelineStage
 
     self_claiming = {s for s, spec in STAGE_REGISTRY.items() if spec.self_claims}
-    assert self_claiming == {PipelineStage.METADATA, PipelineStage.EMBEDDINGS}
+    assert self_claiming == {PipelineStage.METADATA}
 
 
 # ---------------------------------------------------------------------------
