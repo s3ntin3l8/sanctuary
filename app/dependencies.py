@@ -84,12 +84,6 @@ def get_document_repo(db: Session = Depends(get_db)):
     return DocumentRepository(db)
 
 
-def get_ingest_batch_repo(db: Session = Depends(get_db)):
-    from app.repositories.ingest_batch import IngestBatchRepository
-
-    return IngestBatchRepository(db)
-
-
 def get_user_reaction_repo(db: Session = Depends(get_db)):
     from app.repositories.user_reaction import UserReactionRepository
 

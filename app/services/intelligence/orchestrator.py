@@ -65,6 +65,62 @@ def claim_batch_for_analysis(batch_id: int, db: Session) -> bool:
     return cast(CursorResult, result).rowcount == 1
 
 
+def mark_batch_failed_if_all_extracts_failed(batch_id: int, db: Session) -> bool:
+    """Flip a batch to FAILED once every one of its documents has a
+    terminally-failed EXTRACT stage.
+
+    Deliberately does NOT touch COMPLETED/PENDING/PROCESSING semantics —
+    COMPLETED means "user left triage" (see confirm_bundle), not "pipeline
+    finished"; the triage feed excludes COMPLETED/AWAITING_SLICING batches,
+    so overloading it for pipeline-terminal state would silently drop
+    still-untriaged bundles out of the inbox. FAILED has no such reader
+    today, so it's safe to write without touching the feed/count queries.
+
+    A single-doc EXTRACT failure must not flip a multi-doc bundle to FAILED
+    — the WHERE clause only matches when *every* document's EXTRACT is
+    'failed', not just one. Restricted to PENDING/PROCESSING via the status
+    filter so this never clobbers a user-confirmed COMPLETED, a DISMISSED
+    batch, or a batch still AWAITING_SLICING (which has no documents yet).
+    Idempotent and safe to call from multiple racing workers, or repeatedly
+    from a recovery sweep — the status filter makes a second call on an
+    already-FAILED batch a no-op.
+
+    Returns True if this call performed the transition, False otherwise
+    (already failed, not yet all-failed, or the batch doesn't exist).
+    """
+    # ingest_batches.status is SAEnum(IngestBatchStatus, native_enum=False) —
+    # SQLAlchemy's default Enum behavior stores the member *name*
+    # ('PROCESSING'), not `.value` ('processing'). document_pipeline_stages
+    # .status below is a plain String column and genuinely does use
+    # lowercase values — the two columns aren't the same casing convention.
+    result = db.execute(
+        text(
+            """
+            UPDATE ingest_batches
+            SET status = 'FAILED'
+            WHERE id = :batch_id
+              AND status IN ('PENDING', 'PROCESSING')
+              AND EXISTS (
+                SELECT 1 FROM documents WHERE ingest_batch_id = :batch_id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM documents d
+                WHERE d.ingest_batch_id = :batch_id
+                  AND NOT EXISTS (
+                    SELECT 1 FROM document_pipeline_stages dps
+                    WHERE dps.document_id = d.id
+                      AND dps.stage = 'extract'
+                      AND dps.status = 'failed'
+                  )
+              )
+            """
+        ),
+        {"batch_id": batch_id},
+    )
+    db.commit()
+    return cast(CursorResult, result).rowcount == 1
+
+
 def claim_batch_for_metadata_phase(batch_id: int, db: Session) -> bool:
     """Atomically claim a batch's metadata/chat phase — the OCR→chat barrier.
 
