@@ -123,20 +123,24 @@ def test_document_deadline_returns_partial_result_for_pages_still_in_flight():
     each page's own httpx timeout only bounds that one page. A document_
     deadline that elapses while some pages are still in flight must return
     the pages that did complete plus a failure marker for the rest, rather
-    than blocking until every page is done."""
+    than blocking until every page is done -- verified here by elapsed wall
+    time, not just by the result's contents (a `pool.shutdown(wait=True)`
+    regression would still produce the same result, just slowly)."""
     import threading
+    import time
 
     page_count = 3
+    slow_page_block_seconds = 5.0
     release = threading.Event()
     pngs = [f"page-{i}".encode() for i in range(page_count)]
     slow_png = pngs[-1]
 
     def _one_slow_page(png_bytes, *, url, headers, model, timeout):
         if png_bytes == slow_png:
-            # Blocks past the tiny document_deadline below, simulating a
-            # page call still in flight when the document-level budget
-            # runs out; the other two pages return immediately.
-            release.wait(timeout=5)
+            # Blocks well past document_deadline below, simulating a page
+            # call still in flight when the document-level budget runs out;
+            # the other two pages return immediately.
+            release.wait(timeout=slow_page_block_seconds)
             return "<p>late</p>"
         return "<p>fast</p>"
 
@@ -157,16 +161,22 @@ def test_document_deadline_returns_partial_result_for_pages_still_in_flight():
             "app.services.ingestion.chandra_extractor.ocr_slot", side_effect=_fake_gate
         ),
     ):
+        started = time.perf_counter()
         try:
             result = extract_with_chandra(
                 "doc.pdf",
                 ocr_config=_OCR_CFG,
                 max_workers=page_count,
-                document_deadline=0.2,
+                document_deadline=1.0,
             )
         finally:
+            elapsed = time.perf_counter() - started
             release.set()
 
+    # Must return once its own document_deadline passes, not once the slow
+    # page's block eventually clears -- the whole point of not doing a
+    # blocking pool.shutdown(wait=True).
+    assert elapsed < slow_page_block_seconds / 2
     assert result["metadata"]["pages"] == page_count
     assert result["metadata"]["page_failures"] == [page_count]
     assert "document deadline exceeded" in result["content"]

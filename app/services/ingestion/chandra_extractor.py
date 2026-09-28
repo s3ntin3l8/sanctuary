@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import threading
 import time
 from concurrent.futures import ALL_COMPLETED, Future, ThreadPoolExecutor, wait
 from typing import Any
@@ -308,11 +309,30 @@ def extract_with_chandra(
     if not page_pngs:
         raise ChandraExtractionError(f"PDF has no renderable pages: {file_path}")
 
+    # Set once the document deadline has passed. _ocr_safe checks this before
+    # (and after) acquiring the global ocr_slot so a page whose thread hadn't
+    # started its HTTP call yet bails out immediately instead of acquiring
+    # model_gate/ocr_slot-adjacent resources on behalf of a result that will
+    # be discarded — the outer model_gate("chandra") hold ends as soon as we
+    # give up waiting, so any OCR call still made after that point runs
+    # without the cross-family protection that gate exists for. A page
+    # already mid-HTTP-call when the deadline fires can't be interrupted;
+    # it stays bounded by its own per-page httpx timeout regardless.
+    abandoned = threading.Event()
+
     def _ocr_safe(
         item: tuple[int, bytes],
     ) -> tuple[int, str, str, float, Exception | None]:
         idx, png = item
         page_started = time.perf_counter()
+        if abandoned.is_set():
+            return (
+                idx,
+                "",
+                f"<!-- chandra page {idx} skipped: document deadline exceeded -->",
+                0.0,
+                TimeoutError("document deadline exceeded"),
+            )
         try:
             # Global cross-document slot, held only for the network call —
             # this is what lets N single-page documents (each with a
@@ -320,6 +340,15 @@ def extract_with_chandra(
             # a mixed batch (e.g. 1-page + 8-page) split the remaining
             # slots instead of the big doc hogging up to 8 on its own.
             with ocr_slot(label=f"{file_path}:page:{idx}"):
+                if abandoned.is_set():
+                    return (
+                        idx,
+                        "",
+                        f"<!-- chandra page {idx} skipped: "
+                        "document deadline exceeded -->",
+                        time.perf_counter() - page_started,
+                        TimeoutError("document deadline exceeded"),
+                    )
                 html = _ocr_one_page(
                     png,
                     url=url,
@@ -365,6 +394,12 @@ def extract_with_chandra(
             for fut in done:
                 results.append(fut.result())
             if not_done:
+                # Set before shutdown() so any page thread that hasn't yet
+                # reached its ocr_slot()/HTTP-call checkpoints sees it and
+                # bails immediately, rather than acquiring a slot (or making
+                # an OCR call outside model_gate's protection) on behalf of a
+                # result we're about to discard.
+                abandoned.set()
                 logger.warning(
                     "chandra document deadline (%ss) exceeded for %s — "
                     "%d/%d page(s) still in flight, returning partial result",
