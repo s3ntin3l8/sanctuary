@@ -5,6 +5,7 @@ import httpx
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError as SA_OperationalError
 
+from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
 from app.dependencies import get_db_session
 from app.models.database import Document
 from app.models.enums import PipelineStage
@@ -95,7 +96,12 @@ def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> No
         )
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    time_limit=EXTRACT_TASK_TIME_LIMIT,
+    soft_time_limit=EXTRACT_TASK_SOFT_TIME_LIMIT,
+)
 def process_document_task(self, doc_id: int):
     """EXTRACT-only: run Docling conversion, then hand off METADATA to the ai queue.
 

@@ -5,6 +5,8 @@ import re
 import threading
 from typing import overload
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 logger = logging.getLogger(__name__)
 
 
@@ -265,6 +267,12 @@ def _build_converter(force_full_page_ocr: bool = False):
             time.perf_counter() - start,
         )
         return conv
+    except SoftTimeLimitExceeded:
+        # An Exception subclass — must come before the generic branch below
+        # or a soft time limit firing mid-init would be wrongly reported as
+        # a Docling installation problem instead of propagating to
+        # process_document_task's dedicated handler.
+        raise
     except Exception as e:
         raise RuntimeError(
             f"Failed to initialize Docling converter: {e}. "
@@ -388,6 +396,8 @@ def _pdf_text_in_bbox(textpage, bbox) -> str:
     """
     try:
         text = textpage.get_text_bounded(bbox.l, bbox.b, bbox.r, bbox.t)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as e:
         logger.debug("get_text_bounded failed: %s", e)
         return ""
@@ -427,6 +437,8 @@ def _ocr_picture_region(page, bbox) -> str:
         if len(re.sub(r"\s+", "", cleaned)) < 3:
             return ""
         return cleaned
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as e:
         logger.debug("OCR of picture region failed: %s", e)
         return ""
@@ -448,6 +460,8 @@ def _recover_picture_text(
     out: dict[int, str] = {}
     try:
         pdf = pdfium.PdfDocument(file_path)
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as e:
         logger.debug("Failed to open PDF for picture recovery: %s", e)
         return {id(p): "" for pics in pictures_by_page.values() for p in pics}
@@ -456,6 +470,8 @@ def _recover_picture_text(
         for page_no, pics in pictures_by_page.items():
             try:
                 page = pdf[page_no - 1]
+            except SoftTimeLimitExceeded:
+                raise
             except Exception:
                 for p in pics:
                     out[id(p)] = ""
@@ -542,6 +558,8 @@ def _run_conversion(conv, file_path: str) -> tuple[str, list, dict]:
                     },
                 }
             )
+    except SoftTimeLimitExceeded:
+        raise
     except Exception as e:
         logger.warning("Chunking failed for %s: %s", file_path, e)
 
@@ -608,6 +626,13 @@ def _extract_pdf_text_layer(file_path: str) -> str | None:
         if len(re.sub(r"\s+", "", combined)) < 100:
             return None
         return _apply_glyph_fixes(combined)
+    except SoftTimeLimitExceeded:
+        # An Exception subclass — must come before the generic branch below,
+        # or a soft limit firing here would be swallowed as "no text layer,"
+        # falling through to _ocr_with_rotation_correction — the single most
+        # expensive remaining path, run exactly when there's no time budget
+        # left for it.
+        raise
     except Exception as e:
         logger.debug("pdf text layer extraction failed for %s: %s", file_path, e)
         return None
@@ -799,6 +824,13 @@ def convert_file(file_path: str, *, engine: str = "docling") -> dict:
                 "error": str(exc),
                 "model": ocr_cfg.ocr_model if ocr_cfg else None,
             }
+        except SoftTimeLimitExceeded:
+            # An Exception subclass — must come before the generic branch
+            # below, or a soft limit firing while extract_with_chandra's
+            # main thread waits on its page futures would be misread as "the
+            # OCR endpoint crashed" and trigger a full Docling re-run from
+            # scratch, exactly when there's no time budget left for one.
+            raise
         except Exception as exc:  # noqa: BLE001 — never let OCR brick ingest
             logger.warning(
                 "Chandra extraction crashed for %s — falling back to Docling: %s",

@@ -304,7 +304,6 @@ def extract_with_chandra(
     if api_key and api_key != "not-needed":
         headers["Authorization"] = f"Bearer {api_key}"
 
-    start = time.perf_counter()
     page_pngs = _render_pdf_to_pngs(file_path, dpi=dpi)
     if not page_pngs:
         raise ChandraExtractionError(f"PDF has no renderable pages: {file_path}")
@@ -381,6 +380,12 @@ def extract_with_chandra(
     # inside _ocr_safe above, not this gate — chandra holders don't
     # exclude each other here.
     with model_gate("chandra", label=f"chandra-extract:{file_path}"):
+        # document_deadline counts from here, not from when this call started
+        # waiting for the gate -- a long qwen-contention wait would otherwise
+        # consume the whole OCR budget before a single page is even
+        # attempted, marking every page failed and silently falling back to
+        # Docling on every gate-contended document.
+        start = time.perf_counter()
         pool = ThreadPoolExecutor(max_workers=workers)
         try:
             future_pages: dict[Future, int] = {
@@ -394,12 +399,6 @@ def extract_with_chandra(
             for fut in done:
                 results.append(fut.result())
             if not_done:
-                # Set before shutdown() so any page thread that hasn't yet
-                # reached its ocr_slot()/HTTP-call checkpoints sees it and
-                # bails immediately, rather than acquiring a slot (or making
-                # an OCR call outside model_gate's protection) on behalf of a
-                # result we're about to discard.
-                abandoned.set()
                 logger.warning(
                     "chandra document deadline (%ss) exceeded for %s — "
                     "%d/%d page(s) still in flight, returning partial result",
@@ -421,6 +420,15 @@ def extract_with_chandra(
                         )
                     )
         finally:
+            # Set unconditionally (not just on a deadline exceeded) so any
+            # page thread that hasn't yet reached its ocr_slot()/HTTP-call
+            # checkpoints bails immediately rather than acquiring a slot (or
+            # making an OCR call outside model_gate's protection) on behalf
+            # of a result we're discarding — including if wait() itself
+            # raised (e.g. a soft time limit), which would otherwise skip
+            # straight past the `if not_done` branch above without ever
+            # setting it.
+            abandoned.set()
             # Not a plain `with` block: on a deadline exceeded, we must not
             # block here waiting for the still-running pages either — they
             # stay bounded by their own per-page httpx timeout and simply

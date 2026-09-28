@@ -4,6 +4,7 @@ import re
 from datetime import UTC, datetime
 
 import aiofiles
+from celery.exceptions import SoftTimeLimitExceeded
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -366,6 +367,13 @@ def process_uploaded_document(doc: Document, db: Session):
                     f"Document '{safe_filename}' extracted to only {len(text_only)} chars - possible scanned document"
                 )
 
+    except SoftTimeLimitExceeded:
+        # An Exception subclass — must come before the generic branch below,
+        # or process_document_task would see an IngestionError instead of
+        # SoftTimeLimitExceeded and treat a soft time limit as an ordinary
+        # (retryable-looking) conversion failure rather than its own
+        # dedicated no-retry, cascade-and-return-cleanly branch.
+        raise
     except Exception as e:
         error_str = str(e)
         if "timed out" in error_str.lower():

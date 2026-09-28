@@ -64,6 +64,97 @@ def test_process_document_task_success(db_session, sample_document):
 
 
 @pytest.mark.unit
+def test_process_document_task_docling_soft_time_limit_fails_cleanly(
+    db_session, sample_document, tmp_path
+):
+    """PR3b regression: since PR3b, Docling conversion runs inline on
+    process_document_task's own thread instead of a separate thread pool, so
+    a SoftTimeLimitExceeded can now fire literally anywhere inside the
+    conversion call chain — including inside converters.py's/service.py's
+    own broad `except Exception` blocks, which previously only ever saw
+    genuine conversion errors. Without an explicit re-raise ahead of each,
+    the signal gets swallowed and misclassified as an ordinary IngestionError
+    instead of reaching process_document_task's dedicated no-retry branch."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    sample_document.file_path = str(pdf_path)
+    db_session.commit()
+
+    with (
+        patch("app.tasks.document_processing.get_db_session") as mock_get_db,
+        patch(
+            "app.services.ingestion.converters._convert_document",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch.object(process_document_task, "retry") as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        result = process_document_task.run(sample_document.id)
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+
+    from app.services.pipeline_status import stages_dict
+
+    db_session.expire(sample_document, ["stage_rows"])
+    stages = stages_dict(sample_document)
+    assert stages["extract"]["status"] == "failed"
+    assert "soft time limit exceeded" in stages["extract"]["error"]
+
+
+@pytest.mark.unit
+def test_process_document_task_chandra_soft_time_limit_skips_docling_fallback(
+    db_session, sample_document, tmp_path
+):
+    """PR3b regression: a SoftTimeLimitExceeded escaping extract_with_chandra
+    (fired while its main thread waits on page futures) must propagate out of
+    convert_file's Chandra branch untouched, not be caught by the generic
+    `except Exception` there and trigger a full Docling re-run exactly when
+    there's no time budget left for one."""
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    sample_document.file_path = str(pdf_path)
+    db_session.commit()
+
+    with (
+        patch("app.tasks.document_processing.get_db_session") as mock_get_db,
+        patch(
+            "app.services.user_settings_service.get_extraction_engine",
+            return_value="chandra",
+        ),
+        patch("app.services.ai_config.get_ocr_config", return_value=object()),
+        patch("app.services.user_settings_service.get_ocr_concurrency", return_value=1),
+        patch(
+            "app.services.ingestion.chandra_extractor.extract_with_chandra",
+            side_effect=SoftTimeLimitExceeded("simulated"),
+        ),
+        patch(
+            "app.services.ingestion.converters._convert_document"
+        ) as mock_convert_document,
+        patch.object(process_document_task, "retry") as mock_retry,
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        result = process_document_task.run(sample_document.id)
+
+    assert result["status"] == "failed"
+    mock_retry.assert_not_called()
+    mock_convert_document.assert_not_called()
+
+    from app.services.pipeline_status import stages_dict
+
+    db_session.expire(sample_document, ["stage_rows"])
+    stages = stages_dict(sample_document)
+    assert stages["extract"]["status"] == "failed"
+    assert "soft time limit exceeded" in stages["extract"]["error"]
+
+
+@pytest.mark.unit
 def test_reingest_all_documents_task(db_session, sample_document):
     with (
         patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,

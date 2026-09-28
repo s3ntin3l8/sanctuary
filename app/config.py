@@ -37,25 +37,46 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "3600"))  # 60 
 CELERY_TASK_SOFT_TIME_LIMIT = int(
     os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "3000")
 )  # 50 min
+# process_document_task (EXTRACT) gets its own, more generous limits: its
+# worst-case legitimate wait stacks a model_gate acquire (30 min, see
+# model_gate._DEFAULT_ACQUIRE_TIMEOUT) on top of Chandra's own
+# CHANDRA_DOCUMENT_DEADLINE_SECONDS (25 min) *and* a subsequent Docling
+# fallback pass if Chandra fails — a total the shared 3000s/50min default
+# above has no room for. Every other pipeline stage (METADATA, ENRICH, ...)
+# stays on the shared limits; only EXTRACT needs this.
+EXTRACT_TASK_SOFT_TIME_LIMIT = int(
+    os.getenv("EXTRACT_TASK_SOFT_TIME_LIMIT", "4800")
+)  # 80 min
+EXTRACT_TASK_TIME_LIMIT = int(os.getenv("EXTRACT_TASK_TIME_LIMIT", "5400"))  # 90 min
 # Redis visibility_timeout: with task_acks_late=True, a message becomes
 # visible again (and gets redelivered to another worker) after this many
-# seconds even if the original task is still running. Must exceed
-# task_time_limit — otherwise a task running right up against its own hard
-# limit can be redelivered and run twice before the first copy is killed.
+# seconds even if the original task is still running. Must exceed every
+# task_time_limit above (EXTRACT's is the largest) — otherwise a task
+# running right up against its own hard limit can be redelivered and run
+# twice before the first copy is killed.
 CELERY_BROKER_VISIBILITY_TIMEOUT = int(
-    os.getenv("CELERY_BROKER_VISIBILITY_TIMEOUT", "4000")
+    os.getenv("CELERY_BROKER_VISIBILITY_TIMEOUT", "6000")
 )
-assert (
-    CELERY_TASK_SOFT_TIME_LIMIT
-    < CELERY_TASK_TIME_LIMIT
-    < CELERY_BROKER_VISIBILITY_TIMEOUT
-), (
+assert CELERY_TASK_SOFT_TIME_LIMIT < CELERY_TASK_TIME_LIMIT, (
     "Celery timeout misconfiguration: soft_time_limit "
     f"({CELERY_TASK_SOFT_TIME_LIMIT}) must be < task_time_limit "
-    f"({CELERY_TASK_TIME_LIMIT}) must be < broker visibility_timeout "
-    f"({CELERY_BROKER_VISIBILITY_TIMEOUT}) — otherwise a task can be hard-"
-    "killed before it gets the soft-limit warning, or redelivered to "
-    "another worker while the original is still legitimately running."
+    f"({CELERY_TASK_TIME_LIMIT}) — otherwise a task can be hard-killed "
+    "before it gets the soft-limit warning."
+)
+assert EXTRACT_TASK_SOFT_TIME_LIMIT < EXTRACT_TASK_TIME_LIMIT, (
+    "Celery timeout misconfiguration: EXTRACT_TASK_SOFT_TIME_LIMIT "
+    f"({EXTRACT_TASK_SOFT_TIME_LIMIT}) must be < EXTRACT_TASK_TIME_LIMIT "
+    f"({EXTRACT_TASK_TIME_LIMIT})."
+)
+assert (
+    max(CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT)
+    < CELERY_BROKER_VISIBILITY_TIMEOUT
+), (
+    "Celery timeout misconfiguration: the broker visibility_timeout "
+    f"({CELERY_BROKER_VISIBILITY_TIMEOUT}) must exceed every task_time_limit "
+    f"(shared={CELERY_TASK_TIME_LIMIT}, EXTRACT={EXTRACT_TASK_TIME_LIMIT}) — "
+    "otherwise a task running right up against its own hard limit can be "
+    "redelivered and run twice before the first copy is killed."
 )
 
 AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
