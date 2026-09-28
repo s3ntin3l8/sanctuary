@@ -890,6 +890,106 @@ def test_recover_orphaned_resets_running_past_provable_cutoff_despite_active_wor
 
 
 @pytest.mark.unit
+def test_recover_orphaned_skips_extract_running_within_its_own_longer_limit(
+    db_session,
+):
+    """PR3c: EXTRACT runs under its own, longer EXTRACT_TASK_TIME_LIMIT (it
+    can stack a model_gate wait, Chandra's OCR budget, and a Docling fallback
+    pass in one task) — a RUNNING EXTRACT row older than the shared
+    CELERY_TASK_TIME_LIMIT but still within EXTRACT_TASK_TIME_LIMIT is
+    legitimately still executing and must NOT be reset. Using the shared
+    cutoff for it would steal the stage row out from under a live worker."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import text as _text
+
+    from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
+    from app.models.database import Case, Document
+    from app.models.enums import CaseStatus, Jurisdiction, OriginatorType
+    from app.services.pipeline_status import (
+        initialize,
+        recover_orphaned_running_stages,
+    )
+
+    assert EXTRACT_TASK_TIME_LIMIT > CELERY_TASK_TIME_LIMIT, (
+        "test assumes EXTRACT's own limit is longer than the shared one"
+    )
+
+    case = Case(
+        id="_TR_R10", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+    )
+    db_session.add(case)
+    db_session.commit()
+
+    # Doc A: EXTRACT RUNNING past the shared cutoff but within EXTRACT's own
+    # longer one — a legitimately still-running task under the old,
+    # single-cutoff logic this would have been wrongly swept.
+    still_running = Document(
+        title="legitimately-slow-extract.pdf",
+        content="x",
+        case_id="_TR_R10",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(still_running)
+    db_session.flush()
+    initialize(still_running, batched=False, db=db_session)
+    still_running.pipeline_state = "running"
+    past_shared_within_extract = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        seconds=CELERY_TASK_TIME_LIMIT + 600
+    )
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages SET status=:status, started_at=:started "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.RUNNING.value,
+            "started": past_shared_within_extract,
+            "id": still_running.id,
+            "stage": PipelineStage.EXTRACT.value,
+        },
+    )
+
+    # Doc B: proves workers are alive, so the heuristic gate alone can't be
+    # what's protecting doc A — only the per-stage provable cutoff can be.
+    alive = Document(
+        title="recently-active.pdf",
+        content="x",
+        case_id="_TR_R10",
+        originator_type=OriginatorType.UNKNOWN,
+    )
+    db_session.add(alive)
+    db_session.flush()
+    initialize(alive, batched=False, db=db_session)
+    alive.pipeline_state = "partial"
+    db_session.execute(
+        _text(
+            "UPDATE document_pipeline_stages "
+            "SET status=:status, completed_at=:done "
+            "WHERE document_id=:id AND stage=:stage"
+        ),
+        {
+            "status": StageStatus.COMPLETED.value,
+            "done": datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1),
+            "id": alive.id,
+            "stage": PipelineStage.BATCH_ANALYSIS.value,
+        },
+    )
+    db_session.expire(still_running, ["stage_rows"])
+    db_session.expire(alive, ["stage_rows"])
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert result["docs_reset"] == 0
+    assert result["stages_reset"] == 0
+
+    db_session.refresh(still_running)
+    rec = stages_dict(still_running)[PipelineStage.EXTRACT.value]
+    assert rec["status"] == StageStatus.RUNNING.value
+
+
+@pytest.mark.unit
 def test_recover_orphaned_resets_retrying_past_lost_retry_cutoff_despite_active_workers(
     db_session,
 ):

@@ -1,14 +1,19 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.services.ingestion.converters import (
     _apply_glyph_fixes,
+    _build_converter,
     _collect_pictures,
     _convert_document,
     _extract_pdf_text_layer,
     _layout_model_spec,
+    _ocr_picture_region,
     _ocr_with_rotation_correction,
+    _pdf_text_in_bbox,
+    _recover_picture_text,
     _run_conversion,
     _substitute_picture_placeholders,
     is_valid_docling_output,
@@ -596,3 +601,91 @@ def test_run_conversion_skips_picture_recovery_on_image_only_output():
     assert "picture_text_recovered" not in meta
     # Placeholders preserved so the outer sandwich gate still sees image-only
     assert "<!-- image -->" in md
+
+
+# ---------------------------------------------------------------------------
+# PR3c: SoftTimeLimitExceeded must propagate through every guard in the
+# reachable Docling call chain, not be swallowed as an ordinary conversion
+# error. See converters.py's individual `except SoftTimeLimitExceeded: raise`
+# guards -- each test below targets exactly one of them.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_build_converter_reraises_soft_time_limit():
+    with patch(
+        "docling.document_converter.DocumentConverter",
+        side_effect=SoftTimeLimitExceeded("simulated"),
+    ):
+        with pytest.raises(SoftTimeLimitExceeded):
+            _build_converter()
+
+
+@pytest.mark.unit
+def test_run_conversion_reraises_soft_time_limit_from_chunking():
+    mock_conv = MagicMock()
+    mock_res = MagicMock()
+    mock_doc = MagicMock()
+    mock_doc.pages = [MagicMock()]
+    mock_doc.pictures = []
+    mock_res.document = mock_doc
+    mock_res.input.format.value = "PDF"
+    mock_conv.convert.return_value = mock_res
+
+    with patch(
+        "docling.chunking.HierarchicalChunker",
+        side_effect=SoftTimeLimitExceeded("simulated"),
+    ):
+        with pytest.raises(SoftTimeLimitExceeded):
+            _run_conversion(mock_conv, "any.pdf")
+
+
+@pytest.mark.unit
+def test_extract_pdf_text_layer_reraises_soft_time_limit():
+    mock_page = MagicMock()
+    mock_textpage = MagicMock()
+    mock_textpage.get_text_range.side_effect = SoftTimeLimitExceeded("simulated")
+    mock_page.get_textpage.return_value = mock_textpage
+    mock_doc = MagicMock()
+    mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
+
+    with patch("pypdfium2.PdfDocument", return_value=mock_doc):
+        with pytest.raises(SoftTimeLimitExceeded):
+            _extract_pdf_text_layer("any.pdf")
+
+
+@pytest.mark.unit
+def test_pdf_text_in_bbox_reraises_soft_time_limit():
+    textpage = MagicMock()
+    textpage.get_text_bounded.side_effect = SoftTimeLimitExceeded("simulated")
+    bbox = MagicMock(l=0, t=10, r=10, b=0)
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        _pdf_text_in_bbox(textpage, bbox)
+
+
+@pytest.mark.unit
+def test_ocr_picture_region_reraises_soft_time_limit():
+    page = MagicMock()
+    page.get_size.side_effect = SoftTimeLimitExceeded("simulated")
+    bbox = MagicMock(l=0, t=10, r=10, b=0)
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        _ocr_picture_region(page, bbox)
+
+
+@pytest.mark.unit
+def test_recover_picture_text_reraises_soft_time_limit_on_pdf_open():
+    with patch("pypdfium2.PdfDocument", side_effect=SoftTimeLimitExceeded("simulated")):
+        with pytest.raises(SoftTimeLimitExceeded):
+            _recover_picture_text("any.pdf", {1: [_fake_picture(1)]})
+
+
+@pytest.mark.unit
+def test_recover_picture_text_reraises_soft_time_limit_on_page_access():
+    mock_pdf = MagicMock()
+    mock_pdf.__getitem__.side_effect = SoftTimeLimitExceeded("simulated")
+
+    with patch("pypdfium2.PdfDocument", return_value=mock_pdf):
+        with pytest.raises(SoftTimeLimitExceeded):
+            _recover_picture_text("any.pdf", {1: [_fake_picture(1)]})
