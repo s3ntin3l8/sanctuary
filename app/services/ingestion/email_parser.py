@@ -6,6 +6,8 @@ from email.policy import default
 
 from markdownify import markdownify
 
+from app.core.timezone import ensure_utc
+
 # Matches beA/court-email attachment manifest lines:
 # "SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt""
 _MANIFEST_LINE_RE = re.compile(
@@ -25,11 +27,19 @@ _BOILERPLATE_RE = re.compile(
 
 
 def parse_email_date(date_str: str) -> datetime | None:
-    """Parse RFC 5322 date string to datetime object."""
+    """Parse RFC 5322 date string to a timezone-aware (UTC) datetime object.
+
+    A naive result from any fallback branch is tagged UTC rather than
+    converted from local time — a date-only header like "26.05.2026" means
+    that calendar date, and converting via local-time interpretation would
+    shift it across midnight depending on host timezone. This also matches
+    how `_local_strftime` (app/main.py) already treats naive datetimes when
+    rendering, so display is unaffected.
+    """
     if not date_str:
         return None
     try:
-        return email.utils.parsedate_to_datetime(date_str)
+        return ensure_utc(email.utils.parsedate_to_datetime(date_str))
     except Exception:
         pass
     patterns = [
@@ -43,7 +53,7 @@ def parse_email_date(date_str: str) -> datetime | None:
     date_str = re.sub(r"\s+\([^)]+\)$", "", date_str)
     for pattern in patterns:
         try:
-            return datetime.strptime(date_str, pattern)
+            return ensure_utc(datetime.strptime(date_str, pattern))
         except ValueError:
             continue
     match = re.search(r"(\d{1,2})[\.\-](\d{1,2})[\.\-](\d{2,4})", date_str)
@@ -52,7 +62,7 @@ def parse_email_date(date_str: str) -> datetime | None:
             day, month, year = match.groups()
             if len(year) == 2:
                 year = "20" + year if int(year) < 50 else "19" + year
-            return datetime(int(year), int(month), int(day))
+            return ensure_utc(datetime(int(year), int(month), int(day)))
         except ValueError:
             pass
     return None

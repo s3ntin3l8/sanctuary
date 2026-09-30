@@ -16,6 +16,7 @@ import os
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.paths import resolve_storage_path
 from app.models.database import ActionItem, Document, IngestBatch
 from app.models.enums import ActionItemStatus, DocumentStatus, IngestBatchStatus
 
@@ -115,7 +116,11 @@ def delete_bundle(
         # Snapshot before per-doc loop: delete_document auto-removes the
         # batch row when it deletes the last document, so batch.* lookups
         # would fail on the final iteration.
-        raw_source_path = batch.raw_source_path
+        raw_source_path = (
+            resolve_storage_path(batch.raw_source_path)
+            if batch.raw_source_path
+            else None
+        )
         # Children-first order. Document.children carries
         # cascade="all, delete-orphan", so deleting a parent first triggers
         # an ORM cascade DELETE on its children before our manual

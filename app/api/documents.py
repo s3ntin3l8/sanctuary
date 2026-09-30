@@ -21,13 +21,14 @@ from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.helpers import render_page
-from app.models.database import Case, Document, User
+from app.models.database import Case, Document, IngestBatch, User
 from app.models.enums import IngestBatchSourceType, UserReactionType
 from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 from app.services.hud_context import build_hud_context
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
+from app.services.ingestion.converters import MAX_FILE_SIZE
 from app.services.ingestion.service import (
     create_manual_upload_batch,
     ingest_file,
@@ -178,7 +179,18 @@ async def upload_document(
             # Route through the unified email ingestion path — same as Gmail import.
             # No Document is created for the .eml envelope itself.
             try:
-                raw_bytes = await file.read()
+                # Chunked read with a running total, like ingest_file — a bare
+                # await file.read() still buffers the entire file in memory
+                # before any size check runs.
+                chunks = []
+                total_size = 0
+                while chunk := await file.read(1024 * 1024):
+                    total_size += len(chunk)
+                    if total_size > MAX_FILE_SIZE:
+                        max_mb = MAX_FILE_SIZE // (1024 * 1024)
+                        raise ValueError(f"File too large. Maximum size: {max_mb}MB")
+                    chunks.append(chunk)
+                raw_bytes = b"".join(chunks)
                 batch = ingest_raw_email(
                     db,
                     raw_bytes,
@@ -224,6 +236,25 @@ async def upload_document(
             error_count += 1
             logger.error(f"Upload failed for file {file.filename}: {e}", exc_info=True)
             results.append(_row_error(file.filename, "Upload failed"))
+
+    if ingest_batch_id is not None:
+        # create_manual_upload_batch commits the batch row before any of its
+        # files are processed above — if every non-EML file in it then fails
+        # (duplicate, conversion error, etc.), the row survives with zero
+        # documents forever, since delete_bundle has nothing to auto-trigger
+        # it. Check actual document count, not success_count: an EML file in
+        # the same upload can succeed via its own separate batch (see the
+        # ingest_raw_email branch above) without adding to this one.
+        remaining = (
+            db.query(Document.id)
+            .filter(Document.ingest_batch_id == ingest_batch_id)
+            .count()
+        )
+        if remaining == 0:
+            db.query(IngestBatch).filter(IngestBatch.id == ingest_batch_id).delete(
+                synchronize_session=False
+            )
+            db.commit()
 
     if success_count == 0 and error_count > 0:
         return HTMLResponse(

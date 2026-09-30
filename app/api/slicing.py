@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.core.paths import to_storage_path
+from app.core.paths import resolve_storage_path, to_storage_path
 from app.core.rate_limit import limiter
 from app.dependencies import get_db
 from app.helpers import render_page
@@ -71,7 +71,11 @@ async def slicing_thumb(batch_id: int, page: int, db: Session = Depends(get_db))
         return FileResponse(str(resolved), media_type="image/png")
 
     if batch.raw_source_path:
-        candidate = Path(batch.raw_source_path).parent / "thumbs" / f"page_{page}.png"
+        candidate = (
+            resolve_storage_path(batch.raw_source_path).parent
+            / "thumbs"
+            / f"page_{page}.png"
+        )
         served = _serve_if_under_data_dir(candidate)
         if served is not None:
             return served
@@ -87,12 +91,15 @@ async def slicing_thumb(batch_id: int, page: int, db: Session = Depends(get_db))
 
 
 @router.post("/{batch_id}/confirm")
-async def slicing_confirm(
+def slicing_confirm(
     request: Request,
     batch_id: int,
     cuts: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    # No `await` in this body — a sync def lets FastAPI run the blocking
+    # pdfium split/save/hash work (and the DB calls below) in its threadpool
+    # instead of blocking the event loop for the whole slicing operation.
     from app.services.ingestion.cover_letter_wiring import wire_cover_letter
 
     # Idempotency guard — a real row lock, not just a refresh. A second
@@ -111,16 +118,22 @@ async def slicing_confirm(
     if not page_count:
         raise HTTPException(status_code=400, detail="Batch slicing metadata missing")
 
-    # Parse and validate cut positions against the actual page_count
+    # Parse and validate cut positions against the actual page_count.
+    # `cuts` must be a JSON array — json.loads("5") or json.loads("null")
+    # succeed but yield a non-list (int/None), which then raises TypeError
+    # inside the comprehension below rather than the ValueError/
+    # JSONDecodeError this used to only catch, escaping to a bare 500.
     try:
         raw_cuts = json.loads(cuts)
+        if not isinstance(raw_cuts, list):
+            raise ValueError("cuts must be a JSON array")
         cut_positions = sorted({int(c) for c in raw_cuts if 1 <= int(c) < page_count})
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid cuts JSON") from None
 
     if not batch.raw_source_path:
         raise HTTPException(status_code=409, detail="Source PDF no longer available")
-    pdf_path = Path(batch.raw_source_path)
+    pdf_path = resolve_storage_path(batch.raw_source_path)
     if not pdf_path.exists():
         raise HTTPException(status_code=409, detail="Source PDF no longer available")
 
@@ -134,6 +147,7 @@ async def slicing_confirm(
 
     docs_to_process: list[Document] = []
     first_doc_id: int | None = None
+    written_slice_paths: list[Path] = []
 
     try:
         src_pdf = pdfium.PdfDocument(str(pdf_path))
@@ -146,6 +160,7 @@ async def slicing_confirm(
             slice_filename = pdf_path.parent / f"slice_{slice_idx + 1}.pdf"
             slice_pdf.save(str(slice_filename))
             slice_pdf.close()
+            written_slice_paths.append(slice_filename)
 
             slice_bytes = slice_filename.read_bytes()
             content_hash = hashlib.sha256(slice_bytes).hexdigest()
@@ -185,6 +200,15 @@ async def slicing_confirm(
 
     except Exception as exc:
         db.rollback()
+        # The DB rows for these slices are gone (rolled back), but the slice
+        # PDFs already written to disk are not — remove them so a retry
+        # doesn't inherit stale/orphaned files from this failed attempt.
+        for path in written_slice_paths:
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
         raise HTTPException(status_code=500, detail=f"Slicing failed: {exc}") from exc
 
     from app.tasks.dispatch import dispatch_task

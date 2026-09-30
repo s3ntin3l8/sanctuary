@@ -1,12 +1,12 @@
 import logging
 import secrets
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import limiter
+from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import User
 from app.models.enums import AuditEventType
@@ -79,7 +79,7 @@ async def gmail_oauth_callback(
         db,
         user.id,
         credentials_json=creds.to_json(),
-        connected_at=datetime.now().isoformat(),
+        connected_at=now_utc().isoformat(),
     )
     db.commit()
 

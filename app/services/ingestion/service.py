@@ -593,6 +593,19 @@ async def ingest_file(
                     sha256.update(content)
                     await out_file.write(content)
         except HTTPException:
+            # The only HTTPException reachable inside this block is the 413
+            # above — the file being written this call is now orphaned
+            # (partial content, no Document row yet), so clean it up before
+            # propagating. Scoped to this block only; the 400/409 paths
+            # later in this function already do their own explicit cleanup.
+            # Same file_path used unguarded by the sibling os.remove calls
+            # later in this function (magic-mismatch / duplicate paths,
+            # dismissed CodeQL alerts #38/#39) — case_dir is validated under
+            # DATA_DIR above and file_path's filename component was already
+            # os.path.basename()'d inside _unique_upload_path (dismissed
+            # alerts #32/#33); CodeQL doesn't model either barrier.
+            if os.path.exists(file_path):
+                os.remove(file_path)
             raise
         except OSError as e:
             raise HTTPException(

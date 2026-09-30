@@ -59,8 +59,12 @@ async def _embed_document_chunks(doc: Document, db, cfg) -> int:
 
     Idempotent: clears any existing chunk rows for this document first, so
     re-embedding on retry/re-ingestion never hits a UNIQUE conflict or leaves
-    stale rows behind. Nothing is committed until every chunk succeeds — a
-    mid-loop failure leaves no partial write.
+    stale rows behind. This function itself only commits once, after every
+    chunk succeeds — but that guarantee only holds if the caller rolls back
+    the session on any exception raised here. Without that, this doc's
+    pending DELETE (and any doc processed after it, sharing the same open
+    transaction) can be silently flushed by a *later* doc's successful
+    commit in the same loop, wiping this doc's chunks with no replacement.
     """
     texts = _chunks_to_embed(doc)
     if not texts:
@@ -306,6 +310,14 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
                     failed += 1
             except Exception as e:
                 logger.warning(f"Reindex failed for doc {doc.id}: {e}")
+                # _embed_document_chunks's DELETE-then-add-then-commit for
+                # this doc may be mid-transaction when it raised — without
+                # rolling back, that orphaned DELETE stays pending and gets
+                # silently flushed by whichever later doc in this batch next
+                # commits successfully, wiping this doc's chunks with no
+                # replacement. A real DB-level error would also otherwise
+                # poison the session for every doc processed after it.
+                db.rollback()
                 failed += 1
         offset += _REINDEX_BATCH_SIZE
         logger.info(

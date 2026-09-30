@@ -9,7 +9,7 @@ import pytest
 from app.config import AI_EMBED_DIM
 from app.models.database import Case, Claim
 from app.models.enums import CaseStatus, ClaimStatus, ClaimType
-from app.services.claim_embedding import upsert_claim_embedding
+from app.services.claim_embedding import reindex_all_claims, upsert_claim_embedding
 
 
 @pytest.fixture
@@ -143,3 +143,56 @@ def test_upsert_claim_embedding_clears_failure_on_success(db_session, claim_in_c
     assert ok is True
     db_session.refresh(claim_in_case)
     assert claim_in_case.embedding_failed_at is None
+
+
+@pytest.mark.unit
+def test_reindex_all_claims_embeds_every_claim_with_text(db_session):
+    """Regression: Rebuild Index's claims.embedding resize (Settings → AI)
+    clears every claim's embedding column, but nothing re-embedded them —
+    reindex_all_claims is the re-embed pass that closes that gap. Skips
+    claims with no text (upsert_claim_embedding's own no-op guard)."""
+    case = Case(id="EMB-REINDEX-1", title="Reindex test", status=CaseStatus.INTAKE)
+    db_session.add(case)
+    db_session.commit()
+
+    succeeds = Claim(
+        claim_text="A claim whose embed call succeeds.",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+    )
+    embed_fails = Claim(
+        claim_text="A claim whose embed call fails.",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+    )
+    # claim_text is NOT NULL at the DB level; an empty string is the only
+    # way a claim can have "no text" — matches upsert_claim_embedding's own
+    # `not claim.claim_text` truthiness guard. Excluded from `total`.
+    no_text = Claim(
+        claim_text="",
+        claim_type=ClaimType.FACTUAL,
+        status=ClaimStatus.ASSERTED,
+    )
+    db_session.add_all([succeeds, embed_fails, no_text])
+    db_session.commit()
+
+    fake_vec = [0.02] * AI_EMBED_DIM
+
+    async def _embed_side_effect(claim_text, _db):
+        return None if claim_text == embed_fails.claim_text else fake_vec
+
+    with patch(
+        "app.services.claim_embedding.embed_claim_text",
+        new=AsyncMock(side_effect=_embed_side_effect),
+    ):
+        result = asyncio.run(reindex_all_claims(db_session))
+
+    assert result["total"] == 2  # the two claims with real text
+    assert result["reindexed"] == 1
+    assert result["failed"] == 1
+
+    db_session.refresh(succeeds)
+    db_session.refresh(embed_fails)
+    assert succeeds.embedding is not None
+    assert embed_fails.embedding is None
+    assert embed_fails.embedding_failed_at is not None

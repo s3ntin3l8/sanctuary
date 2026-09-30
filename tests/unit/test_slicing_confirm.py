@@ -37,6 +37,35 @@ def _create_scan_batch(db_session, tmp_path, page_count=3):
     return batch
 
 
+def _create_real_scan_batch(db_session, tmp_path, page_count=3):
+    """Like _create_scan_batch, but with a real N-page PDF pdfium can
+    actually split — needed for tests that exercise the slicing loop itself
+    rather than just the pre-loop guards."""
+    import pypdfium2 as pdfium
+
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+
+    pdf = tmp_path / "original.pdf"
+    doc = pdfium.PdfDocument.new()
+    for _ in range(page_count):
+        doc.new_page(200, 200)
+    doc.save(str(pdf))
+    doc.close()
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.SCAN,
+        subject="test_scan.pdf",
+        raw_source_path=str(pdf),
+        status=IngestBatchStatus.AWAITING_SLICING,
+        meta={"slicing": {"status": "ready", "page_count": page_count}},
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+    return batch
+
+
 @pytest.mark.unit
 def test_wire_cover_letter_sets_roles_and_parent(db_session):
     """wire_cover_letter correctly sets COVER_LETTER + ENCLOSURE roles with parent_id."""
@@ -172,3 +201,90 @@ def test_slicing_confirm_locks_batch_row_with_select_for_update(
         "slicing_confirm's batch lookup must use SELECT ... FOR UPDATE — "
         f"got: {batch_selects}"
     )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_cuts", ["5", "null", "[null]", '"oops"'])
+def test_slicing_confirm_invalid_cuts_returns_400_not_500(
+    db_session, tmp_path, bad_cuts
+):
+    """Regression: json.loads("5") / json.loads("null") succeed but return a
+    non-list (int/None) — the old `except (JSONDecodeError, ValueError)`
+    didn't catch the resulting TypeError from `for c in raw_cuts`/`int(c)`,
+    so these escaped as a bare 500 instead of the intended 400."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    batch = _create_scan_batch(db_session, tmp_path, page_count=3)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.post(
+        f"/ingest/slice/{batch.id}/confirm",
+        data={"cuts": bad_cuts},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+    assert "Invalid cuts" in resp.text
+
+
+@pytest.mark.unit
+def test_slicing_confirm_happy_path_creates_expected_slices(db_session, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models.database import Document
+
+    batch = _create_real_scan_batch(db_session, tmp_path, page_count=3)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.post(
+        f"/ingest/slice/{batch.id}/confirm",
+        data={"cuts": "[2]"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
+    docs = (
+        db_session.query(Document)
+        .filter(Document.ingest_batch_id == batch.id)
+        .order_by(Document.id)
+        .all()
+    )
+    assert len(docs) == 2
+    assert (tmp_path / "slice_1.pdf").exists()
+    assert (tmp_path / "slice_2.pdf").exists()
+
+
+@pytest.mark.unit
+def test_slicing_confirm_failure_removes_written_slice_files(
+    db_session, tmp_path, monkeypatch
+):
+    """Regression: a mid-slicing failure rolled back the DB rows for the
+    slices already written, but left the slice_N.pdf files themselves on
+    disk — orphaned with no DB row pointing at them, and a retry of the same
+    batch would then collide with (or silently resurrect) stale files."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    batch = _create_real_scan_batch(db_session, tmp_path, page_count=3)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("cover-letter wiring exploded")
+
+    monkeypatch.setattr(
+        "app.services.ingestion.cover_letter_wiring.wire_cover_letter", _boom
+    )
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.post(
+        f"/ingest/slice/{batch.id}/confirm",
+        data={"cuts": "[2]"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 500
+
+    assert not (tmp_path / "slice_1.pdf").exists()
+    assert not (tmp_path / "slice_2.pdf").exists()
