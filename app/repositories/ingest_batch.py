@@ -1,9 +1,5 @@
-from collections.abc import Sequence
-from datetime import UTC, datetime
-from typing import cast
+from datetime import datetime
 
-from sqlalchemy import text
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.models.database import IngestBatch
@@ -20,31 +16,6 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
 
     def __init__(self, db: Session):
         super().__init__(IngestBatch, db)
-
-    def get_by_case(self, case_id: str) -> Sequence[IngestBatch]:
-        return (
-            self.db.query(IngestBatch)
-            .filter(IngestBatch.case_id == case_id)
-            .order_by(IngestBatch.received_at.desc())
-            .all()
-        )
-
-    def get_pending(self) -> Sequence[IngestBatch]:
-        return (
-            self.db.query(IngestBatch)
-            .filter(IngestBatch.status == IngestBatchStatus.PENDING)
-            .order_by(IngestBatch.received_at.asc())
-            .all()
-        )
-
-    def get_unassigned(self) -> Sequence[IngestBatch]:
-        """Batches whose case_id hasn't been confirmed yet."""
-        return (
-            self.db.query(IngestBatch)
-            .filter(IngestBatch.case_id.is_(None))
-            .order_by(IngestBatch.received_at.desc())
-            .all()
-        )
 
     def get_by_message_id(
         self, message_id: str, owner_id: int | None
@@ -98,47 +69,3 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             status=IngestBatchStatus.PENDING,
             ingest_date=datetime.now(),
         )
-
-    def assign_case(
-        self,
-        batch_id: int,
-        case_id: str,
-        proceeding_id: int | None = None,
-    ) -> IngestBatch | None:
-        return self.update(batch_id, case_id=case_id, proceeding_id=proceeding_id)
-
-    def mark_completed(self, batch_id: int) -> IngestBatch | None:
-        return self.update(batch_id, status=IngestBatchStatus.COMPLETED)
-
-    def mark_failed(self, batch_id: int) -> IngestBatch | None:
-        return self.update(batch_id, status=IngestBatchStatus.FAILED)
-
-    def claim_for_analysis(self, batch_id: int) -> bool:
-        """Atomically claim a batch for Phase 4 analysis.
-
-        Returns True only if this call won the race (all docs done + first claim).
-        Prevents duplicate analyze_batch_task dispatch under concurrent workers.
-        """
-        result = self.db.execute(
-            text(
-                """
-                UPDATE ingest_batches
-                SET analysis_queued_at = :now
-                WHERE id = :batch_id
-                  AND analysis_queued_at IS NULL
-                  AND NOT EXISTS (
-                    SELECT 1 FROM documents
-                    WHERE ingest_batch_id = :batch_id
-                      AND NOT EXISTS (
-                        SELECT 1 FROM document_pipeline_stages dps2
-                        WHERE dps2.document_id = documents.id
-                          AND dps2.stage = 'metadata'
-                          AND dps2.status IN ('completed', 'failed')
-                      )
-                  )
-                """
-            ),
-            {"now": datetime.now(UTC), "batch_id": batch_id},
-        )
-        self.db.commit()
-        return cast(CursorResult, result).rowcount == 1

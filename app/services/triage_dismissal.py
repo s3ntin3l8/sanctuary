@@ -13,12 +13,37 @@ operations as HTTP endpoints.
 import logging
 import os
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.database import ActionItem, Document, IngestBatch
 from app.models.enums import ActionItemStatus, DocumentStatus, IngestBatchStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _has_in_flight_stage(db: Session, batch_id: int) -> bool:
+    """True when any document in the batch has a stage currently RUNNING or
+    RETRYING — the actual "unsafe to delete out from under a worker"
+    condition. Deliberately not IngestBatchStatus.PROCESSING: that status is
+    the batch's normal resting state until a user explicitly confirms it out
+    of triage (see confirm_bundle), so it stays PROCESSING long after every
+    document's pipeline work has finished — using it here would make almost
+    every live batch permanently undeletable."""
+    return bool(
+        db.execute(
+            text(
+                """
+                SELECT 1 FROM document_pipeline_stages dps
+                JOIN documents d ON d.id = dps.document_id
+                WHERE d.ingest_batch_id = :batch_id
+                  AND dps.status IN ('running', 'retrying')
+                LIMIT 1
+                """
+            ),
+            {"batch_id": batch_id},
+        ).first()
+    )
 
 
 def dismiss_bundle(
@@ -62,8 +87,12 @@ def delete_bundle(
 ) -> bool:
     """Hard-delete a batch (and all children + files) or a loose document.
 
-    Raises ValueError when the batch is mid-flight (PROCESSING or
-    AWAITING_SLICING). Caller maps to HTTP 409.
+    Raises ValueError when the batch is mid-flight: AWAITING_SLICING (the
+    user hasn't even confirmed slice boundaries yet), or any document has a
+    stage currently RUNNING/RETRYING. IngestBatchStatus.PROCESSING alone is
+    NOT mid-flight — see _has_in_flight_stage's docstring — so a COMPLETED,
+    PENDING, FAILED, or quiescent PROCESSING batch is deletable. Caller maps
+    to HTTP 409.
     """
     from app.services.document_service import DocumentService
 
@@ -71,13 +100,16 @@ def delete_bundle(
         batch = db.get(IngestBatch, batch_id)
         if not batch:
             return False
-        if batch.status in (
-            IngestBatchStatus.PROCESSING,
-            IngestBatchStatus.AWAITING_SLICING,
-        ):
+        if batch.status == IngestBatchStatus.AWAITING_SLICING:
             raise ValueError(
                 f"Cannot delete batch {batch_id} in {batch.status.value} state. "
                 "Wait for processing to finish, or retry the bundle first."
+            )
+        if _has_in_flight_stage(db, batch_id):
+            raise ValueError(
+                f"Cannot delete batch {batch_id}: a document is still actively "
+                "processing. Wait for processing to finish, or retry the bundle "
+                "first."
             )
 
         # Snapshot before per-doc loop: delete_document auto-removes the

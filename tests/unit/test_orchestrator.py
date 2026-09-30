@@ -322,3 +322,122 @@ def test_trigger_case_brief_releases_claim_when_dispatch_fails(
     db_session.expire_all()
     refreshed = db_session.query(Case).filter(Case.id == case.id).first()
     assert refreshed.brief_queued_at is None
+
+
+# --- mark_batch_failed_if_all_extracts_failed -------------------------------
+
+
+def _set_extract(db, doc_id: int, status: str) -> None:
+    db.execute(
+        text(
+            """
+            INSERT INTO document_pipeline_stages (document_id, stage, status)
+            VALUES (:doc_id, 'extract', :status)
+            ON CONFLICT(document_id, stage) DO UPDATE SET status=:status
+            """
+        ),
+        {"doc_id": doc_id, "status": status},
+    )
+    db.commit()
+
+
+@pytest.fixture
+def batch_with_two_docs(db_session):
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        subject="Orchestrator FAILED-wiring test",
+        status=IngestBatchStatus.PROCESSING,
+    )
+    db_session.add(batch)
+    db_session.commit()
+
+    docs = []
+    for i in range(2):
+        d = Document(
+            title=f"Doc {i}",
+            content="x",
+            case_id="_TRIAGE",
+            ingest_batch_id=batch.id,
+            originator_type=OriginatorType.COURT,
+        )
+        db_session.add(d)
+        docs.append(d)
+    db_session.commit()
+    for d in docs:
+        db_session.refresh(d)
+    return batch, docs
+
+
+@pytest.mark.unit
+def test_mark_batch_failed_when_every_extract_failed(db_session, batch_with_two_docs):
+    from app.models.enums import IngestBatchStatus
+    from app.services.intelligence.orchestrator import (
+        mark_batch_failed_if_all_extracts_failed,
+    )
+
+    batch, docs = batch_with_two_docs
+    for d in docs:
+        _set_extract(db_session, d.id, "failed")
+
+    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is True
+    db_session.refresh(batch)
+    assert batch.status == IngestBatchStatus.FAILED
+
+
+@pytest.mark.unit
+def test_mark_batch_failed_not_triggered_by_single_doc_failure(
+    db_session, batch_with_two_docs
+):
+    """One bad attachment must not flip a multi-doc bundle to FAILED."""
+    from app.models.enums import IngestBatchStatus
+    from app.services.intelligence.orchestrator import (
+        mark_batch_failed_if_all_extracts_failed,
+    )
+
+    batch, docs = batch_with_two_docs
+    _set_extract(db_session, docs[0].id, "failed")
+    _set_extract(db_session, docs[1].id, "completed")
+
+    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
+    db_session.refresh(batch)
+    assert batch.status == IngestBatchStatus.PROCESSING
+
+
+@pytest.mark.unit
+def test_mark_batch_failed_is_idempotent(db_session, batch_with_two_docs):
+    from app.services.intelligence.orchestrator import (
+        mark_batch_failed_if_all_extracts_failed,
+    )
+
+    batch, docs = batch_with_two_docs
+    for d in docs:
+        _set_extract(db_session, d.id, "failed")
+
+    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is True
+    # Second call on an already-FAILED batch is a no-op, not an error.
+    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
+
+
+@pytest.mark.unit
+def test_mark_batch_failed_does_not_touch_completed_batch(
+    db_session, batch_with_two_docs
+):
+    """A batch the user already confirmed out of triage (COMPLETED) must
+    never be silently flipped to FAILED by a background pipeline check."""
+    from app.models.enums import IngestBatchStatus
+    from app.services.intelligence.orchestrator import (
+        mark_batch_failed_if_all_extracts_failed,
+    )
+
+    batch, docs = batch_with_two_docs
+    batch.status = IngestBatchStatus.COMPLETED
+    db_session.commit()
+    for d in docs:
+        _set_extract(db_session, d.id, "failed")
+
+    assert mark_batch_failed_if_all_extracts_failed(batch.id, db_session) is False
+    db_session.refresh(batch)
+    assert batch.status == IngestBatchStatus.COMPLETED

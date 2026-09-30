@@ -70,6 +70,11 @@ def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> No
     only when ingest_batch_id was never set) skip the barrier and dispatch
     directly, since there's no sibling set to wait for.
 
+    Also opportunistically flips the batch to FAILED once every document's
+    EXTRACT has terminally failed (mark_batch_failed_if_all_extracts_failed
+    is a no-op otherwise) — this is the natural "an EXTRACT just went
+    terminal for this batch" hook, so it's reused for that check too.
+
     Never raises: a crash right here (before the claim/dispatch completes)
     leaves the batch's metadata_phase_queued_at NULL, which
     recover_unclaimed_ready_metadata_phases picks up on the next maintenance
@@ -82,7 +87,10 @@ def _trigger_metadata_phase_barrier(doc_id: int, batch_id: int | None, db) -> No
             return
         from app.services.intelligence.orchestrator import (
             claim_batch_for_metadata_phase,
+            mark_batch_failed_if_all_extracts_failed,
         )
+
+        mark_batch_failed_if_all_extracts_failed(batch_id, db)
 
         if claim_batch_for_metadata_phase(batch_id, db):
             dispatch_metadata_phase(batch_id, db)

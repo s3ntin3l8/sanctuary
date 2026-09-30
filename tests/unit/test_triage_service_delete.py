@@ -135,12 +135,34 @@ def test_delete_batch_with_missing_raw_source_file(db_session, tmp_path):
 
 
 @pytest.mark.unit
-def test_delete_batch_in_processing_state_rejected(db_session):
+def test_delete_batch_in_processing_state_with_no_in_flight_stage_allowed(db_session):
+    """PROCESSING is the batch's normal resting state (only an explicit
+    "Confirm bundle" ever advances it) — a PROCESSING batch whose pipeline
+    work has actually finished (no RUNNING/RETRYING stage) must be
+    deletable, or almost every live batch would be permanently stuck."""
     batch, _ = _make_batch_with_docs(db_session, doc_count=1)
     batch.status = IngestBatchStatus.PROCESSING
     db_session.commit()
+    batch_id = batch.id
 
-    with pytest.raises(ValueError, match="processing"):
+    assert delete_bundle(db_session, batch_id=batch_id) is True
+    assert db_session.get(IngestBatch, batch_id) is None
+
+
+@pytest.mark.unit
+def test_delete_batch_with_in_flight_stage_rejected(db_session):
+    """The real "unsafe to delete out from under a worker" condition: some
+    document's stage is currently RUNNING or RETRYING."""
+    from app.models.database import DocumentPipelineStage
+
+    batch, docs = _make_batch_with_docs(db_session, doc_count=1)
+    batch.status = IngestBatchStatus.PROCESSING
+    db_session.add(
+        DocumentPipelineStage(document_id=docs[0].id, stage="extract", status="running")
+    )
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="actively processing"):
         delete_bundle(db_session, batch_id=batch.id)
     # Batch is still there
     assert db_session.get(IngestBatch, batch.id) is not None

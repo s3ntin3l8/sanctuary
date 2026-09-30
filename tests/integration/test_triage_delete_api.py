@@ -77,7 +77,11 @@ def test_delete_404_unknown_batch(app_client):
     assert response.status_code == 404
 
 
-def test_delete_409_processing_batch(app_client, db_session):
+def test_delete_409_batch_with_in_flight_stage(app_client, db_session):
+    """PROCESSING alone is the batch's normal resting state, not mid-flight
+    — the real 409 condition is a document with a RUNNING/RETRYING stage."""
+    from app.models.database import DocumentPipelineStage
+
     batch = IngestBatch(
         subject="Mid-flight",
         source_type=IngestBatchSourceType.EMAIL,
@@ -86,12 +90,37 @@ def test_delete_409_processing_batch(app_client, db_session):
     db_session.add(batch)
     db_session.commit()
     db_session.refresh(batch)
-    _make_triage_doc(db_session, batch, title="Locked Doc")
+    doc = _make_triage_doc(db_session, batch, title="Locked Doc")
+    db_session.add(
+        DocumentPipelineStage(document_id=doc.id, stage="extract", status="running")
+    )
+    db_session.commit()
 
     response = app_client.post(f"/triage/delete?batch_id={batch.id}")
     assert response.status_code == 409
     # Batch still present
     assert db_session.get(IngestBatch, batch.id) is not None
+
+
+def test_delete_200_processing_batch_with_no_in_flight_stage(app_client, db_session):
+    """A PROCESSING batch whose pipeline work has actually finished must be
+    deletable — PROCESSING is the resting state until a user explicitly
+    confirms the bundle, not an indicator of active work."""
+    batch = IngestBatch(
+        subject="Quiescent",
+        source_type=IngestBatchSourceType.EMAIL,
+        status=IngestBatchStatus.PROCESSING,
+    )
+    db_session.add(batch)
+    db_session.commit()
+    db_session.refresh(batch)
+    _make_triage_doc(db_session, batch, title="Idle Doc")
+    batch_id = batch.id
+
+    response = app_client.post(f"/triage/delete?batch_id={batch_id}")
+    assert response.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(IngestBatch, batch_id) is None
 
 
 def test_delete_parent_with_children_and_fk_refs(app_client, db_session, sample_user):
