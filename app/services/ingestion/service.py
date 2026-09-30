@@ -2,6 +2,7 @@ import hashlib
 import os
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 
 import aiofiles
 from celery.exceptions import SoftTimeLimitExceeded
@@ -598,8 +599,14 @@ async def ingest_file(
             # (partial content, no Document row yet), so clean it up before
             # propagating. Scoped to this block only; the 400/409 paths
             # later in this function already do their own explicit cleanup.
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            # file_path is already provably confined to case_dir —
+            # _unique_upload_path applies os.path.basename before joining —
+            # but resolve+containment-check it again right at the delete
+            # site anyway, since that's the recognized sanitizer shape for
+            # a static path-injection check on file.filename-derived input.
+            resolved = Path(file_path).resolve()
+            if resolved.is_relative_to(case_dir.resolve()) and resolved.exists():
+                os.remove(resolved)
             raise
         except OSError as e:
             raise HTTPException(
