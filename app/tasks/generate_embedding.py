@@ -160,8 +160,14 @@ def reindex_all_embeddings_task(self):
         except Exception:
             # Docs already succeeded and the job is already marked done —
             # a claims-reindex failure here shouldn't flip the whole job to
-            # failed. retry_failed_claim_embeddings_task (beat-scheduled)
-            # picks up any claim left with embedding_failed_at set.
+            # failed. A per-claim embed failure inside reindex_all_claims's
+            # own loop is already recorded via embedding_failed_at, so
+            # retry_failed_claim_embeddings_task (beat-scheduled) picks
+            # those up — but a failure here means reindex_all_claims itself
+            # raised (its batch-fetch query, or a re-raised
+            # SoftTimeLimitExceeded), which can leave any not-yet-processed
+            # claim with neither an embedding nor embedding_failed_at set,
+            # with no automatic retry path for those.
             logger.exception("reindex_all_embeddings_task: claim reindex pass failed")
 
         return result

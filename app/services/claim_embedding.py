@@ -12,6 +12,7 @@ import logging
 from datetime import UTC, datetime
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -140,6 +141,13 @@ async def reindex_all_claims(db: Session, progress_cb=None) -> dict:
                     reindexed += 1
                 else:
                     failed += 1
+            except SoftTimeLimitExceeded:
+                # An Exception subclass — must come before the generic
+                # branch below, or a soft time limit would be swallowed as
+                # an ordinary per-claim failure instead of stopping the
+                # task so Celery's hard limit doesn't kill it mid-write
+                # (see app/services/ingestion/service.py's identical guard).
+                raise
             except Exception as e:
                 logger.warning(f"Claim reindex failed for claim {claim.id}: {e}")
                 db.rollback()

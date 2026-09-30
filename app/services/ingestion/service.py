@@ -598,13 +598,14 @@ async def ingest_file(
             # (partial content, no Document row yet), so clean it up before
             # propagating. Scoped to this block only; the 400/409 paths
             # later in this function already do their own explicit cleanup.
-            # Re-derive from os.path.basename directly at this call site —
-            # CodeQL's py/path-injection sanitizer model doesn't propagate
-            # through the _unique_upload_path helper call, even though
-            # file_path is already confined to case_dir by construction.
-            safe_delete_path = os.path.join(case_dir, os.path.basename(file_path))
-            if os.path.exists(safe_delete_path):
-                os.remove(safe_delete_path)
+            # Same file_path used unguarded by the sibling os.remove calls
+            # later in this function (magic-mismatch / duplicate paths,
+            # dismissed CodeQL alerts #38/#39) — case_dir is validated under
+            # DATA_DIR above and file_path's filename component was already
+            # os.path.basename()'d inside _unique_upload_path (dismissed
+            # alerts #32/#33); CodeQL doesn't model either barrier.
+            if os.path.exists(file_path):
+                os.remove(file_path)
             raise
         except OSError as e:
             raise HTTPException(
