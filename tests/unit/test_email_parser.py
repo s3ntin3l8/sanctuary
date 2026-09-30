@@ -1,6 +1,6 @@
 """Expanded tests for parse_rfc822 — covering multipart, encodings, edge cases."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -288,11 +288,20 @@ def test_parse_email_date_rfc822():
 
 
 def test_parse_email_date_iso_fallback():
-    assert parse_email_date("2026-05-26 08:24:00") == datetime(2026, 5, 26, 8, 24, 0)
+    dt = parse_email_date("2026-05-26 08:24:00")
+    assert dt == datetime(2026, 5, 26, 8, 24, 0, tzinfo=UTC)
+    assert dt.tzinfo is not None
+    assert dt.utcoffset().total_seconds() == 0
 
 
 def test_parse_email_date_dotted_fallback():
-    assert parse_email_date("26.05.2026") == datetime(2026, 5, 26)
+    # A naive fallback result must be tagged UTC, not converted from local
+    # time — a date-only header must round-trip to the same calendar date
+    # regardless of host timezone.
+    dt = parse_email_date("26.05.2026")
+    assert dt == datetime(2026, 5, 26, tzinfo=UTC)
+    assert dt.tzinfo is not None
+    assert (dt.year, dt.month, dt.day) == (2026, 5, 26)
 
 
 @pytest.mark.parametrize("yy,century", [("26", 2026), ("80", 1980)])

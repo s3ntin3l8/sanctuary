@@ -121,6 +121,47 @@ def test_ingest_scanned_file_dedup_returns_none(db_session, tmp_path):
 
 
 @pytest.mark.unit
+def test_ingest_scanned_file_stores_raw_source_path_relative_to_data_dir(db_session):
+    """Regression: raw_source_path was stored as an absolute path, unlike
+    every Document.file_path in the same module (which goes through
+    to_storage_path) — making the DB non-portable across hosts where
+    DATA_DIR differs. A path under DATA_DIR must be stored relative and
+    still resolve back to the same file."""
+    from app.core.paths import resolve_storage_path
+    from app.services.ingestion import batch_orchestrator
+    from app.services.ingestion.batch_orchestrator import ingest_scanned_file
+
+    # Read DATA_DIR from the module at call time — isolate_data_dir monkeypatches
+    # it per test session, so this reflects the actual patched path, not
+    # whatever a module-level import captured before the fixture ran.
+    # Deliberately NOT under scans/incoming/ — that's the real
+    # SCAN_INCOMING_DIR, session-shared across tests and swept recursively
+    # by scan_and_ingest; a stray probe file left there would be picked up
+    # by unrelated scan-folder tests (e.g.
+    # test_scan_folder_attributes_owner_by_subfolder's file count assertion).
+    scan_dir = batch_orchestrator.DATA_DIR / "_test_scan_probe"
+    scan_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = _make_minimal_pdf(scan_dir)
+    source_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+
+    with (
+        patch("app.services.ingestion.batch_orchestrator.pdfium") as mock_pdfium,
+        patch("app.services.ingestion.batch_orchestrator.dispatch_task"),
+    ):
+        mock_pdf_doc = MagicMock()
+        mock_pdf_doc.__len__ = MagicMock(return_value=1)
+        mock_pdfium.PdfDocument.return_value = mock_pdf_doc
+
+        batch = ingest_scanned_file(db_session, pdf_path, "batch-rel", source_hash)
+
+    assert batch is not None
+    assert not Path(batch.raw_source_path).is_absolute(), (
+        f"raw_source_path stored absolute: {batch.raw_source_path}"
+    )
+    assert resolve_storage_path(batch.raw_source_path) == pdf_path.resolve()
+
+
+@pytest.mark.unit
 def test_scan_folder_tick_task_runs(db_session):
     """The Celery task invokes scan_and_ingest and returns status=ok."""
     from app.tasks.scan_ingest import scan_folder_tick_task

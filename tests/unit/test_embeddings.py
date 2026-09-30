@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.config import AI_EMBED_DIM
@@ -281,3 +282,73 @@ async def test_generate_embedding_no_doc(db_session):
         await generate_embedding(9999)
 
     mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_reindex_all_docs_failure_does_not_wipe_a_later_success(
+    db_session, sample_case
+):
+    """Regression: reindex_all_docs previously had no db.rollback() on a
+    per-doc failure. _embed_document_chunks issues a bulk DELETE of the
+    doc's existing chunks *before* attempting to write new ones — if that
+    doc's embed call then fails, the DELETE stays pending in the open
+    transaction. Without a rollback, the next doc's successful commit
+    flushes the whole transaction, including the failed doc's orphaned
+    DELETE — silently wiping its pre-existing chunks even though its own
+    reindex was reported as failed.
+
+    A test that only checks the returned `failed` count would pass with or
+    without the fix; this asserts doc A's original chunk survives.
+    """
+    from app.config import AI_EMBED_DIM
+    from app.services.embeddings import reindex_all_docs
+
+    doc_a = Document(title="A", content="content a", case_id=sample_case.id)
+    doc_b = Document(title="B", content="content b", case_id=sample_case.id)
+    db_session.add_all([doc_a, doc_b])
+    db_session.commit()
+    db_session.refresh(doc_a)
+    db_session.refresh(doc_b)
+    assert doc_a.id < doc_b.id  # reindex processes in Document.id order
+
+    preexisting_chunk = DocumentChunk(
+        document_id=doc_a.id,
+        chunk_index=0,
+        text="doc a's original chunk",
+        embedding=[0.1] * AI_EMBED_DIM,
+    )
+    db_session.add(preexisting_chunk)
+    db_session.commit()
+
+    call_count = {"n": 0}
+
+    async def _post_side_effect(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # doc A's only chunk — fail it.
+            raise httpx.HTTPStatusError(
+                "boom", request=MagicMock(), response=MagicMock()
+            )
+        # doc B's chunk — succeed.
+        return _mock_embedding_response([0.2] * AI_EMBED_DIM)
+
+    with (
+        patch("httpx.AsyncClient.post", side_effect=_post_side_effect),
+        patch("app.services.embeddings.SessionLocal", lambda: db_session),
+    ):
+        result = await reindex_all_docs(db_session)
+
+    assert result["failed"] == 1
+    assert result["reindexed"] == 1
+
+    db_session.expire_all()
+    remaining_a = (
+        db_session.query(DocumentChunk)
+        .filter(DocumentChunk.document_id == doc_a.id)
+        .all()
+    )
+    assert len(remaining_a) == 1, (
+        "doc A's pre-existing chunk was wiped by doc B's later commit"
+    )
+    assert remaining_a[0].text == "doc a's original chunk"

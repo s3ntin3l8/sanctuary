@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.base import BaseRepository
@@ -65,7 +66,7 @@ class IngestBatchRepository(BaseRepository[IngestBatch]):
             raw_source_path=raw_source_path,
             case_id=case_id,
             proceeding_id=proceeding_id,
-            received_at=received_at or datetime.now(),
+            received_at=received_at or now_utc(),
             status=IngestBatchStatus.PENDING,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )

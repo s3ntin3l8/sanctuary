@@ -244,9 +244,68 @@ def ingest_raw_email(
     # Attachment paths written here initially — SQLAlchemy event moves them to
     # the case/proceeding folder once confirmed.
 
-    docs_to_process = []
+    docs_to_process: list[Document] = []
     has_attachments = bool(parsed["attachments"])
+    # Paths written below — on any exception before the commit at the end of
+    # this try block, these (and only these; a dedup-reused attachment's
+    # existing file is never appended) are removed so the DB rollback
+    # doesn't leave orphaned files with no row pointing at them.
+    written_paths: list[Path] = []
 
+    try:
+        _ingest_email_docs_and_commit(
+            db,
+            batch,
+            parsed,
+            subject,
+            sender,
+            owner_id,
+            received_date,
+            case_dir,
+            has_attachments,
+            docs_to_process,
+            written_paths,
+        )
+    except Exception:
+        db.rollback()
+        for p in written_paths:
+            if p.exists():
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+        raise
+
+    if not docs_to_process and has_attachments:
+        return None
+
+    logger.info(
+        "Batch #%d committed — dispatching process_document_task for %d doc(s)",
+        batch.id,
+        len(docs_to_process),
+    )
+    for doc in docs_to_process:
+        dispatch_task("app.tasks.document_processing.process_document_task", doc.id)
+
+    return batch
+
+
+def _ingest_email_docs_and_commit(
+    db: Session,
+    batch: IngestBatch,
+    parsed: dict,
+    subject: str,
+    sender: str,
+    owner_id: int | None,
+    received_date,
+    case_dir: Path,
+    has_attachments: bool,
+    docs_to_process: list[Document],
+    written_paths: list[Path],
+) -> None:
+    """Body/attachment document creation and the final commit for
+    ingest_raw_email — split out purely so the caller can wrap every raise
+    point between here and the commit in one try/except for file cleanup."""
     # Create a body document only when the email itself is the content (no attachments).
     # With attachments the body is a transport cover note; metadata lives on the batch.
     if parsed["body"].strip() and not has_attachments:
@@ -254,6 +313,7 @@ def ingest_raw_email(
         body_path = case_dir / f"email_body_{batch.id}.txt"
         with open(body_path, "w") as f:
             f.write(parsed["body"])
+        written_paths.append(body_path)
 
         threading_meta = None
         if parsed.get("in_reply_to") or parsed.get("references"):
@@ -339,6 +399,7 @@ def ingest_raw_email(
                 n += 1
         with open(att_path, "wb") as f:
             f.write(att["content"])
+        written_paths.append(att_path)
 
         try:
             pdf_doc = pdfium.PdfDocument(str(att_path))
@@ -416,16 +477,6 @@ def ingest_raw_email(
 
     db.commit()
 
-    logger.info(
-        "Batch #%d committed — dispatching process_document_task for %d doc(s)",
-        batch.id,
-        len(docs_to_process),
-    )
-    for doc in docs_to_process:
-        dispatch_task("app.tasks.document_processing.process_document_task", doc.id)
-
-    return batch
-
 
 def ingest_scanned_file(
     db: Session,
@@ -451,7 +502,7 @@ def ingest_scanned_file(
         source_type=IngestBatchSourceType.SCAN,
         owner_id=owner_id,
         subject=pdf_path.name[:255],
-        raw_source_path=str(pdf_path),
+        raw_source_path=to_storage_path(pdf_path),
     )
     batch.source_hash = source_hash
     try:

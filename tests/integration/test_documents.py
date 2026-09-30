@@ -110,6 +110,37 @@ def test_upload_generic_failure_shows_generic_message_not_raw_exception(
 
 
 @pytest.mark.integration
+def test_upload_all_files_fail_does_not_strand_empty_manual_batch(
+    db_session, monkeypatch
+):
+    """Regression: create_manual_upload_batch commits the IngestBatch row
+    before any file in it is processed. If every non-EML file then fails,
+    the batch previously survived forever with zero documents — delete_bundle
+    has nothing that auto-triggers on it, and it isn't visible in triage
+    (no documents to render), so it was invisible dead weight in the DB."""
+    from app.models.database import IngestBatch
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("app.api.documents.ingest_file", _boom)
+
+    before_ids = {b.id for b in db_session.query(IngestBatch.id).all()}
+
+    response = client.post(
+        "/upload",
+        files=[("files", ("test_doc.pdf", b"%PDF-1.4 test", "application/pdf"))],
+    )
+    assert response.status_code == 400
+
+    db_session.expire_all()
+    after_ids = {b.id for b in db_session.query(IngestBatch.id).all()}
+    assert after_ids - before_ids == set(), (
+        "an empty manual-upload batch was left behind"
+    )
+
+
+@pytest.mark.integration
 def test_upload_eml_generic_failure_shows_generic_message_not_raw_exception(
     db_session, monkeypatch
 ):
@@ -127,6 +158,32 @@ def test_upload_eml_generic_failure_shows_generic_message_not_raw_exception(
     assert response.status_code == 400
     assert "Upload failed" in response.text
     assert "postgres://secret" not in response.text
+
+
+@pytest.mark.integration
+def test_upload_oversize_eml_surfaces_as_error_not_silent_success(
+    db_session, monkeypatch
+):
+    """Regression: the .eml branch read the whole upload into memory with a
+    bare `await file.read()` and no size check at all, unlike ingest_file's
+    chunked MAX_FILE_SIZE guard for every other extension."""
+    monkeypatch.setattr("app.api.documents.MAX_FILE_SIZE", 10)
+
+    response = client.post(
+        "/upload",
+        files=[
+            (
+                "files",
+                (
+                    "big.eml",
+                    b"From: a@b.com\n\n" + b"x" * 100,
+                    "message/rfc822",
+                ),
+            )
+        ],
+    )
+    assert response.status_code == 400
+    assert "Upload failed" in response.text
 
 
 @pytest.mark.integration

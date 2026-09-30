@@ -6,7 +6,6 @@ import os
 import re
 import threading
 import time
-from pathlib import Path
 
 import httpx
 import pypdfium2 as pdfium
@@ -15,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import SessionLocal
 from app.core.async_utils import run_async
+from app.core.paths import resolve_storage_path
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchStatus
 from app.services.ai_config import get_chat_config
@@ -252,7 +252,15 @@ async def _ai_cut_judgment(
         return parse_json_response(raw)
     except Exception as exc:
         logger.debug("AI cut judgment failed: %s", exc)
-        return {"is_new_document": False, "confidence": "low", "notes": str(exc)}
+        return _conservative_ai_failure(str(exc))
+
+
+def _conservative_ai_failure(notes: str) -> dict:
+    """The single fail-safe shape for a failed AI cut judgment — no cut
+    proposed. Used for both a single candidate's failure and, filled per
+    candidate, for a whole-batch failure — the two failure modes must not
+    disagree on which way to fail."""
+    return {"is_new_document": False, "confidence": "low", "notes": notes}
 
 
 async def _ai_cut_judgments(
@@ -264,14 +272,48 @@ async def _ai_cut_judgments(
     out = {}
     for (page_num, _, _), result in zip(candidates, results, strict=False):
         if isinstance(result, BaseException):
-            out[page_num] = {
-                "is_new_document": False,
-                "confidence": "low",
-                "notes": str(result),
-            }
+            out[page_num] = _conservative_ai_failure(str(result))
         else:
             out[page_num] = result
     return out
+
+
+def _combine_proposed_cuts(
+    heuristic_candidates: list[tuple[int, str, str]],
+    ai_results: dict[int, dict],
+    page_count: int,
+) -> list[dict]:
+    """Merge heuristic candidates with AI judgments into proposed_cuts.
+
+    A missing `ai_results` entry defaults to `is_new_document=True` (propose
+    the cut) — callers must pre-fill `ai_results` with an explicit
+    conservative entry per candidate on whole-batch AI failure, matching the
+    per-candidate failure default in `_ai_cut_judgment`. Otherwise a total AI
+    outage would propose every heuristic candidate as a cut, while a partial
+    outage suppresses them — the two failure modes must fail the same way.
+    """
+    proposed_cuts = []
+    for cut_page, _prev_tail, _curr_head in heuristic_candidates:
+        # Validate cut page is in range (hallucination guard for any AI-injected values)
+        if not (2 <= cut_page <= page_count):
+            continue
+        ai = ai_results.get(cut_page, {})
+        ai_raw = ai.get("is_new_document", True)
+        ai_agrees = (
+            ai_raw
+            if isinstance(ai_raw, bool)
+            else str(ai_raw).strip().lower() in ("true", "1", "yes")
+        )
+        ai_confidence = ai.get("confidence", "medium")
+        if ai_agrees:
+            proposed_cuts.append(
+                {
+                    "page": cut_page,
+                    "confidence": ai_confidence,
+                    "notes": ai.get("notes", ""),
+                }
+            )
+    return proposed_cuts
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +338,7 @@ def prepare(batch_id: int) -> None:
         if not batch.raw_source_path:
             logger.error("prepare_slicing: batch %d has no raw_source_path", batch_id)
             return
-        pdf_path = Path(batch.raw_source_path)
+        pdf_path = resolve_storage_path(batch.raw_source_path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found at {pdf_path}")
 
@@ -369,6 +411,16 @@ def prepare(batch_id: int) -> None:
             except Exception as exc:
                 logger.warning("AI cut judgment batch failed: %s", exc)
                 slice_error = str(exc)
+                # Fill with the same conservative per-candidate failure shape
+                # used inside _ai_cut_judgments — a whole-batch failure must
+                # not propose more cuts than a partial one would. Leaving
+                # ai_results empty here makes every candidate miss the
+                # ai_results.get() lookup below and fall through to its
+                # `True` default (aggressive), the opposite of intended.
+                ai_results = {
+                    cut_page: _conservative_ai_failure(slice_error)
+                    for cut_page, _, _ in heuristic_candidates
+                }
             # One aggregate entry per slicing run — the candidates fan out to
             # many small parallel judgment calls (see _ai_cut_judgments), and
             # docs don't exist yet at this point, so per-call/per-doc rows
@@ -387,27 +439,9 @@ def prepare(batch_id: int) -> None:
             )
 
         # Combine heuristic + AI into proposed_cuts
-        proposed_cuts = []
-        for cut_page, prev_tail, curr_head in heuristic_candidates:
-            # Validate cut page is in range (hallucination guard for any AI-injected values)
-            if not (2 <= cut_page <= page_count):
-                continue
-            ai = ai_results.get(cut_page, {})
-            ai_raw = ai.get("is_new_document", True)
-            ai_agrees = (
-                ai_raw
-                if isinstance(ai_raw, bool)
-                else str(ai_raw).strip().lower() in ("true", "1", "yes")
-            )
-            ai_confidence = ai.get("confidence", "medium")
-            if ai_agrees:
-                proposed_cuts.append(
-                    {
-                        "page": cut_page,
-                        "confidence": ai_confidence,
-                        "notes": ai.get("notes", ""),
-                    }
-                )
+        proposed_cuts = _combine_proposed_cuts(
+            heuristic_candidates, ai_results, page_count
+        )
 
         meta = dict(batch.meta or {})
         meta["slicing"] = {

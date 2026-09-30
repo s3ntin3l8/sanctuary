@@ -118,14 +118,18 @@ def generate_embedding_task(self, doc_id: int):
     name="app.tasks.generate_embedding.reindex_all_embeddings_task",
 )
 def reindex_all_embeddings_task(self):
-    """Regenerate embeddings for every doc with content. Writes progress to
-    UserSettings.reindex_job so the HTMX poller in Settings → AI can render
-    a live bar.
+    """Regenerate embeddings for every doc with content, then every claim
+    with text. Writes doc progress to UserSettings.reindex_job so the HTMX
+    poller in Settings → AI can render a live bar — claims have no such bar
+    (a secondary, background concern after the resize, not surfaced in the
+    same job dict/template contract).
 
-    The HTTP route handles the embedding-column resize DDL synchronously
-    before dispatching this task, so this task only loops over docs.
+    The HTTP route handles the embedding-column resize DDL for both
+    document_chunks and claims synchronously before dispatching this task,
+    so this task only loops over rows.
     """
     from app.dependencies import get_db_session
+    from app.services.claim_embedding import reindex_all_claims
     from app.services.embeddings import reindex_all_docs
     from app.services.user_settings_service import (
         set_reindex_done,
@@ -147,6 +151,19 @@ def reindex_all_embeddings_task(self):
             raise
 
         set_reindex_done(db)
+
+        try:
+            claims_result = run_async(reindex_all_claims(db))
+            result["claims_total"] = claims_result["total"]
+            result["claims_reindexed"] = claims_result["reindexed"]
+            result["claims_failed"] = claims_result["failed"]
+        except Exception:
+            # Docs already succeeded and the job is already marked done —
+            # a claims-reindex failure here shouldn't flip the whole job to
+            # failed. retry_failed_claim_embeddings_task (beat-scheduled)
+            # picks up any claim left with embedding_failed_at set.
+            logger.exception("reindex_all_embeddings_task: claim reindex pass failed")
+
         return result
     finally:
         db.close()

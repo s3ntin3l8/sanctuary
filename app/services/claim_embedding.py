@@ -91,6 +91,69 @@ async def upsert_claim_embedding(claim_id: int, db: Session) -> bool:
     return True
 
 
+_CLAIM_REINDEX_BATCH_SIZE = 50
+
+
+async def reindex_all_claims(db: Session, progress_cb=None) -> dict:
+    """Regenerate embeddings for every claim with text. Returns
+    {total, reindexed, failed}.
+
+    Mirrors app.services.embeddings.reindex_all_docs's pagination shape.
+    Needed after Settings → AI → Rebuild Index resizes claims.embedding to a
+    new dimension: the resize itself clears every row (a pgvector column
+    can only be widened/narrowed once empty), and unlike document_chunks —
+    a purely derived index table the doc-level reindex already repopulates
+    — Claim rows are real domain data that survive the resize with a NULL
+    embedding, and need their own re-embed pass, not a fresh pipeline run.
+
+    upsert_claim_embedding already commits per claim and is idempotent
+    (records embedding_failed_at on failure, clears it on success), so a
+    single claim's failure doesn't need special handling — it returns False
+    rather than raising. The try/except here is defensive for a real DB
+    error only, mirroring reindex_all_docs's rollback so one such error
+    doesn't poison the session (or, via a stray uncommitted write, get
+    flushed) for every claim processed after it in the same batch.
+    """
+    # claim_text is NOT NULL at the DB level; the != "" half excludes an
+    # empty string, matching upsert_claim_embedding's own truthiness guard.
+    base_query = db.query(Claim).filter(
+        Claim.claim_text.isnot(None), Claim.claim_text != ""
+    )
+    total = base_query.count()
+    reindexed = 0
+    failed = 0
+
+    offset = 0
+    while offset < total:
+        batch = (
+            base_query.order_by(Claim.id)
+            .limit(_CLAIM_REINDEX_BATCH_SIZE)
+            .offset(offset)
+            .all()
+        )
+        if not batch:
+            break
+        for claim in batch:
+            try:
+                ok = await upsert_claim_embedding(claim.id, db)
+                if ok:
+                    reindexed += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning(f"Claim reindex failed for claim {claim.id}: {e}")
+                db.rollback()
+                failed += 1
+        offset += _CLAIM_REINDEX_BATCH_SIZE
+        if progress_cb is not None:
+            try:
+                progress_cb(reindexed=reindexed, failed=failed)
+            except Exception as cb_err:
+                logger.debug(f"claim reindex progress_cb failed (continuing): {cb_err}")
+
+    return {"total": total, "reindexed": reindexed, "failed": failed}
+
+
 async def nearest_claims(
     query_text: str,
     db: Session,

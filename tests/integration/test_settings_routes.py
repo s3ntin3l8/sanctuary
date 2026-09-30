@@ -366,6 +366,39 @@ def test_rebuild_index_ddl_failure_returns_generic_toast(db_session, monkeypatch
 
 
 @pytest.mark.integration
+def test_rebuild_index_also_resizes_claims_embedding_column(
+    db_session, test_engine, monkeypatch
+):
+    """Regression: Rebuild Index resized only document_chunks.embedding —
+    claims.embedding (the other AI_EMBED_DIM-typed pgvector column, per
+    CLAUDE.md's Vector search section) was left at the old width, so new
+    claim-embedding writes would fail the app-level dim check forever after
+    a real dimension change, with no route back to a working state short of
+    a manual ALTER."""
+    from sqlalchemy import event
+
+    # dispatch_task would otherwise queue the real Celery reindex task — not
+    # needed to assert the synchronous DDL this route runs itself. Patched
+    # at its source since the route imports it locally on every call.
+    monkeypatch.setattr("app.tasks.dispatch.dispatch_task", lambda *a, **k: None)
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(test_engine, "before_cursor_execute", _capture)
+    try:
+        response = client.post("/api/settings/ai/rebuild-index")
+    finally:
+        event.remove(test_engine, "before_cursor_execute", _capture)
+
+    assert response.status_code == 200, response.text
+    assert any("ALTER TABLE claims" in s for s in statements), statements
+    assert any("UPDATE claims SET embedding" in s for s in statements), statements
+
+
+@pytest.mark.integration
 def test_ai_config_set_role_invalid_role():
     """POST /api/settings/ai/role/{role} with invalid role returns 400."""
     response = client.post(

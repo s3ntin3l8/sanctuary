@@ -718,12 +718,19 @@ async def rebuild_index(
                 f"TYPE vector({embed_dim})"
             )
         )
+        # claims.embedding is the other AI_EMBED_DIM-typed pgvector column
+        # (see CLAUDE.md's Vector search section). Unlike document_chunks —
+        # a purely derived index table, safe to DELETE wholesale — Claim
+        # rows are real domain data, so only the embedding column is
+        # cleared, not the rows themselves.
+        db.execute(text("UPDATE claims SET embedding = NULL"))
+        db.execute(
+            text(f"ALTER TABLE claims ALTER COLUMN embedding TYPE vector({embed_dim})")
+        )
         audit_service.record(db, AuditEventType.MAINTENANCE_REBUILD_INDEX)
         db.commit()
     except Exception as e:
-        logger.error(
-            f"Failed to resize document_chunks.embedding to dim={embed_dim}: {e}"
-        )
+        logger.error(f"Failed to resize embedding columns to dim={embed_dim}: {e}")
         return HTMLResponse(_toast(False, "Index resize failed — see server log"))
 
     total = db.query(Document).filter(Document.content.isnot(None)).count()
