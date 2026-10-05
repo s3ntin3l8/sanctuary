@@ -18,7 +18,7 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 
 ## Stack
 * **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
-* **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (migration in progress, view by view — see `.claude/plans/`); views not yet cut over are still Jinja + HTMX + Alpine.js
+* **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (migration in progress, view by view — see `docs/frontend-migration-plan.md`); views not yet cut over are still Jinja + HTMX + Alpine.js
 * **Styling:** Tailwind CSS v4 — SPA tokens in `frontend/src/styles/index.css` (prototype in `docs/design/`); legacy `static/input.css`
 * **DB:** PostgreSQL + Alembic + `pgvector`
 * **AI:** Auto-detect ollama / lmstudio / openai

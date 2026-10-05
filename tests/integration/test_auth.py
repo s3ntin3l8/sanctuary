@@ -157,6 +157,59 @@ def test_login_rejects_malformed_body_with_uniform_error(auth_enabled, db_sessio
     }
 
 
+def test_plain_http_exception_under_v1_is_uniform_json(auth_enabled, db_session):
+    """A dependency raising a bare HTTPException (not ApiError) still gets {detail, code}."""
+    from fastapi import HTTPException
+
+    from app.main import app as _app
+
+    @_app.get("/api/v1/_test/forbidden")
+    def _forbidden():
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    try:
+        auth_service.create_user(
+            db_session, email="u@example.com", password="password123"
+        )
+        db_session.commit()
+        client = _client()
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "u@example.com", "password": "password123"},
+        )
+        resp = client.get("/api/v1/_test/forbidden")
+    finally:
+        _app.router.routes[:] = [
+            r
+            for r in _app.router.routes
+            if getattr(r, "path", "") != "/api/v1/_test/forbidden"
+        ]
+    assert resp.status_code == 403
+    assert resp.json() == {"detail": "Admin access required", "code": "forbidden"}
+
+
+def test_login_rate_limit_is_uniform_json(auth_enabled, db_session):
+    from app.core.rate_limit import limiter
+
+    limiter.enabled = True
+    try:
+        limiter.reset()
+        client = _client()
+        attempt = {
+            "email": "x@example.com",
+            "password": "nope",  # pragma: allowlist secret
+        }
+        for _ in range(10):
+            client.post("/api/v1/auth/login", json=attempt)
+        resp = client.post("/api/v1/auth/login", json=attempt)
+    finally:
+        limiter.reset()
+        limiter.enabled = False
+    assert resp.status_code == 429
+    assert resp.json()["code"] == "rate_limited"
+    assert resp.json()["detail"].startswith("Too many attempts")
+
+
 def test_unknown_v1_route_is_json_404(auth_enabled, db_session):
     auth_service.create_user(db_session, email="u@example.com", password="password123")
     db_session.commit()

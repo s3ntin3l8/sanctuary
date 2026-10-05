@@ -5,7 +5,7 @@ from __future__ import annotations
 from http import HTTPStatus
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -52,10 +52,6 @@ def http_error_response(exc: Exception, *, default_status: int) -> JSONResponse:
     else:
         detail = HTTPStatus(status_code).phrase
     return error_response(status_code, _status_code_name(status_code), detail)
-
-
-async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    return http_error_response(exc, default_status=500)
 
 
 def validation_error_response(exc: RequestValidationError) -> JSONResponse:

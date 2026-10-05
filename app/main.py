@@ -12,6 +12,9 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+)
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,10 +30,10 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.errors import (
-    ApiError,
-    api_error_handler,
+    error_response,
     http_error_response,
     is_api_v1_path,
     validation_error_response,
@@ -651,8 +654,17 @@ class SignedCookieSessionMiddleware:
 
 # Public paths reachable without authentication. Everything else is default-deny
 # (fail-closed). Prefixes cover static assets and the Phase-2 OIDC routes.
-_PUBLIC_EXACT_PATHS = {"/health", "/favicon.ico", "/login", "/signup", "/logout"}
-_PUBLIC_PATH_PREFIXES = ("/static", "/assets/", "/auth/", "/api/v1/auth/")
+_PUBLIC_EXACT_PATHS = {
+    "/health",
+    "/favicon.ico",
+    "/login",
+    "/signup",
+    "/logout",
+    "/api/v1/auth/config",
+    "/api/v1/auth/login",
+    "/api/v1/auth/signup",
+}
+_PUBLIC_PATH_PREFIXES = ("/static", "/assets/", "/auth/")
 
 
 def _is_public_path(path: str) -> bool:
@@ -1044,11 +1056,21 @@ def render_highlighted(
 templates.env.filters["safe_markdown"] = render_markdown
 templates.env.filters["render_highlighted"] = render_highlighted
 
+
 # Rate limiter setup
 # slowapi's handler is typed for RateLimitExceeded specifically; Starlette's
 # add_exception_handler wants a generic Exception handler. This is slowapi's
 # own documented registration pattern — a stub mismatch, not a real bug.
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    if is_api_v1_path(request.url.path):
+        response = error_response(
+            429, "rate_limited", f"Too many attempts ({exc.detail}). Try again later."
+        )
+        return limiter._inject_headers(response, request.state.view_rate_limit)
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore[arg-type]
 
 
 # Error page defaults
@@ -1116,9 +1138,20 @@ async def validation_error_handler(request: Request, exc: Exception) -> Response
 app.add_exception_handler(404, not_found_handler)
 app.add_exception_handler(500, server_error_handler)
 app.add_exception_handler(422, validation_error_handler)
-# Status-code handlers above win for 404/422/500; this covers every other
-# ApiError status (401, 403, 409, ...).
-app.add_exception_handler(ApiError, api_error_handler)
+
+
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """Status-code handlers above win for 404/422/500; this covers every other
+    status under /api/v1 (401, 403, 409, ...), whether raised as ApiError or as
+    a plain HTTPException from a shared dependency such as get_current_admin."""
+    if is_api_v1_path(request.url.path):
+        return http_error_response(exc, default_status=500)
+    return await fastapi_http_exception_handler(request, exc)
+
+
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 
 
 async def request_validation_handler(
