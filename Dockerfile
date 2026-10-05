@@ -8,6 +8,14 @@ COPY static/input.css ./static/
 COPY app/templates ./app/templates
 RUN npx @tailwindcss/cli -i static/input.css -o static/styles.css
 
+# --- Stage 1b: Build the SPA ---
+FROM node:26-slim AS frontend-builder
+WORKDIR /build
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 # --- Stage 2: Python builder ---
 # Compiles/installs every dependency into an isolated venv. build-essential lives
 # ONLY here so it never reaches the shipped image (it was ~560 MB of dead weight).
@@ -57,8 +65,9 @@ COPY --from=py-builder /opt/venv /opt/venv
 # Copy application code
 COPY . .
 
-# Copy built CSS from Stage 1
+# Copy built CSS from Stage 1 and the SPA bundle from Stage 1b
 COPY --from=css-builder /build/static/styles.css ./static/styles.css
+COPY --from=frontend-builder /build/dist ./frontend/dist
 
 # Ensure data directory exists and is writable
 RUN mkdir -p /app/data && chmod 777 /app/data

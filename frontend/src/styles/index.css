@@ -1,0 +1,92 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Design tokens from the Sanctuary prototype (docs/design). Dark is the default. */
+:root,
+[data-theme='dark'] {
+  --bg: #0b1326;
+  --rail: #060e20;
+  --panel: #0e1729;
+  --panel2: #0d1526;
+  --card: #0f1a2e;
+  --card2: #0b1526;
+  --aibg: #12233a;
+  --line: #222a3d;
+  --line2: #182238;
+  --line3: #3a465e;
+  --ink: #eef2ff;
+  --ink2: #c3cee6;
+  --muted: #95a3bd;
+  --muted2: #5f6d86;
+  --tealink: #a9f4e8;
+  --accent: #57f1db;
+  --on-accent: #003731;
+  --logo: #171f33;
+  --danger: #f87171;
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --bg: #f8fafb;
+  --rail: #ffffff;
+  --panel: #ffffff;
+  --panel2: #f0f4f6;
+  --card: #ffffff;
+  --card2: #f0f4f6;
+  --aibg: #eef6f8;
+  --line: #d9e4e8;
+  --line2: #e8eff1;
+  --line3: #c0ccce;
+  --ink: #1a2426;
+  --ink2: #2a3437;
+  --muted: #566164;
+  --muted2: #8a9599;
+  --tealink: #45636b;
+  --accent: #45636b;
+  --on-accent: #ecfaff;
+  --logo: #e8eff1;
+  --danger: #b91c1c;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-rail: var(--rail);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-card: var(--card);
+  --color-card2: var(--card2);
+  --color-aibg: var(--aibg);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-line3: var(--line3);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink2);
+  --color-muted: var(--muted);
+  --color-muted2: var(--muted2);
+  --color-tealink: var(--tealink);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-logo: var(--logo);
+  --color-danger: var(--danger);
+
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-display: 'Manrope Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line3) transparent;
+  }
+}

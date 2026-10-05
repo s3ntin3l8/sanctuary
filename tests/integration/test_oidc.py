@@ -160,8 +160,8 @@ def test_oidc_callback_rejects_unknown_when_signup_off(
 
     client = TestClient(app, follow_redirects=False)
     resp = client.get("/auth/oidc/callback?code=abc&state=xyz")
-    assert resp.status_code == 401
-    assert b"No account" in resp.content
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login?error=sso_no_account"
 
 
 @pytest.fixture(autouse=True)

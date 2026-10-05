@@ -262,6 +262,15 @@ def auth_disabled_by_default(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def spa_dist(monkeypatch, tmp_path):
+    """Point SPA routes at a stub bundle so tests never need `npm run build`."""
+    import app.config as _app_config
+
+    (tmp_path / "index.html").write_text("<!doctype html><title>spa</title>")
+    monkeypatch.setattr(_app_config, "FRONTEND_DIST", tmp_path)
+
+
+@pytest.fixture(autouse=True)
 def disable_rate_limiter():
     """Disable slowapi limits during tests — its in-memory counter is process-
     global and would otherwise leak across tests that repeatedly POST /login."""

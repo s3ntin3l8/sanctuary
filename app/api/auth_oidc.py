@@ -17,7 +17,6 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app import config
-from app.config import templates
 from app.dependencies import get_db
 from app.services import auth_service
 
@@ -74,12 +73,12 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
         token = await client.authorize_access_token(request)
     except OAuthError as exc:
         logger.warning("OIDC callback failed: %s", exc)
-        return _login_error(request, "Single sign-on failed. Please try again.")
+        return _login_error("sso_failed")
 
     userinfo = token.get("userinfo") or {}
     subject = userinfo.get("sub")
     if not subject:
-        return _login_error(request, "Single sign-on returned no identity.")
+        return _login_error("sso_no_identity")
     email = userinfo.get("email")
     display_name = userinfo.get("name") or userinfo.get("preferred_username")
 
@@ -92,10 +91,7 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
         signup_allowed=auth_service.signup_enabled(db),
     )
     if user is None:
-        return _login_error(
-            request,
-            "No account is linked to this identity. Ask an administrator for access.",
-        )
+        return _login_error("sso_no_account")
 
     from app.core.timezone import now_utc
 
@@ -107,10 +103,6 @@ async def oidc_callback(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/", status_code=303)
 
 
-def _login_error(request: Request, message: str):
-    return templates.TemplateResponse(
-        request,
-        "login.html",
-        {"sidebar_counts": {}, "next": "/", "error": message, "signup_enabled": False},
-        status_code=401,
-    )
+def _login_error(code: str) -> RedirectResponse:
+    """Back to the sign-in screen, which renders the message for ``code``."""
+    return RedirectResponse(f"/login?error={code}", status_code=303)

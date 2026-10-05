@@ -13,7 +13,9 @@ INGEST_WORKER := $(CELERY) worker -n ingest@%h --loglevel=INFO -Q ingest --concu
 AI_WORKER := $(CELERY) worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
 BEAT := $(CELERY) beat --loglevel=INFO
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
+NPM_FE := npm --prefix frontend
+
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -64,6 +66,8 @@ setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 	$(PYTHON) -m pip install -r requirements-dev.txt
 	$(PYTHON) -m playwright install chromium
 	npm install
+	$(NPM_FE) ci
+	$(NPM_FE) run build
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push
 
@@ -127,6 +131,21 @@ worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
 watch-css: ## Watch and build Tailwind CSS v4
 	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
 
+frontend-build: ## Build the SPA (frontend/ -> frontend/dist, served by the app)
+	$(NPM_FE) run build
+
+watch-frontend: ## Rebuild the SPA on every change (Terminal 3)
+	$(NPM_FE) run watch
+
+frontend-test: ## Typecheck, lint and unit-test the SPA
+	$(NPM_FE) run typecheck
+	$(NPM_FE) run lint
+	$(NPM_FE) test
+
+api-types: ## Regenerate frontend/src/api/{openapi.json,schema.d.ts} from the /api/v1 routes
+	$(PYTHON) scripts/export_openapi.py
+	$(NPM_FE) run api-types
+
 test-unit: ## Run unit tests
 	$(PYTEST) --ignore=tests/e2e -m unit
 
@@ -141,8 +160,10 @@ seed: db-up ## Reset database (drop+recreate schema) and seed with advanced tria
 migrate: db-up ## Run database migrations
 	$(ALEMBIC) upgrade head
 
-lint: ## Run pre-commit hooks on all files
+lint: ## Run pre-commit hooks on all files, then the SPA typecheck + lint
 	$(PRECOMMIT) run --all-files
+	$(NPM_FE) run typecheck
+	$(NPM_FE) run lint
 
 clean: ## Clean up temporary files
 	find . -type d -name "__pycache__" -exec rm -rf {} +
