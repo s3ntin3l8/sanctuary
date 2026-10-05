@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Sanctuary</title>
+    <link rel="icon" href="/favicon.ico" />
+    <script>
+      // Apply the saved theme before first paint. Same storage key as the
+      // not-yet-migrated pages, so both halves of the app agree.
+      document.documentElement.dataset.theme =
+        localStorage.getItem('site-theme') === 'light' ? 'light' : 'dark'
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

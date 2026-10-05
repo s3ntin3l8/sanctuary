@@ -28,7 +28,7 @@ def _client():
 
 
 def _login(client, email, password="password123"):
-    client.post("/login", data={"email": email, "password": password})
+    client.post("/api/v1/auth/login", json={"email": email, "password": password})
 
 
 @pytest.fixture

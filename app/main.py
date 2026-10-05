@@ -12,11 +12,12 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     FileResponse,
-    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
@@ -27,9 +28,17 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.datastructures import MutableHeaders
 
+from app.api.v1.errors import (
+    ApiError,
+    api_error_handler,
+    http_error_response,
+    is_api_v1_path,
+    validation_error_response,
+)
 from app.config import (
     CORS_ORIGINS,
     DEBUG,
+    FRONTEND_DIST,
     SCAN_FAILED_DIR,
     SCAN_INCOMING_DIR,
     SCAN_PROCESSED_DIR,
@@ -46,6 +55,7 @@ from app.helpers import (
     format_relative_time,
 )
 from app.services.normalization import normalize_hm
+from app.spa import ImmutableStaticFiles
 
 
 # --- Logging Configuration ---
@@ -642,7 +652,7 @@ class SignedCookieSessionMiddleware:
 # Public paths reachable without authentication. Everything else is default-deny
 # (fail-closed). Prefixes cover static assets and the Phase-2 OIDC routes.
 _PUBLIC_EXACT_PATHS = {"/health", "/favicon.ico", "/login", "/signup", "/logout"}
-_PUBLIC_PATH_PREFIXES = ("/static", "/auth/")
+_PUBLIC_PATH_PREFIXES = ("/static", "/assets/", "/auth/", "/api/v1/auth/")
 
 
 def _is_public_path(path: str) -> bool:
@@ -661,7 +671,10 @@ def _unauthenticated_response(request: Request) -> Response:
         return Response(status_code=401, headers={"HX-Redirect": "/login"})
     accept = request.headers.get("accept", "")
     if request.url.path.startswith("/api/") or "application/json" in accept:
-        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(
+            {"detail": "Not authenticated", "code": "not_authenticated"},
+            status_code=401,
+        )
     target = request.url.path
     if request.url.query:
         target = f"{target}?{request.url.query}"
@@ -753,6 +766,13 @@ app.add_middleware(AccessLogMiddleware)
 # Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
+# Hashed SPA bundle. check_dir=False: the app must still boot (and say so on
+# the SPA routes) when the frontend has not been built yet.
+app.mount(
+    "/assets",
+    ImmutableStaticFiles(directory=str(FRONTEND_DIST / "assets"), check_dir=False),
+    name="assets",
+)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -1042,8 +1062,10 @@ DEFAULT_SIDEBAR_COUNTS = {
 }
 
 
-async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse:
+async def not_found_handler(request: Request, exc: Exception) -> Response:
     """Render custom 404 page."""
+    if is_api_v1_path(request.url.path):
+        return http_error_response(exc, default_status=404)
     return templates.TemplateResponse(
         request,
         "errors/404.html",
@@ -1055,11 +1077,13 @@ async def not_found_handler(request: Request, exc: Exception) -> HTMLResponse:
     )
 
 
-async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse:
+async def server_error_handler(request: Request, exc: Exception) -> Response:
     """Render custom 500 page with logging."""
     logger = logging.getLogger(__name__)
     error_msg = str(exc.detail) if hasattr(exc, "detail") else str(exc)
     logger.error(f"Server error on {request.url.path}: {error_msg}", exc_info=True)
+    if is_api_v1_path(request.url.path):
+        return http_error_response(exc, default_status=500)
     return templates.TemplateResponse(
         request,
         "errors/500.html",
@@ -1071,8 +1095,10 @@ async def server_error_handler(request: Request, exc: Exception) -> HTMLResponse
     )
 
 
-async def validation_error_handler(request: Request, exc: Exception) -> HTMLResponse:
+async def validation_error_handler(request: Request, exc: Exception) -> Response:
     """Render custom 422 page."""
+    if is_api_v1_path(request.url.path):
+        return http_error_response(exc, default_status=422)
     return templates.TemplateResponse(
         request,
         "errors/422.html",
@@ -1090,6 +1116,21 @@ async def validation_error_handler(request: Request, exc: Exception) -> HTMLResp
 app.add_exception_handler(404, not_found_handler)
 app.add_exception_handler(500, server_error_handler)
 app.add_exception_handler(422, validation_error_handler)
+# Status-code handlers above win for 404/422/500; this covers every other
+# ApiError status (401, 403, 409, ...).
+app.add_exception_handler(ApiError, api_error_handler)
+
+
+async def request_validation_handler(
+    request: Request, exc: RequestValidationError
+) -> Response:
+    """Malformed request bodies: uniform shape under /api/v1, FastAPI's elsewhere."""
+    if is_api_v1_path(request.url.path):
+        return validation_error_response(exc)
+    return await request_validation_exception_handler(request, exc)
+
+
+app.add_exception_handler(RequestValidationError, request_validation_handler)  # type: ignore[arg-type]
 
 from app.api import (
     cases,
@@ -1117,7 +1158,9 @@ from app.api.settings_page import router as settings_page_router
 from app.api.settings_parties import router as settings_parties_router
 from app.api.slicing import router as slicing_router
 from app.api.user_settings import router as user_settings_router
+from app.api.v1 import router as api_v1_router
 
+app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
 app.include_router(admin_users_router)

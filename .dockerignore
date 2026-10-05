@@ -20,8 +20,9 @@ e2e/
 scratch/
 .github/
 
-# Node
+# Node (the SPA is built inside the image, never copied from a local build)
 **/node_modules/
+frontend/dist/
 **/npm-debug.log*
 
 # IDEs

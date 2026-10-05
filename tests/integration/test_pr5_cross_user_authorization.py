@@ -41,7 +41,7 @@ def _make_case(db, case_id, owner_id):
 
 def _login(email: str) -> TestClient:
     client = TestClient(app, follow_redirects=False)
-    client.post("/login", data={"email": email, "password": "password123"})
+    client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
     return client
 
 

@@ -18,8 +18,8 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 
 ## Stack
 * **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
-* **Frontend:** HTMX + Alpine.js
-* **Styling:** Tailwind CSS v4 (`static/input.css` dual light/dark tokens)
+* **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (migration in progress, view by view — see `.claude/plans/`); views not yet cut over are still Jinja + HTMX + Alpine.js
+* **Styling:** Tailwind CSS v4 — SPA tokens in `frontend/src/styles/index.css` (prototype in `docs/design/`); legacy `static/input.css`
 * **DB:** PostgreSQL + Alembic + `pgvector`
 * **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
@@ -57,6 +57,8 @@ on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embed
 
 All routes follow REST conventions. See `app/api/` for the complete listing.
 
+**Typed JSON API for the SPA:** `app/api/v1/*` — every route declares a Pydantic `response_model` (`app/schemas/`), raises `ApiError(status, code, detail)` and gets the uniform `{detail, code}` error body. `make api-types` regenerates `frontend/src/api/{openapi.json,schema.d.ts}`; a unit test fails when the committed schema is stale. SPA-owned paths return `spa_index()` (`app/spa.py`); the client calls them through `openapi-fetch` (`frontend/src/api/client.ts`).
+
 **First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Contacts (`/contacts/{sender}`), Costs (`/costs`), Settings (`/settings*`, `/api/settings/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
 
 ## Navigation and ID conventions
@@ -80,7 +82,10 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 ```bash
 make setup      # Install/Update
 make run        # App + both Celery workers + beat scheduler (Terminal 1)
-make watch-css  # Terminal 2: CSS
+make watch-css  # Terminal 2: legacy CSS
+make watch-frontend  # Terminal 3: rebuild the SPA on change (frontend/dist, served by the app)
+make frontend-test   # SPA typecheck + lint + vitest
+make api-types  # Regenerate the SPA's API types after changing app/api/v1
 make seed       # Seed Data
 make test       # Run Tests
 make lint       # Pre-commit hooks

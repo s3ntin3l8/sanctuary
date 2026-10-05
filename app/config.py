@@ -194,3 +194,8 @@ def register_pgvector_adapter(dbapi_conn, connection_record):
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
+
+# Vite build output of the SPA in frontend/ (index.html + hashed assets/).
+FRONTEND_DIST = Path(
+    os.getenv("FRONTEND_DIST", str(PROJECT_ROOT / "frontend" / "dist"))
+)
