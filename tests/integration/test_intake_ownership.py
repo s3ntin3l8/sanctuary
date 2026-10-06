@@ -603,40 +603,6 @@ def test_triage_count_after_delete_is_scoped_to_owner(
     assert client.get("/api/v1/shell").json()["triage_count"] == 1
 
 
-def test_confirm_draft_case_picker_uses_requester_identity_not_doc_owner(
-    auth_enabled, db_session, two_users
-):
-    """The picker/badges shown after confirming a draft case must reflect the
-    *confirming* user's own access, not the ingesting document's owner —
-    these diverge whenever an EDITOR-shared user, not the owner, confirms."""
-    a, b = two_users
-    draft_case = Case(
-        id="DRAFT-IDENTITY",
-        title="Draft",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-        owner_id=a.id,
-        is_draft=True,
-    )
-    db_session.add(draft_case)
-    db_session.flush()
-    db_session.add(
-        CaseShare(
-            case_id=draft_case.id, user_id=b.id, permission=CaseAccessLevel.EDITOR
-        )
-    )
-    db_session.add(Document(title="A's doc", owner_id=a.id, case_id=draft_case.id))
-    db_session.commit()
-
-    client = _client()
-    _login(client, "b@example.com")
-    with patch("app.api.cases.CaseRepository.list_for_picker") as mock_picker:
-        mock_picker.return_value = []
-        resp = client.post(f"/cases/{draft_case.id}/confirm-draft")
-        assert resp.status_code == 200
-        mock_picker.assert_called_once_with(owner_id=b.id)
-
-
 def test_admin_can_delete_other_users_untriaged_document(
     auth_enabled, db_session, two_users
 ):

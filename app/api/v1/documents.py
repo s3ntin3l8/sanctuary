@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.exc import OperationalError
@@ -283,7 +283,7 @@ def update_metadata(
     updated = confirm_document(
         db,
         doc.id,
-        title=body.title.strip() if body.title else None,
+        title=(body.title.strip() or None) if body.title else None,
         originator_type=body.originator_type,
         sender=body.sender.strip() if body.sender is not None else None,
         internal_id=body.internal_id.strip() if body.internal_id is not None else None,
@@ -308,7 +308,7 @@ def summary_action(
     from app.services.case_dashboard_service import summary_bullets_from_ai_summary
 
     if body.action == "approve":
-        doc.ai_summary_approved_at = datetime.now()
+        doc.ai_summary_approved_at = datetime.now(UTC)
     else:
         doc.ai_summary = None
         doc.ai_summary_approved_at = None
@@ -479,23 +479,25 @@ def set_action_status(
 def _owned_relationship(
     rel_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> DocumentRelationship:
+    """404 unless the user may edit *both* documents of the relationship."""
     rel = db.get(DocumentRelationship, rel_id)
     if rel is None:
         raise ApiError(404, "not_found", "Relationship not found.")
     for doc_id in (rel.from_document_id, rel.to_document_id):
         doc = db.get(Document, doc_id)
         if doc is None:
-            continue
+            raise ApiError(404, "not_found", "Relationship not found.")
         case = (
             db.get(Case, doc.case_id)
             if doc.case_id and doc.case_id != "_TRIAGE"
             else None
         )
-        if doc.owner_id == user.id or (
+        allowed = doc.owner_id == user.id or (
             case is not None and access_service.can_edit_case(db, user, case)
-        ):
-            return rel
-    raise ApiError(404, "not_found", "Relationship not found.")
+        )
+        if not allowed:
+            raise ApiError(404, "not_found", "Relationship not found.")
+    return rel
 
 
 @router.post(

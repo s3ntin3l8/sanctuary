@@ -32,11 +32,25 @@ export function SlicingPage() {
       if (e.key === 'ArrowDown') setCursor((c) => Math.min(c + 1, view.page_count - 1))
       else if (e.key === 'ArrowUp') setCursor((c) => Math.max(c - 1, 1))
       else if (e.key.toLowerCase() === 'c') toggle(cursor)
+      else if (e.key === 'Enter' && !confirm.isPending) submit()
       else if (e.key === 'Escape') leaveTo('/triage')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
+  function submit() {
+    confirm.mutate(
+      [...activeCuts].sort((a, b) => a - b),
+      {
+        onSuccess: (r) => {
+          toast(`${r.document_ids.length} document(s) queued`)
+          leaveTo('/triage')
+        },
+        onError: (e) => toast(e.message, 'error'),
+      },
+    )
+  }
 
   function toggle(after: number) {
     setCuts((prev) => {

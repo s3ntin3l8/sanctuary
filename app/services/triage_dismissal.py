@@ -6,7 +6,7 @@ Free-function module (no class). Owns the two destructive bundle operations:
 - delete_bundle: hard-delete (removes rows + raw source file). Raises on
   mid-flight batches.
 
-Mirrors the structure of app/api/triage/bundle_ops.py which exposes both
+Mirrors the structure of app/api/triage/app/api/v1/triage.py which exposes both
 operations as HTTP endpoints.
 """
 

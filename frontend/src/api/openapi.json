@@ -4217,7 +4217,6 @@
         "properties": {
           "title": {
             "maxLength": 500,
-            "minLength": 1,
             "title": "Title",
             "type": "string"
           }

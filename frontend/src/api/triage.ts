@@ -332,19 +332,6 @@ export function useDraftDecision() {
   })
 }
 
-export function useDeleteDocument() {
-  const queryClient = useQueryClient()
-  return useMutation<unknown, ApiError, number>({
-    mutationFn: async (docId) => {
-      await unwrap(api.DELETE('/api/v1/documents/{doc_id}', docPath(docId)))
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: KEY })
-      queryClient.invalidateQueries({ queryKey: ['shell'] })
-    },
-  })
-}
-
 // --- Upload and slicing ------------------------------------------------------
 
 export function useUploadTarget(caseId: string | null) {

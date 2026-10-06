@@ -71,13 +71,19 @@ export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
               {g.doc_ids.map((id) => {
                 const d = docsById.get(id)
                 if (!d) return null
+                const otherGroups = bundle.sub_groups.filter(
+                  (x) => x.sub_group_id !== null && x.id !== g.id,
+                )
                 return (
-                  <li key={id}>
+                  <li
+                    key={id}
+                    className={`flex items-center gap-1 pr-2 ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
+                  >
                     <button
                       type="button"
                       onClick={() => onSelect(id)}
                       aria-current={activeDocId === id ? 'true' : undefined}
-                      className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11.5px] ${activeDocId === id ? 'bg-accent/10' : 'hover:bg-accent/5'}`}
+                      className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[11.5px]"
                       style={{ paddingLeft: 8 + d.depth * 12 }}
                     >
                       <span
@@ -103,21 +109,45 @@ export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
                         />
                       )}
                       <span className="font-mono text-[10px] text-muted">{d.page_count} pp</span>
-                      {batchId !== null && d.role !== 'cover_letter' && (
-                        <button
-                          type="button"
-                          title="Mark as cover letter"
-                          aria-label={`Mark ${d.title} as cover letter`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            run({ batchId, op: 'cover', docId: id })
-                          }}
-                          className="text-muted hover:text-ink"
-                        >
-                          <Icon name="bookmark" size={13} />
-                        </button>
-                      )}
                     </button>
+                    {batchId !== null && bundle.has_manual_groups && otherGroups.length > 0 && (
+                      <select
+                        aria-label={`Move ${d.title} to group`}
+                        value=""
+                        onChange={(e) => {
+                          const target = otherGroups.find(
+                            (x) => String(x.sub_group_id) === e.target.value,
+                          )
+                          if (target && target.sub_group_id !== null)
+                            run({
+                              batchId,
+                              op: 'order',
+                              subGroupId: target.sub_group_id,
+                              docIds: [...target.doc_ids, id],
+                            })
+                        }}
+                        className="w-5 cursor-pointer bg-transparent text-[10px] text-muted"
+                        title="Move to group"
+                      >
+                        <option value="">⇄</option>
+                        {otherGroups.map((x) => (
+                          <option key={x.id} value={String(x.sub_group_id)}>
+                            → {x.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {batchId !== null && d.role !== 'cover_letter' && (
+                      <button
+                        type="button"
+                        title="Mark as cover letter"
+                        aria-label={`Mark ${d.title} as cover letter`}
+                        onClick={() => run({ batchId, op: 'cover', docId: id })}
+                        className="text-muted hover:text-ink"
+                      >
+                        <Icon name="bookmark" size={13} />
+                      </button>
+                    )}
                   </li>
                 )
               })}

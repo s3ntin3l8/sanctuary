@@ -47,7 +47,6 @@ async def delete_document(
 async def document_detail(
     request: Request,
     doc_id: int,
-    context: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -69,16 +68,7 @@ async def document_detail(
         )
 
     if request.headers.get("hx-request"):
-        mode = "review" if context == "triage" else "read"
-        # Pass the case picker list whenever the metadata form is rendered
-        # (review mode) so the <select> has options. The in-context draft
-        # gets prepended by build_hud_context.
-        cases = None
-        if mode == "review":
-            from app.repositories.case import CaseRepository
-
-            cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
-        ctx = build_hud_context(db, doc, mode=mode, context="embedded", cases=cases)
+        ctx = build_hud_context(db, doc, mode="read", context="embedded")
         return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
     # Full-page navigations: case docs redirect to the canonical URL (which

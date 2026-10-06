@@ -60,6 +60,21 @@ export function TriagePage() {
   const uploadCase = params.get('case_id')
 
   const bundles = useMemo(() => query.data?.bundles ?? [], [query.data])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter' || !expanded) return
+      const b = bundles.find((x) => x.key === expanded)
+      if (!b || b.status === 'processing' || b.status === 'stuck') return
+      e.preventDefault()
+      setConfirmTarget({
+        mode: 'single',
+        bundle: b,
+        action: b.suggestion || b.confirmed_case_id ? 'confirm_bundle' : 'assign_case',
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded, bundles])
   const visible = bundles.filter((b) => status === 'all' || b.status === status)
   const counts = useMemo(() => {
     const c: Record<Status, number> = {
@@ -441,7 +456,11 @@ function BundleRow({
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') onToggle()
+          if (e.target !== e.currentTarget) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
         }}
         aria-expanded={expanded}
       >

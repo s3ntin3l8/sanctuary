@@ -586,3 +586,48 @@ def test_conversation_inaccessible_after_case_share_revoked(
 
     resp = client_b.get(f"/api/chat/conversations/{conv_id}")
     assert resp.status_code == 404
+
+
+def test_relationship_decision_requires_edit_access_to_both_documents(
+    auth_enabled, db_session, two_users
+):
+    """B edits case A1 (shared) but not A2: a relationship spanning both
+    must be 404 for B, since confirming/rejecting mutates the far side too."""
+    from app.models.database import DocumentRelationship
+    from app.models.enums import RelationshipConfidence, RelationshipType
+
+    a, b = two_users
+    shared = _make_case(db_session, "PR5-REL-SHARED", a.id)
+    private = _make_case(db_session, "PR5-REL-PRIVATE", a.id)
+    db_session.add(
+        CaseShare(case_id=shared.id, user_id=b.id, permission=CaseAccessLevel.EDITOR)
+    )
+    near = Document(title="shared doc", owner_id=a.id, case_id=shared.id)
+    far = Document(title="private doc", owner_id=a.id, case_id=private.id)
+    db_session.add_all([near, far])
+    db_session.flush()
+    spanning = DocumentRelationship(
+        from_document_id=near.id,
+        to_document_id=far.id,
+        relationship_type=RelationshipType.REFERENCES,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+    db_session.add(spanning)
+    db_session.commit()
+
+    client = _login("b@example.com")
+    assert (
+        client.post(
+            f"/api/v1/documents/relationships/{spanning.id}/confirm"
+        ).status_code
+        == 404
+    )
+    assert (
+        client.delete(f"/api/v1/documents/relationships/{spanning.id}").status_code
+        == 404
+    )
+    db_session.expire_all()
+    assert (
+        db_session.get(DocumentRelationship, spanning.id).confidence
+        == RelationshipConfidence.AI_DETECTED
+    )

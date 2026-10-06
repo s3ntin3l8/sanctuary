@@ -18,7 +18,7 @@ from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Document, IngestBatch, Proceeding, User
-from app.models.enums import PipelineState, StageStatus
+from app.models.enums import IngestBatchStatus, PipelineState, StageStatus
 from app.repositories.case import CaseRepository
 from app.schemas.triage import (
     BatchAssign,
@@ -53,12 +53,12 @@ from app.services.pipeline_status import retry_on_db_locked, stages_dict
 from app.services.triage_bundles import (
     BundleView,
     _bundle_pipeline_label,
+    get_bundle_by_batch_id,
     get_slicing_queue,
     get_triage_bundles,
     get_triage_filter_options,
 )
 from app.services.triage_confirmation import (
-    cleanup_orphaned_drafts,
     confirm_bundle,
     confirm_document,
     get_bundle_suggestion,
@@ -219,7 +219,18 @@ def bundle_dto(bundle: BundleView) -> TriageBundle:
 
 
 def _bundle_by_key(db: Session, user: User, key: str) -> TriageBundle | None:
-    bundles = get_triage_bundles(db, owner_id=user.id)
+    """The bundle as the feed would show it now, or None once it left triage."""
+    batch_id, _ = _parse_key(key)
+    if batch_id is not None:
+        batch = db.get(IngestBatch, batch_id)
+        if batch is None or batch.status in (
+            IngestBatchStatus.COMPLETED,
+            IngestBatchStatus.DISMISSED,
+        ):
+            return None
+        found = get_bundle_by_batch_id(db, batch_id)
+        return bundle_dto(found) if found and found.documents else None
+    bundles = get_triage_bundles(db, limit=500, owner_id=user.id)
     found = next((b for b in bundles if b.key == key), None)
     return bundle_dto(found) if found else None
 
@@ -519,8 +530,6 @@ def _route_document(
         db.refresh(doc)
     if (not pre_case or pre_case == "_TRIAGE") and case_id != "_TRIAGE":
         reset_and_reenrich(db, [doc])
-    # Moving the last document off an AI draft case leaves it orphaned.
-    cleanup_orphaned_drafts(db)
 
 
 def _next_doc_id(bundles: list[BundleView]) -> int | None:
@@ -556,14 +565,13 @@ def confirm_bundle_route(
         key = f"loose-{body.doc_id}"
         _route_document(db, body.doc_id or 0, case_id, body.proceeding_id, finalize)
 
-    bundles = get_triage_bundles(db, owner_id=user.id)
-    updated = next((b for b in bundles if b.key == key), None)
+    updated = _bundle_by_key(db, user, key)
     if updated is not None:
         next_id = updated.documents[0].id if updated.documents else None
     else:
-        next_id = _next_doc_id(bundles)
+        next_id = _next_doc_id(get_triage_bundles(db, limit=500, owner_id=user.id))
     return TriageConfirmResult(
-        bundle=bundle_dto(updated) if updated else None,
+        bundle=updated,
         next_doc_id=next_id,
         case=ConfirmedCase(
             id=case_id, title=case.title if case else case_id, action=action
@@ -639,12 +647,12 @@ def batch_assign(
 def _batch_result(
     db: Session, user: User, keys: list[str], skipped: int
 ) -> BatchResult:
-    bundles = {b.key: b for b in get_triage_bundles(db, owner_id=user.id)}
+    current = {k: _bundle_by_key(db, user, k) for k in keys}
     return BatchResult(
         confirmed=len(keys),
         skipped=skipped,
-        bundles=[bundle_dto(bundles[k]) for k in keys if k in bundles],
-        removed_keys=[k for k in keys if k not in bundles],
+        bundles=[b for b in current.values() if b is not None],
+        removed_keys=[k for k, b in current.items() if b is None],
     )
 
 

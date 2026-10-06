@@ -14,9 +14,6 @@
 {# 3a. Case decision — first-class step in triage HUD (review mode). Sits
    between Pipeline and Metadata so the user can act on the case before
    reading metadata that depends on it. #}
-{% if mode == 'review' %}
-{% include "partials/hud/_case.html" %}
-{% endif %}
 
 {# 4. Metadata review — read-only in all modes; Edit toggle + form only in review mode. #}
 {% include "partials/hud/_metadata_review.html" %}

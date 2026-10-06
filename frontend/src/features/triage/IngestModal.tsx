@@ -38,6 +38,7 @@ export function IngestModal({ open, onClose, caseId }: Props) {
     setFiles([])
     setResults(null)
     setParentId(null)
+    upload.reset()
     onClose()
   }
 

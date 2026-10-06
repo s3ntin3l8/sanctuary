@@ -116,6 +116,9 @@ def confirm_slicing(
 
     locked = db.get(IngestBatch, batch.id, with_for_update=True)
     assert locked is not None
+    # The identity map already holds this row from owned_batch; re-read it
+    # under the lock so the status check sees the committed value.
+    db.refresh(locked)
     try:
         doc_ids = confirm_slices(db, locked, body.cuts)
     except SlicingFailed as exc:

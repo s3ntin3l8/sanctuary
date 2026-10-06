@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import (
     DocumentRole,
@@ -198,7 +198,15 @@ class BatchResult(BaseModel):
 
 
 class TitleUpdate(BaseModel):
-    title: str = Field(min_length=1, max_length=500)
+    title: str = Field(max_length=500)
+
+    @field_validator("title")
+    @classmethod
+    def _strip_non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title must not be empty")
+        return value
 
 
 class GroupRename(BaseModel):

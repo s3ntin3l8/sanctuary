@@ -413,3 +413,31 @@ def test_moving_last_doc_off_a_draft_deletes_the_draft(db_session):
     assert db_session.get(Case, "DRAFT-ORPH-1") is None
     assert db_session.get(Case, "DRAFT-KEEP-1") is not None
     assert db_session.get(Document, mover.id).case_id == "REAL-CLEAN-1"
+
+
+def test_whitespace_title_is_rejected(db_session):
+    admin = _admin(db_session)
+    _, docs = _batch(db_session, admin.id, docs=1)
+    resp = client.put(
+        f"/api/v1/triage/documents/{docs[0].id}/title", json={"title": "   "}
+    )
+    assert resp.status_code == 422
+    db_session.expire_all()
+    assert db_session.get(Document, docs[0].id).title == "Klageerwiderung 1"
+
+
+def test_mutations_find_bundles_beyond_the_default_feed_window(db_session):
+    """Post-mutation lookups must not depend on the service's 50-bundle default."""
+    admin = _admin(db_session)
+    old_batch, _ = _batch(db_session, admin.id, subject="Oldest", docs=1)
+    for i in range(50):
+        _batch(db_session, admin.id, subject=f"Newer {i}", docs=1)
+    with patch("app.api.v1.triage.dispatch_batch_retry"):
+        resp = client.post(
+            f"/api/v1/triage/bundles/{old_batch.id}/retry", json={"full": False}
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["subject"] == "Oldest"
+    grouped = client.post(f"/api/v1/triage/bundles/{old_batch.id}/groups")
+    assert grouped.status_code == 200, grouped.text
+    assert grouped.json()["key"] == f"batch-{old_batch.id}"

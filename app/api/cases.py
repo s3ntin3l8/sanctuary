@@ -23,7 +23,6 @@ from app.models.enums import (
     Jurisdiction,
     ProceedingStatus,
 )
-from app.repositories.case import CaseRepository
 from app.services.case_dashboard_service import CaseDashboardService
 from app.services.case_service import CaseIdTaken, CaseService
 from app.services.hud_context import build_hud_context
@@ -285,15 +284,7 @@ async def confirm_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    # Picker/badge/stats reflect the *requester's* own access (they're what
-    # renders in the requester's own browser), not the ingesting doc owner's
-    # — those diverge whenever an admin or an EDITOR-shared user, not the
-    # original owner, is the one confirming the draft.
-    requester_id = request.state.current_user.id
-    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
-    ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=list(cases)
-    )
+    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
     from app.config import templates as _templates
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
@@ -349,13 +340,7 @@ async def reject_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    # Same rationale as confirm_draft_case: scope to the requester, not the
-    # ingesting doc's owner — they diverge for admins/EDITOR shares.
-    requester_id = request.state.current_user.id
-    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
-    ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=list(cases)
-    )
+    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
     from app.config import templates as _templates
 
     response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
