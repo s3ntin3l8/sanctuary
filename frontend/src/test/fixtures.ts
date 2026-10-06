@@ -434,3 +434,35 @@ export const documentReview: Schemas['DocumentReview'] = {
   cases: [{ id: 'ADV-024-A', title: 'Weber ./. Weber', is_draft: false }],
   proceedings: [],
 }
+
+export const documentReader: Schemas['DocumentReader'] = {
+  ...documentReview,
+  case_id: 'ADV-024-A',
+  case: { id: 'ADV-024-A', title: 'Hansen ./. Hansen', is_draft: false },
+  body_html:
+    '<p>Vorwort.</p><p>Der <mark id="p-p1" data-passage-id="p1" data-kind="disputed" class="hud-mark">Beklagte bestreitet</mark> alles.</p><p>Schluss mit Kosten.</p>',
+  pins: [
+    { id: 7, passage_id: 'p1', note: 'check this', user_id: 1, updated_at: '2026-10-06T08:00:00Z' },
+  ],
+  nav: {
+    prev_doc_id: 2210,
+    next_doc_id: 2212,
+    position: 2,
+    total: 5,
+    parent_id: null,
+    first_child_id: null,
+    bundle_prev_id: null,
+    bundle_next_id: null,
+  },
+  thread_open: true,
+  context_strategy: null,
+  has_original: true,
+}
+
+export const conversation: Schemas['ConversationDetail'] = {
+  id: 31,
+  scope_type: 'document',
+  scope_id: '2211',
+  title: null,
+  messages: [],
+}

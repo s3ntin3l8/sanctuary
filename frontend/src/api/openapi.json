@@ -1058,6 +1058,54 @@
         "title": "CasesDirectory",
         "type": "object"
       },
+      "ChatMessage": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "context_document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Document Ids"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "context_document_ids",
+          "created_at"
+        ],
+        "title": "ChatMessage",
+        "type": "object"
+      },
       "ClaimStatus": {
         "enum": [
           "asserted",
@@ -1137,6 +1185,127 @@
           "action"
         ],
         "title": "ConfirmedCase",
+        "type": "object"
+      },
+      "ConversationDetail": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_type": {
+            "enum": [
+              "document",
+              "case"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "scope_type",
+          "scope_id",
+          "title",
+          "messages"
+        ],
+        "title": "ConversationDetail",
+        "type": "object"
+      },
+      "ConversationOpen": {
+        "properties": {
+          "force_new": {
+            "default": false,
+            "title": "Force New",
+            "type": "boolean"
+          },
+          "scope_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "scope_type": {
+            "enum": [
+              "document",
+              "case"
+            ],
+            "title": "Scope Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_type",
+          "scope_id"
+        ],
+        "title": "ConversationOpen",
+        "type": "object"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "created_at"
+        ],
+        "title": "ConversationSummary",
+        "type": "object"
+      },
+      "ConversationTitle": {
+        "properties": {
+          "title": {
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "ConversationTitle",
         "type": "object"
       },
       "CostPromoted": {
@@ -1525,6 +1694,380 @@
           "enabled"
         ],
         "title": "DebugRedactUpdate",
+        "type": "object"
+      },
+      "DocumentReader": {
+        "description": "The full-screen HUD: the review view plus the rendered body and pins.",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionView"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "attributed_originator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributed Originator"
+          },
+          "az_court": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
+          "body_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Html"
+          },
+          "bundle_next_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Next Id"
+          },
+          "bundle_prev_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Prev Id"
+          },
+          "case": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseRef"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "claims_status": {
+            "enum": [
+              "skipped",
+              "ran",
+              "pending_triage",
+              "pending"
+            ],
+            "title": "Claims Status",
+            "type": "string"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
+          "context_strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Strategy"
+          },
+          "cost_signals": {
+            "items": {
+              "$ref": "#/components/schemas/CostSignalView"
+            },
+            "title": "Cost Signals",
+            "type": "array"
+          },
+          "court_relay": {
+            "title": "Court Relay",
+            "type": "boolean"
+          },
+          "document_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "grounds": {
+            "items": {
+              "$ref": "#/components/schemas/GroundView"
+            },
+            "title": "Grounds",
+            "type": "array"
+          },
+          "has_original": {
+            "title": "Has Original",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "ingest_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Date"
+          },
+          "internal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Id"
+          },
+          "issued_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued Date"
+          },
+          "key_passages": {
+            "items": {
+              "$ref": "#/components/schemas/KeyPassage"
+            },
+            "title": "Key Passages",
+            "type": "array"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MetadataField"
+            },
+            "title": "Metadata",
+            "type": "array"
+          },
+          "nav": {
+            "$ref": "#/components/schemas/ReaderNav"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "originator_type": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
+          "page_count": {
+            "title": "Page Count",
+            "type": "integer"
+          },
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinView"
+            },
+            "title": "Pins",
+            "type": "array"
+          },
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineView"
+          },
+          "proceeding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProceedingRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proceedings": {
+            "items": {
+              "$ref": "#/components/schemas/ProceedingRef"
+            },
+            "title": "Proceedings",
+            "type": "array"
+          },
+          "reactions": {
+            "items": {
+              "$ref": "#/components/schemas/ReactionView"
+            },
+            "title": "Reactions",
+            "type": "array"
+          },
+          "received_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Date"
+          },
+          "relationships": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipView"
+            },
+            "title": "Relationships",
+            "type": "array"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "significance_tier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignificanceTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SummaryView"
+          },
+          "thread_open": {
+            "title": "Thread Open",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "original_filename",
+          "page_count",
+          "case_id",
+          "case",
+          "proceeding",
+          "originator_type",
+          "attributed_originator",
+          "court_relay",
+          "sender",
+          "internal_id",
+          "az_court",
+          "issued_date",
+          "received_date",
+          "ingest_date",
+          "document_type",
+          "significance_tier",
+          "needs_review",
+          "review_reasons",
+          "content_hash",
+          "metadata",
+          "pipeline",
+          "summary",
+          "key_passages",
+          "relationships",
+          "grounds",
+          "claims_status",
+          "actions",
+          "cost_signals",
+          "reactions",
+          "bundle_prev_id",
+          "bundle_next_id",
+          "cases",
+          "proceedings",
+          "body_html",
+          "pins",
+          "nav",
+          "thread_open",
+          "context_strategy",
+          "has_original"
+        ],
+        "title": "DocumentReader",
         "type": "object"
       },
       "DocumentReview": {
@@ -2742,6 +3285,31 @@
         "title": "MaintenanceResult",
         "type": "object"
       },
+      "MessageSend": {
+        "properties": {
+          "content": {
+            "maxLength": 20000,
+            "title": "Content",
+            "type": "string"
+          },
+          "proceeding_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proceeding Id"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "MessageSend",
+        "type": "object"
+      },
       "MetadataField": {
         "properties": {
           "confidence": {
@@ -3034,6 +3602,106 @@
           "label"
         ],
         "title": "PickerProceeding",
+        "type": "object"
+      },
+      "PinCreate": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "passage_id": {
+            "maxLength": 12,
+            "minLength": 1,
+            "title": "Passage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passage_id"
+        ],
+        "title": "PinCreate",
+        "type": "object"
+      },
+      "PinUpdate": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "PinUpdate",
+        "type": "object"
+      },
+      "PinView": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "passage_id": {
+            "title": "Passage Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "passage_id",
+          "note",
+          "user_id",
+          "updated_at"
+        ],
+        "title": "PinView",
         "type": "object"
       },
       "PipelineCounts": {
@@ -3403,6 +4071,111 @@
           "created_at"
         ],
         "title": "ReactionView",
+        "type": "object"
+      },
+      "ReaderNav": {
+        "description": "Where the document sits among its proceeding siblings, bundle and family.",
+        "properties": {
+          "bundle_next_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Next Id"
+          },
+          "bundle_prev_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Prev Id"
+          },
+          "first_child_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Child Id"
+          },
+          "next_doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Doc Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "prev_doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Doc Id"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "prev_doc_id",
+          "next_doc_id",
+          "position",
+          "total",
+          "parent_id",
+          "first_child_id",
+          "bundle_prev_id",
+          "bundle_next_id"
+        ],
+        "title": "ReaderNav",
         "type": "object"
       },
       "ReindexJob": {
@@ -5866,6 +6639,278 @@
         ]
       }
     },
+    "/api/v1/chat/conversations": {
+      "get": {
+        "description": "The caller's own conversations for one document or case, newest first.",
+        "operationId": "v1_list_conversations_api_v1_chat_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope_type",
+            "required": true,
+            "schema": {
+              "title": "Scope Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  },
+                  "title": "Response V1 List Conversations Api V1 Chat Conversations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 List Conversations",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "description": "The caller's latest conversation for the scope, or a new one.",
+        "operationId": "v1_open_conversation_api_v1_chat_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationOpen"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Open Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversations/{conversation_id}": {
+      "delete": {
+        "operationId": "v1_delete_conversation_api_v1_chat_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Delete Conversation",
+        "tags": [
+          "chat"
+        ]
+      },
+      "get": {
+        "operationId": "v1_get_conversation_api_v1_chat_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Get Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversations/{conversation_id}/messages": {
+      "post": {
+        "description": "Stream the assistant's answer as server-sent events.",
+        "operationId": "v1_send_message_api_v1_chat_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageSend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Send Message",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/chat/conversations/{conversation_id}/title": {
+      "put": {
+        "operationId": "v1_rename_conversation_api_v1_chat_conversations__conversation_id__title_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTitle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Rename Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
     "/api/v1/documents/{doc_id}": {
       "delete": {
         "operationId": "v1_delete_document_api_v1_documents__doc_id__delete",
@@ -6002,6 +7047,98 @@
           }
         },
         "summary": "V1 Update Metadata",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/original": {
+      "get": {
+        "description": "The stored source file, inline for PDFs and as a download otherwise.",
+        "operationId": "v1_original_api_v1_documents__doc_id__original_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Original",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/pins": {
+      "post": {
+        "description": "Anchor a margin note to one of the document's key passages.",
+        "operationId": "v1_create_pin_api_v1_documents__doc_id__pins_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create Pin",
         "tags": [
           "documents"
         ]
@@ -6151,6 +7288,48 @@
           }
         },
         "summary": "V1 Set Reaction",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{doc_id}/reader": {
+      "get": {
+        "operationId": "v1_reader_api_v1_documents__doc_id__reader_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentReader"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reader",
         "tags": [
           "documents"
         ]
@@ -6346,6 +7525,91 @@
         "summary": "V1 Review All",
         "tags": [
           "home"
+        ]
+      }
+    },
+    "/api/v1/pins/{pin_id}": {
+      "delete": {
+        "operationId": "v1_delete_pin_api_v1_pins__pin_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pin_id",
+            "required": true,
+            "schema": {
+              "title": "Pin Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Delete Pin",
+        "tags": [
+          "documents"
+        ]
+      },
+      "patch": {
+        "operationId": "v1_update_pin_api_v1_pins__pin_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pin_id",
+            "required": true,
+            "schema": {
+              "title": "Pin Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Pin",
+        "tags": [
+          "documents"
         ]
       }
     },

@@ -1,7 +1,8 @@
-"""Build the context dict for all three Document HUD surfaces.
+"""Build the document HUD context.
 
-One entry point: ``build_hud_context(db, doc, *, mode="read")``. Returns a flat
-dict ready for ``TemplateResponse(request, template, ctx)``.
+One entry point: ``build_hud_context(db, doc, *, mode="read")``. Feeds the v1
+review/reader views (``app/api/v1/documents.py``) and the legacy case-dashboard
+HUD overlay template.
 """
 
 import hashlib
@@ -148,10 +149,9 @@ def build_hud_context(
 
     ``mode``: ``"read"`` (default) or ``"review"`` (triage right pane, shows
     metadata form for case assignment and originator editing).
-    ``context``: ``"overlay"`` | ``"standalone"`` | ``"embedded"``.
-    ``cases``: when ``context="embedded"`` (triage right pane), pass the list
-    of active cases for the case-assignment select; also triggers addition of
-    ``OriginatorType`` and ``is_draft_case`` keys.
+    ``context``: ``"overlay"`` (dashboard template) | ``"embedded"`` (v1 views).
+    ``cases``: the requester's case picker (v1 review/reader); also triggers
+    addition of ``OriginatorType``, ``current_case`` and ``is_draft_case`` keys.
     """
     reactions = (
         db.query(UserReaction)

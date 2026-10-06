@@ -7,7 +7,7 @@ import pytest
 def test_chat_conversations_create_and_get(app_client, sample_case):
     # Create/get conversation
     resp = app_client.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": sample_case.id},
     )
     assert resp.status_code == 200
@@ -17,13 +17,13 @@ def test_chat_conversations_create_and_get(app_client, sample_case):
     assert data["messages"] == []
 
     # Get specific conversation
-    resp = app_client.get(f"/api/chat/conversations/{conv_id}")
+    resp = app_client.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.status_code == 200
     assert resp.json()["id"] == conv_id
 
     # List conversations for scope
     resp = app_client.get(
-        f"/api/chat/conversations?scope_type=case&scope_id={sample_case.id}"
+        f"/api/v1/chat/conversations?scope_type=case&scope_id={sample_case.id}"
     )
     assert resp.status_code == 200
     assert len(resp.json()) >= 1
@@ -33,25 +33,25 @@ def test_chat_conversations_create_and_get(app_client, sample_case):
 @pytest.mark.integration
 def test_chat_update_title(app_client, sample_case):
     resp = app_client.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": sample_case.id},
     )
     conv_id = resp.json()["id"]
 
-    resp = app_client.post(
-        f"/api/chat/conversations/{conv_id}/title", json={"title": "Updated Title"}
+    resp = app_client.put(
+        f"/api/v1/chat/conversations/{conv_id}/title", json={"title": "Updated Title"}
     )
     assert resp.status_code == 200
     assert resp.json()["title"] == "Updated Title"
 
-    resp = app_client.get(f"/api/chat/conversations/{conv_id}")
+    resp = app_client.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.json()["title"] == "Updated Title"
 
 
 @pytest.mark.integration
 def test_chat_stream_message(app_client, sample_case):
     resp = app_client.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": sample_case.id},
     )
     conv_id = resp.json()["id"]
@@ -63,9 +63,10 @@ def test_chat_stream_message(app_client, sample_case):
         yield 'data: {"type": "citations", "docs": []}\n\n'
         yield 'data: {"type": "done"}\n\n'
 
-    with patch("app.api.chat.stream_answer", side_effect=mock_stream):
+    with patch("app.api.v1.chat.stream_answer", side_effect=mock_stream):
         resp = app_client.post(
-            f"/api/chat/conversations/{conv_id}/messages", json={"content": "Hi there"}
+            f"/api/v1/chat/conversations/{conv_id}/messages",
+            json={"content": "Hi there"},
         )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers["content-type"]

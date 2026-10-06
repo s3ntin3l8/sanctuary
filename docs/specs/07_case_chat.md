@@ -13,7 +13,7 @@ Companion document to `docs/specs/00_vision.md` §7. Covers both scopes of AI ch
 |---|---|
 | Schema — `Conversation` + `ConversationMessage` (migration `8ef2d25dee29`) | ✅ |
 | Repository — `ChatRepository` (`get_or_create`, `add_message`, `messages`, `get`) | ✅ |
-| API — `POST /api/chat/conversations` + `POST /api/chat/conversations/{id}/messages` (SSE) | ✅ |
+| API — `POST /api/v1/chat/conversations` + `POST /api/v1/chat/conversations/{id}/messages` (SSE) | ✅ |
 | Service — `stream_answer()` async generator with SSE protocol | ✅ |
 | Context builder — `build_case_chat_prompt()` + `build_document_chat_prompt()` | ✅ |
 | Semantic retrieval — `retrieve_top_docs()` via pgvector chunk search + recency fallback | ✅ |
@@ -138,7 +138,7 @@ ConversationMessage
 
 ## 2. API
 
-### `POST /api/chat/conversations`
+### `POST /api/v1/chat/conversations`
 
 Get or create a conversation for the given scope.
 
@@ -163,7 +163,7 @@ Get or create a conversation for the given scope.
 
 `force_new=true` always creates a fresh conversation, ignoring any existing one for the scope.
 
-### `POST /api/chat/conversations/{conversation_id}/messages`
+### `POST /api/v1/chat/conversations/{conversation_id}/messages`
 
 Stream the AI response to a new user message.
 

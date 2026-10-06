@@ -41,7 +41,7 @@
                 <button @click="loadConversation(h.id); open = false"
                         class="flex-1 min-w-0 text-left px-3 py-2 transition-colors hover:bg-surface-container-high">
                   <div class="text-[11.5px] font-semibold truncate" style="color:var(--color-on-surface);" x-text="h.title || 'Untitled conversation'"></div>
-                  <div class="text-[9px] font-mono mt-0.5" style="color:var(--color-outline);" x-text="new Date(h.ingest_date).toLocaleDateString() + ' ' + new Date(h.ingest_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
+                  <div class="text-[9px] font-mono mt-0.5" style="color:var(--color-outline);" x-text="new Date(h.created_at).toLocaleDateString() + ' ' + new Date(h.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})"></div>
                 </button>
                 <button @click.stop="deleteConversation(h.id)"
                         class="flex-shrink-0 p-2 mr-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-container-high"
@@ -117,11 +117,11 @@
           {# Citation pills #}
           <template x-if="msg.citations && msg.citations.length > 0">
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <template x-for="cite in msg.citations" :key="cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')">
-                <a :href="'/document/' + cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')"
+              <template x-for="cite in msg.citations" :key="cite.doc_id + (cite.passage_id ? '#p=' + cite.passage_id : '')">
+                <a :href="'/document/' + cite.doc_id + (cite.passage_id ? '#p=' + cite.passage_id : '')"
                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-mono border transition-colors hover:bg-surface-container-high"
                    style="border-color:var(--color-outline-variant); color:var(--color-on-surface-variant);"
-                   x-text="(cite.case_id || '') + ' · #' + cite.doc_id + (cite.passage_idx ? '#p=' + cite.passage_idx : '')">
+                   x-text="(cite.case_id || '') + ' · #' + cite.doc_id + (cite.passage_id ? ' · passage' : '')">
                 </a>
               </template>
             </div>

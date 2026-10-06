@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import FileResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.api.access_guards import (
     require_action_item_access,
     require_case_access,
     require_document_access,
+    require_pin_access,
 )
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
@@ -31,6 +33,7 @@ from app.models.enums import (
     StageStatus,
 )
 from app.repositories.case import CaseRepository
+from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.schemas.document_review import (
     ActionStatusUpdate,
@@ -39,16 +42,21 @@ from app.schemas.document_review import (
     CostPromoted,
     CostPromotion,
     CostSignalView,
+    DocumentReader,
     DocumentReview,
     DocumentStatus,
     GroundView,
     KeyPassage,
     MetadataField,
     MetadataUpdate,
+    PinCreate,
+    PinUpdate,
+    PinView,
     PipelineView,
     ProceedingRef,
     ReactionUpdate,
     ReactionView,
+    ReaderNav,
     RelationshipView,
     StageView,
     SummaryAction,
@@ -56,7 +64,9 @@ from app.schemas.document_review import (
     SummaryView,
 )
 from app.services import access_service
+from app.services.case_dashboard_service import key_passages_for_template
 from app.services.hud_context import build_hud_context
+from app.services.markdown_render import render_highlighted
 from app.services.pipeline_status import (
     STAGE_REGISTRY,
     get_upstream_blocking,
@@ -128,6 +138,55 @@ def _field_value(doc: Document, field: str) -> str | None:
 
 
 def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
+    return DocumentReview(**_review_fields(db, user, doc)[0])
+
+
+def _pin_view(pin) -> PinView:
+    return PinView(
+        id=pin.id,
+        passage_id=pin.passage_id,
+        note=pin.note,
+        user_id=pin.user_id,
+        updated_at=pin.updated_at,
+    )
+
+
+def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
+    """The review view plus everything only the full-screen HUD shows."""
+    fields, ctx = _review_fields(db, user, doc)
+    body_html = (
+        str(
+            render_highlighted(
+                doc.content,
+                ctx["key_passages"],
+                ctx["passage_claim_map"],
+                ctx["claim_excerpt_map"],
+            )
+        )
+        if doc.content
+        else None
+    )
+    return DocumentReader(
+        **fields,
+        body_html=body_html,
+        pins=[_pin_view(p) for p in ctx["pins"]],
+        nav=ReaderNav(
+            prev_doc_id=ctx["prev_doc_id"],
+            next_doc_id=ctx["next_doc_id"],
+            position=ctx["doc_position"],
+            total=ctx["proceeding_total"],
+            parent_id=doc.parent_id,
+            first_child_id=ctx["first_child_id"],
+            bundle_prev_id=ctx["bundle_prev_id"],
+            bundle_next_id=ctx["bundle_next_id"],
+        ),
+        thread_open=bool(doc.thread_open),
+        context_strategy=(doc.meta or {}).get("ai_context_strategy"),
+        has_original=bool(doc.file_path),
+    )
+
+
+def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
     ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
     conf = doc.extraction_confidence or {}
@@ -136,29 +195,29 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
     if editable is not None:
         proc_q = proc_q.filter(Proceeding.case_id.in_(editable))
     enrich = (stages_dict(doc).get("enrich") or {}).get("status")
-    return DocumentReview(
-        id=doc.id,
-        title=doc.title,
-        original_filename=doc.original_filename,
-        page_count=doc.page_count or 0,
-        case_id=doc.case_id,
-        case=_case_ref(ctx["current_case"]) if ctx.get("current_case") else None,
-        proceeding=_proceeding_ref(doc.proceeding) if doc.proceeding else None,
-        originator_type=doc.originator_type,
-        attributed_originator=doc.attributed_originator,
-        court_relay=bool(doc.court_relay),
-        sender=doc.sender,
-        internal_id=doc.internal_id,
-        az_court=doc.az_court,
-        issued_date=doc.issued_date,
-        received_date=doc.received_date,
-        ingest_date=doc.ingest_date,
-        document_type=doc.document_type,
-        significance_tier=doc.significance_tier,
-        needs_review=bool(doc.needs_review),
-        review_reasons=list(doc.review_reasons or []),
-        content_hash=doc.content_hash,
-        metadata=[
+    fields: dict = {
+        "id": doc.id,
+        "title": doc.title,
+        "original_filename": doc.original_filename,
+        "page_count": doc.page_count or 0,
+        "case_id": doc.case_id,
+        "case": _case_ref(ctx["current_case"]) if ctx.get("current_case") else None,
+        "proceeding": _proceeding_ref(doc.proceeding) if doc.proceeding else None,
+        "originator_type": doc.originator_type,
+        "attributed_originator": doc.attributed_originator,
+        "court_relay": bool(doc.court_relay),
+        "sender": doc.sender,
+        "internal_id": doc.internal_id,
+        "az_court": doc.az_court,
+        "issued_date": doc.issued_date,
+        "received_date": doc.received_date,
+        "ingest_date": doc.ingest_date,
+        "document_type": doc.document_type,
+        "significance_tier": doc.significance_tier,
+        "needs_review": bool(doc.needs_review),
+        "review_reasons": list(doc.review_reasons or []),
+        "content_hash": doc.content_hash,
+        "metadata": [
             MetadataField(
                 field=field,
                 label=label,
@@ -169,8 +228,8 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for field, label in METADATA_FIELDS
         ],
-        pipeline=pipeline_view(doc),
-        summary=SummaryView(
+        "pipeline": pipeline_view(doc),
+        "summary": SummaryView(
             bullets=[
                 SummaryBullet(**b)
                 for b in ctx["summary_bullets"]
@@ -180,7 +239,7 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             created_at=doc.ai_summary_created_at,
             enrich_status=StageStatus(enrich) if enrich else None,
         ),
-        key_passages=[
+        "key_passages": [
             KeyPassage(
                 id=p["id"],
                 text=p["text"],
@@ -194,7 +253,7 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for p in ctx["key_passages"]
         ],
-        relationships=[
+        "relationships": [
             RelationshipView(
                 id=r["rel_obj"].id,
                 doc_id=r["id"],
@@ -210,7 +269,7 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for r in rels
         ],
-        grounds=[
+        "grounds": [
             GroundView(
                 id=c.id,
                 claim_text=c.claim_text,
@@ -221,8 +280,8 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for c in ctx["grounds"]
         ],
-        claims_status=ctx["claims_status"],
-        actions=[
+        "claims_status": ctx["claims_status"],
+        "actions": [
             ActionView(
                 id=a.id,
                 title=a.title,
@@ -235,7 +294,7 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for a in ctx["actions"]
         ],
-        cost_signals=[
+        "cost_signals": [
             CostSignalView(
                 id=s.id,
                 signal_type=s.signal_type,
@@ -245,15 +304,16 @@ def review_view(db: Session, user: User, doc: Document) -> DocumentReview:
             )
             for s in doc.cost_signals
         ],
-        reactions=[
+        "reactions": [
             ReactionView(reaction=r.reaction, notes=r.notes, created_at=r.ingest_date)
             for r in ctx["reactions"]
         ],
-        bundle_prev_id=ctx["bundle_prev_id"],
-        bundle_next_id=ctx["bundle_next_id"],
-        cases=[_case_ref(c) for c in ctx["cases"]],
-        proceedings=[_proceeding_ref(p) for p in proc_q.all()],
-    )
+        "bundle_prev_id": ctx["bundle_prev_id"],
+        "bundle_next_id": ctx["bundle_next_id"],
+        "cases": [_case_ref(c) for c in ctx["cases"]],
+        "proceedings": [_proceeding_ref(p) for p in proc_q.all()],
+    }
+    return fields, ctx
 
 
 # --- Review view and metadata ------------------------------------------------
@@ -266,6 +326,88 @@ def review(
     doc: Document = Depends(require_document_access()),
 ):
     return review_view(db, user, doc)
+
+
+@router.get("/documents/{doc_id}/reader", response_model=DocumentReader)
+def reader(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access()),
+):
+    return reader_view(db, user, doc)
+
+
+@router.get(
+    "/documents/{doc_id}/original",
+    response_class=FileResponse,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def original(doc: Document = Depends(require_document_access())):
+    """The stored source file, inline for PDFs and as a download otherwise."""
+    from app.config import DATA_DIR
+    from app.core.paths import resolve_storage_path
+
+    if not doc.file_path:
+        raise ApiError(404, "no_original", "No original file stored for this document.")
+    resolved = resolve_storage_path(doc.file_path).resolve()
+    data_root = DATA_DIR.resolve()
+    # Refuse anything outside DATA_DIR even if file_path were ever attacker-influenced.
+    if not str(resolved).startswith(str(data_root) + "/") or not resolved.exists():
+        raise ApiError(404, "no_original", "Original file not found on disk.")
+    if resolved.suffix.lower() == ".pdf":
+        return FileResponse(
+            path=str(resolved),
+            filename=resolved.name,
+            media_type="application/pdf",
+            content_disposition_type="inline",
+        )
+    return FileResponse(
+        path=str(resolved),
+        filename=resolved.name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.post("/documents/{doc_id}/pins", response_model=PinView, status_code=201)
+@limiter.limit("60/minute")
+def create_pin(
+    request: Request,
+    body: PinCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    doc: Document = Depends(require_document_access(edit=True)),
+):
+    """Anchor a margin note to one of the document's key passages."""
+    known = {p["id"] for p in key_passages_for_template(doc.key_passages or [])}
+    if body.passage_id not in known:
+        raise ApiError(422, "unknown_passage", "No such passage in this document.")
+    pin = DocumentPinRepository(db).create(
+        doc.id, body.passage_id, body.note, user_id=user.id
+    )
+    db.commit()
+    db.refresh(pin)
+    return _pin_view(pin)
+
+
+@router.patch("/pins/{pin_id}", response_model=PinView)
+def update_pin(
+    body: PinUpdate,
+    db: Session = Depends(get_db),
+    pin=Depends(require_pin_access(edit=True)),
+):
+    DocumentPinRepository(db).update_note(pin.id, body.note)
+    db.commit()
+    db.refresh(pin)
+    return _pin_view(pin)
+
+
+@router.delete("/pins/{pin_id}", status_code=204, response_class=Response)
+def delete_pin(
+    db: Session = Depends(get_db),
+    pin=Depends(require_pin_access(edit=True)),
+):
+    DocumentPinRepository(db).delete(pin.id)
+    db.commit()
 
 
 @router.put("/documents/{doc_id}/metadata", response_model=DocumentReview)

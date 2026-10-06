@@ -89,7 +89,7 @@ def test_document_original_404_for_non_owner(auth_enabled, db_session, two_users
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.get(f"/document/{doc.id}/original")
+    resp = client.get(f"/api/v1/documents/{doc.id}/original")
     assert resp.status_code == 404
 
 
@@ -302,14 +302,14 @@ def test_conversation_404_for_non_owner(auth_enabled, db_session, two_users):
 
     client_a = _login("a@example.com")
     create_resp = client_a.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "document", "scope_id": str(doc.id)},
     )
     assert create_resp.status_code == 200
     conv_id = create_resp.json()["id"]
 
     client_b = _login("b@example.com")
-    resp = client_b.get(f"/api/chat/conversations/{conv_id}")
+    resp = client_b.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.status_code == 404
 
 
@@ -327,7 +327,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     client_a = _login("a@example.com")
     resp_a = client_a.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert resp_a.status_code == 200
@@ -335,7 +335,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     client_b = _login("b@example.com")
     resp_b = client_b.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert resp_b.status_code == 200
@@ -343,7 +343,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     assert conv_a_id != conv_b_id
     # B cannot read A's conversation directly either.
-    assert client_b.get(f"/api/chat/conversations/{conv_a_id}").status_code == 404
+    assert client_b.get(f"/api/v1/chat/conversations/{conv_a_id}").status_code == 404
 
 
 # --- worker_queue.py -----------------------------------------------------------
@@ -574,17 +574,17 @@ def test_conversation_inaccessible_after_case_share_revoked(
 
     client_b = _login("b@example.com")
     create_resp = client_b.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert create_resp.status_code == 200
     conv_id = create_resp.json()["id"]
-    assert client_b.get(f"/api/chat/conversations/{conv_id}").status_code == 200
+    assert client_b.get(f"/api/v1/chat/conversations/{conv_id}").status_code == 200
 
     db_session.delete(db_session.get(CaseShare, share.id))
     db_session.commit()
 
-    resp = client_b.get(f"/api/chat/conversations/{conv_id}")
+    resp = client_b.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.status_code == 404
 
 
@@ -631,3 +631,49 @@ def test_relationship_decision_requires_edit_access_to_both_documents(
         db_session.get(DocumentRelationship, spanning.id).confidence
         == RelationshipConfidence.AI_DETECTED
     )
+
+
+def test_viewer_share_can_read_but_not_pin(auth_enabled, db_session, two_users):
+    """A VIEWER share reads the reader but gets 404 on pin create/update/delete."""
+    from app.models.database import DocumentPin
+
+    a, b = two_users
+    case = _make_case(db_session, "PR5-PIN-VIEW", a.id)
+    db_session.add(
+        CaseShare(case_id=case.id, user_id=b.id, permission=CaseAccessLevel.VIEWER)
+    )
+    doc = Document(
+        title="pinnable",
+        owner_id=a.id,
+        case_id=case.id,
+        content="The order is final.",
+        key_passages=[
+            {"id": "passage-one1", "text": "The order is final.", "kind": "ruling"}
+        ],
+    )
+    db_session.add(doc)
+    db_session.flush()
+    pin = DocumentPin(
+        document_id=doc.id, passage_id="passage-one1", note="a's", user_id=a.id
+    )
+    db_session.add(pin)
+    db_session.commit()
+
+    client = _login("b@example.com")
+    reader = client.get(f"/api/v1/documents/{doc.id}/reader")
+    assert reader.status_code == 200
+    assert [p["id"] for p in reader.json()["pins"]] == [pin.id]
+    assert (
+        client.post(
+            f"/api/v1/documents/{doc.id}/pins",
+            json={"passage_id": "passage-one1", "note": "b's"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.patch(f"/api/v1/pins/{pin.id}", json={"note": "edited"}).status_code
+        == 404
+    )
+    assert client.delete(f"/api/v1/pins/{pin.id}").status_code == 404
+    db_session.expire_all()
+    assert db_session.get(DocumentPin, pin.id).note == "a's"

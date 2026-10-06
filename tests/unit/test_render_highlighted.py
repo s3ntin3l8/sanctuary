@@ -4,7 +4,7 @@ import pytest
 
 
 def _rh(value, key_passages=None, passage_claim_ids=None):
-    from app.main import render_highlighted
+    from app.services.markdown_render import render_highlighted
 
     return str(render_highlighted(value, key_passages, passage_claim_ids))
 
@@ -164,7 +164,7 @@ def test_render_highlighted_uses_offsets_when_present():
 def test_render_highlighted_claim_excerpt_via_live_offset():
     """Claim excerpts (no stored offsets) are located at render time via the
     same find_text_offsets cascade — not regex against rendered HTML."""
-    from app.main import render_highlighted
+    from app.services.markdown_render import render_highlighted
 
     body = 'The defendant said: "we deny all charges."'
     claim_map = {7: '"we deny all charges."'}

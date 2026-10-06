@@ -28,7 +28,7 @@ function registerAiChat() {
       this.loading = true;
       this.error = null;
       try {
-        const url = id ? `/api/chat/conversations/${id}` : '/api/chat/conversations';
+        const url = id ? `/api/v1/chat/conversations/${id}` : '/api/v1/chat/conversations';
         const method = id ? 'GET' : 'POST';
         const body = id ? null : JSON.stringify({ scope_type: scopeType, scope_id: String(scopeId) });
 
@@ -55,7 +55,7 @@ function registerAiChat() {
 
     async loadHistory() {
       try {
-        const res = await fetch(`/api/chat/conversations?scope_type=${scopeType}&scope_id=${scopeId}`);
+        const res = await fetch(`/api/v1/chat/conversations?scope_type=${scopeType}&scope_id=${scopeId}`);
         if (res.ok) {
           this.history = await res.json();
         }
@@ -70,7 +70,7 @@ function registerAiChat() {
       this.conversationId = null;
       this.error = null;
       try {
-        const res = await fetch('/api/chat/conversations', {
+        const res = await fetch('/api/v1/chat/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scope_type: scopeType, scope_id: String(scopeId), force_new: true }),
@@ -122,7 +122,7 @@ function registerAiChat() {
         }
 
         const res = await fetch(
-          `/api/chat/conversations/${this.conversationId}/messages`,
+          `/api/v1/chat/conversations/${this.conversationId}/messages`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -175,8 +175,8 @@ function registerAiChat() {
               // Update title if it was first message
               if (isFirstMessage) {
                 const title = userMsg.length > 50 ? userMsg.substring(0, 47) + '...' : userMsg;
-                await fetch(`/api/chat/conversations/${this.conversationId}/title`, {
-                  method: 'POST',
+                await fetch(`/api/v1/chat/conversations/${this.conversationId}/title`, {
+                  method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ title }),
                 });
@@ -194,7 +194,7 @@ function registerAiChat() {
     },
 
     async deleteConversation(id) {
-      const res = await fetch(`/api/chat/conversations/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/chat/conversations/${id}`, { method: 'DELETE' });
       if (!res.ok) return;
       this.history = this.history.filter(h => h.id !== id);
       if (this.conversationId === id) {
@@ -227,8 +227,7 @@ function registerAiChat() {
       const citationRe = /\[DOC:(\d+)(?:#p=(\d+))?\]/g;
       const processCitations = (s) => s.replace(citationRe, (_, docId, passageIdx) => {
         const label = passageIdx ? `[DOC:${docId}#p=${passageIdx}]` : `[DOC:${docId}]`;
-        const hash  = passageIdx ? `#p=${passageIdx}` : '';
-        return `<a href="/document/${docId}${hash}" class="inline-block px-1 py-0.5 text-[9px] font-mono rounded hover:underline" style="background:var(--color-primary-container);color:var(--color-primary);">${label}</a>`;
+        return `<a href="/document/${docId}" class="inline-block px-1 py-0.5 text-[9px] font-mono rounded hover:underline" style="background:var(--color-primary-container);color:var(--color-primary);">${label}</a>`;
       });
 
       // Split on complete <think>…</think> blocks before HTML-escaping.

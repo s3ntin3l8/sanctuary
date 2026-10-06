@@ -91,7 +91,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
           icon: 'description',
           title: d.title,
           sub: d.case_id ?? 'Triage',
-          run: () => go(`/document/${d.id}`),
+          run: () => go(`/document/${d.id}`, true),
         })),
       },
       {

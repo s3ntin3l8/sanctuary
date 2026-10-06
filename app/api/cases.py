@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.api.access_guards import require_case_access
 from app.config import templates
@@ -224,83 +224,17 @@ async def case_document_hud(
     return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
 
-@router.get("/{case_id}/document/{doc_id}")
-async def case_document_fullscreen(
-    request: Request,
-    case_id: str,
-    doc_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Full-screen document reader at /cases/:case_id/document/:doc_id."""
-    from app.helpers import render_page
-    from app.services import access_service
-
-    doc = (
-        db.query(Document)
-        .options(
-            joinedload(Document.proceeding),
-            joinedload(Document.children),
-        )
-        .filter(Document.id == doc_id)
-        .first()
-    )
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if (
-        not doc
-        or doc.case_id != case_id
-        or not access_service.can_view_case(db, user, case)
-    ):
-        from fastapi.responses import RedirectResponse
-
-        return RedirectResponse(f"/cases/{case_id}", status_code=302)
-
-    ctx = build_hud_context(db, doc, mode="read")
-    ctx["context"] = "standalone"
-    ctx["case_id"] = case_id
-    return render_page(request, "pages/document.html", db=db, **ctx)
-
-
 @router.post("/{case_id}/confirm-draft")
 async def confirm_draft_case(
-    request: Request,
     case_id: str,
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
-    """Confirm an AI-created draft case (flip is_draft=False)."""
-    import json
-
-    from app.models.database import Document as Doc
-
+    """Confirm an AI-created draft case (flip is_draft=False); the banner reloads."""
     if case.is_draft:
         case.is_draft = False
         db.commit()
-
-    first_doc = (
-        db.query(Doc).filter(Doc.case_id == case_id).order_by(Doc.id.asc()).first()
-    )
-    if not first_doc:
-        return HTMLResponse("", status_code=204)
-
-    db.refresh(first_doc)
-    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
-    from app.config import templates as _templates
-
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-    case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
-    response.headers["HX-Trigger"] = json.dumps(
-        {
-            "triage:advance": {"next_doc_id": first_doc.id},
-            "case:confirmed": {
-                "case_id": case.id,
-                "case_title": case.title,
-                "doc_count": case_doc_count,
-                "action": "ratified",
-            },
-        }
-    )
-    return response
+    return HTMLResponse("", status_code=204)
 
 
 def _delete_case_via_service(case_id: str, db: Session) -> dict:
@@ -321,34 +255,15 @@ def _delete_case_via_service(case_id: str, db: Session) -> dict:
 
 @router.post("/{case_id}/reject-draft")
 async def reject_draft_case(
-    request: Request,
     case_id: str,
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
-    import json
-
     if not case.is_draft:
         raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
-
-    result = _delete_case_via_service(case_id, db)
-    docs = result["docs"]
-
-    first_doc = docs[0] if docs else None
-    if not first_doc:
-        return HTMLResponse("", status_code=204)
-
-    db.refresh(first_doc)
-    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
-    from app.config import templates as _templates
-
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
-    response.headers["HX-Trigger"] = json.dumps(
-        {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
-    )
-    return response
+    _delete_case_via_service(case_id, db)
+    return HTMLResponse("", status_code=204)
 
 
 @router.delete("/{case_id}", response_model=None)

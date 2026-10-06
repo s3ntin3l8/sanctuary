@@ -15,7 +15,7 @@ client = TestClient(app)
 
 @pytest.mark.integration
 def test_open_original_returns_file(db_session, isolate_data_dir):
-    """GET /document/:id/original serves the file as octet-stream."""
+    """GET /api/v1/documents/:id/original serves the file as octet-stream."""
     # Write a real temp file inside the isolated data dir
     tmp = isolate_data_dir / "test_doc.pdf"
     tmp.write_bytes(b"%PDF-1.4 fake pdf content")
@@ -24,7 +24,7 @@ def test_open_original_returns_file(db_session, isolate_data_dir):
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get(f"/document/{doc.id}/original")
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith(
         ("application/pdf", "application/octet-stream")
@@ -33,31 +33,48 @@ def test_open_original_returns_file(db_session, isolate_data_dir):
 
 
 @pytest.mark.integration
+def test_open_original_refuses_existing_file_outside_data_dir(
+    db_session, isolate_data_dir, tmp_path
+):
+    """A stored path that escapes DATA_DIR is never served, even if it exists."""
+    outside = tmp_path / "secret.pdf"
+    outside.write_bytes(b"%PDF-1.4 not yours")
+    assert not str(outside.resolve()).startswith(str(isolate_data_dir.resolve()))
+    doc = Document(title="Escaping Doc", file_path=str(outside))
+    db_session.add(doc)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
+    assert response.status_code == 404
+    assert response.json()["code"] == "no_original"
+
+
+@pytest.mark.integration
 def test_open_original_404_missing_file(db_session, isolate_data_dir):
-    """GET /document/:id/original returns 404 when file_path points to non-existent file."""
+    """GET /api/v1/documents/:id/original returns 404 when file_path points to non-existent file."""
     doc = Document(title="Missing File Doc", file_path="/nonexistent/path/file.pdf")
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get(f"/document/{doc.id}/original")
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
     assert response.status_code == 404
 
 
 @pytest.mark.integration
 def test_open_original_404_no_file_path(db_session):
-    """GET /document/:id/original returns 404 when file_path is None."""
+    """GET /api/v1/documents/:id/original returns 404 when file_path is None."""
     doc = Document(title="No File Path Doc", file_path=None)
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get(f"/document/{doc.id}/original")
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
     assert response.status_code == 404
 
 
 @pytest.mark.integration
 def test_open_original_404_nonexistent_doc(db_session):
-    """GET /document/:id/original returns 404 for a non-existent document id."""
-    response = client.get("/document/999999/original")
+    """GET /api/v1/documents/:id/original returns 404 for a non-existent document id."""
+    response = client.get("/api/v1/documents/999999/original")
     assert response.status_code == 404
 
 
@@ -76,7 +93,7 @@ def test_open_original_serves_relative_path(db_session, isolate_data_dir):
     db_session.add(doc)
     db_session.commit()
 
-    response = client.get(f"/document/{doc.id}/original")
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
     assert response.status_code == 200
     assert b"%PDF" in response.content
 
@@ -113,7 +130,7 @@ def test_ingested_attachment_is_stored_relative_and_served(
     assert not Path(doc.file_path).is_absolute()
     assert (isolate_data_dir / doc.file_path).exists()
 
-    response = client.get(f"/document/{doc.id}/original")
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
     assert response.status_code == 200
     assert b"%PDF" in response.content
 

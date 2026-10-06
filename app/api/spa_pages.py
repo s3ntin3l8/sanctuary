@@ -1,4 +1,4 @@
-"""Triage and slicing screens are SPA routes (data: /api/v1/triage, /api/v1/slicing)."""
+"""Screens owned by the SPA; data comes from /api/v1 (triage, slicing, documents)."""
 
 from __future__ import annotations
 
@@ -20,4 +20,9 @@ def triage_page() -> Response:
 
 @router.get("/ingest/slice/{batch_id}")
 def slicing_review(batch_id: int) -> Response:
+    return spa_index()
+
+
+@router.get("/document/{doc_id}")
+def document_page(doc_id: int) -> Response:
     return spa_index()

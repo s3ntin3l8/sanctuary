@@ -11,6 +11,7 @@ from app.api.v1 import (
     admin_users,
     auth,
     cases,
+    chat,
     documents,
     home,
     search,
@@ -49,6 +50,7 @@ for _module in (
     documents,
     upload,
     slicing,
+    chat,
 ):
     # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
     # v1 route name so a v1 handler can never shadow the legacy route it replaces.

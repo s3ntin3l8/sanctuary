@@ -171,6 +171,47 @@ class DocumentReview(BaseModel):
     proceedings: list[ProceedingRef]
 
 
+class PinView(BaseModel):
+    id: int
+    passage_id: str
+    note: str | None
+    user_id: int | None
+    updated_at: datetime | None
+
+
+class PinCreate(BaseModel):
+    passage_id: str = Field(min_length=1, max_length=12)
+    note: str | None = Field(default=None, max_length=4000)
+
+
+class PinUpdate(BaseModel):
+    note: str | None = Field(default=None, max_length=4000)
+
+
+class ReaderNav(BaseModel):
+    """Where the document sits among its proceeding siblings, bundle and family."""
+
+    prev_doc_id: int | None
+    next_doc_id: int | None
+    position: int | None
+    total: int | None
+    parent_id: int | None
+    first_child_id: int | None
+    bundle_prev_id: int | None
+    bundle_next_id: int | None
+
+
+class DocumentReader(DocumentReview):
+    """The full-screen HUD: the review view plus the rendered body and pins."""
+
+    body_html: str | None
+    pins: list[PinView]
+    nav: ReaderNav
+    thread_open: bool
+    context_strategy: str | None
+    has_original: bool
+
+
 class MetadataUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     originator_type: OriginatorType | None = None
