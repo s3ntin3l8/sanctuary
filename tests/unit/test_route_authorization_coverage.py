@@ -83,17 +83,19 @@ def _all_dependency_calls(dependant) -> list:
 
 
 def _has_recognized_guard(dependant) -> bool:
+    from app.api.v1 import case_detail as v1_case_detail
     from app.api.v1 import documents as v1_documents
     from app.api.v1 import slicing as v1_slicing
     from app.api.v1 import triage as v1_triage
 
-    # Per-object owner resolvers of the v1 triage/slicing API (404 unless the
-    # caller owns the batch/document) and the relationship edit guard.
+    # Per-object owner resolvers of the v1 API (404 unless the caller owns
+    # the batch/document/case) and the relationship edit guard.
     owner_guards = {
         v1_triage.owned_batch,
         v1_triage.owned_document,
         v1_slicing.owned_batch,
         v1_documents._owned_relationship,
+        v1_case_detail._owned_case,
     }
     calls = _all_dependency_calls(dependant)
     if any(getattr(c, "_is_access_guard", False) for c in calls):

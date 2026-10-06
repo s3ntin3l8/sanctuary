@@ -143,6 +143,19 @@
         "title": "ActionView",
         "type": "object"
       },
+      "ActiveProceedingUpdate": {
+        "properties": {
+          "proceeding_id": {
+            "title": "Proceeding Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proceeding_id"
+        ],
+        "title": "ActiveProceedingUpdate",
+        "type": "object"
+      },
       "AdminActiveUpdate": {
         "properties": {
           "is_active": {
@@ -762,6 +775,100 @@
         "title": "Body_v1_upload_api_v1_upload_post",
         "type": "object"
       },
+      "BriefView": {
+        "description": "`Case.ai_brief` as written by the brief generator, or its job state.",
+        "properties": {
+          "detected_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "next_move": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Move"
+          },
+          "posture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posture"
+          },
+          "pressure_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pressure Points",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "processing",
+              "failed",
+              "none"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Rationale"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "BriefView",
+        "type": "object"
+      },
       "BundlePipeline": {
         "properties": {
           "active_label": {
@@ -819,6 +926,112 @@
           }
         },
         "title": "BundleRetry",
+        "type": "object"
+      },
+      "CaseAccessLevel": {
+        "description": "Permission a CaseShare grants a non-owner user (Phase 3 sharing).",
+        "enum": [
+          "viewer",
+          "editor"
+        ],
+        "title": "CaseAccessLevel",
+        "type": "string"
+      },
+      "CaseActionItem": {
+        "properties": {
+          "action_type": {
+            "$ref": "#/components/schemas/ActionItemType"
+          },
+          "addressee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Addressee"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "format": "date-time",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_overdue": {
+            "title": "Is Overdue",
+            "type": "boolean"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "proceeding_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proceeding Id"
+          },
+          "source_document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionItemStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "due_date",
+          "action_type",
+          "status",
+          "location",
+          "addressee",
+          "proceeding_id",
+          "source_document_id",
+          "is_overdue"
+        ],
+        "title": "CaseActionItem",
         "type": "object"
       },
       "CaseCard": {
@@ -991,6 +1204,297 @@
         "title": "CaseCreated",
         "type": "object"
       },
+      "CaseDetail": {
+        "properties": {
+          "action_items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseActionItem"
+            },
+            "title": "Action Items",
+            "type": "array"
+          },
+          "active_proceeding_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Proceeding Id"
+          },
+          "assume_worst_case": {
+            "title": "Assume Worst Case",
+            "type": "boolean"
+          },
+          "brief": {
+            "$ref": "#/components/schemas/BriefView"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_manage_sharing": {
+            "title": "Can Manage Sharing",
+            "type": "boolean"
+          },
+          "case_type": {
+            "$ref": "#/components/schemas/CaseType"
+          },
+          "close_suggestion_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Suggestion Rationale"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "dormancy_alert": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dormancy Alert"
+          },
+          "financials": {
+            "$ref": "#/components/schemas/FinancialsSummary"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_draft": {
+            "title": "Is Draft",
+            "type": "boolean"
+          },
+          "jurisdiction": {
+            "title": "Jurisdiction",
+            "type": "string"
+          },
+          "last_visit": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Visit"
+          },
+          "new_doc_count": {
+            "title": "New Doc Count",
+            "type": "integer"
+          },
+          "open_claim_count": {
+            "title": "Open Claim Count",
+            "type": "integer"
+          },
+          "opposing_parties": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opposing Parties",
+            "type": "array"
+          },
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "parties": {
+            "items": {
+              "$ref": "#/components/schemas/PartyView"
+            },
+            "title": "Parties",
+            "type": "array"
+          },
+          "pending_close": {
+            "title": "Pending Close",
+            "type": "boolean"
+          },
+          "proceedings": {
+            "items": {
+              "$ref": "#/components/schemas/ProceedingView"
+            },
+            "title": "Proceedings",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "case_type",
+          "jurisdiction",
+          "is_draft",
+          "pending_close",
+          "close_suggestion_rationale",
+          "assume_worst_case",
+          "owner_email",
+          "can_edit",
+          "can_manage_sharing",
+          "proceedings",
+          "active_proceeding_id",
+          "documents",
+          "new_doc_count",
+          "last_visit",
+          "action_items",
+          "parties",
+          "opposing_parties",
+          "brief",
+          "financials",
+          "open_claim_count",
+          "dormancy_alert"
+        ],
+        "title": "CaseDetail",
+        "type": "object"
+      },
+      "CaseDocument": {
+        "description": "One row of the case spine (documents of the active proceeding).",
+        "properties": {
+          "document_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_new": {
+            "title": "Is New",
+            "type": "boolean"
+          },
+          "issued_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued Date"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "originator_type": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
+          "received_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Date"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "significance_tier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignificanceTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_open": {
+            "title": "Thread Open",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "originator_type",
+          "document_type",
+          "issued_date",
+          "received_date",
+          "significance_tier",
+          "role",
+          "thread_open",
+          "needs_review",
+          "is_new",
+          "sender"
+        ],
+        "title": "CaseDocument",
+        "type": "object"
+      },
+      "CasePurge": {
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "CasePurge",
+        "type": "object"
+      },
       "CaseRef": {
         "properties": {
           "id": {
@@ -1025,6 +1529,66 @@
         ],
         "title": "CaseStatus",
         "type": "string"
+      },
+      "CaseType": {
+        "description": "Legal domain of the case \u2014 drives cost-allocation defaults.",
+        "enum": [
+          "civil",
+          "family",
+          "administrative",
+          "criminal"
+        ],
+        "title": "CaseType",
+        "type": "string"
+      },
+      "CaseUpdate": {
+        "properties": {
+          "assume_worst_case": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assume Worst Case"
+          },
+          "case_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "CaseUpdate",
+        "type": "object"
       },
       "CasesDirectory": {
         "properties": {
@@ -1106,6 +1670,37 @@
         "title": "ChatMessage",
         "type": "object"
       },
+      "ClaimEvidenceRole": {
+        "enum": [
+          "asserts",
+          "supports",
+          "contests",
+          "refutes",
+          "cites_as_proof"
+        ],
+        "title": "ClaimEvidenceRole",
+        "type": "string"
+      },
+      "ClaimGroupView": {
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimView"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          }
+        },
+        "required": [
+          "status",
+          "claims"
+        ],
+        "title": "ClaimGroupView",
+        "type": "object"
+      },
       "ClaimStatus": {
         "enum": [
           "asserted",
@@ -1117,6 +1712,18 @@
         "title": "ClaimStatus",
         "type": "string"
       },
+      "ClaimStatusUpdate": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ClaimStatusUpdate",
+        "type": "object"
+      },
       "ClaimType": {
         "enum": [
           "factual",
@@ -1125,6 +1732,83 @@
         ],
         "title": "ClaimType",
         "type": "string"
+      },
+      "ClaimView": {
+        "properties": {
+          "allowed_transitions": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimStatus"
+            },
+            "title": "Allowed Transitions",
+            "type": "array"
+          },
+          "claim_text": {
+            "title": "Claim Text",
+            "type": "string"
+          },
+          "claim_type": {
+            "$ref": "#/components/schemas/ClaimType"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "first_made_at": {
+            "format": "date-time",
+            "title": "First Made At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_precedent": {
+            "title": "Is Precedent",
+            "type": "boolean"
+          },
+          "last_updated_at": {
+            "format": "date-time",
+            "title": "Last Updated At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          }
+        },
+        "required": [
+          "id",
+          "claim_text",
+          "claim_type",
+          "status",
+          "is_precedent",
+          "first_made_at",
+          "last_updated_at",
+          "allowed_transitions",
+          "evidence"
+        ],
+        "title": "ClaimView",
+        "type": "object"
+      },
+      "ClientRoleUpdate": {
+        "properties": {
+          "role": {
+            "enum": [
+              "winner",
+              "loser",
+              "unset"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ClientRoleUpdate",
+        "type": "object"
       },
       "ConcurrencyResult": {
         "properties": {
@@ -1308,6 +1992,108 @@
         "title": "ConversationTitle",
         "type": "object"
       },
+      "CostCategory": {
+        "description": "German legal cost categories (Kostenkategorien).",
+        "enum": [
+          "gerichtskosten",
+          "anwaltskosten",
+          "anwaltskosten_gegner",
+          "sachverstaendiger",
+          "vorschuss",
+          "vollstreckung",
+          "auslagen",
+          "sonstiges"
+        ],
+        "title": "CostCategory",
+        "type": "string"
+      },
+      "CostFieldUpdate": {
+        "properties": {
+          "amount_net": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Net"
+          },
+          "amount_paid": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Paid"
+          },
+          "amount_reimbursed": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Reimbursed"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "vat_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Rate"
+          }
+        },
+        "title": "CostFieldUpdate",
+        "type": "object"
+      },
       "CostPromoted": {
         "properties": {
           "amount_gross": {
@@ -1367,6 +2153,244 @@
           }
         },
         "title": "CostPromotion",
+        "type": "object"
+      },
+      "CostRow": {
+        "properties": {
+          "amount_gross": {
+            "title": "Amount Gross",
+            "type": "number"
+          },
+          "amount_net": {
+            "title": "Amount Net",
+            "type": "number"
+          },
+          "amount_paid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Paid"
+          },
+          "amount_reimbursed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Reimbursed"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CostCategory"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_reimbursable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Reimbursable"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "proceeding_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proceeding Id"
+          },
+          "rvg_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rvg Position"
+          },
+          "source_document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CostStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "vat_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Rate"
+          }
+        },
+        "required": [
+          "id",
+          "proceeding_id",
+          "title",
+          "category",
+          "status",
+          "rvg_position",
+          "amount_net",
+          "vat_rate",
+          "amount_gross",
+          "amount_paid",
+          "amount_reimbursed",
+          "is_reimbursable",
+          "issued_at",
+          "due_at",
+          "source_document_id"
+        ],
+        "title": "CostRow",
+        "type": "object"
+      },
+      "CostSignalDoc": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "client_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Role"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "issued_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued Date"
+          },
+          "originator_type": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
+          "role_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Source"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "integer"
+          },
+          "signal_type": {
+            "$ref": "#/components/schemas/CostSignalType"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "issued_date",
+          "originator_type",
+          "signal_type",
+          "signal_id",
+          "amount",
+          "description",
+          "client_role",
+          "role_source"
+        ],
+        "title": "CostSignalDoc",
         "type": "object"
       },
       "CostSignalType": {
@@ -1433,6 +2457,18 @@
         ],
         "title": "CostSignalView",
         "type": "object"
+      },
+      "CostStatus": {
+        "description": "Payment/reimbursement status of a cost position.",
+        "enum": [
+          "offen",
+          "bezahlt",
+          "erstattet",
+          "teilweise",
+          "strittig"
+        ],
+        "title": "CostStatus",
+        "type": "string"
       },
       "CoverUpdate": {
         "properties": {
@@ -1694,6 +2730,67 @@
           "enabled"
         ],
         "title": "DebugRedactUpdate",
+        "type": "object"
+      },
+      "DedupJob": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "merged": {
+            "default": 0,
+            "title": "Merged",
+            "type": "integer"
+          },
+          "processed": {
+            "default": 0,
+            "title": "Processed",
+            "type": "integer"
+          },
+          "proposals": {
+            "default": 0,
+            "title": "Proposals",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DedupJob",
         "type": "object"
       },
       "DocumentReader": {
@@ -2530,6 +3627,134 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EvidenceProposalView": {
+        "properties": {
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "integer"
+          },
+          "proposed_role": {
+            "$ref": "#/components/schemas/ClaimEvidenceRole"
+          },
+          "source_document_id": {
+            "title": "Source Document Id",
+            "type": "integer"
+          },
+          "source_document_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Title"
+          },
+          "target_claim_id": {
+            "title": "Target Claim Id",
+            "type": "integer"
+          },
+          "target_claim_status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          },
+          "target_claim_text": {
+            "title": "Target Claim Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "proposed_role",
+          "excerpt",
+          "target_claim_id",
+          "target_claim_text",
+          "target_claim_status",
+          "source_document_id",
+          "source_document_title"
+        ],
+        "title": "EvidenceProposalView",
+        "type": "object"
+      },
+      "EvidenceView": {
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/RelationshipConfidence"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "integer"
+          },
+          "document_originator": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
+          "document_title": {
+            "title": "Document Title",
+            "type": "string"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reactions": {
+            "items": {
+              "$ref": "#/components/schemas/UserReactionType"
+            },
+            "title": "Reactions",
+            "type": "array"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ClaimEvidenceRole"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "excerpt",
+          "confidence",
+          "document_id",
+          "document_title",
+          "document_originator",
+          "document_date",
+          "reactions"
+        ],
+        "title": "EvidenceView",
+        "type": "object"
+      },
       "ExtractionEngineUpdate": {
         "properties": {
           "engine": {
@@ -2585,6 +3810,75 @@
           "error"
         ],
         "title": "FailedDoc",
+        "type": "object"
+      },
+      "FinancialsSummary": {
+        "properties": {
+          "booked": {
+            "title": "Booked",
+            "type": "number"
+          },
+          "outstanding": {
+            "title": "Outstanding",
+            "type": "number"
+          },
+          "paid": {
+            "title": "Paid",
+            "type": "number"
+          },
+          "reimbursable": {
+            "title": "Reimbursable",
+            "type": "number"
+          },
+          "total_cost_exposure_cents": {
+            "title": "Total Cost Exposure Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_cost_exposure_cents",
+          "booked",
+          "paid",
+          "outstanding",
+          "reimbursable"
+        ],
+        "title": "FinancialsSummary",
+        "type": "object"
+      },
+      "FinancialsView": {
+        "properties": {
+          "case_level_costs": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Case Level Costs",
+            "type": "array"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceExposure"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
+          "signal_docs": {
+            "items": {
+              "$ref": "#/components/schemas/CostSignalDoc"
+            },
+            "title": "Signal Docs",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/FinancialsSummary"
+          }
+        },
+        "required": [
+          "summary",
+          "instances",
+          "case_level_costs",
+          "signal_docs"
+        ],
+        "title": "FinancialsView",
         "type": "object"
       },
       "GmailBackfill": {
@@ -2679,6 +3973,410 @@
           "oauth_start_url"
         ],
         "title": "GmailView",
+        "type": "object"
+      },
+      "GraphBundle": {
+        "properties": {
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/GraphBundleChild"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "footer": {
+            "title": "Footer",
+            "type": "string"
+          },
+          "header": {
+            "title": "Header",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "originator": {
+            "title": "Originator",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "lane",
+          "originator",
+          "row",
+          "x",
+          "y",
+          "header",
+          "footer",
+          "children"
+        ],
+        "title": "GraphBundle",
+        "type": "object"
+      },
+      "GraphBundleChild": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "origin",
+          "date",
+          "tier"
+        ],
+        "title": "GraphBundleChild",
+        "type": "object"
+      },
+      "GraphEdge": {
+        "properties": {
+          "arrow": {
+            "title": "Arrow",
+            "type": "boolean"
+          },
+          "dasharray": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dasharray"
+          },
+          "dashed": {
+            "title": "Dashed",
+            "type": "boolean"
+          },
+          "from_node_id": {
+            "title": "From Node Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "stroke_w": {
+            "title": "Stroke W",
+            "type": "number"
+          },
+          "to_node_id": {
+            "title": "To Node Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "from_node_id",
+          "to_node_id",
+          "kind",
+          "path",
+          "dashed",
+          "dasharray",
+          "stroke_w",
+          "arrow"
+        ],
+        "title": "GraphEdge",
+        "type": "object"
+      },
+      "GraphLane": {
+        "properties": {
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "color"
+        ],
+        "title": "GraphLane",
+        "type": "object"
+      },
+      "GraphNode": {
+        "properties": {
+          "court_relay": {
+            "title": "Court Relay",
+            "type": "boolean"
+          },
+          "cross_proceeding": {
+            "title": "Cross Proceeding",
+            "type": "boolean"
+          },
+          "date_short": {
+            "title": "Date Short",
+            "type": "string"
+          },
+          "full_title": {
+            "title": "Full Title",
+            "type": "string"
+          },
+          "ghost": {
+            "title": "Ghost",
+            "type": "boolean"
+          },
+          "h": {
+            "title": "H",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_bundle": {
+            "title": "Is Bundle",
+            "type": "boolean"
+          },
+          "is_new_since_last_visit": {
+            "title": "Is New Since Last Visit",
+            "type": "boolean"
+          },
+          "lane": {
+            "title": "Lane",
+            "type": "string"
+          },
+          "originator_type": {
+            "title": "Originator Type",
+            "type": "string"
+          },
+          "proceeding_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proceeding Label"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "thread_open": {
+            "title": "Thread Open",
+            "type": "boolean"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "w": {
+            "title": "W",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "lane",
+          "row",
+          "x",
+          "y",
+          "w",
+          "h",
+          "title",
+          "full_title",
+          "role",
+          "date_short",
+          "tier",
+          "thread_open",
+          "ghost",
+          "cross_proceeding",
+          "proceeding_label",
+          "is_bundle",
+          "is_new_since_last_visit",
+          "reaction",
+          "court_relay",
+          "originator_type"
+        ],
+        "title": "GraphNode",
+        "type": "object"
+      },
+      "GraphView": {
+        "properties": {
+          "bundles": {
+            "items": {
+              "$ref": "#/components/schemas/GraphBundle"
+            },
+            "title": "Bundles",
+            "type": "array"
+          },
+          "edge_count": {
+            "title": "Edge Count",
+            "type": "integer"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "filter": {
+            "enum": [
+              "critical",
+              "significant+",
+              "all"
+            ],
+            "title": "Filter",
+            "type": "string"
+          },
+          "lanes": {
+            "items": {
+              "$ref": "#/components/schemas/GraphLane"
+            },
+            "title": "Lanes",
+            "type": "array"
+          },
+          "node_count": {
+            "title": "Node Count",
+            "type": "integer"
+          },
+          "node_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Node Counts",
+            "type": "object"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "proceeding_id": {
+            "title": "Proceeding Id",
+            "type": "integer"
+          },
+          "proof_badges": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Proof Badges",
+            "type": "object"
+          },
+          "svg_height": {
+            "title": "Svg Height",
+            "type": "integer"
+          },
+          "svg_width": {
+            "title": "Svg Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proceeding_id",
+          "filter",
+          "lanes",
+          "nodes",
+          "bundles",
+          "edges",
+          "proof_badges",
+          "svg_width",
+          "svg_height",
+          "node_counts",
+          "node_count",
+          "edge_count"
+        ],
+        "title": "GraphView",
         "type": "object"
       },
       "GroundView": {
@@ -3143,6 +4841,149 @@
         "title": "IngestBatchStatus",
         "type": "string"
       },
+      "InstanceExposure": {
+        "properties": {
+          "allocation_source": {
+            "title": "Allocation Source",
+            "type": "string"
+          },
+          "az_court": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
+          "court_fee": {
+            "title": "Court Fee",
+            "type": "number"
+          },
+          "court_fee_charged": {
+            "title": "Court Fee Charged",
+            "type": "number"
+          },
+          "court_fee_share": {
+            "title": "Court Fee Share",
+            "type": "number"
+          },
+          "court_fee_source": {
+            "title": "Court Fee Source",
+            "type": "string"
+          },
+          "court_level": {
+            "$ref": "#/components/schemas/ProceedingCourtLevel"
+          },
+          "court_name": {
+            "title": "Court Name",
+            "type": "string"
+          },
+          "court_theoretical": {
+            "title": "Court Theoretical",
+            "type": "number"
+          },
+          "invoices_court": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Invoices Court",
+            "type": "array"
+          },
+          "invoices_opposing": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Invoices Opposing",
+            "type": "array"
+          },
+          "invoices_other": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Invoices Other",
+            "type": "array"
+          },
+          "invoices_own": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Invoices Own",
+            "type": "array"
+          },
+          "opposing_gross": {
+            "title": "Opposing Gross",
+            "type": "number"
+          },
+          "opposing_source": {
+            "title": "Opposing Source",
+            "type": "string"
+          },
+          "opposing_theoretical": {
+            "title": "Opposing Theoretical",
+            "type": "number"
+          },
+          "own_lawyer_gross": {
+            "title": "Own Lawyer Gross",
+            "type": "number"
+          },
+          "own_lawyer_source": {
+            "title": "Own Lawyer Source",
+            "type": "string"
+          },
+          "own_theoretical": {
+            "title": "Own Theoretical",
+            "type": "number"
+          },
+          "proceeding_id": {
+            "title": "Proceeding Id",
+            "type": "integer"
+          },
+          "streitwert": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streitwert"
+          },
+          "subtotal": {
+            "title": "Subtotal",
+            "type": "number"
+          }
+        },
+        "required": [
+          "proceeding_id",
+          "court_name",
+          "court_level",
+          "az_court",
+          "streitwert",
+          "allocation_source",
+          "own_lawyer_gross",
+          "own_lawyer_source",
+          "court_fee",
+          "court_fee_share",
+          "court_fee_charged",
+          "court_fee_source",
+          "opposing_gross",
+          "opposing_source",
+          "subtotal",
+          "own_theoretical",
+          "court_theoretical",
+          "opposing_theoretical",
+          "invoices_own",
+          "invoices_court",
+          "invoices_opposing",
+          "invoices_other"
+        ],
+        "title": "InstanceExposure",
+        "type": "object"
+      },
       "Jurisdiction": {
         "description": "Case jurisdiction for cost system.",
         "enum": [
@@ -3283,6 +5124,56 @@
           "message"
         ],
         "title": "MaintenanceResult",
+        "type": "object"
+      },
+      "MergeProposalView": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "string"
+          },
+          "existing_claim_id": {
+            "title": "Existing Claim Id",
+            "type": "integer"
+          },
+          "existing_claim_text": {
+            "title": "Existing Claim Text",
+            "type": "string"
+          },
+          "new_claim_id": {
+            "title": "New Claim Id",
+            "type": "integer"
+          },
+          "new_claim_text": {
+            "title": "New Claim Text",
+            "type": "string"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "integer"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "confidence",
+          "rationale",
+          "new_claim_id",
+          "new_claim_text",
+          "existing_claim_id",
+          "existing_claim_text"
+        ],
+        "title": "MergeProposalView",
         "type": "object"
       },
       "MessageSend": {
@@ -3485,6 +5376,44 @@
         "title": "ModelsView",
         "type": "object"
       },
+      "MonthBucket": {
+        "properties": {
+          "critical": {
+            "title": "Critical",
+            "type": "integer"
+          },
+          "future": {
+            "title": "Future",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "max_total": {
+            "title": "Max Total",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "total",
+          "critical",
+          "future",
+          "max_total"
+        ],
+        "title": "MonthBucket",
+        "type": "object"
+      },
       "NextAction": {
         "properties": {
           "action_type": {
@@ -3515,6 +5444,22 @@
         "title": "NextAction",
         "type": "object"
       },
+      "OpposingPartiesUpdate": {
+        "properties": {
+          "opposing_parties": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Opposing Parties",
+            "type": "array"
+          }
+        },
+        "required": [
+          "opposing_parties"
+        ],
+        "title": "OpposingPartiesUpdate",
+        "type": "object"
+      },
       "OriginatorType": {
         "description": "Maps to the border-l-4 originator stripes from GEMINI.md \u00a74.",
         "enum": [
@@ -3526,6 +5471,29 @@
         ],
         "title": "OriginatorType",
         "type": "string"
+      },
+      "PartyView": {
+        "properties": {
+          "document_count": {
+            "default": 0,
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "role"
+        ],
+        "title": "PartyView",
+        "type": "object"
       },
       "PasswordChange": {
         "properties": {
@@ -3840,6 +5808,141 @@
         "title": "ProceedingRef",
         "type": "object"
       },
+      "ProceedingStatus": {
+        "enum": [
+          "active",
+          "closed"
+        ],
+        "title": "ProceedingStatus",
+        "type": "string"
+      },
+      "ProceedingUpdate": {
+        "properties": {
+          "az_court": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
+          "court_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProceedingCourtLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "court_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Court Name"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProceedingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_matter": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Matter"
+          }
+        },
+        "title": "ProceedingUpdate",
+        "type": "object"
+      },
+      "ProceedingView": {
+        "properties": {
+          "az_court": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Az Court"
+          },
+          "court_level": {
+            "$ref": "#/components/schemas/ProceedingCourtLevel"
+          },
+          "court_name": {
+            "title": "Court Name",
+            "type": "string"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_deletable": {
+            "title": "Is Deletable",
+            "type": "boolean"
+          },
+          "is_draft": {
+            "title": "Is Draft",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProceedingStatus"
+          },
+          "subject_matter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Matter"
+          }
+        },
+        "required": [
+          "id",
+          "court_name",
+          "court_level",
+          "az_court",
+          "subject_matter",
+          "status",
+          "is_draft",
+          "doc_count",
+          "is_deletable"
+        ],
+        "title": "ProceedingView",
+        "type": "object"
+      },
       "ProfileUpdate": {
         "properties": {
           "display_name": {
@@ -3849,6 +5952,41 @@
           }
         },
         "title": "ProfileUpdate",
+        "type": "object"
+      },
+      "ProposalBatch": {
+        "properties": {
+          "action": {
+            "enum": [
+              "confirm",
+              "dismiss"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ProposalBatch",
+        "type": "object"
+      },
+      "ProposalBatchResult": {
+        "properties": {
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "integer"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confirmed",
+          "dismissed"
+        ],
+        "title": "ProposalBatchResult",
         "type": "object"
       },
       "ProposedCut": {
@@ -4176,6 +6314,19 @@
           "bundle_next_id"
         ],
         "title": "ReaderNav",
+        "type": "object"
+      },
+      "ReenrichResult": {
+        "properties": {
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued"
+        ],
+        "title": "ReenrichResult",
         "type": "object"
       },
       "ReindexJob": {
@@ -4516,6 +6667,100 @@
           "next"
         ],
         "title": "SessionStarted",
+        "type": "object"
+      },
+      "ShareCreate": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/CaseAccessLevel"
+          }
+        },
+        "required": [
+          "email",
+          "permission"
+        ],
+        "title": "ShareCreate",
+        "type": "object"
+      },
+      "ShareView": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "granted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted At"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/CaseAccessLevel"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "permission",
+          "granted_at"
+        ],
+        "title": "ShareView",
+        "type": "object"
+      },
+      "SharingView": {
+        "properties": {
+          "owner_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Email"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/ShareView"
+            },
+            "title": "Shares",
+            "type": "array"
+          }
+        },
+        "required": [
+          "owner_email",
+          "shares"
+        ],
+        "title": "SharingView",
         "type": "object"
       },
       "ShellView": {
@@ -4971,6 +7216,167 @@
           "theme"
         ],
         "title": "ThemeUpdate",
+        "type": "object"
+      },
+      "TimelineEventView": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "amount_eur": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Eur"
+          },
+          "claim_count": {
+            "title": "Claim Count",
+            "type": "integer"
+          },
+          "date": {
+            "format": "date-time",
+            "title": "Date",
+            "type": "string"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_future": {
+            "title": "Is Future",
+            "type": "boolean"
+          },
+          "is_overdue": {
+            "title": "Is Overdue",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "quiet_gap_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiet Gap Days"
+          },
+          "rel_count": {
+            "title": "Rel Count",
+            "type": "integer"
+          },
+          "sig": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sig"
+          },
+          "source_document_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Document Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "actor",
+          "kind",
+          "title",
+          "sig",
+          "source_document_id",
+          "note",
+          "amount_eur",
+          "direction",
+          "is_overdue",
+          "is_future",
+          "claim_count",
+          "rel_count",
+          "quiet_gap_days"
+        ],
+        "title": "TimelineEventView",
+        "type": "object"
+      },
+      "TimelineView": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "month_buckets": {
+            "items": {
+              "$ref": "#/components/schemas/MonthBucket"
+            },
+            "title": "Month Buckets",
+            "type": "array"
+          },
+          "today": {
+            "format": "date-time",
+            "title": "Today",
+            "type": "string"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "today",
+          "total_count",
+          "events",
+          "month_buckets"
+        ],
+        "title": "TimelineView",
         "type": "object"
       },
       "TimezoneUpdate": {
@@ -5699,6 +8105,70 @@
           "slicing_queue"
         ],
         "title": "TriageView",
+        "type": "object"
+      },
+      "TruthMapView": {
+        "properties": {
+          "dedup_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DedupJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filter": {
+            "enum": [
+              "open",
+              "established",
+              "refuted",
+              "all"
+            ],
+            "title": "Filter",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimGroupView"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "open_claim_count": {
+            "title": "Open Claim Count",
+            "type": "integer"
+          },
+          "pending_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceProposalView"
+            },
+            "title": "Pending Evidence",
+            "type": "array"
+          },
+          "pending_merges": {
+            "items": {
+              "$ref": "#/components/schemas/MergeProposalView"
+            },
+            "title": "Pending Merges",
+            "type": "array"
+          },
+          "pipeline_active_doc_count": {
+            "title": "Pipeline Active Doc Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filter",
+          "groups",
+          "open_claim_count",
+          "pending_merges",
+          "pending_evidence",
+          "pipeline_active_doc_count",
+          "dedup_job"
+        ],
+        "title": "TruthMapView",
         "type": "object"
       },
       "UploadResponse": {
@@ -6488,6 +8958,340 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}": {
+      "get": {
+        "description": "Everything the dashboard shell needs; marks the case as viewed.",
+        "operationId": "v1_case_detail_api_v1_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "proceeding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Proceeding"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Detail",
+        "tags": [
+          "cases"
+        ]
+      },
+      "patch": {
+        "operationId": "v1_update_case_api_v1_cases__case_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/active-proceeding": {
+      "put": {
+        "operationId": "v1_set_active_proceeding_api_v1_cases__case_id__active_proceeding_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveProceedingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Active Proceeding",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/brief": {
+      "get": {
+        "operationId": "v1_get_brief_api_v1_cases__case_id__brief_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Get Brief",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/brief/refresh": {
+      "post": {
+        "operationId": "v1_refresh_brief_api_v1_cases__case_id__brief_refresh_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Refresh Brief",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/claims/find-duplicates": {
+      "post": {
+        "description": "Start the dedup judge as a background task; poll the truth map for progress.",
+        "operationId": "v1_find_duplicates_api_v1_cases__case_id__claims_find_duplicates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DedupJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Find Duplicates",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/claims/proposals/merge": {
+      "post": {
+        "description": "Confirm or dismiss every pending merge proposal the caller may act on.",
+        "operationId": "v1_batch_merge_api_v1_cases__case_id__claims_proposals_merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposalBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalBatchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Batch Merge",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/confirm-close": {
       "post": {
         "description": "Accept an AI close suggestion: close the case and all its proceedings.",
@@ -6603,6 +9407,259 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}/financials": {
+      "get": {
+        "operationId": "v1_case_financials_api_v1_cases__case_id__financials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancialsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Financials",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/graph": {
+      "get": {
+        "operationId": "v1_case_graph_api_v1_cases__case_id__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "proceeding",
+            "required": true,
+            "schema": {
+              "title": "Proceeding",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "default": "significant+",
+              "enum": [
+                "critical",
+                "significant+",
+                "all"
+              ],
+              "title": "Filter",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Graph",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/opposing-parties": {
+      "put": {
+        "operationId": "v1_save_opposing_parties_api_v1_cases__case_id__opposing_parties_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpposingPartiesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PartyView"
+                  },
+                  "title": "Response V1 Save Opposing Parties Api V1 Cases  Case Id  Opposing Parties Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Opposing Parties",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/purge": {
+      "post": {
+        "description": "Hard-delete a case and erase its on-disk data directory.",
+        "operationId": "v1_purge_case_api_v1_cases__case_id__purge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CasePurge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Purge Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/reenrich": {
+      "post": {
+        "description": "Queue every document of the case for re-enrichment with the current party identity.",
+        "operationId": "v1_reenrich_case_api_v1_cases__case_id__reenrich_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReenrichResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reenrich Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/reject-draft": {
       "post": {
         "description": "Delete an AI-created draft case; its documents return to triage.",
@@ -6636,6 +9693,249 @@
         "summary": "V1 Reject Draft",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/shares": {
+      "get": {
+        "operationId": "v1_list_shares_api_v1_cases__case_id__shares_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 List Shares",
+        "tags": [
+          "cases"
+        ]
+      },
+      "post": {
+        "operationId": "v1_add_share_api_v1_cases__case_id__shares_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Add Share",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/shares/{user_id}": {
+      "delete": {
+        "operationId": "v1_remove_share_api_v1_cases__case_id__shares__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Remove Share",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/timeline": {
+      "get": {
+        "operationId": "v1_case_timeline_api_v1_cases__case_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Case Timeline",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/truthmap": {
+      "get": {
+        "operationId": "v1_truth_map_api_v1_cases__case_id__truthmap_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "established",
+                "refuted",
+                "all"
+              ],
+              "title": "Filter",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TruthMapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Truth Map",
+        "tags": [
+          "claims"
         ]
       }
     },
@@ -6908,6 +10208,577 @@
         "summary": "V1 Rename Conversation",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/claims/proposals/evidence/{proposal_id}/confirm": {
+      "post": {
+        "operationId": "v1_confirm_evidence_api_v1_claims_proposals_evidence__proposal_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Confirm Evidence",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/proposals/evidence/{proposal_id}/dismiss": {
+      "post": {
+        "operationId": "v1_dismiss_evidence_api_v1_claims_proposals_evidence__proposal_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss Evidence",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/proposals/merge/{proposal_id}/confirm": {
+      "post": {
+        "operationId": "v1_confirm_merge_api_v1_claims_proposals_merge__proposal_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Confirm Merge",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/proposals/merge/{proposal_id}/dismiss": {
+      "post": {
+        "operationId": "v1_dismiss_merge_api_v1_claims_proposals_merge__proposal_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss Merge",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/{claim_id}": {
+      "delete": {
+        "operationId": "v1_dismiss_claim_api_v1_claims__claim_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claim_id",
+            "required": true,
+            "schema": {
+              "title": "Claim Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss Claim",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/{claim_id}/precedent": {
+      "post": {
+        "operationId": "v1_toggle_precedent_api_v1_claims__claim_id__precedent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claim_id",
+            "required": true,
+            "schema": {
+              "title": "Claim Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Toggle Precedent",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/claims/{claim_id}/status": {
+      "put": {
+        "operationId": "v1_set_claim_status_api_v1_claims__claim_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "claim_id",
+            "required": true,
+            "schema": {
+              "title": "Claim Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Claim Status",
+        "tags": [
+          "claims"
+        ]
+      }
+    },
+    "/api/v1/cost-signals/{signal_id}/auto-detect-role": {
+      "post": {
+        "description": "Ask the local model which side the ruling favours; leaves the allocation alone on 'unknown'.",
+        "operationId": "v1_auto_detect_role_api_v1_cost_signals__signal_id__auto_detect_role_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "signal_id",
+            "required": true,
+            "schema": {
+              "title": "Signal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Auto Detect Role",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/cost-signals/{signal_id}/client-role": {
+      "put": {
+        "description": "Who won the cost ruling, from the client's side; overrides any auto-detect.",
+        "operationId": "v1_set_client_role_api_v1_cost_signals__signal_id__client_role_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "signal_id",
+            "required": true,
+            "schema": {
+              "title": "Signal Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientRoleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Client Role",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs/{cost_id}": {
+      "patch": {
+        "operationId": "v1_update_cost_api_v1_costs__cost_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cost_id",
+            "required": true,
+            "schema": {
+              "title": "Cost Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostFieldUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Cost",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs/{cost_id}/pay": {
+      "post": {
+        "operationId": "v1_mark_paid_api_v1_costs__cost_id__pay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cost_id",
+            "required": true,
+            "schema": {
+              "title": "Cost Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Mark Paid",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs/{cost_id}/reimburse": {
+      "post": {
+        "operationId": "v1_mark_reimbursed_api_v1_costs__cost_id__reimburse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cost_id",
+            "required": true,
+            "schema": {
+              "title": "Cost Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Mark Reimbursed",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs/{cost_id}/unpay": {
+      "post": {
+        "operationId": "v1_mark_unpaid_api_v1_costs__cost_id__unpay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cost_id",
+            "required": true,
+            "schema": {
+              "title": "Cost Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Mark Unpaid",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs/{cost_id}/unreimburse": {
+      "post": {
+        "operationId": "v1_mark_unreimbursed_api_v1_costs__cost_id__unreimburse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cost_id",
+            "required": true,
+            "schema": {
+              "title": "Cost Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Mark Unreimbursed",
+        "tags": [
+          "costs"
         ]
       }
     },
@@ -7610,6 +11481,92 @@
         "summary": "V1 Update Pin",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/proceedings/{proceeding_id}": {
+      "delete": {
+        "description": "Delete an empty proceeding; the last proceeding of a case is refused.",
+        "operationId": "v1_delete_proceeding_api_v1_proceedings__proceeding_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proceeding_id",
+            "required": true,
+            "schema": {
+              "title": "Proceeding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Delete Proceeding",
+        "tags": [
+          "cases"
+        ]
+      },
+      "patch": {
+        "operationId": "v1_update_proceeding_api_v1_proceedings__proceeding_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proceeding_id",
+            "required": true,
+            "schema": {
+              "title": "Proceeding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProceedingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProceedingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Proceeding",
+        "tags": [
+          "cases"
         ]
       }
     },

@@ -105,11 +105,6 @@ class FinancialsSummary(BaseModel):
     reimbursable: float
 
 
-class DormancyAlert(BaseModel):
-    days_idle: int
-    last_activity: datetime | None
-
-
 class CaseDetail(BaseModel):
     id: str
     title: str
@@ -134,7 +129,7 @@ class CaseDetail(BaseModel):
     brief: BriefView
     financials: FinancialsSummary
     open_claim_count: int
-    dormancy: DormancyAlert | None
+    dormancy_alert: str | None
 
 
 class CaseUpdate(BaseModel):
@@ -350,7 +345,7 @@ class EvidenceProposalView(BaseModel):
     target_claim_text: str
     target_claim_status: ClaimStatus
     source_document_id: int
-    source_document_title: str
+    source_document_title: str | None
 
 
 class DedupJob(BaseModel):

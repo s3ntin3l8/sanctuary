@@ -10,8 +10,11 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin_users,
     auth,
+    case_detail,
     cases,
     chat,
+    claims,
+    costs,
     documents,
     home,
     search,
@@ -51,6 +54,9 @@ for _module in (
     upload,
     slicing,
     chat,
+    case_detail,
+    claims,
+    costs,
 ):
     # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
     # v1 route name so a v1 handler can never shadow the legacy route it replaces.
