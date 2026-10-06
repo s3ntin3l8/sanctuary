@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import (
     ActionItemType,
@@ -51,10 +51,16 @@ class CasesDirectory(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    case_id: str = Field(min_length=1, max_length=64)
+    # The id becomes a URL segment everywhere (/cases/{id}), so keep it URL-safe.
+    case_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     title: str = Field(min_length=1, max_length=255)
     court_name: str = Field(min_length=1, max_length=255)
     jurisdiction: Jurisdiction = Jurisdiction.DE
+
+    @field_validator("case_id", "title", "court_name", mode="before")
+    @classmethod
+    def _strip(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class CaseCreated(BaseModel):

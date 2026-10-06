@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef } from 'react'
 
 import { Icon } from './Icon'
 
@@ -25,6 +25,7 @@ export function Modal({
   footer,
 }: Props) {
   const panel = useRef<HTMLDivElement>(null)
+  const titleId = useId()
 
   useEffect(() => {
     if (!open) return
@@ -48,14 +49,14 @@ export function Modal({
         ref={panel}
         role="dialog"
         aria-modal
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         className="w-full rounded-2xl border border-line bg-card shadow-[0_24px_60px_rgba(0,0,0,.6)]"
         style={{ maxWidth: width }}
       >
         <header className="flex items-center gap-3 border-b border-line2 px-5 py-4">
           {icon && <Icon name={icon} size={20} className="text-accent" />}
           <div className="min-w-0 flex-1">
-            <h2 id="modal-title" className="font-display text-[15px] font-bold">
+            <h2 id={titleId} className="font-display text-[15px] font-bold">
               {title}
             </h2>
             {subtitle && <p className="font-mono text-[11px] text-muted">{subtitle}</p>}

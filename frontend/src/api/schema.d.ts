@@ -11,8 +11,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auth Config */
-        get: operations["auth_config_api_v1_auth_config_get"];
+        /** V1 Auth Config */
+        get: operations["v1_auth_config_api_v1_auth_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -30,8 +30,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
-        post: operations["login_api_v1_auth_login_post"];
+        /** V1 Login */
+        post: operations["v1_login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -47,8 +47,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
-        post: operations["logout_api_v1_auth_logout_post"];
+        /** V1 Logout */
+        post: operations["v1_logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -64,8 +64,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Signup */
-        post: operations["signup_api_v1_auth_signup_post"];
+        /** V1 Signup */
+        post: operations["v1_signup_api_v1_auth_signup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -79,14 +79,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Cases Directory */
-        get: operations["cases_directory_api_v1_cases_get"];
+        /** V1 Cases Directory */
+        get: operations["v1_cases_directory_api_v1_cases_get"];
         put?: never;
         /**
-         * Create Case
+         * V1 Create Case
          * @description Create a case and its initial active proceeding.
          */
-        post: operations["create_case_api_v1_cases_post"];
+        post: operations["v1_create_case_api_v1_cases_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -103,10 +103,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Confirm Close
+         * V1 Confirm Close
          * @description Accept an AI close suggestion: close the case and all its proceedings.
          */
-        post: operations["confirm_close_api_v1_cases__case_id__confirm_close_post"];
+        post: operations["v1_confirm_close_api_v1_cases__case_id__confirm_close_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -123,10 +123,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Dismiss Close
+         * V1 Dismiss Close
          * @description Reject an AI close suggestion: clear the flag, keep the status.
          */
-        post: operations["dismiss_close_api_v1_cases__case_id__dismiss_close_post"];
+        post: operations["v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -140,8 +140,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Home */
-        get: operations["home_api_v1_home_get"];
+        /** V1 Home */
+        get: operations["v1_home_api_v1_home_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -160,10 +160,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Review All
+         * V1 Review All
          * @description Mark everything new as reviewed: advances last_home_visit to now.
          */
-        post: operations["review_all_api_v1_home_review_all_post"];
+        post: operations["v1_review_all_api_v1_home_review_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -177,8 +177,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Search */
-        get: operations["search_api_v1_search_get"];
+        /** V1 Search */
+        get: operations["v1_search_api_v1_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -194,8 +194,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Shell */
-        get: operations["shell_api_v1_shell_get"];
+        /** V1 Shell */
+        get: operations["v1_shell_api_v1_shell_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -211,8 +211,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Worker Queue */
-        get: operations["worker_queue_api_v1_worker_queue_get"];
+        /** V1 Worker Queue */
+        get: operations["v1_worker_queue_api_v1_worker_queue_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -230,8 +230,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry Failed */
-        post: operations["retry_failed_api_v1_worker_queue_retry_failed_post"];
+        /** V1 Retry Failed */
+        post: operations["v1_retry_failed_api_v1_worker_queue_retry_failed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -637,7 +637,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    auth_config_api_v1_auth_config_get: {
+    v1_auth_config_api_v1_auth_config_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -666,7 +666,7 @@ export interface operations {
             };
         };
     };
-    login_api_v1_auth_login_post: {
+    v1_login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -699,7 +699,7 @@ export interface operations {
             };
         };
     };
-    logout_api_v1_auth_logout_post: {
+    v1_logout_api_v1_auth_logout_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -726,7 +726,7 @@ export interface operations {
             };
         };
     };
-    signup_api_v1_auth_signup_post: {
+    v1_signup_api_v1_auth_signup_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -759,7 +759,7 @@ export interface operations {
             };
         };
     };
-    cases_directory_api_v1_cases_get: {
+    v1_cases_directory_api_v1_cases_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -788,7 +788,7 @@ export interface operations {
             };
         };
     };
-    create_case_api_v1_cases_post: {
+    v1_create_case_api_v1_cases_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -821,7 +821,7 @@ export interface operations {
             };
         };
     };
-    confirm_close_api_v1_cases__case_id__confirm_close_post: {
+    v1_confirm_close_api_v1_cases__case_id__confirm_close_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -850,7 +850,7 @@ export interface operations {
             };
         };
     };
-    dismiss_close_api_v1_cases__case_id__dismiss_close_post: {
+    v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -879,7 +879,7 @@ export interface operations {
             };
         };
     };
-    home_api_v1_home_get: {
+    v1_home_api_v1_home_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -908,7 +908,7 @@ export interface operations {
             };
         };
     };
-    review_all_api_v1_home_review_all_post: {
+    v1_review_all_api_v1_home_review_all_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -935,7 +935,7 @@ export interface operations {
             };
         };
     };
-    search_api_v1_search_get: {
+    v1_search_api_v1_search_get: {
         parameters: {
             query: {
                 q: string;
@@ -966,7 +966,7 @@ export interface operations {
             };
         };
     };
-    shell_api_v1_shell_get: {
+    v1_shell_api_v1_shell_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -995,7 +995,7 @@ export interface operations {
             };
         };
     };
-    worker_queue_api_v1_worker_queue_get: {
+    v1_worker_queue_api_v1_worker_queue_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1024,7 +1024,7 @@ export interface operations {
             };
         };
     };
-    retry_failed_api_v1_worker_queue_retry_failed_post: {
+    v1_retry_failed_api_v1_worker_queue_retry_failed_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -1,4 +1,4 @@
-import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 
@@ -23,17 +23,18 @@ const router = createBrowserRouter([
   },
 ])
 
+/** The session expired or was revoked: back to sign-in, then return here. */
+function redirectOnUnauthorized(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    const here = window.location.pathname + window.location.search
+    leaveTo(`/login?next=${encodeURIComponent(here)}`)
+  }
+}
+
 function makeQueryClient() {
   return new QueryClient({
-    queryCache: new QueryCache({
-      onError: (error) => {
-        // The session expired or was revoked: back to sign-in, then return here.
-        if (error instanceof ApiError && error.status === 401) {
-          const here = window.location.pathname + window.location.search
-          leaveTo(`/login?next=${encodeURIComponent(here)}`)
-        }
-      },
-    }),
+    queryCache: new QueryCache({ onError: redirectOnUnauthorized }),
+    mutationCache: new MutationCache({ onError: redirectOnUnauthorized }),
   })
 }
 

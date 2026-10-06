@@ -20,14 +20,12 @@ from app.models.enums import (
     CaseStatus,
     CaseType,
     Jurisdiction,
-    ProceedingCourtLevel,
     ProceedingStatus,
 )
 from app.repositories.case import CaseRepository
 from app.services.case_dashboard_service import CaseDashboardService
-from app.services.case_service import CaseService
+from app.services.case_service import CaseIdTaken, CaseService
 from app.services.hud_context import build_hud_context
-from app.services.ingestion.extractors import infer_court_level
 from app.services.user_settings_service import (
     get_active_proceeding,
     mark_viewed,
@@ -456,29 +454,19 @@ async def create_case(
     user: User = Depends(get_current_user),
 ):
     """Create a new case and its initial active proceeding."""
-    # 1. Create the Case
-    new_case = Case(
-        id=case_id,
-        title=title,
-        status=CaseStatus.INTAKE,
-        jurisdiction=jurisdiction,
-        owner_id=user.id,
-    )
-    db.add(new_case)
-
-    # 2. Create initial Proceeding — infer level from court name; fall back to OTHER
-    new_proceeding = Proceeding(
-        case_id=case_id,
-        court_name=court_name,
-        court_level=infer_court_level(court_name) or ProceedingCourtLevel.OTHER,
-        status=ProceedingStatus.ACTIVE,
-    )
-    db.add(new_proceeding)
-
-    db.commit()
+    try:
+        CaseService(db).create_case_with_proceeding(
+            case_id=case_id.strip(),
+            title=title.strip(),
+            court_name=court_name.strip(),
+            jurisdiction=jurisdiction,
+            owner_id=user.id,
+        )
+    except CaseIdTaken as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # Redirect to the new case dashboard
-    return RedirectResponse(url=f"/cases/{case_id}", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id.strip()}", status_code=303)
 
 
 @router.post("/{case_id}/opposing-parties")

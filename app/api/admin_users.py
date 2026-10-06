@@ -93,7 +93,7 @@ async def toggle_active(
 
 
 @router.post("/users/{user_id}/role")
-async def set_role(
+async def set_user_role(
     user_id: int,
     role: str = Form(...),
     db: Session = Depends(get_db),

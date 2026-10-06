@@ -13,9 +13,9 @@ from app.api.v1.errors import ERROR_RESPONSES
 API_V1_PREFIX = "/api/v1"
 
 router = APIRouter(prefix=API_V1_PREFIX, responses=ERROR_RESPONSES)
-router.include_router(auth.router)
-router.include_router(shell.router)
-router.include_router(home.router)
-router.include_router(cases.router)
-router.include_router(search.router)
-router.include_router(worker_queue.router)
+for _module in (auth, shell, home, cases, search, worker_queue):
+    # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
+    # v1 route name so a v1 handler can never shadow the legacy route it replaces.
+    for _route in _module.router.routes:
+        _route.name = f"v1_{_route.name}"
+    router.include_router(_module.router)

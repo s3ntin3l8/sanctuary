@@ -13,7 +13,7 @@ from app.api.v1.errors import ApiError
 from app.constants import CASE_STATUS_META
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, Proceeding, User
-from app.models.enums import CaseStatus, ProceedingCourtLevel, ProceedingStatus
+from app.models.enums import CaseStatus, ProceedingStatus
 from app.schemas.cases import (
     CaseCard,
     CaseCreate,
@@ -21,16 +21,28 @@ from app.schemas.cases import (
     CasesDirectory,
     NextAction,
 )
-from app.services.case_service import CaseService
+from app.services.case_service import CaseIdTaken, CaseService
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
 
-def case_cards(service: CaseService, enriched: list[dict[str, Any]]) -> list[CaseCard]:
-    """Turn ``CaseService.enrich_case_for_card`` dicts into API cards."""
+def case_cards(
+    service: CaseService,
+    enriched: list[dict[str, Any]],
+    *,
+    doc_counts: dict[str, int] | None = None,
+    action_counts: dict[str, int] | None = None,
+) -> list[CaseCard]:
+    """Turn ``CaseService.enrich_case_for_card`` dicts into API cards.
+
+    Pass the count dicts when the caller already has them (the directory
+    service computes both) to avoid repeating the two bulk queries.
+    """
     ids = [c["id"] for c in enriched]
-    doc_counts = service.doc_repo.bulk_count_by_case(ids)
-    action_counts = service.action_repo.bulk_count_open_by_case(ids)
+    if doc_counts is None:
+        doc_counts = service.doc_repo.bulk_count_by_case(ids)
+    if action_counts is None:
+        action_counts = service.action_repo.bulk_count_open_by_case(ids)
     cards = []
     for c in enriched:
         action = c["next_action"]
@@ -76,7 +88,12 @@ def cases_directory(
     service = CaseService(db)
     data = service.get_all_cases_directory(user.id)
     return CasesDirectory(
-        cases=case_cards(service, data["cases"]),
+        cases=case_cards(
+            service,
+            data["cases"],
+            doc_counts=data["doc_counts"],
+            action_counts=data["deadline_counts"],
+        ),
         counts_by_status=data["stats_by_status"],
         total=data["total"],
     )
@@ -89,33 +106,17 @@ def create_case(
     user: User = Depends(get_current_user),
 ):
     """Create a case and its initial active proceeding."""
-    from app.services.ingestion.extractors import infer_court_level
-
-    case_id = body.case_id.strip()
-    if db.get(Case, case_id) is not None:
-        raise ApiError(
-            409, "case_id_taken", f"A case with id {case_id} already exists."
-        )
-    db.add(
-        Case(
-            id=case_id,
+    try:
+        case = CaseService(db).create_case_with_proceeding(
+            case_id=body.case_id.strip(),
             title=body.title.strip(),
-            status=CaseStatus.INTAKE,
+            court_name=body.court_name.strip(),
             jurisdiction=body.jurisdiction,
             owner_id=user.id,
         )
-    )
-    court_name = body.court_name.strip()
-    db.add(
-        Proceeding(
-            case_id=case_id,
-            court_name=court_name,
-            court_level=infer_court_level(court_name) or ProceedingCourtLevel.OTHER,
-            status=ProceedingStatus.ACTIVE,
-        )
-    )
-    db.commit()
-    return CaseCreated(id=case_id)
+    except CaseIdTaken as exc:
+        raise ApiError(409, "case_id_taken", str(exc)) from exc
+    return CaseCreated(id=case.id)
 
 
 @router.post("/{case_id}/confirm-close", status_code=204, response_class=Response)
