@@ -17,8 +17,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** V1 Set Action Status */
-        patch: operations["v1_set_action_status_api_v1_action_items__item_id__patch"];
+        /** V1 Set Action Item Status */
+        patch: operations["v1_set_action_item_status_api_v1_action_items__item_id__patch"];
         trace?: never;
     };
     "/api/v1/admin/signup": {
@@ -233,6 +233,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Case Detail
+         * @description Everything the dashboard shell needs; marks the case as viewed.
+         */
+        get: operations["v1_case_detail_api_v1_cases__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** V1 Update Case */
+        patch: operations["v1_update_case_api_v1_cases__case_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Get Brief */
+        get: operations["v1_get_brief_api_v1_cases__case_id__brief_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/brief/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Refresh Brief */
+        post: operations["v1_refresh_brief_api_v1_cases__case_id__brief_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/claims/find-duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Find Duplicates
+         * @description Start the dedup judge as a background task; poll the truth map for progress.
+         */
+        post: operations["v1_find_duplicates_api_v1_cases__case_id__claims_find_duplicates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/claims/proposals/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Merge
+         * @description Confirm or dismiss every pending merge proposal the caller may act on.
+         */
+        post: operations["v1_batch_merge_api_v1_cases__case_id__claims_proposals_merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/confirm-close": {
         parameters: {
             query?: never;
@@ -293,6 +388,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/financials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Case Financials */
+        get: operations["v1_case_financials_api_v1_cases__case_id__financials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Case Graph */
+        get: operations["v1_case_graph_api_v1_cases__case_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/opposing-parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Save Opposing Parties */
+        put: operations["v1_save_opposing_parties_api_v1_cases__case_id__opposing_parties_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Purge Case
+         * @description Hard-delete a case and erase its on-disk data directory.
+         */
+        post: operations["v1_purge_case_api_v1_cases__case_id__purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/reenrich": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Reenrich Case
+         * @description Queue every document of the case for re-enrichment with the current party identity.
+         */
+        post: operations["v1_reenrich_case_api_v1_cases__case_id__reenrich_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/reject-draft": {
         parameters: {
             query?: never;
@@ -307,6 +493,95 @@ export interface paths {
          * @description Delete an AI-created draft case; its documents return to triage.
          */
         post: operations["v1_reject_draft_api_v1_cases__case_id__reject_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 List Shares */
+        get: operations["v1_list_shares_api_v1_cases__case_id__shares_get"];
+        put?: never;
+        /** V1 Add Share */
+        post: operations["v1_add_share_api_v1_cases__case_id__shares_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/shares/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Remove Share */
+        delete: operations["v1_remove_share_api_v1_cases__case_id__shares__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Case Timeline */
+        get: operations["v1_case_timeline_api_v1_cases__case_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/truthmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Truth Map */
+        get: operations["v1_truth_map_api_v1_cases__case_id__truthmap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/viewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Mark Case Viewed
+         * @description Record the visit once the dashboard has rendered its "new since" markers.
+         */
+        post: operations["v1_mark_case_viewed_api_v1_cases__case_id__viewed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -386,6 +661,250 @@ export interface paths {
         /** V1 Rename Conversation */
         put: operations["v1_rename_conversation_api_v1_chat_conversations__conversation_id__title_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/proposals/evidence/{proposal_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Confirm Evidence */
+        post: operations["v1_confirm_evidence_api_v1_claims_proposals_evidence__proposal_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/proposals/evidence/{proposal_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Dismiss Evidence */
+        post: operations["v1_dismiss_evidence_api_v1_claims_proposals_evidence__proposal_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/proposals/merge/{proposal_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Confirm Merge */
+        post: operations["v1_confirm_merge_api_v1_claims_proposals_merge__proposal_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/proposals/merge/{proposal_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Dismiss Merge */
+        post: operations["v1_dismiss_merge_api_v1_claims_proposals_merge__proposal_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Dismiss Claim */
+        delete: operations["v1_dismiss_claim_api_v1_claims__claim_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/{claim_id}/precedent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Toggle Precedent */
+        post: operations["v1_toggle_precedent_api_v1_claims__claim_id__precedent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/claims/{claim_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Set Claim Status */
+        put: operations["v1_set_claim_status_api_v1_claims__claim_id__status_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cost-signals/{signal_id}/auto-detect-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Auto Detect Role
+         * @description Ask the local model which side the ruling favours; leaves the allocation alone on 'unknown'.
+         */
+        post: operations["v1_auto_detect_role_api_v1_cost_signals__signal_id__auto_detect_role_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cost-signals/{signal_id}/client-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Set Client Role
+         * @description Who won the cost ruling, from the client's side; overrides any auto-detect.
+         */
+        put: operations["v1_set_client_role_api_v1_cost_signals__signal_id__client_role_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/costs/{cost_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** V1 Update Cost */
+        patch: operations["v1_update_cost_api_v1_costs__cost_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/costs/{cost_id}/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Mark Paid */
+        post: operations["v1_mark_paid_api_v1_costs__cost_id__pay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/costs/{cost_id}/reimburse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Mark Reimbursed */
+        post: operations["v1_mark_reimbursed_api_v1_costs__cost_id__reimburse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/costs/{cost_id}/unpay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Mark Unpaid */
+        post: operations["v1_mark_unpaid_api_v1_costs__cost_id__unpay_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/costs/{cost_id}/unreimburse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Mark Unreimbursed */
+        post: operations["v1_mark_unreimbursed_api_v1_costs__cost_id__unreimburse_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -670,6 +1189,27 @@ export interface paths {
         head?: never;
         /** V1 Update Pin */
         patch: operations["v1_update_pin_api_v1_pins__pin_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/proceedings/{proceeding_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * V1 Delete Proceeding
+         * @description Delete an empty proceeding; the last proceeding of a case is refused.
+         */
+        delete: operations["v1_delete_proceeding_api_v1_proceedings__proceeding_id__delete"];
+        options?: never;
+        head?: never;
+        /** V1 Update Proceeding */
+        patch: operations["v1_update_proceeding_api_v1_proceedings__proceeding_id__patch"];
         trace?: never;
     };
     "/api/v1/relationships/{rel_id}": {
@@ -1980,6 +2520,31 @@ export interface components {
             /** Parent Id */
             parent_id?: number | null;
         };
+        /**
+         * BriefView
+         * @description `Case.ai_brief` as written by the brief generator, or its job state.
+         */
+        BriefView: {
+            /** Detected Status */
+            detected_status?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Next Move */
+            next_move?: string | null;
+            /** Posture */
+            posture?: string | null;
+            /** Pressure Points */
+            pressure_points?: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "processing" | "failed" | "none";
+            /** Status Rationale */
+            status_rationale?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /** BundlePipeline */
         BundlePipeline: {
             /** Active Label */
@@ -2000,6 +2565,38 @@ export interface components {
              * @default false
              */
             full: boolean;
+        };
+        /**
+         * CaseAccessLevel
+         * @description Permission a CaseShare grants a non-owner user (Phase 3 sharing).
+         * @enum {string}
+         */
+        CaseAccessLevel: "viewer" | "editor";
+        /** CaseActionItem */
+        CaseActionItem: {
+            action_type: components["schemas"]["ActionItemType"];
+            /** Addressee */
+            addressee: string | null;
+            /** Description */
+            description: string | null;
+            /**
+             * Due Date
+             * Format: date-time
+             */
+            due_date: string;
+            /** Id */
+            id: number;
+            /** Is Overdue */
+            is_overdue: boolean;
+            /** Location */
+            location: string | null;
+            /** Proceeding Id */
+            proceeding_id: number | null;
+            /** Source Document Id */
+            source_document_id: number | null;
+            status: components["schemas"]["ActionItemStatus"];
+            /** Title */
+            title: string;
         };
         /**
          * CaseCard
@@ -2058,6 +2655,81 @@ export interface components {
             /** Id */
             id: string;
         };
+        /** CaseDetail */
+        CaseDetail: {
+            /** Action Items */
+            action_items: components["schemas"]["CaseActionItem"][];
+            /** Active Proceeding Id */
+            active_proceeding_id: number | null;
+            /** Assume Worst Case */
+            assume_worst_case: boolean;
+            brief: components["schemas"]["BriefView"];
+            /** Can Edit */
+            can_edit: boolean;
+            /** Can Manage Sharing */
+            can_manage_sharing: boolean;
+            case_type: components["schemas"]["CaseType"];
+            /** Close Suggestion Rationale */
+            close_suggestion_rationale: string | null;
+            /** Documents */
+            documents: components["schemas"]["CaseDocument"][];
+            /** Dormancy Alert */
+            dormancy_alert: string | null;
+            financials: components["schemas"]["FinancialsSummary"];
+            /** Id */
+            id: string;
+            /** Is Draft */
+            is_draft: boolean;
+            /** Jurisdiction */
+            jurisdiction: string;
+            /** Last Visit */
+            last_visit: string | null;
+            /** New Doc Count */
+            new_doc_count: number;
+            /** Open Claim Count */
+            open_claim_count: number;
+            /** Opposing Parties */
+            opposing_parties: string[];
+            /** Parties */
+            parties: components["schemas"]["PartyView"][];
+            /** Pending Close */
+            pending_close: boolean;
+            /** Proceedings */
+            proceedings: components["schemas"]["ProceedingView"][];
+            status: components["schemas"]["CaseStatus"];
+            /** Title */
+            title: string;
+        };
+        /**
+         * CaseDocument
+         * @description One row of the case spine (documents of the active proceeding).
+         */
+        CaseDocument: {
+            document_type: components["schemas"]["DocumentType"] | null;
+            /** Id */
+            id: number;
+            /** Is New */
+            is_new: boolean;
+            /** Issued Date */
+            issued_date: string | null;
+            /** Needs Review */
+            needs_review: boolean;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Received Date */
+            received_date: string | null;
+            /** Role */
+            role: string;
+            significance_tier: components["schemas"]["SignificanceTier"] | null;
+            /** Thread Open */
+            thread_open: boolean;
+            /** Title */
+            title: string;
+        };
+        /** CasePurge */
+        CasePurge: {
+            /** Confirm */
+            confirm: string;
+        };
         /** CaseRef */
         CaseRef: {
             /** Id */
@@ -2072,6 +2744,21 @@ export interface components {
          * @enum {string}
          */
         CaseStatus: "intake" | "discovery" | "pre_trial" | "trial" | "post_trial" | "closed";
+        /**
+         * CaseType
+         * @description Legal domain of the case — drives cost-allocation defaults.
+         * @enum {string}
+         */
+        CaseType: "civil" | "family" | "administrative" | "criminal";
+        /** CaseUpdate */
+        CaseUpdate: {
+            /** Assume Worst Case */
+            assume_worst_case?: boolean | null;
+            case_type?: components["schemas"]["CaseType"] | null;
+            status?: components["schemas"]["CaseStatus"] | null;
+            /** Title */
+            title?: string | null;
+        };
         /** CasesDirectory */
         CasesDirectory: {
             /** Cases */
@@ -2103,15 +2790,63 @@ export interface components {
             role: "user" | "assistant";
         };
         /**
+         * ClaimEvidenceRole
+         * @enum {string}
+         */
+        ClaimEvidenceRole: "asserts" | "supports" | "contests" | "refutes" | "cites_as_proof";
+        /** ClaimGroupView */
+        ClaimGroupView: {
+            /** Claims */
+            claims: components["schemas"]["ClaimView"][];
+            status: components["schemas"]["ClaimStatus"];
+        };
+        /**
          * ClaimStatus
          * @enum {string}
          */
         ClaimStatus: "asserted" | "contested" | "needs_proof" | "refuted" | "established";
+        /** ClaimStatusUpdate */
+        ClaimStatusUpdate: {
+            status: components["schemas"]["ClaimStatus"];
+        };
         /**
          * ClaimType
          * @enum {string}
          */
         ClaimType: "factual" | "legal" | "procedural";
+        /** ClaimView */
+        ClaimView: {
+            /** Allowed Transitions */
+            allowed_transitions: components["schemas"]["ClaimStatus"][];
+            /** Claim Text */
+            claim_text: string;
+            claim_type: components["schemas"]["ClaimType"];
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceView"][];
+            /**
+             * First Made At
+             * Format: date-time
+             */
+            first_made_at: string;
+            /** Id */
+            id: number;
+            /** Is Precedent */
+            is_precedent: boolean;
+            /**
+             * Last Updated At
+             * Format: date-time
+             */
+            last_updated_at: string;
+            status: components["schemas"]["ClaimStatus"];
+        };
+        /** ClientRoleUpdate */
+        ClientRoleUpdate: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "winner" | "loser" | "unset";
+        };
         /** ConcurrencyResult */
         ConcurrencyResult: {
             /** Applied Live */
@@ -2184,6 +2919,27 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * CostCategory
+         * @description German legal cost categories (Kostenkategorien).
+         * @enum {string}
+         */
+        CostCategory: "gerichtskosten" | "anwaltskosten" | "anwaltskosten_gegner" | "sachverstaendiger" | "vorschuss" | "vollstreckung" | "auslagen" | "sonstiges";
+        /** CostFieldUpdate */
+        CostFieldUpdate: {
+            /** Amount Net */
+            amount_net?: number | null;
+            /** Amount Paid */
+            amount_paid?: number | null;
+            /** Amount Reimbursed */
+            amount_reimbursed?: number | null;
+            category?: components["schemas"]["CostCategory"] | null;
+            status?: components["schemas"]["CostStatus"] | null;
+            /** Title */
+            title?: string | null;
+            /** Vat Rate */
+            vat_rate?: number | null;
+        };
         /** CostPromoted */
         CostPromoted: {
             /** Amount Gross */
@@ -2203,6 +2959,58 @@ export interface components {
             /** Vat Rate */
             vat_rate?: number | null;
         };
+        /** CostRow */
+        CostRow: {
+            /** Amount Gross */
+            amount_gross: number;
+            /** Amount Net */
+            amount_net: number;
+            /** Amount Paid */
+            amount_paid: number | null;
+            /** Amount Reimbursed */
+            amount_reimbursed: number | null;
+            category: components["schemas"]["CostCategory"];
+            /** Due At */
+            due_at: string | null;
+            /** Id */
+            id: number;
+            /** Is Reimbursable */
+            is_reimbursable: boolean | null;
+            /** Issued At */
+            issued_at: string | null;
+            /** Proceeding Id */
+            proceeding_id: number | null;
+            /** Rvg Position */
+            rvg_position: string | null;
+            /** Source Document Id */
+            source_document_id: number | null;
+            status: components["schemas"]["CostStatus"];
+            /** Title */
+            title: string;
+            /** Vat Rate */
+            vat_rate: number | null;
+        };
+        /** CostSignalDoc */
+        CostSignalDoc: {
+            /** Amount */
+            amount: number | null;
+            /** Client Role */
+            client_role: string | null;
+            /** Description */
+            description: string | null;
+            /** Id */
+            id: number;
+            /** Issued Date */
+            issued_date: string | null;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Role Source */
+            role_source: string | null;
+            /** Signal Id */
+            signal_id: number;
+            signal_type: components["schemas"]["CostSignalType"];
+            /** Title */
+            title: string;
+        };
         /**
          * CostSignalType
          * @description Cost-regime metadata events derived from documents (not costs themselves).
@@ -2221,6 +3029,12 @@ export interface components {
             issued_at: string | null;
             signal_type: components["schemas"]["CostSignalType"];
         };
+        /**
+         * CostStatus
+         * @description Payment/reimbursement status of a cost position.
+         * @enum {string}
+         */
+        CostStatus: "offen" | "bezahlt" | "erstattet" | "teilweise" | "strittig";
         /** CoverUpdate */
         CoverUpdate: {
             /** Doc Id */
@@ -2306,6 +3120,31 @@ export interface components {
         DebugRedactUpdate: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** DedupJob */
+        DedupJob: {
+            /** Error */
+            error?: string | null;
+            /**
+             * Processed
+             * @default 0
+             */
+            processed: number;
+            /**
+             * Proposals
+             * @default 0
+             */
+            proposals: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "failed";
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
         };
         /**
          * DocumentReader
@@ -2518,6 +3357,41 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** EvidenceProposalView */
+        EvidenceProposalView: {
+            /** Excerpt */
+            excerpt: string | null;
+            /** Proposal Id */
+            proposal_id: number;
+            proposed_role: components["schemas"]["ClaimEvidenceRole"];
+            /** Source Document Id */
+            source_document_id: number;
+            /** Source Document Title */
+            source_document_title: string | null;
+            /** Target Claim Id */
+            target_claim_id: number;
+            target_claim_status: components["schemas"]["ClaimStatus"];
+            /** Target Claim Text */
+            target_claim_text: string;
+        };
+        /** EvidenceView */
+        EvidenceView: {
+            confidence: components["schemas"]["RelationshipConfidence"];
+            /** Document Date */
+            document_date: string | null;
+            /** Document Id */
+            document_id: number;
+            document_originator: components["schemas"]["OriginatorType"];
+            /** Document Title */
+            document_title: string;
+            /** Excerpt */
+            excerpt: string | null;
+            /** Id */
+            id: number;
+            /** Reactions */
+            reactions: components["schemas"]["UserReactionType"][];
+            role: components["schemas"]["ClaimEvidenceRole"];
+        };
         /** ExtractionEngineUpdate */
         ExtractionEngineUpdate: {
             /**
@@ -2538,6 +3412,29 @@ export interface components {
             stage: string;
             /** Title */
             title: string;
+        };
+        /** FinancialsSummary */
+        FinancialsSummary: {
+            /** Booked */
+            booked: number;
+            /** Outstanding */
+            outstanding: number;
+            /** Paid */
+            paid: number;
+            /** Reimbursable */
+            reimbursable: number;
+            /** Total Cost Exposure Cents */
+            total_cost_exposure_cents: number;
+        };
+        /** FinancialsView */
+        FinancialsView: {
+            /** Case Level Costs */
+            case_level_costs: components["schemas"]["CostRow"][];
+            /** Instances */
+            instances: components["schemas"]["InstanceExposure"][];
+            /** Signal Docs */
+            signal_docs: components["schemas"]["CostSignalDoc"][];
+            summary: components["schemas"]["FinancialsSummary"];
         };
         /** GmailBackfill */
         GmailBackfill: {
@@ -2571,6 +3468,147 @@ export interface components {
             last_sync_at: string | null;
             /** Oauth Start Url */
             oauth_start_url: string;
+        };
+        /** GraphBundle */
+        GraphBundle: {
+            /** Children */
+            children: components["schemas"]["GraphBundleChild"][];
+            /** Footer */
+            footer: string;
+            /** Header */
+            header: string;
+            /** Id */
+            id: number;
+            /** Lane */
+            lane: string;
+            /** Originator */
+            originator: string;
+            /** Row */
+            row: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** GraphBundleChild */
+        GraphBundleChild: {
+            /** Date */
+            date: string;
+            /** Id */
+            id: number;
+            /** Origin */
+            origin: string;
+            /** Tier */
+            tier: string | null;
+            /** Title */
+            title: string;
+        };
+        /** GraphEdge */
+        GraphEdge: {
+            /** Arrow */
+            arrow: boolean;
+            /** Dasharray */
+            dasharray: string | null;
+            /** Dashed */
+            dashed: boolean;
+            /** From Node Id */
+            from_node_id: number;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /** Stroke W */
+            stroke_w: number;
+            /** To Node Id */
+            to_node_id: number;
+        };
+        /** GraphLane */
+        GraphLane: {
+            /** Color */
+            color: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** GraphNode */
+        GraphNode: {
+            /** Cross Proceeding */
+            cross_proceeding: boolean;
+            /** Date Short */
+            date_short: string;
+            /** Full Title */
+            full_title: string;
+            /** Ghost */
+            ghost: boolean;
+            /** H */
+            h: number;
+            /** Id */
+            id: number;
+            /** Is Bundle */
+            is_bundle: boolean;
+            /** Is New Since Last Visit */
+            is_new_since_last_visit: boolean;
+            /** Lane */
+            lane: string;
+            /** Originator Type */
+            originator_type: string;
+            /** Proceeding Label */
+            proceeding_label: string | null;
+            /** Reaction */
+            reaction: string | null;
+            /** Role */
+            role: string;
+            /** Row */
+            row: number;
+            /** Thread Open */
+            thread_open: boolean;
+            /** Tier */
+            tier: string | null;
+            /** Title */
+            title: string;
+            /** W */
+            w: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** GraphView */
+        GraphView: {
+            /** Bundles */
+            bundles: components["schemas"]["GraphBundle"][];
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["GraphEdge"][];
+            /**
+             * Filter
+             * @enum {string}
+             */
+            filter: "critical" | "significant+" | "all";
+            /** Lanes */
+            lanes: components["schemas"]["GraphLane"][];
+            /** Node Count */
+            node_count: number;
+            /** Node Counts */
+            node_counts: {
+                [key: string]: number;
+            };
+            /** Nodes */
+            nodes: components["schemas"]["GraphNode"][];
+            /** Proceeding Id */
+            proceeding_id: number;
+            /** Proof Badges */
+            proof_badges: {
+                [key: string]: number;
+            };
+            /** Svg Height */
+            svg_height: number;
+            /** Svg Width */
+            svg_width: number;
         };
         /** GroundView */
         GroundView: {
@@ -2724,6 +3762,52 @@ export interface components {
          * @enum {string}
          */
         IngestBatchStatus: "pending" | "processing" | "completed" | "failed" | "dismissed" | "awaiting_slicing";
+        /** InstanceExposure */
+        InstanceExposure: {
+            /** Allocation Source */
+            allocation_source: string;
+            /** Az Court */
+            az_court: string | null;
+            /** Court Fee */
+            court_fee: number;
+            /** Court Fee Charged */
+            court_fee_charged: number;
+            /** Court Fee Share */
+            court_fee_share: number;
+            /** Court Fee Source */
+            court_fee_source: string;
+            court_level: components["schemas"]["ProceedingCourtLevel"];
+            /** Court Name */
+            court_name: string;
+            /** Court Theoretical */
+            court_theoretical: number;
+            /** Invoices Court */
+            invoices_court: components["schemas"]["CostRow"][];
+            /** Invoices Opposing */
+            invoices_opposing: components["schemas"]["CostRow"][];
+            /** Invoices Other */
+            invoices_other: components["schemas"]["CostRow"][];
+            /** Invoices Own */
+            invoices_own: components["schemas"]["CostRow"][];
+            /** Opposing Gross */
+            opposing_gross: number;
+            /** Opposing Source */
+            opposing_source: string;
+            /** Opposing Theoretical */
+            opposing_theoretical: number;
+            /** Own Lawyer Gross */
+            own_lawyer_gross: number;
+            /** Own Lawyer Source */
+            own_lawyer_source: string;
+            /** Own Theoretical */
+            own_theoretical: number;
+            /** Proceeding Id */
+            proceeding_id: number;
+            /** Streitwert */
+            streitwert: number | null;
+            /** Subtotal */
+            subtotal: number;
+        };
         /**
          * Jurisdiction
          * @description Case jurisdiction for cost system.
@@ -2768,6 +3852,23 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** MergeProposalView */
+        MergeProposalView: {
+            /** Confidence */
+            confidence: string;
+            /** Existing Claim Id */
+            existing_claim_id: number;
+            /** Existing Claim Text */
+            existing_claim_text: string;
+            /** New Claim Id */
+            new_claim_id: number;
+            /** New Claim Text */
+            new_claim_text: string;
+            /** Proposal Id */
+            proposal_id: number;
+            /** Rationale */
+            rationale: string | null;
+        };
         /** MessageSend */
         MessageSend: {
             /** Content */
@@ -2811,6 +3912,21 @@ export interface components {
             /** Ocr */
             ocr: string[];
         };
+        /** MonthBucket */
+        MonthBucket: {
+            /** Critical */
+            critical: number;
+            /** Future */
+            future: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Max Total */
+            max_total: number;
+            /** Total */
+            total: number;
+        };
         /** NextAction */
         NextAction: {
             action_type: components["schemas"]["ActionItemType"];
@@ -2819,12 +3935,29 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** OpposingPartiesUpdate */
+        OpposingPartiesUpdate: {
+            /** Opposing Parties */
+            opposing_parties: string[];
+        };
         /**
          * OriginatorType
          * @description Maps to the border-l-4 originator stripes from GEMINI.md §4.
          * @enum {string}
          */
         OriginatorType: "court" | "opposing" | "own" | "third_party" | "unknown";
+        /** PartyView */
+        PartyView: {
+            /**
+             * Document Count
+             * @default 0
+             */
+            document_count: number;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -2930,6 +4063,41 @@ export interface components {
             /** Is Draft */
             is_draft: boolean;
         };
+        /**
+         * ProceedingStatus
+         * @enum {string}
+         */
+        ProceedingStatus: "active" | "closed";
+        /** ProceedingUpdate */
+        ProceedingUpdate: {
+            /** Az Court */
+            az_court?: string | null;
+            court_level?: components["schemas"]["ProceedingCourtLevel"] | null;
+            /** Court Name */
+            court_name?: string | null;
+            status?: components["schemas"]["ProceedingStatus"] | null;
+            /** Subject Matter */
+            subject_matter?: string | null;
+        };
+        /** ProceedingView */
+        ProceedingView: {
+            /** Az Court */
+            az_court: string | null;
+            court_level: components["schemas"]["ProceedingCourtLevel"];
+            /** Court Name */
+            court_name: string;
+            /** Doc Count */
+            doc_count: number;
+            /** Id */
+            id: number;
+            /** Is Deletable */
+            is_deletable: boolean;
+            /** Is Draft */
+            is_draft: boolean;
+            status: components["schemas"]["ProceedingStatus"];
+            /** Subject Matter */
+            subject_matter: string | null;
+        };
         /** ProfileUpdate */
         ProfileUpdate: {
             /**
@@ -2937,6 +4105,21 @@ export interface components {
              * @default
              */
             display_name: string;
+        };
+        /** ProposalBatch */
+        ProposalBatch: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "confirm" | "dismiss";
+        };
+        /** ProposalBatchResult */
+        ProposalBatchResult: {
+            /** Confirmed */
+            confirmed: number;
+            /** Dismissed */
+            dismissed: number;
         };
         /** ProposedCut */
         ProposedCut: {
@@ -3020,6 +4203,11 @@ export interface components {
             prev_doc_id: number | null;
             /** Total */
             total: number | null;
+        };
+        /** ReenrichResult */
+        ReenrichResult: {
+            /** Queued */
+            queued: number;
         };
         /** ReindexJob */
         ReindexJob: {
@@ -3152,6 +4340,29 @@ export interface components {
         SessionStarted: {
             /** Next */
             next: string;
+        };
+        /** ShareCreate */
+        ShareCreate: {
+            /** Email */
+            email: string;
+            permission: components["schemas"]["CaseAccessLevel"];
+        };
+        /** ShareView */
+        ShareView: {
+            /** Display Name */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            permission: components["schemas"]["CaseAccessLevel"];
+            /** User Id */
+            user_id: number;
+        };
+        /** SharingView */
+        SharingView: {
+            /** Owner Email */
+            owner_email: string | null;
+            /** Shares */
+            shares: components["schemas"]["ShareView"][];
         };
         /**
          * ShellView
@@ -3301,6 +4512,54 @@ export interface components {
              * @enum {string}
              */
             theme: "dark" | "light";
+        };
+        /** TimelineEventView */
+        TimelineEventView: {
+            /** Actor */
+            actor: string;
+            /** Amount Eur */
+            amount_eur: number | null;
+            /** Claim Count */
+            claim_count: number;
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /** Direction */
+            direction: string | null;
+            /** Id */
+            id: string;
+            /** Is Future */
+            is_future: boolean;
+            /** Is Overdue */
+            is_overdue: boolean;
+            /** Kind */
+            kind: string;
+            /** Note */
+            note: string | null;
+            /** Quiet Gap Days */
+            quiet_gap_days: number | null;
+            /** Sig */
+            sig: string | null;
+            /** Source Document Id */
+            source_document_id: number | null;
+            /** Title */
+            title: string;
+        };
+        /** TimelineView */
+        TimelineView: {
+            /** Events */
+            events: components["schemas"]["TimelineEventView"][];
+            /** Month Buckets */
+            month_buckets: components["schemas"]["MonthBucket"][];
+            /**
+             * Today
+             * Format: date-time
+             */
+            today: string;
+            /** Total Count */
+            total_count: number;
         };
         /** TimezoneUpdate */
         TimezoneUpdate: {
@@ -3509,6 +4768,25 @@ export interface components {
             slicing_queue: components["schemas"]["SlicingQueueItem"][];
             stats: components["schemas"]["TriageStats"];
         };
+        /** TruthMapView */
+        TruthMapView: {
+            dedup_job: components["schemas"]["DedupJob"] | null;
+            /**
+             * Filter
+             * @enum {string}
+             */
+            filter: "open" | "established" | "refuted" | "all";
+            /** Groups */
+            groups: components["schemas"]["ClaimGroupView"][];
+            /** Open Claim Count */
+            open_claim_count: number;
+            /** Pending Evidence */
+            pending_evidence: components["schemas"]["EvidenceProposalView"][];
+            /** Pending Merges */
+            pending_merges: components["schemas"]["MergeProposalView"][];
+            /** Pipeline Active Doc Count */
+            pipeline_active_doc_count: number;
+        };
         /** UploadResponse */
         UploadResponse: {
             /** Batch Id */
@@ -3568,7 +4846,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    v1_set_action_status_api_v1_action_items__item_id__patch: {
+    v1_set_action_item_status_api_v1_action_items__item_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -3589,7 +4867,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ActionView"];
+                    "application/json": components["schemas"]["CaseActionItem"];
                 };
             };
             /** @description Error */
@@ -4051,6 +5329,202 @@ export interface operations {
             };
         };
     };
+    v1_case_detail_api_v1_cases__case_id__get: {
+        parameters: {
+            query?: {
+                proceeding?: number | null;
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_case_api_v1_cases__case_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_get_brief_api_v1_cases__case_id__brief_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_refresh_brief_api_v1_cases__case_id__brief_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_find_duplicates_api_v1_cases__case_id__claims_find_duplicates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DedupJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_batch_merge_api_v1_cases__case_id__claims_proposals_merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposalBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalBatchResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_confirm_close_api_v1_cases__case_id__confirm_close_post: {
         parameters: {
             query?: never;
@@ -4140,7 +5614,364 @@ export interface operations {
             };
         };
     };
+    v1_case_financials_api_v1_cases__case_id__financials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinancialsView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_case_graph_api_v1_cases__case_id__graph_get: {
+        parameters: {
+            query: {
+                proceeding: number;
+                filter?: "critical" | "significant+" | "all";
+                /** @description The visit timestamp the detail call returned as last_visit */
+                since?: string | null;
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_save_opposing_parties_api_v1_cases__case_id__opposing_parties_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpposingPartiesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyView"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_purge_case_api_v1_cases__case_id__purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CasePurge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reenrich_case_api_v1_cases__case_id__reenrich_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReenrichResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_reject_draft_api_v1_cases__case_id__reject_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_list_shares_api_v1_cases__case_id__shares_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_add_share_api_v1_cases__case_id__shares_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_remove_share_api_v1_cases__case_id__shares__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: number;
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_case_timeline_api_v1_cases__case_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_truth_map_api_v1_cases__case_id__truthmap_get: {
+        parameters: {
+            query?: {
+                filter?: "open" | "established" | "refuted" | "all";
+            };
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TruthMapView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_case_viewed_api_v1_cases__case_id__viewed_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4351,6 +6182,438 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_evidence_api_v1_claims_proposals_evidence__proposal_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_evidence_api_v1_claims_proposals_evidence__proposal_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_merge_api_v1_claims_proposals_merge__proposal_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_merge_api_v1_claims_proposals_merge__proposal_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_claim_api_v1_claims__claim_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_toggle_precedent_api_v1_claims__claim_id__precedent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_claim_status_api_v1_claims__claim_id__status_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                claim_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_auto_detect_role_api_v1_cost_signals__signal_id__auto_detect_role_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                signal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_client_role_api_v1_cost_signals__signal_id__client_role_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                signal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientRoleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_cost_api_v1_costs__cost_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostFieldUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_paid_api_v1_costs__cost_id__pay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_reimbursed_api_v1_costs__cost_id__reimburse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_unpaid_api_v1_costs__cost_id__unpay_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_unreimbursed_api_v1_costs__cost_id__unreimburse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
                 };
             };
             /** @description Error */
@@ -4862,6 +7125,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PinView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_proceeding_api_v1_proceedings__proceeding_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proceeding_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_proceeding_api_v1_proceedings__proceeding_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proceeding_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProceedingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProceedingView"];
                 };
             };
             /** @description Error */

@@ -68,18 +68,18 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, str]:
     case_id = f"E2E-CONF-{suffix}"
 
     resp = api_client.post(
-        "/cases",
-        data={
+        "/api/v1/cases",
+        json={
             "case_id": case_id,
             "title": f"E2E Confirm {suffix}",
             "court_name": "AG Hamburg",
         },
-        follow_redirects=False,
     )
-    assert resp.status_code in (200, 303), f"Case create failed: {resp.status_code}"
+    assert resp.status_code == 201, f"Case create failed: {resp.status_code}"
 
     cur = conn.cursor()
-    owner_id = cur.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()[0]
+    # The triage feed is owner-scoped: seed the row for the signed-in user.
+    owner_id = api_client.get("/api/v1/shell").json()["user"]["id"]
     batch_id = cur.execute(
         """
         INSERT INTO ingest_batches

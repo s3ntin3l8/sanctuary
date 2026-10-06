@@ -48,16 +48,11 @@ from app.config import (
     SCAN_PROCESSING_DIR,
     templates,
 )
-from app.constants import REVIEW_FIELD_LABELS
 from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
 from app.helpers import (
-    format_days_ago,
-    format_due_relative,
     format_eur,
-    format_relative_time,
 )
-from app.services.normalization import normalize_hm
 from app.spa import ImmutableStaticFiles
 
 
@@ -798,10 +793,6 @@ async def health_check():
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
 
 
-def _hash_id(text: str, kind: str = "neutral", length: int = 12) -> str:
-    return hashlib.sha1(f"{text}|{kind}".encode()).hexdigest()[:length]
-
-
 def _local_strftime(dt, fmt: str) -> str:
     from datetime import UTC as _UTC
     from datetime import date
@@ -829,25 +820,9 @@ def _local_strftime(dt, fmt: str) -> str:
     return ""
 
 
-templates.env.globals["review_field_labels"] = REVIEW_FIELD_LABELS
-templates.env.filters["hm"] = normalize_hm
-templates.env.filters["hash"] = _hash_id
 templates.env.globals["format_eur"] = format_eur
-# Pipeline stage list (key/icon/label, ordered by STAGE_REGISTRY.order) —
-# consumed by _pipeline_stepper.html so the registry is the single source
-# of truth for display order + labels rather than a hardcoded Jinja list.
-from app.services.pipeline_status import stage_display_list as _stage_display_list
-
-templates.env.globals["pipeline_stages"] = _stage_display_list
-templates.env.filters["format_relative_time"] = format_relative_time
-templates.env.filters["format_days_ago"] = format_days_ago
-templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
 templates.env.filters["local_strftime"] = _local_strftime
-
-from app.services.markdown_render import render_markdown
-
-templates.env.filters["safe_markdown"] = render_markdown
 
 
 # Rate limiter setup
@@ -959,37 +934,25 @@ async def request_validation_handler(
 app.add_exception_handler(RequestValidationError, request_validation_handler)  # type: ignore[arg-type]
 
 from app.api import (
-    cases,
     contacts,
     costs_router,
-    documents_router,
     home_router,
     ingestion_settings,
-    proceedings_router,
     search,
 )
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
-from app.api.case_sharing import router as case_sharing_router
-from app.api.claims import router as claims_router
 from app.api.settings_page import router as settings_page_router
 from app.api.spa_pages import router as spa_pages_router
-from app.api.user_settings import router as user_settings_router
 from app.api.v1 import router as api_v1_router
 
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
-app.include_router(case_sharing_router)
-app.include_router(user_settings_router)
-app.include_router(claims_router)
 app.include_router(home_router)
 app.include_router(spa_pages_router)
 app.include_router(costs_router)
-app.include_router(documents_router)
-app.include_router(cases.router)
 app.include_router(contacts.router)
-app.include_router(proceedings_router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)

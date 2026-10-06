@@ -279,12 +279,12 @@ function CaseAndProceeding({
         {review.case ? (
           <div>
             <div className="flex items-center gap-2">
-              <a
-                href={`/cases/${review.case.id}`}
+              <Link
+                to={`/cases/${review.case.id}`}
                 className="font-mono text-[12px] font-semibold text-tealink hover:underline"
               >
                 {review.case.id}
-              </a>
+              </Link>
               {review.case.is_draft && <Badge tone="warning">draft</Badge>}
             </div>
             <div className="truncate text-[11px] text-muted">{review.case.title}</div>

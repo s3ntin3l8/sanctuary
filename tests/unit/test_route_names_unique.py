@@ -45,7 +45,7 @@ def test_v1_routes_are_name_prefixed():
 def test_legacy_template_names_resolve_to_legacy_pages():
     assert app.url_path_for("home") == "/"
     assert app.url_path_for("case_directory") == "/cases"
-    assert app.url_path_for("create_case") == "/cases"
+    assert app.url_path_for("case_detail", case_id="ADV-1") == "/cases/ADV-1"
     assert app.url_path_for("v1_confirm_close", case_id="X") == (
         "/api/v1/cases/X/confirm-close"
     )

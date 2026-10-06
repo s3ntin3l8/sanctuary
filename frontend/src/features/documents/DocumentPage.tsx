@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 import { originalUrl, type Reader, useCreatePin, useDocumentReader } from '../../api/documents'
 import { formatShortDate } from '../../format'
-import { leaveTo } from '../../navigation'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
 import { Modal } from '../../ui/Modal'
@@ -247,7 +246,7 @@ function Hud({ reader }: { reader: Reader }) {
           if (find.isOpen) find.close()
           else if (chatOpen) setChatOpen(false)
           else if (focusMode) setFocusMode(false)
-          else leaveTo(backHref)
+          else navigate(backHref)
           break
       }
     }
@@ -266,13 +265,13 @@ function Hud({ reader }: { reader: Reader }) {
   return (
     <div className="flex h-full flex-col overflow-hidden" data-testid="document-hud">
       <header className="flex items-center gap-3 border-b border-line bg-panel px-4 py-2 text-[12px]">
-        <a
-          href={backHref}
+        <Link
+          to={backHref}
           className="flex items-center gap-1 text-muted hover:text-ink"
           title="Back (Esc)"
         >
           <Icon name="arrow_back" size={16} />
-        </a>
+        </Link>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 font-mono text-[10.5px] text-muted">
             <span>

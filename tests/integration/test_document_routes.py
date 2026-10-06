@@ -106,7 +106,6 @@ def test_ingested_attachment_is_stored_relative_and_served(
     import email.message
     from pathlib import Path
 
-    from app.models.enums import IngestBatchSourceType
     from app.services.ingestion.batch_orchestrator import ingest_raw_email
 
     msg = email.message.EmailMessage()
@@ -143,40 +142,14 @@ def test_retry_stage_happy_path_dispatches(db_session):
     doc = _doc_with_stages(
         db_session, enrich={"status": StageStatus.FAILED.value, "error": "boom"}
     )
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
+    with patch("app.api.v1.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry")
 
     assert response.status_code == 200
     db_session.refresh(doc)
     assert stages_dict(doc)["enrich"]["status"] == StageStatus.PENDING.value
     mock_dispatch.assert_called_once()
     assert mock_dispatch.call_args[0][2] == PipelineStage.ENRICH
-
-
-@pytest.mark.integration
-def test_retry_stage_409_when_running(db_session):
-    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RUNNING.value})
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
-
-    assert response.status_code == 409
-    db_session.refresh(doc)
-    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RUNNING.value
-    mock_dispatch.assert_not_called()
-
-
-@pytest.mark.integration
-def test_retry_stage_409_when_retrying(db_session):
-    """PR4: a stage with a live scheduled retry countdown (RETRYING) must
-    block a manual retry of that same stage the same as RUNNING."""
-    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RETRYING.value})
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/enrich/retry")
-
-    assert response.status_code == 409
-    db_session.refresh(doc)
-    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RETRYING.value
-    mock_dispatch.assert_not_called()
 
 
 def _batch_with_two_failed_batch_analysis_docs(db):
@@ -223,7 +196,9 @@ def test_retry_batch_analysis_stage_resets_all_failed_siblings_and_dispatches(
     batch, docs = _batch_with_two_failed_batch_analysis_docs(db_session)
 
     with patch("app.tasks.dispatch.dispatch_task") as mock_dispatch:
-        response = client.post(f"/document/{docs[0].id}/pipeline/batch_analysis/retry")
+        response = client.post(
+            f"/api/v1/documents/{docs[0].id}/pipeline/batch_analysis/retry"
+        )
 
     assert response.status_code == 200
     mock_dispatch.assert_called_once_with(
@@ -265,8 +240,8 @@ def test_retry_all_resets_stages_and_dispatches(db_session):
         db_session,
         extract={"status": StageStatus.FAILED.value, "error": "boom"},
     )
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/retry-all")
+    with patch("app.api.v1.documents.dispatch_pipeline_retry") as mock_dispatch:
+        response = client.post(f"/api/v1/documents/{doc.id}/pipeline/retry-all")
 
     assert response.status_code == 200
     db_session.refresh(doc)
@@ -277,51 +252,3 @@ def test_retry_all_resets_stages_and_dispatches(db_session):
     mock_dispatch.assert_called_once()
     # Dispatched stage is EXTRACT — kicks off the cascade.
     assert mock_dispatch.call_args[0][2] == PipelineStage.EXTRACT
-
-
-@pytest.mark.integration
-def test_retry_all_preserves_skipped(db_session):
-    doc = _doc_with_stages(
-        db_session,
-        batch_analysis={"status": StageStatus.SKIPPED.value, "reason": "manual upload"},
-    )
-    with patch("app.api.documents.dispatch_pipeline_retry"):
-        response = client.post(f"/document/{doc.id}/pipeline/retry-all")
-
-    assert response.status_code == 200
-    db_session.refresh(doc)
-    assert stages_dict(doc)["batch_analysis"]["status"] == StageStatus.SKIPPED.value
-
-
-@pytest.mark.integration
-def test_retry_all_409_when_running(db_session):
-    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RUNNING.value})
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/retry-all")
-
-    assert response.status_code == 409
-    assert b"still running" in response.content
-    db_session.refresh(doc)
-    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RUNNING.value
-    mock_dispatch.assert_not_called()
-
-
-@pytest.mark.integration
-def test_retry_all_409_when_retrying(db_session):
-    """PR4: a stage with a live scheduled retry countdown (RETRYING) must
-    block retry-all the same as RUNNING — resetting it here would race the
-    countdown's own eventual redispatch."""
-    doc = _doc_with_stages(db_session, enrich={"status": StageStatus.RETRYING.value})
-    with patch("app.api.documents.dispatch_pipeline_retry") as mock_dispatch:
-        response = client.post(f"/document/{doc.id}/pipeline/retry-all")
-
-    assert response.status_code == 409
-    db_session.refresh(doc)
-    assert stages_dict(doc)["enrich"]["status"] == StageStatus.RETRYING.value
-    mock_dispatch.assert_not_called()
-
-
-@pytest.mark.integration
-def test_retry_all_404_for_unknown_doc(db_session):
-    response = client.post("/document/999999/pipeline/retry-all")
-    assert response.status_code == 404

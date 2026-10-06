@@ -6,8 +6,8 @@ Companion document to `docs/specs/00_vision.md` §2. Covers the swim-lane SVG gr
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — layout stays server-side in `CaseGraphService` (`GET /api/v1/cases/{id}/graph?proceeding=&filter=&since=`); rendering, pan/zoom, filters and hover live in `frontend/src/features/cases/dashboard/GraphTab.tsx`. References below to `correspondence_graph.html`, `CaseGraphRenderer` or `dashboard.js` describe the pre-migration implementation.
 
 | Layer | Status |
 |---|---|

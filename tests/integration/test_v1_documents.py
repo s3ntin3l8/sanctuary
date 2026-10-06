@@ -382,3 +382,52 @@ def test_upload_target_requires_case_access(db_session, sample_case):
         client.get("/api/v1/upload/target", params={"case_id": "NOPE"}).status_code
         == 404
     )
+
+
+@pytest.mark.integration
+def test_retry_refused_while_a_stage_is_retrying_and_retry_all_keeps_skipped(
+    db_session,
+):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id, pipeline_state=PipelineState.FAILED)
+    db_session.add_all(
+        [
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.EXTRACT,
+                status=StageStatus.COMPLETED,
+            ),
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.METADATA,
+                status=StageStatus.RETRYING,
+            ),
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.BATCH_ANALYSIS,
+                status=StageStatus.SKIPPED,
+                reason="manual upload",
+            ),
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.ENRICH,
+                status=StageStatus.FAILED,
+            ),
+        ]
+    )
+    db_session.commit()
+    retrying = client.post(f"/api/v1/documents/{doc.id}/pipeline/metadata/retry")
+    assert retrying.status_code == 409 and retrying.json()["code"] == "in_flight"
+    assert (
+        client.post(f"/api/v1/documents/{doc.id}/pipeline/retry-all").status_code == 409
+    )
+
+    db_session.query(DocumentPipelineStage).filter_by(
+        document_id=doc.id, stage=PipelineStage.METADATA
+    ).update({"status": StageStatus.COMPLETED})
+    db_session.commit()
+    with patch("app.api.v1.documents.dispatch_pipeline_retry"):
+        view = client.post(f"/api/v1/documents/{doc.id}/pipeline/retry-all").json()
+    by_key = {s["key"]: s["status"] for s in view["stages"]}
+    assert by_key["batch_analysis"] == "skipped"
+    assert by_key["enrich"] == "pending"

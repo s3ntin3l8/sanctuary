@@ -26,15 +26,14 @@ def _seed_case_with_claim(api_client, db_seed) -> tuple[str, int]:
     case_id = f"E2E-CLAIM-{suffix}"
 
     resp = api_client.post(
-        "/cases",
-        data={
+        "/api/v1/cases",
+        json={
             "case_id": case_id,
             "title": f"E2E Claim {suffix}",
             "court_name": "AG Hamburg",
         },
-        follow_redirects=False,
     )
-    assert resp.status_code in (200, 303)
+    assert resp.status_code == 201, f"Case create failed: {resp.status_code}"
 
     now = datetime.now(UTC)
     cur = conn.cursor()
@@ -95,21 +94,17 @@ def test_asserted_claim_can_be_marked_established(page: Page, api_client, db_see
     """ASSERTED → ESTABLISHED transition swaps the claim card in place."""
     case_id, claim_id = _seed_case_with_claim(api_client, db_seed)
 
-    # dashboard.js reads ?view= directly into Alpine state with no mapping;
-    # the truth-map pane's x-show checks view === 'truth' (not 'truthmap').
     page.goto(f"/cases/{case_id}?view=truth")
 
     card = page.locator(f"#claim-card-{claim_id}")
     expect(card).to_be_visible(timeout=10_000)
 
-    # The status pill is a button. Click it to open the dropdown, then pick
-    # "Mark Established". The card swaps via HTMX outerHTML.
-    status_pill = card.get_by_role("button").first
-    status_pill.click()
-    page.get_by_role("button", name="Mark Established").first.click()
+    # The SPA truth map offers one button per allowed transition.
+    card.get_by_role("button", name="mark established").click()
 
-    # After swap, the new card's pill text should read "Established".
+    # The claim left the "open" filter; under "all" its badge reads "established".
+    page.get_by_role("button", name="all", exact=True).click()
     new_card = page.locator(f"#claim-card-{claim_id}")
-    expect(new_card.get_by_text("Established", exact=False)).to_be_visible(
+    expect(new_card.get_by_text("established", exact=True).first).to_be_visible(
         timeout=5_000
     )

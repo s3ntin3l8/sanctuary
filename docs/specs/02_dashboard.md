@@ -6,8 +6,8 @@ Companion document to `docs/vision.md` and `docs/triage.md`. Covers the primary 
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — React case page (SPA migration phase 5): `frontend/src/features/cases/dashboard/CasePage.tsx` on `GET /api/v1/cases/{id}` (`app/api/v1/case_detail.py`). The Graph view is the default; `?view=review|graph|truth|timeline|fin`, `?proceeding=` and `?filter=` are the URL contract. File names below that mention Jinja partials or `dashboard.js` describe the pre-migration implementation.
 
 | Layer | Status |
 |---|---|

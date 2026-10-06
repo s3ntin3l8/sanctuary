@@ -67,7 +67,7 @@ def test_delete_document_404_for_non_owner(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.delete(f"/document/{doc.id}")
+    resp = client.delete(f"/api/v1/documents/{doc.id}")
     assert resp.status_code == 404
 
 
@@ -78,8 +78,8 @@ def test_delete_document_ok_for_owner(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.delete(f"/document/{doc.id}")
-    assert resp.status_code == 200
+    resp = client.delete(f"/api/v1/documents/{doc.id}")
+    assert resp.status_code == 204
 
 
 def test_document_original_404_for_non_owner(auth_enabled, db_session, two_users):
@@ -124,7 +124,7 @@ def test_update_case_404_for_non_owner(auth_enabled, db_session, two_users):
     _make_case(db_session, "PR5-A", a.id)
 
     client = _login("b@example.com")
-    resp = client.patch("/cases/PR5-A", data={"title": "Hijacked"})
+    resp = client.patch("/api/v1/cases/PR5-A", json={"title": "Hijacked"})
     assert resp.status_code == 404
 
 
@@ -133,7 +133,7 @@ def test_update_case_ok_for_owner(auth_enabled, db_session, two_users):
     _make_case(db_session, "PR5-A", a.id)
 
     client = _login("a@example.com")
-    resp = client.patch("/cases/PR5-A", data={"title": "Renamed"})
+    resp = client.patch("/api/v1/cases/PR5-A", json={"title": "Renamed"})
     assert resp.status_code == 200
     db_session.expire_all()
     assert db_session.get(Case, "PR5-A").title == "Renamed"
@@ -149,8 +149,8 @@ def test_update_case_forbidden_for_viewer_share(auth_enabled, db_session, two_us
     db_session.commit()
 
     client = _login("b@example.com")
-    assert client.get("/cases/PR5-A").status_code == 200
-    resp = client.patch("/cases/PR5-A", data={"title": "Hijacked"})
+    assert client.get("/api/v1/cases/PR5-A").status_code == 200
+    resp = client.patch("/api/v1/cases/PR5-A", json={"title": "Hijacked"})
     assert resp.status_code == 404
 
 
@@ -163,7 +163,7 @@ def test_update_case_ok_for_editor_share(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.patch("/cases/PR5-A", data={"title": "Edited by editor"})
+    resp = client.patch("/api/v1/cases/PR5-A", json={"title": "Edited by editor"})
     assert resp.status_code == 200
 
 
@@ -172,9 +172,7 @@ def test_purge_case_404_for_non_owner(auth_enabled, db_session, two_users):
     _make_case(db_session, "PR5-A", a.id)
 
     client = _login("b@example.com")
-    resp = client.request(
-        "DELETE", "/cases/PR5-A/purge", json={"confirm": "purge PR5-A"}
-    )
+    resp = client.post("/api/v1/cases/PR5-A/purge", json={"confirm": "purge PR5-A"})
     assert resp.status_code == 404
 
 
@@ -184,16 +182,18 @@ def test_create_case_owner_can_immediately_edit_it(auth_enabled, db_session, two
     a, _b = two_users
     client = _login("a@example.com")
     resp = client.post(
-        "/cases",
-        data={"case_id": "PR5-NEW", "title": "New Case", "court_name": "AG Berlin"},
+        "/api/v1/cases",
+        json={"case_id": "PR5-NEW", "title": "New Case", "court_name": "AG Berlin"},
     )
-    assert resp.status_code in (200, 303)
+    assert resp.status_code == 201
     db_session.expire_all()
     case = db_session.get(Case, "PR5-NEW")
     assert case is not None
     assert case.owner_id == a.id
 
-    edit_resp = client.patch("/cases/PR5-NEW", data={"title": "Renamed by owner"})
+    edit_resp = client.patch(
+        "/api/v1/cases/PR5-NEW", json={"title": "Renamed by owner"}
+    )
     assert edit_resp.status_code == 200
 
 
@@ -214,7 +214,7 @@ def test_update_proceeding_404_for_non_owner(auth_enabled, db_session, two_users
 
     client = _login("b@example.com")
     resp = client.patch(
-        f"/proceedings/{proceeding.id}", data={"court_name": "Hijacked"}
+        f"/api/v1/proceedings/{proceeding.id}", json={"court_name": "Hijacked"}
     )
     assert resp.status_code == 404
 
@@ -287,7 +287,7 @@ def test_mark_cost_paid_404_for_non_owner(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.post(f"/costs/{cost.id}/pay")
+    resp = client.post(f"/api/v1/costs/{cost.id}/pay")
     assert resp.status_code == 404
 
 
@@ -423,7 +423,7 @@ def test_claim_precedent_toggle_404_for_non_owner(auth_enabled, db_session, two_
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.post(f"/claims/{claim.id}/precedent/toggle")
+    resp = client.post(f"/api/v1/claims/{claim.id}/precedent")
     assert resp.status_code == 404
 
 
@@ -447,7 +447,7 @@ def test_claim_precedent_toggle_ok_for_owner(auth_enabled, db_session, two_users
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.post(f"/claims/{claim.id}/precedent/toggle")
+    resp = client.post(f"/api/v1/claims/{claim.id}/precedent")
     assert resp.status_code == 200
 
 
@@ -485,9 +485,9 @@ def test_update_claim_status_cannot_be_used_via_own_case_to_mutate_other_case_cl
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.post(
-        f"/cases/{case_a.id}/claims/{claim.id}/status",
-        data={"status": ClaimStatus.ESTABLISHED.value},
+    resp = client.put(
+        f"/api/v1/claims/{claim.id}/status",
+        json={"status": ClaimStatus.ESTABLISHED.value},
     )
     assert resp.status_code == 404
 
@@ -546,9 +546,10 @@ def test_batch_merge_proposal_cannot_confirm_via_unrelated_case_edit_access(
 
     client = _login("a@example.com")
     resp = client.post(
-        f"/cases/{case_a.id}/claims/proposals/merge/batch", data={"action": "confirm"}
+        f"/api/v1/cases/{case_a.id}/claims/proposals/merge", json={"action": "confirm"}
     )
     assert resp.status_code == 200
+    assert resp.json() == {"confirmed": 0, "dismissed": 0}
 
     db_session.expire_all()
     assert db_session.get(ClaimMergeProposal, proposal.id).status == (

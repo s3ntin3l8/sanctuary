@@ -101,7 +101,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
           icon: 'folder',
           title: c.title,
           sub: `${c.id} · ${c.status}`,
-          run: () => go(`/cases/${c.id}`),
+          run: () => go(`/cases/${c.id}`, true),
         })),
       },
       {

@@ -81,21 +81,22 @@ def test_owner_can_share_and_grantee_sees_case(
     client = _client()
     _login(client, "owner@example.com")
     resp = client.post(
-        f"/cases/{case.id}/shares",
-        data={"email": "other@example.com", "permission": "viewer"},
+        f"/api/v1/cases/{case.id}/shares",
+        json={"email": "other@example.com", "permission": "viewer"},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert resp.json()["shares"][0]["permission"] == "viewer"
 
     grantee = _client()
     _login(grantee, "other@example.com")
-    assert grantee.get(f"/cases/{case.id}").status_code == 200
+    assert grantee.get(f"/api/v1/cases/{case.id}").status_code == 200
 
 
-def test_non_owner_cannot_open_sharing_page(auth_enabled, db_session, owner_and_other):
+def test_non_owner_cannot_list_shares(auth_enabled, db_session, owner_and_other):
     owner, other, case = owner_and_other
     client = _client()
     _login(client, "other@example.com")
-    assert client.get(f"/cases/{case.id}/sharing").status_code == 404
+    assert client.get(f"/api/v1/cases/{case.id}/shares").status_code == 404
 
 
 def test_remove_share_revokes_access(auth_enabled, db_session, owner_and_other):
@@ -104,12 +105,13 @@ def test_remove_share_revokes_access(auth_enabled, db_session, owner_and_other):
 
     client = _client()
     _login(client, "owner@example.com")
-    resp = client.post(f"/cases/{case.id}/shares/{other.id}/remove")
-    assert resp.status_code == 204
+    resp = client.delete(f"/api/v1/cases/{case.id}/shares/{other.id}")
+    assert resp.status_code == 200
+    assert resp.json()["shares"] == []
 
     grantee = _client()
     _login(grantee, "other@example.com")
-    assert grantee.get(f"/cases/{case.id}").status_code == 404
+    assert grantee.get(f"/api/v1/cases/{case.id}").status_code == 404
 
 
 def test_reassign_then_delete_user(auth_enabled, db_session, owner_and_other):

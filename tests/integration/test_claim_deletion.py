@@ -138,7 +138,7 @@ def test_find_duplicates_guard_blocks_concurrent(db_session):
     db_session.commit()
 
     client = TestClient(app)
-    response = client.post(f"/cases/{case.id}/claims/find-duplicates")
+    response = client.post(f"/api/v1/cases/{case.id}/claims/find-duplicates")
 
     assert response.status_code == 200
     # Guard should NOT have reset processed back to 0.
