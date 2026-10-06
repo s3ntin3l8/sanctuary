@@ -299,13 +299,8 @@ async def worker_queue_panel_body(
     )
 
 
-@router.post("/retry-failed")
-@limiter.limit("5/minute")
-async def retry_failed_docs(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def retry_failed_docs_for(db: Session, user: User) -> None:
+    """Reset and re-dispatch every FAILED doc the user may see."""
     from app.services.pipeline_status import (
         STAGE_REGISTRY,
         reset_failed_stages_only,
@@ -370,6 +365,15 @@ async def retry_failed_docs(
             )
             dispatch_task(process_document_task, doc_id)
 
+
+@router.post("/retry-failed")
+@limiter.limit("5/minute")
+async def retry_failed_docs(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    retry_failed_docs_for(db, user)
     running, pending, failed = _get_queue_docs(db, owner_id=user.id)
     queue_items = _build_queue_items(running, pending)
     n_active_ai = count_inflight()

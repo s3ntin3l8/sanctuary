@@ -1156,58 +1156,6 @@ class CaseService:
             "total": len(all_cases),
         }
 
-    def get_all_cases_directory_paginated(
-        self, user_id: int, page: int = 1, per_page: int = 20
-    ) -> dict:
-        """Get paginated cases with counts for directory view."""
-        visible = self._visible_filter(user_id)
-        cases, total = self.case_repo.get_paginated(
-            page=page, per_page=per_page, include_drafts=True, visible_ids=visible
-        )
-        now = now_utc()
-
-        from app.services.user_settings_service import get_last_home_visit
-
-        last_home_visit = get_last_home_visit(self.db, user_id)
-
-        batched = self._batch_card_context([c.id for c in cases])
-        enriched_cases = [
-            self.enrich_case_for_card(c, now, last_home_visit, _batched=batched)
-            for c in cases
-        ]
-
-        draft_cases = [c for c in enriched_cases if c["is_draft"]]
-        active_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] != CaseStatus.CLOSED
-        ]
-        closed_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
-        ]
-
-        stats_by_status = self.case_repo.count_all_by_status(visible_ids=visible)
-
-        case_ids = [c.id for c in cases]
-        doc_counts = self.doc_repo.bulk_count_by_case(case_ids)
-        action_counts = self.action_repo.bulk_count_open_by_case(case_ids)
-
-        return {
-            "cases": enriched_cases,
-            "draft_cases": draft_cases,
-            "active_cases": active_cases,
-            "closed_cases": closed_cases,
-            "stats_by_status": stats_by_status,
-            "doc_counts": doc_counts,
-            "deadline_counts": action_counts,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-            "total_pages": (total + per_page - 1) // per_page if total > 0 else 1,
-        }
-
     def create_case(
         self,
         case_id: str,

@@ -13,12 +13,13 @@ from app.models.enums import (
 )
 
 
-def build_sidebar_counts(db: Session, owner_id: int | None = None) -> dict:
-    """Computes sidebar badge counts. When ``owner_id`` is given, the triage and
-    case counts are scoped to that user (per-user triage inbox + visible cases)."""
-    # Count bundles (IngestBatches) pending triage rather than documents, to stay
-    # consistent with the feed which groups docs into bundles. Loose docs without a
-    # batch (historical pre-batch data) are counted individually as fallback.
+def triage_inbox_count(db: Session, owner_id: int | None = None) -> int:
+    """Bundles awaiting triage (plus loose pre-batch docs), optionally per owner.
+
+    Counts IngestBatches rather than documents, to stay consistent with the
+    feed which groups docs into bundles. Loose docs without a batch
+    (historical pre-batch data) are counted individually as fallback.
+    """
     batch_q = db.query(IngestBatch).filter(
         IngestBatch.status != IngestBatchStatus.COMPLETED,
         IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
@@ -30,7 +31,13 @@ def build_sidebar_counts(db: Session, owner_id: int | None = None) -> dict:
     if owner_id is not None:
         batch_q = batch_q.filter(IngestBatch.owner_id == owner_id)
         loose_q = loose_q.filter(Document.owner_id == owner_id)
-    triage_count = batch_q.count() + loose_q.count()
+    return batch_q.count() + loose_q.count()
+
+
+def build_sidebar_counts(db: Session, owner_id: int | None = None) -> dict:
+    """Computes sidebar badge counts. When ``owner_id`` is given, the triage and
+    case counts are scoped to that user (per-user triage inbox + visible cases)."""
+    triage_count = triage_inbox_count(db, owner_id)
     total_docs = db.query(Document).count()
 
     case_q = db.query(Case).filter(Case.status != CaseStatus.CLOSED)

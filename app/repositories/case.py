@@ -166,34 +166,3 @@ class CaseRepository(BaseRepository[Case]):
     def get_all(self) -> Sequence[Case]:  # type: ignore[override]  # CaseRepository intentionally specializes the generic base signature for Case-specific filters
         """Get all cases."""
         return self.db.query(Case).all()
-
-    def get_paginated(  # type: ignore[override]  # CaseRepository intentionally specializes the generic base signature for Case-specific filters
-        self,
-        page: int = 1,
-        per_page: int = 20,
-        status: CaseStatus | None = None,
-        include_drafts: bool = False,
-        visible_ids: set[str] | None = None,
-    ) -> tuple[Sequence[Case], int]:
-        """Get paginated cases with total count."""
-        query = self.db.query(Case).filter(Case.id != "_TRIAGE")
-
-        if visible_ids is not None:
-            query = query.filter(Case.id.in_(visible_ids))
-
-        if not include_drafts:
-            query = query.filter(Case.is_draft.is_(False))
-
-        if status:
-            query = query.filter(Case.status == status)
-
-        total = query.count()
-
-        cases = (
-            query.order_by(Case.ingest_date.desc())
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all()
-        )
-
-        return cases, total

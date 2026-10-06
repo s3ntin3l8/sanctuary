@@ -40,8 +40,9 @@ export async function unwrap<T>(call: Promise<Result<T>>): Promise<T> {
   } catch {
     throw new ApiError(0, 'network_error', 'Could not reach the server.')
   }
-  if (result.data !== undefined) return result.data
   const { error, response } = result
+  // 204 and other empty bodies arrive as `data: undefined` on a 2xx response.
+  if (result.data !== undefined || (response.ok && error === undefined)) return result.data as T
   if (isErrorBody(error)) throw new ApiError(response.status, error.code, error.detail)
   throw new ApiError(response.status, 'error', 'Something went wrong. Please try again.')
 }

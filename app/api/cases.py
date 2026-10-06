@@ -33,53 +33,17 @@ from app.services.user_settings_service import (
     mark_viewed,
     set_active_proceeding,
 )
+from app.spa import spa_index
 
 router = APIRouter(prefix="/cases", tags=["pages"])
-
-DEFAULT_PAGE_SIZE = 20
 
 FilterQuery = Annotated[str, Query(pattern=r"^(critical|significant\+|all)$")]
 
 
-@router.get("")
-async def case_directory(
-    request: Request,
-    page: int = Query(1, ge=1),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    from app.constants import CASE_STATUS_META
-    from app.core.timezone import now_utc
-
-    case_service = CaseService(db)
-
-    if page > 1:
-        data = case_service.get_all_cases_directory_paginated(
-            user.id, page=page, per_page=DEFAULT_PAGE_SIZE
-        )
-    else:
-        data = case_service.get_all_cases_directory(user.id)
-
-    case_titles = {c["id"]: c["title"] for c in data["cases"]}
-    now = now_utc()
-
-    return render_page(
-        request,
-        "pages/case_directory.html",
-        db=db,
-        now=now,
-        all_cases=data["cases"],
-        active_cases=data["active_cases"],
-        closed_cases=data["closed_cases"],
-        case_titles=case_titles,
-        stats_by_status=data["stats_by_status"],
-        doc_counts=data["doc_counts"],
-        deadline_counts=data["deadline_counts"],
-        status_meta=CASE_STATUS_META,
-        current_page=data.get("page", 1),
-        total_pages=data.get("total_pages", 1),
-        total=data["total"],
-    )
+@router.get("", include_in_schema=False)
+def case_directory():
+    """The cases directory is an SPA route (data comes from /api/v1/cases)."""
+    return spa_index()
 
 
 @router.get("/{case_id}/brief")
@@ -544,53 +508,6 @@ async def save_opposing_parties(
             "saved": True,
         },
     )
-
-
-@router.post("/{case_id}/confirm-close")
-async def confirm_close_case(
-    request: Request,
-    case_id: str,
-    db: Session = Depends(get_db),
-    case: Case = Depends(require_case_access(edit=True)),
-):
-    """Confirm an AI-suggested case closure: set status to CLOSED and cascade proceedings."""
-    from datetime import UTC, datetime
-
-    case.status = CaseStatus.CLOSED
-    case.closed_at = datetime.now(UTC)
-    case.pending_close = False
-    db.query(Proceeding).filter(Proceeding.case_id == case_id).update(
-        {"status": ProceedingStatus.CLOSED}
-    )
-    db.commit()
-
-    response = Response(status_code=204)
-    response.headers["HX-Redirect"] = str(
-        request.app.url_path_for("case_detail", case_id=case_id)
-    )
-    return response
-
-
-@router.post("/{case_id}/dismiss-close")
-async def dismiss_close_case(
-    request: Request,
-    case_id: str,
-    db: Session = Depends(get_db),
-    case: Case = Depends(require_case_access(edit=True)),
-):
-    """Dismiss an AI-suggested case closure: clear the pending flag, keep status unchanged."""
-    case.pending_close = False
-    if case.ai_brief and isinstance(case.ai_brief, dict):
-        brief = dict(case.ai_brief)
-        brief.pop("close_suggestion_rationale", None)
-        case.ai_brief = brief
-    db.commit()
-
-    response = Response(status_code=204)
-    response.headers["HX-Redirect"] = str(
-        request.app.url_path_for("case_detail", case_id=case_id)
-    )
-    return response
 
 
 @router.post("/{case_id}/reenrich")

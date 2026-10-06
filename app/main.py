@@ -1151,7 +1151,7 @@ async def http_exception_handler(
     return await fastapi_http_exception_handler(request, exc)
 
 
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
 
 
 async def request_validation_handler(

@@ -24,6 +24,9 @@
   --on-accent: #003731;
   --logo: #171f33;
   --danger: #f87171;
+  --warning: #fbbf24;
+  --success: #34d399;
+  --info: #38bdf8;
   color-scheme: dark;
 }
 
@@ -47,6 +50,9 @@
   --on-accent: #ecfaff;
   --logo: #e8eff1;
   --danger: #b91c1c;
+  --warning: #a1791a;
+  --success: #3f9b6e;
+  --info: #0369a1;
   color-scheme: light;
 }
 
@@ -70,10 +76,21 @@
   --color-on-accent: var(--on-accent);
   --color-logo: var(--logo);
   --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-info: var(--info);
 
   --font-sans: 'Inter Variable', system-ui, sans-serif;
   --font-display: 'Manrope Variable', 'Inter Variable', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../assets/fonts/material-symbols-outlined.woff2') format('woff2');
 }
 
 @layer base {
@@ -89,4 +106,32 @@
     scrollbar-width: thin;
     scrollbar-color: var(--line3) transparent;
   }
+}
+
+@utility icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+  white-space: nowrap;
+  font-feature-settings: 'liga';
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
+@utility icon-filled {
+  font-variation-settings:
+    'FILL' 1,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
 }
