@@ -31,6 +31,10 @@ class AdminUserCreate(BaseModel):
     role: UserRole = UserRole.USER
 
 
+class AdminActiveUpdate(BaseModel):
+    is_active: bool
+
+
 class AdminRoleUpdate(BaseModel):
     role: UserRole
 

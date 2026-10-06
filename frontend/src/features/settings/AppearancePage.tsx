@@ -10,6 +10,7 @@ import { Button } from '../../ui/Button'
 import { Field } from '../../ui/Field'
 import { Icon } from '../../ui/Icon'
 import { SettingsCard } from '../../ui/SettingsCard'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 const CARDS = [
@@ -19,13 +20,14 @@ const CARDS = [
 ] as const
 
 export function AppearancePage() {
-  const view = useAppearance().data
+  const viewQuery = useAppearance()
+  const view = viewQuery.data
   const isAdmin = useShell().data?.user.role === 'admin'
   const saveTheme = useSaveTheme()
   const saveCards = useSaveDashboardCards()
   const saveTz = useSaveTimezone()
   const toast = useToast()
-  if (!view) return null
+  if (!view) return <QueryState error={viewQuery.error} pending={viewQuery.isPending} />
 
   return (
     <>
@@ -38,7 +40,7 @@ export function AppearancePage() {
               aria-pressed={view.theme === t}
               onClick={() => {
                 setTheme(t)
-                saveTheme.mutate({ theme: t })
+                saveTheme.mutate({ theme: t }, { onError: (err) => toast(err.message, 'error') })
               }}
             >
               <Icon name={t === 'dark' ? 'dark_mode' : 'light_mode'} size={16} />{' '}

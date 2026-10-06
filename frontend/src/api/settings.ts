@@ -175,14 +175,26 @@ export function useReindex(kind: 'reindex' | 'rebuild-index') {
           ? api.POST('/api/v1/settings/ai/reindex')
           : api.POST('/api/v1/settings/ai/rebuild-index'),
       ),
-    onSuccess: (job) => queryClient.setQueryData(['settings', 'reindex'], job),
+    onSuccess: (job) => {
+      queryClient.setQueryData(['settings', 'reindex'], job)
+      // A rebuild resizes the columns synchronously: the mismatch flag is already stale.
+      queryClient.invalidateQueries({ queryKey: ['settings', 'ai'] })
+    },
   })
 }
 
 export function useReindexStatus(initial: S['ReindexJob'] | null | undefined) {
+  const queryClient = useQueryClient()
   return useQuery<S['ReindexJob'] | null, ApiError>({
     queryKey: ['settings', 'reindex'],
-    queryFn: () => unwrap(api.GET('/api/v1/settings/ai/reindex/status')),
+    queryFn: async () => {
+      const job = await unwrap(api.GET('/api/v1/settings/ai/reindex/status'))
+      const previous = queryClient.getQueryData<S['ReindexJob'] | null>(['settings', 'reindex'])
+      if (previous?.status === 'running' && job?.status !== 'running') {
+        queryClient.invalidateQueries({ queryKey: ['settings', 'ai'] })
+      }
+      return job
+    },
     initialData: initial === undefined ? undefined : initial,
     refetchInterval: (query) => (query.state.data?.status === 'running' ? 4_000 : false),
   })
@@ -282,8 +294,13 @@ const userPath = (id: number) => ({ params: { path: { user_id: id } } })
 export const useAdminCreateUser = () =>
   useAdminReplace<S['AdminUserCreate']>((body) => unwrap(api.POST('/api/v1/admin/users', { body })))
 export const useAdminToggleActive = () =>
-  useAdminReplace<number>((id) =>
-    unwrap(api.PUT('/api/v1/admin/users/{user_id}/active', userPath(id))),
+  useAdminReplace<{ id: number; isActive: boolean }>(({ id, isActive }) =>
+    unwrap(
+      api.PUT('/api/v1/admin/users/{user_id}/active', {
+        ...userPath(id),
+        body: { is_active: isActive },
+      }),
+    ),
   )
 export const useAdminSetRole = () =>
   useAdminReplace<{ id: number; role: S['AdminRoleUpdate']['role'] }>(({ id, role }) =>

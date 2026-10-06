@@ -64,8 +64,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** V1 Toggle Active */
-        put: operations["v1_toggle_active_api_v1_admin_users__user_id__active_put"];
+        /** V1 Set Active */
+        put: operations["v1_set_active_api_v1_admin_users__user_id__active_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -948,6 +948,11 @@ export interface components {
          * @enum {string}
          */
         ActionItemType: "deadline" | "court_date" | "response_required" | "filing_required" | "payment_due";
+        /** AdminActiveUpdate */
+        AdminActiveUpdate: {
+            /** Is Active */
+            is_active: boolean;
+        };
         /** AdminPasswordReset */
         AdminPasswordReset: {
             /** New Password */
@@ -1858,7 +1863,7 @@ export interface operations {
             };
         };
     };
-    v1_toggle_active_api_v1_admin_users__user_id__active_put: {
+    v1_set_active_api_v1_admin_users__user_id__active_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -1867,7 +1872,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminActiveUpdate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

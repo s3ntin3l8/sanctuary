@@ -6,6 +6,7 @@ import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 function fields(event: FormEvent<HTMLFormElement>) {
@@ -14,13 +15,14 @@ function fields(event: FormEvent<HTMLFormElement>) {
 }
 
 export function AccountPage() {
-  const account = useAccount().data
+  const accountQuery = useAccount()
+  const account = accountQuery.data
   const profile = useUpdateProfile()
   const email = useChangeEmail()
   const password = useChangePassword()
   const toast = useToast()
 
-  if (!account) return null
+  if (!account) return <QueryState error={accountQuery.error} pending={accountQuery.isPending} />
   const name = account.display_name || account.email
   return (
     <>
@@ -43,7 +45,10 @@ export function AccountPage() {
             const { data } = fields(e)
             profile.mutate(
               { display_name: String(data.get('display_name')) },
-              { onSuccess: () => toast('Profile updated') },
+              {
+                onSuccess: () => toast('Profile updated'),
+                onError: (err) => toast(err.message, 'error'),
+              },
             )
           }}
         >

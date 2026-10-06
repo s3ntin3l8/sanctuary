@@ -8,6 +8,7 @@ import { Field, inputClass } from '../../ui/Field'
 import { Icon } from '../../ui/Icon'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 const WINDOWS = [
@@ -17,13 +18,14 @@ const WINDOWS = [
 ] as const
 
 export function GmailPage() {
-  const gmail = useGmail().data
+  const gmailQuery = useGmail()
+  const gmail = gmailQuery.data
   const save = useSaveGmailFilters()
   const backfill = useGmailBackfill()
   const toast = useToast()
   const [days, setDays] = useState<90 | 365 | 1825>(90)
 
-  if (!gmail) return null
+  if (!gmail) return <QueryState error={gmailQuery.error} pending={gmailQuery.isPending} />
 
   function onSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -36,7 +38,10 @@ export function GmailPage() {
           .filter(Boolean),
         label_filter: String(data.get('label_filter')),
       },
-      { onSuccess: () => toast('Gmail configuration saved') },
+      {
+        onSuccess: () => toast('Gmail configuration saved'),
+        onError: (err) => toast(err.message, 'error'),
+      },
     )
   }
 

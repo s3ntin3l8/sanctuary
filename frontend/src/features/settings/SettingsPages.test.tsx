@@ -168,3 +168,65 @@ test('admin: creates a user and never offers self-destructive actions on yoursel
   )
   expect(await screen.findByText('Users (3)')).toBeVisible()
 })
+
+test('ai: editing an endpoint keeps, replaces or clears the stored key', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/ai': { body: aiSettings },
+    'GET /api/v1/settings/ai/health': {
+      body: {
+        chat: { ok: true, provider: null, detail: 'ok' },
+        embed: { ok: true, provider: null, detail: 'ok' },
+        ocr: { ok: true, provider: null, detail: 'ok' },
+      },
+    },
+    'GET /api/v1/settings/ai/instances/inst_a/models': { body: { chat: [], embed: [], ocr: [] } },
+    'GET /api/v1/settings/ai/instances/inst_b/models': { body: { chat: [], embed: [], ocr: [] } },
+    'PUT /api/v1/settings/ai/instances/inst_b': { body: aiSettings.instances[1] },
+  })
+  renderAt('/settings/ai', <AiPage />)
+  const user = userEvent.setup()
+  const bodies = async () =>
+    Promise.all(
+      fetch.mock.calls
+        .map(([r]) => r)
+        .filter((r) => r.method === 'PUT')
+        .map((r) => r.clone().json()),
+    )
+
+  const openSecondEndpoint = async () => {
+    const edits = await screen.findAllByRole('button', { name: 'Edit' })
+    const second = edits[1]
+    if (!second) throw new Error('expected two endpoints')
+    await user.click(second)
+    return screen.getByRole('dialog')
+  }
+
+  // Untouched key field → null (keep).
+  let dialog = await openSecondEndpoint()
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(async () => expect((await bodies()).at(-1)).toMatchObject({ api_key: null }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+  // Remove-the-stored-key checkbox → "" (clear).
+  dialog = await openSecondEndpoint()
+  await user.click(within(dialog).getByLabelText('Remove the stored key'))
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(async () => expect((await bodies()).at(-1)).toMatchObject({ api_key: '' }))
+})
+
+test('settings pages explain a 403 instead of rendering nothing', async () => {
+  stubApi({
+    'GET /api/v1/settings/data': {
+      status: 403,
+      body: { detail: 'Admin access required', code: 'forbidden' },
+    },
+    'GET /api/v1/settings/data/debug-logs': {
+      status: 403,
+      body: { detail: 'Admin access required', code: 'forbidden' },
+    },
+  })
+  renderAt('/settings/data', <DataPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Only an administrator can open this page.',
+  )
+})

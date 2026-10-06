@@ -23,6 +23,7 @@ import { Icon } from '../../ui/Icon'
 import { Modal } from '../../ui/Modal'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 type Instance = Schemas['AiInstance']
@@ -36,9 +37,10 @@ const ROLE_ICONS: Record<RoleName, string> = {
 }
 
 export function AiPage() {
-  const settings = useAiSettings().data
+  const settingsQuery = useAiSettings()
+  const settings = settingsQuery.data
   const [editing, setEditing] = useState<Instance | 'new' | null>(null)
-  if (!settings) return null
+  if (!settings) return <QueryState error={settingsQuery.error} pending={settingsQuery.isPending} />
   return (
     <>
       <SettingsCard
@@ -164,16 +166,15 @@ function EndpointModal({
     const label = String(data.get('label'))
     const base_url = String(data.get('base_url'))
     const key = String(data.get('api_key'))
+    const clearKey = data.get('clear_key') === 'on'
     const done = () => {
       toast(instance ? 'Endpoint saved' : 'Endpoint added')
       onClose()
     }
     if (instance) {
-      // An untouched key field keeps the stored key (never echoed to the browser).
-      update.mutate(
-        { id: instance.id, body: { label, base_url, api_key: key === '' ? null : key } },
-        { onSuccess: done },
-      )
+      // null keeps the stored key (never echoed to the browser); "" clears it.
+      const api_key = clearKey ? '' : key === '' ? null : key
+      update.mutate({ id: instance.id, body: { label, base_url, api_key } }, { onSuccess: done })
     } else {
       create.mutate({ label, base_url, api_key: key || null }, { onSuccess: done })
     }
@@ -210,6 +211,12 @@ function EndpointModal({
           placeholder={instance?.has_api_key ? '•••••••• (unchanged)' : 'optional'}
           hint="Only needed for OpenAI-compatible servers that require one. Stored locally."
         />
+        {instance?.has_api_key && (
+          <label className="flex items-center gap-2 text-[12px] text-ink2">
+            <input type="checkbox" name="clear_key" className="h-4 w-4 accent-accent" /> Remove the
+            stored key
+          </label>
+        )}
         {error && (
           <p role="alert" className="text-[11px] text-danger">
             {error.message}
@@ -313,7 +320,10 @@ function RoleCard({
             value={role.active_id ?? ''}
             disabled={instances.length === 0 || setRole.isPending}
             onChange={(e) =>
-              setRole.mutate({ role: role.role, body: { instance_id: e.target.value, model: '' } })
+              setRole.mutate(
+                { role: role.role, body: { instance_id: e.target.value, model: '' } },
+                { onError: (err) => toast(err.message, 'error') },
+              )
             }
             className={inputClass}
           >
@@ -489,8 +499,18 @@ function ExtractionEngine({ engine }: { engine: Schemas['AiSettingsView']['extra
             value={value}
             checked={current === value}
             onChange={() => {
+              const previous = current
               setCurrent(value)
-              set.mutate({ engine: value }, { onSuccess: () => toast(`Default engine: ${label}`) })
+              set.mutate(
+                { engine: value },
+                {
+                  onSuccess: () => toast(`Default engine: ${label}`),
+                  onError: (err) => {
+                    setCurrent(previous)
+                    toast(err.message, 'error')
+                  },
+                },
+              )
             }}
             className="mt-0.5 accent-accent"
           />

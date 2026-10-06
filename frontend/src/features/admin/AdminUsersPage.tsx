@@ -20,12 +20,14 @@ import { Field, inputClass } from '../../ui/Field'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
 import { Toggle } from '../../ui/Toggle'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 type User = Schemas['AdminUser']
 
 export function AdminUsersPage() {
-  const view = useAdminUsers().data
+  const viewQuery = useAdminUsers()
+  const view = viewQuery.data
   const me = useShell().data?.user
   const create = useAdminCreateUser()
   const signup = useAdminSignup()
@@ -34,7 +36,7 @@ export function AdminUsersPage() {
   useEffect(() => {
     document.title = 'Users | The Sanctuary'
   }, [])
-  if (!view || !me) return null
+  if (!view || !me) return <QueryState error={viewQuery.error} pending={viewQuery.isPending} />
 
   function onCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -68,7 +70,9 @@ export function AdminUsersPage() {
             checked={view.signup_enabled}
             label="Self-service sign-up"
             disabled={signup.isPending}
-            onChange={(next) => signup.mutate(next)}
+            onChange={(next) =>
+              signup.mutate(next, { onError: (err) => toast(err.message, 'error') })
+            }
           />
         </div>
       </SettingsCard>
@@ -147,7 +151,9 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
               variant="secondary"
               className="px-2.5 py-1 text-[11px]"
               disabled={toggle.isPending}
-              onClick={() => toggle.mutate(user.id, { onError: fail })}
+              onClick={() =>
+                toggle.mutate({ id: user.id, isActive: !user.is_active }, { onError: fail })
+              }
             >
               {user.is_active ? 'Deactivate' : 'Activate'}
             </Button>

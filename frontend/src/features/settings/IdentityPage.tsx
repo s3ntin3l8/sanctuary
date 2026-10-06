@@ -5,13 +5,15 @@ import { Button } from '../../ui/Button'
 import { Field, inputClass } from '../../ui/Field'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 export function IdentityPage() {
-  const identity = useIdentity().data
+  const identityQuery = useIdentity()
+  const identity = identityQuery.data
   const save = useSaveIdentity()
   const toast = useToast()
-  if (!identity) return null
+  if (!identity) return <QueryState error={identityQuery.error} pending={identityQuery.isPending} />
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -25,7 +27,7 @@ export function IdentityPage() {
           .filter(Boolean),
         user_context: String(data.get('user_context')),
       },
-      { onSuccess: () => toast('Identity saved') },
+      { onSuccess: () => toast('Identity saved'), onError: (err) => toast(err.message, 'error') },
     )
   }
 

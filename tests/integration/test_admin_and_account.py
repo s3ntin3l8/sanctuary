@@ -78,7 +78,9 @@ def test_admin_creates_user(auth_enabled, db_session, admin):
 def test_admin_toggle_active_revokes_sessions(auth_enabled, db_session, admin, regular):
     client = _client()
     _login(client, "admin@example.com")
-    resp = client.put(f"/api/v1/admin/users/{regular.id}/active")
+    resp = client.put(
+        f"/api/v1/admin/users/{regular.id}/active", json={"is_active": False}
+    )
     assert resp.status_code == 200
     db_session.refresh(regular)
     assert regular.is_active is False
@@ -376,3 +378,65 @@ def test_dev_mode_fresh_db_redirects_to_create_admin(db_session):
     resp = client.get("/triage")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/signup"
+
+
+def test_admin_active_flag_is_idempotent_and_self_guarded(
+    auth_enabled, db_session, admin, regular
+):
+    client = _client()
+    _login(client, "admin@example.com")
+    for _ in range(2):
+        resp = client.put(
+            f"/api/v1/admin/users/{regular.id}/active", json={"is_active": False}
+        )
+        assert resp.status_code == 200
+    db_session.refresh(regular)
+    assert regular.is_active is False
+    assert regular.token_version == 1  # bumped once, not twice
+    self_resp = client.put(
+        f"/api/v1/admin/users/{admin.id}/active", json={"is_active": False}
+    )
+    assert self_resp.status_code == 400
+    assert self_resp.json()["code"] == "self_change"
+    assert (
+        client.put(
+            f"/api/v1/admin/users/{admin.id}/password",
+            json={"new_password": "freshpassword1"},  # pragma: allowlist secret
+        ).status_code
+        == 400
+    )
+
+
+def test_admin_reassign_cases_validation(auth_enabled, db_session, admin, regular):
+    client = _client()
+    _login(client, "admin@example.com")
+    same = client.post(
+        f"/api/v1/admin/users/{regular.id}/reassign-cases",
+        json={"new_owner_id": regular.id},
+    )
+    assert same.status_code == 400
+    assert same.json()["code"] == "same_owner"
+    missing = client.post(
+        f"/api/v1/admin/users/{regular.id}/reassign-cases",
+        json={"new_owner_id": 999999},
+    )
+    assert missing.status_code == 404
+
+
+def test_change_email_without_password_needs_no_current_password(
+    auth_enabled, db_session
+):
+    user = auth_service.create_user(db_session, email="sso@example.com", password=None)
+    db_session.commit()
+    # No password hash means no local login; drive the request via a session cookie.
+    import app.main as main_module
+    from app.services.auth_service import build_session
+
+    client = _client()
+    client.cookies.set("session", main_module._dump_session_cookie(build_session(user)))
+    resp = client.put(
+        "/api/v1/settings/account/email", json={"new_email": "sso2@example.com"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "sso2@example.com"
+    assert resp.json()["has_password"] is False

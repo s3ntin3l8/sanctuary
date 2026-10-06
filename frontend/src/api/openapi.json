@@ -47,6 +47,19 @@
         "title": "ActionItemType",
         "type": "string"
       },
+      "AdminActiveUpdate": {
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ],
+        "title": "AdminActiveUpdate",
+        "type": "object"
+      },
       "AdminPasswordReset": {
         "properties": {
           "new_password": {
@@ -2407,7 +2420,7 @@
     },
     "/api/v1/admin/users/{user_id}/active": {
       "put": {
-        "operationId": "v1_toggle_active_api_v1_admin_users__user_id__active_put",
+        "operationId": "v1_set_active_api_v1_admin_users__user_id__active_put",
         "parameters": [
           {
             "in": "path",
@@ -2419,6 +2432,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminActiveUpdate"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -2441,7 +2464,7 @@
             "description": "Error"
           }
         },
-        "summary": "V1 Toggle Active",
+        "summary": "V1 Set Active",
         "tags": [
           "admin"
         ]

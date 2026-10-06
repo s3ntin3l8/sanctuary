@@ -12,17 +12,19 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { Toggle } from '../../ui/Toggle'
+import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 export function DataPage() {
-  const view = useDataView().data
+  const viewQuery = useDataView()
+  const view = viewQuery.data
   const reset = useMaintenance('reset-enrichment')
   const clear = useMaintenance('clear-all-data')
   const redact = useSetDebugRedact()
   const toast = useToast()
   const [confirm, setConfirm] = useState<'reset' | 'clear' | null>(null)
   const [redactOn, setRedactOn] = useState<boolean | null>(null)
-  if (!view) return null
+  if (!view) return <QueryState error={viewQuery.error} pending={viewQuery.isPending} />
   const redactValue = redactOn ?? view.ai_debug_redact
 
   const stats = [

@@ -1,7 +1,7 @@
 """Live Celery worker pool control — resize workers without a restart.
 
 Uses Celery's remote-control API (the same pidbox bus already used by
-settings_maintenance's `control.purge()`). `--without-gossip/mingle/heartbeat`
+maintenance_service's `control.purge()`). `--without-gossip/mingle/heartbeat`
 do not disable remote control, so this works against the trimmed workers.
 """
 

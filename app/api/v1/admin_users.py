@@ -10,6 +10,7 @@ from app.api.v1.errors import ApiError
 from app.dependencies import get_current_admin, get_db
 from app.models.database import Case, User
 from app.schemas.admin import (
+    AdminActiveUpdate,
     AdminPasswordReset,
     AdminReassignCases,
     AdminRoleUpdate,
@@ -85,17 +86,19 @@ def create_user(
 
 
 @router.put("/users/{user_id}/active", response_model=AdminUsersView)
-def toggle_active(
+def set_active(
     user_id: int,
+    body: AdminActiveUpdate,
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ):
     user = _target(db, user_id)
     if user.id == admin.id:
         raise ApiError(400, "self_change", "You cannot deactivate your own account.")
-    user.is_active = not user.is_active
-    auth_service.bump_token_version(user)
-    db.commit()
+    if user.is_active != body.is_active:
+        user.is_active = body.is_active
+        auth_service.bump_token_version(user)
+        db.commit()
     return _view(db)
 
 
@@ -122,6 +125,10 @@ def reset_password(
     admin: User = Depends(get_current_admin),
 ):
     user = _target(db, user_id)
+    if user.id == admin.id:
+        raise ApiError(
+            400, "self_change", "Change your own password under Settings → Account."
+        )
     auth_service.set_password(db, user, body.new_password)
     db.commit()
 

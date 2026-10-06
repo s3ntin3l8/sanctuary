@@ -455,3 +455,57 @@ def test_settings_pages_are_spa_routes():
         assert c.get(f"/settings/{tab}").status_code == 200, tab
     assert c.get("/settings/nope").headers["location"] == "/settings/account"
     assert c.get("/admin/users").status_code == 200
+
+
+def test_regular_user_keeps_personal_settings_but_not_timezone(
+    auth_enabled, db_session
+):
+    from app.services import auth_service
+
+    auth_service.create_user(
+        db_session,
+        email="u@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    db_session.commit()
+    c = TestClient(app, follow_redirects=False)
+    c.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "u@example.com",
+            "password": "password123",  # pragma: allowlist secret
+        },  # pragma: allowlist secret
+    )
+    assert (
+        c.put("/api/v1/settings/appearance/theme", json={"theme": "light"}).status_code
+        == 200
+    )
+    assert (
+        c.put("/api/v1/settings/gmail/filters", json={"allowlist": []}).status_code
+        == 200
+    )
+    denied = c.put("/api/v1/settings/appearance/timezone", json={"tz": "UTC"})
+    assert denied.status_code == 403
+    assert c.get("/settings/ai").status_code == 403  # SPA page is gated too
+    assert c.get("/settings/account").status_code == 200
+
+
+def test_ai_instance_update_clears_key_with_empty_string(db_session):
+    inst = _create_instance()
+    client.put(
+        f"/api/v1/settings/ai/instances/{inst['id']}",
+        json={
+            "label": "Box",
+            "base_url": "http://x",
+            "api_key": "k1",  # pragma: allowlist secret
+        },  # pragma: allowlist secret
+    )
+    cleared = client.put(
+        f"/api/v1/settings/ai/instances/{inst['id']}",
+        json={"label": "Box", "base_url": "http://x", "api_key": ""},
+    )
+    assert cleared.json()["has_api_key"] is False
+    saved = next(
+        i for i in _app_settings(db_session)["ai"]["instances"] if i["id"] == inst["id"]
+    )
+    assert saved["api_key"] == "not-needed"  # pragma: allowlist secret
