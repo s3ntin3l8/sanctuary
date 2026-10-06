@@ -1,0 +1,384 @@
+"""/api/v1/documents/*: review view and the actions on it; upload."""
+
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.models.database import (
+    ActionItem,
+    Case,
+    Document,
+    DocumentPipelineStage,
+    DocumentRelationship,
+    User,
+)
+from app.models.enums import (
+    ActionItemType,
+    CaseStatus,
+    PipelineStage,
+    PipelineState,
+    RelationshipConfidence,
+    RelationshipType,
+    StageStatus,
+)
+
+pytestmark = pytest.mark.integration
+
+client = TestClient(app)
+
+
+def _admin(db):
+    return db.query(User).filter_by(email="admin@localhost").one()
+
+
+def _doc(db, owner_id, case_id="_TRIAGE", **kw):
+    doc = Document(
+        title=kw.pop("title", "Klageerwiderung"),
+        owner_id=owner_id,
+        case_id=case_id,
+        pipeline_state=kw.pop("pipeline_state", PipelineState.COMPLETED),
+        ai_summary={
+            "legal_significance": "rebuts custody claim",
+            "required_action": "file counter-statement",
+            "financial_impact": "1.3 RVG fee",
+        },
+        key_passages=[
+            {"text": "Der Beklagte bestreitet", "kind": "disputed", "page": 2}
+        ],
+        extraction_confidence={"sender": "low", "issued_date": "medium"},
+        review_reasons=["missing_sender"],
+        needs_review=True,
+        **kw,
+    )
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+# --- Review view --------------------------------------------------------------
+
+
+def test_review_view_shape(db_session, sample_case):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    other = _doc(db_session, admin.id, title="Antragsschrift")
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=doc.id,
+            to_document_id=other.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.AI_DETECTED,
+        )
+    )
+    db_session.add(
+        ActionItem(
+            case_id="_TRIAGE",
+            source_document_id=doc.id,
+            title="File counter-statement",
+            action_type=ActionItemType.DEADLINE,
+            due_date=datetime.now(UTC) + timedelta(days=4),
+        )
+    )
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id, stage=PipelineStage.ENRICH, status=StageStatus.COMPLETED
+        )
+    )
+    db_session.commit()
+
+    body = client.get(f"/api/v1/documents/{doc.id}/review").json()
+    assert body["title"] == "Klageerwiderung"
+    assert body["case"] is None
+    assert [b["kind"] for b in body["summary"]["bullets"]] == [
+        "legal",
+        "action",
+        "finance",
+    ]
+    assert body["summary"]["enrich_status"] == "completed"
+    (passage,) = body["key_passages"]
+    assert passage["text"].startswith("Der Beklagte") and passage["page"] == 2
+    (rel,) = body["relationships"]
+    assert (
+        rel["doc_id"] == other.id
+        and rel["direction"] == "out"
+        and rel["rel_type"] == "replies_to"
+    )
+    (action,) = body["actions"]
+    assert action["title"] == "File counter-statement" and action["status"] == "open"
+    sender = next(f for f in body["metadata"] if f["field"] == "sender")
+    assert sender["confidence"] == "low"
+    assert [s["key"] for s in body["pipeline"]["stages"]][:2] == ["extract", "metadata"]
+    assert body["claims_status"] == "pending_triage"
+    assert [c["id"] for c in body["cases"]] == [sample_case.id]
+
+
+def test_review_requires_access(auth_enabled, db_session):
+    from app.services import auth_service
+
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    other = auth_service.create_user(
+        db_session,
+        email="other@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    db_session.commit()
+    c = TestClient(app)
+    c.post(
+        "/api/v1/auth/login",
+        json={
+            "email": other.email,
+            "password": "password123",  # pragma: allowlist secret
+        },  # pragma: allowlist secret
+    )
+    assert c.get(f"/api/v1/documents/{doc.id}/review").status_code == 404
+
+
+# --- Actions -----------------------------------------------------------------
+
+
+def test_metadata_update_recomputes_review(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    body = client.put(
+        f"/api/v1/documents/{doc.id}/metadata",
+        json={
+            "sender": "RA Müller",
+            "issued_date": "2026-06-14T00:00:00Z",
+            "significance_tier": "critical",
+        },
+    ).json()
+    assert body["sender"] == "RA Müller"
+    assert body["significance_tier"] == "critical"
+    assert "missing_sender" not in body["review_reasons"]
+    assert body["title"] == "Klageerwiderung"  # untouched fields stay
+
+
+def test_summary_approve_and_reject(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    approved = client.post(
+        f"/api/v1/documents/{doc.id}/summary", json={"action": "approve"}
+    ).json()
+    assert approved["approved_at"] is not None
+    rejected = client.post(
+        f"/api/v1/documents/{doc.id}/summary", json={"action": "reject"}
+    ).json()
+    assert rejected["bullets"] == [] and rejected["approved_at"] is None
+
+
+def test_reactions_toggle_and_note(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    url = f"/api/v1/documents/{doc.id}/reactions"
+    assert [
+        r["reaction"] for r in client.post(url, json={"reaction": "lies"}).json()
+    ] == ["lies"]
+    assert client.post(url, json={"reaction": "lies"}).json() == []
+    noted = client.post(
+        url, json={"reaction": "needs_proof", "notes": "ask for the Jugendamt file"}
+    ).json()
+    assert noted[0]["notes"] == "ask for the Jugendamt file"
+
+
+def test_action_item_status_and_relationship_decisions(db_session, sample_case):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    other = _doc(db_session, admin.id, title="Other")
+    item = ActionItem(
+        case_id="_TRIAGE",
+        source_document_id=doc.id,
+        title="x",
+        action_type=ActionItemType.DEADLINE,
+        due_date=datetime.now(UTC),
+    )
+    rel = DocumentRelationship(
+        from_document_id=doc.id,
+        to_document_id=other.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+    rel2 = DocumentRelationship(
+        from_document_id=other.id,
+        to_document_id=doc.id,
+        relationship_type=RelationshipType.REFERENCES,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+    db_session.add_all([item, rel, rel2])
+    db_session.commit()
+
+    assert (
+        client.patch(
+            f"/api/v1/action-items/{item.id}", json={"status": "completed"}
+        ).json()["status"]
+        == "completed"
+    )
+    assert client.post(f"/api/v1/relationships/{rel.id}/confirm").status_code == 204
+    db_session.expire_all()
+    assert (
+        db_session.get(DocumentRelationship, rel.id).confidence
+        == RelationshipConfidence.USER_CONFIRMED
+    )
+    assert client.delete(f"/api/v1/relationships/{rel2.id}").status_code == 204
+    assert db_session.query(DocumentRelationship).filter_by(id=rel2.id).first() is None
+    assert client.delete("/api/v1/relationships/999999").status_code == 404
+
+
+def test_pipeline_retry_rules(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id, pipeline_state=PipelineState.FAILED)
+    db_session.add_all(
+        [
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.EXTRACT,
+                status=StageStatus.COMPLETED,
+            ),
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.METADATA,
+                status=StageStatus.RUNNING,
+            ),
+            DocumentPipelineStage(
+                document_id=doc.id,
+                stage=PipelineStage.ENRICH,
+                status=StageStatus.FAILED,
+            ),
+        ]
+    )
+    db_session.commit()
+    blocked = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry")
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "upstream_running"
+    running = client.post(f"/api/v1/documents/{doc.id}/pipeline/metadata/retry")
+    assert running.status_code == 409 and running.json()["code"] == "in_flight"
+    assert (
+        client.post(f"/api/v1/documents/{doc.id}/pipeline/retry-all").status_code == 409
+    )
+    assert (
+        client.post(f"/api/v1/documents/{doc.id}/pipeline/nope/retry").status_code
+        == 422
+    )
+
+    db_session.query(DocumentPipelineStage).filter_by(
+        document_id=doc.id, stage=PipelineStage.METADATA
+    ).update({"status": StageStatus.COMPLETED})
+    db_session.commit()
+    with patch("app.api.v1.documents.dispatch_pipeline_retry") as dispatch:
+        view = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry").json()
+    assert dispatch.call_args.args[2] == PipelineStage.ENRICH
+    assert (
+        next(s for s in view["stages"] if s["key"] == "enrich")["status"] == "pending"
+    )
+
+
+def test_document_status_labels(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id, pipeline_state=PipelineState.FAILED)
+    db_session.add(
+        DocumentPipelineStage(
+            document_id=doc.id,
+            stage=PipelineStage.EXTRACT,
+            status=StageStatus.FAILED,
+            error="boom",
+        )
+    )
+    db_session.commit()
+    body = client.get(f"/api/v1/documents/{doc.id}/status").json()
+    assert body == {
+        "id": doc.id,
+        "state": "failed",
+        "label": "extract failed",
+        "error": "boom",
+    }
+
+
+def test_draft_case_confirm_and_reject(db_session):
+    admin = _admin(db_session)
+    draft = Case(
+        id="DRAFT-1",
+        title="AI draft",
+        status=CaseStatus.INTAKE,
+        is_draft=True,
+        owner_id=admin.id,
+    )
+    db_session.add(draft)
+    db_session.commit()
+    doc = _doc(db_session, admin.id, case_id="DRAFT-1")
+    assert (
+        client.post("/api/v1/cases/DRAFT-1/confirm-draft").json()["is_draft"] is False
+    )
+    assert client.post("/api/v1/cases/DRAFT-1/reject-draft").status_code == 400
+
+    draft2 = Case(
+        id="DRAFT-2",
+        title="AI draft 2",
+        status=CaseStatus.INTAKE,
+        is_draft=True,
+        owner_id=admin.id,
+    )
+    db_session.add(draft2)
+    db_session.commit()
+    doc2 = _doc(db_session, admin.id, case_id="DRAFT-2")
+    assert client.post("/api/v1/cases/DRAFT-2/reject-draft").status_code == 204
+    db_session.expire_all()
+    assert db_session.get(Case, "DRAFT-2") is None
+    assert db_session.get(Document, doc2.id).case_id == "_TRIAGE"
+    assert db_session.get(Document, doc.id).case_id == "DRAFT-1"
+
+
+# --- Upload ------------------------------------------------------------------
+
+
+def test_upload_queues_files_and_reports_duplicates(db_session):
+    with patch("app.tasks.dispatch.dispatch_task"):
+        first = client.post(
+            "/api/v1/upload",
+            files=[("files", ("brief.txt", b"hello world", "text/plain"))],
+        ).json()
+        assert first["queued"] == 1 and first["results"][0]["status"] == "queued"
+        assert first["batch_id"] is not None
+        dup = client.post(
+            "/api/v1/upload",
+            files=[("files", ("brief.txt", b"hello world", "text/plain"))],
+        ).json()
+    assert dup["results"][0]["status"] == "duplicate"
+    assert dup["batch_id"] is None  # empty batch is removed again
+
+
+def test_upload_rejects_unknown_case_and_empty_selection(db_session):
+    resp = client.post(
+        "/api/v1/upload",
+        files=[("files", ("brief.txt", b"x", "text/plain"))],
+        data={"case_id": "NOPE"},
+    )
+    assert resp.status_code == 404
+    assert (
+        client.post(
+            "/api/v1/upload", files=[("files", ("", b"", "text/plain"))]
+        ).status_code
+        == 422
+    )
+
+
+def test_upload_filename_is_echoed_safely(db_session):
+    name = "<img src=x onerror=alert(1)>.txt"
+    with patch("app.tasks.dispatch.dispatch_task"):
+        body = client.post(
+            "/api/v1/upload", files=[("files", (name, b"xss", "text/plain"))]
+        ).json()
+    assert body["results"][0]["filename"] == name  # JSON, never interpolated into HTML
+
+
+def test_upload_target_requires_case_access(db_session, sample_case):
+    body = client.get(
+        "/api/v1/upload/target", params={"case_id": sample_case.id}
+    ).json()
+    assert body["case_title"] == sample_case.title
+    assert (
+        client.get("/api/v1/upload/target", params={"case_id": "NOPE"}).status_code
+        == 404
+    )

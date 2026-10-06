@@ -106,7 +106,7 @@ def test_upload_filename_case_id_sniffing_cannot_plant_into_another_users_case(
     client = _login("a@example.com")
     file_content = b"forged content"
     resp = client.post(
-        "/upload",
+        "/api/v1/upload",
         files=[("files", ("ADV-999-Z-forged-letter.txt", file_content, "text/plain"))],
     )
     assert resp.status_code in (200, 302, 303)

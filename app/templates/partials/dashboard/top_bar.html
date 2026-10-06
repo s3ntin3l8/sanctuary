@@ -116,16 +116,14 @@
 
   {# Upload & Ask AI — stays right #}
   <div class="flex items-center gap-1.5 ml-auto">
-    <button hx-get="{{ request.app.url_path_for('upload_page') }}?case_id={{ case.id }}"
-            hx-target="#upload-modal-root"
-            hx-swap="innerHTML"
+    <a href="/triage?upload=1&case_id={{ case.id | urlencode }}"
             class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0 hover:bg-surface-container-high transition-colors"
             style="background:var(--color-surface-container); border:1px solid var(--color-outline-variant); color:var(--color-on-surface-variant);">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 4v16m-8-8h16"/>
       </svg>
       [+ doc]
-    </button>
+    </a>
 
     <button @click="chatOpen = true; docChatOpen = false"
             class="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] flex-shrink-0 hover:opacity-90 transition-colors"

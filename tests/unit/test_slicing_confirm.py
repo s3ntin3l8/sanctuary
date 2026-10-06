@@ -25,6 +25,7 @@ def _create_scan_batch(db_session, tmp_path, page_count=3):
     pdf.write_bytes(_make_minimal_pdf_bytes())
 
     batch = IngestBatch(
+        owner_id=_admin_id(db_session),
         source_type=IngestBatchSourceType.SCAN,
         subject="test_scan.pdf",
         raw_source_path=str(pdf),
@@ -35,6 +36,12 @@ def _create_scan_batch(db_session, tmp_path, page_count=3):
     db_session.commit()
     db_session.refresh(batch)
     return batch
+
+
+def _admin_id(db) -> int:
+    from app.models.database import User
+
+    return db.query(User).filter_by(email="admin@localhost").one().id
 
 
 def _create_real_scan_batch(db_session, tmp_path, page_count=3):
@@ -54,6 +61,7 @@ def _create_real_scan_batch(db_session, tmp_path, page_count=3):
     doc.close()
 
     batch = IngestBatch(
+        owner_id=_admin_id(db_session),
         source_type=IngestBatchSourceType.SCAN,
         subject="test_scan.pdf",
         raw_source_path=str(pdf),
@@ -128,6 +136,7 @@ def test_slicing_confirm_idempotency_guard(db_session, tmp_path):
     pdf = tmp_path / "original.pdf"
     pdf.write_bytes(b"%PDF-1.4")
     batch = IngestBatch(
+        owner_id=_admin_id(db_session),
         source_type=IngestBatchSourceType.SCAN,
         subject="already_done.pdf",
         raw_source_path=str(pdf),
@@ -143,12 +152,12 @@ def test_slicing_confirm_idempotency_guard(db_session, tmp_path):
 
     client = TestClient(app, raise_server_exceptions=False)
     resp = client.post(
-        f"/ingest/slice/{batch.id}/confirm",
-        data={"cuts": "[]"},
-        follow_redirects=False,
+        f"/api/v1/slicing/{batch.id}/confirm",
+        json={"cuts": []},
     )
-    # Should redirect to /triage (303), not create new Documents
-    assert resp.status_code in (303, 200)
+    # Refused (409), no new Documents
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "not_awaiting"
     from app.models.database import Document
 
     docs = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).all()
@@ -184,9 +193,8 @@ def test_slicing_confirm_locks_batch_row_with_select_for_update(
 
         client = TestClient(app, raise_server_exceptions=False)
         client.post(
-            f"/ingest/slice/{batch.id}/confirm",
-            data={"cuts": "[]"},
-            follow_redirects=False,
+            f"/api/v1/slicing/{batch.id}/confirm",
+            json={"cuts": []},
         )
     finally:
         event.remove(test_engine, "before_cursor_execute", _capture)
@@ -204,14 +212,11 @@ def test_slicing_confirm_locks_batch_row_with_select_for_update(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("bad_cuts", ["5", "null", "[null]", '"oops"'])
-def test_slicing_confirm_invalid_cuts_returns_400_not_500(
+@pytest.mark.parametrize("bad_cuts", [5, None, [None], "oops"])
+def test_slicing_confirm_invalid_cuts_returns_422_not_500(
     db_session, tmp_path, bad_cuts
 ):
-    """Regression: json.loads("5") / json.loads("null") succeed but return a
-    non-list (int/None) — the old `except (JSONDecodeError, ValueError)`
-    didn't catch the resulting TypeError from `for c in raw_cuts`/`int(c)`,
-    so these escaped as a bare 500 instead of the intended 400."""
+    """Non-list or non-integer cuts are rejected by validation, never a 500."""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -219,13 +224,9 @@ def test_slicing_confirm_invalid_cuts_returns_400_not_500(
     batch = _create_scan_batch(db_session, tmp_path, page_count=3)
 
     client = TestClient(app, raise_server_exceptions=False)
-    resp = client.post(
-        f"/ingest/slice/{batch.id}/confirm",
-        data={"cuts": bad_cuts},
-        follow_redirects=False,
-    )
-    assert resp.status_code == 400
-    assert "Invalid cuts" in resp.text
+    resp = client.post(f"/api/v1/slicing/{batch.id}/confirm", json={"cuts": bad_cuts})
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "validation_error"
 
 
 @pytest.mark.unit
@@ -239,11 +240,11 @@ def test_slicing_confirm_happy_path_creates_expected_slices(db_session, tmp_path
 
     client = TestClient(app, raise_server_exceptions=False)
     resp = client.post(
-        f"/ingest/slice/{batch.id}/confirm",
-        data={"cuts": "[2]"},
-        follow_redirects=False,
+        f"/api/v1/slicing/{batch.id}/confirm",
+        json={"cuts": [2]},
     )
-    assert resp.status_code == 303
+    assert resp.status_code == 200
+    assert len(resp.json()["document_ids"]) == 2
 
     db_session.expire_all()
     docs = (
@@ -280,9 +281,8 @@ def test_slicing_confirm_failure_removes_written_slice_files(
 
     client = TestClient(app, raise_server_exceptions=False)
     resp = client.post(
-        f"/ingest/slice/{batch.id}/confirm",
-        data={"cuts": "[2]"},
-        follow_redirects=False,
+        f"/api/v1/slicing/{batch.id}/confirm",
+        json={"cuts": [2]},
     )
     assert resp.status_code == 500
 

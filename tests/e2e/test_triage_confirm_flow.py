@@ -173,36 +173,19 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
         route_button = row.get_by_role("button", name="Route")
     route_button.click()
 
-    # The modal's non-batch form (#bundle-confirm-form) holds the case
-    # picker <select> — no suggested_case_id means the picker branch
-    # (not the pre-confirmed hidden-input branch) is the one rendered.
-    form = page.locator("#bundle-confirm-form")
-    expect(form).to_be_visible(timeout=5_000)
-    form.locator("select[name='case_id']").select_option(value=case_id)
-
-    # The submit button is :disabled="!isNewCase && !bundleConfirm.suggested_case_id"
-    # (triage_bundle_confirm_modal.html) — the <select> has
-    # x-model="bundleConfirm.suggested_case_id", so selecting an option
-    # should clear that disabled state via Alpine's own reactivity. Assert
-    # it explicitly rather than assuming: if this fails, the problem is
-    # client-side reactivity, not the server; if it passes but the DB
-    # assertion below still fails, the problem is server-side.
-    submit_button = form.locator("button[type='submit']")
+    # The SPA confirm dialog: "Route" opens it without a suggestion, so the
+    # case <select> (id=case_id) is rendered rather than the suggestion card.
+    dialog = page.get_by_role("dialog")
+    expect(dialog).to_be_visible(timeout=5_000)
+    dialog.locator("select#case_id").select_option(value=case_id)
+    submit_button = dialog.get_by_role("button", name="Assign")
     expect(submit_button).to_be_enabled(timeout=5_000)
 
-    # Capture the request AND response: a prior run confirmed the request
-    # fires with the right case_id, yet the DB assertion below still failed
-    # — meaning the server received it but something downstream of the
-    # cascade (e.g. reset_and_reenrich, called right after in the same
-    # request) may be throwing and rolling back the transaction, while
-    # HTMX/the browser only cares that *a* response came back, not its
-    # status. Check the response status/body directly rather than
-    # inferring from DB state alone.
-    with page.expect_response("**/triage/confirm") as response_info:
+    with page.expect_response("**/api/v1/triage/confirm") as response_info:
         submit_button.click()
     resp = response_info.value
     assert resp.status == 200, (
-        f"POST /triage/confirm returned {resp.status}: {resp.text()[:2000]!r}"
+        f"POST /api/v1/triage/confirm returned {resp.status}: {resp.text()[:2000]!r}"
     )
 
     # confirm_bundle (service.py) with finalize=False — what action=assign_case
@@ -213,15 +196,6 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     # on an AI suggestion), does that. So the row is expected to still be
     # present here, not gone.
     #
-    # The row's own case chip (triage_row.html's "unassigned" / "no
-    # suggestion" text) reflects bundle-level confirmed_case_id /
-    # suggested_case_id — neither of which assign_case touches (it only
-    # cascades case_id onto the individual Document rows, not any
-    # bundle-level aggregate field). Confirmed against an actual failing
-    # run's rendered row: it still read "unassigned" after a successful
-    # assign_case. So the row staying on "unassigned" here is correct,
-    # expected UI behavior, not a sign anything failed — the real check is
-    # the DB-level case cascade below.
     row = (
         page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}").first
     )

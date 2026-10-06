@@ -266,7 +266,6 @@ async def case_document_fullscreen(
 async def confirm_draft_case(
     request: Request,
     case_id: str,
-    context: str = "embedded",
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
@@ -297,23 +296,7 @@ async def confirm_draft_case(
     )
     from app.config import templates as _templates
 
-    template = (
-        "partials/triage/_doc_hud.html"
-        if context == "triage"
-        else "partials/hud/_container.html"
-    )
-    response = _templates.TemplateResponse(request, template, ctx)
-
-    from app.services.triage_oob_render import (
-        render_sidebar_badges_oob,
-        render_triage_header_stats_oob,
-    )
-
-    response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db, owner_id=requester_id)
-        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
-    ).encode("utf-8")
-
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
     response.headers["HX-Trigger"] = json.dumps(
         {
@@ -349,7 +332,6 @@ def _delete_case_via_service(case_id: str, db: Session) -> dict:
 async def reject_draft_case(
     request: Request,
     case_id: str,
-    context: str = "embedded",
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
@@ -376,22 +358,8 @@ async def reject_draft_case(
     )
     from app.config import templates as _templates
 
-    template = (
-        "partials/triage/_doc_hud.html"
-        if context == "triage"
-        else "partials/hud/_container.html"
-    )
-    response = _templates.TemplateResponse(request, template, ctx)
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    from app.services.triage_oob_render import (
-        render_sidebar_badges_oob,
-        render_triage_header_stats_oob,
-    )
-
-    response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db, owner_id=requester_id)
-        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
-    ).encode("utf-8")
     response.headers["HX-Trigger"] = json.dumps(
         {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
     )

@@ -12,11 +12,9 @@ from app.api import (
     documents,
     home,
     proceedings,
-    triage,
 )
 
 home_router = home.router
-triage_router = triage.router
 costs_router = costs.router
 documents_router = documents.router
 proceedings_router = proceedings.router
@@ -28,9 +26,7 @@ __all__ = [
     "documents",
     "home",
     "proceedings",
-    "triage",
     "home_router",
-    "triage_router",
     "costs_router",
     "documents_router",
     "proceedings_router",

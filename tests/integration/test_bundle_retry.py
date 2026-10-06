@@ -1,6 +1,5 @@
 """Integration tests for POST /triage/bundle/retry."""
 
-import json
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -74,7 +73,9 @@ def _stages_with_running(running_stage: PipelineStage) -> dict:
 
 
 def _post(app_client, batch_id):
-    return app_client.post("/triage/bundle/retry", data={"batch_id": batch_id})
+    return app_client.post(
+        f"/api/v1/triage/bundles/{batch_id}/retry", json={"full": False}
+    )
 
 
 @pytest.mark.integration
@@ -137,17 +138,17 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
     )
 
     # OOB row fragment must be in response body for client-side swap to work
-    assert b'hx-swap-oob="true"' in response.content, (
+    assert response.json()["key"] == f"batch-{batch.id}", (
         "OOB marker missing — render_bundle_group_oob silently failed or bundle was filtered out.\n"
         f"Response body: {response.content[:500]}"
     )
-    assert f'id="triage-row-batch-{batch.id}"'.encode() in response.content, (
+    assert response.json()["batch_id"] == batch.id, (
         f"Row ID missing — bundle lookup returned None.\nResponse body: {response.content[:500]}"
     )
 
 
 @pytest.mark.integration
-def test_retry_bundle_hx_trigger_payload(app_client, db_session, sample_case):
+def test_retry_bundle_returns_refreshed_bundle(app_client, db_session, sample_case):
     batch = _make_batch(db_session, sample_case)
     _make_doc(db_session, batch, _pending_stages())
     db_session.commit()
@@ -156,14 +157,10 @@ def test_retry_bundle_hx_trigger_payload(app_client, db_session, sample_case):
         response = _post(app_client, batch.id)
 
     assert response.status_code == 200
-    hx_trigger = response.headers.get("hx-trigger") or response.headers.get(
-        "HX-Trigger"
-    )
-    assert hx_trigger, "HX-Trigger header must be present"
-    payload = json.loads(hx_trigger)
-    assert "triage:bundle-retried" in payload
-    assert payload["triage:bundle-retried"]["batch_id"] == batch.id
-    assert payload["triage:bundle-retried"]["doc_count"] == 1
+    body = response.json()
+    assert body["batch_id"] == batch.id
+    assert body["doc_count"] == 1
+    assert body["status"] == "processing"
 
 
 @pytest.mark.integration

@@ -3,8 +3,8 @@
 Walks every registered route and, for each one whose path carries an
 `{..._id}` parameter, asserts its resolved dependency tree includes a
 recognized access guard. New ID-bearing routes must either wire one of the
-`app.api.access_guards` dependencies (or `require_triage_object_owner` for
-triage/slicing) or be added to `_ALLOWLIST` below with a reason.
+`app.api.access_guards` dependencies (or the v1 triage/slicing owner
+resolvers) or be added to `_ALLOWLIST` below with a reason.
 
 This can't see inline `access_service.can_view_case(...)` checks or guard
 logic embedded directly in a route body — those are intentionally allowlisted
@@ -26,11 +26,13 @@ _ALLOWLIST: dict[str, str] = {
     # Inline access_service.can_view_case checks (custom queries/responses
     # that don't fit the Depends-based guard shape) — see the route bodies.
     "GET /document/{doc_id}": "inline check_owned_or_case_access (custom joinedload query)",
-    "GET /upload/status/{doc_id}": "inline check_owned_or_case_access (non-raising empty-HTML denial)",
     "GET /cases/{case_id}/brief": "inline access_service.can_view_case",
     "GET /cases/{case_id}": "inline access_service.can_view_case",
     "GET /cases/{case_id}/document/{doc_id}/hud": "inline access_service.can_view_case",
     "GET /cases/{case_id}/document/{doc_id}": "inline access_service.can_view_case",
+    # SPA shell only — the page is static HTML; the data call
+    # (/api/v1/slicing/{batch_id}) carries the owner check.
+    "GET /ingest/slice/{batch_id}": "SPA index; guarded by the v1 data route",
     # case_sharing.py's own inline owner-or-admin guard (stricter than the
     # generic edit guard: only the owner or an admin may manage shares).
     "GET /cases/{case_id}/sharing": "inline _require_owner_or_admin",
@@ -82,12 +84,22 @@ def _all_dependency_calls(dependant) -> list:
 
 
 def _has_recognized_guard(dependant) -> bool:
-    from app.api.triage.ownership import require_triage_object_owner
+    from app.api.v1 import documents as v1_documents
+    from app.api.v1 import slicing as v1_slicing
+    from app.api.v1 import triage as v1_triage
 
+    # Per-object owner resolvers of the v1 triage/slicing API (404 unless the
+    # caller owns the batch/document) and the relationship edit guard.
+    owner_guards = {
+        v1_triage.owned_batch,
+        v1_triage.owned_document,
+        v1_slicing.owned_batch,
+        v1_documents._owned_relationship,
+    }
     calls = _all_dependency_calls(dependant)
     if any(getattr(c, "_is_access_guard", False) for c in calls):
         return True
-    if require_triage_object_owner in calls:
+    if owner_guards & set(calls):
         return True
     return get_current_admin in calls
 

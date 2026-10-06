@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.exception_handlers import (
     http_exception_handler as fastapi_http_exception_handler,
 )
@@ -1168,7 +1168,6 @@ from app.api import (
     ingestion_settings,
     proceedings_router,
     search,
-    triage_router,
 )
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
@@ -1176,7 +1175,7 @@ from app.api.case_sharing import router as case_sharing_router
 from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
 from app.api.settings_page import router as settings_page_router
-from app.api.slicing import router as slicing_router
+from app.api.triage_pages import router as triage_pages_router
 from app.api.user_settings import router as user_settings_router
 from app.api.v1 import router as api_v1_router
 
@@ -1188,15 +1187,7 @@ app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(home_router)
-# Triage is the per-user intake inbox: each user sees and acts on only the
-# documents/batches they ingested. The feed reads are owner-filtered; this
-# router-level guard 404s any by-id mutation targeting another user's object.
-from app.api.triage.ownership import require_triage_object_owner
-
-app.include_router(triage_router, dependencies=[Depends(require_triage_object_owner)])
-# Slicing acts on a batch_id (multi-page scan review) — same per-user ownership
-# guard so a user can't drive slicing on another user's batch.
-app.include_router(slicing_router, dependencies=[Depends(require_triage_object_owner)])
+app.include_router(triage_pages_router)
 app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)

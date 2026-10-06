@@ -52,7 +52,6 @@ export function Shell() {
           icon="inbox"
           label="Triage"
           to="/triage"
-          legacy
           badge={<CountBadge count={shell?.triage_count ?? 0} tone="danger" />}
         />
         <RailButton icon="folder_open" label="Cases" to="/cases" />

@@ -55,7 +55,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
           label: 'Navigate',
           items: [
             { key: 'home', icon: 'home', title: 'Home', run: () => go('/', true) },
-            { key: 'triage', icon: 'inbox', title: 'Triage', run: () => go('/triage') },
+            { key: 'triage', icon: 'inbox', title: 'Triage', run: () => go('/triage', true) },
             { key: 'cases', icon: 'folder_open', title: 'Cases', run: () => go('/cases', true) },
           ],
         },

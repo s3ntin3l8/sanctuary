@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/action-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** V1 Set Action Status */
+        patch: operations["v1_set_action_status_api_v1_action_items__item_id__patch"];
+        trace?: never;
+    };
     "/api/v1/admin/signup": {
         parameters: {
             query?: never;
@@ -236,6 +253,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/confirm-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Confirm Draft
+         * @description Ratify an AI-created draft case.
+         */
+        post: operations["v1_confirm_draft_api_v1_cases__case_id__confirm_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/dismiss-close": {
         parameters: {
             query?: never;
@@ -250,6 +287,194 @@ export interface paths {
          * @description Reject an AI close suggestion: clear the flag, keep the status.
          */
         post: operations["v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/reject-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Reject Draft
+         * @description Delete an AI-created draft case; its documents return to triage.
+         */
+        post: operations["v1_reject_draft_api_v1_cases__case_id__reject_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Delete Document */
+        delete: operations["v1_delete_document_api_v1_documents__doc_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/cost-signals/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Promote Cost Signal
+         * @description Create a LegalCost from the document's most recent cost signal.
+         *
+         *     Invoice/advance signals already materialise during enrichment; this is
+         *     for the remaining kinds (e.g. a Streitwert ruling) with optional overrides.
+         */
+        post: operations["v1_promote_cost_signal_api_v1_documents__doc_id__cost_signals_promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Update Metadata
+         * @description Apply a metadata patch (fields left null are untouched) and recompute review flags.
+         */
+        put: operations["v1_update_metadata_api_v1_documents__doc_id__metadata_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/pipeline/retry-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Retry All Stages */
+        post: operations["v1_retry_all_stages_api_v1_documents__doc_id__pipeline_retry_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/pipeline/{stage}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Retry Stage */
+        post: operations["v1_retry_stage_api_v1_documents__doc_id__pipeline__stage__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/reactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Set Reaction
+         * @description Toggle a reaction; with ``notes`` it is upserted instead of toggled.
+         */
+        post: operations["v1_set_reaction_api_v1_documents__doc_id__reactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Review */
+        get: operations["v1_review_api_v1_documents__doc_id__review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Document Status
+         * @description Upload-progress polling: terminal states carry no further changes.
+         */
+        get: operations["v1_document_status_api_v1_documents__doc_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Summary Action */
+        post: operations["v1_summary_action_api_v1_documents__doc_id__summary_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -287,6 +512,46 @@ export interface paths {
          * @description Mark everything new as reviewed: advances last_home_visit to now.
          */
         post: operations["v1_review_all_api_v1_home_review_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/relationships/{rel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * V1 Reject Relationship
+         * @description Drop a relationship suggestion; reopens the target's thread if nothing confirmed remains.
+         */
+        delete: operations["v1_reject_relationship_api_v1_relationships__rel_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/relationships/{rel_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Confirm Relationship
+         * @description Promote an AI-detected relationship to user-confirmed; closes the target's thread.
+         */
+        post: operations["v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -894,6 +1159,400 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/slicing/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Slicing */
+        get: operations["v1_slicing_api_v1_slicing__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/{batch_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Confirm Slicing */
+        post: operations["v1_confirm_slicing_api_v1_slicing__batch_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/{batch_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Retry
+         * @description Re-run the slice proposal for a batch whose preparation failed.
+         */
+        post: operations["v1_retry_api_v1_slicing__batch_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/slicing/{batch_id}/thumb/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Thumbnail */
+        get: operations["v1_thumbnail_api_v1_slicing__batch_id__thumb__page__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Triage */
+        get: operations["v1_triage_api_v1_triage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/batch/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Assign
+         * @description Assign every selected bundle to one case (stays in triage for review).
+         */
+        post: operations["v1_batch_assign_api_v1_triage_batch_assign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/batch/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Batch Confirm
+         * @description Confirm each selected bundle to its own AI-suggested case; skip the rest.
+         */
+        post: operations["v1_batch_confirm_api_v1_triage_batch_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Bundle */
+        get: operations["v1_bundle_api_v1_triage_bundles__batch_id__get"];
+        put?: never;
+        post?: never;
+        /** V1 Delete */
+        delete: operations["v1_delete_api_v1_triage_bundles__batch_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Set Cover */
+        put: operations["v1_set_cover_api_v1_triage_bundles__batch_id__cover_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Dismiss */
+        post: operations["v1_dismiss_api_v1_triage_bundles__batch_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 New Group */
+        post: operations["v1_new_group_api_v1_triage_bundles__batch_id__groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/groups/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Reset Groups */
+        post: operations["v1_reset_groups_api_v1_triage_bundles__batch_id__groups_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/groups/{sub_group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Rename Group */
+        put: operations["v1_rename_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__put"];
+        post?: never;
+        /** V1 Delete Group */
+        delete: operations["v1_delete_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/groups/{sub_group_id}/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Reorder Group */
+        put: operations["v1_reorder_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/bundles/{batch_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Retry Bundle
+         * @description Re-run the AI stages for every document in the bundle (``full`` re-extracts too).
+         */
+        post: operations["v1_retry_bundle_api_v1_triage_bundles__batch_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Confirm Bundle Route */
+        post: operations["v1_confirm_bundle_route_api_v1_triage_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/documents/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Delete Loose */
+        delete: operations["v1_delete_loose_api_v1_triage_documents__doc_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/documents/{doc_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Dismiss Loose */
+        post: operations["v1_dismiss_loose_api_v1_triage_documents__doc_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/documents/{doc_id}/title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Set Title */
+        put: operations["v1_set_title_api_v1_triage_documents__doc_id__title_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/triage/retry-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Retry All */
+        post: operations["v1_retry_all_api_v1_triage_retry_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Upload
+         * @description Ingest files: non-.eml files share one manual batch; each .eml is its own batch.
+         */
+        post: operations["v1_upload_api_v1_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/upload/target": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Upload Target
+         * @description What the upload modal needs when opened for a case: title and parent docs.
+         */
+        get: operations["v1_upload_target_api_v1_upload_target_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/worker-queue": {
         parameters: {
             query?: never;
@@ -943,11 +1602,37 @@ export interface components {
             role: components["schemas"]["UserRole"];
         };
         /**
+         * ActionItemStatus
+         * @enum {string}
+         */
+        ActionItemStatus: "open" | "completed" | "dismissed";
+        /**
          * ActionItemType
          * @description Type of action derived from a document.
          * @enum {string}
          */
         ActionItemType: "deadline" | "court_date" | "response_required" | "filing_required" | "payment_due";
+        /** ActionStatusUpdate */
+        ActionStatusUpdate: {
+            status: components["schemas"]["ActionItemStatus"];
+        };
+        /** ActionView */
+        ActionView: {
+            action_type: components["schemas"]["ActionItemType"];
+            /** Addressee */
+            addressee: string | null;
+            /** Description */
+            description: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Id */
+            id: number;
+            /** Location */
+            location: string | null;
+            status: components["schemas"]["ActionItemStatus"];
+            /** Title */
+            title: string;
+        };
         /** AdminActiveUpdate */
         AdminActiveUpdate: {
             /** Is Active */
@@ -1103,6 +1788,65 @@ export interface components {
             /** Signup Enabled */
             signup_enabled: boolean;
         };
+        /** BatchAssign */
+        BatchAssign: {
+            /** Case Id */
+            case_id?: string | null;
+            /** Keys */
+            keys: string[];
+            /** New Case Id */
+            new_case_id?: string | null;
+            /** New Case Title */
+            new_case_title?: string | null;
+            /** Proceeding Id */
+            proceeding_id?: number | null;
+        };
+        /** BatchKeys */
+        BatchKeys: {
+            /** Keys */
+            keys: string[];
+        };
+        /** BatchResult */
+        BatchResult: {
+            /** Bundles */
+            bundles: components["schemas"]["TriageBundle"][];
+            /** Confirmed */
+            confirmed: number;
+            /** Removed Keys */
+            removed_keys: string[];
+            /** Skipped */
+            skipped: number;
+        };
+        /** Body_v1_upload_api_v1_upload_post */
+        Body_v1_upload_api_v1_upload_post: {
+            /** Case Id */
+            case_id?: string | null;
+            /** Files */
+            files: string[];
+            /** Parent Id */
+            parent_id?: number | null;
+        };
+        /** BundlePipeline */
+        BundlePipeline: {
+            /** Active Label */
+            active_label: string | null;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Failed Error */
+            failed_error: string | null;
+            /** Total */
+            total: number;
+        };
+        /** BundleRetry */
+        BundleRetry: {
+            /**
+             * Full
+             * @default false
+             */
+            full: boolean;
+        };
         /**
          * CaseCard
          * @description One case as shown on Home and in the Cases directory.
@@ -1160,6 +1904,15 @@ export interface components {
             /** Id */
             id: string;
         };
+        /** CaseRef */
+        CaseRef: {
+            /** Id */
+            id: string;
+            /** Is Draft */
+            is_draft: boolean;
+            /** Title */
+            title: string;
+        };
         /**
          * CaseStatus
          * @enum {string}
@@ -1176,6 +1929,16 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ClaimStatus
+         * @enum {string}
+         */
+        ClaimStatus: "asserted" | "contested" | "needs_proof" | "refuted" | "established";
+        /**
+         * ClaimType
+         * @enum {string}
+         */
+        ClaimType: "factual" | "legal" | "procedural";
         /** ConcurrencyResult */
         ConcurrencyResult: {
             /** Applied Live */
@@ -1187,6 +1950,60 @@ export interface components {
         ConcurrencyUpdate: {
             /** Concurrency */
             concurrency: number;
+        };
+        /** ConfirmedCase */
+        ConfirmedCase: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "created" | "assigned" | "ratified";
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** CostPromoted */
+        CostPromoted: {
+            /** Amount Gross */
+            amount_gross: number;
+            /** Cost Id */
+            cost_id: number;
+        };
+        /**
+         * CostPromotion
+         * @description Promote the document's latest cost signal into the ledger.
+         */
+        CostPromotion: {
+            /** Amount */
+            amount?: number | null;
+            /** Category */
+            category?: string | null;
+            /** Vat Rate */
+            vat_rate?: number | null;
+        };
+        /**
+         * CostSignalType
+         * @description Cost-regime metadata events derived from documents (not costs themselves).
+         * @enum {string}
+         */
+        CostSignalType: "streitwert" | "cost_ruling" | "pkh_grant" | "pkh_denied";
+        /** CostSignalView */
+        CostSignalView: {
+            /** Amount */
+            amount: number | null;
+            /** Description */
+            description: string | null;
+            /** Id */
+            id: number;
+            /** Issued At */
+            issued_at: string | null;
+            signal_type: components["schemas"]["CostSignalType"];
+        };
+        /** CoverUpdate */
+        CoverUpdate: {
+            /** Doc Id */
+            doc_id: number;
         };
         /** CurrentUser */
         CurrentUser: {
@@ -1269,6 +2086,100 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** DocumentReview */
+        DocumentReview: {
+            /** Actions */
+            actions: components["schemas"]["ActionView"][];
+            /** Attributed Originator */
+            attributed_originator: string | null;
+            /** Az Court */
+            az_court: string | null;
+            /** Bundle Next Id */
+            bundle_next_id: number | null;
+            /** Bundle Prev Id */
+            bundle_prev_id: number | null;
+            case: components["schemas"]["CaseRef"] | null;
+            /** Case Id */
+            case_id: string | null;
+            /** Cases */
+            cases: components["schemas"]["CaseRef"][];
+            /**
+             * Claims Status
+             * @enum {string}
+             */
+            claims_status: "skipped" | "ran" | "pending_triage" | "pending";
+            /** Content Hash */
+            content_hash: string | null;
+            /** Cost Signals */
+            cost_signals: components["schemas"]["CostSignalView"][];
+            /** Court Relay */
+            court_relay: boolean;
+            document_type: components["schemas"]["DocumentType"] | null;
+            /** Grounds */
+            grounds: components["schemas"]["GroundView"][];
+            /** Id */
+            id: number;
+            /** Ingest Date */
+            ingest_date: string | null;
+            /** Internal Id */
+            internal_id: string | null;
+            /** Issued Date */
+            issued_date: string | null;
+            /** Key Passages */
+            key_passages: components["schemas"]["KeyPassage"][];
+            /** Metadata */
+            metadata: components["schemas"]["MetadataField"][];
+            /** Needs Review */
+            needs_review: boolean;
+            /** Original Filename */
+            original_filename: string | null;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Page Count */
+            page_count: number;
+            pipeline: components["schemas"]["PipelineView"];
+            proceeding: components["schemas"]["ProceedingRef"] | null;
+            /** Proceedings */
+            proceedings: components["schemas"]["ProceedingRef"][];
+            /** Reactions */
+            reactions: components["schemas"]["ReactionView"][];
+            /** Received Date */
+            received_date: string | null;
+            /** Relationships */
+            relationships: components["schemas"]["RelationshipView"][];
+            /** Review Reasons */
+            review_reasons: string[];
+            /** Sender */
+            sender: string | null;
+            significance_tier: components["schemas"]["SignificanceTier"] | null;
+            summary: components["schemas"]["SummaryView"];
+            /** Title */
+            title: string;
+        };
+        /**
+         * DocumentRole
+         * @description Structural role of a document inside its delivery bundle.
+         * @enum {string}
+         */
+        DocumentRole: "cover_letter" | "enclosure" | "standalone";
+        /**
+         * DocumentStatus
+         * @description Upload-progress polling: where a freshly ingested document is.
+         */
+        DocumentStatus: {
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            state: components["schemas"]["PipelineState"];
+        };
+        /**
+         * DocumentType
+         * @description Legal document type, assigned at ingest.
+         * @enum {string}
+         */
+        DocumentType: "ruling" | "motion" | "statement" | "annex" | "relay" | "correspondence" | "report" | "invoice" | "other";
         /** EmailChange */
         EmailChange: {
             /**
@@ -1356,6 +2267,44 @@ export interface components {
             last_sync_at: string | null;
             /** Oauth Start Url */
             oauth_start_url: string;
+        };
+        /** GroundView */
+        GroundView: {
+            /** Claim Text */
+            claim_text: string;
+            claim_type: components["schemas"]["ClaimType"];
+            /**
+             * First Made At
+             * Format: date-time
+             */
+            first_made_at: string;
+            /** Id */
+            id: number;
+            /** Is Precedent */
+            is_precedent: boolean;
+            status: components["schemas"]["ClaimStatus"];
+        };
+        /** GroupOrder */
+        GroupOrder: {
+            /** Doc Ids */
+            doc_ids: number[];
+            /** Lead Doc Id */
+            lead_doc_id?: number | null;
+        };
+        /** GroupRename */
+        GroupRename: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Lead Doc Id */
+            lead_doc_id?: number | null;
+        };
+        /** GroupTarget */
+        GroupTarget: {
+            /** Lead Doc Id */
+            lead_doc_id?: number | null;
         };
         /** HomeActionItem */
         HomeActionItem: {
@@ -1461,6 +2410,12 @@ export interface components {
             user_context: string;
         };
         /**
+         * IngestBatchSourceType
+         * @description Where a batch of documents came from.
+         * @enum {string}
+         */
+        IngestBatchSourceType: "email" | "scan" | "manual";
+        /**
          * IngestBatchStatus
          * @enum {string}
          */
@@ -1471,6 +2426,27 @@ export interface components {
          * @enum {string}
          */
         Jurisdiction: "de" | "uk" | "us" | "other";
+        /** KeyPassage */
+        KeyPassage: {
+            /** Claim Id */
+            claim_id: number | null;
+            /** End Offset */
+            end_offset: number | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string | null;
+            /** Page */
+            page: number | null;
+            /** Pin Count */
+            pin_count: number;
+            /** Rationale */
+            rationale: string | null;
+            /** Start Offset */
+            start_offset: number | null;
+            /** Text */
+            text: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */
@@ -1487,6 +2463,33 @@ export interface components {
         MaintenanceResult: {
             /** Message */
             message: string;
+        };
+        /** MetadataField */
+        MetadataField: {
+            /** Confidence */
+            confidence: ("high" | "medium" | "low") | null;
+            /** Field */
+            field: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string | null;
+        };
+        /** MetadataUpdate */
+        MetadataUpdate: {
+            document_type?: components["schemas"]["DocumentType"] | null;
+            /** Internal Id */
+            internal_id?: string | null;
+            /** Issued Date */
+            issued_date?: string | null;
+            originator_type?: components["schemas"]["OriginatorType"] | null;
+            /** Received Date */
+            received_date?: string | null;
+            /** Sender */
+            sender?: string | null;
+            significance_tier?: components["schemas"]["SignificanceTier"] | null;
+            /** Title */
+            title?: string | null;
         };
         /** ModelsView */
         ModelsView: {
@@ -1505,12 +2508,41 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * OriginatorType
+         * @description Maps to the border-l-4 originator stripes from GEMINI.md §4.
+         * @enum {string}
+         */
+        OriginatorType: "court" | "opposing" | "own" | "third_party" | "unknown";
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** PickerCase */
+        PickerCase: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** PickerOption */
+        PickerOption: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /** PickerProceeding */
+        PickerProceeding: {
+            /** Case Id */
+            case_id: string;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
         };
         /** PipelineCounts */
         PipelineCounts: {
@@ -1530,6 +2562,38 @@ export interface components {
          * @enum {string}
          */
         PipelineStage: "extract" | "metadata" | "batch_analysis" | "enrich" | "relationships" | "claims" | "entities" | "embeddings";
+        /**
+         * PipelineState
+         * @enum {string}
+         */
+        PipelineState: "pending" | "running" | "completed" | "failed" | "dismissed" | "partial";
+        /** PipelineView */
+        PipelineView: {
+            /** Stages */
+            stages: components["schemas"]["StageView"][];
+            state: components["schemas"]["PipelineState"];
+        };
+        /**
+         * ProceedingCourtLevel
+         * @description German court hierarchy level of a proceeding.
+         * @enum {string}
+         */
+        ProceedingCourtLevel: "ag" | "lg" | "olg" | "bgh" | "other";
+        /** ProceedingRef */
+        ProceedingRef: {
+            /** Az Court */
+            az_court: string | null;
+            /** Case Id */
+            case_id: string;
+            /** Court Level */
+            court_level: string;
+            /** Court Name */
+            court_name: string;
+            /** Id */
+            id: number;
+            /** Is Draft */
+            is_draft: boolean;
+        };
         /** ProfileUpdate */
         ProfileUpdate: {
             /**
@@ -1537,6 +2601,15 @@ export interface components {
              * @default
              */
             display_name: string;
+        };
+        /** ProposedCut */
+        ProposedCut: {
+            /** Confidence */
+            confidence: ("high" | "medium" | "low") | null;
+            /** Notes */
+            notes: string | null;
+            /** Page */
+            page: number;
         };
         /** QueueCounts */
         QueueCounts: {
@@ -1576,6 +2649,20 @@ export interface components {
             /** Queued */
             queued: components["schemas"]["QueueItem"][];
         };
+        /** ReactionUpdate */
+        ReactionUpdate: {
+            /** Notes */
+            notes?: string | null;
+            reaction: components["schemas"]["UserReactionType"];
+        };
+        /** ReactionView */
+        ReactionView: {
+            /** Created At */
+            created_at: string | null;
+            /** Notes */
+            notes: string | null;
+            reaction: components["schemas"]["UserReactionType"];
+        };
         /** ReindexJob */
         ReindexJob: {
             /** Embed Dim */
@@ -1606,6 +2693,39 @@ export interface components {
              * @default 0
              */
             total: number;
+        };
+        /**
+         * RelationshipConfidence
+         * @description Provenance of a document relationship.
+         * @enum {string}
+         */
+        RelationshipConfidence: "ai_detected" | "user_confirmed" | "user_created";
+        /**
+         * RelationshipType
+         * @description How one document relates to another.
+         * @enum {string}
+         */
+        RelationshipType: "replies_to" | "references" | "attaches_as_proof" | "supersedes" | "cited_by" | "encloses";
+        /** RelationshipView */
+        RelationshipView: {
+            confidence: components["schemas"]["RelationshipConfidence"];
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "out" | "in";
+            /** Doc Id */
+            doc_id: number;
+            /** Id */
+            id: number;
+            rel_type: components["schemas"]["RelationshipType"];
+            /** Title */
+            title: string;
+        };
+        /** RetryAllResult */
+        RetryAllResult: {
+            /** Retried */
+            retried: number;
         };
         /**
          * RoleHealthView
@@ -1709,6 +2829,113 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /**
+         * SlicingConfirm
+         * @description Split after each listed page (1 ≤ cut < page_count).
+         */
+        SlicingConfirm: {
+            /** Cuts */
+            cuts?: number[];
+        };
+        /** SlicingConfirmed */
+        SlicingConfirmed: {
+            /** Document Ids */
+            document_ids: number[];
+        };
+        /** SlicingPage */
+        SlicingPage: {
+            /** Has Thumbnail */
+            has_thumbnail: boolean;
+            /** Page */
+            page: number;
+            /** Text Head */
+            text_head: string;
+            /** Text Tail */
+            text_tail: string;
+        };
+        /** SlicingQueueItem */
+        SlicingQueueItem: {
+            /** Batch Id */
+            batch_id: number;
+            /** Page Count */
+            page_count: number | null;
+            /** Status */
+            status: string;
+            /** Subject */
+            subject: string | null;
+        };
+        /** SlicingView */
+        SlicingView: {
+            /** Batch Id */
+            batch_id: number;
+            /** Error */
+            error: string | null;
+            /** Page Count */
+            page_count: number;
+            /** Pages */
+            pages: components["schemas"]["SlicingPage"][];
+            /** Proposed Cuts */
+            proposed_cuts: components["schemas"]["ProposedCut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "preparing" | "ready" | "failed" | "done";
+            /** Subject */
+            subject: string | null;
+        };
+        /**
+         * StageStatus
+         * @enum {string}
+         */
+        StageStatus: "pending" | "running" | "retrying" | "completed" | "failed" | "dismissed" | "skipped";
+        /** StageView */
+        StageView: {
+            /** Attempt */
+            attempt: number | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Icon */
+            icon: string;
+            key: components["schemas"]["PipelineStage"];
+            /** Label */
+            label: string;
+            /** Max Attempts */
+            max_attempts: number | null;
+            /** Next At */
+            next_at: string | null;
+            status: components["schemas"]["StageStatus"] | null;
+        };
+        /** SummaryAction */
+        SummaryAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "reject";
+        };
+        /** SummaryBullet */
+        SummaryBullet: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "legal" | "action" | "finance";
+            /** Text */
+            text: string;
+        };
+        /** SummaryView */
+        SummaryView: {
+            /** Approved At */
+            approved_at: string | null;
+            /** Bullets */
+            bullets: components["schemas"]["SummaryBullet"][];
+            /** Created At */
+            created_at: string | null;
+            enrich_status: components["schemas"]["StageStatus"] | null;
+        };
         /** ThemeUpdate */
         ThemeUpdate: {
             /**
@@ -1722,6 +2949,252 @@ export interface components {
             /** Tz */
             tz: string;
         };
+        /** TitleUpdate */
+        TitleUpdate: {
+            /** Title */
+            title: string;
+        };
+        /** TriageActionDate */
+        TriageActionDate: {
+            /** Due Date */
+            due_date: string | null;
+            /** Title */
+            title: string;
+        };
+        /** TriageBundle */
+        TriageBundle: {
+            /** Action Dates */
+            action_dates: components["schemas"]["TriageActionDate"][];
+            /** Batch Id */
+            batch_id: number | null;
+            /** Confirmed Case Id */
+            confirmed_case_id: string | null;
+            /** Doc Count */
+            doc_count: number;
+            /** Documents */
+            documents: components["schemas"]["TriageDocument"][];
+            /** Has Manual Groups */
+            has_manual_groups: boolean;
+            /** Has Unconfirmed Metadata */
+            has_unconfirmed_metadata: boolean;
+            /** Is Synthetic */
+            is_synthetic: boolean;
+            /** Key */
+            key: string;
+            /** Lead Doc Id */
+            lead_doc_id: number | null;
+            /** Originator Types */
+            originator_types: components["schemas"]["OriginatorType"][];
+            pipeline: components["schemas"]["BundlePipeline"];
+            /**
+             * Pipeline Filter
+             * @enum {string}
+             */
+            pipeline_filter: "ready" | "review_metadata" | "processing" | "failed";
+            proceeding: components["schemas"]["TriageProceeding"] | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** Sender Email */
+            sender_email: string | null;
+            source_type: components["schemas"]["IngestBatchSourceType"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "stuck" | "processing" | "needs_classification" | "needs_review";
+            /** Sub Groups */
+            sub_groups: components["schemas"]["TriageSubGroup"][];
+            /** Subject */
+            subject: string | null;
+            suggestion: components["schemas"]["TriageCaseSuggestion"] | null;
+            /** To Confirm Count */
+            to_confirm_count: number;
+            /** Total Pages */
+            total_pages: number;
+            /** Unresolved Review Count */
+            unresolved_review_count: number;
+        };
+        /** TriageCaseSuggestion */
+        TriageCaseSuggestion: {
+            /** Case Id */
+            case_id: string;
+            /** Exists */
+            exists: boolean;
+            /** Is Draft */
+            is_draft: boolean;
+            /** Title */
+            title: string | null;
+        };
+        /**
+         * TriageConfirm
+         * @description Route a bundle (or loose document) to a case.
+         *
+         *     ``confirm_bundle`` finalises and removes it from triage; ``assign_case``
+         *     keeps it in the inbox for further per-document review.
+         */
+        TriageConfirm: {
+            /**
+             * Action
+             * @default confirm_bundle
+             * @enum {string}
+             */
+            action: "confirm_bundle" | "assign_case";
+            /** Batch Id */
+            batch_id?: number | null;
+            /** Case Id */
+            case_id?: string | null;
+            /** Doc Id */
+            doc_id?: number | null;
+            /** New Case Id */
+            new_case_id?: string | null;
+            /** New Case Title */
+            new_case_title?: string | null;
+            /** Proceeding Id */
+            proceeding_id?: number | null;
+        };
+        /** TriageConfirmResult */
+        TriageConfirmResult: {
+            bundle: components["schemas"]["TriageBundle"] | null;
+            case: components["schemas"]["ConfirmedCase"];
+            /** Next Doc Id */
+            next_doc_id: number | null;
+        };
+        /** TriageDocument */
+        TriageDocument: {
+            /** Depth */
+            depth: number;
+            /** Id */
+            id: number;
+            /** Is Proof */
+            is_proof: boolean;
+            /** Needs Review */
+            needs_review: boolean;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Page Count */
+            page_count: number;
+            pipeline_state: components["schemas"]["PipelineState"];
+            /** Review Reasons */
+            review_reasons: string[];
+            role: components["schemas"]["DocumentRole"];
+            significance_tier: components["schemas"]["SignificanceTier"] | null;
+            /** Sub Group Id */
+            sub_group_id: number | null;
+            /** Title */
+            title: string;
+        };
+        /** TriageProceeding */
+        TriageProceeding: {
+            /** Az Court */
+            az_court: string | null;
+            court_level: components["schemas"]["ProceedingCourtLevel"];
+            /** Court Name */
+            court_name: string;
+            /** Id */
+            id: number;
+        };
+        /** TriageStats */
+        TriageStats: {
+            /** Drafts Pending */
+            drafts_pending: number;
+            /** Failed Docs */
+            failed_docs: number;
+            /** First Draft Doc Id */
+            first_draft_doc_id: number | null;
+            /** First Failed Doc Id */
+            first_failed_doc_id: number | null;
+            /** Needs Classification */
+            needs_classification: number;
+            /** Needs Review */
+            needs_review: number;
+            /** Pending */
+            pending: number;
+            /** Processing */
+            processing: number;
+            /** Stuck */
+            stuck: number;
+        };
+        /** TriageSubGroup */
+        TriageSubGroup: {
+            /** Case Confidence */
+            case_confidence: string | null;
+            /** Doc Ids */
+            doc_ids: number[];
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Lead Doc Id */
+            lead_doc_id: number | null;
+            /** Sub Group Id */
+            sub_group_id: number | null;
+            /** Suggested Case Id */
+            suggested_case_id: string | null;
+            /** Suggested Case Title */
+            suggested_case_title: string | null;
+        };
+        /** TriageView */
+        TriageView: {
+            /** Bundles */
+            bundles: components["schemas"]["TriageBundle"][];
+            /** Cases */
+            cases: components["schemas"]["PickerCase"][];
+            /** Filter Options */
+            filter_options: {
+                [key: string]: components["schemas"]["PickerOption"][];
+            };
+            /** Proceedings */
+            proceedings: components["schemas"]["PickerProceeding"][];
+            /** Slicing Queue */
+            slicing_queue: components["schemas"]["SlicingQueueItem"][];
+            stats: components["schemas"]["TriageStats"];
+        };
+        /** UploadResponse */
+        UploadResponse: {
+            /** Batch Id */
+            batch_id: number | null;
+            /** Failed */
+            failed: number;
+            /** Queued */
+            queued: number;
+            /** Results */
+            results: components["schemas"]["UploadResult"][];
+        };
+        /** UploadResult */
+        UploadResult: {
+            /** Batch Id */
+            batch_id?: number | null;
+            /** Doc Id */
+            doc_id?: number | null;
+            /** Filename */
+            filename: string;
+            /** Message */
+            message?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "duplicate" | "error";
+        };
+        /** UploadTarget */
+        UploadTarget: {
+            /** Case Id */
+            case_id: string | null;
+            /** Case Title */
+            case_title: string | null;
+            /** Parent Options */
+            parent_options: {
+                [key: string]: string | number;
+            }[];
+        };
+        /**
+         * UserReactionType
+         * @description Strategic reaction captured at triage time — recalled later by AI.
+         * @enum {string}
+         */
+        UserReactionType: "lies" | "true" | "needs_proof" | "precedent";
         /**
          * UserRole
          * @description Account role. Admins manage users, signup, and password resets.
@@ -1737,6 +3210,41 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    v1_set_action_status_api_v1_action_items__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionStatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_set_signup_api_v1_admin_signup_put: {
         parameters: {
             query?: never;
@@ -2214,6 +3722,37 @@ export interface operations {
             };
         };
     };
+    v1_confirm_draft_api_v1_cases__case_id__confirm_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseRef"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post: {
         parameters: {
             query?: never;
@@ -2231,6 +3770,329 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reject_draft_api_v1_cases__case_id__reject_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_document_api_v1_documents__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_promote_cost_signal_api_v1_documents__doc_id__cost_signals_promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostPromotion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostPromoted"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_metadata_api_v1_documents__doc_id__metadata_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_all_stages_api_v1_documents__doc_id__pipeline_retry_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_stage_api_v1_documents__doc_id__pipeline__stage__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                stage: components["schemas"]["PipelineStage"];
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_reaction_api_v1_documents__doc_id__reactions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReactionView"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_review_api_v1_documents__doc_id__review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_document_status_api_v1_documents__doc_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_summary_action_api_v1_documents__doc_id__summary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SummaryAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SummaryView"];
+                };
             };
             /** @description Error */
             default: {
@@ -2277,6 +4139,64 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reject_relationship_api_v1_relationships__rel_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rel_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rel_id: number;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -3402,6 +5322,780 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShellView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_slicing_api_v1_slicing__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_slicing_api_v1_slicing__batch_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlicingConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingConfirmed"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_api_v1_slicing__batch_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlicingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_thumbnail_api_v1_slicing__batch_id__thumb__page__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: number;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_triage_api_v1_triage_get: {
+        parameters: {
+            query?: {
+                sort?: string;
+                dir?: string;
+                case_id?: string[];
+                proceeding_id?: string[];
+                pipeline_filter?: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_batch_assign_api_v1_triage_batch_assign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchAssign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_batch_confirm_api_v1_triage_batch_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchKeys"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_bundle_api_v1_triage_bundles__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_api_v1_triage_bundles__batch_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_cover_api_v1_triage_bundles__batch_id__cover_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CoverUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_api_v1_triage_bundles__batch_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_new_group_api_v1_triage_bundles__batch_id__groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reset_groups_api_v1_triage_bundles__batch_id__groups_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_rename_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_group_id: number;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_group_id: number;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GroupTarget"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reorder_group_api_v1_triage_bundles__batch_id__groups__sub_group_id__order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sub_group_id: number;
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupOrder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_bundle_api_v1_triage_bundles__batch_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleRetry"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageBundle"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_bundle_route_api_v1_triage_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriageConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriageConfirmResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_loose_api_v1_triage_documents__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_loose_api_v1_triage_documents__doc_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_title_api_v1_triage_documents__doc_id__title_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_all_api_v1_triage_retry_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryAllResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_upload_api_v1_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_v1_upload_api_v1_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_upload_target_api_v1_upload_target_get: {
+        parameters: {
+            query?: {
+                case_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadTarget"];
                 };
             };
             /** @description Error */

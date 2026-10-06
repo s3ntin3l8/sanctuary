@@ -159,7 +159,14 @@ def require_action_item_access(*, edit: bool = False):
         user: User = Depends(get_current_user),
     ) -> ActionItem:
         item = db.query(ActionItem).filter(ActionItem.id == item_id).first()
-        if item is None or not _check_case_id(db, user, item.case_id, edit=edit):
+        if item is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        # Items extracted from an untriaged document belong to whoever owns
+        # that document (the case is still the _TRIAGE placeholder).
+        owner_id = item.source_document.owner_id if item.source_document else None
+        if not check_owned_or_case_access(
+            db, user, owner_id=owner_id, case_id=item.case_id, edit=edit
+        ):
             raise HTTPException(status_code=404, detail="Not found")
         return item
 
