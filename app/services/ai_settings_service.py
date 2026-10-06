@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -190,13 +192,13 @@ def read_debug_log(path: str) -> str | None:
 
     Raises ValueError for any path that escapes the debug root.
     """
-    if "\0" in path or ".." in path.split("/"):
+    if "\0" in path:
         raise ValueError("Invalid path")
-    candidate = (AI_DEBUG_ROOT / path).resolve()
-    try:
-        candidate.relative_to(AI_DEBUG_ROOT)
-    except ValueError as exc:
-        raise ValueError("Path escapes debug root") from exc
+    root = str(AI_DEBUG_ROOT)
+    normalized = os.path.normpath(os.path.join(root, path))
+    if not normalized.startswith(root + os.sep):
+        raise ValueError("Path escapes debug root")
+    candidate = Path(normalized)
     if candidate.suffix != ".md" or not candidate.is_file():
         return None
     return candidate.read_text(encoding="utf-8", errors="replace")
