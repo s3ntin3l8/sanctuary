@@ -22,7 +22,7 @@ def reset_rate_limiter():
 
 @pytest.mark.integration
 def test_export_returns_zip(db_session):
-    response = client.get("/api/export")
+    response = client.get("/api/v1/settings/data/export")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
     assert "sanctuary_export_" in response.headers["content-disposition"]
@@ -37,7 +37,7 @@ def test_export_returns_zip(db_session):
 
 @pytest.mark.integration
 def test_export_manifest_has_table_counts(db_session):
-    response = client.get("/api/export")
+    response = client.get("/api/v1/settings/data/export")
     assert response.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(response.content))
     manifest = json.loads(zf.read("manifest.json"))

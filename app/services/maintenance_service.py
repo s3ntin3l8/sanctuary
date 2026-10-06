@@ -1,4 +1,4 @@
-"""Data & Maintenance settings endpoints."""
+"""Maintenance operations behind Settings → Data (danger zone)."""
 
 import contextlib
 import logging
@@ -6,16 +6,12 @@ import shutil
 from pathlib import Path
 from typing import cast
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
 from sqlalchemy import text
 from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session
 
 from app import config as cfg
 from app.core.cache import cache
-from app.core.rate_limit import limiter
-from app.dependencies import get_db
 from app.models.database import Base
 from app.models.enums import AuditEventType
 from app.services import audit_service
@@ -23,7 +19,6 @@ from app.services.case_service import seed_triage_case
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/settings/maintenance", tags=["settings"])
 
 # Tables preserved across a workspace clear: the account, its per-user prefs,
 # global app/AI config (API keys, connected accounts, bootstrap_admin pin), and
@@ -31,9 +26,8 @@ router = APIRouter(prefix="/api/settings/maintenance", tags=["settings"])
 _PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
 
 
-@router.post("/reset-enrichment", response_class=HTMLResponse)
-@limiter.limit("5/minute")
-def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
+def reset_ai_enrichment(db: Session) -> tuple[int, int]:
+    """Clear every AI-derived field and all vectors. Returns (docs_reset, vectors_cleared)."""
     # embedding lives on the document_chunks row itself, so deleting the
     # chunk rows drops their vectors too.
     vectors_cleared = cast(
@@ -52,16 +46,11 @@ def reset_ai_enrichment(request: Request, db: Session = Depends(get_db)):
     audit_service.record(db, AuditEventType.MAINTENANCE_RESET_AI_ENRICHMENT)
     db.commit()
 
-    return HTMLResponse(
-        f'<span class="text-xs" style="color:var(--color-primary)">'
-        f"Reset {docs_reset} document{'' if docs_reset == 1 else 's'}; {vectors_cleared} embedding{'' if vectors_cleared == 1 else 's'} cleared."
-        f"</span>"
-    )
+    return docs_reset, vectors_cleared
 
 
-@router.post("/clear-all-data", response_class=HTMLResponse)
-@limiter.limit("5/minute")
-def clear_all_data(request: Request, db: Session = Depends(get_db)):
+def clear_all_data(db: Session) -> tuple[int, int]:
+    """Wipe every domain table and file artifact. Returns (rows_deleted, disk_items)."""
     # Purge queued Celery tasks so in-flight jobs don't repopulate rows.
     try:
         from app.tasks.celery_app import celery_app  # noqa: PLC0415
@@ -152,10 +141,4 @@ def clear_all_data(request: Request, db: Session = Depends(get_db)):
 
     cache.clear()
 
-    s = lambda n: "" if n == 1 else "s"  # noqa: E731
-    return HTMLResponse(
-        f'<span class="text-xs" style="color:var(--color-primary)">'
-        f"Cleared {rows_deleted} database row{s(rows_deleted)}; "
-        f"{disk_items} disk artifact{s(disk_items)} removed."
-        f"</span>"
-    )
+    return rows_deleted, disk_items

@@ -7,13 +7,41 @@ schema (``frontend/src/api/openapi.json``) is the client's source of truth.
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, cases, home, search, shell, worker_queue
+from app.api.v1 import (
+    admin_users,
+    auth,
+    cases,
+    home,
+    search,
+    settings_account,
+    settings_ai,
+    settings_appearance,
+    settings_data,
+    settings_gmail,
+    settings_identity,
+    shell,
+    worker_queue,
+)
 from app.api.v1.errors import ERROR_RESPONSES
 
 API_V1_PREFIX = "/api/v1"
 
 router = APIRouter(prefix=API_V1_PREFIX, responses=ERROR_RESPONSES)
-for _module in (auth, shell, home, cases, search, worker_queue):
+for _module in (
+    auth,
+    shell,
+    home,
+    cases,
+    search,
+    worker_queue,
+    settings_account,
+    settings_gmail,
+    settings_identity,
+    settings_ai,
+    settings_appearance,
+    settings_data,
+    admin_users,
+):
     # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
     # v1 route name so a v1 handler can never shadow the legacy route it replaces.
     for _route in _module.router.routes:

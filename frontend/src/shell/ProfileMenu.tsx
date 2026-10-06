@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
 
 import { useLogout, useShell } from '../api/shell'
 import { initials } from '../format'
@@ -55,8 +56,20 @@ export function ProfileMenu() {
               {isAdmin && ' · admin'}
             </div>
           </div>
-          <MenuLink href="/settings/account" icon="settings" label="Settings" />
-          {isAdmin && <MenuLink href="/admin/users" icon="group" label="Manage users" />}
+          <MenuLink
+            href="/settings/account"
+            icon="settings"
+            label="Settings"
+            onClick={() => setOpen(false)}
+          />
+          {isAdmin && (
+            <MenuLink
+              href="/admin/users"
+              icon="group"
+              label="Manage users"
+              onClick={() => setOpen(false)}
+            />
+          )}
           <div className="mx-2.5 my-1 flex items-center gap-1.5 border-t border-line2 pt-2 text-[10px] text-muted">
             <Icon name="lock" size={12} /> Local · nothing leaves this device
           </div>
@@ -74,14 +87,25 @@ export function ProfileMenu() {
   )
 }
 
-function MenuLink({ href, icon, label }: { href: string; icon: string; label: string }) {
+function MenuLink({
+  href,
+  icon,
+  label,
+  onClick,
+}: {
+  href: string
+  icon: string
+  label: string
+  onClick: () => void
+}) {
   return (
-    <a
-      href={href}
+    <Link
+      to={href}
       role="menuitem"
+      onClick={onClick}
       className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] text-ink2 hover:bg-accent/7 hover:text-ink"
     >
       <Icon name={icon} size={16} /> {label}
-    </a>
+    </Link>
   )
 }

@@ -122,14 +122,15 @@ def test_reassign_then_delete_user(auth_enabled, db_session, owner_and_other):
     client = _client()
     _login(client, "adm@example.com")
     # owner owns SH-1 → delete blocked
-    assert client.post(f"/admin/users/{owner.id}/delete").status_code == 409
+    assert client.delete(f"/api/v1/admin/users/{owner.id}").status_code == 409
     # reassign to other, then delete succeeds
     assert (
         client.post(
-            f"/admin/users/{owner.id}/reassign-cases", data={"new_owner_id": other.id}
+            f"/api/v1/admin/users/{owner.id}/reassign-cases",
+            json={"new_owner_id": other.id},
         ).status_code
-        == 204
+        == 200
     )
     db_session.expire_all()
     assert db_session.get(Case, "SH-1").owner_id == other.id
-    assert client.post(f"/admin/users/{owner.id}/delete").status_code == 204
+    assert client.delete(f"/api/v1/admin/users/{owner.id}").status_code == 200

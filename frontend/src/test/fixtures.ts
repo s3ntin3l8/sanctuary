@@ -92,3 +92,87 @@ export const homeView: Schemas['HomeView'] = {
   active_cases: [caseCard],
   caught_up: false,
 }
+
+export const aiSettings: Schemas['AiSettingsView'] = {
+  instances: [
+    {
+      id: 'inst_a',
+      label: 'Ollama · local',
+      base_url: 'http://127.0.0.1:11434',
+      has_api_key: false,
+      is_external: false,
+      summary_model: 'qwen3.5:9b',
+      embed_model: 'nomic-embed-text',
+      embed_dim: 768,
+      ocr_model: '',
+    },
+    {
+      id: 'inst_b',
+      label: 'LM Studio · OCR',
+      base_url: 'http://127.0.0.1:1234',
+      has_api_key: true,
+      is_external: false,
+      summary_model: '',
+      embed_model: '',
+      embed_dim: null,
+      ocr_model: 'chandra-ocr',
+    },
+  ],
+  roles: [
+    {
+      role: 'chat',
+      label: 'Chat',
+      hint: 'Powers briefs.',
+      active_id: 'inst_a',
+      model: 'qwen3.5:9b',
+      embed_dim: null,
+    },
+    {
+      role: 'embed',
+      label: 'Embeddings',
+      hint: 'Powers search.',
+      active_id: 'inst_a',
+      model: 'nomic-embed-text',
+      embed_dim: 768,
+    },
+    {
+      role: 'ocr',
+      label: 'OCR',
+      hint: 'Reads scans.',
+      active_id: 'inst_b',
+      model: 'chandra-ocr',
+      embed_dim: null,
+    },
+  ],
+  extraction_engine: 'chandra',
+  worker_concurrency: 2,
+  ocr_concurrency: 4,
+  embed_index: { dim: 768, model: 'nomic-embed-text', index_dim: 768, mismatch: false },
+  reindex_job: null,
+}
+
+export const adminUsers: Schemas['AdminUsersView'] = {
+  users: [
+    {
+      id: 1,
+      email: 'k.vogt@ra-vogt.de',
+      display_name: 'Katharina Vogt',
+      role: 'admin',
+      is_active: true,
+      created_at: '2026-03-14T10:00:00Z',
+      last_login_at: '2026-06-17T06:40:00Z',
+      owned_case_count: 3,
+    },
+    {
+      id: 2,
+      email: 'reg@example.com',
+      display_name: null,
+      role: 'user',
+      is_active: true,
+      created_at: '2026-05-01T10:00:00Z',
+      last_login_at: null,
+      owned_case_count: 0,
+    },
+  ],
+  signup_enabled: false,
+}

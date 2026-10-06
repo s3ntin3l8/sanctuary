@@ -1,14 +1,24 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import { createBrowserRouter, RouterProvider } from 'react-router'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 
 import { ApiError } from './api/client'
+import { AdminUsersPage } from './features/admin/AdminUsersPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SignupPage } from './features/auth/SignupPage'
 import { CasesPage } from './features/cases/CasesPage'
 import { HomePage } from './features/home/HomePage'
+import { AccountPage } from './features/settings/AccountPage'
+import { AiPage } from './features/settings/AiPage'
+import { AppearancePage } from './features/settings/AppearancePage'
+import { DataPage } from './features/settings/DataPage'
+import { ExportPage } from './features/settings/ExportPage'
+import { GmailPage } from './features/settings/GmailPage'
+import { IdentityPage } from './features/settings/IdentityPage'
+import { SettingsLayout } from './features/settings/SettingsLayout'
 import { leaveTo } from './navigation'
 import { Shell } from './shell/Shell'
+import { ToastProvider } from './ui/toast'
 
 // Every path here must also be served by FastAPI as an SPA route (app/spa.py).
 const router = createBrowserRouter([
@@ -19,6 +29,20 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/cases', element: <CasesPage /> },
+      {
+        element: <SettingsLayout />,
+        children: [
+          { path: '/settings', element: <Navigate to="/settings/account" replace /> },
+          { path: '/settings/account', element: <AccountPage /> },
+          { path: '/settings/appearance', element: <AppearancePage /> },
+          { path: '/settings/ai', element: <AiPage /> },
+          { path: '/settings/identity', element: <IdentityPage /> },
+          { path: '/settings/gmail', element: <GmailPage /> },
+          { path: '/settings/data', element: <DataPage /> },
+          { path: '/settings/export', element: <ExportPage /> },
+          { path: '/admin/users', element: <AdminUsersPage /> },
+        ],
+      },
     ],
   },
 ])
@@ -42,7 +66,9 @@ export function App() {
   const [queryClient] = useState(makeQueryClient)
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

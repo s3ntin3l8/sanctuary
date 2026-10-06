@@ -848,12 +848,6 @@ templates.env.filters["format_due_relative"] = format_due_relative
 templates.env.filters["urlencode"] = quote
 templates.env.filters["local_strftime"] = _local_strftime
 
-# Flags AI endpoints on the public internet so the settings UI can warn about
-# case-data egress (LAN/loopback endpoints stay quiet).
-from app.services.ai_config import is_external_endpoint as _is_external_endpoint
-
-templates.env.globals["is_external_endpoint"] = _is_external_endpoint
-
 # Markdown renderer.
 # html=False blocks raw-HTML passthrough — Docling-produced markdown can't inject
 # <script> even if the source PDF was adversarial. typographer upgrades straight
@@ -1176,19 +1170,12 @@ from app.api import (
     search,
     triage_router,
 )
-from app.api.admin_users import router as admin_users_router
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.case_sharing import router as case_sharing_router
 from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
-from app.api.export import router as export_router
-from app.api.settings_account import router as settings_account_router
-from app.api.settings_ai_config import router as settings_ai_router
-from app.api.settings_appearance import router as settings_appearance_router
-from app.api.settings_maintenance import router as settings_maintenance_router
 from app.api.settings_page import router as settings_page_router
-from app.api.settings_parties import router as settings_parties_router
 from app.api.slicing import router as slicing_router
 from app.api.user_settings import router as user_settings_router
 from app.api.v1 import router as api_v1_router
@@ -1196,9 +1183,7 @@ from app.api.v1 import router as api_v1_router
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
-app.include_router(admin_users_router)
 app.include_router(case_sharing_router)
-app.include_router(settings_account_router)
 app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
@@ -1220,11 +1205,6 @@ app.include_router(proceedings_router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)
-app.include_router(settings_ai_router)
-app.include_router(settings_appearance_router)
-app.include_router(settings_maintenance_router)
-app.include_router(settings_parties_router)
-app.include_router(export_router)
 
 from app.api.worker_queue import router as worker_queue_router
 
