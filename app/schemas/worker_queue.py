@@ -1,0 +1,40 @@
+"""The document-processing queue (what the Celery workers are doing)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel
+
+from app.models.enums import PipelineStage
+
+
+class QueueItem(BaseModel):
+    kind: Literal["doc", "batch"]
+    stage: PipelineStage
+    label: str
+    doc_id: int | None
+    batch_id: int | None
+    doc_count: int
+
+
+class FailedDoc(BaseModel):
+    doc_id: int
+    batch_id: int | None
+    title: str
+    stage: str
+    error: str
+
+
+class QueueCounts(BaseModel):
+    executing: int
+    queued: int
+    failed: int
+    ai_inflight: int
+
+
+class QueueView(BaseModel):
+    counts: QueueCounts
+    executing: list[QueueItem]
+    queued: list[QueueItem]
+    failed: list[FailedDoc]

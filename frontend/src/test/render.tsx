@@ -27,7 +27,9 @@ export function stubApi(replies: Record<string, Reply>) {
     const key = `${request.method} ${new URL(request.url).pathname}`
     const reply = replies[key]
     if (!reply) throw new Error(`unexpected request: ${key}`)
-    return Response.json(reply.body, { status: reply.status ?? 200 })
+    const status = reply.status ?? 200
+    if (reply.body === null) return new Response(null, { status })
+    return Response.json(reply.body, { status })
   })
   vi.stubGlobal('fetch', mock)
   return mock

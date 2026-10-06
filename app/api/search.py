@@ -21,35 +21,6 @@ def _filter_visible(db, user, documents, cases):
     return documents, cases
 
 
-@router.get("/api/search")
-async def api_search(
-    q: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """API endpoint for live search autocomplete."""
-    if len(q) < 2:
-        return {"documents": [], "cases": [], "contacts": [], "total": 0}
-
-    search_service = SearchService(db)
-    result = await run_in_threadpool(search_service.search_all, q, limit=30)
-    documents, cases = _filter_visible(db, user, result.documents, result.cases)
-
-    # Simple JSON serialization
-    return {
-        "documents": [
-            {"id": d.id, "title": d.title, "case_id": d.case_id} for d in documents
-        ],
-        "cases": [
-            {"id": c.id, "title": c.title, "status": c.status.value} for c in cases
-        ],
-        "contacts": [{"name": d.sender} for d in documents if d.sender][
-            :5
-        ],  # Simplified contact search from doc senders
-        "total": len(documents) + len(cases),
-    }
-
-
 @router.get("/search")
 async def search_page(
     request: Request,

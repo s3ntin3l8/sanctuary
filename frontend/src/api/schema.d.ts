@@ -11,8 +11,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Auth Config */
-        get: operations["auth_config_api_v1_auth_config_get"];
+        /** V1 Auth Config */
+        get: operations["v1_auth_config_api_v1_auth_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -30,8 +30,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
-        post: operations["login_api_v1_auth_login_post"];
+        /** V1 Login */
+        post: operations["v1_login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Logout */
+        post: operations["v1_logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -47,8 +64,174 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Signup */
-        post: operations["signup_api_v1_auth_signup_post"];
+        /** V1 Signup */
+        post: operations["v1_signup_api_v1_auth_signup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Cases Directory */
+        get: operations["v1_cases_directory_api_v1_cases_get"];
+        put?: never;
+        /**
+         * V1 Create Case
+         * @description Create a case and its initial active proceeding.
+         */
+        post: operations["v1_create_case_api_v1_cases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/confirm-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Confirm Close
+         * @description Accept an AI close suggestion: close the case and all its proceedings.
+         */
+        post: operations["v1_confirm_close_api_v1_cases__case_id__confirm_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/dismiss-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Dismiss Close
+         * @description Reject an AI close suggestion: clear the flag, keep the status.
+         */
+        post: operations["v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Home */
+        get: operations["v1_home_api_v1_home_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/home/review-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Review All
+         * @description Mark everything new as reviewed: advances last_home_visit to now.
+         */
+        post: operations["v1_review_all_api_v1_home_review_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Search */
+        get: operations["v1_search_api_v1_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Shell */
+        get: operations["v1_shell_api_v1_shell_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/worker-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Worker Queue */
+        get: operations["v1_worker_queue_api_v1_worker_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/worker-queue/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Retry Failed */
+        post: operations["v1_retry_failed_api_v1_worker_queue_retry_failed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -59,6 +242,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActionItemType
+         * @description Type of action derived from a document.
+         * @enum {string}
+         */
+        ActionItemType: "deadline" | "court_date" | "response_required" | "filing_required" | "payment_due";
         /**
          * AuthConfig
          * @description What the public sign-in screens need to know before anyone is logged in.
@@ -74,6 +263,89 @@ export interface components {
             signup_enabled: boolean;
         };
         /**
+         * CaseCard
+         * @description One case as shown on Home and in the Cases directory.
+         */
+        CaseCard: {
+            /** Client Name */
+            client_name: string;
+            /** Days Since Activity */
+            days_since_activity: number;
+            /** Doc Count */
+            doc_count: number;
+            /** Exposure Eur */
+            exposure_eur: number;
+            /** Id */
+            id: string;
+            /** Is Dormant */
+            is_dormant: boolean;
+            /** Is Draft */
+            is_draft: boolean;
+            /** Last Activity At */
+            last_activity_at: string | null;
+            /** Matter Type */
+            matter_type: string;
+            max_significance: components["schemas"]["SignificanceTier"] | null;
+            /** New Docs */
+            new_docs: number;
+            next_action: components["schemas"]["NextAction"] | null;
+            /** Open Action Count */
+            open_action_count: number;
+            /** Opposing Party */
+            opposing_party: string;
+            /** Pending Close */
+            pending_close: boolean;
+            /** Proceeding Name */
+            proceeding_name: string;
+            status: components["schemas"]["CaseStatus"];
+            /** Status Label */
+            status_label: string;
+            /** Title */
+            title: string;
+        };
+        /** CaseCreate */
+        CaseCreate: {
+            /** Case Id */
+            case_id: string;
+            /** Court Name */
+            court_name: string;
+            /** @default de */
+            jurisdiction: components["schemas"]["Jurisdiction"];
+            /** Title */
+            title: string;
+        };
+        /** CaseCreated */
+        CaseCreated: {
+            /** Id */
+            id: string;
+        };
+        /**
+         * CaseStatus
+         * @enum {string}
+         */
+        CaseStatus: "intake" | "discovery" | "pre_trial" | "trial" | "post_trial" | "closed";
+        /** CasesDirectory */
+        CasesDirectory: {
+            /** Cases */
+            cases: components["schemas"]["CaseCard"][];
+            /** Counts By Status */
+            counts_by_status: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
+        };
+        /** CurrentUser */
+        CurrentUser: {
+            /** Display Name */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            /** Id */
+            id: number;
+            role: components["schemas"]["UserRole"];
+        };
+        /**
          * ErrorResponse
          * @description Body of every non-2xx ``/api/v1`` response.
          *
@@ -86,6 +358,124 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** FailedDoc */
+        FailedDoc: {
+            /** Batch Id */
+            batch_id: number | null;
+            /** Doc Id */
+            doc_id: number;
+            /** Error */
+            error: string;
+            /** Stage */
+            stage: string;
+            /** Title */
+            title: string;
+        };
+        /** HomeActionItem */
+        HomeActionItem: {
+            action_type: components["schemas"]["ActionItemType"];
+            /** Case Id */
+            case_id: string;
+            /** Case Title */
+            case_title: string;
+            /** Description */
+            description: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+        };
+        /** HomeDeltaCase */
+        HomeDeltaCase: {
+            /** Case Id */
+            case_id: string;
+            /** Case Title */
+            case_title: string;
+            /** Doc Titles */
+            doc_titles: string[];
+            max_significance: components["schemas"]["SignificanceTier"];
+            /** New Actions */
+            new_actions: number;
+            /** New Doc Count */
+            new_doc_count: number;
+        };
+        /** HomeSignal */
+        HomeSignal: {
+            /** Action */
+            action: string;
+            /** Detail */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Link */
+            link: string;
+            /** Severity */
+            severity: string;
+            /** Title */
+            title: string;
+        };
+        /** HomeTriageBundle */
+        HomeTriageBundle: {
+            /** Case Id */
+            case_id: string | null;
+            /** Doc Count */
+            doc_count: number;
+            /** Id */
+            id: number;
+            pipeline: components["schemas"]["PipelineCounts"];
+            /** Received At */
+            received_at: string | null;
+            /** Sender Email */
+            sender_email: string | null;
+            status: components["schemas"]["IngestBatchStatus"];
+            /** Suggested Case Id */
+            suggested_case_id: string | null;
+            /** Title */
+            title: string;
+        };
+        /** HomeView */
+        HomeView: {
+            /** Active Cases */
+            active_cases: components["schemas"]["CaseCard"][];
+            /** Caught Up */
+            caught_up: boolean;
+            /** Delta Cases */
+            delta_cases: components["schemas"]["HomeDeltaCase"][];
+            /** Draft Cases */
+            draft_cases: components["schemas"]["CaseCard"][];
+            /** Greeting */
+            greeting: string;
+            /** Last Home Visit */
+            last_home_visit: string | null;
+            /**
+             * Now
+             * Format: date-time
+             */
+            now: string;
+            /** Signals */
+            signals: components["schemas"]["HomeSignal"][];
+            /** Today Items */
+            today_items: components["schemas"]["HomeActionItem"][];
+            /** Triage Bundles */
+            triage_bundles: components["schemas"]["HomeTriageBundle"][];
+            /** User Name */
+            user_name: string;
+        };
+        /**
+         * IngestBatchStatus
+         * @enum {string}
+         */
+        IngestBatchStatus: "pending" | "processing" | "completed" | "failed" | "dismissed" | "awaiting_slicing";
+        /**
+         * Jurisdiction
+         * @description Case jurisdiction for cost system.
+         * @enum {string}
+         */
+        Jurisdiction: "de" | "uk" | "us" | "other";
         /** LoginRequest */
         LoginRequest: {
             /** Email */
@@ -98,6 +488,103 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** NextAction */
+        NextAction: {
+            action_type: components["schemas"]["ActionItemType"];
+            /** Due Date */
+            due_date: string | null;
+            /** Title */
+            title: string;
+        };
+        /** PipelineCounts */
+        PipelineCounts: {
+            /** Completed */
+            completed: number;
+            /** Failed */
+            failed: number;
+            /** Pending */
+            pending: number;
+            /** Running */
+            running: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * PipelineStage
+         * @enum {string}
+         */
+        PipelineStage: "extract" | "metadata" | "batch_analysis" | "enrich" | "relationships" | "claims" | "entities" | "embeddings";
+        /** QueueCounts */
+        QueueCounts: {
+            /** Ai Inflight */
+            ai_inflight: number;
+            /** Executing */
+            executing: number;
+            /** Failed */
+            failed: number;
+            /** Queued */
+            queued: number;
+        };
+        /** QueueItem */
+        QueueItem: {
+            /** Batch Id */
+            batch_id: number | null;
+            /** Doc Count */
+            doc_count: number;
+            /** Doc Id */
+            doc_id: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "doc" | "batch";
+            /** Label */
+            label: string;
+            stage: components["schemas"]["PipelineStage"];
+        };
+        /** QueueView */
+        QueueView: {
+            counts: components["schemas"]["QueueCounts"];
+            /** Executing */
+            executing: components["schemas"]["QueueItem"][];
+            /** Failed */
+            failed: components["schemas"]["FailedDoc"][];
+            /** Queued */
+            queued: components["schemas"]["QueueItem"][];
+        };
+        /** SearchCase */
+        SearchCase: {
+            /** Id */
+            id: string;
+            status: components["schemas"]["CaseStatus"];
+            /** Title */
+            title: string;
+        };
+        /** SearchContact */
+        SearchContact: {
+            /** Name */
+            name: string;
+        };
+        /** SearchDocument */
+        SearchDocument: {
+            /** Case Id */
+            case_id: string | null;
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+        };
+        /** SearchResults */
+        SearchResults: {
+            /** Cases */
+            cases: components["schemas"]["SearchCase"][];
+            /** Contacts */
+            contacts: components["schemas"]["SearchContact"][];
+            /** Documents */
+            documents: components["schemas"]["SearchDocument"][];
+            /** Total */
+            total: number;
+        };
         /**
          * SessionStarted
          * @description A session cookie was set; ``next`` is the same-site path to navigate to.
@@ -106,6 +593,21 @@ export interface components {
             /** Next */
             next: string;
         };
+        /**
+         * ShellView
+         * @description Everything the persistent app shell (rail, profile menu) renders.
+         */
+        ShellView: {
+            /** Triage Count */
+            triage_count: number;
+            user: components["schemas"]["CurrentUser"];
+        };
+        /**
+         * SignificanceTier
+         * @description Document significance to case — drives graph visibility.
+         * @enum {string}
+         */
+        SignificanceTier: "critical" | "significant" | "informational" | "administrative";
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -120,6 +622,12 @@ export interface components {
             /** Password Confirm */
             password_confirm: string;
         };
+        /**
+         * UserRole
+         * @description Account role. Admins manage users, signup, and password resets.
+         * @enum {string}
+         */
+        UserRole: "admin" | "user";
     };
     responses: never;
     parameters: never;
@@ -129,7 +637,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    auth_config_api_v1_auth_config_get: {
+    v1_auth_config_api_v1_auth_config_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -158,7 +666,7 @@ export interface operations {
             };
         };
     };
-    login_api_v1_auth_login_post: {
+    v1_login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -191,7 +699,34 @@ export interface operations {
             };
         };
     };
-    signup_api_v1_auth_signup_post: {
+    v1_logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_signup_api_v1_auth_signup_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -211,6 +746,300 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionStarted"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_cases_directory_api_v1_cases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasesDirectory"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_create_case_api_v1_cases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CaseCreated"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_confirm_close_api_v1_cases__case_id__confirm_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_home_api_v1_home_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_review_all_api_v1_home_review_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_search_api_v1_search_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_shell_api_v1_shell_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShellView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_worker_queue_api_v1_worker_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_retry_failed_api_v1_worker_queue_retry_failed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueView"];
                 };
             };
             /** @description Error */

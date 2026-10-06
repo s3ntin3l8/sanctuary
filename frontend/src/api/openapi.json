@@ -1,6 +1,18 @@
 {
   "components": {
     "schemas": {
+      "ActionItemType": {
+        "description": "Type of action derived from a document.",
+        "enum": [
+          "deadline",
+          "court_date",
+          "response_required",
+          "filing_required",
+          "payment_due"
+        ],
+        "title": "ActionItemType",
+        "type": "string"
+      },
       "AuthConfig": {
         "description": "What the public sign-in screens need to know before anyone is logged in.",
         "properties": {
@@ -30,6 +42,254 @@
         "title": "AuthConfig",
         "type": "object"
       },
+      "CaseCard": {
+        "description": "One case as shown on Home and in the Cases directory.",
+        "properties": {
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "days_since_activity": {
+            "title": "Days Since Activity",
+            "type": "integer"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "exposure_eur": {
+            "title": "Exposure Eur",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_dormant": {
+            "title": "Is Dormant",
+            "type": "boolean"
+          },
+          "is_draft": {
+            "title": "Is Draft",
+            "type": "boolean"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "matter_type": {
+            "title": "Matter Type",
+            "type": "string"
+          },
+          "max_significance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignificanceTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_docs": {
+            "title": "New Docs",
+            "type": "integer"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open_action_count": {
+            "title": "Open Action Count",
+            "type": "integer"
+          },
+          "opposing_party": {
+            "title": "Opposing Party",
+            "type": "string"
+          },
+          "pending_close": {
+            "title": "Pending Close",
+            "type": "boolean"
+          },
+          "proceeding_name": {
+            "title": "Proceeding Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "status_label": {
+            "title": "Status Label",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "status_label",
+          "is_draft",
+          "pending_close",
+          "client_name",
+          "opposing_party",
+          "proceeding_name",
+          "matter_type",
+          "next_action",
+          "exposure_eur",
+          "doc_count",
+          "open_action_count",
+          "new_docs",
+          "days_since_activity",
+          "is_dormant",
+          "max_significance",
+          "last_activity_at"
+        ],
+        "title": "CaseCard",
+        "type": "object"
+      },
+      "CaseCreate": {
+        "properties": {
+          "case_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "court_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Court Name",
+            "type": "string"
+          },
+          "jurisdiction": {
+            "$ref": "#/components/schemas/Jurisdiction",
+            "default": "de"
+          },
+          "title": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_id",
+          "title",
+          "court_name"
+        ],
+        "title": "CaseCreate",
+        "type": "object"
+      },
+      "CaseCreated": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CaseCreated",
+        "type": "object"
+      },
+      "CaseStatus": {
+        "enum": [
+          "intake",
+          "discovery",
+          "pre_trial",
+          "trial",
+          "post_trial",
+          "closed"
+        ],
+        "title": "CaseStatus",
+        "type": "string"
+      },
+      "CasesDirectory": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseCard"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "counts_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/CaseStatus"
+            },
+            "title": "Counts By Status",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cases",
+          "counts_by_status",
+          "total"
+        ],
+        "title": "CasesDirectory",
+        "type": "object"
+      },
+      "CurrentUser": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role"
+        ],
+        "title": "CurrentUser",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "Body of every non-2xx ``/api/v1`` response.\n\n``code`` is a stable machine-readable identifier the client branches on;\n``detail`` is the human-readable message it may show as-is.",
         "properties": {
@@ -48,6 +308,379 @@
         ],
         "title": "ErrorResponse",
         "type": "object"
+      },
+      "FailedDoc": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "integer"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "batch_id",
+          "title",
+          "stage",
+          "error"
+        ],
+        "title": "FailedDoc",
+        "type": "object"
+      },
+      "HomeActionItem": {
+        "properties": {
+          "action_type": {
+            "$ref": "#/components/schemas/ActionItemType"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_title": {
+            "title": "Case Title",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "case_id",
+          "case_title",
+          "title",
+          "description",
+          "due_date",
+          "action_type"
+        ],
+        "title": "HomeActionItem",
+        "type": "object"
+      },
+      "HomeDeltaCase": {
+        "properties": {
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
+          "case_title": {
+            "title": "Case Title",
+            "type": "string"
+          },
+          "doc_titles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Doc Titles",
+            "type": "array"
+          },
+          "max_significance": {
+            "$ref": "#/components/schemas/SignificanceTier"
+          },
+          "new_actions": {
+            "title": "New Actions",
+            "type": "integer"
+          },
+          "new_doc_count": {
+            "title": "New Doc Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "case_id",
+          "case_title",
+          "new_doc_count",
+          "new_actions",
+          "max_significance",
+          "doc_titles"
+        ],
+        "title": "HomeDeltaCase",
+        "type": "object"
+      },
+      "HomeSignal": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "link": {
+            "title": "Link",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "severity",
+          "title",
+          "detail",
+          "action",
+          "link"
+        ],
+        "title": "HomeSignal",
+        "type": "object"
+      },
+      "HomeTriageBundle": {
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "pipeline": {
+            "$ref": "#/components/schemas/PipelineCounts"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
+          "sender_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender Email"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IngestBatchStatus"
+          },
+          "suggested_case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Case Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "received_at",
+          "sender_email",
+          "title",
+          "doc_count",
+          "case_id",
+          "suggested_case_id",
+          "pipeline"
+        ],
+        "title": "HomeTriageBundle",
+        "type": "object"
+      },
+      "HomeView": {
+        "properties": {
+          "active_cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseCard"
+            },
+            "title": "Active Cases",
+            "type": "array"
+          },
+          "caught_up": {
+            "title": "Caught Up",
+            "type": "boolean"
+          },
+          "delta_cases": {
+            "items": {
+              "$ref": "#/components/schemas/HomeDeltaCase"
+            },
+            "title": "Delta Cases",
+            "type": "array"
+          },
+          "draft_cases": {
+            "items": {
+              "$ref": "#/components/schemas/CaseCard"
+            },
+            "title": "Draft Cases",
+            "type": "array"
+          },
+          "greeting": {
+            "title": "Greeting",
+            "type": "string"
+          },
+          "last_home_visit": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Home Visit"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/HomeSignal"
+            },
+            "title": "Signals",
+            "type": "array"
+          },
+          "today_items": {
+            "items": {
+              "$ref": "#/components/schemas/HomeActionItem"
+            },
+            "title": "Today Items",
+            "type": "array"
+          },
+          "triage_bundles": {
+            "items": {
+              "$ref": "#/components/schemas/HomeTriageBundle"
+            },
+            "title": "Triage Bundles",
+            "type": "array"
+          },
+          "user_name": {
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "greeting",
+          "user_name",
+          "now",
+          "today_items",
+          "triage_bundles",
+          "last_home_visit",
+          "delta_cases",
+          "signals",
+          "draft_cases",
+          "active_cases",
+          "caught_up"
+        ],
+        "title": "HomeView",
+        "type": "object"
+      },
+      "IngestBatchStatus": {
+        "enum": [
+          "pending",
+          "processing",
+          "completed",
+          "failed",
+          "dismissed",
+          "awaiting_slicing"
+        ],
+        "title": "IngestBatchStatus",
+        "type": "string"
+      },
+      "Jurisdiction": {
+        "description": "Case jurisdiction for cost system.",
+        "enum": [
+          "de",
+          "uk",
+          "us",
+          "other"
+        ],
+        "title": "Jurisdiction",
+        "type": "string"
       },
       "LoginRequest": {
         "properties": {
@@ -72,6 +705,304 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "NextAction": {
+        "properties": {
+          "action_type": {
+            "$ref": "#/components/schemas/ActionItemType"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "due_date",
+          "action_type"
+        ],
+        "title": "NextAction",
+        "type": "object"
+      },
+      "PipelineCounts": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "running",
+          "pending",
+          "failed",
+          "completed"
+        ],
+        "title": "PipelineCounts",
+        "type": "object"
+      },
+      "PipelineStage": {
+        "enum": [
+          "extract",
+          "metadata",
+          "batch_analysis",
+          "enrich",
+          "relationships",
+          "claims",
+          "entities",
+          "embeddings"
+        ],
+        "title": "PipelineStage",
+        "type": "string"
+      },
+      "QueueCounts": {
+        "properties": {
+          "ai_inflight": {
+            "title": "Ai Inflight",
+            "type": "integer"
+          },
+          "executing": {
+            "title": "Executing",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "executing",
+          "queued",
+          "failed",
+          "ai_inflight"
+        ],
+        "title": "QueueCounts",
+        "type": "object"
+      },
+      "QueueItem": {
+        "properties": {
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "doc_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Id"
+          },
+          "kind": {
+            "enum": [
+              "doc",
+              "batch"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/PipelineStage"
+          }
+        },
+        "required": [
+          "kind",
+          "stage",
+          "label",
+          "doc_id",
+          "batch_id",
+          "doc_count"
+        ],
+        "title": "QueueItem",
+        "type": "object"
+      },
+      "QueueView": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/QueueCounts"
+          },
+          "executing": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "title": "Executing",
+            "type": "array"
+          },
+          "failed": {
+            "items": {
+              "$ref": "#/components/schemas/FailedDoc"
+            },
+            "title": "Failed",
+            "type": "array"
+          },
+          "queued": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "title": "Queued",
+            "type": "array"
+          }
+        },
+        "required": [
+          "counts",
+          "executing",
+          "queued",
+          "failed"
+        ],
+        "title": "QueueView",
+        "type": "object"
+      },
+      "SearchCase": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status"
+        ],
+        "title": "SearchCase",
+        "type": "object"
+      },
+      "SearchContact": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SearchContact",
+        "type": "object"
+      },
+      "SearchDocument": {
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "case_id"
+        ],
+        "title": "SearchDocument",
+        "type": "object"
+      },
+      "SearchResults": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/SearchCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/SearchContact"
+            },
+            "title": "Contacts",
+            "type": "array"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/SearchDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "documents",
+          "cases",
+          "contacts",
+          "total"
+        ],
+        "title": "SearchResults",
+        "type": "object"
+      },
       "SessionStarted": {
         "description": "A session cookie was set; ``next`` is the same-site path to navigate to.",
         "properties": {
@@ -85,6 +1016,35 @@
         ],
         "title": "SessionStarted",
         "type": "object"
+      },
+      "ShellView": {
+        "description": "Everything the persistent app shell (rail, profile menu) renders.",
+        "properties": {
+          "triage_count": {
+            "title": "Triage Count",
+            "type": "integer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/CurrentUser"
+          }
+        },
+        "required": [
+          "user",
+          "triage_count"
+        ],
+        "title": "ShellView",
+        "type": "object"
+      },
+      "SignificanceTier": {
+        "description": "Document significance to case \u2014 drives graph visibility.",
+        "enum": [
+          "critical",
+          "significant",
+          "informational",
+          "administrative"
+        ],
+        "title": "SignificanceTier",
+        "type": "string"
       },
       "SignupRequest": {
         "properties": {
@@ -113,6 +1073,15 @@
         ],
         "title": "SignupRequest",
         "type": "object"
+      },
+      "UserRole": {
+        "description": "Account role. Admins manage users, signup, and password resets.",
+        "enum": [
+          "admin",
+          "user"
+        ],
+        "title": "UserRole",
+        "type": "string"
       }
     }
   },
@@ -124,7 +1093,7 @@
   "paths": {
     "/api/v1/auth/config": {
       "get": {
-        "operationId": "auth_config_api_v1_auth_config_get",
+        "operationId": "v1_auth_config_api_v1_auth_config_get",
         "responses": {
           "200": {
             "content": {
@@ -147,7 +1116,7 @@
             "description": "Error"
           }
         },
-        "summary": "Auth Config",
+        "summary": "V1 Auth Config",
         "tags": [
           "auth"
         ]
@@ -155,7 +1124,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "operationId": "login_api_v1_auth_login_post",
+        "operationId": "v1_login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -188,7 +1157,31 @@
             "description": "Error"
           }
         },
-        "summary": "Login",
+        "summary": "V1 Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "v1_logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Logout",
         "tags": [
           "auth"
         ]
@@ -196,7 +1189,7 @@
     },
     "/api/v1/auth/signup": {
       "post": {
-        "operationId": "signup_api_v1_auth_signup_post",
+        "operationId": "v1_signup_api_v1_auth_signup_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -229,9 +1222,345 @@
             "description": "Error"
           }
         },
-        "summary": "Signup",
+        "summary": "V1 Signup",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/cases": {
+      "get": {
+        "operationId": "v1_cases_directory_api_v1_cases_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasesDirectory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Cases Directory",
+        "tags": [
+          "cases"
+        ]
+      },
+      "post": {
+        "description": "Create a case and its initial active proceeding.",
+        "operationId": "v1_create_case_api_v1_cases_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/confirm-close": {
+      "post": {
+        "description": "Accept an AI close suggestion: close the case and all its proceedings.",
+        "operationId": "v1_confirm_close_api_v1_cases__case_id__confirm_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Confirm Close",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/dismiss-close": {
+      "post": {
+        "description": "Reject an AI close suggestion: clear the flag, keep the status.",
+        "operationId": "v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Dismiss Close",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/home": {
+      "get": {
+        "operationId": "v1_home_api_v1_home_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Home",
+        "tags": [
+          "home"
+        ]
+      }
+    },
+    "/api/v1/home/review-all": {
+      "post": {
+        "description": "Mark everything new as reviewed: advances last_home_visit to now.",
+        "operationId": "v1_review_all_api_v1_home_review_all_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Review All",
+        "tags": [
+          "home"
+        ]
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "operationId": "v1_search_api_v1_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 2,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Search",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/v1/shell": {
+      "get": {
+        "operationId": "v1_shell_api_v1_shell_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShellView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Shell",
+        "tags": [
+          "shell"
+        ]
+      }
+    },
+    "/api/v1/worker-queue": {
+      "get": {
+        "operationId": "v1_worker_queue_api_v1_worker_queue_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Worker Queue",
+        "tags": [
+          "worker-queue"
+        ]
+      }
+    },
+    "/api/v1/worker-queue/retry-failed": {
+      "post": {
+        "operationId": "v1_retry_failed_api_v1_worker_queue_retry_failed_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Retry Failed",
+        "tags": [
+          "worker-queue"
         ]
       }
     }

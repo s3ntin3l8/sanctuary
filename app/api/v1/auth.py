@@ -6,7 +6,7 @@ and return generic messages so they never reveal which emails are registered.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app import config
@@ -122,3 +122,8 @@ def signup(
     request.session.clear()
     request.session.update(auth_service.build_session(user))
     return SessionStarted(next="/")
+
+
+@router.post("/logout", status_code=204, response_class=Response)
+def logout(request: Request) -> None:
+    request.session.clear()

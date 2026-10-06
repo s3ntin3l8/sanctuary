@@ -9,7 +9,7 @@
             return;
         }
         try {
-            const r = await fetch('/api/search?q=' + encodeURIComponent(this.searchQuery));
+            const r = await fetch('/api/v1/search?q=' + encodeURIComponent(this.searchQuery));
             this.searchResults = await r.json();
         } catch (e) { console.error(e); }
     }

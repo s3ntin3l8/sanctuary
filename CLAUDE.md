@@ -63,7 +63,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 
 ## Navigation and ID conventions
 
-* **Sidebar** is a 56px icon-rail nav (Home, Cases, Search, Settings). It is not a case list.
+* **Sidebar** is a 56px icon-rail nav (Home, Triage, Cases; theme, search/⌘K, processing queue, profile menu → Settings). It is not a case list. SPA: `frontend/src/shell/`.
 * **`Case.id`** (e.g. `ADV-024-A`) is the lead identifier in: top-bar pill, breadcrumb, URLs, chat, reports.
 * **Breadcrumb format:** `Cases › ADV-024-A · Case Title`
 * Per-court Aktenzeichen lives on `Proceeding.az_court` — it is context, never the primary identity.

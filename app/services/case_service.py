@@ -829,6 +829,14 @@ def build_proceeding_exposure(case_id: str, db: Session) -> list[dict]:
     return rows
 
 
+class CaseIdTaken(ValueError):
+    """A case with this id already exists."""
+
+    def __init__(self, case_id: str) -> None:
+        super().__init__(f"A case with id {case_id} already exists.")
+        self.case_id = case_id
+
+
 class CaseService:
     """Service layer for Case operations."""
 
@@ -1126,20 +1134,7 @@ class CaseService:
             for c in all_cases
         ]
 
-        draft_cases = [c for c in enriched_cases if c["is_draft"]]
-        active_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] != CaseStatus.CLOSED
-        ]
-        closed_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
-        ]
-
         stats_by_status = self.case_repo.count_all_by_status(visible_ids=visible)
-
         doc_counts = self.doc_repo.bulk_count_by_case([c.id for c in all_cases])
         action_counts = self.action_repo.bulk_count_open_by_case(
             [c.id for c in all_cases]
@@ -1147,66 +1142,49 @@ class CaseService:
 
         return {
             "cases": enriched_cases,
-            "draft_cases": draft_cases,
-            "active_cases": active_cases,
-            "closed_cases": closed_cases,
             "stats_by_status": stats_by_status,
             "doc_counts": doc_counts,
             "deadline_counts": action_counts,
             "total": len(all_cases),
         }
 
-    def get_all_cases_directory_paginated(
-        self, user_id: int, page: int = 1, per_page: int = 20
-    ) -> dict:
-        """Get paginated cases with counts for directory view."""
-        visible = self._visible_filter(user_id)
-        cases, total = self.case_repo.get_paginated(
-            page=page, per_page=per_page, include_drafts=True, visible_ids=visible
+    def create_case_with_proceeding(
+        self,
+        *,
+        case_id: str,
+        title: str,
+        court_name: str,
+        jurisdiction: Jurisdiction,
+        owner_id: int,
+    ) -> Case:
+        """Create a case plus its first active proceeding (court level inferred).
+
+        Raises :class:`CaseIdTaken` when ``case_id`` already exists.
+        """
+        from app.models.database import Proceeding
+        from app.models.enums import ProceedingCourtLevel, ProceedingStatus
+        from app.services.ingestion.extractors import infer_court_level
+
+        if self.db.get(Case, case_id) is not None:
+            raise CaseIdTaken(case_id)
+        case = Case(
+            id=case_id,
+            title=title,
+            status=CaseStatus.INTAKE,
+            jurisdiction=jurisdiction,
+            owner_id=owner_id,
         )
-        now = now_utc()
-
-        from app.services.user_settings_service import get_last_home_visit
-
-        last_home_visit = get_last_home_visit(self.db, user_id)
-
-        batched = self._batch_card_context([c.id for c in cases])
-        enriched_cases = [
-            self.enrich_case_for_card(c, now, last_home_visit, _batched=batched)
-            for c in cases
-        ]
-
-        draft_cases = [c for c in enriched_cases if c["is_draft"]]
-        active_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] != CaseStatus.CLOSED
-        ]
-        closed_cases = [
-            c
-            for c in enriched_cases
-            if not c["is_draft"] and c["status"] == CaseStatus.CLOSED
-        ]
-
-        stats_by_status = self.case_repo.count_all_by_status(visible_ids=visible)
-
-        case_ids = [c.id for c in cases]
-        doc_counts = self.doc_repo.bulk_count_by_case(case_ids)
-        action_counts = self.action_repo.bulk_count_open_by_case(case_ids)
-
-        return {
-            "cases": enriched_cases,
-            "draft_cases": draft_cases,
-            "active_cases": active_cases,
-            "closed_cases": closed_cases,
-            "stats_by_status": stats_by_status,
-            "doc_counts": doc_counts,
-            "deadline_counts": action_counts,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-            "total_pages": (total + per_page - 1) // per_page if total > 0 else 1,
-        }
+        self.db.add(case)
+        self.db.add(
+            Proceeding(
+                case_id=case_id,
+                court_name=court_name,
+                court_level=infer_court_level(court_name) or ProceedingCourtLevel.OTHER,
+                status=ProceedingStatus.ACTIVE,
+            )
+        )
+        self.db.commit()
+        return case
 
     def create_case(
         self,
