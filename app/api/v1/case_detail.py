@@ -9,7 +9,11 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.access_guards import require_case_access, require_proceeding_access
+from app.api.access_guards import (
+    require_action_item_access,
+    require_case_access,
+    require_proceeding_access,
+)
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.core.timezone import now_utc
@@ -62,10 +66,11 @@ from app.schemas.case_detail import (
     TimelineView,
     brief_view,
 )
+from app.schemas.document_review import ActionStatusUpdate
 from app.services import access_service, auth_service, user_settings_service
 from app.services.case_dashboard_service import (
     _PARTY_ROLE_ORDER,
-    CaseDashboardService,
+    reaction_map_for_proceeding,
 )
 from app.services.case_graph_service import CaseGraphService
 from app.services.case_service import (
@@ -391,6 +396,18 @@ def reenrich_case(
     return ReenrichResult(queued=len(docs))
 
 
+@router.patch("/action-items/{item_id}", response_model=CaseActionItem)
+def set_action_item_status(
+    body: ActionStatusUpdate,
+    db: Session = Depends(get_db),
+    item: ActionItem = Depends(require_action_item_access(edit=True)),
+):
+    item.status = body.status
+    db.commit()
+    db.refresh(item)
+    return _action_item(item, now_utc())
+
+
 # --- Brief -------------------------------------------------------------------
 
 
@@ -443,12 +460,11 @@ def case_graph(
             )
             .all()
         }
-    svc = CaseDashboardService(db)
     payload = CaseGraphService(db).build_payload(
         proceeding,
         filter,
         new_doc_ids=new_ids,
-        reaction_map=svc._reaction_map_for_proceeding(proceeding),
+        reaction_map=reaction_map_for_proceeding(db, proceeding),
     )
     data = dataclasses.asdict(payload)
     return GraphView(

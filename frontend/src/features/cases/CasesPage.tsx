@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { type CaseCard, useCasesDirectory, useCloseDecision } from '../../api/cases'
@@ -155,7 +156,10 @@ function CaseRow({ card }: { card: CaseCard }) {
   const urgent = due ? daysUntil(due) <= 7 : false
   return (
     <li>
-      <a href={`/cases/${card.id}`} className={`${GRID} px-3 py-2.5 text-[12px] hover:bg-accent/5`}>
+      <Link
+        to={`/cases/${card.id}`}
+        className={`${GRID} px-3 py-2.5 text-[12px] hover:bg-accent/5`}
+      >
         <SignificanceDot tier={card.max_significance} />
         <span className="truncate font-mono text-[11px] font-semibold text-tealink">{card.id}</span>
         <span className="min-w-0">
@@ -190,7 +194,7 @@ function CaseRow({ card }: { card: CaseCard }) {
           {card.new_docs > 0 && <span className="text-tealink"> +{card.new_docs}</span>}
         </span>
         <Icon name="chevron_right" size={16} className="text-muted" />
-      </a>
+      </Link>
       {card.pending_close && (
         <div className="flex items-center gap-3 border-t border-warning/30 bg-warning/8 px-3 py-2 text-[11px]">
           <Icon name="auto_awesome" size={14} className="text-warning" />

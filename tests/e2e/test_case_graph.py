@@ -28,15 +28,14 @@ def _seed_case_with_two_docs(api_client, db_seed) -> tuple[str, list[int]]:
     case_id = f"E2E-GRAPH-{suffix}"
 
     resp = api_client.post(
-        "/cases",
-        data={
+        "/api/v1/cases",
+        json={
             "case_id": case_id,
             "title": f"E2E Graph {suffix}",
             "court_name": "AG Hamburg",
         },
-        follow_redirects=False,
     )
-    assert resp.status_code in (200, 303)
+    assert resp.status_code == 201, f"Case create failed: {resp.status_code}"
 
     proc_row = conn.execute(
         "SELECT id FROM proceedings WHERE case_id = %s", (case_id,)
@@ -94,15 +93,13 @@ def test_case_dashboard_renders_graph_svg_with_nodes(page: Page, api_client, db_
     """Case dashboard's default view is the graph — SVG with one node per doc."""
     case_id, doc_ids = _seed_case_with_two_docs(api_client, db_seed)
 
-    page.goto(f"/cases/{case_id}")
+    page.goto(f"/cases/{case_id}?view=graph")
 
-    # Graph container is present in the dashboard layout.
-    graph = page.locator("#graph-container, .case-graph, svg").first
+    # The SPA graph tab renders the correspondence SVG.
+    graph = page.get_by_label("Correspondence graph")
     expect(graph).to_be_visible(timeout=10_000)
 
-    # Each seeded document should render as a node. correspondence_graph.html
-    # sets data-id="{{ node.id }}" (node.id == doc.id) on rendered node
-    # groups; if that attribute changes, this test will surface the drift.
+    # Each seeded document renders as a node group carrying data-id=doc.id.
     for doc_id in doc_ids:
         node = page.locator(f"[data-id='{doc_id}']").first
         expect(node).to_be_attached(timeout=5_000)

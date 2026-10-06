@@ -8345,7 +8345,7 @@
   "paths": {
     "/api/v1/action-items/{item_id}": {
       "patch": {
-        "operationId": "v1_set_action_status_api_v1_action_items__item_id__patch",
+        "operationId": "v1_set_action_item_status_api_v1_action_items__item_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -8372,7 +8372,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ActionView"
+                  "$ref": "#/components/schemas/CaseActionItem"
                 }
               }
             },
@@ -8389,9 +8389,9 @@
             "description": "Error"
           }
         },
-        "summary": "V1 Set Action Status",
+        "summary": "V1 Set Action Item Status",
         "tags": [
-          "documents"
+          "cases"
         ]
       }
     },

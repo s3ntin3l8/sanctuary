@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import type { CaseCard } from '../../api/cases'
 import { daysUntil, formatDueRelative, formatEur, formatShortDate } from '../../format'
 import { Badge } from '../../ui/Badge'
@@ -27,8 +28,8 @@ export function CaseCardTile({ card }: { card: CaseCard }) {
   const action = card.next_action
   const urgent = action?.due_date ? daysUntil(action.due_date) <= 7 : false
   return (
-    <a
-      href={`/cases/${card.id}`}
+    <Link
+      to={`/cases/${card.id}`}
       className="flex flex-col gap-2 rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40"
     >
       <div className="flex items-center gap-2">
@@ -65,6 +66,6 @@ export function CaseCardTile({ card }: { card: CaseCard }) {
           {card.days_since_activity}d {card.is_dormant ? 'quiet' : 'ago'}
         </span>
       </div>
-    </a>
+    </Link>
   )
 }

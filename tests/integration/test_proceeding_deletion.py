@@ -30,15 +30,14 @@ def _make_proceeding(db, case_id, name="AG München"):
 
 
 @pytest.mark.integration
-def test_delete_empty_proceeding_returns_hx_refresh(app_client, db_session):
+def test_delete_empty_proceeding_returns_204(app_client, db_session):
     case = _make_case(db_session)
     p1 = _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
 
-    response = app_client.delete(f"/proceedings/{p2.id}")
+    response = app_client.delete(f"/api/v1/proceedings/{p2.id}")
 
-    assert response.status_code == 200
-    assert response.headers.get("hx-refresh") == "true"
+    assert response.status_code == 204
 
     p2_id, p1_id = p2.id, p1.id
     db_session.expunge_all()
@@ -47,7 +46,7 @@ def test_delete_empty_proceeding_returns_hx_refresh(app_client, db_session):
 
 
 @pytest.mark.integration
-def test_delete_proceeding_with_document_returns_400(app_client, db_session):
+def test_delete_proceeding_with_document_returns_409(app_client, db_session):
     case = _make_case(db_session, "PDEL-INT-2")
     _make_proceeding(db_session, case.id, "AG")
     p2 = _make_proceeding(db_session, case.id, "LG")
@@ -56,20 +55,20 @@ def test_delete_proceeding_with_document_returns_400(app_client, db_session):
     db_session.add(doc)
     db_session.commit()
 
-    response = app_client.delete(f"/proceedings/{p2.id}")
-    assert response.status_code == 400
+    response = app_client.delete(f"/api/v1/proceedings/{p2.id}")
+    assert response.status_code == 409
 
     db_session.expire_all()
     assert db_session.get(Proceeding, p2.id) is not None
 
 
 @pytest.mark.integration
-def test_delete_only_proceeding_returns_400(app_client, db_session):
+def test_delete_only_proceeding_returns_409(app_client, db_session):
     case = _make_case(db_session, "PDEL-INT-3")
     p = _make_proceeding(db_session, case.id, "AG")
 
-    response = app_client.delete(f"/proceedings/{p.id}")
-    assert response.status_code == 400
+    response = app_client.delete(f"/api/v1/proceedings/{p.id}")
+    assert response.status_code == 409
 
     db_session.expire_all()
     assert db_session.get(Proceeding, p.id) is not None
@@ -77,7 +76,7 @@ def test_delete_only_proceeding_returns_400(app_client, db_session):
 
 @pytest.mark.integration
 def test_delete_nonexistent_proceeding_returns_404(app_client, db_session):
-    response = app_client.delete("/proceedings/999999")
+    response = app_client.delete("/api/v1/proceedings/999999")
     assert response.status_code == 404
 
 
@@ -103,8 +102,8 @@ def test_delete_active_proceeding_clears_user_setting(app_client, db_session):
 
     assert get_active_proceeding(case.id, db_session, uid) == p2.id
 
-    response = app_client.delete(f"/proceedings/{p2.id}")
-    assert response.status_code == 200
+    response = app_client.delete(f"/api/v1/proceedings/{p2.id}")
+    assert response.status_code == 204
 
     db_session.expire_all()
     assert get_active_proceeding(case.id, db_session, uid) is None

@@ -1,7 +1,7 @@
 import type { FormEvent } from 'react'
 
 import { useCreateCase } from '../../api/cases'
-import { leaveTo } from '../../navigation'
+import { useNavigate } from 'react-router'
 import { Button } from '../../ui/Button'
 import { Modal } from '../../ui/Modal'
 import { TextField } from '../../ui/TextField'
@@ -17,6 +17,7 @@ const JURISDICTIONS = [
 
 export function CreateCaseModal({ open, onClose }: Props) {
   const create = useCreateCase()
+  const navigate = useNavigate()
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -28,7 +29,7 @@ export function CreateCaseModal({ open, onClose }: Props) {
         court_name: String(form.get('court_name')),
         jurisdiction: form.get('jurisdiction') as 'de' | 'uk' | 'us' | 'other',
       },
-      { onSuccess: (created) => leaveTo(`/cases/${created.id}`) },
+      { onSuccess: (created) => navigate(`/cases/${created.id}`) },
     )
   }
 

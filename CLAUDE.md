@@ -59,7 +59,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 
 **Typed JSON API for the SPA:** `app/api/v1/*` — every route declares a Pydantic `response_model` (`app/schemas/`), raises `ApiError(status, code, detail)` and gets the uniform `{detail, code}` error body. `make api-types` regenerates `frontend/src/api/{openapi.json,schema.d.ts}`; a unit test fails when the committed schema is stale. SPA-owned paths return `spa_index()` (`app/spa.py`); the client calls them through `openapi-fetch` (`frontend/src/api/client.ts`).
 
-**First-class views:** Case management (`/cases/*`), Triage (`/triage` SPA, `/api/v1/triage/*`, `/api/v1/documents/*`, `/api/v1/upload`, `/api/v1/slicing/*`), Document HUD (`/document/{id}` SPA, `/api/v1/documents/{id}/reader`, pins `/api/v1/pins/*`), Chat (`/api/v1/chat/*`, SSE streaming), Contacts (`/contacts/{sender}`), Costs (`/costs`), Settings (`/settings/*` SPA, `/api/v1/settings/*`, `/api/v1/admin/*`), Slicing review (`/ingest/slice/{batch_id}` SPA).
+**First-class views:** Cases (`/cases`, `/cases/{id}` SPA; `/api/v1/cases/{id}` detail, `/graph`, `/timeline`, `/truthmap`, `/financials`, `/shares`, `/api/v1/claims/*`, `/api/v1/costs/*`, `/api/v1/proceedings/*`), Triage (`/triage` SPA, `/api/v1/triage/*`, `/api/v1/documents/*`, `/api/v1/upload`, `/api/v1/slicing/*`), Document HUD (`/document/{id}` SPA, `/api/v1/documents/{id}/reader`, pins `/api/v1/pins/*`), Chat (`/api/v1/chat/*`, SSE streaming), Contacts (`/contacts/{sender}`), Costs page (`/costs`, legacy), Settings (`/settings/*` SPA, `/api/v1/settings/*`, `/api/v1/admin/*`), Slicing review (`/ingest/slice/{batch_id}` SPA).
 
 ## Navigation and ID conventions
 
@@ -73,7 +73,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 * **Internal ID is the lead everywhere.** `Case.id` (e.g. `ADV-024-A`) is shown in sidebar, breadcrumb, URLs, chat, reports. Per-court Aktenzeichen lives on `Proceeding.az_court` — context, never identity.
 * **Management Summary:** 3-bullet (Legal Significance, Action/Deadline, Financial Impact).
 * **Triage:** No `case_id`/`parent_id` → Triage Inbox. Bundle by `ingest_batch_id`.
-* **Graph first:** primary case view is the correspondence swim-lane graph, not a document list.
+* **Graph first:** the correspondence swim-lane graph (`frontend/src/features/cases/dashboard/GraphTab.tsx`, layout from `CaseGraphService`) is the primary way to navigate a case; the Review tab's spine is a companion, not a file list.
 * **AI answers cite sources** — every AI response references the document and passage it drew from.
 * **Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
 * **Email body is transport-only.** When an email has attachments, the email body is intentionally discarded during ingest — the body is a cover note only; all substantive correspondence from the lawyer arrives as attached PDF letters. Do not "fix" this.

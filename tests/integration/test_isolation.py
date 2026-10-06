@@ -98,7 +98,7 @@ def test_case_detail_404_for_non_owner(auth_enabled, db_session, two_users):
         "/api/v1/auth/login", json={"email": "b@example.com", "password": "password123"}
     )
     # B is logged in; A owns ISO-A → B must get 404.
-    resp = client.get("/cases/ISO-A")
+    resp = client.get("/api/v1/cases/ISO-A")
     assert resp.status_code == 404
 
 
@@ -110,5 +110,5 @@ def test_case_detail_ok_for_owner(auth_enabled, db_session, two_users):
     client.post(
         "/api/v1/auth/login", json={"email": "a@example.com", "password": "password123"}
     )
-    resp = client.get("/cases/ISO-A")
+    resp = client.get("/api/v1/cases/ISO-A")
     assert resp.status_code == 200

@@ -17,8 +17,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** V1 Set Action Status */
-        patch: operations["v1_set_action_status_api_v1_action_items__item_id__patch"];
+        /** V1 Set Action Item Status */
+        patch: operations["v1_set_action_item_status_api_v1_action_items__item_id__patch"];
         trace?: never;
     };
     "/api/v1/admin/signup": {
@@ -4865,7 +4865,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    v1_set_action_status_api_v1_action_items__item_id__patch: {
+    v1_set_action_item_status_api_v1_action_items__item_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -4886,7 +4886,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ActionView"];
+                    "application/json": components["schemas"]["CaseActionItem"];
                 };
             };
             /** @description Error */

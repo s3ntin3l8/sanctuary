@@ -328,40 +328,8 @@ def test_worker_queue_lists_failed_docs_and_retries_them(db_session):
     assert {call.args[1] for call in dispatch.call_args_list} == {doc.id}
 
 
-def test_legacy_case_dashboard_renders_pending_close_banner(db_session, sample_case):
-    """The banner posts to the v1 close endpoints by route name."""
-    sample_case.pending_close = True
-    db_session.commit()
-    resp = client.get(f"/cases/{sample_case.id}")
-    assert resp.status_code == 200
-    assert f"/api/v1/cases/{sample_case.id}/confirm-close" in resp.text
-    assert f"/api/v1/cases/{sample_case.id}/dismiss-close" in resp.text
-
-
 def test_create_case_rejects_unsafe_ids(db_session):
     resp = client.post(
         "/api/v1/cases", json={"case_id": "a/b", "title": "x", "court_name": "AG"}
     )
     assert resp.status_code == 422
-
-
-def test_legacy_create_case_form_still_works(db_session):
-    """The legacy triage modal posts a form to /cases until phase 3."""
-    c = TestClient(app, follow_redirects=False)
-    resp = c.post(
-        "/cases",
-        data={"case_id": "FORM-1", "title": "Form case", "court_name": "AG Hamburg"},
-    )
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/cases/FORM-1"
-    assert (
-        c.post(
-            "/cases",
-            data={
-                "case_id": "FORM-1",
-                "title": "Form case",
-                "court_name": "AG Hamburg",
-            },
-        ).status_code
-        == 409
-    )

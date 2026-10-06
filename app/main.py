@@ -959,37 +959,25 @@ async def request_validation_handler(
 app.add_exception_handler(RequestValidationError, request_validation_handler)  # type: ignore[arg-type]
 
 from app.api import (
-    cases,
     contacts,
     costs_router,
-    documents_router,
     home_router,
     ingestion_settings,
-    proceedings_router,
     search,
 )
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
-from app.api.case_sharing import router as case_sharing_router
-from app.api.claims import router as claims_router
 from app.api.settings_page import router as settings_page_router
 from app.api.spa_pages import router as spa_pages_router
-from app.api.user_settings import router as user_settings_router
 from app.api.v1 import router as api_v1_router
 
 app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
-app.include_router(case_sharing_router)
-app.include_router(user_settings_router)
-app.include_router(claims_router)
 app.include_router(home_router)
 app.include_router(spa_pages_router)
 app.include_router(costs_router)
-app.include_router(documents_router)
-app.include_router(cases.router)
 app.include_router(contacts.router)
-app.include_router(proceedings_router)
 app.include_router(search.router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)

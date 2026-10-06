@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { useEffect, useState } from 'react'
 
 import type { Schemas } from '../../api/client'
@@ -165,8 +166,8 @@ function DeadlinesPanel({ items }: { items: Home['today_items'] }) {
             const urgent = item.due_date ? daysUntil(item.due_date) < 7 : false
             return (
               <li key={item.id}>
-                <a
-                  href={`/cases/${item.case_id}`}
+                <Link
+                  to={`/cases/${item.case_id}`}
                   className="grid grid-cols-[18px_1.4fr_1fr_110px] items-center gap-3 py-2 text-[12px] hover:bg-accent/5"
                 >
                   <Icon
@@ -191,7 +192,7 @@ function DeadlinesPanel({ items }: { items: Home['today_items'] }) {
                       ? `${formatShortDate(item.due_date)} · ${formatDueRelative(item.due_date)}`
                       : 'no date'}
                   </span>
-                </a>
+                </Link>
               </li>
             )
           })}
@@ -295,12 +296,12 @@ function DeltaPanel({ home }: { home: Home }) {
         {home.delta_cases.map((d) => (
           <li key={d.case_id} className="py-2 text-[12px]">
             <div className="flex items-center gap-2">
-              <a
-                href={`/cases/${d.case_id}`}
+              <Link
+                to={`/cases/${d.case_id}`}
                 className="font-mono text-[11px] text-tealink hover:underline"
               >
                 {d.case_id}
-              </a>
+              </Link>
               <span className="truncate font-semibold">{d.case_title}</span>
               <span className="ml-auto flex items-center gap-1">
                 <Badge tone="accent">+{pluralize(d.new_doc_count, 'doc')}</Badge>

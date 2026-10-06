@@ -1,33 +1,9 @@
-"""Re-exports for routers consumed by app.main during the late-import block.
+"""Re-exports for the legacy routers app.main still mounts (each cutover
+removes one; other modules import their routers directly)."""
 
-The `/api/v1` dual-mount was removed (see commit history / project_audit_completion).
-This file now only provides convenient names for the routers app.main actually
-mounts. Other modules import their routers directly.
-"""
-
-from app.api import (
-    cases,
-    contacts,
-    costs,
-    documents,
-    home,
-    proceedings,
-)
+from app.api import contacts, costs, home
 
 home_router = home.router
 costs_router = costs.router
-documents_router = documents.router
-proceedings_router = proceedings.router
 
-__all__ = [
-    "cases",
-    "contacts",
-    "costs",
-    "documents",
-    "home",
-    "proceedings",
-    "home_router",
-    "costs_router",
-    "documents_router",
-    "proceedings_router",
-]
+__all__ = ["contacts", "costs", "home", "home_router", "costs_router"]
