@@ -549,7 +549,7 @@ async def ingest_file(
                 )
             preliminary_case_id = validated
             # The caller's own case_id was already access-checked by the route
-            # (see documents.py's /upload). A case_id sniffed from the filename
+            # (see the upload API (app/api/v1/upload.py)). A case_id sniffed from the filename
             # was not — without this, naming a file after another user's case
             # id would silently file it there. Fall back to _TRIAGE rather than
             # erroring, since filename-sniffing is a best-effort convenience,

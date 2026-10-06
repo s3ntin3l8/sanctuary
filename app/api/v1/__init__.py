@@ -11,6 +11,7 @@ from app.api.v1 import (
     admin_users,
     auth,
     cases,
+    documents,
     home,
     search,
     settings_account,
@@ -20,6 +21,9 @@ from app.api.v1 import (
     settings_gmail,
     settings_identity,
     shell,
+    slicing,
+    triage,
+    upload,
     worker_queue,
 )
 from app.api.v1.errors import ERROR_RESPONSES
@@ -41,6 +45,10 @@ for _module in (
     settings_appearance,
     settings_data,
     admin_users,
+    triage,
+    documents,
+    upload,
+    slicing,
 ):
     # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
     # v1 route name so a v1 handler can never shadow the legacy route it replaces.

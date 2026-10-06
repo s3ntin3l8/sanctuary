@@ -2,7 +2,7 @@
    hx-confirm. Mounted once in base.html. Listens on document for
    htmx:confirm, calls preventDefault to suppress HTMX's browser-native
    dialog, then later calls evt.detail.issueRequest(true) when the user
-   accepts. Style mirrors triage_retry_confirm_modal.html so the app's
+   accepts. Style mirrors the SPA confirm dialog so the app's
    confirm UX is consistent. #}
 <div x-data="{
         open: false,

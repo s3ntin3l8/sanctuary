@@ -65,10 +65,10 @@ x-cloak x-show="searchOpen" class="fixed inset-0 z-[9999] flex items-start justi
                 </a>
 
                 <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2 mt-2">Actions</p>
-                <button type="button" @click="searchOpen = false" htmx-get="/upload" hx-target="#upload-modal-root" hx-swap="innerHTML" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer">
+                <a href="/triage?upload=1" @click="searchOpen = false" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer">
                     <span class="material-symbols-outlined text-sm text-on-surface-variant">upload_file</span>
                     <span class="text-sm text-on-surface">Upload Document</span>
-                </button>
+                </a>
                 <button type="button" @click="searchOpen = false; window.toggleSiteTheme && window.toggleSiteTheme()" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors cursor-pointer">
                     <span class="material-symbols-outlined text-sm text-on-surface-variant">dark_mode</span>
                     <span class="text-sm text-on-surface">Toggle Theme</span>

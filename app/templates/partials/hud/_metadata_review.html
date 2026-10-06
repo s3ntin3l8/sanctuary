@@ -1,0 +1,58 @@
+{# 2-column read-only metadata review for the document HUD (editing lives in
+   the SPA triage review panel).
+
+   Required: doc.
+
+   Title and Case (+ internal_id / Case ID) intentionally omitted — title shows
+   in the active doc header above; case + internal_id show in the case selector
+   above. Avoids duplication and tightens vertical density.
+#}
+{% from "partials/_conf_chip.html" import conf_chip %}
+{% set _conf = doc.extraction_confidence or {} %}
+
+{% set _fields = [
+    ('Originator', (doc.originator_type.value | capitalize) if doc.originator_type else '—',        _conf.get('originator') or 'low'),
+    ('Sender',     doc.sender or '—',                                                               _conf.get('sender')     or 'low'),
+    ('Issued',     (doc.issued_date | local_strftime('%Y-%m-%d') if doc.issued_date else '—'),              _conf.get('issued_date') or 'low'),
+    ('Received',   (doc.received_date | local_strftime('%Y-%m-%d') if doc.received_date else '—'),          'high' if doc.received_date else 'low'),
+    ('Tier',       (doc.significance_tier.value | capitalize) if doc.significance_tier else '—',    'high' if doc.significance_tier else 'low'),
+    ('Type',       (doc.document_type.value | capitalize) if doc.document_type else '—',            'high' if doc.document_type else 'low'),
+    ('AZ',         doc.proceeding.az_court if (doc.proceeding and doc.proceeding.az_court) else '—', 'high' if (doc.proceeding and doc.proceeding.az_court) else 'low'),
+] %}
+{% set _level_class = {
+    'high':   'border-l-originator-own',
+    'medium': 'border-l-warning',
+    'low':    'border-l-originator-opposing',
+} %}
+
+<div id="triage-metadata-{{ doc.id }}"
+     class="px-5 py-3 border-b border-outline-variant/20"
+     >
+
+    <div class="flex items-center justify-between mb-2">
+        <h4 class="font-headline text-[10px] font-bold text-on-surface-variant uppercase tracking-widest flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[12px] text-primary">edit_note</span>
+            Metadata review
+        </h4>
+    </div>
+
+    {# ── CONFIRMED: read-only grid — 2 cols when container ≥340px (covers
+       the drawer HUD rail on wide viewports), 1 col when narrow (300px
+       rail minimum, narrow windows). Container query reads the pane's
+       width, not the viewport's. ── #}
+    <div class="grid grid-cols-1 @[340px]:grid-cols-2 gap-1.5">
+        {% for label, value, level in _fields %}
+        <div class="flex items-center gap-1.5 py-1 px-2 rounded bg-surface-low border-l-2 {{ _level_class.get(level, 'border-l-outline-variant') }}">
+            <div class="font-headline text-[8px] uppercase tracking-widest font-semibold text-on-surface-variant w-[64px] flex-shrink-0">
+                {{ label }}
+            </div>
+            <div class="flex-1 min-w-0 text-[11px] truncate {% if label in ('Issued', 'Received', 'AZ') %}font-mono{% endif %} text-on-surface" title="{{ value }}">
+                {{ value }}
+            </div>
+            {{ conf_chip(level) }}
+        </div>
+        {% endfor %}
+    </div>
+
+    {# ── REVIEW: existing form — only rendered in review mode where `cases` is in context ── #}
+</div>

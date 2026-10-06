@@ -16,6 +16,8 @@ import { ExportPage } from './features/settings/ExportPage'
 import { GmailPage } from './features/settings/GmailPage'
 import { IdentityPage } from './features/settings/IdentityPage'
 import { SettingsLayout } from './features/settings/SettingsLayout'
+import { SlicingPage } from './features/slicing/SlicingPage'
+import { TriagePage } from './features/triage/TriagePage'
 import { leaveTo } from './navigation'
 import { Shell } from './shell/Shell'
 import { ToastProvider } from './ui/toast'
@@ -29,6 +31,8 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/cases', element: <CasesPage /> },
+      { path: '/triage', element: <TriagePage /> },
+      { path: '/ingest/slice/:batchId', element: <SlicingPage /> },
       {
         element: <SettingsLayout />,
         children: [

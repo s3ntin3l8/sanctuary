@@ -62,13 +62,12 @@ def test_full_ingestion_pipeline(db_session, test_engine):
         # 3. Upload Document
         file_content = b"PDF dummy content"
         response = client.post(
-            "/upload",
+            "/api/v1/upload",
             files=[("files", ("test.pdf", file_content, "application/pdf"))],
             data={"case_id": "ADV-123-K"},
-            headers={"hx-request": "true"},
         )
         assert response.status_code == 200
-        assert "queued" in response.text
+        assert response.json()["results"][0]["status"] == "queued"
 
         # 4. Get the created document
         doc = db_session.query(Document).filter(Document.case_id == "ADV-123-K").first()

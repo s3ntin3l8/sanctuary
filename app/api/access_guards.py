@@ -3,8 +3,8 @@
 Each guard is a FastAPI dependency factory: it resolves an ID path parameter
 to its owning case (or, for _TRIAGE/no-case objects, its direct owner) and
 checks the current user's access via app.services.access_service. Raises 404
-(never 403) on denial — matching require_triage_object_owner's convention
-(app/api/triage/ownership.py) — so a 404 never reveals whether the object
+(never 403) on denial — the convention of every per-object guard
+(the v1 triage/slicing owner resolvers) — so a 404 never reveals whether the object
 exists to a user who can't see it.
 
 Every guard sets `_is_access_guard = True` on the dependency callable it
@@ -18,7 +18,7 @@ same case_id, so access_service.can_view_case would either let everyone see
 everyone's triage queue or, if _TRIAGE's owner_id happens to be some other
 user, block the real owner from their own docs. Ownership on the Document/
 IngestBatch row itself is the only correct signal there, same as
-require_triage_object_owner already does for the triage/slicing routers.
+the v1 triage/slicing owner resolvers do for their routers.
 """
 
 from __future__ import annotations
@@ -159,7 +159,14 @@ def require_action_item_access(*, edit: bool = False):
         user: User = Depends(get_current_user),
     ) -> ActionItem:
         item = db.query(ActionItem).filter(ActionItem.id == item_id).first()
-        if item is None or not _check_case_id(db, user, item.case_id, edit=edit):
+        if item is None:
+            raise HTTPException(status_code=404, detail="Not found")
+        # Items extracted from an untriaged document belong to whoever owns
+        # that document (the case is still the _TRIAGE placeholder).
+        owner_id = item.source_document.owner_id if item.source_document else None
+        if not check_owned_or_case_access(
+            db, user, owner_id=owner_id, case_id=item.case_id, edit=edit
+        ):
             raise HTTPException(status_code=404, detail="Not found")
         return item
 

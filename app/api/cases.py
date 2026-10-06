@@ -23,7 +23,6 @@ from app.models.enums import (
     Jurisdiction,
     ProceedingStatus,
 )
-from app.repositories.case import CaseRepository
 from app.services.case_dashboard_service import CaseDashboardService
 from app.services.case_service import CaseIdTaken, CaseService
 from app.services.hud_context import build_hud_context
@@ -266,7 +265,6 @@ async def case_document_fullscreen(
 async def confirm_draft_case(
     request: Request,
     case_id: str,
-    context: str = "embedded",
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
@@ -286,34 +284,10 @@ async def confirm_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    # Picker/badge/stats reflect the *requester's* own access (they're what
-    # renders in the requester's own browser), not the ingesting doc owner's
-    # — those diverge whenever an admin or an EDITOR-shared user, not the
-    # original owner, is the one confirming the draft.
-    requester_id = request.state.current_user.id
-    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
-    ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=list(cases)
-    )
+    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
     from app.config import templates as _templates
 
-    template = (
-        "partials/triage/_doc_hud.html"
-        if context == "triage"
-        else "partials/hud/_container.html"
-    )
-    response = _templates.TemplateResponse(request, template, ctx)
-
-    from app.services.triage_oob_render import (
-        render_sidebar_badges_oob,
-        render_triage_header_stats_oob,
-    )
-
-    response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db, owner_id=requester_id)
-        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
-    ).encode("utf-8")
-
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
     case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
     response.headers["HX-Trigger"] = json.dumps(
         {
@@ -349,7 +323,6 @@ def _delete_case_via_service(case_id: str, db: Session) -> dict:
 async def reject_draft_case(
     request: Request,
     case_id: str,
-    context: str = "embedded",
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
@@ -367,31 +340,11 @@ async def reject_draft_case(
         return HTMLResponse("", status_code=204)
 
     db.refresh(first_doc)
-    # Same rationale as confirm_draft_case: scope to the requester, not the
-    # ingesting doc's owner — they diverge for admins/EDITOR shares.
-    requester_id = request.state.current_user.id
-    cases = CaseRepository(db).list_for_picker(owner_id=requester_id)
-    ctx = build_hud_context(
-        db, first_doc, mode="review", context="embedded", cases=list(cases)
-    )
+    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
     from app.config import templates as _templates
 
-    template = (
-        "partials/triage/_doc_hud.html"
-        if context == "triage"
-        else "partials/hud/_container.html"
-    )
-    response = _templates.TemplateResponse(request, template, ctx)
+    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
 
-    from app.services.triage_oob_render import (
-        render_sidebar_badges_oob,
-        render_triage_header_stats_oob,
-    )
-
-    response.body = bytes(response.body) + (
-        render_sidebar_badges_oob(db, owner_id=requester_id)
-        + render_triage_header_stats_oob(request, db, owner_id=requester_id)
-    ).encode("utf-8")
     response.headers["HX-Trigger"] = json.dumps(
         {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
     )

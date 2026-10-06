@@ -88,7 +88,7 @@ def test_triage_page_excludes_other_users(auth_enabled, db_session, two_users):
 
     client = _client()
     _login(client, "a@example.com")
-    body = client.get("/triage").text
+    body = client.get("/api/v1/triage").text
     assert "AlphaSubject doc" in body
     assert "BetaSubject doc" not in body
 
@@ -112,7 +112,7 @@ def test_triage_mutation_on_other_users_batch_404(auth_enabled, db_session, two_
     client = _client()
     _login(client, "a@example.com")
     # A tries to dismiss B's batch → guard 404
-    resp = client.post(f"/triage/dismiss?batch_id={b_batch.id}")
+    resp = client.post(f"/api/v1/triage/bundles/{b_batch.id}/dismiss")
     assert resp.status_code == 404
 
 
@@ -136,8 +136,8 @@ def test_assign_to_other_users_case_forbidden(auth_enabled, db_session, two_user
     client = _client()
     _login(client, "a@example.com")
     resp = client.post(
-        "/triage/batch/assign",
-        data={"bundle_keys": [f"batch-{a_batch.id}"], "case_id": "OTHER-C"},
+        "/api/v1/triage/batch/assign",
+        json={"keys": [f"batch-{a_batch.id}"], "case_id": "OTHER-C"},
     )
     assert resp.status_code == 403
     # C must NOT have gained any document.
@@ -471,9 +471,10 @@ def test_batch_confirm_skips_bundle_with_inaccessible_suggested_case(
     client = _client()
     _login(client, "a@example.com")
     resp = client.post(
-        "/triage/batch/confirm", data={"bundle_keys": [f"batch-{a_batch.id}"]}
+        "/api/v1/triage/batch/confirm", json={"keys": [f"batch-{a_batch.id}"]}
     )
     assert resp.status_code == 200
+    assert resp.json()["skipped"] == 1
 
     db_session.expire_all()
     refreshed_batch = db_session.get(IngestBatch, a_batch.id)
@@ -520,14 +521,15 @@ def test_confirm_rejects_proceeding_id_from_a_different_case(
     client = _client()
     _login(client, "a@example.com")
     resp = client.post(
-        "/triage/confirm",
-        data={
-            "batch_id": str(a_batch.id),
+        "/api/v1/triage/confirm",
+        json={
+            "batch_id": a_batch.id,
             "case_id": target_case.id,
-            "proceeding_id": str(other_proc.id),
+            "proceeding_id": other_proc.id,
         },
     )
     assert resp.status_code == 422
+    assert resp.json()["code"] == "proceeding_mismatch"
 
 
 # --- triage page/OOB scoping (review-fix round) -----------------------------
@@ -579,16 +581,15 @@ def test_triage_page_proceedings_picker_excludes_other_users_courts(
 
     client = _client()
     _login(client, "a@example.com")
-    body = client.get("/triage").text
+    body = client.get("/api/v1/triage").text
     assert "AG Aachen A-Court" in body
     assert "AG Berlin B-Secret-Court" not in body
 
 
-def test_delete_document_triage_oob_counts_scoped_to_owner(
+def test_triage_count_after_delete_is_scoped_to_owner(
     auth_enabled, db_session, two_users
 ):
-    """The sidebar/header OOB re-renders after a triage delete must reflect
-    only the deleting user's own remaining triage count, not every user's."""
+    """The shell badge reflects only the deleting user's own remaining triage."""
     a, b = two_users
     _triage_batch(db_session, a.id, "AKeep1")
     a_batch2, a_doc2 = _triage_batch(db_session, a.id, "ADelete")
@@ -598,67 +599,21 @@ def test_delete_document_triage_oob_counts_scoped_to_owner(
 
     client = _client()
     _login(client, "a@example.com")
-    resp = client.delete(f"/document/{a_doc2.id}?context=triage")
-    assert resp.status_code == 200
-
-    # A has 1 remaining triage doc; B (untouched) has 3. A scoped-count
-    # renders "1"; an unscoped count would render "4" (1 + 3) instead.
-    body = resp.text
-    assert (
-        '<span class="absolute -top-1 -right-1 flex items-center justify-center min-w-[16px] h-4 px-1 bg-error text-surface text-[9px] font-bold rounded-full border-2 border-surface-container-low">1</span>'
-        in body
-    )
-    assert ">4<" not in body
+    assert client.delete(f"/api/v1/documents/{a_doc2.id}").status_code == 204
+    assert client.get("/api/v1/shell").json()["triage_count"] == 1
 
 
-def test_confirm_draft_case_picker_uses_requester_identity_not_doc_owner(
+def test_admin_can_delete_other_users_untriaged_document(
     auth_enabled, db_session, two_users
 ):
-    """The picker/badges shown after confirming a draft case must reflect the
-    *confirming* user's own access, not the ingesting document's owner —
-    these diverge whenever an EDITOR-shared user, not the owner, confirms."""
-    a, b = two_users
-    draft_case = Case(
-        id="DRAFT-IDENTITY",
-        title="Draft",
-        status=CaseStatus.INTAKE,
-        jurisdiction=Jurisdiction.DE,
-        owner_id=a.id,
-        is_draft=True,
-    )
-    db_session.add(draft_case)
-    db_session.flush()
-    db_session.add(
-        CaseShare(
-            case_id=draft_case.id, user_id=b.id, permission=CaseAccessLevel.EDITOR
-        )
-    )
-    db_session.add(Document(title="A's doc", owner_id=a.id, case_id=draft_case.id))
-    db_session.commit()
-
-    client = _client()
-    _login(client, "b@example.com")
-    with patch("app.api.cases.CaseRepository.list_for_picker") as mock_picker:
-        mock_picker.return_value = []
-        resp = client.post(f"/cases/{draft_case.id}/confirm-draft")
-        assert resp.status_code == 200
-        mock_picker.assert_called_once_with(owner_id=b.id)
-
-
-def test_delete_document_oob_scoped_to_requester_not_doc_owner(
-    auth_enabled, db_session, two_users
-):
-    """An admin deleting another user's untriaged document must have the OOB
-    re-render (next-doc, bundles, badges, feed) scoped to the admin's own
-    access — the response renders into the admin's browser, not the deleted
-    doc's owner's."""
+    """An admin may delete another user's untriaged document (edit access)."""
     from app.models.enums import UserRole
 
     a, _b = two_users
-    admin = auth_service.create_user(
+    auth_service.create_user(
         db_session,
         email="admin-del@example.com",
-        password="password123",
+        password="password123",  # pragma: allowlist secret
         role=UserRole.ADMIN,
     )
     db_session.commit()
@@ -666,35 +621,26 @@ def test_delete_document_oob_scoped_to_requester_not_doc_owner(
 
     client = _client()
     _login(client, "admin-del@example.com")
-    with patch(
-        "app.services.triage_oob_render.render_sidebar_badges_oob"
-    ) as mock_badges:
-        mock_badges.return_value = ""
-        resp = client.delete(f"/document/{a_doc.id}?context=triage")
-        assert resp.status_code == 200
-        assert mock_badges.call_args.kwargs["owner_id"] == admin.id
+    doc_id = a_doc.id
+    assert client.delete(f"/api/v1/documents/{doc_id}").status_code == 204
+    db_session.expire_all()
+    assert db_session.query(Document).filter(Document.id == doc_id).first() is None
 
 
-def test_delete_document_next_doc_advance_does_not_cross_into_other_users_sibling(
+def test_triage_feed_of_admin_does_not_show_other_users_sibling_docs(
     auth_enabled, db_session, two_users
 ):
-    """An admin deleting A's triage doc must not have the 'advance to next
-    doc' trigger point at A's remaining sibling in the same batch — that
-    sibling shares A's batch (batches have one owner), but the *requester*
-    (admin) is not A, so it's still another user's document."""
-    import json
-
+    """A sibling in another user's batch never shows up in the admin's inbox."""
     from app.models.enums import UserRole
 
     a, _b = two_users
     auth_service.create_user(
         db_session,
         email="admin-sib@example.com",
-        password="password123",
+        password="password123",  # pragma: allowlist secret
         role=UserRole.ADMIN,
     )
     db_session.commit()
-
     batch, doc1 = _triage_batch(db_session, a.id, "TwoDocBatch")
     doc2 = Document(
         title="TwoDocBatch doc 2",
@@ -709,9 +655,6 @@ def test_delete_document_next_doc_advance_does_not_cross_into_other_users_siblin
 
     client = _client()
     _login(client, "admin-sib@example.com")
-    resp = client.delete(f"/document/{doc1.id}?context=triage")
-    assert resp.status_code == 200
-
-    trigger = json.loads(resp.headers.get("HX-Trigger", "{}"))
-    advance = trigger.get("triage:advance")
-    assert advance is None or advance.get("next_doc_id") != doc2.id
+    assert client.delete(f"/api/v1/documents/{doc1.id}").status_code == 204
+    feed = client.get("/api/v1/triage").json()
+    assert all(d["id"] != doc2.id for b in feed["bundles"] for d in b["documents"])

@@ -94,9 +94,9 @@ def test_promote_cost_delta(app_client, db_session, sample_case):
     )
     db_session.commit()
 
-    resp = app_client.post(f"/document/{doc.id}/cost-from-delta")
+    resp = app_client.post(f"/api/v1/documents/{doc.id}/cost-signals/promote", json={})
     assert resp.status_code == 200
-    assert "promoted" in resp.text
+    assert resp.json()["amount_gross"] == 450.0
 
     cost = (
         db_session.query(LegalCost)
