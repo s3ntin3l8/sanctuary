@@ -6,8 +6,8 @@ Companion document to `docs/specs/00_vision.md` §8 and `docs/specs/02_dashboard
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/financials`, `/api/v1/costs/*`, `/api/v1/cost-signals/*` and `frontend/src/features/cases/dashboard/CostsTab.tsx`. References below to `financials_view.html` or out-of-band swaps describe the pre-migration implementation.
 
 | Layer | Status |
 |---|---|

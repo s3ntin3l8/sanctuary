@@ -6,8 +6,8 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/truthmap`, `/api/v1/claims/*` (`app/api/v1/claims.py`) and `frontend/src/features/cases/dashboard/TruthMapTab.tsx`. References below to `case_view_truthmap.html`, `claim_card.html` or htmx swaps describe the pre-migration implementation.
 
 | Layer | Status |
 |---|---|

@@ -17,6 +17,7 @@ import { formatShortDate } from '../../../format'
 import { Badge, type Tone } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'
 import { Chip } from '../../../ui/Chip'
+import { ConfirmDialog } from '../../../ui/ConfirmDialog'
 import { Icon } from '../../../ui/Icon'
 import { QueryState } from '../../../ui/QueryState'
 import { useToast } from '../../../ui/toast'
@@ -51,6 +52,7 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
   const batch = useBatchMerge(detail.id)
   const decide = useProposalDecision(detail.id)
   const find = useFindDuplicates(detail.id)
+  const [batchAction, setBatchAction] = useState<'confirm' | 'dismiss' | null>(null)
   const tm = query.data
   if (!tm) return <QueryState error={query.error} pending={query.isPending} />
   const job = tm.dedup_job
@@ -214,6 +216,24 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
         </section>
       )}
 
+      <ConfirmDialog
+        open={batchAction !== null}
+        onClose={() => setBatchAction(null)}
+        onConfirm={() => {
+          if (batchAction) batch.mutate(batchAction, { onError })
+          setBatchAction(null)
+        }}
+        title={batchAction === 'confirm' ? 'Merge all proposals?' : 'Dismiss all proposals?'}
+        body={
+          batchAction === 'confirm'
+            ? `${tm.pending_merges.length} claims will be merged into their duplicates. This cannot be undone.`
+            : `${tm.pending_merges.length} merge proposals will be dismissed.`
+        }
+        label={batchAction === 'confirm' ? 'Merge all' : 'Dismiss all'}
+        danger={batchAction === 'confirm'}
+        pending={batch.isPending}
+      />
+
       {tm.groups.length === 0 && (
         <p className="text-muted">
           {tm.pipeline_active_doc_count > 0
@@ -252,6 +272,7 @@ function ClaimCard({
   const precedent = useClaimPrecedent(caseId)
   const dismiss = useDismissClaim(caseId)
   const [open, setOpen] = useState(false)
+  const [confirmDismiss, setConfirmDismiss] = useState(false)
   const onError = (e: Error) => toast(e.message, 'error')
   return (
     <li id={`claim-card-${claim.id}`} className="rounded-xl border border-line bg-card p-3">
@@ -293,7 +314,7 @@ function ClaimCard({
             <button
               type="button"
               aria-label="Dismiss claim"
-              onClick={() => dismiss.mutate(claim.id, { onError })}
+              onClick={() => setConfirmDismiss(true)}
               className="rounded border border-line px-1.5 py-0.5 hover:border-danger hover:text-danger"
             >
               <Icon name="delete" size={12} />
@@ -301,6 +322,19 @@ function ClaimCard({
           </span>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmDismiss}
+        onClose={() => setConfirmDismiss(false)}
+        onConfirm={() => {
+          dismiss.mutate(claim.id, { onError })
+          setConfirmDismiss(false)
+        }}
+        title="Dismiss this claim?"
+        body="The claim and its pending evidence proposals are removed from the Truth Map."
+        label="Dismiss"
+        danger
+        pending={dismiss.isPending}
+      />
       {open && (
         <ul className="mt-2 space-y-1 border-t border-line2 pt-2">
           {claim.evidence.map((e) => (

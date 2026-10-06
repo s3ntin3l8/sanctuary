@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
-import { type CaseDetail, useCaseDetail, useSetActiveProceeding } from '../../../api/caseDetail'
+import { useQueryClient } from '@tanstack/react-query'
+
+import { caseKey, type CaseDetail, useCaseDetail, useMarkViewed } from '../../../api/caseDetail'
 import { useCloseDecision } from '../../../api/cases'
 import { useDraftDecision } from '../../../api/triage'
 
@@ -57,7 +59,7 @@ export function CasePage() {
   const caseId = useParams().caseId ?? ''
   const [params, setParams] = useSearchParams()
   const requestedProceeding = params.get('proceeding') ? Number(params.get('proceeding')) : null
-  const view = (params.get('view') as View | null) ?? 'review'
+  const view = (params.get('view') as View | null) ?? 'graph'
   const query = useCaseDetail(caseId, requestedProceeding)
   const detail = query.data
   useEffect(() => {
@@ -68,7 +70,7 @@ export function CasePage() {
     <Dashboard
       key={caseId}
       detail={detail}
-      view={VIEWS.some(([v]) => v === view) ? view : 'review'}
+      view={VIEWS.some(([v]) => v === view) ? view : 'graph'}
       setView={(v) => {
         params.set('view', v)
         setParams(params, { replace: true })
@@ -88,11 +90,28 @@ function Dashboard({
 }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
-  const setActive = useSetActiveProceeding(detail.id)
+  const markViewed = useMarkViewed(detail.id)
   const closeDecision = useCloseDecision()
   const draftDecision = useDraftDecision()
-  const [selectedDoc, setSelectedDoc] = useState<number | null>(detail.documents[0]?.id ?? null)
+  const [selectedDoc, setSelectedDoc] = useState<number | null>(null)
+  const firstDoc = detail.documents[0]?.id ?? null
+  // Keep the selection inside the active proceeding's spine.
+  const [seenProceeding, setSeenProceeding] = useState(detail.active_proceeding_id)
+  if (seenProceeding !== detail.active_proceeding_id) {
+    setSeenProceeding(detail.active_proceeding_id)
+    setSelectedDoc(null)
+  }
+  const currentDoc = selectedDoc ?? firstDoc
+  const refreshCase = () => queryClient.invalidateQueries({ queryKey: caseKey(detail.id) })
+
+  // "New since last visit" markers are computed server-side against the
+  // previous visit; record this one once the page is on screen.
+  const markViewedMutate = markViewed.mutate
+  useEffect(() => {
+    markViewedMutate()
+  }, [markViewedMutate])
   const [chatOpen, setChatOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [sharing, setSharing] = useState(false)
@@ -103,6 +122,7 @@ function Dashboard({
       const el = e.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (editing || sharing) return
       if (e.key === '/') {
         e.preventDefault()
         setChatOpen(true)
@@ -115,10 +135,10 @@ function Dashboard({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [chatOpen, setView])
+  }, [chatOpen, editing, sharing, setView])
 
+  // The detail request persists ?proceeding= as the active proceeding.
   function switchProceeding(id: number) {
-    setActive.mutate(id, { onError: (e) => toast(e.message, 'error') })
     params.set('proceeding', String(id))
     setParams(params, { replace: true })
   }
@@ -252,14 +272,24 @@ function Dashboard({
           </span>
           <Button
             className="px-2.5 py-1 text-[11px]"
-            onClick={() => closeDecision.mutate({ caseId: detail.id, decision: 'confirm' })}
+            onClick={() =>
+              closeDecision.mutate(
+                { caseId: detail.id, decision: 'confirm' },
+                { onSuccess: refreshCase, onError: (e) => toast(e.message, 'error') },
+              )
+            }
           >
             Close case
           </Button>
           <Button
             variant="secondary"
             className="px-2.5 py-1 text-[11px]"
-            onClick={() => closeDecision.mutate({ caseId: detail.id, decision: 'dismiss' })}
+            onClick={() =>
+              closeDecision.mutate(
+                { caseId: detail.id, decision: 'dismiss' },
+                { onSuccess: refreshCase, onError: (e) => toast(e.message, 'error') },
+              )
+            }
           >
             Keep open
           </Button>
@@ -270,7 +300,7 @@ function Dashboard({
       <div className="flex min-h-0 flex-1">
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-card2">
           {view === 'review' && (
-            <ReviewTab detail={detail} selectedDoc={selectedDoc} onSelect={setSelectedDoc} />
+            <ReviewTab detail={detail} selectedDoc={currentDoc} onSelect={setSelectedDoc} />
           )}
           {view === 'graph' && (
             <GraphTab detail={detail} onOpen={setSelectedDoc} selectedDoc={selectedDoc} />

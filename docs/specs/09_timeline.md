@@ -6,8 +6,8 @@ Companion document to `docs/specs/00_vision.md` §UI. Covers the per-case chrono
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/timeline` (`CaseTimelineService`) and `frontend/src/features/cases/dashboard/TimelineTab.tsx`. References below to `case_timeline_panel.html` or Alpine state describe the pre-migration implementation.
 
 | Layer | Status |
 |---|---|

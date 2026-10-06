@@ -191,22 +191,56 @@ def test_detail_shape_and_active_proceeding(db_session, dash):
 
 
 @pytest.mark.integration
-def test_detail_marks_visit_after_computing_new_docs(db_session, dash):
-    first = client.get("/api/v1/cases/DASH-001").json()
-    assert first["last_visit"] is None
+def test_visit_is_recorded_explicitly_and_feeds_new_markers(db_session, dash):
+    """GET is side-effect free; POST /viewed records the visit; the graph marks
+    documents newer than the `since` the client got from the detail call."""
+    assert client.get("/api/v1/cases/DASH-001").json()["last_visit"] is None
+    assert client.get("/api/v1/cases/DASH-001").json()["last_visit"] is None
+    assert client.post("/api/v1/cases/DASH-001/viewed").status_code == 204
     doc = Document(
         title="Neu",
         case_id="DASH-001",
         proceeding_id=dash["p1"].id,
         owner_id=_admin(db_session).id,
         originator_type=OriginatorType.COURT,
+        significance_tier=SignificanceTier.SIGNIFICANT,
         ingest_date=datetime.now(UTC) + timedelta(seconds=5),
     )
     db_session.add(doc)
     db_session.commit()
-    second = client.get("/api/v1/cases/DASH-001").json()
-    assert second["new_doc_count"] == 1
-    assert next(d for d in second["documents"] if d["title"] == "Neu")["is_new"] is True
+    detail = client.get("/api/v1/cases/DASH-001").json()
+    assert detail["last_visit"] is not None
+    assert detail["new_doc_count"] == 1
+    assert next(d for d in detail["documents"] if d["title"] == "Neu")["is_new"] is True
+    # Refetching the detail does not move the marker.
+    assert client.get("/api/v1/cases/DASH-001").json()["new_doc_count"] == 1
+    graph = client.get(
+        f"/api/v1/cases/DASH-001/graph?proceeding={dash['p1'].id}&since={detail['last_visit']}"
+    ).json()
+    assert {n["id"] for n in graph["nodes"] if n["is_new_since_last_visit"]} == {doc.id}
+
+
+@pytest.mark.integration
+def test_foreign_proceeding_param_is_ignored(db_session, dash):
+    other = Case(
+        id="DASH-OTHER",
+        title="Other",
+        status=CaseStatus.INTAKE,
+        jurisdiction=Jurisdiction.DE,
+    )
+    db_session.add(other)
+    db_session.flush()
+    foreign = Proceeding(
+        case_id=other.id,
+        court_name="LG Berlin",
+        court_level=ProceedingCourtLevel.LG,
+        status=ProceedingStatus.ACTIVE,
+        ingest_date=datetime(2026, 3, 1, tzinfo=UTC),
+    )
+    db_session.add(foreign)
+    db_session.commit()
+    resp = client.get(f"/api/v1/cases/DASH-001?proceeding={foreign.id}")
+    assert resp.json()["active_proceeding_id"] == dash["p1"].id
 
 
 @pytest.mark.integration
@@ -401,3 +435,72 @@ def test_sharing_roundtrip(db_session, dash):
         client.delete(f"/api/v1/cases/DASH-001/shares/{other.id}").json()["shares"]
         == []
     )
+
+
+@pytest.mark.parametrize(
+    "method, path, body",
+    [
+        ("patch", "/api/v1/cases/{case}", {"title": "x"}),
+        ("post", "/api/v1/cases/{case}/purge", {"confirm": "purge {case}"}),
+        ("put", "/api/v1/cases/{case}/opposing-parties", {"opposing_parties": []}),
+        ("post", "/api/v1/cases/{case}/reenrich", None),
+        ("post", "/api/v1/cases/{case}/brief/refresh", None),
+        ("post", "/api/v1/cases/{case}/claims/find-duplicates", None),
+        ("post", "/api/v1/cases/{case}/claims/proposals/merge", {"action": "confirm"}),
+        ("put", "/api/v1/claims/{claim}/status", {"status": "established"}),
+        ("post", "/api/v1/claims/{claim}/precedent", None),
+        ("delete", "/api/v1/claims/{claim}", None),
+        ("post", "/api/v1/costs/{cost}/pay", None),
+        ("patch", "/api/v1/costs/{cost}", {"title": "x"}),
+        ("patch", "/api/v1/proceedings/{proc}", {"az_court": "x"}),
+        ("delete", "/api/v1/proceedings/{proc}", None),
+        ("patch", "/api/v1/action-items/{item}", {"status": "completed"}),
+        ("get", "/api/v1/cases/{case}/shares", None),
+    ],
+)
+@pytest.mark.integration
+def test_viewer_share_cannot_mutate(auth_enabled, db_session, dash, method, path, body):
+    """A VIEWER share reads the dashboard but gets 404 from every mutation."""
+    from app.models.database import CaseShare
+    from app.models.enums import CaseAccessLevel
+    from app.services import auth_service
+
+    viewer = auth_service.create_user(
+        db_session,
+        email="viewer@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    db_session.add(
+        CaseShare(
+            case_id="DASH-001", user_id=viewer.id, permission=CaseAccessLevel.VIEWER
+        )
+    )
+    db_session.commit()
+    item = db_session.query(ActionItem).filter_by(case_id="DASH-001").one()
+    c = TestClient(app, follow_redirects=False)
+    c.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "viewer@example.com",
+            "password": "password123",  # pragma: allowlist secret
+        },
+    )
+    assert c.get("/api/v1/cases/DASH-001").status_code == 200
+    url = path.format(
+        case="DASH-001",
+        claim=dash["claim"].id,
+        cost=dash["cost"].id,
+        proc=dash["p2"].id,
+        item=item.id,
+    )
+    if body is not None:
+        body = {
+            k: (v.format(case="DASH-001") if isinstance(v, str) else v)
+            for k, v in body.items()
+        }
+    resp = (
+        getattr(c, method)(url, json=body)
+        if body is not None
+        else getattr(c, method)(url)
+    )
+    assert resp.status_code == 404, (url, resp.status_code, resp.text)

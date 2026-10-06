@@ -1,7 +1,7 @@
 """CaseGraphService — builds the JSON-serializable graph payload for the swim-lane SVG renderer.
 
 All geometry (x/y coordinates, path strings for edges) is computed here so the
-Jinja template is pure rendering with no logic.
+SPA graph (frontend/src/features/cases/dashboard/GraphTab.tsx) is pure rendering.
 """
 
 import logging
@@ -24,7 +24,7 @@ from app.repositories.document_relationship import DocumentRelationshipRepositor
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Geometry constants — must match the SVG template exactly
+# Geometry constants — mirrored by the SPA renderer (GraphTab.tsx)
 # ---------------------------------------------------------------------------
 LANE_W = 280
 ROW_H = 80
@@ -33,7 +33,7 @@ LEFT = 36
 NODE_W = 180
 NODE_H = 50
 GHOST_NODE_H = 56
-BUNDLE_CHILD_ROW_H = 48  # must match child_row_h in correspondence_graph.html
+BUNDLE_CHILD_ROW_H = 48  # must match CHILD_ROW_H in GraphTab.tsx
 
 # ---------------------------------------------------------------------------
 # Lane definitions (fixed order)

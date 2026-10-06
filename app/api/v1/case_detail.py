@@ -4,6 +4,7 @@ and the case/proceeding mutations the dashboard offers."""
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func
@@ -40,7 +41,6 @@ from app.models.enums import (
 from app.repositories.claim import ClaimRepository
 from app.repositories.proceeding import ProceedingRepository
 from app.schemas.case_detail import (
-    ActiveProceedingUpdate,
     BriefView,
     CaseActionItem,
     CaseDetail,
@@ -171,7 +171,7 @@ def _cost_row(c: LegalCost) -> CostRow:
         is_reimbursable=c.is_reimbursable,
         issued_at=c.issued_at,
         due_at=c.due_at,
-        source_document_id=getattr(c, "source_document_id", None),
+        source_document_id=c.source_document_id,
     )
 
 
@@ -223,11 +223,10 @@ def case_detail(
             issued_date=d.issued_date,
             received_date=d.received_date,
             significance_tier=d.significance_tier,
-            role=d.role.value if hasattr(d.role, "value") else str(d.role),
+            role=d.role.value,
             thread_open=bool(d.thread_open),
             needs_review=bool(d.needs_review),
             is_new=bool(last_visit and d.ingest_date and d.ingest_date > last_visit),
-            sender=d.sender,
         )
         for d in docs
     ]
@@ -248,7 +247,6 @@ def case_detail(
             ],
         )
     )
-    owner = db.get(User, case.owner_id) if case.owner_id else None
     detail = CaseDetail(
         id=case.id,
         title=case.title,
@@ -261,7 +259,6 @@ def case_detail(
             "close_suggestion_rationale"
         ),
         assume_worst_case=bool(case.assume_worst_case),
-        owner_email=owner.email if owner else None,
         can_edit=access_service.can_edit_case(db, user, case),
         can_manage_sharing=access_service.is_admin(user) or case.owner_id == user.id,
         proceedings=procs,
@@ -287,30 +284,17 @@ def case_detail(
         open_claim_count=int(open_claims),
         dormancy_alert=_compute_dormancy_alert(case, db),
     )
-    # New-since-last-visit is computed above; now record this visit.
-    user_settings_service.mark_viewed(case.id, db, user.id)
-    db.commit()
     return detail
 
 
-@router.put(
-    "/cases/{case_id}/active-proceeding", status_code=204, response_class=Response
-)
-def set_active_proceeding(
-    body: ActiveProceedingUpdate,
+@router.post("/cases/{case_id}/viewed", status_code=204, response_class=Response)
+def mark_case_viewed(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     case: Case = Depends(require_case_access()),
 ):
-    if (
-        not db.query(Proceeding.id)
-        .filter(Proceeding.id == body.proceeding_id, Proceeding.case_id == case.id)
-        .first()
-    ):
-        raise ApiError(404, "not_found", "Proceeding not found.")
-    user_settings_service.set_active_proceeding(
-        case.id, body.proceeding_id, db, user.id
-    )
+    """Record the visit once the dashboard has rendered its "new since" markers."""
+    user_settings_service.mark_viewed(case.id, db, user.id)
     db.commit()
 
 
@@ -439,8 +423,10 @@ def refresh_brief(
 def case_graph(
     proceeding: int,
     filter: SignificanceFilter = Query("significant+"),
+    since: datetime | None = Query(
+        None, description="The visit timestamp the detail call returned as last_visit"
+    ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
     case: Case = Depends(require_case_access()),
 ):
     if (
@@ -449,7 +435,7 @@ def case_graph(
         .first()
     ):
         raise ApiError(404, "not_found", "Proceeding not found.")
-    last_visit = user_settings_service.get_last_viewed(case.id, db, user.id)
+    last_visit = since
     new_ids: set[int] = set()
     if last_visit is not None:
         new_ids = {
@@ -633,7 +619,6 @@ def _sharing(db: Session, case: Case) -> SharingView:
                 email=u.email,
                 display_name=u.display_name,
                 permission=s.permission,
-                granted_at=s.created_at,
             )
             for s, u in rows
         ],

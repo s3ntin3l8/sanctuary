@@ -31,7 +31,11 @@ export function Rail({
   const toast = useToast()
   const refresh = useRefreshBrief(detail.id)
   const setStatus = useCaseActionStatus(detail.id)
-  const open = detail.action_items.filter((a) => a.status === 'open')
+  const [audience, setAudience] = useState<'mine' | 'all'>('mine')
+  const open = detail.action_items.filter(
+    (a) =>
+      a.status === 'open' && (audience === 'all' || a.addressee === null || a.addressee === 'user'),
+  )
   const brief = detail.brief
   return (
     <aside
@@ -80,6 +84,12 @@ export function Rail({
                 <b className="text-tealink">Next —</b> {brief.next_move}
               </p>
             )}
+            {brief.detected_status && (
+              <p className="text-[11px] text-muted">
+                Status: {brief.detected_status.replace('_', ' ')}
+                {brief.status_rationale ? ` — ${brief.status_rationale}` : ''}
+              </p>
+            )}
             {brief.updated_at && (
               <p className="font-mono text-[10px] text-muted2">
                 {formatShortDate(brief.updated_at)}
@@ -90,8 +100,16 @@ export function Rail({
       </section>
 
       <section>
-        <h3 className="mb-1.5 text-[10px] font-bold tracking-[.12em] text-muted uppercase">
-          Deadlines <span className="font-mono normal-case">{open.length}</span>
+        <h3 className="mb-1.5 flex items-center text-[10px] font-bold tracking-[.12em] text-muted uppercase">
+          Deadlines <span className="ml-1 font-mono normal-case">{open.length}</span>
+          <button
+            type="button"
+            onClick={() => setAudience((v) => (v === 'mine' ? 'all' : 'mine'))}
+            className="ml-auto normal-case tracking-normal text-muted hover:text-ink"
+            aria-pressed={audience === 'all'}
+          >
+            {audience === 'mine' ? 'mine' : 'all'}
+          </button>
         </h3>
         <ul className="space-y-1.5">
           {open.slice(0, 6).map((a) => (
@@ -104,20 +122,40 @@ export function Rail({
                   {formatDueRelative(a.due_date)}
                 </span>
                 <span className="text-muted">{formatShortDate(a.due_date)}</span>
+                {a.addressee && a.addressee !== 'user' && (
+                  <span className="rounded border border-line px-1 text-[9px] text-muted">
+                    {a.addressee}
+                  </span>
+                )}
                 {detail.can_edit && (
-                  <button
-                    type="button"
-                    aria-label={`Mark ${a.title} done`}
-                    onClick={() =>
-                      setStatus.mutate(
-                        { itemId: a.id, status: 'completed' },
-                        { onError: (e) => toast(e.message, 'error') },
-                      )
-                    }
-                    className="ml-auto text-muted hover:text-success"
-                  >
-                    <Icon name="check_circle" size={14} />
-                  </button>
+                  <span className="ml-auto flex gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Mark ${a.title} done`}
+                      onClick={() =>
+                        setStatus.mutate(
+                          { itemId: a.id, status: 'completed' },
+                          { onError: (e) => toast(e.message, 'error') },
+                        )
+                      }
+                      className="text-muted hover:text-success"
+                    >
+                      <Icon name="check_circle" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Dismiss ${a.title}`}
+                      onClick={() =>
+                        setStatus.mutate(
+                          { itemId: a.id, status: 'dismissed' },
+                          { onError: (e) => toast(e.message, 'error') },
+                        )
+                      }
+                      className="text-muted hover:text-danger"
+                    >
+                      <Icon name="close" size={14} />
+                    </button>
+                  </span>
                 )}
               </div>
               {a.source_document_id !== null ? (

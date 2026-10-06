@@ -83,10 +83,8 @@ def _dedup_job(raw: dict | None) -> DedupJob | None:
         status=raw.get("status", "done"),
         processed=int(raw.get("processed") or stats.get("scanned") or 0),
         total=int(raw.get("total") or 0),
-        merged=int(stats.get("merged") or 0),
         proposals=int(stats.get("proposals_created") or 0),
         error=stats.get("error"),
-        finished_at=raw.get("ended_at"),
     )
 
 

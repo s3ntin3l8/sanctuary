@@ -94,7 +94,6 @@ class CaseDocument(BaseModel):
     thread_open: bool
     needs_review: bool
     is_new: bool
-    sender: str | None
 
 
 class FinancialsSummary(BaseModel):
@@ -115,7 +114,6 @@ class CaseDetail(BaseModel):
     pending_close: bool
     close_suggestion_rationale: str | None
     assume_worst_case: bool
-    owner_email: str | None
     can_edit: bool
     can_manage_sharing: bool
     proceedings: list[ProceedingView]
@@ -174,10 +172,6 @@ class ProceedingUpdate(BaseModel):
     status: ProceedingStatus | None = None
 
 
-class ActiveProceedingUpdate(BaseModel):
-    proceeding_id: int
-
-
 # --- Graph -------------------------------------------------------------------
 
 
@@ -207,7 +201,6 @@ class GraphNode(BaseModel):
     is_bundle: bool
     is_new_since_last_visit: bool
     reaction: str | None
-    court_relay: bool
     originator_type: str
 
 
@@ -275,7 +268,6 @@ class TimelineEventView(BaseModel):
     is_overdue: bool
     is_future: bool
     claim_count: int
-    rel_count: int
     quiet_gap_days: int | None
 
 
@@ -352,10 +344,8 @@ class DedupJob(BaseModel):
     status: Literal["running", "done", "failed"]
     processed: int = 0
     total: int = 0
-    merged: int = 0
     proposals: int = 0
     error: str | None = None
-    finished_at: datetime | None = None
 
 
 class TruthMapView(BaseModel):
@@ -469,7 +459,6 @@ class ShareView(BaseModel):
     email: str
     display_name: str | None
     permission: CaseAccessLevel
-    granted_at: datetime | None
 
 
 class SharingView(BaseModel):

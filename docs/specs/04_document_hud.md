@@ -1,13 +1,13 @@
 # Sanctuary — Document HUD
 
-Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashboard.md`](02_dashboard.md). Covers the document-reading surfaces: the full-screen reader at `/document/{id}`, the inline review pane on the triage page (both React on `/api/v1`), and the slide-in overlay on the case dashboard.
+Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashboard.md`](02_dashboard.md). Covers the document-reading surfaces: the full-screen reader at `/document/{id}`, the inline review pane on the triage page (both React on `/api/v1`), and the document side panel on the case dashboard.
 
 ---
 
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — full-screen reader and chat are React (SPA migration phase 4); the dashboard overlay is still Jinja until phase 5.
+**Status:** 🟢 IMPLEMENTED — full-screen reader, chat and the dashboard side panel are React (SPA migration phases 4 and 5).
 
 | Feature | Implementation |
 |---------|----------------|
@@ -19,7 +19,7 @@ Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashb
 | Intelligence rail (summary, pipeline, metadata, passages, relationships, grounds, actions, cost signals, reactions) | `DocumentReview.tsx` `ReviewSections` (shared with triage) |
 | AI chat drawer with streaming + citations | `frontend/src/features/chat/ChatDrawer.tsx` on `/api/v1/chat/*` |
 | Keyboard map (`← → ↑ ↓ [ ] { } f o n r 1-4 / ⌘F ? Esc`) | `DocumentPage.tsx` (the `?` overview is generated from the same table) |
-| Slide-in overlay on the case dashboard | `partials/hud/_container.html` (`context=overlay`), `GET /cases/{id}/document/{id}/hud` |
+| Document side panel on the case dashboard (graph node click) | `GraphTab.tsx` renders `DocumentReview` with an "Open HUD" link |
 
 ---
 

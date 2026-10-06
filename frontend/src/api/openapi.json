@@ -143,19 +143,6 @@
         "title": "ActionView",
         "type": "object"
       },
-      "ActiveProceedingUpdate": {
-        "properties": {
-          "proceeding_id": {
-            "title": "Proceeding Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "proceeding_id"
-        ],
-        "title": "ActiveProceedingUpdate",
-        "type": "object"
-      },
       "AdminActiveUpdate": {
         "properties": {
           "is_active": {
@@ -1313,17 +1300,6 @@
             "title": "Opposing Parties",
             "type": "array"
           },
-          "owner_email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Email"
-          },
           "parties": {
             "items": {
               "$ref": "#/components/schemas/PartyView"
@@ -1360,7 +1336,6 @@
           "pending_close",
           "close_suggestion_rationale",
           "assume_worst_case",
-          "owner_email",
           "can_edit",
           "can_manage_sharing",
           "proceedings",
@@ -1435,17 +1410,6 @@
             "title": "Role",
             "type": "string"
           },
-          "sender": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sender"
-          },
           "significance_tier": {
             "anyOf": [
               {
@@ -1476,8 +1440,7 @@
           "role",
           "thread_open",
           "needs_review",
-          "is_new",
-          "sender"
+          "is_new"
         ],
         "title": "CaseDocument",
         "type": "object"
@@ -2744,23 +2707,6 @@
               }
             ],
             "title": "Error"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "merged": {
-            "default": 0,
-            "title": "Merged",
-            "type": "integer"
           },
           "processed": {
             "default": 0,
@@ -4156,10 +4102,6 @@
       },
       "GraphNode": {
         "properties": {
-          "court_relay": {
-            "title": "Court Relay",
-            "type": "boolean"
-          },
           "cross_proceeding": {
             "title": "Cross Proceeding",
             "type": "boolean"
@@ -4282,7 +4224,6 @@
           "is_bundle",
           "is_new_since_last_visit",
           "reaction",
-          "court_relay",
           "originator_type"
         ],
         "title": "GraphNode",
@@ -6705,18 +6646,6 @@
             "title": "Email",
             "type": "string"
           },
-          "granted_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Granted At"
-          },
           "permission": {
             "$ref": "#/components/schemas/CaseAccessLevel"
           },
@@ -6729,8 +6658,7 @@
           "user_id",
           "email",
           "display_name",
-          "permission",
-          "granted_at"
+          "permission"
         ],
         "title": "ShareView",
         "type": "object"
@@ -7293,10 +7221,6 @@
             ],
             "title": "Quiet Gap Days"
           },
-          "rel_count": {
-            "title": "Rel Count",
-            "type": "integer"
-          },
           "sig": {
             "anyOf": [
               {
@@ -7338,7 +7262,6 @@
           "is_overdue",
           "is_future",
           "claim_count",
-          "rel_count",
           "quiet_gap_days"
         ],
         "title": "TimelineEventView",
@@ -9067,51 +8990,6 @@
         ]
       }
     },
-    "/api/v1/cases/{case_id}/active-proceeding": {
-      "put": {
-        "operationId": "v1_set_active_proceeding_api_v1_cases__case_id__active_proceeding_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "case_id",
-            "required": true,
-            "schema": {
-              "title": "Case Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ActiveProceedingUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Set Active Proceeding",
-        "tags": [
-          "cases"
-        ]
-      }
-    },
     "/api/v1/cases/{case_id}/brief": {
       "get": {
         "operationId": "v1_get_brief_api_v1_cases__case_id__brief_get",
@@ -9484,6 +9362,25 @@
               ],
               "title": "Filter",
               "type": "string"
+            }
+          },
+          {
+            "description": "The visit timestamp the detail call returned as last_visit",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The visit timestamp the detail call returned as last_visit",
+              "title": "Since"
             }
           }
         ],
@@ -9936,6 +9833,42 @@
         "summary": "V1 Truth Map",
         "tags": [
           "claims"
+        ]
+      }
+    },
+    "/api/v1/cases/{case_id}/viewed": {
+      "post": {
+        "description": "Record the visit once the dashboard has rendered its \"new since\" markers.",
+        "operationId": "v1_mark_case_viewed_api_v1_cases__case_id__viewed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Mark Case Viewed",
+        "tags": [
+          "cases"
         ]
       }
     },

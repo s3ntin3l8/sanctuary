@@ -16,10 +16,22 @@ const KIND_ICON: Record<string, string> = {
   relay: 'forward_to_inbox',
   payment: 'payments',
   deadline: 'event',
+  hearing: 'gavel',
+  pending: 'hourglass_top',
   milestone: 'flag',
 }
 const ACTORS = ['own', 'court', 'opposing', 'third'] as const
-const KINDS = ['filing', 'order', 'statement', 'report', 'payment'] as const
+const KINDS = [
+  'filing',
+  'order',
+  'statement',
+  'report',
+  'relay',
+  'payment',
+  'deadline',
+  'hearing',
+  'milestone',
+] as const
 
 /** The case calendar: every dated event, month ribbon, actor and kind filters. */
 export function TimelineTab({ detail }: { detail: CaseDetail }) {
@@ -100,12 +112,10 @@ export function TimelineTab({ detail }: { detail: CaseDetail }) {
                   · {e.quiet_gap_days} quiet days ·
                 </p>
               )}
-              <div
-                role={e.source_document_id ? 'button' : undefined}
-                onClick={() =>
-                  e.source_document_id && navigate(`/document/${e.source_document_id}`)
-                }
-                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${e.source_document_id ? 'cursor-pointer hover:bg-accent/5' : ''} ${e.is_future ? 'opacity-70' : ''}`}
+              <Row
+                docId={e.source_document_id}
+                onOpen={(id) => navigate(`/document/${id}`)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left ${e.source_document_id ? 'cursor-pointer hover:bg-accent/5' : ''} ${e.is_future ? 'opacity-70' : ''}`}
               >
                 <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted">
                   {formatShortDate(e.date)}
@@ -128,7 +138,7 @@ export function TimelineTab({ detail }: { detail: CaseDetail }) {
                   <span className="font-mono text-[10px] text-muted">⚖ {e.claim_count}</span>
                 )}
                 {e.note && <span className="truncate text-[11px] text-muted">{e.note}</span>}
-              </div>
+              </Row>
             </li>
           )
         })}
@@ -148,4 +158,24 @@ function annotate(events: TimelineView['events'], today: string) {
     if (marker) todayShown = true
     return { e, m, header, marker }
   })
+}
+
+/** A document-backed event is a button; others are plain rows. */
+function Row({
+  docId,
+  onOpen,
+  className,
+  children,
+}: {
+  docId: number | null
+  onOpen: (id: number) => void
+  className: string
+  children: React.ReactNode
+}) {
+  if (docId === null) return <div className={className}>{children}</div>
+  return (
+    <button type="button" onClick={() => onOpen(docId)} className={className}>
+      {children}
+    </button>
+  )
 }

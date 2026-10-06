@@ -254,23 +254,6 @@ export interface paths {
         patch: operations["v1_update_case_api_v1_cases__case_id__patch"];
         trace?: never;
     };
-    "/api/v1/cases/{case_id}/active-proceeding": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** V1 Set Active Proceeding */
-        put: operations["v1_set_active_proceeding_api_v1_cases__case_id__active_proceeding_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/cases/{case_id}/brief": {
         parameters: {
             query?: never;
@@ -579,6 +562,26 @@ export interface paths {
         get: operations["v1_truth_map_api_v1_cases__case_id__truthmap_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cases/{case_id}/viewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Mark Case Viewed
+         * @description Record the visit once the dashboard has rendered its "new since" markers.
+         */
+        post: operations["v1_mark_case_viewed_api_v1_cases__case_id__viewed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2324,11 +2327,6 @@ export interface components {
             /** Title */
             title: string;
         };
-        /** ActiveProceedingUpdate */
-        ActiveProceedingUpdate: {
-            /** Proceeding Id */
-            proceeding_id: number;
-        };
         /** AdminActiveUpdate */
         AdminActiveUpdate: {
             /** Is Active */
@@ -2692,8 +2690,6 @@ export interface components {
             open_claim_count: number;
             /** Opposing Parties */
             opposing_parties: string[];
-            /** Owner Email */
-            owner_email: string | null;
             /** Parties */
             parties: components["schemas"]["PartyView"][];
             /** Pending Close */
@@ -2723,8 +2719,6 @@ export interface components {
             received_date: string | null;
             /** Role */
             role: string;
-            /** Sender */
-            sender: string | null;
             significance_tier: components["schemas"]["SignificanceTier"] | null;
             /** Thread Open */
             thread_open: boolean;
@@ -3131,13 +3125,6 @@ export interface components {
         DedupJob: {
             /** Error */
             error?: string | null;
-            /** Finished At */
-            finished_at?: string | null;
-            /**
-             * Merged
-             * @default 0
-             */
-            merged: number;
             /**
              * Processed
              * @default 0
@@ -3548,8 +3535,6 @@ export interface components {
         };
         /** GraphNode */
         GraphNode: {
-            /** Court Relay */
-            court_relay: boolean;
             /** Cross Proceeding */
             cross_proceeding: boolean;
             /** Date Short */
@@ -4368,8 +4353,6 @@ export interface components {
             display_name: string | null;
             /** Email */
             email: string;
-            /** Granted At */
-            granted_at: string | null;
             permission: components["schemas"]["CaseAccessLevel"];
             /** User Id */
             user_id: number;
@@ -4557,8 +4540,6 @@ export interface components {
             note: string | null;
             /** Quiet Gap Days */
             quiet_gap_days: number | null;
-            /** Rel Count */
-            rel_count: number;
             /** Sig */
             sig: string | null;
             /** Source Document Id */
@@ -5416,39 +5397,6 @@ export interface operations {
             };
         };
     };
-    v1_set_active_proceeding_api_v1_cases__case_id__active_proceeding_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                case_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ActiveProceedingUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     v1_get_brief_api_v1_cases__case_id__brief_get: {
         parameters: {
             query?: never;
@@ -5702,6 +5650,8 @@ export interface operations {
             query: {
                 proceeding: number;
                 filter?: "critical" | "significant+" | "all";
+                /** @description The visit timestamp the detail call returned as last_visit */
+                since?: string | null;
             };
             header?: never;
             path: {
@@ -6009,6 +5959,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TruthMapView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_mark_case_viewed_api_v1_cases__case_id__viewed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

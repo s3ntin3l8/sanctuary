@@ -9,6 +9,7 @@ import {
 } from '../../../api/caseDetail'
 import { leaveTo } from '../../../navigation'
 import { Button } from '../../../ui/Button'
+import { ConfirmDialog } from '../../../ui/ConfirmDialog'
 import { Field, inputClass } from '../../../ui/Field'
 import { Modal } from '../../../ui/Modal'
 import { Toggle } from '../../../ui/Toggle'
@@ -23,13 +24,20 @@ type Props = { open: boolean; onClose: () => void; detail: CaseDetail }
 
 /** Edit the case, its proceedings, or purge it entirely. */
 export function EditCaseModal({ open, onClose, detail }: Props) {
+  // Mounted only while open so form state starts fresh each time.
+  if (!open) return null
+  return <EditCaseForm onClose={onClose} detail={detail} />
+}
+
+function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
   const toast = useToast()
   const update = useUpdateCase(detail.id)
   const updateProc = useUpdateProceeding(detail.id)
-  const deleteProc = useDeleteProceeding(detail.id)
+  const deleteProcMutation = useDeleteProceeding(detail.id)
   const purge = usePurgeCase(detail.id)
   const [worst, setWorst] = useState(detail.assume_worst_case)
   const [purging, setPurging] = useState(false)
+  const [deleteProc, setDeleteProc] = useState<CaseDetail['proceedings'][number] | null>(null)
 
   function submitCase(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -52,14 +60,7 @@ export function EditCaseModal({ open, onClose, detail }: Props) {
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Edit case"
-      subtitle={detail.id}
-      icon="edit"
-      width={560}
-    >
+    <Modal open onClose={onClose} title="Edit case" subtitle={detail.id} icon="edit" width={560}>
       <form onSubmit={submitCase} className="space-y-3">
         <Field label="Title">
           <input name="title" defaultValue={detail.title} required className={inputClass} />
@@ -161,12 +162,7 @@ export function EditCaseModal({ open, onClose, detail }: Props) {
                     variant="secondary"
                     className="px-2 py-1.5 text-[11px] text-danger"
                     aria-label={`Delete proceeding ${p.court_name}`}
-                    onClick={() =>
-                      deleteProc.mutate(p.id, {
-                        onSuccess: () => toast('Proceeding deleted'),
-                        onError: (err) => toast(err.message, 'error'),
-                      })
-                    }
+                    onClick={() => setDeleteProc(p)}
                   >
                     Delete
                   </Button>
@@ -176,6 +172,25 @@ export function EditCaseModal({ open, onClose, detail }: Props) {
           </li>
         ))}
       </ul>
+
+      <ConfirmDialog
+        open={deleteProc !== null}
+        onClose={() => setDeleteProc(null)}
+        onConfirm={() => {
+          if (deleteProc) {
+            deleteProcMutation.mutate(deleteProc.id, {
+              onSuccess: () => toast('Proceeding deleted'),
+              onError: (err) => toast(err.message, 'error'),
+            })
+          }
+          setDeleteProc(null)
+        }}
+        title={`Delete proceeding ${deleteProc?.court_name ?? ''}?`}
+        body="This cannot be undone."
+        label="Delete"
+        danger
+        pending={deleteProcMutation.isPending}
+      />
 
       <section className="mt-5 rounded-xl border border-danger/40 bg-danger/5 p-3">
         <h3 className="text-[10px] font-bold tracking-[.12em] text-danger uppercase">

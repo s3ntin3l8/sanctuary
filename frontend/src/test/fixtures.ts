@@ -477,7 +477,6 @@ export const caseDetail: Schemas['CaseDetail'] = {
   pending_close: false,
   close_suggestion_rationale: null,
   assume_worst_case: false,
-  owner_email: 'admin@localhost',
   can_edit: true,
   can_manage_sharing: true,
   proceedings: [
@@ -518,7 +517,6 @@ export const caseDetail: Schemas['CaseDetail'] = {
       thread_open: true,
       needs_review: false,
       is_new: true,
-      sender: null,
     },
     {
       id: 2210,
@@ -532,7 +530,6 @@ export const caseDetail: Schemas['CaseDetail'] = {
       thread_open: false,
       needs_review: false,
       is_new: false,
-      sender: null,
     },
   ],
   new_doc_count: 1,

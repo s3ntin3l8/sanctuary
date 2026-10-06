@@ -33,13 +33,17 @@ export function useCaseGraph(
   caseId: string,
   proceeding: number | null,
   filter: SignificanceFilter,
+  since: string | null,
 ) {
   return useQuery<GraphView, ApiError>({
-    queryKey: [...caseKey(caseId), 'graph', proceeding, filter],
+    queryKey: [...caseKey(caseId), 'graph', proceeding, filter, since],
     queryFn: () =>
       unwrap(
         api.GET('/api/v1/cases/{case_id}/graph', {
-          params: { path: { case_id: caseId }, query: { proceeding: proceeding ?? 0, filter } },
+          params: {
+            path: { case_id: caseId },
+            query: { proceeding: proceeding ?? 0, filter, since },
+          },
         }),
       ),
     enabled: proceeding !== null,
@@ -140,17 +144,9 @@ export function useRefreshBrief(caseId: string) {
   })
 }
 
-export function useSetActiveProceeding(caseId: string) {
-  const invalidate = useCaseInvalidate(caseId)
-  return useMutation<unknown, ApiError, number>({
-    mutationFn: (proceeding_id) =>
-      unwrap(
-        api.PUT('/api/v1/cases/{case_id}/active-proceeding', {
-          ...casePath(caseId),
-          body: { proceeding_id },
-        }),
-      ),
-    onSuccess: invalidate,
+export function useMarkViewed(caseId: string) {
+  return useMutation<unknown, ApiError>({
+    mutationFn: () => unwrap(api.POST('/api/v1/cases/{case_id}/viewed', casePath(caseId))),
   })
 }
 

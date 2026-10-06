@@ -1,6 +1,6 @@
 """Text normalization helpers.
 
-`normalize_hm`           — Jinja filter; canonicalizes H&M variants in display text.
+`normalize_hm`           — canonicalizes H&M variants in display text.
 `normalize_entity_name`  — canonical form for Entity dedup at extraction time.
 """
 

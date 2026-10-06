@@ -73,7 +73,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 * **Internal ID is the lead everywhere.** `Case.id` (e.g. `ADV-024-A`) is shown in sidebar, breadcrumb, URLs, chat, reports. Per-court Aktenzeichen lives on `Proceeding.az_court` — context, never identity.
 * **Management Summary:** 3-bullet (Legal Significance, Action/Deadline, Financial Impact).
 * **Triage:** No `case_id`/`parent_id` → Triage Inbox. Bundle by `ingest_batch_id`.
-* **Graph first:** the correspondence swim-lane graph (`frontend/src/features/cases/dashboard/GraphTab.tsx`, layout from `CaseGraphService`) is the primary way to navigate a case; the Review tab's spine is a companion, not a file list.
+* **Graph first:** primary case view is the correspondence swim-lane graph (`frontend/src/features/cases/dashboard/GraphTab.tsx`, layout from `CaseGraphService`), not a document list.
 * **AI answers cite sources** — every AI response references the document and passage it drew from.
 * **Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.
 * **Email body is transport-only.** When an email has attachments, the email body is intentionally discarded during ingest — the body is a cover note only; all substantive correspondence from the lawyer arrives as attached PDF letters. Do not "fix" this.

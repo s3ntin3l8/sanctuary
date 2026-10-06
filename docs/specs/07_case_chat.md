@@ -298,10 +298,10 @@ Shared by both scopes. Initialised via `x-data="aiChat({scopeType, scopeId, sugg
 
 | Key | Scope | Action | Source |
 |---|---|---|---|
-| `/` | Dashboard (no doc HUD) | Open case chat drawer + focus textarea | `dashboard.js` |
-| `/` | Dashboard (doc HUD open) | Open document chat drawer + focus textarea | `dashboard.js` |
-| `Esc` | Any | Close chat panels | `dashboard.js` |
-| `Enter` | Chat input focused | Submit message | `chat.js` |
+| `/` | Case dashboard | Open the case chat drawer | `CasePage.tsx` |
+| `/` | Document HUD | Open the document chat drawer | `DocumentPage.tsx` |
+| `Esc` | Any | Close the chat drawer | `CasePage.tsx`, `DocumentPage.tsx` |
+| `Enter` | Chat input focused | Submit message (Shift+Enter: newline) | `ChatDrawer.tsx` |
 
 ---
 

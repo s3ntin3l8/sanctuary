@@ -51,6 +51,7 @@ function stub(extra: Parameters<typeof stubApi>[0] = {}) {
     'GET /api/v1/cases/ADV-024-A': { body: caseDetail },
     'GET /api/v1/documents/2211/review': { body: documentReview },
     'GET /api/v1/cases/ADV-024-A/graph': { body: graph },
+    'POST /api/v1/cases/ADV-024-A/viewed': { status: 204, body: null },
     ...extra,
   })
 }
@@ -65,8 +66,8 @@ function page(path = '/cases/ADV-024-A') {
 }
 
 test('renders the header, spine, review panel and brief rail', async () => {
-  stub()
-  page()
+  const fetch = stub()
+  page('/cases/ADV-024-A?view=review')
   expect(await screen.findByRole('heading', { level: 1, name: 'Vane ./. Vane' })).toBeVisible()
   const spine = screen.getByRole('complementary', { name: 'Case spine' })
   expect(within(spine).getAllByRole('button')).toHaveLength(2)
@@ -80,25 +81,30 @@ test('renders the header, spine, review panel and brief rail', async () => {
   expect(within(rail).getByText('Erwiderung einreichen')).toBeVisible()
   expect(within(rail).getByText(/€18,450/)).toBeVisible()
   expect(screen.getByRole('button', { name: /Truth map/ })).toHaveTextContent('3')
+  // The visit is recorded once the page is on screen, not by the detail GET.
+  await waitFor(() =>
+    expect(fetch.mock.calls.some(([r]) => r.method === 'POST' && r.url.endsWith('/viewed'))).toBe(
+      true,
+    ),
+  )
 })
 
-test('switching the proceeding persists it and the graph tab renders nodes', async () => {
-  const fetch = stub({
-    'PUT /api/v1/cases/ADV-024-A/active-proceeding': { status: 204, body: null },
-  })
+test('the graph is the default view; switching the proceeding refetches with ?proceeding=', async () => {
+  const fetch = stub()
   page()
   const user = userEvent.setup()
   await screen.findByRole('heading', { level: 1 })
-  await user.selectOptions(screen.getByLabelText('Proceeding'), '11')
-  await waitFor(() =>
-    expect(
-      fetch.mock.calls.some(([r]) => r.method === 'PUT' && r.url.endsWith('/active-proceeding')),
-    ).toBe(true),
-  )
-  await user.keyboard('g')
   expect(await screen.findByLabelText('Correspondence graph')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Klageerwiderung.pdf' })).toBeInTheDocument()
   expect(screen.getByText('2 hidden by filter · show all')).toBeVisible()
+  await user.selectOptions(screen.getByLabelText('Proceeding'), '11')
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(
+        ([r]) => r.method === 'GET' && new URL(r.url).search.includes('proceeding=11'),
+      ),
+    ).toBe(true),
+  )
 })
 
 test('draft banner ratifies the case', async () => {

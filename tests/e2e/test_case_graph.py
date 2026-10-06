@@ -93,7 +93,7 @@ def test_case_dashboard_renders_graph_svg_with_nodes(page: Page, api_client, db_
     """Case dashboard's default view is the graph — SVG with one node per doc."""
     case_id, doc_ids = _seed_case_with_two_docs(api_client, db_seed)
 
-    page.goto(f"/cases/{case_id}?view=graph")
+    page.goto(f"/cases/{case_id}")
 
     # The SPA graph tab renders the correspondence SVG.
     graph = page.get_by_label("Correspondence graph")

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 
 import {
   type CaseDetail,
@@ -24,6 +24,14 @@ const LANE_COLOR: Record<string, string> = {
 const laneColor = (key: string) => LANE_COLOR[key] ?? 'var(--line3)'
 
 const CHILD_ROW_H = 48
+
+/** Enter or Space on a focusable SVG group. */
+function activate(e: React.KeyboardEvent, run: () => void) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    run()
+  }
+}
 const REACTION_GLYPH: Record<string, string> = {
   lies: '🚩',
   true: '✅',
@@ -40,11 +48,18 @@ type Props = {
 /** The correspondence swim-lane graph (layout from the server, interaction here). */
 export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
   const navigate = useNavigate()
-  const [filter, setFilter] = useState<SignificanceFilter>('significant+')
+  const [params, setParams] = useSearchParams()
+  const filterParam = params.get('filter')
+  const filter: SignificanceFilter =
+    filterParam === 'critical' || filterParam === 'all' ? filterParam : 'significant+'
+  const setFilter = (f: SignificanceFilter) => {
+    params.set('filter', f)
+    setParams(params, { replace: true })
+  }
   const [hover, setHover] = useState<number | null>(null)
   const [laneFilter, setLaneFilter] = useState<string | null>(null)
   const [panelDoc, setPanelDoc] = useState<number | null>(null)
-  const query = useCaseGraph(detail.id, detail.active_proceeding_id, filter)
+  const query = useCaseGraph(detail.id, detail.active_proceeding_id, filter, detail.last_visit)
   const graph = query.data
 
   const hidden = useMemo(() => {
@@ -52,7 +67,12 @@ export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
     const c = graph.node_counts
     if (filter === 'all') return 0
     if (filter === 'critical')
-      return (c.significant ?? 0) + (c.informational ?? 0) + (c.administrative_standalone ?? 0)
+      return (
+        (c.significant ?? 0) +
+        (c.informational ?? 0) +
+        (c.administrative_standalone ?? 0) +
+        (c.administrative_relay ?? 0)
+      )
     return c.administrative_standalone ?? 0
   }, [graph, filter])
 
@@ -166,7 +186,9 @@ function Canvas({
     const el = viewport.current
     if (!el) return
     const scale = Math.min(1.1, Math.max(0.6, (el.clientWidth - 24) / Math.max(graph.svg_width, 1)))
-    setCamera({ scale, tx: 12, ty: 12 })
+    // Rows run oldest → newest; open on the newest correspondence.
+    const ty = Math.min(12, el.clientHeight - graph.svg_height * scale - 12)
+    setCamera({ scale, tx: 12, ty })
   }, [graph.svg_width, graph.svg_height])
 
   useEffect(() => {
@@ -275,11 +297,17 @@ function Canvas({
               <g
                 key={`b-${b.id}`}
                 data-node
+                role="button"
+                tabIndex={0}
+                aria-label={`${b.header}: ${b.children.length} documents`}
                 opacity={dim(b.lane, b.id) ? 0.3 : 1}
                 onMouseEnter={() => setHover(b.id)}
                 onMouseLeave={() => setHover(null)}
-                className="cursor-pointer"
+                onFocus={() => setHover(b.id)}
+                onBlur={() => setHover(null)}
+                className="cursor-pointer outline-none focus-visible:[&>rect:first-child]:stroke-accent"
                 onClick={() => onOpen(b.id)}
+                onKeyDown={(e) => activate(e, () => onOpen(b.id))}
               >
                 <rect
                   x={b.x - 8}
@@ -315,10 +343,17 @@ function Canvas({
                     <g
                       key={c.id}
                       data-node
-                      className="cursor-pointer"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={c.title}
+                      className="cursor-pointer outline-none"
                       onClick={(e) => {
                         e.stopPropagation()
                         onOpen(c.id)
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        activate(e, () => onOpen(c.id))
                       }}
                     >
                       <rect
