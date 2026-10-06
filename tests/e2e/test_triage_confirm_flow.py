@@ -75,14 +75,12 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     assert resp.status_code in (200, 303), f"Case create failed: {resp.status_code}"
 
     upload = api_client.post(
-        "/upload",
-        # The route reads form.getlist("files") (plural) — matches
-        # upload_form.html's <input name="files" multiple>. Content includes
-        # the suffix (not just the filename) so re-runs against a persistent
-        # dev DB don't collide with a prior run's leftover doc on the
-        # content-hash duplicate check. Must be >= 30 non-whitespace chars —
-        # is_valid_docling_output() (converters.py) rejects shorter content
-        # as a likely near-empty/placeholder OCR result.
+        "/api/v1/upload",
+        # Content includes the suffix (not just the filename) so re-runs
+        # against a persistent dev DB don't collide with a prior run's
+        # leftover doc on the content-hash duplicate check. Must be >= 30
+        # non-whitespace chars — is_valid_docling_output() (converters.py)
+        # rejects shorter content as a likely near-empty/placeholder OCR result.
         files={
             "files": (
                 f"e2e-confirm-{suffix}.txt",
@@ -93,7 +91,7 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     )
     assert upload.status_code == 200, f"Upload failed: {upload.status_code}"
 
-    list_resp = api_client.get("/triage")
+    list_resp = api_client.get("/api/v1/triage")
     assert list_resp.status_code == 200
     body = list_resp.text
     marker = f"e2e-confirm-{suffix}"
