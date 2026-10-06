@@ -343,7 +343,7 @@ def verify_embedding_dim(db, expected_dim: int) -> tuple[bool, int | None]:
     Returns (matches, actual_dim). actual_dim is None if the column can't be
     introspected (e.g. table missing). Used by the lifespan startup hook to
     catch a stale AI_EMBED_DIM/embed model: a pgvector column can only change
-    dimension once it's empty (see settings_ai_config's rebuild-index path),
+    dimension once it's empty (see app/api/v1/settings_ai.py rebuild_index),
     so a mismatch here means every embedding write is about to fail the
     per-write dim guard until Settings → Rebuild Index runs.
     """

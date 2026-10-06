@@ -1,3 +1,4 @@
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
@@ -454,9 +455,12 @@ async def create_case(
     user: User = Depends(get_current_user),
 ):
     """Create a new case and its initial active proceeding."""
+    case_id = case_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", case_id):
+        raise HTTPException(status_code=422, detail="Case id must be URL-safe.")
     try:
         CaseService(db).create_case_with_proceeding(
-            case_id=case_id.strip(),
+            case_id=case_id,
             title=title.strip(),
             court_name=court_name.strip(),
             jurisdiction=jurisdiction,
@@ -466,7 +470,7 @@ async def create_case(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # Redirect to the new case dashboard
-    return RedirectResponse(url=f"/cases/{case_id.strip()}", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}", status_code=303)
 
 
 @router.post("/{case_id}/opposing-parties")

@@ -45,32 +45,43 @@ def test_non_admin_blocked_from_admin_users(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
     assert client.get("/admin/users").status_code == 403
+    assert client.get("/api/v1/admin/users").status_code == 403
 
 
 def test_admin_can_list_users(auth_enabled, db_session, admin):
     client = _client()
     _login(client, "admin@example.com")
-    resp = client.get("/admin/users")
+    resp = client.get("/api/v1/admin/users")
     assert resp.status_code == 200
-    assert b"Manage Users" in resp.content
+    body = resp.json()
+    assert {u["email"] for u in body["users"]} >= {"admin@example.com"}
+    assert body["signup_enabled"] is False
+    assert client.get("/admin/users").status_code == 200  # SPA page
 
 
 def test_admin_creates_user(auth_enabled, db_session, admin):
     client = _client()
     _login(client, "admin@example.com")
     resp = client.post(
-        "/admin/users",
-        data={"email": "new@example.com", "password": "password123", "role": "user"},
+        "/api/v1/admin/users",
+        json={
+            "email": "new@example.com",
+            "password": "password123",
+            "role": "user",
+        },  # pragma: allowlist secret
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 201
+    assert "new@example.com" in {u["email"] for u in resp.json()["users"]}
     assert auth_service.get_user_by_email(db_session, "new@example.com") is not None
 
 
 def test_admin_toggle_active_revokes_sessions(auth_enabled, db_session, admin, regular):
     client = _client()
     _login(client, "admin@example.com")
-    resp = client.post(f"/admin/users/{regular.id}/toggle-active")
-    assert resp.status_code == 204
+    resp = client.put(
+        f"/api/v1/admin/users/{regular.id}/active", json={"is_active": False}
+    )
+    assert resp.status_code == 200
     db_session.refresh(regular)
     assert regular.is_active is False
     assert regular.token_version == 1
@@ -79,8 +90,9 @@ def test_admin_toggle_active_revokes_sessions(auth_enabled, db_session, admin, r
 def test_admin_cannot_delete_self(auth_enabled, db_session, admin):
     client = _client()
     _login(client, "admin@example.com")
-    resp = client.post(f"/admin/users/{admin.id}/delete")
+    resp = client.delete(f"/api/v1/admin/users/{admin.id}")
     assert resp.status_code == 400
+    assert resp.json()["code"] == "self_change"
 
 
 def test_delete_blocked_when_user_owns_cases(auth_enabled, db_session, admin, regular):
@@ -96,16 +108,47 @@ def test_delete_blocked_when_user_owns_cases(auth_enabled, db_session, admin, re
     db_session.commit()
     client = _client()
     _login(client, "admin@example.com")
-    resp = client.post(f"/admin/users/{regular.id}/delete")
+    resp = client.delete(f"/api/v1/admin/users/{regular.id}")
     assert resp.status_code == 409
+    assert resp.json()["code"] == "owns_cases"
 
 
 def test_signup_toggle(auth_enabled, db_session, admin):
     client = _client()
     _login(client, "admin@example.com")
     assert auth_service.signup_enabled(db_session) is False
-    client.post("/admin/signup-toggle")
+    assert client.put("/api/v1/admin/signup", json={"enabled": True}).json()[
+        "signup_enabled"
+    ]
     assert auth_service.signup_enabled(db_session) is True
+
+
+def test_admin_role_change_and_password_reset(auth_enabled, db_session, admin, regular):
+    client = _client()
+    _login(client, "admin@example.com")
+    resp = client.put(f"/api/v1/admin/users/{regular.id}/role", json={"role": "admin"})
+    assert resp.status_code == 200
+    db_session.refresh(regular)
+    assert regular.role == UserRole.ADMIN
+    assert (
+        client.put(
+            f"/api/v1/admin/users/{admin.id}/role", json={"role": "user"}
+        ).status_code
+        == 400
+    )
+
+    resp = client.put(
+        f"/api/v1/admin/users/{regular.id}/password",
+        json={"new_password": "freshpassword1"},  # pragma: allowlist secret
+    )
+    assert resp.status_code == 204
+    fresh = _client()
+    _login(
+        fresh,
+        "reg@example.com",
+        password="freshpassword1",  # pragma: allowlist secret
+    )  # pragma: allowlist secret
+    assert fresh.get("/api/v1/shell").status_code == 200
 
 
 # --- triage is per-user (any authenticated user has their own inbox) --------
@@ -123,19 +166,26 @@ def test_triage_accessible_to_regular_user(auth_enabled, db_session, regular):
 def test_change_password_wrong_current(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/password",
-        data={"current_password": "wrong", "new_password": "newpassword123"},
+    resp = client.put(
+        "/api/v1/settings/account/password",
+        json={
+            "current_password": "wrong",
+            "new_password": "newpassword123",
+        },  # pragma: allowlist secret
     )
     assert resp.status_code == 422
+    assert resp.json()["code"] == "wrong_password"
 
 
 def test_change_password_success_keeps_session(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/password",
-        data={"current_password": "password123", "new_password": "newpassword123"},
+    resp = client.put(
+        "/api/v1/settings/account/password",
+        json={
+            "current_password": "password123",
+            "new_password": "newpassword123",
+        },  # pragma: allowlist secret
     )
     assert resp.status_code == 204
     # Session was re-issued with the new token_version → still authenticated.
@@ -150,8 +200,11 @@ def test_change_password_success_keeps_session(auth_enabled, db_session, regular
 def test_update_display_name(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post("/api/settings/account/profile", data={"display_name": "Reggie"})
-    assert resp.status_code == 204
+    resp = client.put(
+        "/api/v1/settings/account/profile", json={"display_name": "Reggie"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Reggie"
     db_session.refresh(regular)
     assert regular.display_name == "Reggie"
 
@@ -162,9 +215,9 @@ def test_update_display_name(auth_enabled, db_session, regular):
 def test_change_email_wrong_current_password(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/email",
-        data={"new_email": "newreg@example.com", "current_password": "wrong"},
+    resp = client.put(
+        "/api/v1/settings/account/email",
+        json={"new_email": "newreg@example.com", "current_password": "wrong"},
     )
     assert resp.status_code == 422
     db_session.refresh(regular)
@@ -174,9 +227,9 @@ def test_change_email_wrong_current_password(auth_enabled, db_session, regular):
 def test_change_email_invalid_format(auth_enabled, db_session, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/email",
-        data={"new_email": "notanemail", "current_password": "password123"},
+    resp = client.put(
+        "/api/v1/settings/account/email",
+        json={"new_email": "notanemail", "current_password": "password123"},
     )
     assert resp.status_code == 422
 
@@ -184,9 +237,9 @@ def test_change_email_invalid_format(auth_enabled, db_session, regular):
 def test_change_email_duplicate(auth_enabled, db_session, admin, regular):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/email",
-        data={"new_email": "admin@example.com", "current_password": "password123"},
+    resp = client.put(
+        "/api/v1/settings/account/email",
+        json={"new_email": "admin@example.com", "current_password": "password123"},
     )
     assert resp.status_code == 422
 
@@ -196,11 +249,11 @@ def test_change_email_success_keeps_session_and_login(
 ):
     client = _client()
     _login(client, "reg@example.com")
-    resp = client.post(
-        "/api/settings/account/email",
-        data={"new_email": "Renamed@Example.com", "current_password": "password123"},
+    resp = client.put(
+        "/api/v1/settings/account/email",
+        json={"new_email": "Renamed@Example.com", "current_password": "password123"},
     )
-    assert resp.status_code == 204
+    assert resp.status_code == 200
     db_session.refresh(regular)
     assert regular.email == "renamed@example.com"  # normalized
     # Session keys on uid, so the current session stays authenticated.
@@ -325,3 +378,65 @@ def test_dev_mode_fresh_db_redirects_to_create_admin(db_session):
     resp = client.get("/triage")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/signup"
+
+
+def test_admin_active_flag_is_idempotent_and_self_guarded(
+    auth_enabled, db_session, admin, regular
+):
+    client = _client()
+    _login(client, "admin@example.com")
+    for _ in range(2):
+        resp = client.put(
+            f"/api/v1/admin/users/{regular.id}/active", json={"is_active": False}
+        )
+        assert resp.status_code == 200
+    db_session.refresh(regular)
+    assert regular.is_active is False
+    assert regular.token_version == 1  # bumped once, not twice
+    self_resp = client.put(
+        f"/api/v1/admin/users/{admin.id}/active", json={"is_active": False}
+    )
+    assert self_resp.status_code == 400
+    assert self_resp.json()["code"] == "self_change"
+    assert (
+        client.put(
+            f"/api/v1/admin/users/{admin.id}/password",
+            json={"new_password": "freshpassword1"},  # pragma: allowlist secret
+        ).status_code
+        == 400
+    )
+
+
+def test_admin_reassign_cases_validation(auth_enabled, db_session, admin, regular):
+    client = _client()
+    _login(client, "admin@example.com")
+    same = client.post(
+        f"/api/v1/admin/users/{regular.id}/reassign-cases",
+        json={"new_owner_id": regular.id},
+    )
+    assert same.status_code == 400
+    assert same.json()["code"] == "same_owner"
+    missing = client.post(
+        f"/api/v1/admin/users/{regular.id}/reassign-cases",
+        json={"new_owner_id": 999999},
+    )
+    assert missing.status_code == 404
+
+
+def test_change_email_without_password_needs_no_current_password(
+    auth_enabled, db_session
+):
+    user = auth_service.create_user(db_session, email="sso@example.com", password=None)
+    db_session.commit()
+    # No password hash means no local login; drive the request via a session cookie.
+    import app.main as main_module
+    from app.services.auth_service import build_session
+
+    client = _client()
+    client.cookies.set("session", main_module._dump_session_cookie(build_session(user)))
+    resp = client.put(
+        "/api/v1/settings/account/email", json={"new_email": "sso2@example.com"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "sso2@example.com"
+    assert resp.json()["has_password"] is False

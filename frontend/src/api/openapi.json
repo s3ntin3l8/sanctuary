@@ -1,6 +1,40 @@
 {
   "components": {
     "schemas": {
+      "AccountView": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "email",
+          "display_name",
+          "role",
+          "has_password"
+        ],
+        "title": "AccountView",
+        "type": "object"
+      },
       "ActionItemType": {
         "description": "Type of action derived from a document.",
         "enum": [
@@ -12,6 +46,443 @@
         ],
         "title": "ActionItemType",
         "type": "string"
+      },
+      "AdminActiveUpdate": {
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ],
+        "title": "AdminActiveUpdate",
+        "type": "object"
+      },
+      "AdminPasswordReset": {
+        "properties": {
+          "new_password": {
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "title": "AdminPasswordReset",
+        "type": "object"
+      },
+      "AdminReassignCases": {
+        "properties": {
+          "new_owner_id": {
+            "title": "New Owner Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "new_owner_id"
+        ],
+        "title": "AdminReassignCases",
+        "type": "object"
+      },
+      "AdminRoleUpdate": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "AdminRoleUpdate",
+        "type": "object"
+      },
+      "AdminUser": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "owned_case_count": {
+            "title": "Owned Case Count",
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role",
+          "is_active",
+          "created_at",
+          "last_login_at",
+          "owned_case_count"
+        ],
+        "title": "AdminUser",
+        "type": "object"
+      },
+      "AdminUserCreate": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "user"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AdminUserCreate",
+        "type": "object"
+      },
+      "AdminUsersView": {
+        "properties": {
+          "signup_enabled": {
+            "title": "Signup Enabled",
+            "type": "boolean"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "signup_enabled"
+        ],
+        "title": "AdminUsersView",
+        "type": "object"
+      },
+      "AiHealth": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "title": "AiHealth",
+        "type": "object"
+      },
+      "AiInstance": {
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "embed_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Dim"
+          },
+          "embed_model": {
+            "title": "Embed Model",
+            "type": "string"
+          },
+          "has_api_key": {
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_external": {
+            "title": "Is External",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ocr_model": {
+            "title": "Ocr Model",
+            "type": "string"
+          },
+          "summary_model": {
+            "title": "Summary Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "base_url",
+          "has_api_key",
+          "is_external",
+          "summary_model",
+          "embed_model",
+          "embed_dim",
+          "ocr_model"
+        ],
+        "title": "AiInstance",
+        "type": "object"
+      },
+      "AiInstanceInput": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "base_url"
+        ],
+        "title": "AiInstanceInput",
+        "type": "object"
+      },
+      "AiRole": {
+        "properties": {
+          "active_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Id"
+          },
+          "embed_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Dim"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "chat",
+              "embed",
+              "ocr"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "label",
+          "hint",
+          "active_id",
+          "model",
+          "embed_dim"
+        ],
+        "title": "AiRole",
+        "type": "object"
+      },
+      "AiSettingsView": {
+        "properties": {
+          "embed_index": {
+            "$ref": "#/components/schemas/EmbedIndex"
+          },
+          "extraction_engine": {
+            "enum": [
+              "chandra",
+              "docling"
+            ],
+            "title": "Extraction Engine",
+            "type": "string"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/AiInstance"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
+          "ocr_concurrency": {
+            "title": "Ocr Concurrency",
+            "type": "integer"
+          },
+          "reindex_job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReindexJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/AiRole"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "worker_concurrency": {
+            "title": "Worker Concurrency",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instances",
+          "roles",
+          "extraction_engine",
+          "worker_concurrency",
+          "ocr_concurrency",
+          "embed_index",
+          "reindex_job"
+        ],
+        "title": "AiSettingsView",
+        "type": "object"
+      },
+      "AppearanceView": {
+        "properties": {
+          "dashboard_cards": {
+            "$ref": "#/components/schemas/DashboardCards"
+          },
+          "theme": {
+            "enum": [
+              "dark",
+              "light"
+            ],
+            "title": "Theme",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "timezone_choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Timezone Choices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "theme",
+          "dashboard_cards",
+          "timezone",
+          "timezone_choices"
+        ],
+        "title": "AppearanceView",
+        "type": "object"
       },
       "AuthConfig": {
         "description": "What the public sign-in screens need to know before anyone is logged in.",
@@ -256,6 +727,39 @@
         "title": "CasesDirectory",
         "type": "object"
       },
+      "ConcurrencyResult": {
+        "properties": {
+          "applied_live": {
+            "title": "Applied Live",
+            "type": "boolean"
+          },
+          "concurrency": {
+            "title": "Concurrency",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "concurrency",
+          "applied_live"
+        ],
+        "title": "ConcurrencyResult",
+        "type": "object"
+      },
+      "ConcurrencyUpdate": {
+        "properties": {
+          "concurrency": {
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Concurrency",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "concurrency"
+        ],
+        "title": "ConcurrencyUpdate",
+        "type": "object"
+      },
       "CurrentUser": {
         "properties": {
           "display_name": {
@@ -290,6 +794,274 @@
         "title": "CurrentUser",
         "type": "object"
       },
+      "DashboardCards": {
+        "properties": {
+          "action_items": {
+            "default": true,
+            "title": "Action Items",
+            "type": "boolean"
+          },
+          "costs": {
+            "default": true,
+            "title": "Costs",
+            "type": "boolean"
+          },
+          "documents": {
+            "default": true,
+            "title": "Documents",
+            "type": "boolean"
+          }
+        },
+        "title": "DashboardCards",
+        "type": "object"
+      },
+      "DataView": {
+        "properties": {
+          "ai_debug_redact": {
+            "title": "Ai Debug Redact",
+            "type": "boolean"
+          },
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "claim_count": {
+            "title": "Claim Count",
+            "type": "integer"
+          },
+          "cost_count": {
+            "title": "Cost Count",
+            "type": "integer"
+          },
+          "db_size_mb": {
+            "title": "Db Size Mb",
+            "type": "number"
+          },
+          "doc_count": {
+            "title": "Doc Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "doc_count",
+          "case_count",
+          "claim_count",
+          "cost_count",
+          "db_size_mb",
+          "ai_debug_redact"
+        ],
+        "title": "DataView",
+        "type": "object"
+      },
+      "DebugLogList": {
+        "properties": {
+          "log_root": {
+            "title": "Log Root",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/DebugLogRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows",
+          "log_root"
+        ],
+        "title": "DebugLogList",
+        "type": "object"
+      },
+      "DebugLogRow": {
+        "properties": {
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          }
+        },
+        "required": [
+          "ts",
+          "kind",
+          "scope_id",
+          "stage",
+          "model",
+          "duration_ms",
+          "status",
+          "path"
+        ],
+        "title": "DebugLogRow",
+        "type": "object"
+      },
+      "DebugLogView": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "body"
+        ],
+        "title": "DebugLogView",
+        "type": "object"
+      },
+      "DebugRedactUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DebugRedactUpdate",
+        "type": "object"
+      },
+      "EmailChange": {
+        "properties": {
+          "current_password": {
+            "default": "",
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_email": {
+            "title": "New Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_email"
+        ],
+        "title": "EmailChange",
+        "type": "object"
+      },
+      "EmbedIndex": {
+        "properties": {
+          "dim": {
+            "title": "Dim",
+            "type": "integer"
+          },
+          "index_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Dim"
+          },
+          "mismatch": {
+            "title": "Mismatch",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dim",
+          "model",
+          "index_dim",
+          "mismatch"
+        ],
+        "title": "EmbedIndex",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "Body of every non-2xx ``/api/v1`` response.\n\n``code`` is a stable machine-readable identifier the client branches on;\n``detail`` is the human-readable message it may show as-is.",
         "properties": {
@@ -307,6 +1079,23 @@
           "code"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExtractionEngineUpdate": {
+        "properties": {
+          "engine": {
+            "enum": [
+              "chandra",
+              "docling"
+            ],
+            "title": "Engine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine"
+        ],
+        "title": "ExtractionEngineUpdate",
         "type": "object"
       },
       "FailedDoc": {
@@ -347,6 +1136,100 @@
           "error"
         ],
         "title": "FailedDoc",
+        "type": "object"
+      },
+      "GmailBackfill": {
+        "properties": {
+          "days": {
+            "enum": [
+              90,
+              365,
+              1825
+            ],
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "title": "GmailBackfill",
+        "type": "object"
+      },
+      "GmailFilters": {
+        "properties": {
+          "allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowlist",
+            "type": "array"
+          },
+          "label_filter": {
+            "default": "",
+            "title": "Label Filter",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allowlist"
+        ],
+        "title": "GmailFilters",
+        "type": "object"
+      },
+      "GmailView": {
+        "properties": {
+          "allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowlist",
+            "type": "array"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "connected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          },
+          "label_filter": {
+            "title": "Label Filter",
+            "type": "string"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "oauth_start_url": {
+            "title": "Oauth Start Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connected",
+          "connected_at",
+          "last_sync_at",
+          "allowlist",
+          "label_filter",
+          "oauth_start_url"
+        ],
+        "title": "GmailView",
         "type": "object"
       },
       "HomeActionItem": {
@@ -659,6 +1542,32 @@
         "title": "HomeView",
         "type": "object"
       },
+      "IdentityView": {
+        "properties": {
+          "own_parties": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Own Parties",
+            "type": "array"
+          },
+          "own_self": {
+            "title": "Own Self",
+            "type": "string"
+          },
+          "user_context": {
+            "title": "User Context",
+            "type": "string"
+          }
+        },
+        "required": [
+          "own_self",
+          "own_parties",
+          "user_context"
+        ],
+        "title": "IdentityView",
+        "type": "object"
+      },
       "IngestBatchStatus": {
         "enum": [
           "pending",
@@ -705,6 +1614,51 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MaintenanceResult": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "MaintenanceResult",
+        "type": "object"
+      },
+      "ModelsView": {
+        "properties": {
+          "chat": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Chat",
+            "type": "array"
+          },
+          "embed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Embed",
+            "type": "array"
+          },
+          "ocr": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ocr",
+            "type": "array"
+          }
+        },
+        "required": [
+          "chat",
+          "embed",
+          "ocr"
+        ],
+        "title": "ModelsView",
+        "type": "object"
+      },
       "NextAction": {
         "properties": {
           "action_type": {
@@ -733,6 +1687,24 @@
           "action_type"
         ],
         "title": "NextAction",
+        "type": "object"
+      },
+      "PasswordChange": {
+        "properties": {
+          "current_password": {
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
         "type": "object"
       },
       "PipelineCounts": {
@@ -781,6 +1753,17 @@
         ],
         "title": "PipelineStage",
         "type": "string"
+      },
+      "ProfileUpdate": {
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "title": "ProfileUpdate",
+        "type": "object"
       },
       "QueueCounts": {
         "properties": {
@@ -899,6 +1882,154 @@
           "failed"
         ],
         "title": "QueueView",
+        "type": "object"
+      },
+      "ReindexJob": {
+        "properties": {
+          "embed_dim": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Dim"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "reindexed": {
+            "default": 0,
+            "title": "Reindexed",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ReindexJob",
+        "type": "object"
+      },
+      "RoleHealthView": {
+        "description": "Live health per role; a separate call because it talks to the endpoints.",
+        "properties": {
+          "chat": {
+            "$ref": "#/components/schemas/AiHealth"
+          },
+          "embed": {
+            "$ref": "#/components/schemas/AiHealth"
+          },
+          "ocr": {
+            "$ref": "#/components/schemas/AiHealth"
+          }
+        },
+        "required": [
+          "chat",
+          "embed",
+          "ocr"
+        ],
+        "title": "RoleHealthView",
+        "type": "object"
+      },
+      "RoleUpdate": {
+        "properties": {
+          "instance_id": {
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_id"
+        ],
+        "title": "RoleUpdate",
+        "type": "object"
+      },
+      "RoleUpdateResult": {
+        "properties": {
+          "embed_index": {
+            "$ref": "#/components/schemas/EmbedIndex"
+          },
+          "health": {
+            "$ref": "#/components/schemas/AiHealth"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AiRole"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "role",
+          "health",
+          "warning",
+          "embed_index"
+        ],
+        "title": "RoleUpdateResult",
         "type": "object"
       },
       "SearchCase": {
@@ -1074,6 +2205,49 @@
         "title": "SignupRequest",
         "type": "object"
       },
+      "SignupToggle": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SignupToggle",
+        "type": "object"
+      },
+      "ThemeUpdate": {
+        "properties": {
+          "theme": {
+            "enum": [
+              "dark",
+              "light"
+            ],
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme"
+        ],
+        "title": "ThemeUpdate",
+        "type": "object"
+      },
+      "TimezoneUpdate": {
+        "properties": {
+          "tz": {
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tz"
+        ],
+        "title": "TimezoneUpdate",
+        "type": "object"
+      },
       "UserRole": {
         "description": "Account role. Admins manage users, signup, and password resets.",
         "enum": [
@@ -1091,6 +2265,361 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/signup": {
+      "put": {
+        "operationId": "v1_set_signup_api_v1_admin_signup_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupToggle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Signup",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "operationId": "v1_users_api_v1_admin_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Users",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "v1_create_user_api_v1_admin_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create User",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}": {
+      "delete": {
+        "operationId": "v1_delete_user_api_v1_admin_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Delete User",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/active": {
+      "put": {
+        "operationId": "v1_set_active_api_v1_admin_users__user_id__active_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminActiveUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Active",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/password": {
+      "put": {
+        "operationId": "v1_reset_password_api_v1_admin_users__user_id__password_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reset Password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/reassign-cases": {
+      "post": {
+        "description": "Move every case owned by ``user_id`` to ``new_owner_id`` (unblocks delete).",
+        "operationId": "v1_reassign_cases_api_v1_admin_users__user_id__reassign_cases_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminReassignCases"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reassign Cases",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{user_id}/role": {
+      "put": {
+        "operationId": "v1_set_user_role_api_v1_admin_users__user_id__role_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRoleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set User Role",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/auth/config": {
       "get": {
         "operationId": "v1_auth_config_api_v1_auth_config_get",
@@ -1468,6 +2997,1290 @@
         "summary": "V1 Search",
         "tags": [
           "search"
+        ]
+      }
+    },
+    "/api/v1/settings/account": {
+      "get": {
+        "operationId": "v1_account_api_v1_settings_account_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Account",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/account/email": {
+      "put": {
+        "operationId": "v1_change_email_api_v1_settings_account_email_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Change Email",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/account/password": {
+      "put": {
+        "operationId": "v1_change_password_api_v1_settings_account_password_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Change Password",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/account/profile": {
+      "put": {
+        "operationId": "v1_update_profile_api_v1_settings_account_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Profile",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai": {
+      "get": {
+        "description": "Configuration only \u2014 no network probes (see /health and /models).",
+        "operationId": "v1_ai_settings_api_v1_settings_ai_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSettingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Ai Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/debug-redact": {
+      "put": {
+        "operationId": "v1_debug_redact_api_v1_settings_ai_debug_redact_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DebugRedactUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebugRedactUpdate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Debug Redact",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/extraction-engine": {
+      "put": {
+        "operationId": "v1_set_engine_api_v1_settings_ai_extraction_engine_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractionEngineUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractionEngineUpdate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Engine",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/health": {
+      "get": {
+        "operationId": "v1_role_health_api_v1_settings_ai_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleHealthView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Role Health",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/instances": {
+      "post": {
+        "operationId": "v1_create_instance_api_v1_settings_ai_instances_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiInstanceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiInstance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create Instance",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/instances/{instance_id}": {
+      "delete": {
+        "operationId": "v1_remove_instance_api_v1_settings_ai_instances__instance_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Remove Instance",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "v1_update_instance_api_v1_settings_ai_instances__instance_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiInstanceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiInstance"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Update Instance",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/instances/{instance_id}/models": {
+      "get": {
+        "operationId": "v1_instance_models_api_v1_settings_ai_instances__instance_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Instance Models",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/instances/{instance_id}/test": {
+      "post": {
+        "operationId": "v1_test_instance_api_v1_settings_ai_instances__instance_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "title": "Instance Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiHealth"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Test Instance",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/ocr-concurrency": {
+      "put": {
+        "operationId": "v1_ocr_concurrency_api_v1_settings_ai_ocr_concurrency_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConcurrencyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcurrencyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Ocr Concurrency",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/rebuild-index": {
+      "post": {
+        "description": "Resize both pgvector columns to the configured dimension, then re-embed.",
+        "operationId": "v1_rebuild_index_api_v1_settings_ai_rebuild_index_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Rebuild Index",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/reindex": {
+      "post": {
+        "description": "Re-embed every document with the current settings (no column change).",
+        "operationId": "v1_reindex_api_v1_settings_ai_reindex_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJob"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reindex",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/reindex/status": {
+      "get": {
+        "operationId": "v1_reindex_status_api_v1_settings_ai_reindex_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReindexJob"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response V1 Reindex Status Api V1 Settings Ai Reindex Status Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reindex Status",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/roles/{role}": {
+      "put": {
+        "description": "Point a role at an endpoint and, if ``model`` is set, pick its model.",
+        "operationId": "v1_set_role_api_v1_settings_ai_roles__role__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "chat",
+                "embed",
+                "ocr"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleUpdateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Role",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/ai/worker-concurrency": {
+      "put": {
+        "operationId": "v1_worker_concurrency_api_v1_settings_ai_worker_concurrency_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConcurrencyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcurrencyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Worker Concurrency",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/appearance": {
+      "get": {
+        "operationId": "v1_appearance_api_v1_settings_appearance_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppearanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Appearance",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/appearance/dashboard-cards": {
+      "put": {
+        "operationId": "v1_save_dashboard_cards_api_v1_settings_appearance_dashboard_cards_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardCards"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppearanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Dashboard Cards",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/appearance/theme": {
+      "put": {
+        "operationId": "v1_save_theme_api_v1_settings_appearance_theme_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThemeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppearanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Theme",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/appearance/timezone": {
+      "put": {
+        "description": "The display timezone is global (one workspace), so admins only.",
+        "operationId": "v1_save_timezone_api_v1_settings_appearance_timezone_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimezoneUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppearanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Timezone",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data": {
+      "get": {
+        "operationId": "v1_data_api_v1_settings_data_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Data",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data/clear-all-data": {
+      "post": {
+        "operationId": "v1_clear_all_data_api_v1_settings_data_clear_all_data_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Clear All Data",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data/debug-logs": {
+      "get": {
+        "operationId": "v1_debug_logs_api_v1_settings_data_debug_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebugLogList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Debug Logs",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data/debug-logs/view": {
+      "get": {
+        "operationId": "v1_debug_log_api_v1_settings_data_debug_logs_view_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebugLogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Debug Log",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data/export": {
+      "get": {
+        "description": "Download the whole workspace as a zip (GDPR Art. 15/20).",
+        "operationId": "v1_export_api_v1_settings_data_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Export",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/data/reset-enrichment": {
+      "post": {
+        "operationId": "v1_reset_enrichment_api_v1_settings_data_reset_enrichment_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reset Enrichment",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail": {
+      "get": {
+        "operationId": "v1_gmail_api_v1_settings_gmail_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Gmail",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/backfill": {
+      "post": {
+        "description": "Queue a one-off import of the last ``days`` days of the user's mailbox.",
+        "operationId": "v1_backfill_api_v1_settings_gmail_backfill_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailBackfill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Backfill",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/filters": {
+      "put": {
+        "operationId": "v1_save_filters_api_v1_settings_gmail_filters_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailFilters"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Filters",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/identity": {
+      "get": {
+        "operationId": "v1_identity_api_v1_settings_identity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Identity",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "v1_save_identity_api_v1_settings_identity_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityView"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Save Identity",
+        "tags": [
+          "settings"
         ]
       }
     },

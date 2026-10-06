@@ -1,17 +1,33 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { vi } from 'vitest'
 
-/** Render a page inside the providers the app gives it, at `path`. */
-export function renderAt(path: string, ui: ReactElement) {
+import { ToastProvider } from '../ui/toast'
+
+/**
+ * Render a page inside the providers the app gives it, at `path`.
+ * Pass `layout` to render `ui` as that layout's outlet child.
+ */
+export function renderAt(path: string, ui: ReactElement, layout?: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  const tree = layout ? (
+    <Routes>
+      <Route element={layout}>
+        <Route path="*" element={ui} />
+      </Route>
+    </Routes>
+  ) : (
+    ui
+  )
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[path]}>{tree}</MemoryRouter>
+      </ToastProvider>
     </QueryClientProvider>,
   )
 }

@@ -301,7 +301,7 @@ def test_cross_origin_mutating_request_is_blocked():
             "type": "http",
             "method": "POST",
             "scheme": "http",
-            "path": "/api/settings/theme",
+            "path": "/api/v1/settings/appearance/theme",
             "headers": [
                 (b"host", b"testserver"),
                 (b"origin", b"https://attacker.example"),

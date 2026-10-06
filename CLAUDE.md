@@ -59,7 +59,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 
 **Typed JSON API for the SPA:** `app/api/v1/*` — every route declares a Pydantic `response_model` (`app/schemas/`), raises `ApiError(status, code, detail)` and gets the uniform `{detail, code}` error body. `make api-types` regenerates `frontend/src/api/{openapi.json,schema.d.ts}`; a unit test fails when the committed schema is stale. SPA-owned paths return `spa_index()` (`app/spa.py`); the client calls them through `openapi-fetch` (`frontend/src/api/client.ts`).
 
-**First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Contacts (`/contacts/{sender}`), Costs (`/costs`), Settings (`/settings*`, `/api/settings/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
+**First-class views:** Case management (`/cases/*`), Triage (`/triage`), Chat (`/api/chat/*`), Contacts (`/contacts/{sender}`), Costs (`/costs`), Settings (`/settings/*` SPA, `/api/v1/settings/*`, `/api/v1/admin/*`), Upload (`/upload`), Slicing (`/ingest/slice/*`).
 
 ## Navigation and ID conventions
 

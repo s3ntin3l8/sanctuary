@@ -36,25 +36,6 @@ _ALLOWLIST: dict[str, str] = {
     "GET /cases/{case_id}/sharing": "inline _require_owner_or_admin",
     "POST /cases/{case_id}/shares": "inline _require_owner_or_admin",
     "POST /cases/{case_id}/shares/{user_id}/remove": "inline _require_owner_or_admin",
-    # Admin-only user management — global admin capability, not scoped to a
-    # case/document; get_current_admin (403 for non-admins) is the guard.
-    "POST /admin/users/{user_id}/toggle-active": "admin-only via get_current_admin",
-    "POST /admin/users/{user_id}/role": "admin-only via get_current_admin",
-    "POST /admin/users/{user_id}/reset-password": "admin-only via get_current_admin",
-    "POST /admin/users/{user_id}/delete": "admin-only via get_current_admin",
-    "POST /admin/users/{user_id}/reassign-cases": "admin-only via get_current_admin",
-    # Global AI-provider config, not a per-user/per-case resource, so a
-    # per-object access_guards check doesn't apply here. It's a KNOWN GAP,
-    # not a deliberate "any user may" decision: any authenticated user can
-    # currently repoint chat/embed/OCR at an attacker-controlled endpoint and
-    # see other users' document content flow through it. Needs a role gate
-    # (get_current_admin), not this meta-test's kind of guard — tracked in
-    # https://github.com/s3ntin3l8/sanctuary/issues/161, out of scope here
-    # since it's a role check, not a case/doc ownership one, and predates
-    # this PR's route list.
-    "POST /api/settings/ai/instances/{instance_id}": "known gap, tracked in #161",
-    "DELETE /api/settings/ai/instances/{instance_id}": "known gap, tracked in #161",
-    "POST /api/settings/ai/instances/{instance_id}/test": "known gap, tracked in #161",
 }
 
 
