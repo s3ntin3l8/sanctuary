@@ -226,44 +226,15 @@ async def case_document_hud(
 
 @router.post("/{case_id}/confirm-draft")
 async def confirm_draft_case(
-    request: Request,
     case_id: str,
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
-    """Confirm an AI-created draft case (flip is_draft=False)."""
-    import json
-
-    from app.models.database import Document as Doc
-
+    """Confirm an AI-created draft case (flip is_draft=False); the banner reloads."""
     if case.is_draft:
         case.is_draft = False
         db.commit()
-
-    first_doc = (
-        db.query(Doc).filter(Doc.case_id == case_id).order_by(Doc.id.asc()).first()
-    )
-    if not first_doc:
-        return HTMLResponse("", status_code=204)
-
-    db.refresh(first_doc)
-    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
-    from app.config import templates as _templates
-
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-    case_doc_count = db.query(Document).filter(Document.case_id == case_id).count()
-    response.headers["HX-Trigger"] = json.dumps(
-        {
-            "triage:advance": {"next_doc_id": first_doc.id},
-            "case:confirmed": {
-                "case_id": case.id,
-                "case_title": case.title,
-                "doc_count": case_doc_count,
-                "action": "ratified",
-            },
-        }
-    )
-    return response
+    return HTMLResponse("", status_code=204)
 
 
 def _delete_case_via_service(case_id: str, db: Session) -> dict:
@@ -284,34 +255,15 @@ def _delete_case_via_service(case_id: str, db: Session) -> dict:
 
 @router.post("/{case_id}/reject-draft")
 async def reject_draft_case(
-    request: Request,
     case_id: str,
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access(edit=True)),
 ):
     """Delete an AI-created draft case and revert its documents to _TRIAGE."""
-    import json
-
     if not case.is_draft:
         raise HTTPException(status_code=400, detail="Only draft cases can be rejected")
-
-    result = _delete_case_via_service(case_id, db)
-    docs = result["docs"]
-
-    first_doc = docs[0] if docs else None
-    if not first_doc:
-        return HTMLResponse("", status_code=204)
-
-    db.refresh(first_doc)
-    ctx = build_hud_context(db, first_doc, mode="read", context="embedded")
-    from app.config import templates as _templates
-
-    response = _templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
-    response.headers["HX-Trigger"] = json.dumps(
-        {"case:rejected": {"case_id": case_id, "doc_count": result["doc_count"]}}
-    )
-    return response
+    _delete_case_via_service(case_id, db)
+    return HTMLResponse("", status_code=204)
 
 
 @router.delete("/{case_id}", response_model=None)

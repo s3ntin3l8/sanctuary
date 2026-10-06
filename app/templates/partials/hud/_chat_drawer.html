@@ -1,6 +1,6 @@
-{# Document chat drawer — used in standalone and embedded HUD contexts.
+{# Document chat drawer for the case-dashboard HUD overlay.
    Expects x-data on a parent that includes docChatOpen bool.
-   Required: doc, context
+   Required: doc
 #}
 {% set scope_type = 'document' %}
 {% set scope_id = doc.id | string %}

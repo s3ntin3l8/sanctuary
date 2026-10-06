@@ -89,6 +89,46 @@ export function useDeleteConversation(scope: ChatScope) {
 }
 
 /**
+ * Append a finished exchange to the cached conversation so a refetch cannot
+ * duplicate it. Synthetic negative ids are replaced by the server's on refetch.
+ */
+export function useAppendExchange() {
+  const queryClient = useQueryClient()
+  return (
+    conversationId: number,
+    exchange: { question: string; answer: string; citedDocIds: number[] },
+  ) => {
+    const now = new Date().toISOString()
+    const stamp = -Date.now()
+    queryClient.setQueryData<Conversation>(convKey(conversationId), (prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              {
+                id: stamp,
+                role: 'user',
+                content: exchange.question,
+                context_document_ids: null,
+                created_at: now,
+              },
+              {
+                id: stamp - 1,
+                role: 'assistant',
+                content: exchange.answer,
+                context_document_ids: exchange.citedDocIds,
+                created_at: now,
+              },
+            ],
+          }
+        : prev,
+    )
+    return stamp - 1
+  }
+}
+
+/**
  * Send a message and consume the server-sent event stream frame by frame.
  * Resolves when the server sends `done` or closes the stream.
  */

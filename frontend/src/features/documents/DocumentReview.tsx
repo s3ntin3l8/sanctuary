@@ -102,14 +102,16 @@ function Section({
   meta,
   children,
   action,
+  dataAttr,
 }: {
   title: string
   meta?: string
   children: React.ReactNode
   action?: React.ReactNode
+  dataAttr?: Record<string, string>
 }) {
   return (
-    <section className="rounded-xl border border-line bg-card2 p-3">
+    <section className="rounded-xl border border-line bg-card2 p-3" {...dataAttr}>
       <header className="mb-2 flex items-center gap-2">
         <h4 className="text-[9.5px] font-extrabold tracking-[.12em] text-muted uppercase">
           {title}
@@ -876,7 +878,11 @@ function Reactions({ review }: { review: Review }) {
   const active = new Set(review.reactions.map((r) => r.reaction))
   const note = review.reactions.find((r) => r.notes)?.notes ?? ''
   return (
-    <Section title="Your reaction" meta="recalled by the AI later">
+    <Section
+      title="Your reaction"
+      meta="recalled by the AI later"
+      dataAttr={{ 'data-reaction-bar': '' }}
+    >
       <div className="flex flex-wrap items-center gap-1.5">
         {REACTIONS.map(([key, glyph, label]) => (
           <button

@@ -47,7 +47,9 @@ export function useFind(root: RefObject<HTMLElement | null>, bodyVersion: string
   // Ranges are derived from the query and the current body; `collect` reads the
   // live DOM, so this runs on commit of either input rather than in an effect.
   const ranges = useMemo(
-    () => (isOpen && bodyVersion !== undefined ? collect(root.current, query) : []),
+    () => (isOpen ? collect(root.current, query) : []),
+    // bodyVersion is not read, but a new body means new text nodes to search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isOpen, query, bodyVersion, root],
   )
 
@@ -58,9 +60,12 @@ export function useFind(root: RefObject<HTMLElement | null>, bodyVersion: string
 
   useEffect(() => {
     if (!css?.highlights || !HighlightClass) return
+    const clear = () => {
+      css.highlights?.delete('find')
+      css.highlights?.delete('find-current')
+    }
     if (!isOpen || ranges.length === 0) {
-      css.highlights.delete('find')
-      css.highlights.delete('find-current')
+      clear()
       return
     }
     css.highlights.set('find', new HighlightClass(...ranges))
@@ -73,6 +78,7 @@ export function useFind(root: RefObject<HTMLElement | null>, bodyVersion: string
         parent.scrollIntoView({ block: 'center' })
       }
     }
+    return clear
   }, [ranges, index, isOpen])
 
   const open = useCallback(() => setOpen(true), [])

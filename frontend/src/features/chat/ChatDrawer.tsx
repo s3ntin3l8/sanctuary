@@ -7,6 +7,7 @@ import {
   citationsFromIds,
   type Conversation,
   streamMessage,
+  useAppendExchange,
   useConversation,
   useConversations,
   useDeleteConversation,
@@ -45,9 +46,12 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
   const history = useConversations(scope)
   const rename = useRenameConversation(scope)
   const remove = useDeleteConversation(scope)
+  const appendExchange = useAppendExchange()
 
   const [draft, setDraft] = useState('')
-  const [pending, setPending] = useState<Message[]>([])
+  // The question in flight, and resolved citations for answers written to the cache.
+  const [inFlight, setInFlight] = useState<string | null>(null)
+  const [richCitations, setRichCitations] = useState<Record<number, Citation[]>>({})
   const [streaming, setStreaming] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
@@ -74,24 +78,28 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' })
-  }, [conversation.data?.messages.length, pending.length, streaming])
+  }, [conversation.data?.messages.length, inFlight, streaming])
 
   useEffect(() => () => abort.current?.abort(), [])
 
-  const persisted: Message[] = (conversation.data?.messages ?? []).map((m) => ({
+  const messages: Message[] = (conversation.data?.messages ?? []).map((m) => ({
     id: m.id,
     role: m.role,
     content: m.content,
-    citations: m.role === 'assistant' ? citationsFromIds(m.context_document_ids) : [],
+    citations:
+      m.role === 'assistant'
+        ? (richCitations[m.id] ?? citationsFromIds(m.context_document_ids))
+        : [],
   }))
-  const messages = [...persisted, ...pending]
+  if (inFlight !== null)
+    messages.push({ id: 'in-flight', role: 'user', content: inFlight, citations: [] })
 
   async function send(text: string) {
     const content = text.trim()
     if (!content || conversationId === null || streaming !== null) return
     setError(null)
     setDraft('')
-    setPending((p) => [...p, { id: `u-${Date.now()}`, role: 'user', content, citations: [] }])
+    setInFlight(content)
     setStreaming('')
     let answer = ''
     let citations: Citation[] = []
@@ -112,10 +120,13 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
         },
         controller.signal,
       )
-      setPending((p) => [
-        ...p,
-        { id: `a-${Date.now()}`, role: 'assistant', content: answer, citations },
-      ])
+      const answerId = appendExchange(conversationId, {
+        question: content,
+        answer,
+        citedDocIds: [...new Set(citations.map((c) => c.doc_id))],
+      })
+      if (citations.length) setRichCitations((r) => ({ ...r, [answerId]: citations }))
+      setInFlight(null)
       if (isFirst) {
         const auto = content.length > 50 ? `${content.slice(0, 47)}…` : content
         rename.mutate({ id: conversationId, title: auto })
@@ -134,7 +145,7 @@ export function ChatDrawer({ scope, title, suggestions, onClose, proceeding, pre
   }
 
   function switchTo(c: Conversation | { id: number }) {
-    setPending([])
+    setInFlight(null)
     setStreaming(null)
     setConversationId(c.id)
     setShowHistory(false)

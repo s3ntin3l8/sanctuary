@@ -1,8 +1,5 @@
-{# Ask AI — toggles docChatOpen in the enclosing Alpine scope.
-   overlay:    docChatOpen lives on caseDashboard (dashboard.js)
-   standalone: docChatOpen lives on hudReader() (hud.js)
-   embedded:   docChatOpen lives on the bare { docChatOpen: false } scope on the container
-   Required: context, doc
+{# Ask AI — toggles docChatOpen on the enclosing caseDashboard scope (dashboard.js).
+   Required: doc
 #}
 <div class="px-5 py-4" x-show="!docChatOpen">
   <button @click="docChatOpen = !docChatOpen; if (docChatOpen && typeof chatOpen !== 'undefined') chatOpen = false"

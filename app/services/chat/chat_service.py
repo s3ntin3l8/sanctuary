@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Case, Conversation, Document
 from app.repositories.chat import ChatRepository
+from app.schemas.chat import Citation
 from app.services.ai_config import get_chat_config
 from app.services.ai_inflight import track_ai_call_async
 from app.services.ai_provider import chat_provider
@@ -139,13 +140,20 @@ async def stream_answer(
             doc_id = ref["doc_id"]
             d = doc_map.get(doc_id)
             if d:
+                # Only the document prompt numbers the document's own key
+                # passages; case-scope hits are numbered over matched chunks.
+                passage_id = (
+                    _passage_id(d, ref["passage_idx"])
+                    if conversation.scope_type == "document"
+                    else None
+                )
                 citation_docs.append(
-                    {
-                        "doc_id": d.id,
-                        "case_id": d.case_id,
-                        "title": d.title or "Untitled",
-                        "passage_id": _passage_id(d, ref["passage_idx"]),
-                    }
+                    Citation(
+                        doc_id=d.id,
+                        case_id=d.case_id,
+                        title=d.title or "Untitled",
+                        passage_id=passage_id,
+                    ).model_dump()
                 )
 
     if citation_docs:

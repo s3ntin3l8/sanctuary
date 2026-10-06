@@ -105,3 +105,25 @@ test('find counts matches in the body', async () => {
   await user.type(screen.getByLabelText('Find in document'), 'kosten')
   expect(screen.getByText('1/1')).toBeVisible()
 })
+
+test('number keys fire reactions and Esc on the shortcuts overview stays on the page', async () => {
+  const fetch = stub({
+    'POST /api/v1/documents/2211/reactions': {
+      body: [{ reaction: 'lies', notes: null, created_at: null }],
+    },
+  })
+  page()
+  const user = userEvent.setup()
+  await screen.findByRole('heading', { name: 'Klageerwiderung.pdf' })
+  await user.keyboard('1')
+  await waitFor(() =>
+    expect(
+      fetch.mock.calls.some(([r]) => r.method === 'POST' && r.url.endsWith('/reactions')),
+    ).toBe(true),
+  )
+  await user.keyboard('?')
+  const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(dialog).not.toBeInTheDocument())
+  expect(screen.getByRole('heading', { name: 'Klageerwiderung.pdf' })).toBeVisible()
+})

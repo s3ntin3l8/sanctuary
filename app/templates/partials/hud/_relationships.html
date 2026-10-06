@@ -1,5 +1,5 @@
-{# Document relationships — unified renderer for all three HUD contexts.
-   Required: doc, relationships_out (list[dict]), relationships_in (list[dict]), context, mode
+{# Document relationships for the HUD overlay.
+   Required: doc, relationships_out (list[dict]), relationships_in (list[dict]), mode
    Each rel dict: {id, title, rel_type, confidence, rel_obj}
 #}
 {% set total_rels = (relationships_out|length) + (relationships_in|length) %}

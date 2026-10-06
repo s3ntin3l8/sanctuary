@@ -1,5 +1,5 @@
-{# Passages spine (standalone/embedded) or passage cards (overlay).
-   Required: key_passages (list[{text, kind, page, rationale, id}]), context
+{# Key passage cards for the HUD overlay.
+   Required: key_passages (list[{text, kind, page, rationale, id}])
    Optional: passage_claim_map (dict[passage_id, claim_id])
 #}
 {% set pcm = passage_claim_map if passage_claim_map is defined else {} %}

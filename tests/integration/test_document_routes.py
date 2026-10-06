@@ -33,6 +33,23 @@ def test_open_original_returns_file(db_session, isolate_data_dir):
 
 
 @pytest.mark.integration
+def test_open_original_refuses_existing_file_outside_data_dir(
+    db_session, isolate_data_dir, tmp_path
+):
+    """A stored path that escapes DATA_DIR is never served, even if it exists."""
+    outside = tmp_path / "secret.pdf"
+    outside.write_bytes(b"%PDF-1.4 not yours")
+    assert not str(outside.resolve()).startswith(str(isolate_data_dir.resolve()))
+    doc = Document(title="Escaping Doc", file_path=str(outside))
+    db_session.add(doc)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/documents/{doc.id}/original")
+    assert response.status_code == 404
+    assert response.json()["code"] == "no_original"
+
+
+@pytest.mark.integration
 def test_open_original_404_missing_file(db_session, isolate_data_dir):
     """GET /api/v1/documents/:id/original returns 404 when file_path points to non-existent file."""
     doc = Document(title="Missing File Doc", file_path="/nonexistent/path/file.pdf")

@@ -1,37 +1,25 @@
 # Sanctuary — Document HUD
 
-Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashboard.md`](02_dashboard.md). Covers the single canonical document-reading surface: slide-in overlay on the dashboard, full-screen reader at a dedicated URL, and embedded review pane on the triage page. One template, three contexts, one data flow.
+Companion to [`docs/specs/00_vision.md`](00_vision.md) and [`docs/specs/02_dashboard.md`](02_dashboard.md). Covers the document-reading surfaces: the full-screen reader at `/document/{id}`, the inline review pane on the triage page (both React on `/api/v1`), and the slide-in overlay on the case dashboard.
 
 ---
 
 ## Implementation Status
 
-**Last Updated:** April 26, 2026
-**Status:** 🟢 IMPLEMENTED (v1 complete)
+**Last Updated:** October 6, 2026
+**Status:** 🟢 IMPLEMENTED — full-screen reader and chat are React (SPA migration phase 4); the dashboard overlay is still Jinja until phase 5.
 
-### Feature Matrix
-
-| Feature | Status | Implementation |
-|---------|--------|----------------|
-| Three-context template (`_container.html`) | ✅ Implemented | `partials/hud/_container.html` |
-| Full-screen reader at `/cases/:id/document/:id` | ✅ Implemented | `pages/document.html`, `api/cases.py` |
-| Slide-in overlay (`context=overlay`) | ✅ Implemented | `_container.html` + case dashboard |
-| Embedded triage pane (`context=embedded mode=review`) | ✅ Implemented | `_container.html` |
-| Sticky top bar with backdrop-blur | ✅ Implemented | `_top_bar.html` |
-| `n/N` position counter (proceeding-scoped) | ✅ Implemented | `neighbor_doc_ids` returns 4-tuple |
-| Reaction pip in top bar | ✅ Implemented | `_top_bar.html` |
-| `thread_open` amber glow | ✅ Implemented | `_top_bar.html` |
-| Scroll-spy (`IntersectionObserver`) | ✅ Implemented | `hud.js` |
-| Key passage `<mark data-passage-id>` | ✅ Implemented | `render_highlighted` |
-| URL fragment deep-link `#p=<passage_id>` | ✅ Implemented | `hud.js` |
-| Left gutter + margin pin cards | ✅ Implemented | `_body.html`, `_pin_card.html` |
-| Pin collision resolution | ✅ Implemented | `hud.js` |
-| Passages spine with `[+ pin]` | ✅ Implemented | `_passages_spine.html` |
-| Grounds: inline expand + confirm/refute | ✅ Implemented | `_grounds.html` |
-| Actions: status chip + confirm/dismiss | ✅ Implemented | `_actions.html` |
-| Cost delta: `[promote to cost]` button | ✅ Implemented | `_cost_delta.html` |
-| AI chat drawer (Phase 7) | ✅ Implemented | `_chat_drawer.html` |
-| Keyboard shortcut set (`/ r 1-4 n o f ? ← →`) | ✅ Implemented | `hud.js` |
+| Feature | Implementation |
+|---------|----------------|
+| Full-screen reader at `/document/{id}` | `frontend/src/features/documents/DocumentPage.tsx` on `GET /api/v1/documents/{id}/reader` |
+| Body with `<mark data-passage-id>` highlights | `app/services/markdown_render.py` (`render_highlighted`, server-side) |
+| Scroll-spy, click-to-sync, `#p=<passage_id>` deep links | `DocumentPage.tsx` |
+| Margin pins with collision resolution | `PinGutter.tsx`; `POST /api/v1/documents/{id}/pins`, `PATCH\|DELETE /api/v1/pins/{id}` |
+| Find (CSS Custom Highlight API) and zoom | `useFind.ts`, `DocumentPage.tsx` |
+| Intelligence rail (summary, pipeline, metadata, passages, relationships, grounds, actions, cost signals, reactions) | `DocumentReview.tsx` `ReviewSections` (shared with triage) |
+| AI chat drawer with streaming + citations | `frontend/src/features/chat/ChatDrawer.tsx` on `/api/v1/chat/*` |
+| Keyboard map (`← → ↑ ↓ [ ] { } f o n r 1-4 / ⌘F ? Esc`) | `DocumentPage.tsx` (the `?` overview is generated from the same table) |
+| Slide-in overlay on the case dashboard | `partials/hud/_container.html` (`context=overlay`), `GET /cases/{id}/document/{id}/hud` |
 
 ---
 

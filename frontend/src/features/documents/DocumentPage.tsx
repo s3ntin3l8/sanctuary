@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
-import { originalUrl, type Pin, type Reader, useDocumentReader } from '../../api/documents'
+import { originalUrl, type Reader, useCreatePin, useDocumentReader } from '../../api/documents'
 import { formatShortDate } from '../../format'
 import { leaveTo } from '../../navigation'
 import { Badge, type Tone } from '../../ui/Badge'
@@ -13,7 +13,6 @@ import { ChatDrawer } from '../chat/ChatDrawer'
 import { ORIGINATOR_COLOR, ReviewSections } from './DocumentReview'
 import { PinGutter } from './PinGutter'
 import { type Find, useFind } from './useFind'
-import { useCreatePin } from '../../api/documents'
 
 const REACTION_GLYPH: Record<string, string> = {
   lies: '🚩',
@@ -88,9 +87,9 @@ function Hud({ reader }: { reader: Reader }) {
         toast('This passage could not be located in the text.', 'error')
       }
       setActivePassageId(passageId)
-      if (push) window.history.replaceState(null, '', `#p=${passageId}`)
+      if (push) navigate({ hash: `p=${passageId}` }, { replace: true })
     },
-    [toast],
+    [toast, navigate],
   )
 
   // Deep link `#p=<id>` (chat citations, bookmarks).
@@ -169,7 +168,7 @@ function Hud({ reader }: { reader: Reader }) {
     if (target) navigate(`/document/${target}`)
   }
 
-  const reactionBar = useRef<HTMLDivElement>(null)
+  const rail = useRef<HTMLElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
@@ -180,6 +179,8 @@ function Hud({ reader }: { reader: Reader }) {
       }
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
+      // The shortcuts overview owns the keyboard while open (its own Esc closes it).
+      if (shortcuts) return
       const nav = reader.nav
       switch (e.key) {
         case 'ArrowLeft':
@@ -218,16 +219,20 @@ function Hud({ reader }: { reader: Reader }) {
           pinPassage(activePassageId)
           break
         case 'r':
-          reactionBar.current?.querySelector<HTMLElement>('button')?.focus()
-          reactionBar.current?.scrollIntoView({ block: 'center' })
+          {
+            const bar = rail.current?.querySelector<HTMLElement>('[data-reaction-bar]')
+            bar?.querySelector<HTMLElement>('button')?.focus()
+            bar?.scrollIntoView({ block: 'center' })
+          }
           break
         case '1':
         case '2':
         case '3':
         case '4':
           {
-            const buttons =
-              reactionBar.current?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')
+            const buttons = rail.current?.querySelectorAll<HTMLButtonElement>(
+              '[data-reaction-bar] button[aria-pressed]',
+            )
             buttons?.[Number(e.key) - 1]?.click()
           }
           break
@@ -373,6 +378,7 @@ function Hud({ reader }: { reader: Reader }) {
 
         {!focusMode && (
           <aside
+            ref={rail}
             aria-label="Document intelligence"
             className="w-[340px] shrink-0 space-y-3 overflow-y-auto border-l border-line bg-panel p-3 text-[12px]"
           >
@@ -386,7 +392,6 @@ function Hud({ reader }: { reader: Reader }) {
                 onAskAi: askAbout,
               }}
             />
-            <div ref={reactionBar} className="hidden" aria-hidden />
             {!chatOpen && (
               <button
                 type="button"
@@ -539,5 +544,3 @@ function FindBox({ find }: { find: Find }) {
     </div>
   )
 }
-
-export type { Pin }

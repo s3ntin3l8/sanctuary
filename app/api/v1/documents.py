@@ -66,6 +66,7 @@ from app.schemas.document_review import (
 from app.services import access_service
 from app.services.case_dashboard_service import key_passages_for_template
 from app.services.hud_context import build_hud_context
+from app.services.markdown_render import render_highlighted
 from app.services.pipeline_status import (
     STAGE_REGISTRY,
     get_upstream_blocking,
@@ -152,8 +153,6 @@ def _pin_view(pin) -> PinView:
 
 def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
     """The review view plus everything only the full-screen HUD shows."""
-    from app.main import render_highlighted
-
     fields, ctx = _review_fields(db, user, doc)
     body_html = (
         str(

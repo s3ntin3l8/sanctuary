@@ -76,13 +76,6 @@
 
   --color-outline: #727d80;
   --color-outline-variant: #a9b4b7;
-
-  --color-key-passage-bg: #e0f2fe;
-  --color-key-passage-fg: #075985;
-  --color-key-passage-ring: #7dd3fc;
-  --color-claim-bg: #fef3c7;
-  --color-claim-fg: #92400e;
-  --color-claim-ring: #fcd34d;
   --color-warning: #b45309;
   --color-warning-container: #fef3c7;
 
@@ -94,7 +87,6 @@
   --color-surface-high: var(--color-surface-container-high);
   --color-surface-highest: var(--color-surface-container-highest);
   --shadow-drawer: -8px 0 32px rgba(0,0,0,0.35);
-  --color-leader-line: rgb(245 158 11 / 0.4);
 }
 
 /* ── Dark Mode Overrides (applied when .dark is on <html>) ── */
@@ -168,13 +160,6 @@
 
     --color-outline: #859490;
     --color-outline-variant: #3c4a46;
-
-    --color-key-passage-bg: rgb(2 132 199 / 0.20);
-    --color-key-passage-fg: #bae6fd;
-    --color-key-passage-ring: rgb(56 189 248 / 0.35);
-    --color-claim-bg: rgb(245 158 11 / 0.20);
-    --color-claim-fg: #fde68a;
-    --color-claim-ring: rgb(245 158 11 / 0.35);
     --color-warning: #fbbf24;
     --color-warning-container: rgb(251 191 36 / 0.15);
   }
@@ -336,50 +321,6 @@
 }
 .drawer-slide-in { animation: drawerSlideIn .22s cubic-bezier(.2,.7,.2,1) both; }
 
-@keyframes passageFocus {
-  0%   { box-shadow: 0 0 0 3px var(--color-primary); }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-
-.hud-mark-flash { animation: passageFocus 600ms ease-out both; }
-
-@keyframes spineRowFlash {
-  0%   { background-color: var(--color-primary); color: var(--color-on-primary); }
-  100% { background-color: transparent; color: inherit; }
-}
-@keyframes spineRowFlashWarn {
-  0%   { background-color: var(--color-amber); color: var(--color-on-amber, #fff); }
-  100% { background-color: transparent; color: inherit; }
-}
-
-.hud-spine-flash      { animation: spineRowFlash      550ms ease-out both; }
-.hud-spine-flash-warn { animation: spineRowFlashWarn  900ms ease-out both; }
-
-.hud-pin-card { transition: top .24s cubic-bezier(.2,.7,.2,1); }
-
-.hud-pin-card--unmatched {
-  opacity: 0.65;
-  filter: saturate(0.7);
-}
-.hud-pin-card--unmatched::after {
-  content: "⚠ approx";
-  position: absolute;
-  top: -10px;
-  left: 0;
-  font-size: 8px;
-  font-weight: 700;
-  color: var(--color-amber);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.hud-top-bar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
 
 [x-cloak] { display: none !important; }
 

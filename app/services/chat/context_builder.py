@@ -9,6 +9,7 @@ from app.models.database import (
     Document,
 )
 from app.models.enums import ActionItemStatus
+from app.services.case_dashboard_service import key_passages_for_template
 from app.services.intelligence.claim_context import format_claims_for_case
 from app.services.intelligence.reaction_context import (
     format_reactions_for_case,
@@ -24,12 +25,12 @@ def build_document_chat_prompt(
     history: list[ConversationMessage],
     user_message: str,
 ) -> str:
-    passages = doc.key_passages or []
+    # Numbered from the same normalised list the citation resolver uses
+    # (chat_service._passage_id), so [DOC:n#p=k] maps back to a stable id.
+    passages = key_passages_for_template(doc.key_passages or [])
     passages_block = ""
     if passages:
-        lines = [
-            f"  [{i + 1}] {p.get('text', '')}" for i, p in enumerate(passages[:10])
-        ]
+        lines = [f"  [{i + 1}] {p['text']}" for i, p in enumerate(passages[:10])]
         passages_block = "Key passages:\n" + "\n".join(lines)
 
     content_preview = (doc.content or "")[:6000]

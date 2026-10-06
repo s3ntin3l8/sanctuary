@@ -631,3 +631,49 @@ def test_relationship_decision_requires_edit_access_to_both_documents(
         db_session.get(DocumentRelationship, spanning.id).confidence
         == RelationshipConfidence.AI_DETECTED
     )
+
+
+def test_viewer_share_can_read_but_not_pin(auth_enabled, db_session, two_users):
+    """A VIEWER share reads the reader but gets 404 on pin create/update/delete."""
+    from app.models.database import DocumentPin
+
+    a, b = two_users
+    case = _make_case(db_session, "PR5-PIN-VIEW", a.id)
+    db_session.add(
+        CaseShare(case_id=case.id, user_id=b.id, permission=CaseAccessLevel.VIEWER)
+    )
+    doc = Document(
+        title="pinnable",
+        owner_id=a.id,
+        case_id=case.id,
+        content="The order is final.",
+        key_passages=[
+            {"id": "passage-one1", "text": "The order is final.", "kind": "ruling"}
+        ],
+    )
+    db_session.add(doc)
+    db_session.flush()
+    pin = DocumentPin(
+        document_id=doc.id, passage_id="passage-one1", note="a's", user_id=a.id
+    )
+    db_session.add(pin)
+    db_session.commit()
+
+    client = _login("b@example.com")
+    reader = client.get(f"/api/v1/documents/{doc.id}/reader")
+    assert reader.status_code == 200
+    assert [p["id"] for p in reader.json()["pins"]] == [pin.id]
+    assert (
+        client.post(
+            f"/api/v1/documents/{doc.id}/pins",
+            json={"passage_id": "passage-one1", "note": "b's"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.patch(f"/api/v1/pins/{pin.id}", json={"note": "edited"}).status_code
+        == 404
+    )
+    assert client.delete(f"/api/v1/pins/{pin.id}").status_code == 404
+    db_session.expire_all()
+    assert db_session.get(DocumentPin, pin.id).note == "a's"
