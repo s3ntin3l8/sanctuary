@@ -25,8 +25,7 @@
   </h4>
 
   {% if key_passages %}
-    {% if context == 'overlay' %}
-    {# Overlay: full passage cards (no body column to scroll) #}
+    {# Full passage cards (no body column to scroll) #}
     <div class="space-y-2.5">
       {% for p in key_passages %}
       {% set p_id = p.id if p.id else (p.text ~ p.kind)|hash %}
@@ -52,66 +51,6 @@
       {% endfor %}
     </div>
 
-    {% else %}
-    {# Standalone / embedded: spine rows with scroll-spy anchors #}
-    <div class="space-y-1" id="hud-passages-spine">
-      {% set current_kind = namespace(val='') %}
-      {% for p in key_passages %}
-      {% set p_id = p.id if p.id else (p.text ~ p.kind)|hash %}
-      {% if p.kind != current_kind.val %}
-      {% set current_kind.val = p.kind %}
-      <div class="text-[9px] font-bold uppercase tracking-widest mt-3 mb-1 px-1"
-           style="color:var(--color-outline);">── {{ p.kind }}</div>
-      {% endif %}
-      {% set accent = kind_colors.get(p.kind, kind_colors['neutral']) %}
-      {% set claim_id = pcm.get(p_id) %}
-      <div role="button" tabindex="0"
-              data-spine-passage="{{ p_id }}"
-              @click="focusPassage && focusPassage('{{ p_id }}')"
-              @keydown.enter.prevent="focusPassage && focusPassage('{{ p_id }}')"
-              @keydown.space.prevent="focusPassage && focusPassage('{{ p_id }}')"
-              class="w-full text-left px-2 py-1.5 rounded hover:bg-surface-container-high transition-colors group cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/40">
-        <p class="text-[11px] leading-snug line-clamp-2 italic" style="color:var(--color-on-surface);">"{{ p.text | truncate(100, true) }}"</p>
-        <div class="flex items-center gap-2 mt-1 flex-wrap">
-          {% if claim_id %}
-          <span class="text-[9px] font-bold text-primary">⚖ #{{ claim_id }}</span>
-          {% endif %}
-          {% if p.rationale %}
-          <span class="text-[9px]" style="color:var(--color-on-surface-variant);">{{ p.rationale | truncate(50, true) }}</span>
-          {% endif %}
-          {% if p.start_offset is none %}
-          <span class="text-[8px] font-mono" style="color:var(--color-outline);" title="Approximate scroll position — original text not matched in source markdown">⚠ approx</span>
-          {% endif %}
-          {% if context != 'overlay' %}
-          {% set pin_count = passage_pin_counts.get(p_id, 0) if passage_pin_counts is defined else 0 %}
-          {% if pin_count > 0 %}
-          <span class="text-[9px] font-bold text-amber" data-spine-pin-count="{{ pin_count }}" data-spine-passage-ref="{{ p_id }}" title="{{ pin_count }} pin(s)">📌 {{ pin_count }}</span>
-          {% endif %}
-          <button type="button"
-                  onclick="event.stopPropagation()"
-                  hx-post="{{ request.app.url_path_for('create_pin', doc_id=doc.id) }}"
-                  hx-vals='{"passage_id": "{{ p_id }}"}'
-                  hx-target="#hud-pin-gutter-{{ doc.id }}"
-                  hx-swap="beforeend"
-                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors"
-                  style="color: var(--color-outline);"
-                  data-pin-button="{{ p_id }}"
-                  title="Pin this passage (n)">
-            + pin
-          </button>
-          <button type="button"
-                  @click.stop="focusAskAiWithPassage && focusAskAiWithPassage('{{ p_id }}', {{ p.text | truncate(200, true) | tojson | forceescape }})"
-                  class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded hover:bg-surface-container-high transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                  style="color: var(--color-primary);"
-                  title="Ask AI about this passage">
-            ask AI
-          </button>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
 
   {% else %}
   <p class="text-[11px] italic" style="color:var(--color-outline);">No key passages detected yet.</p>

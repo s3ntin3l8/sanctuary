@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 
 import type { Schemas } from '../../api/client'
 import {
@@ -438,6 +438,7 @@ function BundleRow({
   onRetry: (full: boolean) => void
 }) {
   const action = useBundleAction()
+  const navigate = useNavigate()
   const toast = useToast()
   const [menu, setMenu] = useState(false)
   const [activeDoc, setActiveDoc] = useState<number | null>(b.lead_doc_id)
@@ -659,7 +660,7 @@ function BundleRow({
               <DocumentReview
                 docId={activeDoc}
                 onReassign={() => onConfirm('assign_case')}
-                onOpenHud={(id) => window.location.assign(`/document/${id}`)}
+                onOpenHud={(id) => navigate(`/document/${id}`)}
               />
             ) : (
               <p className="text-[12px] text-muted">Select a document.</p>

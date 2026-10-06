@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react'
+import { Link } from 'react-router'
 
 import type { Schemas } from '../../api/client'
 import {
@@ -45,7 +46,15 @@ type Props = {
   onOpenHud?: (docId: number) => void
 }
 
-/** The intelligence panel for one document (triage inline review; later the HUD rail). */
+/** What the full-screen HUD wires into the passage spine. */
+export type PassageHooks = {
+  activePassageId: string | null
+  onFocus: (passageId: string) => void
+  onPin: (passageId: string) => void
+  onAskAi: (passageText: string) => void
+}
+
+/** The intelligence panel for one document in the triage inline review. */
 export function DocumentReview({ docId, onReassign, onOpenHud }: Props) {
   const query = useDocumentReview(docId)
   const review = query.data
@@ -53,19 +62,38 @@ export function DocumentReview({ docId, onReassign, onOpenHud }: Props) {
   return (
     <div className="space-y-3 text-[12px]">
       <Header review={review} onOpenHud={onOpenHud} />
+      <ReviewSections review={review} onReassign={onReassign} />
+    </div>
+  )
+}
+
+/** The rail sections shared by the triage review and the HUD (`passages` adds spine behaviour). */
+export function ReviewSections({
+  review,
+  onReassign,
+  passages,
+  singleColumn = false,
+}: {
+  review: Review
+  onReassign?: (review: Review) => void
+  passages?: PassageHooks
+  singleColumn?: boolean
+}) {
+  return (
+    <>
       <Pipeline review={review} />
       <CaseAndProceeding review={review} onReassign={onReassign} />
       <Metadata review={review} />
       <Summary review={review} />
-      <Passages review={review} />
-      <div className="grid grid-cols-2 gap-3">
+      <Passages review={review} hooks={passages} />
+      <div className={singleColumn ? 'space-y-3' : 'grid grid-cols-2 gap-3'}>
         <Relationships review={review} />
         <Grounds review={review} />
         <Actions review={review} />
         <CostSignals review={review} />
       </div>
       <Reactions review={review} />
-    </div>
+    </>
   )
 }
 
@@ -569,21 +597,79 @@ function Summary({ review }: { review: Review }) {
   )
 }
 
-function Passages({ review }: { review: Review }) {
+const PASSAGE_TONE: Record<string, string> = {
+  ruling: 'border-accent',
+  holding: 'border-accent',
+  deadline: 'border-warning',
+  finding: 'border-info',
+  concession: 'border-success',
+  neutral: 'border-line3',
+}
+
+function Passages({ review, hooks }: { review: Review; hooks?: PassageHooks }) {
   if (review.key_passages.length === 0) return null
+  const claims = review.key_passages.filter((p) => p.claim_id).length
   return (
-    <Section title="Key passages" meta={`${review.key_passages.length}`}>
+    <Section
+      title="Key passages"
+      meta={`${review.key_passages.length}${claims ? ` · ⚖ ${claims}` : ''}`}
+    >
       <ul className="space-y-2">
-        {review.key_passages.map((p) => (
-          <li key={p.id} className="border-l-2 border-accent pl-2">
-            <p className="leading-relaxed">“{p.text}”</p>
-            <p className="font-mono text-[10px] text-muted">
-              {p.kind ?? 'passage'}
-              {p.page ? ` · p. ${p.page}` : ''}
-              {p.claim_id ? ` · claim #${p.claim_id}` : ''}
-            </p>
-          </li>
-        ))}
+        {review.key_passages.map((p) => {
+          const active = hooks?.activePassageId === p.id
+          const body = (
+            <>
+              <p className="leading-relaxed">“{p.text}”</p>
+              <p className="font-mono text-[10px] text-muted">
+                {p.kind ?? 'passage'}
+                {p.page ? ` · p. ${p.page}` : ''}
+                {p.claim_id ? ` · claim #${p.claim_id}` : ''}
+                {p.start_offset === null ? ' · ⚠ approx' : ''}
+                {p.pin_count ? ` · 📌 ${p.pin_count}` : ''}
+              </p>
+            </>
+          )
+          return (
+            <li
+              key={p.id}
+              data-spine-passage={p.id}
+              className={`rounded-r border-l-2 pl-2 ${PASSAGE_TONE[p.kind ?? 'neutral'] ?? 'border-line3'} ${active ? 'bg-accent/8' : ''}`}
+            >
+              {hooks ? (
+                <div className="flex items-start gap-1">
+                  <button
+                    type="button"
+                    onClick={() => hooks.onFocus(p.id)}
+                    aria-current={active ? 'true' : undefined}
+                    className="min-w-0 flex-1 text-left hover:text-ink"
+                  >
+                    {body}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Pin this passage"
+                    title="Pin (n)"
+                    onClick={() => hooks.onPin(p.id)}
+                    className="text-muted hover:text-ink"
+                  >
+                    <Icon name="push_pin" size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Ask the AI about this passage"
+                    title="Ask AI"
+                    onClick={() => hooks.onAskAi(p.text)}
+                    className="text-muted hover:text-ink"
+                  >
+                    <Icon name="forum" size={14} />
+                  </button>
+                </div>
+              ) : (
+                body
+              )}
+            </li>
+          )
+        })}
       </ul>
     </Section>
   )
@@ -612,13 +698,13 @@ function Relationships({ review }: { review: Review }) {
             <span className="w-4 text-center font-mono text-muted">
               {REL_GLYPH[r.rel_type] ?? '·'}
             </span>
-            <a
-              href={`/document/${r.doc_id}`}
+            <Link
+              to={`/document/${r.doc_id}`}
               className="min-w-0 flex-1 truncate hover:underline"
               title={r.title}
             >
               {r.title}
-            </a>
+            </Link>
             <span className="font-mono text-[10px] text-muted">
               {r.rel_type.replace(/_/g, ' ')}
             </span>

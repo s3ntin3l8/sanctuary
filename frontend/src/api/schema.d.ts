@@ -313,6 +313,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 List Conversations
+         * @description The caller's own conversations for one document or case, newest first.
+         */
+        get: operations["v1_list_conversations_api_v1_chat_conversations_get"];
+        put?: never;
+        /**
+         * V1 Open Conversation
+         * @description The caller's latest conversation for the scope, or a new one.
+         */
+        post: operations["v1_open_conversation_api_v1_chat_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Get Conversation */
+        get: operations["v1_get_conversation_api_v1_chat_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        /** V1 Delete Conversation */
+        delete: operations["v1_delete_conversation_api_v1_chat_conversations__conversation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/conversations/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Send Message
+         * @description Stream the assistant's answer as server-sent events.
+         */
+        post: operations["v1_send_message_api_v1_chat_conversations__conversation_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/conversations/{conversation_id}/title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** V1 Rename Conversation */
+        put: operations["v1_rename_conversation_api_v1_chat_conversations__conversation_id__title_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{doc_id}": {
         parameters: {
             query?: never;
@@ -373,6 +452,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{doc_id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Original
+         * @description The stored source file, inline for PDFs and as a download otherwise.
+         */
+        get: operations["v1_original_api_v1_documents__doc_id__original_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Create Pin
+         * @description Anchor a margin note to one of the document's key passages.
+         */
+        post: operations["v1_create_pin_api_v1_documents__doc_id__pins_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/documents/{doc_id}/pipeline/retry-all": {
         parameters: {
             query?: never;
@@ -421,6 +540,23 @@ export interface paths {
          * @description Toggle a reaction; with ``notes`` it is upserted instead of toggled.
          */
         post: operations["v1_set_reaction_api_v1_documents__doc_id__reactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{doc_id}/reader": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Reader */
+        get: operations["v1_reader_api_v1_documents__doc_id__reader_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -516,6 +652,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pins/{pin_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** V1 Delete Pin */
+        delete: operations["v1_delete_pin_api_v1_pins__pin_id__delete"];
+        options?: never;
+        head?: never;
+        /** V1 Update Pin */
+        patch: operations["v1_update_pin_api_v1_pins__pin_id__patch"];
         trace?: never;
     };
     "/api/v1/relationships/{rel_id}": {
@@ -1929,6 +2083,25 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** ChatMessage */
+        ChatMessage: {
+            /** Content */
+            content: string;
+            /** Context Document Ids */
+            context_document_ids: number[] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+        };
         /**
          * ClaimStatus
          * @enum {string}
@@ -1960,6 +2133,54 @@ export interface components {
             action: "created" | "assigned" | "ratified";
             /** Id */
             id: string;
+            /** Title */
+            title: string;
+        };
+        /** ConversationDetail */
+        ConversationDetail: {
+            /** Id */
+            id: number;
+            /** Messages */
+            messages: components["schemas"]["ChatMessage"][];
+            /** Scope Id */
+            scope_id: string;
+            /**
+             * Scope Type
+             * @enum {string}
+             */
+            scope_type: "document" | "case";
+            /** Title */
+            title: string | null;
+        };
+        /** ConversationOpen */
+        ConversationOpen: {
+            /**
+             * Force New
+             * @default false
+             */
+            force_new: boolean;
+            /** Scope Id */
+            scope_id: string;
+            /**
+             * Scope Type
+             * @enum {string}
+             */
+            scope_type: "document" | "case";
+        };
+        /** ConversationSummary */
+        ConversationSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Title */
+            title: string | null;
+        };
+        /** ConversationTitle */
+        ConversationTitle: {
             /** Title */
             title: string;
         };
@@ -2085,6 +2306,89 @@ export interface components {
         DebugRedactUpdate: {
             /** Enabled */
             enabled: boolean;
+        };
+        /**
+         * DocumentReader
+         * @description The full-screen HUD: the review view plus the rendered body and pins.
+         */
+        DocumentReader: {
+            /** Actions */
+            actions: components["schemas"]["ActionView"][];
+            /** Attributed Originator */
+            attributed_originator: string | null;
+            /** Az Court */
+            az_court: string | null;
+            /** Body Html */
+            body_html: string | null;
+            /** Bundle Next Id */
+            bundle_next_id: number | null;
+            /** Bundle Prev Id */
+            bundle_prev_id: number | null;
+            case: components["schemas"]["CaseRef"] | null;
+            /** Case Id */
+            case_id: string | null;
+            /** Cases */
+            cases: components["schemas"]["CaseRef"][];
+            /**
+             * Claims Status
+             * @enum {string}
+             */
+            claims_status: "skipped" | "ran" | "pending_triage" | "pending";
+            /** Content Hash */
+            content_hash: string | null;
+            /** Context Strategy */
+            context_strategy: string | null;
+            /** Cost Signals */
+            cost_signals: components["schemas"]["CostSignalView"][];
+            /** Court Relay */
+            court_relay: boolean;
+            document_type: components["schemas"]["DocumentType"] | null;
+            /** Grounds */
+            grounds: components["schemas"]["GroundView"][];
+            /** Has Original */
+            has_original: boolean;
+            /** Id */
+            id: number;
+            /** Ingest Date */
+            ingest_date: string | null;
+            /** Internal Id */
+            internal_id: string | null;
+            /** Issued Date */
+            issued_date: string | null;
+            /** Key Passages */
+            key_passages: components["schemas"]["KeyPassage"][];
+            /** Metadata */
+            metadata: components["schemas"]["MetadataField"][];
+            nav: components["schemas"]["ReaderNav"];
+            /** Needs Review */
+            needs_review: boolean;
+            /** Original Filename */
+            original_filename: string | null;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Page Count */
+            page_count: number;
+            /** Pins */
+            pins: components["schemas"]["PinView"][];
+            pipeline: components["schemas"]["PipelineView"];
+            proceeding: components["schemas"]["ProceedingRef"] | null;
+            /** Proceedings */
+            proceedings: components["schemas"]["ProceedingRef"][];
+            /** Reactions */
+            reactions: components["schemas"]["ReactionView"][];
+            /** Received Date */
+            received_date: string | null;
+            /** Relationships */
+            relationships: components["schemas"]["RelationshipView"][];
+            /** Review Reasons */
+            review_reasons: string[];
+            /** Sender */
+            sender: string | null;
+            significance_tier: components["schemas"]["SignificanceTier"] | null;
+            summary: components["schemas"]["SummaryView"];
+            /** Thread Open */
+            thread_open: boolean;
+            /** Title */
+            title: string;
         };
         /** DocumentReview */
         DocumentReview: {
@@ -2464,6 +2768,13 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** MessageSend */
+        MessageSend: {
+            /** Content */
+            content: string;
+            /** Proceeding Id */
+            proceeding_id?: number | null;
+        };
         /** MetadataField */
         MetadataField: {
             /** Confidence */
@@ -2543,6 +2854,31 @@ export interface components {
             id: number;
             /** Label */
             label: string;
+        };
+        /** PinCreate */
+        PinCreate: {
+            /** Note */
+            note?: string | null;
+            /** Passage Id */
+            passage_id: string;
+        };
+        /** PinUpdate */
+        PinUpdate: {
+            /** Note */
+            note?: string | null;
+        };
+        /** PinView */
+        PinView: {
+            /** Id */
+            id: number;
+            /** Note */
+            note: string | null;
+            /** Passage Id */
+            passage_id: string;
+            /** Updated At */
+            updated_at: string | null;
+            /** User Id */
+            user_id: number | null;
         };
         /** PipelineCounts */
         PipelineCounts: {
@@ -2662,6 +2998,28 @@ export interface components {
             /** Notes */
             notes: string | null;
             reaction: components["schemas"]["UserReactionType"];
+        };
+        /**
+         * ReaderNav
+         * @description Where the document sits among its proceeding siblings, bundle and family.
+         */
+        ReaderNav: {
+            /** Bundle Next Id */
+            bundle_next_id: number | null;
+            /** Bundle Prev Id */
+            bundle_prev_id: number | null;
+            /** First Child Id */
+            first_child_id: number | null;
+            /** Next Doc Id */
+            next_doc_id: number | null;
+            /** Parent Id */
+            parent_id: number | null;
+            /** Position */
+            position: number | null;
+            /** Prev Doc Id */
+            prev_doc_id: number | null;
+            /** Total */
+            total: number | null;
         };
         /** ReindexJob */
         ReindexJob: {
@@ -3811,6 +4169,201 @@ export interface operations {
             };
         };
     };
+    v1_list_conversations_api_v1_chat_conversations_get: {
+        parameters: {
+            query: {
+                scope_type: string;
+                scope_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_open_conversation_api_v1_chat_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationOpen"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_get_conversation_api_v1_chat_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_conversation_api_v1_chat_conversations__conversation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_send_message_api_v1_chat_conversations__conversation_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_rename_conversation_api_v1_chat_conversations__conversation_id__title_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationTitle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_delete_document_api_v1_documents__doc_id__delete: {
         parameters: {
             query?: never;
@@ -3910,6 +4463,72 @@ export interface operations {
             };
         };
     };
+    v1_original_api_v1_documents__doc_id__original_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_create_pin_api_v1_documents__doc_id__pins_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_retry_all_stages_api_v1_documents__doc_id__pipeline_retry_all_post: {
         parameters: {
             query?: never;
@@ -3995,6 +4614,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReactionView"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reader_api_v1_documents__doc_id__reader_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentReader"];
                 };
             };
             /** @description Error */
@@ -4149,6 +4799,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_delete_pin_api_v1_pins__pin_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pin_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_update_pin_api_v1_pins__pin_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pin_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PinView"];
+                };
             };
             /** @description Error */
             default: {

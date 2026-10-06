@@ -2,25 +2,21 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.api.access_guards import (
-    check_owned_or_case_access,
     require_action_item_access,
     require_document_access,
-    require_pin_access,
 )
 from app.config import templates
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Document, User
 from app.models.enums import UserReactionType
-from app.repositories.document_pin import DocumentPinRepository
 from app.repositories.user_reaction import UserReactionRepository
 from app.services.case_dashboard_service import summary_bullets_from_ai_summary
-from app.services.hud_context import build_hud_context
 from app.services.pipeline_status import stages_dict
 from app.services.triage_retry import dispatch_pipeline_retry
 
@@ -41,49 +37,6 @@ async def delete_document(
     if not DocumentService(db).delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
     return HTMLResponse("")
-
-
-@router.get("/document/{doc_id}")
-async def document_detail(
-    request: Request,
-    doc_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-
-    doc = (
-        db.query(Document)
-        .options(joinedload(Document.proceeding))
-        .filter(Document.id == doc_id)
-        .first()
-    )
-    if not doc or not check_owned_or_case_access(
-        db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=False
-    ):
-        return templates.TemplateResponse(
-            request,
-            "errors/404.html",
-            {"message": f"Document {doc_id} not found"},
-            status_code=404,
-        )
-
-    if request.headers.get("hx-request"):
-        ctx = build_hud_context(db, doc, mode="read", context="embedded")
-        return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
-    # Full-page navigations: case docs redirect to the canonical URL (which
-    # renders pages/document.html). Triage docs render it directly since they
-    # have no canonical /cases/… URL yet.
-    if not doc.case_id or doc.case_id == "_TRIAGE":
-        from app.helpers import render_page
-
-        ctx = build_hud_context(db, doc, mode="read")
-        ctx["context"] = "standalone"
-        ctx["case_id"] = "_TRIAGE"
-        return render_page(request, "pages/document.html", db=db, **ctx)
-    return RedirectResponse(
-        url=f"/cases/{doc.case_id}/document/{doc.id}", status_code=302
-    )
 
 
 @router.post("/document/{doc_id}/reaction")
@@ -385,63 +338,6 @@ def _lock_row_for_retry(doc_id: int, db: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/document/{doc_id}/pin")
-async def create_pin(
-    request: Request,
-    doc_id: int,
-    passage_id: str = Form(...),
-    note: str | None = Form(None),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    doc: Document = Depends(require_document_access(edit=True)),
-):
-    repo = DocumentPinRepository(db)
-    pin = repo.create(doc_id, passage_id, note, user_id=user.id)
-    db.commit()
-    db.refresh(pin)
-
-    pins = repo.get_by_document(doc_id)
-    passage_pin_counts: dict[str, int] = {}
-    for p in pins:
-        passage_pin_counts[p.passage_id] = passage_pin_counts.get(p.passage_id, 0) + 1
-
-    return templates.TemplateResponse(
-        request,
-        "partials/hud/_pin_card.html",
-        {"pin": pin, "passage_pin_counts": passage_pin_counts},
-    )
-
-
-@router.patch("/pin/{pin_id}")
-async def update_pin(
-    pin_id: int,
-    note: str | None = Form(None),
-    db: Session = Depends(get_db),
-    pin=Depends(require_pin_access(edit=True)),
-):
-    repo = DocumentPinRepository(db)
-    repo.update_note(pin_id, note)
-    db.commit()
-    return HTMLResponse("", status_code=204)
-
-
-@router.delete("/pin/{pin_id}")
-async def delete_pin(
-    pin_id: int,
-    db: Session = Depends(get_db),
-    pin=Depends(require_pin_access(edit=True)),
-):
-    repo = DocumentPinRepository(db)
-    repo.delete(pin_id)
-    db.commit()
-    return HTMLResponse("", status_code=200)
-
-
-# ---------------------------------------------------------------------------
-# Original file — serve raw stored file in a new tab.
-# ---------------------------------------------------------------------------
-
-
 @router.patch("/action-item/{item_id}/status")
 async def update_action_item_status(
     request: Request,
@@ -462,42 +358,3 @@ async def update_action_item_status(
 
     db.commit()
     return HTMLResponse(status_code=204, content="")
-
-
-@router.get("/document/{doc_id}/original")
-async def document_original(
-    doc_id: int,
-    db: Session = Depends(get_db),
-    doc: Document = Depends(require_document_access()),
-):
-    from app.config import DATA_DIR
-    from app.core.paths import resolve_storage_path
-
-    if not doc.file_path:
-        raise HTTPException(
-            status_code=404, detail="No original file stored for this document"
-        )
-
-    # Defense-in-depth: refuse to serve anything outside DATA_DIR even if the
-    # stored file_path were ever attacker-influenced (compromised task,
-    # malicious migration, future SQLi).
-    resolved = resolve_storage_path(doc.file_path).resolve()
-    data_root = DATA_DIR.resolve()
-    if not str(resolved).startswith(str(data_root) + "/") and resolved != data_root:
-        raise HTTPException(status_code=404, detail="Original file not found on disk")
-
-    if not resolved.exists():
-        raise HTTPException(status_code=404, detail="Original file not found on disk")
-
-    if resolved.suffix.lower() == ".pdf":
-        return FileResponse(
-            path=str(resolved),
-            filename=resolved.name,
-            media_type="application/pdf",
-            content_disposition_type="inline",
-        )
-    return FileResponse(
-        path=str(resolved),
-        filename=resolved.name,
-        media_type="application/octet-stream",
-    )

@@ -27,6 +27,12 @@
   --warning: #fbbf24;
   --success: #34d399;
   --info: #38bdf8;
+  --mark-bg: rgb(2 132 199 / 0.2);
+  --mark-fg: #bae6fd;
+  --mark-ring: rgb(56 189 248 / 0.35);
+  --claim-bg: rgb(245 158 11 / 0.2);
+  --claim-fg: #fde68a;
+  --claim-ring: rgb(245 158 11 / 0.35);
   color-scheme: dark;
 }
 
@@ -53,6 +59,12 @@
   --warning: #a1791a;
   --success: #3f9b6e;
   --info: #0369a1;
+  --mark-bg: #e0f2fe;
+  --mark-fg: #075985;
+  --mark-ring: #7dd3fc;
+  --claim-bg: #fef3c7;
+  --claim-fg: #92400e;
+  --claim-ring: #fcd34d;
   color-scheme: light;
 }
 
@@ -134,4 +146,114 @@
     'wght' 400,
     'GRAD' 0,
     'opsz' 24;
+}
+
+/* Document reader: the server renders markdown with <mark> highlights
+   (app/main.py render_highlighted); the SPA only styles them. */
+.reader {
+  font-size: calc(14px * var(--reader-zoom, 1));
+  line-height: 1.7;
+  color: var(--ink);
+}
+.reader h1,
+.reader h2,
+.reader h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+}
+.reader h1 {
+  font-size: 1.35em;
+}
+.reader h2 {
+  font-size: 1.2em;
+}
+.reader h3 {
+  font-size: 1.05em;
+}
+.reader p,
+.reader ul,
+.reader ol,
+.reader blockquote,
+.reader table {
+  margin: 0 0 0.9em;
+}
+.reader ul,
+.reader ol {
+  padding-left: 1.4em;
+}
+.reader ul {
+  list-style: disc;
+}
+.reader ol {
+  list-style: decimal;
+}
+.reader blockquote {
+  border-left: 2px solid var(--line3);
+  padding-left: 0.9em;
+  color: var(--ink2);
+}
+.reader table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.reader th,
+.reader td {
+  border: 1px solid var(--line2);
+  padding: 0.3em 0.6em;
+  vertical-align: top;
+}
+.reader a {
+  color: var(--tealink);
+  text-decoration: underline;
+}
+.reader hr {
+  border: 0;
+  border-top: 1px solid var(--line2);
+  margin: 1.4em 0;
+}
+.reader .hud-mark {
+  background: var(--mark-bg);
+  color: var(--mark-fg);
+  border-radius: 3px;
+  padding: 0 2px;
+  box-shadow: 0 0 0 1px var(--mark-ring);
+  cursor: pointer;
+  scroll-margin: 40vh;
+}
+.reader .hud-mark--claim {
+  background: var(--claim-bg);
+  color: var(--claim-fg);
+  box-shadow: 0 0 0 1px var(--claim-ring);
+}
+.reader .hud-mark.is-active {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.reader .hud-claim-chip {
+  font-size: 0.75em;
+  margin-left: 2px;
+  color: var(--claim-fg);
+  text-decoration: none;
+}
+::highlight(find) {
+  background: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: inherit;
+}
+::highlight(find-current) {
+  background: var(--warning);
+  color: #000;
+}
+.hud-mark-flash {
+  animation: passage-focus 600ms ease-out both;
+}
+@keyframes passage-focus {
+  0% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 1px var(--mark-ring);
+  }
 }

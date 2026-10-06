@@ -57,7 +57,8 @@ test('⌘K opens the palette and search results navigate', async () => {
   await user.type(input, 'Klage')
   const hit = await screen.findByRole('button', { name: /Klageerwiderung/ })
   await user.click(hit)
-  expect(navigation.leaveTo).toHaveBeenCalledWith('/document/2211')
+  // Documents are an SPA route now: client-side navigation, no full page load.
+  expect(navigation.leaveTo).not.toHaveBeenCalled()
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
   await user.keyboard('{Meta>}k{/Meta}')

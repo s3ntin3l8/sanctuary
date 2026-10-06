@@ -25,14 +25,13 @@ _ID_PARAM_RE = re.compile(r"\{([a-zA-Z_]*_id)\}")
 _ALLOWLIST: dict[str, str] = {
     # Inline access_service.can_view_case checks (custom queries/responses
     # that don't fit the Depends-based guard shape) — see the route bodies.
-    "GET /document/{doc_id}": "inline check_owned_or_case_access (custom joinedload query)",
     "GET /cases/{case_id}/brief": "inline access_service.can_view_case",
     "GET /cases/{case_id}": "inline access_service.can_view_case",
     "GET /cases/{case_id}/document/{doc_id}/hud": "inline access_service.can_view_case",
-    "GET /cases/{case_id}/document/{doc_id}": "inline access_service.can_view_case",
     # SPA shell only — the page is static HTML; the data call
     # (/api/v1/slicing/{batch_id}) carries the owner check.
     "GET /ingest/slice/{batch_id}": "SPA index; guarded by the v1 data route",
+    "GET /document/{doc_id}": "SPA index; guarded by the v1 data route",
     # case_sharing.py's own inline owner-or-admin guard (stricter than the
     # generic edit guard: only the owner or an admin may manage shares).
     "GET /cases/{case_id}/sharing": "inline _require_owner_or_admin",

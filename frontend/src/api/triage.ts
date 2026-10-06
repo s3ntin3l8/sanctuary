@@ -209,10 +209,14 @@ export function useDocumentReview(docId: number | null) {
   })
 }
 
+/**
+ * Patch every cached view of this document: the review (`['document', id]`)
+ * and the reader (`['document', id, 'reader']`), which extends the review.
+ */
 function useDocPatch(docId: number) {
   const queryClient = useQueryClient()
   return (update: (prev: S['DocumentReview']) => S['DocumentReview']) =>
-    queryClient.setQueryData<S['DocumentReview']>(['document', docId], (prev) =>
+    queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
       prev ? update(prev) : prev,
     )
 }
@@ -223,7 +227,9 @@ export function useUpdateMetadata(docId: number) {
     mutationFn: (body) =>
       unwrap(api.PUT('/api/v1/documents/{doc_id}/metadata', { ...docPath(docId), body })),
     onSuccess: (view) => {
-      queryClient.setQueryData(['document', docId], view)
+      queryClient.setQueriesData<S['DocumentReview']>({ queryKey: ['document', docId] }, (prev) =>
+        prev ? { ...prev, ...view } : prev,
+      )
       queryClient.invalidateQueries({ queryKey: KEY })
     },
   })

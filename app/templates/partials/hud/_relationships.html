@@ -30,13 +30,10 @@
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
       <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">{{ arrow }}</span>
       <div class="flex-1 min-w-0">
-        <button {% if context != 'overlay' %}
-                onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
-                {% else %}
+        <button
                 hx-get="{{ request.app.url_path_for('case_document_hud', case_id=doc.case_id, doc_id=rel.id) }}"
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
-                {% endif %}
                 class="text-left truncate block text-primary hover:underline transition-colors cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
         <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
       </div>
@@ -67,13 +64,10 @@
         class="flex items-start gap-2 text-[11px] {% if is_ai and mode == 'review' %}bg-surface-container rounded-lg px-2 py-1.5{% endif %}">
       <span class="font-mono text-[9px] font-bold shrink-0 mt-0.5 text-outline">{{ arrow }}</span>
       <div class="flex-1 min-w-0">
-        <button {% if context != 'overlay' %}
-                onclick="window.location.href='/cases/{{ doc.case_id }}/document/{{ rel.id }}'"
-                {% else %}
+        <button
                 hx-get="{{ request.app.url_path_for('case_document_hud', case_id=doc.case_id, doc_id=rel.id) }}"
                 hx-target="#case-dashboard-hud"
                 hx-swap="innerHTML"
-                {% endif %}
                 class="text-left truncate block text-primary hover:underline transition-colors cursor-pointer w-full">{{ rel.title | truncate(40, true) }}</button>
         <p class="text-[9px] font-mono text-on-surface-variant">{{ rel.rel_type.replace('_', ' ') }}</p>
       </div>

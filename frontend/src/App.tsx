@@ -7,6 +7,7 @@ import { AdminUsersPage } from './features/admin/AdminUsersPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SignupPage } from './features/auth/SignupPage'
 import { CasesPage } from './features/cases/CasesPage'
+import { DocumentPage } from './features/documents/DocumentPage'
 import { HomePage } from './features/home/HomePage'
 import { AccountPage } from './features/settings/AccountPage'
 import { AiPage } from './features/settings/AiPage'
@@ -33,6 +34,7 @@ const router = createBrowserRouter([
       { path: '/cases', element: <CasesPage /> },
       { path: '/triage', element: <TriagePage /> },
       { path: '/ingest/slice/:batchId', element: <SlicingPage /> },
+      { path: '/document/:id', element: <DocumentPage /> },
       {
         element: <SettingsLayout />,
         children: [

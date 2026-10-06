@@ -1,6 +1,5 @@
-{# Document HUD container — one template, three contexts, two modes.
-   context ∈ {overlay, standalone, embedded}
-   mode    ∈ {read, review}
+{# Document HUD overlay (case dashboard slide-in). The full-screen reader is
+   the SPA route /document/{id}.
 
    Required context vars:
      doc, context, mode, case_id,
@@ -46,7 +45,7 @@
     {% endif %}
 
     {# Expand to full-screen #}
-    <a href="{{ request.app.url_path_for('case_document_fullscreen', case_id=case_id, doc_id=doc.id) }}"
+    <a href="/document/{{ doc.id }}"
        class="px-1.5 py-0.5 rounded text-[11px] hover:bg-surface-container-high transition-colors"
        style="color:var(--color-on-surface-variant);"
        title="Open full text (⇱)">⇱</a>
@@ -100,53 +99,4 @@
 </div>
 {# Doc chat drawer — mounts in caseDashboard scope using docChatOpen #}
 {% include "partials/hud/_chat_drawer.html" %}
-
-{# ── STANDALONE (full-screen reader) ─────────────────────────────────────── #}
-{% elif context == 'standalone' %}
-<div class="flex-1 flex flex-col overflow-hidden" x-data="hudReader()" data-hud-root data-hud-context="standalone"
-     :style="docChatOpen ? 'padding-right: 400px; transition: padding 0.2s ease-out;' : 'padding-right: 0; transition: padding 0.2s ease-out;'"
-     data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
-     data-prev-doc-id="{{ prev_doc_id or '' }}" data-next-doc-id="{{ next_doc_id or '' }}"
-     data-parent-doc-id="{{ doc.parent_id or '' }}"
-     data-first-child-doc-id="{{ first_child_id or '' }}"
-     data-bundle-prev="{{ bundle_prev_id or '' }}"
-     data-bundle-next="{{ bundle_next_id or '' }}">
-  {% include "partials/hud/_top_bar.html" %}
-  <div class="flex-1 flex overflow-hidden min-h-0 hud-body-rail">
-    {# Body column #}
-    <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container/20">
-      {% include "partials/hud/_body.html" %}
-    </div>
-    {# Right rail #}
-    <div class="w-[340px] flex-none border-l border-outline-variant/10 overflow-y-auto custom-scrollbar bg-surface-container-low"
-         id="hud-rail-{{ doc.id }}">
-      {% include "partials/hud/_rail.html" %}
-      {% include "partials/hud/_ask_ai.html" %}
-    </div>
-  </div>
-  {% include "partials/hud/_chat_drawer.html" %}
-</div>
-
-{# ── EMBEDDED (triage right pane) ────────────────────────────────────────── #}
-{% elif context == 'embedded' %}
-<div class="flex-1 flex overflow-hidden min-h-0" x-data="hudReader()" data-hud-root data-hud-context="embedded"
-      data-doc-id="{{ doc.id }}" data-case-id="{{ case_id }}"
-      data-prev-doc-id="{{ prev_doc_id or '' }}" data-next-doc-id="{{ next_doc_id or '' }}"
-      data-parent-doc-id="{{ doc.parent_id or '' }}"
-      data-first-child-doc-id="{{ first_child_id or '' }}"
-      data-bundle-prev="{{ bundle_prev_id or '' }}"
-      data-bundle-next="{{ bundle_next_id or '' }}">  {# Body column #}
-  <div class="flex-1 overflow-y-auto custom-scrollbar bg-surface-container/20">
-    {% include "partials/hud/_body.html" %}
-  </div>
-  {# Right rail #}
-  <div class="w-[340px] flex-none border-l border-outline-variant/10 overflow-y-auto custom-scrollbar bg-surface-container-low"
-       id="hud-rail-{{ doc.id }}">
-    {% include "partials/hud/_rail.html" %}
-    {% include "partials/hud/_ask_ai.html" %}
-  </div>
-  {% include "partials/hud/_chat_drawer.html" %}
-</div>
 {% endif %}
-
-{% include "partials/hud/_shortcuts.html" %}

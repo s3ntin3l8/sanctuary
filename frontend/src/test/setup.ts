@@ -10,3 +10,16 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
 })
+
+// jsdom has no layout: stub the observers and scroll APIs the reader uses.
+class NoopObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return []
+  }
+}
+// Assigned directly (not vi.stubGlobal) so `unstubGlobals` keeps them across tests.
+Object.assign(globalThis, { IntersectionObserver: NoopObserver, ResizeObserver: NoopObserver })
+Element.prototype.scrollIntoView ??= function scrollIntoView() {}

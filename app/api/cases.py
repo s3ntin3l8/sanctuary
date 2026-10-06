@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.api.access_guards import require_case_access
 from app.config import templates
@@ -222,43 +222,6 @@ async def case_document_hud(
     ctx["context"] = "overlay"
     ctx["case_id"] = case_id
     return templates.TemplateResponse(request, "partials/hud/_container.html", ctx)
-
-
-@router.get("/{case_id}/document/{doc_id}")
-async def case_document_fullscreen(
-    request: Request,
-    case_id: str,
-    doc_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Full-screen document reader at /cases/:case_id/document/:doc_id."""
-    from app.helpers import render_page
-    from app.services import access_service
-
-    doc = (
-        db.query(Document)
-        .options(
-            joinedload(Document.proceeding),
-            joinedload(Document.children),
-        )
-        .filter(Document.id == doc_id)
-        .first()
-    )
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if (
-        not doc
-        or doc.case_id != case_id
-        or not access_service.can_view_case(db, user, case)
-    ):
-        from fastapi.responses import RedirectResponse
-
-        return RedirectResponse(f"/cases/{case_id}", status_code=302)
-
-    ctx = build_hud_context(db, doc, mode="read")
-    ctx["context"] = "standalone"
-    ctx["case_id"] = case_id
-    return render_page(request, "pages/document.html", db=db, **ctx)
 
 
 @router.post("/{case_id}/confirm-draft")

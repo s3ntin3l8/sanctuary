@@ -89,7 +89,7 @@ def test_document_original_404_for_non_owner(auth_enabled, db_session, two_users
     db_session.commit()
 
     client = _login("b@example.com")
-    resp = client.get(f"/document/{doc.id}/original")
+    resp = client.get(f"/api/v1/documents/{doc.id}/original")
     assert resp.status_code == 404
 
 
@@ -302,14 +302,14 @@ def test_conversation_404_for_non_owner(auth_enabled, db_session, two_users):
 
     client_a = _login("a@example.com")
     create_resp = client_a.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "document", "scope_id": str(doc.id)},
     )
     assert create_resp.status_code == 200
     conv_id = create_resp.json()["id"]
 
     client_b = _login("b@example.com")
-    resp = client_b.get(f"/api/chat/conversations/{conv_id}")
+    resp = client_b.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.status_code == 404
 
 
@@ -327,7 +327,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     client_a = _login("a@example.com")
     resp_a = client_a.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert resp_a.status_code == 200
@@ -335,7 +335,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     client_b = _login("b@example.com")
     resp_b = client_b.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert resp_b.status_code == 200
@@ -343,7 +343,7 @@ def test_chat_conversations_are_not_shared_between_users(
 
     assert conv_a_id != conv_b_id
     # B cannot read A's conversation directly either.
-    assert client_b.get(f"/api/chat/conversations/{conv_a_id}").status_code == 404
+    assert client_b.get(f"/api/v1/chat/conversations/{conv_a_id}").status_code == 404
 
 
 # --- worker_queue.py -----------------------------------------------------------
@@ -574,17 +574,17 @@ def test_conversation_inaccessible_after_case_share_revoked(
 
     client_b = _login("b@example.com")
     create_resp = client_b.post(
-        "/api/chat/conversations",
+        "/api/v1/chat/conversations",
         json={"scope_type": "case", "scope_id": case.id},
     )
     assert create_resp.status_code == 200
     conv_id = create_resp.json()["id"]
-    assert client_b.get(f"/api/chat/conversations/{conv_id}").status_code == 200
+    assert client_b.get(f"/api/v1/chat/conversations/{conv_id}").status_code == 200
 
     db_session.delete(db_session.get(CaseShare, share.id))
     db_session.commit()
 
-    resp = client_b.get(f"/api/chat/conversations/{conv_id}")
+    resp = client_b.get(f"/api/v1/chat/conversations/{conv_id}")
     assert resp.status_code == 404
 
 

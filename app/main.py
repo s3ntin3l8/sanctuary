@@ -1172,10 +1172,9 @@ from app.api import (
 from app.api.auth import router as auth_router
 from app.api.auth_oidc import router as auth_oidc_router
 from app.api.case_sharing import router as case_sharing_router
-from app.api.chat import router as chat_router
 from app.api.claims import router as claims_router
 from app.api.settings_page import router as settings_page_router
-from app.api.triage_pages import router as triage_pages_router
+from app.api.spa_pages import router as spa_pages_router
 from app.api.user_settings import router as user_settings_router
 from app.api.v1 import router as api_v1_router
 
@@ -1183,11 +1182,10 @@ app.include_router(api_v1_router)
 app.include_router(auth_router)
 app.include_router(auth_oidc_router)
 app.include_router(case_sharing_router)
-app.include_router(chat_router)
 app.include_router(user_settings_router)
 app.include_router(claims_router)
 app.include_router(home_router)
-app.include_router(triage_pages_router)
+app.include_router(spa_pages_router)
 app.include_router(costs_router)
 app.include_router(documents_router)
 app.include_router(cases.router)
