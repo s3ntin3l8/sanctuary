@@ -1834,6 +1834,164 @@
         "title": "ConfirmedCase",
         "type": "object"
       },
+      "ContactCase": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status"
+        ],
+        "title": "ContactCase",
+        "type": "object"
+      },
+      "ContactDocument": {
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "case_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Title"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "ingest_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Date"
+          },
+          "issued_date": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued Date"
+          },
+          "legal_significance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Significance"
+          },
+          "originator_type": {
+            "$ref": "#/components/schemas/OriginatorType"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "case_id",
+          "case_title",
+          "originator_type",
+          "issued_date",
+          "ingest_date",
+          "legal_significance"
+        ],
+        "title": "ContactDocument",
+        "type": "object"
+      },
+      "ContactView": {
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/ContactCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "document_count": {
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/ContactDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "last_contact": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Contact"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "document_count",
+          "case_count",
+          "last_contact",
+          "cases",
+          "documents"
+        ],
+        "title": "ContactView",
+        "type": "object"
+      },
       "ConversationDetail": {
         "properties": {
           "id": {
@@ -1955,6 +2113,67 @@
         "title": "ConversationTitle",
         "type": "object"
       },
+      "CostAlert": {
+        "properties": {
+          "case_title": {
+            "title": "Case Title",
+            "type": "string"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostRow"
+          },
+          "open_amount": {
+            "title": "Open Amount",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cost",
+          "case_title",
+          "open_amount"
+        ],
+        "title": "CostAlert",
+        "type": "object"
+      },
+      "CostCaseGroup": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "costs": {
+            "items": {
+              "$ref": "#/components/schemas/CostRow"
+            },
+            "title": "Costs",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CaseStatus"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/FinancialsSummary"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "can_edit",
+          "summary",
+          "costs"
+        ],
+        "title": "CostCaseGroup",
+        "type": "object"
+      },
       "CostCategory": {
         "description": "German legal cost categories (Kostenkategorien).",
         "enum": [
@@ -1969,6 +2188,131 @@
         ],
         "title": "CostCategory",
         "type": "string"
+      },
+      "CostCreate": {
+        "description": "A manually booked cost; gross is derived from net and VAT on the server.",
+        "properties": {
+          "amount_net": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Net",
+            "type": "number"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CostCategory"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "gebuehren_faktor": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gebuehren Faktor"
+          },
+          "is_reimbursable": {
+            "default": true,
+            "title": "Is Reimbursable",
+            "type": "boolean"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "proceeding_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proceeding Id"
+          },
+          "rvg_position": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rvg Position"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CostStatus",
+            "default": "offen"
+          },
+          "streitwert": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streitwert"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "vat_rate": {
+            "default": 0.19,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Vat Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "category",
+          "title",
+          "amount_net"
+        ],
+        "title": "CostCreate",
+        "type": "object"
       },
       "CostFieldUpdate": {
         "properties": {
@@ -2018,6 +2362,65 @@
               }
             ]
           },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "gebuehren_faktor": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gebuehren Faktor"
+          },
+          "is_reimbursable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Reimbursable"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
           "status": {
             "anyOf": [
               {
@@ -2027,6 +2430,18 @@
                 "type": "null"
               }
             ]
+          },
+          "streitwert": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streitwert"
           },
           "title": {
             "anyOf": [
@@ -2118,6 +2533,24 @@
         "title": "CostPromotion",
         "type": "object"
       },
+      "CostReimburse": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "title": "CostReimburse",
+        "type": "object"
+      },
       "CostRow": {
         "properties": {
           "amount_gross": {
@@ -2150,6 +2583,14 @@
             ],
             "title": "Amount Reimbursed"
           },
+          "auto_created": {
+            "title": "Auto Created",
+            "type": "boolean"
+          },
+          "case_id": {
+            "title": "Case Id",
+            "type": "string"
+          },
           "category": {
             "$ref": "#/components/schemas/CostCategory"
           },
@@ -2164,6 +2605,17 @@
               }
             ],
             "title": "Due At"
+          },
+          "gebuehren_faktor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gebuehren Faktor"
           },
           "id": {
             "title": "Id",
@@ -2191,6 +2643,29 @@
               }
             ],
             "title": "Issued At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
           },
           "proceeding_id": {
             "anyOf": [
@@ -2228,6 +2703,17 @@
           "status": {
             "$ref": "#/components/schemas/CostStatus"
           },
+          "streitwert": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streitwert"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -2246,6 +2732,7 @@
         },
         "required": [
           "id",
+          "case_id",
           "proceeding_id",
           "title",
           "category",
@@ -2259,6 +2746,11 @@
           "is_reimbursable",
           "issued_at",
           "due_at",
+          "paid_at",
+          "streitwert",
+          "gebuehren_faktor",
+          "notes",
+          "auto_created",
           "source_document_id"
         ],
         "title": "CostRow",
@@ -2432,6 +2924,43 @@
         ],
         "title": "CostStatus",
         "type": "string"
+      },
+      "CostsOverview": {
+        "description": "Every cost the caller may see, grouped by case, with the ledger totals.",
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/CostCaseGroup"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "due_soon": {
+            "items": {
+              "$ref": "#/components/schemas/CostAlert"
+            },
+            "title": "Due Soon",
+            "type": "array"
+          },
+          "overdue": {
+            "items": {
+              "$ref": "#/components/schemas/CostAlert"
+            },
+            "title": "Overdue",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/FinancialsSummary"
+          }
+        },
+        "required": [
+          "summary",
+          "overdue",
+          "due_soon",
+          "cases"
+        ],
+        "title": "CostsOverview",
+        "type": "object"
       },
       "CoverUpdate": {
         "properties": {
@@ -9249,6 +9778,58 @@
         ]
       }
     },
+    "/api/v1/cases/{case_id}/costs": {
+      "post": {
+        "operationId": "v1_create_cost_api_v1_cases__case_id__costs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostRow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Create Cost",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
     "/api/v1/cases/{case_id}/dismiss-close": {
       "post": {
         "description": "Reject an AI close suggestion: clear the flag, keep the status.",
@@ -10413,6 +10994,51 @@
         ]
       }
     },
+    "/api/v1/contacts": {
+      "get": {
+        "description": "Documents whose sender contains ``name``, limited to the caller's cases.",
+        "operationId": "v1_contact_api_v1_contacts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 300,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
     "/api/v1/cost-signals/{signal_id}/auto-detect-role": {
       "post": {
         "description": "Ask the local model which side the ruling favours; leaves the allocation alone on 'unknown'.",
@@ -10490,6 +11116,38 @@
           }
         },
         "summary": "V1 Set Client Role",
+        "tags": [
+          "costs"
+        ]
+      }
+    },
+    "/api/v1/costs": {
+      "get": {
+        "description": "The ledger across every case the caller may see.",
+        "operationId": "v1_costs_overview_api_v1_costs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostsOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Costs Overview",
         "tags": [
           "costs"
         ]
@@ -10591,6 +11249,7 @@
     },
     "/api/v1/costs/{cost_id}/reimburse": {
       "post": {
+        "description": "Book a reimbursement (\u00a791 ZPO); the full gross unless an amount is given.",
         "operationId": "v1_mark_reimbursed_api_v1_costs__cost_id__reimburse_post",
         "parameters": [
           {
@@ -10603,6 +11262,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CostReimburse"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -11577,6 +12253,7 @@
     },
     "/api/v1/search": {
       "get": {
+        "description": "Palette and results page; ``limit`` is split across documents, cases and contacts.",
         "operationId": "v1_search_api_v1_search_get",
         "parameters": [
           {
@@ -11588,6 +12265,20 @@
               "minLength": 2,
               "title": "Q",
               "type": "string"
+            }
+          },
+          {
+            "description": "Across all result kinds",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "Across all result kinds",
+              "maximum": 120,
+              "minimum": 6,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],

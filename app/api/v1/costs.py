@@ -4,19 +4,135 @@ refetches the case financials for the derived totals."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
-from sqlalchemy.orm import Session
+from datetime import timedelta
 
-from app.api.access_guards import require_cost_access, require_cost_signal_access
-from app.api.v1.case_detail import _cost_row
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy.orm import Session, joinedload
+
+from app.api.access_guards import (
+    require_case_access,
+    require_cost_access,
+    require_cost_signal_access,
+)
+from app.api.v1.case_detail import _cost_row, summary_of
 from app.api.v1.errors import ApiError
-from app.dependencies import get_db
-from app.models.database import CostSignal, LegalCost
-from app.schemas.case_detail import ClientRoleUpdate, CostFieldUpdate, CostRow
+from app.core.timezone import now_utc
+from app.dependencies import get_current_user, get_db
+from app.models.database import Case, CostSignal, LegalCost, Proceeding, User
+from app.models.enums import CostStatus
+from app.schemas.case_detail import (
+    ClientRoleUpdate,
+    CostAlert,
+    CostCaseGroup,
+    CostCreate,
+    CostFieldUpdate,
+    CostReimburse,
+    CostRow,
+    CostsOverview,
+)
+from app.services import access_service
 from app.services.case_service import recompute_total_cost_exposure
 from app.services.cost_service import CostService, _derive_status
 
 router = APIRouter(tags=["costs"])
+
+_SETTLED = (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
+
+
+@router.get("/costs", response_model=CostsOverview)
+def costs_overview(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """The ledger across every case the caller may see."""
+    visible = access_service.visible_case_ids(db, user)
+    editable = access_service.editable_case_ids(db, user)
+    q = db.query(LegalCost).options(joinedload(LegalCost.case))
+    if visible is not None:
+        q = q.filter(LegalCost.case_id.in_(visible))
+    costs = q.order_by(
+        LegalCost.issued_at.desc().nullslast(), LegalCost.id.desc()
+    ).all()
+    by_case: dict[str, list[LegalCost]] = {}
+    for c in costs:
+        by_case.setdefault(c.case_id, []).append(c)
+    cases = (
+        db.query(Case).filter(Case.id.in_(by_case)).order_by(Case.title.asc()).all()
+        if by_case
+        else []
+    )
+    now = now_utc()
+    soon = now + timedelta(days=7)
+    overdue: list[CostAlert] = []
+    due_soon: list[CostAlert] = []
+    titles = {c.id: c.title for c in cases}
+    for c in costs:
+        if c.status in _SETTLED or c.due_at is None:
+            continue
+        alert = CostAlert(
+            cost=_cost_row(c),
+            case_title=titles.get(c.case_id, c.case_id),
+            open_amount=max((c.amount_gross or 0) - (c.amount_paid or 0), 0.0),
+        )
+        if c.due_at < now:
+            overdue.append(alert)
+        elif c.due_at <= soon:
+            due_soon.append(alert)
+    overdue.sort(key=lambda a: a.cost.due_at or now)
+    due_soon.sort(key=lambda a: a.cost.due_at or now)
+    return CostsOverview(
+        summary=summary_of(costs, sum(c.total_cost_exposure or 0 for c in cases)),
+        overdue=overdue,
+        due_soon=due_soon,
+        cases=[
+            CostCaseGroup(
+                id=case.id,
+                title=case.title,
+                status=case.status,
+                can_edit=editable is None or case.id in editable,
+                summary=summary_of(by_case[case.id], case.total_cost_exposure or 0),
+                costs=[_cost_row(c) for c in by_case[case.id]],
+            )
+            for case in cases
+        ],
+    )
+
+
+@router.post("/cases/{case_id}/costs", response_model=CostRow, status_code=201)
+def create_cost(
+    body: CostCreate,
+    db: Session = Depends(get_db),
+    case: Case = Depends(require_case_access(edit=True)),
+):
+    if body.proceeding_id is not None and (
+        not db.query(Proceeding.id)
+        .filter(Proceeding.id == body.proceeding_id, Proceeding.case_id == case.id)
+        .first()
+    ):
+        raise ApiError(
+            422, "bad_proceeding", "Proceeding does not belong to this case."
+        )
+    cost = CostService(db).create_cost(
+        case_id=case.id,
+        category=body.category,
+        title=body.title,
+        amount_net=body.amount_net,
+        amount_gross=round(body.amount_net * (1 + body.vat_rate), 2),
+        status=body.status,
+        vat_rate=body.vat_rate,
+        rvg_position=body.rvg_position,
+        streitwert=body.streitwert,
+        gebuehren_faktor=body.gebuehren_faktor,
+        notes=body.notes,
+        is_reimbursable=body.is_reimbursable,
+        issued_at=body.issued_at,
+        due_at=body.due_at,
+        proceeding_id=body.proceeding_id,
+    )
+    db.commit()
+    db.refresh(cost)
+    recompute_total_cost_exposure(case.id, db)
+    return _cost_row(cost)
 
 
 def _refreshed(db: Session, cost: LegalCost) -> CostRow:
@@ -46,10 +162,13 @@ def mark_unpaid(
 
 @router.post("/costs/{cost_id}/reimburse", response_model=CostRow)
 def mark_reimbursed(
+    body: CostReimburse | None = None,
     db: Session = Depends(get_db),
     cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
-    CostService(db).mark_as_reimbursed(cost.id, cost.amount_gross)
+    """Book a reimbursement (§91 ZPO); the full gross unless an amount is given."""
+    amount = body.amount if body and body.amount is not None else cost.amount_gross
+    CostService(db).mark_as_reimbursed(cost.id, amount)
     return _refreshed(db, cost)
 
 
@@ -89,6 +208,16 @@ def update_cost(
     if "amount_reimbursed" in data:
         cost.amount_reimbursed = data["amount_reimbursed"]
         _derive_status(cost)
+    for field in (
+        "streitwert",
+        "gebuehren_faktor",
+        "issued_at",
+        "due_at",
+        "notes",
+        "is_reimbursable",
+    ):
+        if field in data:
+            setattr(cost, field, data[field])
     return _refreshed(db, cost)
 
 

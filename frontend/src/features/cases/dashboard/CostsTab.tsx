@@ -1,13 +1,8 @@
 import { Link } from 'react-router'
 
-import {
-  type CaseDetail,
-  type CostAction,
-  useCostAction,
-  useFinancials,
-  useSignalRole,
-} from '../../../api/caseDetail'
+import { type CaseDetail, useFinancials, useSignalRole } from '../../../api/caseDetail'
 import type { Schemas } from '../../../api/client'
+import { type CostAction, useLedgerAction } from '../../../api/costs'
 import { formatEur, formatShortDate } from '../../../format'
 import { Badge } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'
@@ -20,7 +15,7 @@ type CostRow = Schemas['CostRow']
 export function CostsTab({ detail }: { detail: CaseDetail }) {
   const toast = useToast()
   const query = useFinancials(detail.id, true)
-  const act = useCostAction(detail.id)
+  const act = useLedgerAction()
   const role = useSignalRole(detail.id)
   const fin = query.data
   if (!fin) return <QueryState error={query.error} pending={query.isPending} />

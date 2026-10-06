@@ -249,10 +249,11 @@ def test_costs_list_is_scoped_per_user(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.get("/costs")
+    resp = client.get("/api/v1/costs")
     assert resp.status_code == 200
-    assert "Cost owned by A" in resp.text
-    assert "Cost owned by B" not in resp.text
+    titles = {c["title"] for g in resp.json()["cases"] for c in g["costs"]}
+    assert "Cost owned by A" in titles
+    assert "Cost owned by B" not in titles
 
 
 def test_create_cost_requires_edit_access_to_case(auth_enabled, db_session, two_users):
@@ -261,12 +262,11 @@ def test_create_cost_requires_edit_access_to_case(auth_enabled, db_session, two_
 
     client = _login("b@example.com")
     resp = client.post(
-        "/costs",
-        data={
-            "case_id": "PR5-COST-A",
+        "/api/v1/cases/PR5-COST-A/costs",
+        json={
             "category": CostCategory.GERICHTSKOSTEN.value,
             "title": "Injected cost",
-            "amount_net": "50",
+            "amount_net": 50,
         },
     )
     assert resp.status_code == 404

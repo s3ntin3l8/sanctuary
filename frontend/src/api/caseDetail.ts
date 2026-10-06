@@ -300,37 +300,6 @@ function useFinancialsInvalidate(caseId: string) {
   }
 }
 
-export type CostAction = 'pay' | 'unpay' | 'reimburse' | 'unreimburse'
-
-export function useCostAction(caseId: string) {
-  const invalidate = useFinancialsInvalidate(caseId)
-  return useMutation<S['CostRow'], ApiError, { costId: number; action: CostAction }>({
-    mutationFn: ({ costId, action }) => {
-      const params = { params: { path: { cost_id: costId } } }
-      switch (action) {
-        case 'pay':
-          return unwrap(api.POST('/api/v1/costs/{cost_id}/pay', params))
-        case 'unpay':
-          return unwrap(api.POST('/api/v1/costs/{cost_id}/unpay', params))
-        case 'reimburse':
-          return unwrap(api.POST('/api/v1/costs/{cost_id}/reimburse', params))
-        case 'unreimburse':
-          return unwrap(api.POST('/api/v1/costs/{cost_id}/unreimburse', params))
-      }
-    },
-    onSuccess: invalidate,
-  })
-}
-
-export function useUpdateCost(caseId: string) {
-  const invalidate = useFinancialsInvalidate(caseId)
-  return useMutation<S['CostRow'], ApiError, { costId: number } & S['CostFieldUpdate']>({
-    mutationFn: ({ costId, ...body }) =>
-      unwrap(api.PATCH('/api/v1/costs/{cost_id}', { params: { path: { cost_id: costId } }, body })),
-    onSuccess: invalidate,
-  })
-}
-
 export function useSignalRole(caseId: string) {
   const invalidate = useFinancialsInvalidate(caseId)
   return useMutation<

@@ -55,6 +55,7 @@ export function Shell() {
           badge={<CountBadge count={shell?.triage_count ?? 0} tone="danger" />}
         />
         <RailButton icon="folder_open" label="Cases" to="/cases" />
+        <RailButton icon="payments" label="Costs" to="/costs" />
         <div className="flex-1" />
         <RailButton
           icon={theme === 'dark' ? 'light_mode' : 'dark_mode'}

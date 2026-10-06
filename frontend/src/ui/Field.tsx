@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
 
-/** Label + control + hint, for controls that are not a plain text input. */
+/**
+ * Label + control + hint. Without `htmlFor` the control is wrapped by the
+ * label, so a single input/select/textarea child is associated implicitly.
+ */
 export function Field({
   label,
   hint,
@@ -12,15 +15,22 @@ export function Field({
   htmlFor?: string
   children: ReactNode
 }) {
+  const caption = (
+    <span className="text-[10px] font-bold tracking-[.1em] text-muted uppercase">{label}</span>
+  )
   return (
     <div>
-      <label
-        htmlFor={htmlFor}
-        className="text-[10px] font-bold tracking-[.1em] text-muted uppercase"
-      >
-        {label}
-      </label>
-      <div className="mt-1">{children}</div>
+      {htmlFor ? (
+        <>
+          <label htmlFor={htmlFor}>{caption}</label>
+          <div className="mt-1">{children}</div>
+        </>
+      ) : (
+        <label className="block">
+          {caption}
+          <div className="mt-1">{children}</div>
+        </label>
+      )}
       {hint && <p className="mt-1 text-[10px] text-muted">{hint}</p>}
     </div>
   )

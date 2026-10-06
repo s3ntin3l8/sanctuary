@@ -57,6 +57,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
             { key: 'home', icon: 'home', title: 'Home', run: () => go('/', true) },
             { key: 'triage', icon: 'inbox', title: 'Triage', run: () => go('/triage', true) },
             { key: 'cases', icon: 'folder_open', title: 'Cases', run: () => go('/cases', true) },
+            { key: 'costs', icon: 'payments', title: 'Costs', run: () => go('/costs', true) },
           ],
         },
         {
@@ -66,7 +67,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
               key: 'upload',
               icon: 'upload_file',
               title: 'Upload documents',
-              run: () => go('/upload'),
+              run: () => go('/triage?upload=1', true),
             },
             {
               key: 'theme',
@@ -110,7 +111,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
           key: `contact-${c.name}`,
           icon: 'person',
           title: c.name,
-          run: () => go(`/contacts/${encodeURIComponent(c.name)}`),
+          run: () => go(`/contacts?name=${encodeURIComponent(c.name)}`, true),
         })),
       },
     ].filter((g) => g.items.length > 0)
@@ -150,7 +151,8 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
                 e.preventDefault()
                 const item = flat[cursor]
                 if (item) item.run()
-                else if (debounced.length >= 2) go(`/search?q=${encodeURIComponent(debounced)}`)
+                else if (debounced.length >= 2)
+                  go(`/search?q=${encodeURIComponent(debounced)}`, true)
               }
             }}
             placeholder="Search cases, documents, contacts…"
