@@ -53,11 +53,15 @@ from playwright.sync_api import Page, expect
 pytestmark = pytest.mark.e2e
 
 
-def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
-    """Create a target Case and a triage Document via the live API.
+def _seed_doc_and_case(api_client, db_seed) -> tuple[str, str]:
+    """Create a target Case via the live API and a completed triage Document
+    directly in the database.
 
-    Returns (case_id, doc_id). Uses unique IDs to avoid collision with
-    leftover data from prior runs.
+    The document is seeded as a row, not uploaded: an upload dispatches the
+    AI pipeline, whose background stages keep rewriting ``pipeline_state``
+    (and in CI fail against an unreachable AI backend), so the row never
+    settles into a state that offers "Route". Upload itself is covered by
+    the API integration tests.
     """
     conn, cleanup = db_seed
     suffix = uuid.uuid4().hex[:6].upper()
@@ -74,61 +78,40 @@ def _seed_doc_and_case(api_client, db_seed) -> tuple[str, int]:
     )
     assert resp.status_code in (200, 303), f"Case create failed: {resp.status_code}"
 
-    upload = api_client.post(
-        "/api/v1/upload",
-        # Content includes the suffix (not just the filename) so re-runs
-        # against a persistent dev DB don't collide with a prior run's
-        # leftover doc on the content-hash duplicate check. Must be >= 30
-        # non-whitespace chars — is_valid_docling_output() (converters.py)
-        # rejects shorter content as a likely near-empty/placeholder OCR result.
-        files={
-            "files": (
-                f"e2e-confirm-{suffix}.txt",
-                f"This is a test document body for e2e confirm flow {suffix}.".encode(),
-                "text/plain",
-            )
-        },
-    )
-    assert upload.status_code == 200, f"Upload failed: {upload.status_code}"
-
-    list_resp = api_client.get("/api/v1/triage")
-    assert list_resp.status_code == 200
-    body = list_resp.text
-    marker = f"e2e-confirm-{suffix}"
-    assert marker in body, f"Uploaded doc not visible in triage queue (no {marker!r})"
-
-    _force_pipeline_completed(conn, suffix)
-
-    return case_id, suffix
-
-
-def _force_pipeline_completed(conn, suffix: str) -> None:
-    """Fast-forward the seeded doc's pipeline_state to 'completed'.
-
-    mock_status() (triage_view.py) only needs pipeline_state out of
-    {pending, running, partial} to unlock the Route/Confirm buttons, so
-    force it directly rather than waiting on a real classification result —
-    the extract -> metadata pipeline (an LLM call to suggest a case) can
-    take tens of seconds to minutes depending on the AI backend's
-    reachability/load, which this test shouldn't be at the mercy of.
-    (test_case_graph.py / test_claim_status_transition.py apply the same
-    principle: bypass the AI-dependent stages via direct seeding.)
-
-    LIKE on the suffix, not an exact title match: extract_clean_title()
-    (service.py) only normalizes the raw filename into the cleaned title
-    once the extract stage actually runs, and whether that's synchronous
-    with the /upload response isn't guaranteed even under
-    CELERY_TASK_ALWAYS_EAGER — LIKE matches either form.
-    """
     cur = conn.cursor()
+    owner_id = cur.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()[0]
+    batch_id = cur.execute(
+        """
+        INSERT INTO ingest_batches
+            (owner_id, source_type, subject, status, received_at, ingest_date)
+        VALUES (%s, 'MANUAL', %s, 'PROCESSING', now(), now())
+        RETURNING id
+        """,
+        (owner_id, f"e2e-confirm-{suffix}.txt"),
+    ).fetchone()[0]
     cur.execute(
-        "UPDATE documents SET pipeline_state = 'completed' WHERE title LIKE %s",
-        (f"%{suffix}%",),
-    )
-    assert cur.rowcount == 1, (
-        f"Expected to fast-forward exactly one doc, got {cur.rowcount}"
+        """
+        INSERT INTO documents
+            (title, owner_id, case_id, ingest_batch_id, originator_type, status,
+             pipeline_state, page_count, role, court_relay, thread_open,
+             needs_review, review_reasons, received_date, ingest_date)
+        VALUES (%s, %s, '_TRIAGE', %s, 'UNKNOWN', 'ACTIVE', 'completed', 1,
+                'STANDALONE', false, false, true, '["pending_confirmation"]',
+                now(), now())
+        """,
+        (f"e2e-confirm-{suffix}", owner_id, batch_id),
     )
     conn.commit()
+
+    def _cleanup():
+        c = conn.cursor()
+        c.execute("DELETE FROM documents WHERE ingest_batch_id = %s", (batch_id,))
+        c.execute("DELETE FROM ingest_batches WHERE id = %s", (batch_id,))
+        c.execute("DELETE FROM cases WHERE id = %s", (case_id,))
+        conn.commit()
+
+    cleanup.append(_cleanup)
+    return case_id, suffix
 
 
 def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
@@ -142,33 +125,9 @@ def test_triage_confirm_routes_doc_to_case(page: Page, api_client, db_seed):
     row = (
         page.locator("[data-bundle-key]").filter(has_text=f"e2e-confirm-{suffix}").first
     )
-
-    # A generic test doc's content won't semantically match any existing
-    # case, so triage_row.html renders "Route" (action: assign_case) rather
-    # than "Confirm bundle" (action: confirm_bundle, which only renders when
-    # lead_sub.suggested_case_id is set by the AI classifier). Both dispatch
-    # the same triage:open-bundle-confirm modal.
-    #
-    # The extract->metadata pipeline is still dispatched somewhat
-    # asynchronously even under CELERY_TASK_ALWAYS_EAGER (observed ~1s+
-    # lag locally), so a background task can race _seed_doc_and_case's
-    # fast-forward and revert pipeline_state back to running/pending after
-    # it already committed 'completed'. Re-apply the fast-forward on each
-    # retry rather than just waiting — a fixed budget fighting a fast local
-    # DB race, not the tens-of-seconds a real AI call would need.
-    route_button = row.get_by_role("button", name="Route")
-    for _ in range(10):
-        if route_button.is_visible():
-            break
-        _force_pipeline_completed(conn, suffix)
-        page.wait_for_timeout(1_000)
-        page.reload()
-        row = (
-            page.locator("[data-bundle-key]")
-            .filter(has_text=f"e2e-confirm-{suffix}")
-            .first
-        )
-        route_button = row.get_by_role("button", name="Route")
+    # No AI suggestion → the row offers "Route" (assign_case), not "Confirm".
+    route_button = row.get_by_role("button", name="Route", exact=True)
+    expect(route_button).to_be_visible(timeout=10_000)
     route_button.click()
 
     # The SPA confirm dialog: "Route" opens it without a suggestion, so the
