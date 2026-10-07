@@ -11,6 +11,7 @@ import { CasePage } from './features/cases/dashboard/CasePage'
 import { ContactPage } from './features/contacts/ContactPage'
 import { CostsPage } from './features/costs/CostsPage'
 import { DocumentPage } from './features/documents/DocumentPage'
+import { ImportPage } from './features/import/ImportPage'
 import { HomePage } from './features/home/HomePage'
 import { NotFoundPage } from './features/NotFoundPage'
 import { AccountPage } from './features/settings/AccountPage'
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
       { path: '/triage', element: <TriagePage /> },
       { path: '/ingest/slice/:batchId', element: <SlicingPage /> },
       { path: '/document/:id', element: <DocumentPage /> },
+      { path: '/import', element: <ImportPage /> },
       { path: '/costs', element: <CostsPage /> },
       { path: '/contacts', element: <ContactPage /> },
       { path: '/search', element: <SearchPage /> },

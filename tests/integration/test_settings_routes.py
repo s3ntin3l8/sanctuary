@@ -222,30 +222,6 @@ def test_gmail_filters_roundtrip(db_session):
     assert _audit(db_session, AuditEventType.SETTINGS_INGESTION_CHANGED)
 
 
-def test_gmail_backfill_requires_connection(db_session):
-    response = client.post("/api/v1/settings/gmail/backfill", json={"days": 90})
-    assert response.status_code == 409
-    assert response.json()["code"] == "gmail_not_connected"
-
-
-def test_gmail_backfill_enqueues_task(db_session):
-    from app.services import user_settings_service
-
-    admin_id = db_session.query(User).filter_by(email="admin@localhost").one().id
-    user_settings_service.set_gmail_credentials(
-        db_session, admin_id, credentials_json="{}", connected_at="2026-01-01"
-    )
-    db_session.commit()
-    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
-        response = client.post("/api/v1/settings/gmail/backfill", json={"days": 365})
-    assert response.status_code == 202
-    assert dispatch.call_args.kwargs == {"days": 365}
-    assert (
-        client.post("/api/v1/settings/gmail/backfill", json={"days": 7}).status_code
-        == 422
-    )
-
-
 # --- AI & models -------------------------------------------------------------
 
 

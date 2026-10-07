@@ -252,7 +252,7 @@ def record_gmail_sync_outcome(
     error: str | None = None,
     reconnect_required: bool = False,
 ) -> None:
-    """Record what the last sync/backfill did, or why it failed.
+    """Record what the last sync or import did, or why it failed.
 
     ``reconnect_required`` marks failures only a fresh OAuth grant can fix
     (revoked/expired token, over-scoped token, undecryptable credentials).

@@ -2,7 +2,7 @@
 
 - the sync watermark is the run's *start* time (minus overlap), not its end
 - one failing message doesn't abort the whole run / block the watermark
-- a per-user lock prevents overlapping incremental + backfill runs
+- a per-user lock prevents overlapping incremental, index and import runs
 """
 
 from datetime import UTC, datetime
@@ -348,10 +348,10 @@ def test_lock_release_uses_a_single_atomic_call_not_separate_get_and_delete(
 
 
 @pytest.mark.unit
-def test_backfill_retries_on_lock_collision_instead_of_silently_no_opping(
+def test_index_refresh_retries_on_lock_collision_instead_of_silently_no_opping(
     gmail_user, db_session
 ):
-    """A user-triggered backfill must not silently do nothing when it loses
+    """A user-triggered index refresh must not silently do nothing when it loses
     the lock race — it's an explicit user action, not a background tick, so
     it should defer and retry rather than leave the user thinking it ran."""
     from celery.exceptions import Retry
@@ -362,12 +362,12 @@ def test_backfill_retries_on_lock_collision_instead_of_silently_no_opping(
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client),
         patch.object(
-            gmail_sync.run_gmail_backfill, "retry", side_effect=retry_sentinel
+            gmail_sync.index_gmail_mailbox, "retry", side_effect=retry_sentinel
         ) as mock_retry,
     ):
         with gmail_sync._user_sync_lock(gmail_user.id):
             with pytest.raises(Retry):
-                gmail_sync.run_gmail_backfill.run(gmail_user.id)
+                gmail_sync.index_gmail_mailbox.run(gmail_user.id)
 
     mock_retry.assert_called_once_with(countdown=30)
 
@@ -423,9 +423,7 @@ def test_missing_watermark_is_anchored_and_never_queries_unbounded(
 
 
 @pytest.mark.unit
-def test_incremental_and_backfill_queries_respect_the_label_filter(
-    gmail_user, db_session
-):
+def test_incremental_query_respects_the_label_filter(gmail_user, db_session):
     user_settings_service.set_gmail_inbox_filters(
         db_session,
         gmail_user.id,
@@ -435,19 +433,6 @@ def test_incremental_and_backfill_queries_respect_the_label_filter(
     db_session.commit()
     service = _fake_service()
     _run_sync(gmail_user.id, service)
-    q = list_call(service).call_args.kwargs["q"]
-    assert "label:Sanctuary" in q and "after:" in q
-
-    service = _fake_service()
-    with (
-        patch(
-            "app.tasks.gmail_sync.get_gmail_service",
-            return_value=GmailConnection(service, None),
-        ),
-        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
-    ):
-        mock_lock.return_value.__enter__.return_value = True
-        gmail_sync.run_gmail_backfill.run(gmail_user.id, days=30)
     q = list_call(service).call_args.kwargs["q"]
     assert "label:Sanctuary" in q and "after:" in q
 

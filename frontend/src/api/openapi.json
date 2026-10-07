@@ -4461,24 +4461,6 @@
         "title": "GmailAutoSync",
         "type": "object"
       },
-      "GmailBackfill": {
-        "properties": {
-          "days": {
-            "enum": [
-              90,
-              365,
-              1825
-            ],
-            "title": "Days",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "days"
-        ],
-        "title": "GmailBackfill",
-        "type": "object"
-      },
       "GmailFilters": {
         "properties": {
           "allowlist": {
@@ -4498,6 +4480,392 @@
           "allowlist"
         ],
         "title": "GmailFilters",
+        "type": "object"
+      },
+      "GmailGroup": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_at": {
+            "format": "date-time",
+            "title": "First At",
+            "type": "string"
+          },
+          "ingested_count": {
+            "title": "Ingested Count",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "internal_id",
+                  "az_court"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "last_at": {
+            "format": "date-time",
+            "title": "Last At",
+            "type": "string"
+          },
+          "matched_case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Case Id"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "matched_case_id",
+          "count",
+          "ingested_count",
+          "first_at",
+          "last_at"
+        ],
+        "title": "GmailGroup",
+        "type": "object"
+      },
+      "GmailGroupList": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/GmailGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "GmailGroupList",
+        "type": "object"
+      },
+      "GmailImportQueued": {
+        "properties": {
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued"
+        ],
+        "title": "GmailImportQueued",
+        "type": "object"
+      },
+      "GmailImportRequest": {
+        "properties": {
+          "before": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "gmail_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gmail Ids"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "oldest_n": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest N"
+          },
+          "sequential": {
+            "default": true,
+            "title": "Sequential",
+            "type": "boolean"
+          }
+        },
+        "title": "GmailImportRequest",
+        "type": "object"
+      },
+      "GmailImportStatus": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "current_subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Subject"
+          },
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "sequential": {
+            "title": "Sequential",
+            "type": "boolean"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active",
+          "total",
+          "done",
+          "failed_count",
+          "sequential",
+          "cancelled",
+          "error",
+          "current_subject",
+          "waiting",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "GmailImportStatus",
+        "type": "object"
+      },
+      "GmailIndexStatus": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "indexed_count": {
+            "title": "Indexed Count",
+            "type": "integer"
+          },
+          "last_indexed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Indexed At"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "running",
+          "indexed_count",
+          "last_indexed_at",
+          "done",
+          "total",
+          "error"
+        ],
+        "title": "GmailIndexStatus",
+        "type": "object"
+      },
+      "GmailIndexedMessage": {
+        "properties": {
+          "gmail_id": {
+            "title": "Gmail Id",
+            "type": "string"
+          },
+          "has_attachments": {
+            "title": "Has Attachments",
+            "type": "boolean"
+          },
+          "ingested": {
+            "title": "Ingested",
+            "type": "boolean"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "title": "Sent At",
+            "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gmail_id",
+          "thread_id",
+          "sender",
+          "subject",
+          "sent_at",
+          "has_attachments",
+          "ingested"
+        ],
+        "title": "GmailIndexedMessage",
+        "type": "object"
+      },
+      "GmailMessagePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GmailIndexedMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "GmailMessagePage",
         "type": "object"
       },
       "GmailResetSync": {
@@ -12348,6 +12716,266 @@
         ]
       }
     },
+    "/api/v1/gmail/groups": {
+      "get": {
+        "operationId": "v1_groups_api_v1_gmail_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailGroupList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Groups",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/import": {
+      "delete": {
+        "description": "Stop after the message currently being ingested.",
+        "operationId": "v1_cancel_import_api_v1_gmail_import_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Cancel Import",
+        "tags": [
+          "gmail"
+        ]
+      },
+      "post": {
+        "description": "Queue the not-yet-imported messages of the selection, oldest first.",
+        "operationId": "v1_start_import_api_v1_gmail_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailImportQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Start Import",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/import/status": {
+      "get": {
+        "operationId": "v1_import_status_api_v1_gmail_import_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailImportStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Import Status",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/index": {
+      "post": {
+        "description": "Fetch headers of every allowlisted message not indexed yet (idempotent).",
+        "operationId": "v1_refresh_index_api_v1_gmail_index_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Refresh Index",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/index/status": {
+      "get": {
+        "operationId": "v1_index_status_api_v1_gmail_index_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailIndexStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Index Status",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
+    "/api/v1/gmail/messages": {
+      "get": {
+        "operationId": "v1_messages_api_v1_gmail_messages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailMessagePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Messages",
+        "tags": [
+          "gmail"
+        ]
+      }
+    },
     "/api/v1/home": {
       "get": {
         "operationId": "v1_home_api_v1_home_get",
@@ -14032,41 +14660,6 @@
           }
         },
         "summary": "V1 Set Auto Sync",
-        "tags": [
-          "settings"
-        ]
-      }
-    },
-    "/api/v1/settings/gmail/backfill": {
-      "post": {
-        "description": "Queue a one-off import of the last ``days`` days of the user's mailbox.",
-        "operationId": "v1_backfill_api_v1_settings_gmail_backfill_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GmailBackfill"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "V1 Backfill",
         "tags": [
           "settings"
         ]

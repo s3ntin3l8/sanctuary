@@ -68,10 +68,6 @@ class GmailFilters(BaseModel):
     label_filter: str = ""
 
 
-class GmailBackfill(BaseModel):
-    days: Literal[90, 365, 1825]
-
-
 # --- Identity & context (global) ---------------------------------------------
 
 

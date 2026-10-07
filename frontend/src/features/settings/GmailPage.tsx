@@ -1,9 +1,9 @@
 import { type FormEvent, useState } from 'react'
+import { Link } from 'react-router'
 
 import {
   useDisconnectGmail,
   useGmail,
-  useGmailBackfill,
   useGmailSyncNow,
   useResetGmailSync,
   useSaveGmailFilters,
@@ -22,23 +22,15 @@ import { Toggle } from '../../ui/Toggle'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
-const WINDOWS = [
-  [90, 'Past 90 days'],
-  [365, 'Past year'],
-  [1825, 'Past 5 years'],
-] as const
-
 export function GmailPage() {
   const gmailQuery = useGmail()
   const gmail = gmailQuery.data
   const save = useSaveGmailFilters()
-  const backfill = useGmailBackfill()
   const autoSync = useSetGmailAutoSync()
   const syncNow = useGmailSyncNow()
   const resetSync = useResetGmailSync()
   const disconnect = useDisconnectGmail()
   const toast = useToast()
-  const [days, setDays] = useState<90 | 365 | 1825>(90)
   const [since, setSince] = useState('')
   const [confirm, setConfirm] = useState<'disconnect' | 'reset' | null>(null)
 
@@ -109,7 +101,7 @@ export function GmailPage() {
 
       <SettingsCard
         title="Sync"
-        description="Sync fetches mail received since the last sync point. Older mail is imported deliberately via a backfill."
+        description="Sync fetches mail received since the last sync point. Older mail is imported deliberately via Import history."
       >
         <div className="flex items-center gap-3">
           <div className="flex-1">
@@ -203,37 +195,17 @@ export function GmailPage() {
       </SettingsCard>
 
       <SettingsCard
-        title="Bulk backfill"
-        description="Import older mail once. Runs in the background; results land in Triage."
+        title="Import history"
+        description="Pull in older mail on purpose: browse it grouped by case reference and import the oldest first."
       >
         <div className="flex items-center gap-2">
-          <select
-            aria-label="Backfill window"
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value) as 90 | 365 | 1825)}
-            className="rounded-[9px] border border-line bg-panel2 px-2 py-1.5 text-[12px]"
-          >
-            {WINDOWS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <Button
-            disabled={!gmail.connected || backfill.isPending}
-            onClick={() =>
-              backfill.mutate(
-                { days },
-                {
-                  onSuccess: () => toast('Backfill queued'),
-                  onError: (err) => toast(err.message, 'error'),
-                },
-              )
-            }
-          >
-            Run
-          </Button>
-          {!gmail.connected && <Badge>Connect Gmail first</Badge>}
+          {gmail.connected ? (
+            <Link to="/import" className={buttonClass('secondary')}>
+              Open history import
+            </Link>
+          ) : (
+            <Badge>Connect Gmail first</Badge>
+          )}
         </div>
       </SettingsCard>
 
@@ -267,7 +239,7 @@ export function GmailPage() {
           )
         }}
         title="Reset sync state?"
-        body={`Forgets failed messages and moves the sync point to ${since || 'now'}. Mail older than that is only imported by a backfill.`}
+        body={`Forgets failed messages and moves the sync point to ${since || 'now'}. Mail older than that is only imported via Import history.`}
         label="Reset"
         pending={resetSync.isPending}
       />

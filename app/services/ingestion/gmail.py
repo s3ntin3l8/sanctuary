@@ -1,5 +1,10 @@
 import json
 import logging
+import time
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from email.header import decode_header, make_header
+from email.utils import parseaddr, parsedate_to_datetime
 from typing import Any, NamedTuple
 
 from google.auth.exceptions import RefreshError
@@ -139,3 +144,121 @@ def revoke_token(credentials_json: str) -> bool:
     except Exception:
         logger.warning("Gmail token revoke failed", exc_info=True)
         return False
+
+
+# --- Metadata-only access (for the history import page) ----------------------
+
+_METADATA_HEADERS = ["From", "Subject", "Date", "Message-ID"]
+# Gmail's per-user quota is 250 units/s and messages.get costs 5 units, so 50
+# gets per batch with a ~1s pause keeps a full-mailbox index inside the limit.
+_METADATA_BATCH = 50
+_BATCH_PAUSE_SECONDS = 1.0
+_LIST_PAGE_PAUSE_SECONDS = 0.5
+
+
+def list_message_ids(service: Any, query: str) -> Iterator[str]:
+    """Every message id matching ``query`` (newest first), page by page."""
+    page_token = None
+    while True:
+        request = (
+            service.users()
+            .messages()
+            .list(
+                userId="me",
+                q=query,
+                maxResults=500,
+                **({"pageToken": page_token} if page_token else {}),
+            )
+        )
+        results = request.execute()
+        for message in results.get("messages", []):
+            yield message["id"]
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            return
+        time.sleep(_LIST_PAGE_PAUSE_SECONDS)
+
+
+def fetch_metadata(service: Any, gmail_ids: list[str]) -> list[dict]:
+    """Headers-only fetch for ``gmail_ids`` via Gmail batch requests.
+
+    Ids whose request fails are logged and left out, so the next index refresh
+    (which only fetches ids it doesn't have yet) retries them.
+    """
+    found: list[dict] = []
+
+    def _collect(request_id: str, response: dict | None, exception: Exception | None):
+        if exception is not None or response is None:
+            logger.warning(
+                "Gmail metadata fetch failed for %s: %s", request_id, exception
+            )
+            return
+        found.append(response)
+
+    for start in range(0, len(gmail_ids), _METADATA_BATCH):
+        batch = service.new_batch_http_request(callback=_collect)
+        for gmail_id in gmail_ids[start : start + _METADATA_BATCH]:
+            batch.add(
+                service.users()
+                .messages()
+                .get(
+                    userId="me",
+                    id=gmail_id,
+                    format="metadata",
+                    metadataHeaders=_METADATA_HEADERS,
+                ),
+                request_id=gmail_id,
+            )
+        batch.execute()
+        if start + _METADATA_BATCH < len(gmail_ids):
+            time.sleep(_BATCH_PAUSE_SECONDS)
+    return found
+
+
+def _decode_header_value(value: str) -> str:
+    try:
+        return str(make_header(decode_header(value))).strip()
+    except Exception:
+        return value.strip()
+
+
+def _payload_has_attachment(payload: dict) -> bool:
+    if payload.get("filename"):
+        return True
+    parts = payload.get("parts") or []
+    if parts:
+        return any(_payload_has_attachment(part) for part in parts)
+    return False
+
+
+def parse_metadata(message: dict) -> dict:
+    """Normalise a ``format=metadata`` Gmail message for the index."""
+    payload = message.get("payload") or {}
+    headers = {h["name"].lower(): h["value"] for h in payload.get("headers", [])}
+
+    sent_at = None
+    if headers.get("date"):
+        try:
+            sent_at = parsedate_to_datetime(headers["date"])
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            sent_at = None
+    if sent_at is None:  # unparseable/missing Date: fall back to Gmail's receipt time
+        sent_at = datetime.fromtimestamp(int(message["internalDate"]) / 1000, tz=UTC)
+
+    _, sender = parseaddr(headers.get("from", ""))
+    mime_type = payload.get("mimeType", "")
+    return {
+        "gmail_id": message["id"],
+        "thread_id": message.get("threadId") or message["id"],
+        "message_id": (headers.get("message-id") or "").strip() or None,
+        "sender": sender.lower() or None,
+        "subject": _decode_header_value(headers.get("subject", "")) or None,
+        "sent_at": sent_at,
+        # The metadata format may omit parts; multipart/mixed is the usual
+        # envelope for a message that carries attachments.
+        "has_attachments": _payload_has_attachment(payload)
+        or mime_type == "multipart/mixed",
+        "size_estimate": message.get("sizeEstimate"),
+    }

@@ -1196,6 +1196,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gmail/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Groups */
+        get: operations["v1_groups_api_v1_gmail_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Start Import
+         * @description Queue the not-yet-imported messages of the selection, oldest first.
+         */
+        post: operations["v1_start_import_api_v1_gmail_import_post"];
+        /**
+         * V1 Cancel Import
+         * @description Stop after the message currently being ingested.
+         */
+        delete: operations["v1_cancel_import_api_v1_gmail_import_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/import/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Import Status */
+        get: operations["v1_import_status_api_v1_gmail_import_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Refresh Index
+         * @description Fetch headers of every allowlisted message not indexed yet (idempotent).
+         */
+        post: operations["v1_refresh_index_api_v1_gmail_index_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/index/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Index Status */
+        get: operations["v1_index_status_api_v1_gmail_index_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gmail/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** V1 Messages */
+        get: operations["v1_messages_api_v1_gmail_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/home": {
         parameters: {
             query?: never;
@@ -1951,26 +2063,6 @@ export interface paths {
          */
         put: operations["v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/settings/gmail/backfill": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * V1 Backfill
-         * @description Queue a one-off import of the last ``days`` days of the user's mailbox.
-         */
-        post: operations["v1_backfill_api_v1_settings_gmail_backfill_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3828,14 +3920,6 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
-        /** GmailBackfill */
-        GmailBackfill: {
-            /**
-             * Days
-             * @enum {integer}
-             */
-            days: 90 | 365 | 1825;
-        };
         /** GmailFilters */
         GmailFilters: {
             /** Allowlist */
@@ -3845,6 +3929,122 @@ export interface components {
              * @default
              */
             label_filter: string;
+        };
+        /** GmailGroup */
+        GmailGroup: {
+            /** Count */
+            count: number;
+            /**
+             * First At
+             * Format: date-time
+             */
+            first_at: string;
+            /** Ingested Count */
+            ingested_count: number;
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: ("internal_id" | "az_court") | null;
+            /**
+             * Last At
+             * Format: date-time
+             */
+            last_at: string;
+            /** Matched Case Id */
+            matched_case_id: string | null;
+        };
+        /** GmailGroupList */
+        GmailGroupList: {
+            /** Groups */
+            groups: components["schemas"]["GmailGroup"][];
+        };
+        /** GmailImportQueued */
+        GmailImportQueued: {
+            /** Queued */
+            queued: number;
+        };
+        /** GmailImportRequest */
+        GmailImportRequest: {
+            /** Before */
+            before?: string | null;
+            /** Gmail Ids */
+            gmail_ids?: string[] | null;
+            /** Group */
+            group?: string | null;
+            /** Oldest N */
+            oldest_n?: number | null;
+            /**
+             * Sequential
+             * @default true
+             */
+            sequential: boolean;
+        };
+        /** GmailImportStatus */
+        GmailImportStatus: {
+            /** Active */
+            active: boolean;
+            /** Cancelled */
+            cancelled: boolean;
+            /** Current Subject */
+            current_subject: string | null;
+            /** Done */
+            done: number;
+            /** Error */
+            error: string | null;
+            /** Failed Count */
+            failed_count: number;
+            /** Finished At */
+            finished_at: string | null;
+            /** Sequential */
+            sequential: boolean;
+            /** Started At */
+            started_at: string | null;
+            /** Total */
+            total: number;
+            /** Waiting */
+            waiting: boolean;
+        };
+        /** GmailIndexStatus */
+        GmailIndexStatus: {
+            /** Done */
+            done: number;
+            /** Error */
+            error: string | null;
+            /** Indexed Count */
+            indexed_count: number;
+            /** Last Indexed At */
+            last_indexed_at: string | null;
+            /** Running */
+            running: boolean;
+            /** Total */
+            total: number;
+        };
+        /** GmailIndexedMessage */
+        GmailIndexedMessage: {
+            /** Gmail Id */
+            gmail_id: string;
+            /** Has Attachments */
+            has_attachments: boolean;
+            /** Ingested */
+            ingested: boolean;
+            /** Sender */
+            sender: string | null;
+            /**
+             * Sent At
+             * Format: date-time
+             */
+            sent_at: string;
+            /** Subject */
+            subject: string | null;
+            /** Thread Id */
+            thread_id: string;
+        };
+        /** GmailMessagePage */
+        GmailMessagePage: {
+            /** Items */
+            items: components["schemas"]["GmailIndexedMessage"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** GmailResetSync */
         GmailResetSync: {
@@ -7603,6 +7803,213 @@ export interface operations {
             };
         };
     };
+    v1_groups_api_v1_gmail_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailGroupList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_start_import_api_v1_gmail_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailImportQueued"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_cancel_import_api_v1_gmail_import_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_import_status_api_v1_gmail_import_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailImportStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_refresh_index_api_v1_gmail_index_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_index_status_api_v1_gmail_index_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailIndexStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_messages_api_v1_gmail_messages_get: {
+        parameters: {
+            query?: {
+                group?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailMessagePage"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_home_api_v1_home_get: {
         parameters: {
             query?: never;
@@ -8972,37 +9379,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GmailView"];
                 };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    v1_backfill_api_v1_settings_gmail_backfill_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GmailBackfill"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Error */
             default: {

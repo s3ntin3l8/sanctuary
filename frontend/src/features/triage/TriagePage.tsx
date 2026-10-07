@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 
 import type { Schemas } from '../../api/client'
 import {
@@ -14,7 +14,7 @@ import {
 } from '../../api/triage'
 import { formatShortDate, pluralize } from '../../format'
 import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { Button, buttonClass } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
@@ -119,6 +119,9 @@ export function TriagePage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <Link to="/import" className={buttonClass('secondary')}>
+            <Icon name="mail" size={16} /> Import from Gmail
+          </Link>
           <Button
             variant="secondary"
             disabled={retryAll.isPending || bundles.length === 0}

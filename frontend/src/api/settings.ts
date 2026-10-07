@@ -59,10 +59,6 @@ export const useResetGmailSync = () =>
   )
 export const useDisconnectGmail = () =>
   useReplace<S['GmailView'], undefined>('gmail', () => unwrap(api.DELETE('/api/v1/settings/gmail')))
-export const useGmailBackfill = () =>
-  useMutation<unknown, ApiError, S['GmailBackfill']>({
-    mutationFn: (body) => unwrap(api.POST('/api/v1/settings/gmail/backfill', { body })),
-  })
 
 // --- Identity ----------------------------------------------------------------
 

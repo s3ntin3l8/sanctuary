@@ -1,4 +1,4 @@
-"""Settings → Gmail: per-user mailbox connection, inbox filters, sync controls and backfill."""
+"""Settings → Gmail: per-user mailbox connection, inbox filters and sync controls."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from app.models.database import User
 from app.models.enums import AuditEventType
 from app.schemas.settings import (
     GmailAutoSync,
-    GmailBackfill,
     GmailFilters,
     GmailResetSync,
     GmailView,
@@ -181,19 +180,3 @@ def disconnect(
     _audit(db, user, "disconnect")
     db.commit()
     return _view(db, user)
-
-
-@router.post("/backfill", status_code=202, response_class=Response)
-@limiter.limit("2/minute")
-def backfill(
-    request: Request,
-    body: GmailBackfill,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Queue a one-off import of the last ``days`` days of the user's mailbox."""
-    from app.tasks.dispatch import dispatch_task
-    from app.tasks.gmail_sync import run_gmail_backfill
-
-    _require_connected(db, user)
-    dispatch_task(run_gmail_backfill, user.id, days=body.days)
