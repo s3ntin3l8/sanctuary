@@ -78,7 +78,7 @@ def test_start_does_not_request_previously_granted_scopes():
 def test_callback_rejects_broader_than_readonly_grant(db_session):
     response = _oauth_callback([READONLY_SCOPE, "https://mail.google.com/"])
     assert response.status_code == 400
-    assert "mail.google.com" in response.json()["detail"]
+    assert "beyond read-only" in response.json()["detail"]
     assert not _sj(db_session, _admin(db_session)).get("gmail_credentials_json")
 
 

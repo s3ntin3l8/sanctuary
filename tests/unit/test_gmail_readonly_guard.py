@@ -100,7 +100,7 @@ def test_scanner_flags_mutations_and_ignores_reads():
 def test_assert_readonly_scopes():
     assert_readonly_scopes([READONLY_SCOPE])
     assert_readonly_scopes(None)
-    with pytest.raises(GmailScopeError, match="mail.google.com"):
+    with pytest.raises(GmailScopeError, match="beyond read-only"):
         assert_readonly_scopes([READONLY_SCOPE, "https://mail.google.com/"])
 
 
