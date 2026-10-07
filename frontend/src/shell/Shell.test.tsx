@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import * as navigation from '../navigation'
-import { emptyQueue, shellView } from '../test/fixtures'
+import { emptyQueue, notificationsView, shellView } from '../test/fixtures'
 import { renderAt, stubApi } from '../test/render'
 import { Shell } from './Shell'
 
@@ -11,6 +11,7 @@ function renderShell() {
   vi.spyOn(navigation, 'leaveTo').mockImplementation(() => {})
   const fetch = stubApi({
     'GET /api/v1/shell': { body: shellView },
+    'GET /api/v1/notifications': { body: notificationsView },
     'GET /api/v1/worker-queue': {
       body: { ...emptyQueue, counts: { executing: 1, queued: 2, failed: 0, ai_inflight: 0 } },
     },
@@ -34,6 +35,7 @@ test('rail links: triage is a full page load, cases is client-side', async () =>
   expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute('href', '/cases')
   expect(await screen.findByText('7')).toBeVisible() // triage badge
   expect(await screen.findByText('3')).toBeVisible() // processing badge: 1 executing + 2 queued
+  expect(await screen.findByText('4')).toBeVisible() // notifications badge
 })
 
 test('profile menu signs out and leaves for /login', async () => {

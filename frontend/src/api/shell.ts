@@ -41,3 +41,12 @@ export function useSearch(q: string, limit = 30) {
     placeholderData: (previous) => previous,
   })
 }
+
+export function useNotifications() {
+  return useQuery<Schemas['NotificationsView'], ApiError>({
+    queryKey: ['notifications'],
+    queryFn: () => unwrap(api.GET('/api/v1/notifications')),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+}

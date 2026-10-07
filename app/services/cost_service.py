@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Sequence
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -285,6 +286,46 @@ def _ensure_cost_signal(
     db.add(row)
     db.flush()
     return row
+
+
+SETTLED_STATUSES = (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
+
+
+@dataclass(frozen=True)
+class CostDue:
+    """An unsettled cost whose due date has passed (``overdue``) or falls
+    inside the look-ahead window."""
+
+    cost: LegalCost
+    open_amount: float
+    overdue: bool
+
+
+def costs_due(
+    costs: Sequence[LegalCost], now: datetime, *, within_days: int = 7
+) -> list[CostDue]:
+    """Overdue and soon-due costs out of ``costs``, soonest first.
+
+    Shared by the ledger's alert strip and the rail notifications so both
+    agree on what "overdue" means: not paid or reimbursed, with a due date
+    before ``now``."""
+    soon = now + timedelta(days=within_days)
+    due: list[CostDue] = []
+    for c in costs:
+        if c.status in SETTLED_STATUSES or c.due_at is None:
+            continue
+        due_at = ensure_utc(c.due_at)
+        if due_at > soon:
+            continue
+        due.append(
+            CostDue(
+                cost=c,
+                open_amount=max((c.amount_gross or 0) - (c.amount_paid or 0), 0.0),
+                overdue=due_at < now,
+            )
+        )
+    due.sort(key=lambda d: ensure_utc(d.cost.due_at) if d.cost.due_at else now)
+    return due
 
 
 def _derive_status(cost: LegalCost) -> None:

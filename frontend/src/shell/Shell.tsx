@@ -4,6 +4,7 @@ import { Outlet } from 'react-router'
 import { useShell } from '../api/shell'
 import { currentTheme, toggleTheme } from '../theme'
 import { CommandPalette } from './CommandPalette'
+import { NotificationsPanel } from './NotificationsPanel'
 import { ProcessingQueue } from './ProcessingQueue'
 import { ProfileMenu } from './ProfileMenu'
 import { CountBadge, RailButton } from './RailButton'
@@ -62,6 +63,7 @@ export function Shell() {
           onClick={() => setThemeState(toggleTheme())}
         />
         <RailButton icon="search" label="Search (⌘K)" onClick={() => setPalette(true)} />
+        <NotificationsPanel />
         <ProcessingQueue />
         <ProfileMenu />
       </nav>

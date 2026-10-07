@@ -5919,6 +5919,150 @@
         "title": "NextAction",
         "type": "object"
       },
+      "NotificationGroup": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "overdue_deadline",
+              "upcoming_deadline",
+              "hearing",
+              "pending_triage",
+              "overdue_cost"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "count",
+          "items"
+        ],
+        "title": "NotificationGroup",
+        "type": "object"
+      },
+      "NotificationItem": {
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "case_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Title"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "overdue_deadline",
+              "upcoming_deadline",
+              "hearing",
+              "pending_triage",
+              "overdue_cost"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "link": {
+            "title": "Link",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "detail",
+          "due_at",
+          "case_id",
+          "case_title",
+          "link"
+        ],
+        "title": "NotificationItem",
+        "type": "object"
+      },
+      "NotificationsView": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "groups",
+          "generated_at"
+        ],
+        "title": "NotificationsView",
+        "type": "object"
+      },
       "OpposingPartiesUpdate": {
         "properties": {
           "opposing_parties": {
@@ -12010,6 +12154,38 @@
         "summary": "V1 Review All",
         "tags": [
           "home"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "description": "Overdue and upcoming deadlines, hearings, the caller's pending triage\nbundles and overdue costs, each group counted in full and capped at five\nrows.",
+        "operationId": "v1_notifications_api_v1_notifications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Notifications",
+        "tags": [
+          "notifications"
         ]
       }
     },

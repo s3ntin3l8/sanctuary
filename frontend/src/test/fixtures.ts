@@ -572,3 +572,75 @@ export const caseDetail: Schemas['CaseDetail'] = {
   open_claim_count: 3,
   dormancy_alert: null,
 }
+
+export const notificationsView: Schemas['NotificationsView'] = {
+  total: 4,
+  generated_at: '2026-06-17T06:40:00Z',
+  groups: [
+    {
+      kind: 'overdue_deadline',
+      count: 1,
+      items: [
+        {
+          id: 11,
+          kind: 'overdue_deadline',
+          title: 'Stellungnahme Jugendamt',
+          detail: null,
+          due_at: '2026-06-15T00:00:00Z',
+          case_id: 'ADV-024-A',
+          case_title: 'Weber ./. Weber',
+          link: '/cases/ADV-024-A?view=review',
+        },
+      ],
+    },
+    { kind: 'upcoming_deadline', count: 0, items: [] },
+    {
+      kind: 'hearing',
+      count: 1,
+      items: [
+        {
+          id: 12,
+          kind: 'hearing',
+          title: 'Mündliche Verhandlung',
+          detail: 'Saal 3',
+          due_at: '2026-07-02T09:00:00Z',
+          case_id: 'ADV-024-A',
+          case_title: 'Weber ./. Weber',
+          link: '/cases/ADV-024-A?view=review',
+        },
+      ],
+    },
+    {
+      kind: 'pending_triage',
+      count: 1,
+      items: [
+        {
+          id: 42,
+          kind: 'pending_triage',
+          title: 'Ladung AG Hamburg',
+          detail: 'poststelle@ag-hamburg.de',
+          due_at: '2026-06-17T06:00:00Z',
+          case_id: null,
+          case_title: null,
+          link: '/triage',
+        },
+      ],
+    },
+    {
+      kind: 'overdue_cost',
+      count: 1,
+      items: [
+        {
+          id: 7,
+          kind: 'overdue_cost',
+          title: 'Gerichtskostenvorschuss',
+          detail: '1,230.00 € open',
+          due_at: '2026-06-10T00:00:00Z',
+          case_id: 'ADV-024-A',
+          case_title: 'Weber ./. Weber',
+          link: '/costs',
+        },
+      ],
+    },
+  ],
+}

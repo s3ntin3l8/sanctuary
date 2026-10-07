@@ -4,8 +4,6 @@ refetches the case financials for the derived totals."""
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
@@ -19,7 +17,6 @@ from app.api.v1.errors import ApiError
 from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import Case, CostSignal, LegalCost, Proceeding, User
-from app.models.enums import CostStatus
 from app.schemas.case_detail import (
     ClientRoleUpdate,
     CostAlert,
@@ -32,11 +29,9 @@ from app.schemas.case_detail import (
 )
 from app.services import access_service
 from app.services.case_service import recompute_total_cost_exposure
-from app.services.cost_service import CostService, _derive_status
+from app.services.cost_service import CostService, _derive_status, costs_due
 
 router = APIRouter(tags=["costs"])
-
-_SETTLED = (CostStatus.BEZAHLT, CostStatus.ERSTATTET)
 
 
 @router.get("/costs", response_model=CostsOverview)
@@ -61,25 +56,20 @@ def costs_overview(
         if by_case
         else []
     )
-    now = now_utc()
-    soon = now + timedelta(days=7)
-    overdue: list[CostAlert] = []
-    due_soon: list[CostAlert] = []
     titles = {c.id: c.title for c in cases}
-    for c in costs:
-        if c.status in _SETTLED or c.due_at is None:
-            continue
-        alert = CostAlert(
-            cost=_cost_row(c),
-            case_title=titles.get(c.case_id, c.case_id),
-            open_amount=max((c.amount_gross or 0) - (c.amount_paid or 0), 0.0),
+    alerts = [
+        (
+            d.overdue,
+            CostAlert(
+                cost=_cost_row(d.cost),
+                case_title=titles.get(d.cost.case_id, d.cost.case_id),
+                open_amount=d.open_amount,
+            ),
         )
-        if c.due_at < now:
-            overdue.append(alert)
-        elif c.due_at <= soon:
-            due_soon.append(alert)
-    overdue.sort(key=lambda a: a.cost.due_at or now)
-    due_soon.sort(key=lambda a: a.cost.due_at or now)
+        for d in costs_due(costs, now_utc())
+    ]
+    overdue = [a for is_overdue, a in alerts if is_overdue]
+    due_soon = [a for is_overdue, a in alerts if not is_overdue]
     return CostsOverview(
         summary=summary_of(costs, sum(c.total_cost_exposure or 0 for c in cases)),
         overdue=overdue,
