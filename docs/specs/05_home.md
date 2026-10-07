@@ -12,6 +12,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, `docs/dashboard.md`, a
 
 | Layer | Status |
 |---|---|
+| Morning briefing card (`BriefingCard.tsx`, `GET /api/v1/home/briefing`) | ✅ local model, one row per user and day in `home_briefings` |
 | Today panel (cross-case deadlines) | ✅ |
 | Awaiting Triage panel (pending bundles) | ✅ |
 | Delta feed (since last visit) | ✅ |
@@ -396,6 +397,18 @@ Priority tiers described in §6. Within each tier, most-recently-active first.
 
 ---
 
+## 8b. Morning briefing
+
+The card above the KPI row is the prototype's "Morning briefing": two to four plain sentences from the configured local model about what matters today, plus up to three imperative priorities, each starting with a case id or "Triage".
+
+- **Input** is exactly what Home already aggregates (`HomeService.get_home_data`): open deadlines and hearings with days-until-due in the reader's calendar, the triage inbox, cases with new documents, signals, the recent-activity rows — one sanitised line each (`home_briefing_generator._compose_prompt`). It goes to the configured chat endpoint and nowhere else; when that endpoint is public (`ai_config.is_external_endpoint`) the row records `external` and the card says "generated on an external endpoint" instead of "generated locally".
+- **No magic numbers**: the prompt (`HOME_BRIEFING_SYSTEM`) forbids invented dates, estimates and probabilities; only dates and counts from the input may appear.
+- **One per user and day** in `home_briefings` (`user_id, day` unique; the day is the configured timezone's). The first `GET /api/v1/home/briefing` of the day claims the row (`INSERT … ON CONFLICT … WHERE queued_at IS NULL`), dispatches `generate_home_briefing_task` on the `ai` queue and answers `processing`; the card polls every 3 s until `ready` or `failed`. `POST …/refresh` re-arms a finished or failed row; a run in flight is never duplicated. A claim older than `CELERY_TASK_TIME_LIMIT` cannot belong to a live run (worker died, broker dropped the dispatch) and is taken over by the next request, so a day never stays stuck in `processing`.
+- **Failure** is a state, not a blank: the card shows the error and the Regenerate button; the Signals panel still owns provider health.
+- The card is not a chat surface (§12): one-shot text, no input.
+
+---
+
 ## 9. Keyboard-first interaction
 
 Home is designed to be navigable without touching the mouse. `j`/`k` move focus between every row marked `data-nav-row` in DOM order (deadlines, triage bundles, delta cases, signals, case cards), wrapping at the ends; the focused row is the highlight, and Enter is the browser's own link activation. Keys are ignored while typing in a field or while a modal, popover or menu is open; closing a modal hands focus back to the row it was opened from. The `?` cheat sheet is global (`ShortcutsProvider`) and never stacks over another overlay; each page registers its own section with `usePageShortcuts`.
@@ -459,7 +472,7 @@ Explicit non-goals — these would all pull Home back toward a DMS mental model.
 - **Not a notifications page.** Notifications are reactive, surfaced via the rail's 🔔 button. Home is proactive — it pulls things forward; it doesn't catalog alerts.
 - **Not a settings page.** Gmail setup, AI provider config, etc. all live under Settings (rail ⚙). Home only *surfaces* when these need attention via the Signals panel.
 - **Not a case directory.** The Active Cases strip is a scoped overview, not a browser. The full case directory is `/cases`.
-- **Not an AI chat surface.** Chat is case-scoped (case dashboard) or document-scoped (document HUD). Home has no chat panel — "ask AI (global)" is available in ⌘K for rare cross-case questions.
+- **Not an AI chat surface.** Chat is case-scoped (case dashboard) or document-scoped (document HUD). Home has no chat panel — the briefing card (§8b) is one-shot text with no input; "ask AI (global)" is available in ⌘K for rare cross-case questions.
 - **Not a reporting surface.** Exports, printouts, sharable summaries belong in a separate Reports view (out of scope for v1).
 
 ---

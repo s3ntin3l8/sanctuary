@@ -666,3 +666,14 @@ export const notificationsView: Schemas['NotificationsView'] = {
     },
   ],
 }
+
+export const briefingView: Schemas['BriefingView'] = {
+  status: 'ready',
+  day: '2026-06-17',
+  generated_at: '2026-06-17T06:40:00Z',
+  model_label: 'qwen3.5:9b',
+  external: false,
+  summary: 'Two deadlines land this week.',
+  priorities: ['ADV-024-A: file the counter-statement'],
+  error: null,
+}

@@ -856,6 +856,93 @@
         "title": "BriefView",
         "type": "object"
       },
+      "BriefingView": {
+        "description": "Today's locally generated morning briefing for the signed-in user.",
+        "properties": {
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "external": {
+            "title": "External",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "model_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Label"
+          },
+          "priorities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Priorities",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "processing",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "status",
+          "day",
+          "generated_at",
+          "model_label",
+          "external",
+          "summary",
+          "priorities",
+          "error"
+        ],
+        "title": "BriefingView",
+        "type": "object"
+      },
       "BundlePipeline": {
         "properties": {
           "active_label": {
@@ -12212,6 +12299,70 @@
           }
         },
         "summary": "V1 Home",
+        "tags": [
+          "home"
+        ]
+      }
+    },
+    "/api/v1/home/briefing": {
+      "get": {
+        "description": "Today's briefing. The first request of the day starts generation and\nreturns ``processing``; the client polls until ``ready`` or ``failed``.",
+        "operationId": "v1_get_briefing_api_v1_home_briefing_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Get Briefing",
+        "tags": [
+          "home"
+        ]
+      }
+    },
+    "/api/v1/home/briefing/refresh": {
+      "post": {
+        "description": "Regenerate today's briefing. A run already in flight is left alone.",
+        "operationId": "v1_refresh_briefing_api_v1_home_briefing_refresh_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Refresh Briefing",
         "tags": [
           "home"
         ]

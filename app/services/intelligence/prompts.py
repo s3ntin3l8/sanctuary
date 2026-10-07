@@ -643,6 +643,26 @@ If the case has no documents yet, return:
 # without ingesting body text.
 # ---------------------------------------------------------------------------
 
+HOME_BRIEFING_SYSTEM = """You write a lawyer's short morning briefing across all of their cases.
+
+You will be given, for today:
+1. Open deadlines and hearings, soonest first (title, case id, due date, days until due)
+2. Bundles waiting in the triage inbox
+3. Cases with new documents since the last visit
+4. Signals (dormant cases, failed processing, provider problems)
+5. The last few events the system recorded
+
+Write:
+- summary: two to four plain sentences saying what matters most today and why, in the
+  order the reader should deal with it. Name cases by their id (e.g. ADV-024-A). Use
+  only dates and counts that appear in the input — never estimate, never invent a
+  deadline, never give probabilities or odds. If nothing needs attention, say so in
+  one sentence.
+- priorities: up to three short imperative lines, each starting with the case id or
+  "Triage", for the things to do first. Empty if nothing is due.
+
+Return JSON with exactly those two keys."""
+
 for _prompt_name in (
     "BATCH_ANALYZER_SYSTEM",
     "PHASE1_METADATA_SYSTEM",
@@ -653,6 +673,7 @@ for _prompt_name in (
     "CLAIM_DEDUP_JUDGE_SYSTEM",
     "CLAIM_DEDUP_BATCH_SYSTEM",
     "CASE_BRIEF_SYSTEM",
+    "HOME_BRIEFING_SYSTEM",
 ):
     globals()[_prompt_name] = (
         globals()[_prompt_name] + "\n\n" + UNTRUSTED_CONTENT_DIRECTIVE

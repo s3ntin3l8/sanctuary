@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -82,6 +82,20 @@ class HomeActivityEvent(BaseModel):
     occurred_at: datetime
     case_id: str | None
     link: str
+
+
+class BriefingView(BaseModel):
+    """Today's locally generated morning briefing for the signed-in user."""
+
+    status: Literal["processing", "ready", "failed"]
+    day: date
+    generated_at: datetime | None
+    model_label: str | None
+    external: bool
+    """The model ran on a public endpoint, not this machine or the LAN."""
+    summary: str | None
+    priorities: list[str]
+    error: str | None
 
 
 class HomeView(BaseModel):

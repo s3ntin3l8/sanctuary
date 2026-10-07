@@ -21,6 +21,7 @@ import { Panel } from '../../ui/Panel'
 import { CaseCardTile } from '../cases/CaseCardTile'
 import { CreateCaseModal } from '../cases/CreateCaseModal'
 import { ActivityPanel } from './ActivityPanel'
+import { BriefingCard } from './BriefingCard'
 
 type Home = Schemas['HomeView']
 
@@ -88,6 +89,8 @@ export function HomePage() {
 
       {data && (
         <div className="space-y-4 px-6 py-4">
+          <BriefingCard />
+
           <div className="grid grid-cols-5 gap-3">
             <Kpi label="Deadlines" value={data.today_items.length} icon="timer" />
             <Kpi label="Triage" value={data.triage_bundles.length} icon="inbox" />

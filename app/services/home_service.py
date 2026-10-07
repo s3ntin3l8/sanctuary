@@ -37,8 +37,10 @@ class HomeService:
         visible = access_service.visible_case_ids(self.db, user)
         user_name = (user.display_name or user.email) if user else "there"
 
-        # Calculate Greeting
-        hour = now.hour
+        # Greeting by the reader's clock, not UTC's.
+        from app.services.timezone_service import get_user_tz
+
+        hour = now.astimezone(get_user_tz()).hour
         if hour < 12:
             greeting = "Good morning"
         elif hour < 18:

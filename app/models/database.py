@@ -1,5 +1,5 @@
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +15,7 @@ def _utcnow():
 
 from sqlalchemy import (
     Boolean,
+    Date,
     Float,
     ForeignKey,
     Index,
@@ -1188,6 +1189,37 @@ class AppSettings(Base):
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=True
     )
+
+
+class HomeBriefing(Base):
+    """One generated-locally morning briefing per user and day (issue #175).
+
+    ``queued_at`` is the dispatch claim: set atomically when a worker is
+    sent to generate, cleared on terminal exit, so a Home polled every few
+    seconds cannot fan out duplicate AI calls."""
+
+    __tablename__ = "home_briefings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "day", name="uq_home_briefings_user_day"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="processing")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priorities: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    model_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    # True when the generating endpoint was on the public internet
+    # (ai_config.is_external_endpoint); the card must not claim "local" then.
+    external: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=_sa_text("false")
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class UserSettings(Base):

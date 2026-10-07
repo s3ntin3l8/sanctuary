@@ -314,3 +314,12 @@ class Phase1Metadata(BaseModel):
         None,
         description="Legal domain of the case: civil, family, administrative, or criminal. Null when not determinable from document content alone.",
     )
+
+
+class HomeBriefingOut(BaseModel):
+    """HOME_BRIEFING_SYSTEM output."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    summary: str
+    priorities: list[str] = Field(default_factory=list)

@@ -22,3 +22,21 @@ export function useReviewAll() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['home'] }),
   })
 }
+
+export function useBriefing() {
+  return useQuery<Schemas['BriefingView'], ApiError>({
+    queryKey: ['home', 'briefing'],
+    queryFn: () => unwrap(api.GET('/api/v1/home/briefing')),
+    staleTime: 60_000,
+    // Poll while the local model is still writing.
+    refetchInterval: (query) => (query.state.data?.status === 'processing' ? 3_000 : false),
+  })
+}
+
+export function useRefreshBriefing() {
+  const queryClient = useQueryClient()
+  return useMutation<Schemas['BriefingView'], ApiError>({
+    mutationFn: () => unwrap(api.POST('/api/v1/home/briefing/refresh')),
+    onSuccess: (view) => queryClient.setQueryData(['home', 'briefing'], view),
+  })
+}
