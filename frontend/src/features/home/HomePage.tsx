@@ -20,6 +20,7 @@ import { Icon } from '../../ui/Icon'
 import { Panel } from '../../ui/Panel'
 import { CaseCardTile } from '../cases/CaseCardTile'
 import { CreateCaseModal } from '../cases/CreateCaseModal'
+import { ActivityPanel } from './ActivityPanel'
 
 type Home = Schemas['HomeView']
 
@@ -130,26 +131,29 @@ export function HomePage() {
             </Panel>
           )}
 
-          <Panel
-            title="Active cases"
-            icon="folder_open"
-            meta={pluralize(data.active_cases.length, 'case')}
-            action={
-              <a href="/cases" className="text-[11px] text-tealink hover:underline">
-                View all
-              </a>
-            }
-          >
-            {data.active_cases.length === 0 ? (
-              <p className="py-4 text-center text-[12px] text-muted">No active cases yet.</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {data.active_cases.map((c) => (
-                  <CaseCardTile key={c.id} card={c} navRow />
-                ))}
-              </div>
-            )}
-          </Panel>
+          <div className="grid grid-cols-[1.6fr_1fr] gap-4">
+            <Panel
+              title="Active cases"
+              icon="folder_open"
+              meta={pluralize(data.active_cases.length, 'case')}
+              action={
+                <a href="/cases" className="text-[11px] text-tealink hover:underline">
+                  View all
+                </a>
+              }
+            >
+              {data.active_cases.length === 0 ? (
+                <p className="py-4 text-center text-[12px] text-muted">No active cases yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {data.active_cases.map((c) => (
+                    <CaseCardTile key={c.id} card={c} navRow />
+                  ))}
+                </div>
+              )}
+            </Panel>
+            <ActivityPanel events={data.activity} row={ROW} />
+          </div>
         </div>
       )}
       <CreateCaseModal open={creating} onClose={() => setCreating(false)} />

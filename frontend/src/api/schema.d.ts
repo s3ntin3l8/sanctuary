@@ -3915,6 +3915,33 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * HomeActivityEvent
+         * @description One row of the "Recent activity" strip, derived from a timestamp the
+         *     pipeline already writes (document ingested / enriched, stage failed,
+         *     deadline or hearing extracted, cost paid, case closed, brief refreshed,
+         *     case shared).
+         */
+        HomeActivityEvent: {
+            /** Case Id */
+            case_id: string | null;
+            /** Detail */
+            detail: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "document_ingested" | "document_enriched" | "pipeline_failed" | "deadline_extracted" | "hearing_scheduled" | "cost_paid" | "case_closed" | "brief_refreshed" | "case_shared";
+            /** Link */
+            link: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Title */
+            title: string;
+        };
         /** HomeDeltaCase */
         HomeDeltaCase: {
             /** Case Id */
@@ -3969,6 +3996,8 @@ export interface components {
         HomeView: {
             /** Active Cases */
             active_cases: components["schemas"]["CaseCard"][];
+            /** Activity */
+            activity: components["schemas"]["HomeActivityEvent"][];
             /** Caught Up */
             caught_up: boolean;
             /** Delta Cases */

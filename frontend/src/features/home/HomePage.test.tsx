@@ -25,6 +25,21 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
     '/cases/ADV-024-A',
   )
   expect(screen.getByText('€18.4k')).toBeVisible()
+  const activity = screen.getByRole('region', { name: 'Recent activity' })
+  expect(
+    within(activity).getByRole('link', { name: /Klageerwiderung\.pdf enriched/ }),
+  ).toHaveAttribute('href', '/document/2211')
+  expect(within(activity).getByText('metadata stage · file too large')).toBeVisible()
+})
+
+test('activity strip shows its empty state', async () => {
+  stubApi({
+    'GET /api/v1/home': { body: { ...homeView, activity: [] } },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+  })
+  renderAt('/', <HomePage />)
+  await screen.findByRole('heading', { name: 'Good morning, Katharina.' })
+  expect(screen.getByText('Nothing has happened yet.')).toBeVisible()
 })
 
 test('review all posts and refreshes the delta panel', async () => {
@@ -79,9 +94,9 @@ test('j / k move focus across the panels in order, Enter follows the link, ? lis
   expect(document.activeElement).toHaveAttribute('href', '/triage')
   await user.keyboard('k')
   expect(document.activeElement).toHaveTextContent('File counter-statement')
-  // Wraps backwards to the last row (the active case card).
+  // Wraps backwards to the last row (the last activity entry).
   await user.keyboard('k')
-  expect(document.activeElement).toHaveTextContent('Weber ./. Weber')
+  expect(document.activeElement).toHaveTextContent('Gutachten_Anhang_gross.pdf')
 
   // Typing in a field must not move focus.
   const input = document.createElement('input')

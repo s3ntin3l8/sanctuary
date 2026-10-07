@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -59,6 +60,30 @@ class HomeSignal(BaseModel):
     link: str
 
 
+class HomeActivityEvent(BaseModel):
+    """One row of the "Recent activity" strip, derived from a timestamp the
+    pipeline already writes (document ingested / enriched, stage failed,
+    deadline or hearing extracted, cost paid, case closed, brief refreshed,
+    case shared)."""
+
+    kind: Literal[
+        "document_ingested",
+        "document_enriched",
+        "pipeline_failed",
+        "deadline_extracted",
+        "hearing_scheduled",
+        "cost_paid",
+        "case_closed",
+        "brief_refreshed",
+        "case_shared",
+    ]
+    title: str
+    detail: str | None
+    occurred_at: datetime
+    case_id: str | None
+    link: str
+
+
 class HomeView(BaseModel):
     greeting: str
     user_name: str
@@ -68,6 +93,7 @@ class HomeView(BaseModel):
     last_home_visit: datetime | None
     delta_cases: list[HomeDeltaCase]
     signals: list[HomeSignal]
+    activity: list[HomeActivityEvent]
     draft_cases: list[CaseCard]
     active_cases: list[CaseCard]
     caught_up: bool

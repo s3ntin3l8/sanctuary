@@ -90,6 +90,24 @@ export const homeView: Schemas['HomeView'] = {
     },
   ],
   draft_cases: [],
+  activity: [
+    {
+      kind: 'document_enriched',
+      title: 'Klageerwiderung.pdf',
+      detail: 'ADV-024-A · Weber ./. Weber',
+      occurred_at: '2026-06-17T06:32:00Z',
+      case_id: 'ADV-024-A',
+      link: '/document/2211',
+    },
+    {
+      kind: 'pipeline_failed',
+      title: 'Gutachten_Anhang_gross.pdf',
+      detail: 'metadata stage · file too large',
+      occurred_at: '2026-06-17T03:40:00Z',
+      case_id: 'ADV-024-A',
+      link: '/document/2212',
+    },
+  ],
   active_cases: [caseCard],
   caught_up: false,
 }

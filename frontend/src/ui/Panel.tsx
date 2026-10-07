@@ -14,7 +14,7 @@ type Props = {
 /** A titled card section: uppercase label row, then content. */
 export function Panel({ title, icon, meta, action, children, className = '' }: Props) {
   return (
-    <section className={`rounded-xl border border-line bg-card ${className}`}>
+    <section aria-label={title} className={`rounded-xl border border-line bg-card ${className}`}>
       <header className="flex items-center gap-2 border-b border-line2 px-4 py-2.5">
         {icon && <Icon name={icon} size={14} className="text-muted" />}
         <h2 className="text-[10px] font-extrabold tracking-[.12em] text-ink uppercase">{title}</h2>

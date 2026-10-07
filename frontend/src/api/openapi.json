@@ -5015,6 +5015,71 @@
         "title": "HomeActionItem",
         "type": "object"
       },
+      "HomeActivityEvent": {
+        "description": "One row of the \"Recent activity\" strip, derived from a timestamp the\npipeline already writes (document ingested / enriched, stage failed,\ndeadline or hearing extracted, cost paid, case closed, brief refreshed,\ncase shared).",
+        "properties": {
+          "case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Id"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "enum": [
+              "document_ingested",
+              "document_enriched",
+              "pipeline_failed",
+              "deadline_extracted",
+              "hearing_scheduled",
+              "cost_paid",
+              "case_closed",
+              "brief_refreshed",
+              "case_shared"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "link": {
+            "title": "Link",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "detail",
+          "occurred_at",
+          "case_id",
+          "link"
+        ],
+        "title": "HomeActivityEvent",
+        "type": "object"
+      },
       "HomeDeltaCase": {
         "properties": {
           "case_id": {
@@ -5187,6 +5252,13 @@
             "title": "Active Cases",
             "type": "array"
           },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/HomeActivityEvent"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
           "caught_up": {
             "title": "Caught Up",
             "type": "boolean"
@@ -5261,6 +5333,7 @@
           "last_home_visit",
           "delta_cases",
           "signals",
+          "activity",
           "draft_cases",
           "active_cases",
           "caught_up"

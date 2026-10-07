@@ -13,6 +13,7 @@ from app.models.enums import (
     SignificanceTier,
 )
 from app.services.attention_scoring import score_action_item, score_triage_batch
+from app.services.home_activity import recent_activity
 from app.services.signals import get_signals
 
 
@@ -182,6 +183,9 @@ class HomeService:
         # 4. Signals
         signals = get_signals(self.db)
 
+        # 4b. Recent activity, derived from existing timestamps (no event log)
+        activity = recent_activity(self.db, user, visible) if user else []
+
         # 5. Active Cases Strip
         from app.services.case_service import CaseService
 
@@ -211,6 +215,7 @@ class HomeService:
             "triage_bundles": triage_batches,
             "delta_cases": delta_cases,
             "signals": signals,
+            "activity": activity,
             "active_cases": confirmed_cases,
             "draft_cases": draft_cases,
             "last_home_visit": last_home_visit,
