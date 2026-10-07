@@ -222,17 +222,6 @@ _DOWNSTREAM: dict[PipelineStage, list[PipelineStage]] = {
 }
 
 
-def stage_display_list() -> list[dict]:
-    """Return all stages sorted by display order as dicts with the keys
-    templates use — `key`, `icon`, `label`. The horizontal pipeline-stepper
-    template reads this via the `pipeline_stages` Jinja global so the
-    registry is the single source of truth for both order and labels."""
-    return [
-        {"key": spec.stage.value, "icon": spec.icon, "label": spec.label}
-        for spec in _STAGE_ORDER
-    ]
-
-
 def _compute_transitive_upstream(target: PipelineStage) -> frozenset[PipelineStage]:
     """BFS through depends_on edges to collect every transitive ancestor of
     `target`. Used by get_upstream_blocking."""

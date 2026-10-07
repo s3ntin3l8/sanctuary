@@ -1,5 +1,4 @@
-"""Re-exports for the legacy routers app.main still mounts (each cutover
-removes one; other modules import their routers directly)."""
+"""Page routers mounted by app.main; the JSON API lives in app.api.v1."""
 
 from app.api import home
 

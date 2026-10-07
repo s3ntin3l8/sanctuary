@@ -18,8 +18,8 @@ A **case intelligence engine**, not a document archive. Documents are evidence. 
 
 ## Stack
 * **Backend:** Python 3.12+ / FastAPI + Celery (background tasks)
-* **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (migration in progress, view by view — see `docs/frontend-migration-plan.md`); views not yet cut over are still Jinja + HTMX + Alpine.js
-* **Styling:** Tailwind CSS v4 — SPA tokens in `frontend/src/styles/index.css` (prototype in `docs/design/`); legacy `static/input.css`
+* **Frontend:** React 19 + Vite + TypeScript SPA in `frontend/` (React Router, TanStack Query, `openapi-fetch`); FastAPI serves the built bundle from `frontend/dist` and returns `spa_index()` for every page route. No server-rendered HTML.
+* **Styling:** Tailwind CSS v4 via `@tailwindcss/vite` — tokens in `frontend/src/styles/index.css` (design reference in `docs/design/`); fonts self-hosted through `@fontsource`
 * **DB:** PostgreSQL + Alembic + `pgvector`
 * **AI:** Auto-detect ollama / lmstudio / openai
 * **Ingestion:** Docling (PDF → Markdown)
@@ -55,7 +55,7 @@ on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embed
 
 ## Routes
 
-All routes follow REST conventions. See `app/api/` for the complete listing.
+All routes follow REST conventions. See `app/api/` for the complete listing: `app/api/v1/*` is the JSON API, `app/api/{home,spa_pages,settings_page}.py` are the page routes that hand the SPA shell to the browser, `app/api/auth*.py` the login/OIDC flow.
 
 **Typed JSON API for the SPA:** `app/api/v1/*` — every route declares a Pydantic `response_model` (`app/schemas/`), raises `ApiError(status, code, detail)` and gets the uniform `{detail, code}` error body. `make api-types` regenerates `frontend/src/api/{openapi.json,schema.d.ts}`; a unit test fails when the committed schema is stale. SPA-owned paths return `spa_index()` (`app/spa.py`); the client calls them through `openapi-fetch` (`frontend/src/api/client.ts`).
 
@@ -82,8 +82,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing.
 ```bash
 make setup      # Install/Update
 make run        # App + both Celery workers + beat scheduler (Terminal 1)
-make watch-css  # Terminal 2: legacy CSS
-make watch-frontend  # Terminal 3: rebuild the SPA on change (frontend/dist, served by the app)
+make watch-frontend  # Terminal 2: rebuild the SPA on change (frontend/dist, served by the app)
 make frontend-test   # SPA typecheck + lint + vitest
 make api-types  # Regenerate the SPA's API types after changing app/api/v1
 make seed       # Seed Data

@@ -15,7 +15,7 @@ BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai watch-css frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -65,7 +65,6 @@ help: ## Show this help message
 setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 	$(PYTHON) -m pip install -r requirements-dev.txt
 	$(PYTHON) -m playwright install chromium
-	npm install
 	$(NPM_FE) ci
 	$(NPM_FE) run build
 	$(PRECOMMIT) install
@@ -127,9 +126,6 @@ worker-ingest: ## Start only the ingest (OCR) Celery worker
 
 worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
 	$(AI_WORKER)
-
-watch-css: ## Watch and build Tailwind CSS v4
-	npx @tailwindcss/cli -i static/input.css -o static/styles.css --watch
 
 frontend-build: ## Build the SPA (frontend/ -> frontend/dist, served by the app)
 	$(NPM_FE) run build

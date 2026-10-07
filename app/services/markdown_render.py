@@ -1,7 +1,6 @@
 """Markdown rendering for document bodies, with key-passage highlighting.
 
-Used by the v1 document reader (``body_html``) and the legacy ``safe_markdown``
-template filter.
+Used by the v1 document reader (``body_html``).
 """
 
 from __future__ import annotations
@@ -24,12 +23,6 @@ _md = (
     .enable("table")
     .enable("strikethrough")
 )
-
-
-def render_markdown(value: str | None) -> Markup:
-    if not value:
-        return Markup("")
-    return Markup(_md.render(str(value)))
 
 
 # Highlight sentinels — private-use unicode pairs that survive markdown
@@ -206,6 +199,3 @@ def render_highlighted(
         html = "".join(fallback_anchors) + html
 
     return Markup(html)
-
-
-# Filter name kept for backward compat with existing templates.

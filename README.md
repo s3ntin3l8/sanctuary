@@ -12,7 +12,7 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 - **Master Timeline** — Global chronological feed across all litigation matters.
 - **Legal Cost Tracking** — Specialized German Kostenrecht support (RVG/GKG), 4-metric summaries, and automated overdue alerts.
 - **Relationship Intelligence Hub** — Contact management automatically aggregated from document senders.
-- **Privacy First** — 100% offline operation. All frontend assets (Alpine.js, HTMX, Fonts) and AI models are hosted locally.
+- **Privacy First** — 100% offline operation. The SPA bundle, fonts and AI models are all hosted locally; no CDN, no telemetry.
 - **Dual Theme** — Semantic design tokens supporting high-contrast light and dark modes.
 - **Intelligent Ingestion** — Docling-powered PDF conversion and `.eml` email parsing with heuristic metadata extraction.
 - **AI Management Summaries** — 3-bullet summaries (Legal Significance, Action, Finance) generated locally via Ollama.
@@ -23,8 +23,8 @@ A privacy-first legal case management workspace for active litigation. All AI ru
 |---|---|
 | Backend | Python 3.12+ / FastAPI |
 | Task queue | Celery + Redis (background AI pipeline) |
-| Frontend | HTMX + Alpine.js |
-| Styling | Tailwind CSS v4 (semantic design tokens) |
+| Frontend | React 19 + Vite + TypeScript SPA (`frontend/`), typed against the `/api/v1` OpenAPI schema |
+| Styling | Tailwind CSS v4 (semantic design tokens, dark/light themes) |
 | Database | PostgreSQL + Alembic migrations + `pgvector` |
 | AI | Local Ollama / LM Studio / OpenAI-compatible — auto-detected |
 | Ingestion | Docling (PDF → Markdown) & EML Parser |
@@ -37,7 +37,8 @@ You can use the provided `Makefile` for common development tasks:
 ```bash
 make setup      # Install dependencies and hooks
 make run        # Start FastAPI server (http://127.0.0.1:8000) + both Celery workers + beat scheduler
-make watch-css  # Watch/build Tailwind CSS (Terminal 2)
+make watch-frontend  # Rebuild the SPA on change (Terminal 2)
+make frontend-test   # SPA typecheck + lint + vitest
 make test       # Run all tests
 make seed       # Reset and seed database
 make migrate    # Run Alembic migrations
@@ -84,14 +85,14 @@ make seed
 
 ## Design System
 
-Tokens are defined in `static/input.css`. Light mode is the default. Dark mode activates when the `.dark` class is present on `<html>`.
+Tokens live in `frontend/src/styles/index.css` as CSS custom properties under `[data-theme='dark']` and `[data-theme='light']`, exposed to Tailwind through `@theme`. Dark is the default; the choice is persisted in `localStorage` (`site-theme`) and applied before first paint. The visual reference is `docs/design/`.
 
-| Token | Light | Dark |
-|---|---|---|
-| `surface` | `#f8fafb` | `#0b1326` |
-| `surface-container` | `#e8eff1` | `#171f33` |
-| `primary` | `#45636b` | `#57f1db` |
-| `on-surface` | `#2a3437` | `#dae2fd` |
+| Token | Role |
+|---|---|
+| `--bg`, `--rail`, `--panel`, `--card` | Surfaces, from the page background up to cards |
+| `--ink`, `--muted` | Text, primary and secondary |
+| `--accent`, `--tealink` | Actions and links |
+| `--line` | Hairline borders |
 
 ## Database Schema
 

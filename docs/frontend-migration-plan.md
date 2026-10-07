@@ -1,5 +1,7 @@
 # Plan: Sanctuary frontend → React + Vite + TypeScript SPA (per "Sanctuary Prototype")
 
+> **Status (2026-10-07):** complete. Phases 0–7 merged (#174, #178, #180–#184 and the legacy-stack removal PR); the Jinja/HTMX/Alpine stack is gone. Deferred items are tracked in #175, #176, #177, #179, #186.
+
 ## Context
 
 The frontend today is Jinja + HTMX + Alpine: 123 templates (12.2k lines), ~2,000 lines of

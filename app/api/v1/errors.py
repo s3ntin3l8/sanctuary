@@ -24,8 +24,9 @@ class ApiError(HTTPException):
         self.code = code
 
 
-def is_api_v1_path(path: str) -> bool:
-    return path.startswith("/api/v1/")
+def is_api_path(path: str) -> bool:
+    """Any JSON API (v1 plus the OAuth/ingest helpers): errors use the uniform envelope."""
+    return path.startswith("/api/")
 
 
 def _status_code_name(status_code: int) -> str:

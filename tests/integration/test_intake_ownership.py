@@ -93,16 +93,16 @@ def test_triage_page_excludes_other_users(auth_enabled, db_session, two_users):
     assert "BetaSubject doc" not in body
 
 
-def test_sidebar_triage_count_is_per_user(db_session, two_users):
-    from app.helpers import build_sidebar_counts
+def test_rail_triage_count_is_per_user(db_session, two_users):
+    from app.helpers import triage_inbox_count
 
     a, b = two_users
     _triage_batch(db_session, a.id, "A1")
     _triage_batch(db_session, b.id, "B1")
     _triage_batch(db_session, b.id, "B2")
 
-    assert build_sidebar_counts(db_session, owner_id=a.id)["triage_count"] == 1
-    assert build_sidebar_counts(db_session, owner_id=b.id)["triage_count"] == 2
+    assert triage_inbox_count(db_session, owner_id=a.id) == 1
+    assert triage_inbox_count(db_session, owner_id=b.id) == 2
 
 
 def test_triage_mutation_on_other_users_batch_404(auth_enabled, db_session, two_users):
