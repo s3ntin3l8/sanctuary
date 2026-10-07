@@ -284,7 +284,7 @@ async def find_duplicates_for_case(
             ClaimMergeProposal.existing_claim_id,
         ).all()
         for a, b in rows:
-            existing_pairs.add(tuple(sorted((a, b))))
+            existing_pairs.add((min(a, b), max(a, b)))
 
     # ------------------------------------------------------------------ #
     # Phase 1: collect all unique candidate pairs via embedding KNN       #
