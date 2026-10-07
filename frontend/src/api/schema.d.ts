@@ -1213,6 +1213,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/home/briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Get Briefing
+         * @description Today's briefing. The first request of the day starts generation and
+         *     returns ``processing``; the client polls until ``ready`` or ``failed``.
+         */
+        get: operations["v1_get_briefing_api_v1_home_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/home/briefing/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Refresh Briefing
+         * @description Regenerate today's briefing. A run already in flight is left alone.
+         */
+        post: operations["v1_refresh_briefing_api_v1_home_briefing_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/home/review-all": {
         parameters: {
             query?: never;
@@ -2652,6 +2693,32 @@ export interface components {
             status_rationale?: string | null;
             /** Updated At */
             updated_at?: string | null;
+        };
+        /**
+         * BriefingView
+         * @description Today's locally generated morning briefing for the signed-in user.
+         */
+        BriefingView: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Error */
+            error: string | null;
+            /** Generated At */
+            generated_at: string | null;
+            /** Model Label */
+            model_label: string | null;
+            /** Priorities */
+            priorities: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "processing" | "ready" | "failed";
+            /** Summary */
+            summary: string | null;
         };
         /** BundlePipeline */
         BundlePipeline: {
@@ -7461,6 +7528,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HomeView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_get_briefing_api_v1_home_briefing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_refresh_briefing_api_v1_home_briefing_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingView"];
                 };
             };
             /** @description Error */

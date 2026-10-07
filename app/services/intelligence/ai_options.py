@@ -94,4 +94,10 @@ STAGE_OPTIONS: dict[str, dict] = {
         "num_predict": 8000,
         "max_tokens": 8000,
     },
+    "home_briefing": {
+        "num_ctx": 8192,
+        **_QWEN_SAMPLING,
+        "num_predict": 1200,
+        "max_tokens": 1200,
+    },
 }

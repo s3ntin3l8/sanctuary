@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response
+from datetime import date
+
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.v1.cases import case_cards
+from app.api.v1.errors import ApiError
+from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
-from app.models.database import IngestBatch, User
+from app.models.database import HomeBriefing, IngestBatch, User
 from app.schemas.home import (
+    BriefingView,
     HomeActionItem,
     HomeActivityEvent,
     HomeDeltaCase,
@@ -20,6 +25,11 @@ from app.schemas.home import (
 from app.services import access_service
 from app.services.case_service import CaseService
 from app.services.home_service import HomeService
+from app.services.intelligence.home_briefing_generator import (
+    briefing_row,
+    claim_for_dispatch,
+    today_for_user,
+)
 from app.services.user_settings_service import mark_home_visit
 
 router = APIRouter(prefix="/home", tags=["home"])
@@ -90,3 +100,56 @@ def review_all(db: Session = Depends(get_db), user: User = Depends(get_current_u
     """Mark everything new as reviewed: advances last_home_visit to now."""
     mark_home_visit(db, user.id)
     db.commit()
+
+
+# --- Morning briefing --------------------------------------------------------
+
+
+def _briefing_view(row: HomeBriefing) -> BriefingView:
+    return BriefingView(
+        status=row.status,  # type: ignore[arg-type]
+        day=row.day,
+        generated_at=row.generated_at,
+        model_label=row.model_label,
+        summary=row.summary,
+        priorities=list(row.priorities or []),
+        error=row.error,
+    )
+
+
+def _dispatch_briefing(db: Session, user_id: int, day: date) -> None:
+    from app.tasks.dispatch import dispatch_task
+    from app.tasks.generate_home_briefing import generate_home_briefing_task
+
+    if claim_for_dispatch(db, user_id, day):
+        dispatch_task(generate_home_briefing_task, user_id, day.isoformat())
+
+
+@router.get("/briefing", response_model=BriefingView)
+def get_briefing(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Today's briefing. The first request of the day starts generation and
+    returns ``processing``; the client polls until ``ready`` or ``failed``."""
+    day = today_for_user()
+    row = briefing_row(db, user.id, day)
+    if row is None:
+        _dispatch_briefing(db, user.id, day)
+        row = briefing_row(db, user.id, day)
+        if row is None:  # pragma: no cover — the claim just inserted it
+            raise ApiError(500, "briefing_unavailable", "Could not start the briefing.")
+    return _briefing_view(row)
+
+
+@router.post("/briefing/refresh", response_model=BriefingView, status_code=202)
+@limiter.limit("6/hour")
+def refresh_briefing(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Regenerate today's briefing. A run already in flight is left alone."""
+    day = today_for_user()
+    _dispatch_briefing(db, user.id, day)
+    row = briefing_row(db, user.id, day)
+    if row is None:  # pragma: no cover
+        raise ApiError(500, "briefing_unavailable", "Could not start the briefing.")
+    return _briefing_view(row)

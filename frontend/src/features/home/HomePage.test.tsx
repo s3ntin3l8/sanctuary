@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test } from 'vitest'
 
-import { emptyQueue, homeView } from '../../test/fixtures'
+import { briefingView, emptyQueue, homeView } from '../../test/fixtures'
 import { renderAt, stubApi } from '../../test/render'
 import { HomePage } from './HomePage'
 
@@ -10,6 +10,7 @@ test('renders greeting, KPIs and every panel from the home view', async () => {
   stubApi({
     'GET /api/v1/home': { body: homeView },
     'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
   })
   renderAt('/', <HomePage />)
 
@@ -36,6 +37,7 @@ test('activity strip shows its empty state', async () => {
   stubApi({
     'GET /api/v1/home': { body: { ...homeView, activity: [] } },
     'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
   })
   renderAt('/', <HomePage />)
   await screen.findByRole('heading', { name: 'Good morning, Katharina.' })
@@ -46,6 +48,7 @@ test('review all posts and refreshes the delta panel', async () => {
   const fetch = stubApi({
     'GET /api/v1/home': { body: homeView },
     'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
     'POST /api/v1/home/review-all': { status: 204, body: null },
   })
   renderAt('/', <HomePage />)
@@ -70,6 +73,7 @@ test('shows the caught-up state instead of the panels', async () => {
       },
     },
     'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
   })
   renderAt('/', <HomePage />)
   expect(await screen.findByText("You're caught up.")).toBeVisible()
@@ -80,6 +84,7 @@ test('j / k move focus across the panels in order, Enter follows the link, ? lis
   stubApi({
     'GET /api/v1/home': { body: homeView },
     'GET /api/v1/worker-queue': { body: emptyQueue },
+    'GET /api/v1/home/briefing': { body: briefingView },
   })
   renderAt('/', <HomePage />)
   const user = userEvent.setup()
