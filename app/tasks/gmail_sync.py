@@ -9,10 +9,16 @@ import redis
 from sqlalchemy.orm import Session
 
 from app.config import REDIS_URL
+from app.core.secrets import SecretsError
 from app.models.database import UserSettings
+from app.services import user_settings_service
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
-from app.services.ingestion.gmail import fetch_raw_message, get_gmail_service
-from app.services.user_settings_service import user_ids_with_gmail
+from app.services.ingestion.gmail import (
+    GmailReconnectRequired,
+    build_query,
+    fetch_raw_message,
+    get_gmail_service,
+)
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -164,19 +170,106 @@ def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
             _maybe_warn(exc)
 
 
+def _connect(db: Session, user_id: int, sj: dict):
+    """Build the Gmail client from the user's stored (encrypted) credentials.
+
+    A token refreshed along the way is persisted immediately, so it survives
+    even if the rest of the run fails.
+    """
+    credentials_json = user_settings_service.decrypt_gmail_credentials(
+        sj.get("gmail_credentials_json")
+    )
+    connection = get_gmail_service(credentials_json or "")
+    if connection.refreshed_credentials_json:
+        user_settings_service.update_gmail_token(
+            db, user_id, connection.refreshed_credentials_json
+        )
+        db.commit()
+    return connection.service
+
+
+def _record_failure(
+    db: Session, user_id: int, message: str, *, reconnect_required: bool = False
+) -> None:
+    """Persist why a run failed so Settings → Gmail can show it. Never raises:
+    losing the status line must not mask the original failure."""
+    try:
+        db.rollback()
+        user_settings_service.record_gmail_sync_outcome(
+            db,
+            user_id,
+            error=message[:500],
+            reconnect_required=reconnect_required,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Could not record Gmail sync failure for user %d", user_id)
+
+
+def _ingest_query(
+    db: Session, service, user_id: int, query: str
+) -> tuple[int, list[str]]:
+    """Page through ``query`` and ingest every hit. Returns (ok, failed ids)."""
+    count = 0
+    failed_ids: list[str] = []
+    page_token = None
+    first_page = True
+
+    while first_page or page_token:
+        first_page = False
+        if page_token:
+            results = (
+                service.users()
+                .messages()
+                .list(userId="me", q=query, pageToken=page_token)
+                .execute()
+            )
+        else:
+            results = service.users().messages().list(userId="me", q=query).execute()
+
+        messages = results.get("messages", [])
+        page_ok, page_failed = _ingest_messages(
+            db, service, user_id, [m["id"] for m in messages]
+        )
+        count += page_ok
+        failed_ids.extend(page_failed)
+
+        page_token = results.get("nextPageToken")
+        if page_token:
+            time.sleep(0.5)
+    return count, failed_ids
+
+
+def _cap_failures(failed_ids: list[str], user_id: int, source: str) -> list[str]:
+    if len(failed_ids) <= _MAX_TRACKED_FAILURES:
+        return failed_ids
+    logger.warning(
+        "%s: %d tracked failures for user %d exceeds the cap of %d — dropping "
+        "the oldest %d (they will no longer be auto-retried)",
+        source,
+        len(failed_ids),
+        user_id,
+        _MAX_TRACKED_FAILURES,
+        len(failed_ids) - _MAX_TRACKED_FAILURES,
+    )
+    return failed_ids[-_MAX_TRACKED_FAILURES:]
+
+
 @celery_app.task(bind=True, max_retries=2)
 def sync_gmail_incremental(self):
-    """Beat entry point — fan out one incremental sync per connected mailbox.
+    """Beat entry point — fan out one incremental sync per opted-in mailbox.
 
-    Each connected user gets their own per-user sync; ingested emails are owned
-    by that user (their triage inbox).
+    Only users who switched automatic sync on are polled; everyone else syncs
+    on demand ("Sync now"). Ingested emails are owned by that user (their
+    triage inbox).
     """
     from app.config import SessionLocal
     from app.tasks.dispatch import dispatch_task
 
     db = SessionLocal()
     try:
-        user_ids = user_ids_with_gmail(db)
+        user_ids = user_settings_service.user_ids_with_gmail_auto_sync(db)
     finally:
         db.close()
 
@@ -204,6 +297,7 @@ def sync_gmail_for_user(self, user_id: int):
         # overlap is extra slack on top of that for clock skew between this
         # host and Gmail's own timestamps.
         run_started_at = datetime.now(UTC)
+        watermark = (run_started_at - _WATERMARK_OVERLAP).isoformat()
 
         from app.config import SessionLocal
 
@@ -214,23 +308,25 @@ def sync_gmail_for_user(self, user_id: int):
             if not sj.get("gmail_credentials_json"):
                 return "Gmail not connected"
 
-            service = get_gmail_service(sj["gmail_credentials_json"])
-
             allowlist = sj.get("gmail_allowlist", [])
             if not allowlist:
                 return "Allowlist empty"
 
-            label_filter = sj.get("gmail_label_filter", "")
-
-            from_q = " OR ".join([f"from:{e}" for e in allowlist])
-            query = f"({from_q})"
-            if label_filter:
-                query += f" label:{label_filter}"
-
             last_sync = sj.get("gmail_last_sync_at")
-            if last_sync:
-                dt = datetime.fromisoformat(last_sync)
-                query += f" after:{int(dt.timestamp())}"
+            if not last_sync:
+                # Never run an unbounded query: with no watermark the search
+                # would match the senders' entire history. Anchor here and let
+                # the import page pull history deliberately.
+                user_settings_service.reset_gmail_sync(db, user_id, since=watermark)
+                db.commit()
+                return "Initialized sync watermark"
+
+            service = _connect(db, user_id, sj)
+            query = build_query(
+                allowlist,
+                sj.get("gmail_label_filter", ""),
+                after=int(datetime.fromisoformat(last_sync).timestamp()),
+            )
 
             # Retry messages that failed on a previous run first — tracked by
             # Gmail id regardless of whether they still fall inside the
@@ -242,75 +338,54 @@ def sync_gmail_for_user(self, user_id: int):
                 db, service, user_id, prior_failed_ids
             )
 
-            count = 0
-            new_failed_ids: list[str] = []
-            page_token = None
-            first_page = True
-
-            while first_page or page_token:
-                first_page = False
-                if page_token:
-                    results = (
-                        service.users()
-                        .messages()
-                        .list(userId="me", q=query, pageToken=page_token)
-                        .execute()
-                    )
-                else:
-                    results = (
-                        service.users().messages().list(userId="me", q=query).execute()
-                    )
-
-                messages = results.get("messages", [])
-                page_ok, page_failed = _ingest_messages(
-                    db, service, user_id, [m["id"] for m in messages]
-                )
-                count += page_ok
-                new_failed_ids.extend(page_failed)
-
-                page_token = results.get("nextPageToken")
-                if page_token:
-                    time.sleep(0.5)
+            count, new_failed_ids = _ingest_query(db, service, user_id, query)
 
             # Watermark advances on every run regardless of failures — a
             # message that keeps failing must not be able to stall every
             # *other* message in the mailbox forever. It stays tracked in
             # gmail_failed_message_ids instead, so it's still retried (see
-            # the top of this function) without gating anything else.
+            # above) without gating anything else.
             #
             # A message can appear in both still_failed_ids (retried from
             # last run) and new_failed_ids (also inside this run's normal
             # window) if it keeps failing — dedupe (keeping first occurrence)
             # so one persistently-broken message doesn't eat two slots of
             # the tracked-failures cap for itself.
-            failed_ids = list(dict.fromkeys(still_failed_ids + new_failed_ids))
-            if len(failed_ids) > _MAX_TRACKED_FAILURES:
-                logger.warning(
-                    "Gmail sync: %d tracked failures for user %d exceeds the "
-                    "cap of %d — dropping the oldest %d (they will no longer "
-                    "be auto-retried)",
-                    len(failed_ids),
-                    user_id,
-                    _MAX_TRACKED_FAILURES,
-                    len(failed_ids) - _MAX_TRACKED_FAILURES,
-                )
-                failed_ids = failed_ids[-_MAX_TRACKED_FAILURES:]
-
-            new_json = dict(settings.settings_json or {})
-            new_json["gmail_last_sync_at"] = (
-                run_started_at - _WATERMARK_OVERLAP
-            ).isoformat()
-            new_json["gmail_failed_message_ids"] = failed_ids
-            settings.settings_json = new_json
-            db.commit()
+            failed_ids = _cap_failures(
+                list(dict.fromkeys(still_failed_ids + new_failed_ids)),
+                user_id,
+                "Gmail sync",
+            )
 
             total_ok = count + retried_ok
             result = f"Synced {total_ok} messages for user {user_id}"
             if failed_ids:
                 result += f" ({len(failed_ids)} still failing, will retry)"
+
+            # Re-read: a disconnect may have committed while we were fetching,
+            # and writing our watermark/result back would resurrect half of it.
+            db.refresh(settings)
+            if not (settings.settings_json or {}).get("gmail_credentials_json"):
+                return "Gmail disconnected during sync"
+
+            new_json = dict(settings.settings_json or {})
+            new_json["gmail_last_sync_at"] = watermark
+            new_json["gmail_failed_message_ids"] = failed_ids
+            new_json["gmail_last_sync_result"] = result
+            new_json["gmail_last_sync_error"] = None
+            new_json["gmail_reconnect_required"] = False
+            settings.settings_json = new_json
+            db.commit()
             return result
+        except (GmailReconnectRequired, SecretsError) as e:
+            # Only a fresh OAuth grant (or the right encryption key) fixes
+            # these — retrying with backoff would just hammer Google.
+            logger.warning("Gmail sync for user %d needs a reconnect: %s", user_id, e)
+            _record_failure(db, user_id, str(e), reconnect_required=True)
+            return "Reconnect required"
         except Exception as e:
             logger.error(f"Gmail incremental sync failed for user {user_id}: {e}")
+            _record_failure(db, user_id, str(e))
             raise
         finally:
             db.close()
@@ -342,75 +417,57 @@ def run_gmail_backfill(self, user_id: int, days: int = 90):
             if not sj.get("gmail_credentials_json"):
                 return "Gmail not connected"
 
-            service = get_gmail_service(sj["gmail_credentials_json"])
             allowlist = sj.get("gmail_allowlist", [])
             if not allowlist:
                 return "Allowlist empty"
 
-            from_q = " OR ".join([f"from:{e}" for e in allowlist])
+            service = _connect(db, user_id, sj)
             cutoff_date = datetime.now(UTC) - timedelta(days=days)
-            query = f"({from_q}) after:{int(cutoff_date.timestamp())}"
+            query = build_query(
+                allowlist,
+                sj.get("gmail_label_filter", ""),
+                after=int(cutoff_date.timestamp()),
+            )
 
-            count = 0
-            new_failed_ids: list[str] = []
-            page_token = None
-            first_page = True
+            count, new_failed_ids = _ingest_query(db, service, user_id, query)
 
-            while first_page or page_token:
-                first_page = False
-                if page_token:
-                    results = (
-                        service.users()
-                        .messages()
-                        .list(userId="me", q=query, pageToken=page_token)
-                        .execute()
-                    )
-                else:
-                    results = (
-                        service.users().messages().list(userId="me", q=query).execute()
-                    )
+            result = f"Backfilled {count} messages for user {user_id}"
+            if new_failed_ids:
+                result += f" ({len(new_failed_ids)} failed, will retry)"
 
-                messages = results.get("messages", [])
-                page_ok, page_failed = _ingest_messages(
-                    db, service, user_id, [m["id"] for m in messages]
-                )
-                count += page_ok
-                new_failed_ids.extend(page_failed)
+            # Re-read: a disconnect may have committed while we were fetching,
+            # and writing our watermark/result back would resurrect half of it.
+            db.refresh(settings)
+            if not (settings.settings_json or {}).get("gmail_credentials_json"):
+                return "Gmail disconnected during sync"
 
-                page_token = results.get("nextPageToken")
-                if page_token:
-                    time.sleep(0.5)
-
+            new_json = dict(settings.settings_json or {})
             if new_failed_ids:
                 # Share the same tracked-failures list incremental sync
                 # drains on every run, rather than dropping backfill
                 # failures on the floor — the next incremental tick (or
                 # another backfill) will retry them.
-                prior = list(sj.get("gmail_failed_message_ids") or [])
-                merged = list(dict.fromkeys(prior + new_failed_ids))
-                if len(merged) > _MAX_TRACKED_FAILURES:
-                    logger.warning(
-                        "Gmail backfill: %d tracked failures for user %d "
-                        "exceeds the cap of %d — dropping the oldest %d "
-                        "(they will no longer be auto-retried)",
-                        len(merged),
-                        user_id,
-                        _MAX_TRACKED_FAILURES,
-                        len(merged) - _MAX_TRACKED_FAILURES,
-                    )
-                    merged = merged[-_MAX_TRACKED_FAILURES:]
-                new_json = dict(settings.settings_json or {})
-                new_json["gmail_failed_message_ids"] = merged
-                settings.settings_json = new_json
-
+                prior = list(new_json.get("gmail_failed_message_ids") or [])
+                new_json["gmail_failed_message_ids"] = _cap_failures(
+                    list(dict.fromkeys(prior + new_failed_ids)),
+                    user_id,
+                    "Gmail backfill",
+                )
+            new_json["gmail_last_sync_result"] = result
+            new_json["gmail_last_sync_error"] = None
+            new_json["gmail_reconnect_required"] = False
+            settings.settings_json = new_json
             db.commit()
-
-            result = f"Backfilled {count} messages for user {user_id}"
-            if new_failed_ids:
-                result += f" ({len(new_failed_ids)} failed, will retry)"
             return result
+        except (GmailReconnectRequired, SecretsError) as e:
+            logger.warning(
+                "Gmail backfill for user %d needs a reconnect: %s", user_id, e
+            )
+            _record_failure(db, user_id, str(e), reconnect_required=True)
+            return "Reconnect required"
         except Exception as e:
             logger.error(f"Gmail backfill failed for user {user_id}: {e}")
+            _record_failure(db, user_id, str(e))
             raise
         finally:
             db.close()

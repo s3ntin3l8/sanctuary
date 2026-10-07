@@ -11,6 +11,11 @@ os.environ.setdefault("SANCTUARY_LOG_FILE", "0")
 # connection and fail with a retry-limit RuntimeError. No test in this suite
 # exercises real (non-eager) dispatch, so there is nothing to opt out for.
 os.environ["CELERY_TASK_ALWAYS_EAGER"] = "true"
+# Fixed throwaway Fernet key (forced, so a developer's real .env key never
+# encrypts test data) for the stored-credential encryption.
+os.environ["SECRETS_ENCRYPTION_KEY"] = (
+    "1k6vAY8AuVyfEHhvnI2k6n-YlGnikcrtPeidluquNgY="  # pragma: allowlist secret
+)
 
 
 def pytest_sessionfinish(session, exitstatus):

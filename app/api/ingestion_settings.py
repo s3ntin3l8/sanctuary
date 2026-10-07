@@ -10,7 +10,11 @@ from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import User
 from app.services import user_settings_service
-from app.services.ingestion.gmail import get_oauth_flow
+from app.services.ingestion.gmail import (
+    GmailScopeError,
+    assert_readonly_scopes,
+    get_oauth_flow,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingest", tags=["ingestion"])
@@ -26,7 +30,8 @@ async def gmail_oauth_start(request: Request):
     flow = get_oauth_flow()
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
+        # No include_granted_scopes: it would fold scopes granted to this OAuth
+        # client earlier into the new token. We want exactly gmail.readonly.
         state=state,
     )
     return RedirectResponse(url=authorization_url)
@@ -47,8 +52,23 @@ async def gmail_oauth_callback(
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
 
     flow = get_oauth_flow()
-    flow.fetch_token(code=code)
+    try:
+        flow.fetch_token(code=code)
+    except Warning as exc:
+        # oauthlib raises a bare Warning when Google returns different scopes
+        # than were requested — i.e. more than read-only access.
+        logger.warning("Gmail OAuth scope mismatch: %s", exc)
+        raise HTTPException(
+            status_code=400,
+            detail="Google granted different permissions than requested; "
+            "Sanctuary only accepts read-only Gmail access.",
+        ) from exc
     creds = flow.credentials
+    try:
+        assert_readonly_scopes(creds.granted_scopes)
+    except GmailScopeError as exc:
+        logger.warning("Gmail OAuth rejected: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     user_settings_service.set_gmail_credentials(
         db,

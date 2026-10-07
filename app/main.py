@@ -50,6 +50,7 @@ from app.config import (
 )
 from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
+from app.core.secrets import SecretsError
 from app.spa import ImmutableStaticFiles, spa_index
 
 
@@ -331,6 +332,11 @@ async def lifespan(app: FastAPI):
 
     with SessionLocal() as seed_db:
         seed_triage_case(seed_db)
+
+    from app.core.secrets import require_key_if_secrets_stored
+
+    with SessionLocal() as secrets_db:
+        require_key_if_secrets_stored(secrets_db)
 
     # Pin the primary admin (by id) for the worker/dev-mode code paths. Idempotent
     # and safe to call always: it pins an existing admin, optionally seeds one from
@@ -835,6 +841,15 @@ async def server_error_handler(request: Request, exc: Exception) -> Response:
     return _page_error(500, "Something went wrong", "An unexpected error occurred.")
 
 
+async def secrets_error_handler(request: Request, exc: Exception) -> Response:
+    """A missing/wrong SECRETS_ENCRYPTION_KEY is an operator problem the message
+    explains (no secret in it) — surface it instead of an opaque 500."""
+    logging.getLogger(__name__).error("Secrets error on %s: %s", request.url.path, exc)
+    if is_api_path(request.url.path):
+        return error_response(503, "secrets_key_unavailable", str(exc))
+    return _page_error(503, "Encryption key unavailable", str(exc))
+
+
 async def validation_error_handler(request: Request, exc: Exception) -> Response:
     if is_api_path(request.url.path):
         return http_error_response(exc, default_status=422)
@@ -846,6 +861,7 @@ async def validation_error_handler(request: Request, exc: Exception) -> Response
 app.add_exception_handler(404, not_found_handler)
 app.add_exception_handler(500, server_error_handler)
 app.add_exception_handler(422, validation_error_handler)
+app.add_exception_handler(SecretsError, secrets_error_handler)
 
 
 async def http_exception_handler(

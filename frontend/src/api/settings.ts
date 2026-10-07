@@ -42,6 +42,23 @@ export const useSaveGmailFilters = () =>
   useReplace<S['GmailView'], S['GmailFilters']>('gmail', (body) =>
     unwrap(api.PUT('/api/v1/settings/gmail/filters', { body })),
   )
+export const useSetGmailAutoSync = () =>
+  useReplace<S['GmailView'], S['GmailAutoSync']>('gmail', (body) =>
+    unwrap(api.PUT('/api/v1/settings/gmail/auto-sync', { body })),
+  )
+export function useGmailSyncNow() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, ApiError>({
+    mutationFn: () => unwrap(api.POST('/api/v1/settings/gmail/sync')),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'gmail'] }),
+  })
+}
+export const useResetGmailSync = () =>
+  useReplace<S['GmailView'], S['GmailResetSync']>('gmail', (body) =>
+    unwrap(api.POST('/api/v1/settings/gmail/reset-sync', { body })),
+  )
+export const useDisconnectGmail = () =>
+  useReplace<S['GmailView'], undefined>('gmail', () => unwrap(api.DELETE('/api/v1/settings/gmail')))
 export const useGmailBackfill = () =>
   useMutation<unknown, ApiError, S['GmailBackfill']>({
     mutationFn: (body) => unwrap(api.POST('/api/v1/settings/gmail/backfill', { body })),

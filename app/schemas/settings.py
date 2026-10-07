@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -42,6 +43,24 @@ class GmailView(BaseModel):
     allowlist: list[str]
     label_filter: str
     oauth_start_url: str
+    auto_sync: bool
+    last_sync_result: str | None
+    last_sync_error: str | None
+    # The stored grant is unusable; only reconnecting fixes it.
+    reconnect_required: bool
+    failed_count: int
+    # An active AI endpoint (chat/embed/OCR) is on the public internet, so
+    # imported mail would leave this machine.
+    ai_external: bool
+
+
+class GmailAutoSync(BaseModel):
+    enabled: bool
+
+
+class GmailResetSync(BaseModel):
+    # Move the sync watermark here; omitted = now. Never cleared.
+    since: date | None = None
 
 
 class GmailFilters(BaseModel):

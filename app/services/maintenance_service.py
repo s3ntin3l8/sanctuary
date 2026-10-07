@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import config as cfg
 from app.core.cache import cache
-from app.models.database import Base
+from app.models.database import Base, UserSettings
 from app.models.enums import AuditEventType
 from app.services import audit_service
 from app.services.case_service import seed_triage_case
@@ -68,6 +68,12 @@ def clear_all_data(db: Session) -> tuple[int, int]:
         if table.name in _PRESERVED_TABLES:
             continue
         rows_deleted += cast(CursorResult, db.execute(table.delete())).rowcount
+    # Tracked Gmail failures point at mail whose bundles were just wiped; the
+    # connection and watermark stay (re-importing is a deliberate action).
+    for user_settings in db.query(UserSettings).all():
+        data = user_settings.settings_json or {}
+        if data.get("gmail_failed_message_ids"):
+            user_settings.settings_json = {**data, "gmail_failed_message_ids": []}
     audit_service.record(db, AuditEventType.MAINTENANCE_CLEAR_ALL_DATA)
     db.commit()
 

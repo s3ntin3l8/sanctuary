@@ -72,6 +72,9 @@ jobs:
       # ephemeral CI run, not a real secret.
       SESSION_SECRET: "ci-e2e-ephemeral-not-a-real-secret" # pragma: allowlist secret
       AUTH_ENABLED: "false"
+      # Throwaway Fernet key for the stored-credential encryption; scoped to
+      # this ephemeral CI run, not a real secret.
+      SECRETS_ENCRYPTION_KEY: "1k6vAY8AuVyfEHhvnI2k6n-YlGnikcrtPeidluquNgY=" # pragma: allowlist secret
       # Matches docker-compose.yml's `db` service (published on the default
       # Postgres port) — explicit here so this job doesn't depend on the
       # app's own DATABASE_URL default staying in sync.

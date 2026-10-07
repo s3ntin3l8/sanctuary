@@ -137,6 +137,11 @@ def oidc_enabled() -> bool:
     return bool(OIDC_ISSUER and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET)
 
 
+# Fernet key for credentials stored in the settings JSON (Gmail tokens, AI API
+# keys). Dedicated — not derived from SESSION_SECRET — so rotating the session
+# secret can't strand stored tokens. Generated into .env by `make setup`.
+SECRETS_ENCRYPTION_KEY = os.getenv("SECRETS_ENCRYPTION_KEY", "")
+
 # Gmail OAuth Configuration
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")

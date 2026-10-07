@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services import user_settings_service
+from app.services.ingestion.gmail import GmailConnection
 from app.tasks import gmail_sync
 
 
@@ -119,7 +120,10 @@ def test_watermark_is_run_start_not_run_end(gmail_user, db_session):
 
     run_start = datetime.now(UTC)
     with (
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
     ):
         mock_lock.return_value.__enter__.return_value = True
@@ -171,7 +175,10 @@ def test_one_failed_message_does_not_abort_the_run_and_is_tracked_for_retry(
         return b"raw bytes"
 
     with (
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
         patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=_fetch),
         patch("app.tasks.gmail_sync.ingest_raw_email") as mock_ingest,
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
@@ -212,7 +219,10 @@ def test_previously_failed_message_is_retried_and_drops_off_once_it_succeeds(
     service = _fake_service(messages=[])  # nothing new this window
 
     with (
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
         patch("app.tasks.gmail_sync.fetch_raw_message", return_value=b"raw"),
         patch("app.tasks.gmail_sync.ingest_raw_email") as mock_ingest,
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
@@ -236,7 +246,10 @@ def test_lock_blocks_overlapping_sync_for_same_user(gmail_user, db_session):
 
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client),
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
     ):
         # Simulate an in-progress run by holding the lock manually first.
         with gmail_sync._user_sync_lock(gmail_user.id) as first_acquired:
@@ -255,7 +268,10 @@ def test_lock_is_released_after_a_successful_run(gmail_user, db_session):
 
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client),
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
     ):
         gmail_sync.sync_gmail_for_user.run(gmail_user.id)
         # A second call after the first has returned must be able to acquire.
@@ -277,7 +293,10 @@ def test_lock_degrades_open_when_redis_unavailable(gmail_user, db_session):
 
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=broken_client),
-        patch("app.tasks.gmail_sync.get_gmail_service", return_value=service),
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
     ):
         result = gmail_sync.sync_gmail_for_user.run(gmail_user.id)
 
@@ -351,3 +370,218 @@ def test_backfill_retries_on_lock_collision_instead_of_silently_no_opping(
                 gmail_sync.run_gmail_backfill.run(gmail_user.id)
 
     mock_retry.assert_called_once_with(countdown=30)
+
+
+# --- Watermark safety, outcome recording, token persistence ------------------
+
+
+def list_call(service):
+    return service.users.return_value.messages.return_value.list
+
+
+def _set_settings(db_session, user_id, **changes):
+    from app.models.database import UserSettings
+
+    settings = db_session.query(UserSettings).filter_by(user_id=user_id).one()
+    data = dict(settings.settings_json or {})
+    for key, value in changes.items():
+        if value is None:
+            data.pop(key, None)
+        else:
+            data[key] = value
+    settings.settings_json = data
+    db_session.commit()
+
+
+def _run_sync(user_id, service, **patches):
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, patches.pop("refreshed", None)),
+        ),
+        patch("app.tasks.gmail_sync.fetch_raw_message", return_value=b"raw"),
+        patch("app.tasks.gmail_sync.ingest_raw_email"),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        return gmail_sync.sync_gmail_for_user.run(user_id)
+
+
+@pytest.mark.unit
+def test_missing_watermark_is_anchored_and_never_queries_unbounded(
+    gmail_user, db_session
+):
+    _set_settings(db_session, gmail_user.id, gmail_last_sync_at=None)
+    service = _fake_service(messages=[{"id": "m1"}])
+
+    result = _run_sync(gmail_user.id, service)
+
+    assert result == "Initialized sync watermark"
+    service.users.return_value.messages.return_value.list.assert_not_called()
+    db_session.expire_all()
+    assert _get_settings_json(db_session, gmail_user.id)["gmail_last_sync_at"]
+
+
+@pytest.mark.unit
+def test_incremental_and_backfill_queries_respect_the_label_filter(
+    gmail_user, db_session
+):
+    user_settings_service.set_gmail_inbox_filters(
+        db_session,
+        gmail_user.id,
+        allowlist=["lawyer@example.com"],
+        label_filter="Sanctuary",
+    )
+    db_session.commit()
+    service = _fake_service()
+    _run_sync(gmail_user.id, service)
+    q = list_call(service).call_args.kwargs["q"]
+    assert "label:Sanctuary" in q and "after:" in q
+
+    service = _fake_service()
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        gmail_sync.run_gmail_backfill.run(gmail_user.id, days=30)
+    q = list_call(service).call_args.kwargs["q"]
+    assert "label:Sanctuary" in q and "after:" in q
+
+
+@pytest.mark.unit
+def test_success_records_result_and_clears_a_previous_error(gmail_user, db_session):
+    _set_settings(
+        db_session,
+        gmail_user.id,
+        gmail_last_sync_error="old failure",
+        gmail_reconnect_required=True,
+    )
+
+    result = _run_sync(gmail_user.id, _fake_service())
+
+    db_session.expire_all()
+    sj = _get_settings_json(db_session, gmail_user.id)
+    assert sj["gmail_last_sync_result"] == result
+    assert sj["gmail_last_sync_error"] is None
+    assert sj["gmail_reconnect_required"] is False
+
+
+@pytest.mark.unit
+def test_reconnect_required_is_recorded_and_not_retried(gmail_user, db_session):
+    from app.services.ingestion.gmail import GmailReconnectRequired
+
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            side_effect=GmailReconnectRequired("token revoked"),
+        ),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        # Returns (does not raise) so Celery's autoretry doesn't hammer Google.
+        result = gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+
+    assert result == "Reconnect required"
+    db_session.expire_all()
+    sj = _get_settings_json(db_session, gmail_user.id)
+    assert sj["gmail_last_sync_error"] == "token revoked"
+    assert sj["gmail_reconnect_required"] is True
+
+
+@pytest.mark.unit
+def test_undecryptable_credentials_require_reconnect(gmail_user, db_session):
+    from app.core.secrets import SecretsError
+
+    with (
+        patch(
+            "app.tasks.gmail_sync.user_settings_service.decrypt_gmail_credentials",
+            side_effect=SecretsError("wrong key"),
+        ),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        assert gmail_sync.sync_gmail_for_user.run(gmail_user.id) == "Reconnect required"
+    db_session.expire_all()
+    assert _get_settings_json(db_session, gmail_user.id)["gmail_reconnect_required"]
+
+
+@pytest.mark.unit
+def test_unexpected_failure_is_recorded_and_still_retried(gmail_user, db_session):
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service", side_effect=RuntimeError("boom")
+        ),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        with pytest.raises(RuntimeError):
+            gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+    db_session.expire_all()
+    sj = _get_settings_json(db_session, gmail_user.id)
+    assert sj["gmail_last_sync_error"] == "boom"
+    assert sj["gmail_reconnect_required"] is False
+
+
+@pytest.mark.unit
+def test_refreshed_token_is_persisted_encrypted_and_unchanged_one_is_not(
+    gmail_user, db_session
+):
+    before = _get_settings_json(db_session, gmail_user.id)["gmail_credentials_json"]
+
+    _run_sync(gmail_user.id, _fake_service())  # token unchanged
+    db_session.expire_all()
+    assert (
+        _get_settings_json(db_session, gmail_user.id)["gmail_credentials_json"]
+        == before
+    )
+
+    _run_sync(gmail_user.id, _fake_service(), refreshed='{"token": "fresh"}')
+    db_session.expire_all()
+    after = _get_settings_json(db_session, gmail_user.id)["gmail_credentials_json"]
+    assert after != before and after.startswith("enc:v1:")
+    assert (
+        user_settings_service.decrypt_gmail_credentials(after) == '{"token": "fresh"}'
+    )
+
+
+@pytest.mark.unit
+def test_disconnect_during_a_sync_is_not_resurrected(gmail_user, db_session):
+    """If the user disconnects while a run is fetching, the run's final write
+    must not put the watermark/result of a connection that no longer exists
+    back into settings."""
+    from app.models.database import UserSettings
+
+    def _disconnect_mid_run(*_args, **_kwargs):
+        user_settings_service.clear_gmail_connection(db_session, gmail_user.id)
+        db_session.commit()
+        return 0, []
+
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(_fake_service(), None),
+        ),
+        patch("app.tasks.gmail_sync._ingest_query", side_effect=_disconnect_mid_run),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        result = gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+
+    assert result == "Gmail disconnected during sync"
+    db_session.expire_all()
+    sj = (
+        db_session.query(UserSettings)
+        .filter_by(user_id=gmail_user.id)
+        .one()
+        .settings_json
+    )
+    for key in (
+        "gmail_credentials_json",
+        "gmail_last_sync_at",
+        "gmail_last_sync_result",
+    ):
+        assert key not in sj
