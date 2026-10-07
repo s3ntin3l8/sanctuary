@@ -4,6 +4,7 @@ import type { ReactElement } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { vi } from 'vitest'
 
+import { ShortcutsProvider } from '../shell/shortcuts'
 import { ToastProvider } from '../ui/toast'
 
 /**
@@ -26,7 +27,9 @@ export function renderAt(path: string, ui: ReactElement, layout?: ReactElement) 
   return render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <MemoryRouter initialEntries={[path]}>{tree}</MemoryRouter>
+        <ShortcutsProvider>
+          <MemoryRouter initialEntries={[path]}>{tree}</MemoryRouter>
+        </ShortcutsProvider>
       </ToastProvider>
     </QueryClientProvider>,
   )

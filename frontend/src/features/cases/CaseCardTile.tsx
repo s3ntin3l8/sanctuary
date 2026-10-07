@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import type { CaseCard } from '../../api/cases'
 import { daysUntil, formatDueRelative, formatEur, formatShortDate } from '../../format'
+import { ROW_ATTR } from '../../shell/keys'
 import { Badge } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
 
@@ -24,13 +25,14 @@ export function SignificanceDot({ tier }: { tier: CaseCard['max_significance'] }
 }
 
 /** A case summary card (Home grids). The whole card links to the case. */
-export function CaseCardTile({ card }: { card: CaseCard }) {
+export function CaseCardTile({ card, navRow = false }: { card: CaseCard; navRow?: boolean }) {
   const action = card.next_action
   const urgent = action?.due_date ? daysUntil(action.due_date) <= 7 : false
   return (
     <Link
       to={`/cases/${card.id}`}
-      className="flex flex-col gap-2 rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40"
+      {...(navRow ? { [ROW_ATTR]: '' } : {})}
+      className="flex flex-col gap-2 rounded-xl border border-line bg-card2 p-3 transition-colors hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none"
     >
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11px] font-semibold text-tealink">{card.id}</span>

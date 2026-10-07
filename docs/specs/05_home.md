@@ -18,7 +18,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, `docs/dashboard.md`, a
 | Signals panel (alerts/health) | ✅ |
 | Active Cases strip (case cards) | ✅ |
 | Attention scoring logic | ✅ |
-| Keyboard navigation (j/k, Enter) | ⏳ j/k/Enter + `?` cheat sheet being restored in #177 (SPA currently has only ⌘K/⌘D) |
+| Keyboard navigation (j/k, Enter, `?`) | ✅ `useRovingRows` (`frontend/src/shell/keys.ts`) over the rows marked `data-nav-row`; cheat sheet from `frontend/src/shell/shortcuts.tsx` |
 
 ---
 
@@ -397,7 +397,7 @@ Priority tiers described in §6. Within each tier, most-recently-active first.
 
 ## 9. Keyboard-first interaction
 
-Home is designed to be navigable without touching the mouse. The SPA currently binds only the shell-level ⌘K (palette) and ⌘D (theme) in `frontend/src/shell/Shell.tsx`; the rows below are being restored in #177.
+Home is designed to be navigable without touching the mouse. `j`/`k` move focus between every row marked `data-nav-row` in DOM order (deadlines, triage bundles, delta cases, signals, case cards), wrapping at the ends; the focused row is the highlight, and Enter is the browser's own link activation. Keys are ignored while typing in a field or while a modal, popover or menu is open; closing a modal hands focus back to the row it was opened from. The `?` cheat sheet is global (`ShortcutsProvider`) and never stacks over another overlay; each page registers its own section with `usePageShortcuts`.
 
 | Key | Action |
 |---|---|
@@ -484,7 +484,7 @@ Home is done when:
 - **Time-to-orient ≤5 seconds**: opening the app and glancing at Home tells you what needs attention without scrolling or clicking.
 - **Ruthless noise filtering**: cases with nothing new don't appear in the attention panels. An inbox with 900 documents and 4 active cases still produces a Home screen that fits on one laptop viewport.
 - **"You're caught up" is reachable**: a user who has just triaged everything and responded to all deadlines sees the composite empty state. Not aspirational — a real daily occurrence.
-- **Keyboard-only navigation works**: `j/k` through every panel, `Enter` opens the highlighted item, zero mouse needed (pending #177).
+- **Keyboard-only navigation works**: `j/k` through every panel, `Enter` opens the highlighted item, zero mouse needed (`HomePage.test.tsx`).
 - **Delta timestamp semantics are correct**: opening Home passively doesn't advance the last-visit timestamp; only explicit "review all" does. Bouncing in and out of Home doesn't hide new items. Covered by `tests/integration/test_v1_home_and_cases.py` and `frontend/src/features/home/HomePage.test.tsx`.
 - **Panels collapse when empty**: no "No data" decorations taking up vertical space; one-line empty states only.
 - **Signals surface real issues**: Gmail auth issue, failed ingests, dormant cases all reach the user through Signals, not buried in a settings menu.

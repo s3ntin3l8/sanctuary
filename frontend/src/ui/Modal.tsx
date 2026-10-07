@@ -33,8 +33,14 @@ export function Modal({
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
+    // Hand focus back to where it came from on close, so keyboard flows
+    // (Home's j/k rows, the HUD) resume where they were.
+    const opener = document.activeElement as HTMLElement | null
     panel.current?.querySelector<HTMLElement>('input, button, select, textarea')?.focus()
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (opener?.isConnected) opener.focus()
+    }
   }, [open, onClose])
 
   if (!open) return null

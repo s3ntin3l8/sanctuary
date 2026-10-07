@@ -3,9 +3,10 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router'
 
 import { originalUrl, type Reader, useCreatePin, useDocumentReader } from '../../api/documents'
 import { formatShortDate } from '../../format'
+import { hasModifier, isTypingTarget } from '../../shell/keys'
+import { usePageShortcuts, useShortcuts } from '../../shell/shortcuts'
 import { Badge, type Tone } from '../../ui/Badge'
 import { Icon } from '../../ui/Icon'
-import { Modal } from '../../ui/Modal'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 import { ChatDrawer } from '../chat/ChatDrawer'
@@ -27,7 +28,7 @@ const SUGGESTIONS = [
   'Which passages should I verify against our own records?',
 ]
 
-const SHORTCUTS: [string, string][] = [
+const SHORTCUTS = [
   ['← / →', 'Previous / next document in the proceeding'],
   ['↑ / ↓', 'Previous / next key passage'],
   ['[ / ]', 'Parent / first attached document'],
@@ -39,9 +40,8 @@ const SHORTCUTS: [string, string][] = [
   ['1 – 4', 'React: lies, true, needs proof, precedent'],
   ['/', 'Ask the AI about this document'],
   ['⌘F / Ctrl+F', 'Find in document'],
-  ['?', 'This overview'],
   ['Esc', 'Leave focus mode, close find or chat, then back to the case'],
-]
+] as const
 
 /** The full-screen document HUD: rendered body, pins, intelligence rail, chat. */
 export function DocumentPage() {
@@ -64,7 +64,8 @@ function Hud({ reader }: { reader: Reader }) {
   const [focusMode, setFocusMode] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [prefill, setPrefill] = useState<{ text: string; at: number } | null>(null)
-  const [shortcuts, setShortcuts] = useState(false)
+  const shortcuts = useShortcuts()
+  usePageShortcuts('Document', SHORTCUTS)
   const [activePassageId, setActivePassageId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const find = useFind(article, reader.body_html)
@@ -170,16 +171,14 @@ function Hud({ reader }: { reader: Reader }) {
   const rail = useRef<HTMLElement>(null)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         find.open()
         return
       }
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (isTypingTarget(e) || hasModifier(e)) return
       // The shortcuts overview owns the keyboard while open (its own Esc closes it).
-      if (shortcuts) return
+      if (shortcuts.open) return
       const nav = reader.nav
       switch (e.key) {
         case 'ArrowLeft':
@@ -238,9 +237,6 @@ function Hud({ reader }: { reader: Reader }) {
         case '/':
           e.preventDefault()
           setChatOpen(true)
-          break
-        case '?':
-          setShortcuts(true)
           break
         case 'Escape':
           if (find.isOpen) find.close()
@@ -345,11 +341,7 @@ function Hud({ reader }: { reader: Reader }) {
             pressed={chatOpen}
             onClick={() => setChatOpen((v) => !v)}
           />
-          <ToolButton
-            label="Keyboard shortcuts (?)"
-            icon="keyboard"
-            onClick={() => setShortcuts(true)}
-          />
+          <ToolButton label="Keyboard shortcuts (?)" icon="keyboard" onClick={shortcuts.show} />
         </div>
       </header>
 
@@ -414,33 +406,7 @@ function Hud({ reader }: { reader: Reader }) {
           />
         )}
       </div>
-
-      <Modal
-        open={shortcuts}
-        onClose={() => setShortcuts(false)}
-        title="Keyboard shortcuts"
-        icon="keyboard"
-      >
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12px]">
-          {SHORTCUTS.map(([k, v]) => (
-            <KeyRow key={k} k={k} v={v} />
-          ))}
-        </dl>
-      </Modal>
     </div>
-  )
-}
-
-function KeyRow({ k, v }: { k: string; v: string }) {
-  return (
-    <>
-      <dt>
-        <kbd className="rounded border border-line bg-card2 px-1.5 py-0.5 font-mono text-[10.5px]">
-          {k}
-        </kbd>
-      </dt>
-      <dd className="text-ink2">{v}</dd>
-    </>
   )
 }
 
