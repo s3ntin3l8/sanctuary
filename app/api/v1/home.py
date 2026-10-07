@@ -10,6 +10,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.database import IngestBatch, User
 from app.schemas.home import (
     HomeActionItem,
+    HomeActivityEvent,
     HomeDeltaCase,
     HomeSignal,
     HomeTriageBundle,
@@ -77,6 +78,7 @@ def home(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
         last_home_visit=data["last_home_visit"],
         delta_cases=[HomeDeltaCase(**d) for d in data["delta_cases"]],
         signals=[HomeSignal(**s) for s in data["signals"]],
+        activity=[HomeActivityEvent(**e) for e in data["activity"]],
         draft_cases=case_cards(service, data["draft_cases"], editable=editable),
         active_cases=case_cards(service, data["active_cases"], editable=editable),
         caught_up=data["caught_up"],

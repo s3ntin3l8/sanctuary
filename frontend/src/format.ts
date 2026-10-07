@@ -42,6 +42,19 @@ export function formatDueRelative(iso: string, now = new Date()) {
   return `in ${days}d`
 }
 
+/** "8m" · "3h" · "2d" · "18 Jun" — how long ago `iso` was, prototype-style. */
+export function formatAgo(iso: string, now = new Date()) {
+  const ms = now.getTime() - new Date(iso).getTime()
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 1) return 'now'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.round(hours / 24)
+  if (days < 14) return `${days}d`
+  return formatShortDate(iso)
+}
+
 /** "€18,450" */
 export function formatEur(amount: number) {
   return `€${eur.format(amount)}`
