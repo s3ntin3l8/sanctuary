@@ -47,6 +47,7 @@ def _oauth_callback(granted_scopes, fetch_error=None):
     """Drive start -> callback with a mocked Google flow."""
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
+    flow.code_verifier = "verifier-1"
     flow.credentials.granted_scopes = granted_scopes
     flow.credentials.to_json.return_value = CREDS
     if fetch_error:
@@ -70,6 +71,7 @@ def _oauth_callback(granted_scopes, fetch_error=None):
 def test_start_does_not_request_previously_granted_scopes():
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
+    flow.code_verifier = "verifier-1"
     with patch("app.api.ingestion_settings.get_oauth_flow", return_value=flow):
         client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
     assert "include_granted_scopes" not in flow.authorization_url.call_args.kwargs
@@ -337,3 +339,96 @@ def test_reset_sync_refuses_a_date_in_the_future(db_session):
         ).status_code
         == 200
     )
+
+
+# --- PKCE: the verifier made at /start must reach /callback -------------------
+
+
+def test_callback_sends_the_verifier_made_at_start(db_session):
+    flow = MagicMock()
+    flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
+    flow.code_verifier = "verifier-1"
+    flow.credentials.granted_scopes = [READONLY_SCOPE]
+    flow.credentials.to_json.return_value = CREDS
+    with (
+        patch("app.api.ingestion_settings.get_oauth_flow", return_value=flow),
+        patch("app.api.ingestion_settings.secrets.token_urlsafe", return_value="s"),
+    ):
+        client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
+        client.get(
+            "/api/ingest/gmail/oauth/callback?code=c&state=s", follow_redirects=False
+        )
+    flow.fetch_token.assert_called_once_with(code="c", code_verifier="verifier-1")
+
+
+def test_start_and_callback_agree_on_pkce_with_a_real_google_flow(db_session):
+    """Regression: /start and /callback each build their own Flow. google-auth-
+    oauthlib generates the PKCE verifier on the first one, so unless it is carried
+    over the second one sends none and Google answers `invalid_grant: Missing code
+    verifier` (what the first real Connect Gmail hit). No mocking of the Flow
+    itself: the verifier sent at the end must hash to the challenge in the URL."""
+    import base64
+    import hashlib
+    import time
+    from urllib.parse import parse_qs, urlparse
+
+    from google_auth_oauthlib.flow import Flow
+
+    seen: dict = {}
+
+    class _Flow(Flow):
+        def fetch_token(self, **kwargs):
+            seen.update(kwargs)
+            self.oauth2session.token = {
+                "access_token": "t",
+                "refresh_token": "r",
+                "scope": [READONLY_SCOPE],
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "expires_at": time.time() + 3600,
+            }
+
+    def _make():
+        return _Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": "id.apps.googleusercontent.com",
+                    "client_secret": "s",  # pragma: allowlist secret
+                    "auth_uri": "https://accounts.google.test/auth",
+                    "token_uri": "https://oauth2.google.test/token",
+                }
+            },
+            scopes=[READONLY_SCOPE],
+            redirect_uri="https://sanctuary.test/api/ingest/gmail/oauth/callback",
+        )
+
+    with (
+        patch("app.api.ingestion_settings.get_oauth_flow", side_effect=_make),
+        patch("app.api.ingestion_settings.secrets.token_urlsafe", return_value="s1"),
+    ):
+        start = client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
+        challenge = parse_qs(urlparse(start.headers["location"]).query)[
+            "code_challenge"
+        ][0]
+        done = client.get(
+            "/api/ingest/gmail/oauth/callback?code=c&state=s1", follow_redirects=False
+        )
+
+    assert done.status_code in (302, 303, 307), done.text
+    verifier = seen["code_verifier"]
+    assert verifier, "no code_verifier reached the token exchange"
+    digest = hashlib.sha256(verifier.encode()).digest()
+    assert base64.urlsafe_b64encode(digest).rstrip(b"=").decode() == challenge
+
+
+def test_google_rejecting_the_code_is_a_readable_400_not_a_bare_bad_request(db_session):
+    from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
+
+    response = _oauth_callback(
+        [READONLY_SCOPE],
+        fetch_error=InvalidGrantError(description="Missing code verifier."),
+    )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "invalid_grant" in detail and "Start again" in detail
+    assert not _sj(db_session, _admin(db_session)).get("gmail_credentials_json")
