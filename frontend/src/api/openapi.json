@@ -4731,6 +4731,14 @@
       },
       "GmailIndexStatus": {
         "properties": {
+          "cached_bytes": {
+            "title": "Cached Bytes",
+            "type": "integer"
+          },
+          "cached_count": {
+            "title": "Cached Count",
+            "type": "integer"
+          },
           "done": {
             "title": "Done",
             "type": "integer"
@@ -4782,13 +4790,19 @@
           "done",
           "total",
           "skipped",
-          "error"
+          "error",
+          "cached_count",
+          "cached_bytes"
         ],
         "title": "GmailIndexStatus",
         "type": "object"
       },
       "GmailIndexedMessage": {
         "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
           "gmail_id": {
             "title": "Gmail Id",
             "type": "string"
@@ -4840,7 +4854,8 @@
           "subject",
           "sent_at",
           "has_attachments",
-          "ingested"
+          "ingested",
+          "cached"
         ],
         "title": "GmailIndexedMessage",
         "type": "object"
@@ -12718,6 +12733,31 @@
         "summary": "V1 Summary Action",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/api/v1/gmail/cache": {
+      "delete": {
+        "description": "Delete the local copies of fetched messages (local files only \u2014 nothing in\nGmail or in already-imported bundles is touched).",
+        "operationId": "v1_clear_cache_api_v1_gmail_cache_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Clear Cache",
+        "tags": [
+          "gmail"
         ]
       }
     },

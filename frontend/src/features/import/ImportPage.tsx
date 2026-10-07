@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 
 import {
   useCancelGmailImport,
+  useClearGmailCache,
   useGmailGroups,
   useGmailImportStatus,
   useGmailIndexStatus,
@@ -16,11 +17,17 @@ import { formatIsoDate, pluralize } from '../../format'
 import { Alert } from '../../ui/Alert'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
 type Group = Schemas['GmailGroup']
+
+function formatSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 /** "8372-25" is stored as the case id; the lawyer's file number reads "8372/25". */
 function referenceLabel(group: Group) {
@@ -62,7 +69,7 @@ function GroupMessages({
         {items.map((m) => (
           <li
             key={m.gmail_id}
-            className="grid grid-cols-[24px_88px_200px_1fr_20px_20px] items-center gap-2 px-4 py-1.5"
+            className="grid grid-cols-[24px_88px_200px_1fr_20px_20px_20px] items-center gap-2 px-4 py-1.5"
           >
             <input
               type="checkbox"
@@ -76,6 +83,14 @@ function GroupMessages({
             <span className="truncate">{m.subject ?? '(no subject)'}</span>
             {m.has_attachments ? (
               <Icon name="attach_file" size={14} className="text-muted" />
+            ) : (
+              <span />
+            )}
+            {m.cached ? (
+              <span title="Cached locally — importing it needs no Gmail">
+                <Icon name="save" size={14} className="text-muted" />
+                <span className="sr-only">Cached locally</span>
+              </span>
             ) : (
               <span />
             )}
@@ -112,6 +127,7 @@ export function ImportPage() {
   const refresh = useRefreshGmailIndex()
   const start = useStartGmailImport()
   const cancel = useCancelGmailImport()
+  const clearCache = useClearGmailCache()
   const toast = useToast()
 
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -119,6 +135,7 @@ export function ImportPage() {
   // Raw text, so clearing the field to retype doesn't fight a clamp on every keystroke.
   const [oldestInput, setOldestInput] = useState('25')
   const [sequential, setSequential] = useState(true)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   useEffect(() => {
     document.title = 'Import history | The Sanctuary'
@@ -172,6 +189,8 @@ export function ImportPage() {
           <p className="text-muted">
             {index.indexed_count} messages indexed
             {index.last_indexed_at && ` · refreshed ${formatIsoDate(index.last_indexed_at)}`}
+            {index.cached_count > 0 &&
+              ` · ${index.cached_count} cached (${formatSize(index.cached_bytes)})`}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -181,6 +200,15 @@ export function ImportPage() {
           >
             Gmail settings
           </Link>
+          {index.cached_count > 0 && (
+            <Button
+              variant="secondary"
+              disabled={importing || clearCache.isPending}
+              onClick={() => setConfirmClear(true)}
+            >
+              <Icon name="delete_sweep" size={16} /> Clear cache
+            </Button>
+          )}
           <Button
             variant="secondary"
             disabled={!ready || index.running || refresh.isPending}
@@ -404,6 +432,23 @@ export function ImportPage() {
           nothing is imported until you choose.
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false)
+          clearCache.mutate(undefined, {
+            onSuccess: () => toast('Local mail cache cleared'),
+            onError: (err) => toast(err.message, 'error'),
+          })
+        }}
+        title="Clear the local mail cache?"
+        body="Deletes the raw copies of fetched emails kept on this machine. Nothing in Gmail and no already-imported bundle is touched; importing these messages again will fetch them from Gmail."
+        label="Clear cache"
+        danger
+        pending={clearCache.isPending}
+      />
     </div>
   )
 }

@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 from app.config import REDIS_URL
 from app.core.secrets import SecretsError
 from app.models.database import GmailMessageIndex, UserSettings
-from app.services import gmail_index_service, gmail_runs, user_settings_service
+from app.services import (
+    gmail_cache,
+    gmail_index_service,
+    gmail_runs,
+    user_settings_service,
+)
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
@@ -76,6 +81,39 @@ def _get_user_settings(db: Session, user_id: int):
     return db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
 
 
+def _raw_message(user_id: int, gmail_id: str, get_service) -> bytes:
+    """The raw RFC822 message — from the local cache if we have it, else Gmail.
+
+    ``get_service`` is only called on a cache miss, so a fully cached batch needs
+    neither network nor a valid token. A fetched message is cached *before* the
+    caller ingests it, so one that fails to ingest can be replayed once fixed.
+    """
+    cached = gmail_cache.read(user_id, gmail_id)
+    if cached is not None:
+        return cached
+    raw = fetch_raw_message(get_service(), gmail_id)
+    gmail_cache.write(user_id, gmail_id, raw)
+    return raw
+
+
+class _LazyService:
+    """Builds the Gmail client the first time it is needed (see _raw_message)."""
+
+    def __init__(self, connect):
+        self._connect = connect
+        self._service = None
+
+    def __call__(self):
+        if self._service is None:
+            self._service = self._connect()
+        return self._service
+
+
+def _settings_json(db: Session, user_id: int) -> dict:
+    settings = _get_user_settings(db, user_id)
+    return (settings.settings_json or {}) if settings else {}
+
+
 def _ingest_messages(
     db: Session, service, user_id: int, message_ids: list[str]
 ) -> tuple[int, list[str]]:
@@ -88,7 +126,7 @@ def _ingest_messages(
     failed_ids: list[str] = []
     for msg_id in message_ids:
         try:
-            raw_bytes = fetch_raw_message(service, msg_id)
+            raw_bytes = _raw_message(user_id, msg_id, lambda: service)
             ingest_raw_email(db, raw_bytes, owner_id=user_id)
             succeeded += 1
         except Exception:
@@ -545,7 +583,9 @@ def _merge_import_outcome(
     db.commit()
 
 
-def _import_one(db: Session, service, user_id: int, work: dict, gmail_id: str) -> None:
+def _import_one(
+    db: Session, get_service, user_id: int, work: dict, gmail_id: str
+) -> None:
     """Ingest one message, updating ``work`` in place."""
     work["current"] = {
         "gmail_id": gmail_id,
@@ -553,9 +593,11 @@ def _import_one(db: Session, service, user_id: int, work: dict, gmail_id: str) -
     }
     try:
         batch = ingest_raw_email(
-            db, fetch_raw_message(service, gmail_id), owner_id=user_id
+            db, _raw_message(user_id, gmail_id, get_service), owner_id=user_id
         )
         work["current"]["batch_id"] = batch.id if batch else None
+    except (GmailReconnectRequired, SecretsError):
+        raise  # not this message's fault: end the run and ask for a reconnect
     except Exception:
         db.rollback()
         work["failed"].append(gmail_id)
@@ -673,12 +715,13 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
                 "failed": list(state["failed"]),
                 "waiting_on": None,
             }
-            settings = _get_user_settings(db, user_id)
-            service = _connect(
-                db, user_id, (settings.settings_json or {}) if settings else {}
+            # Built lazily: messages already in the local cache need no Gmail
+            # connection (or valid token) at all.
+            get_service = _LazyService(
+                lambda: _connect(db, user_id, _settings_json(db, user_id))
             )
             while work["remaining"]:
-                _import_one(db, service, user_id, work, work["remaining"].pop(0))
+                _import_one(db, get_service, user_id, work, work["remaining"].pop(0))
                 if sequential:
                     break
                 if (

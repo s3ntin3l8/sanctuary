@@ -19,6 +19,9 @@ class GmailIndexStatus(BaseModel):
     # run; a further refresh retries them.
     skipped: int
     error: str | None
+    # Raw messages kept locally (data/gmail_raw): re-importing them needs no Gmail.
+    cached_count: int
+    cached_bytes: int
 
 
 class GmailGroup(BaseModel):
@@ -46,6 +49,7 @@ class GmailIndexedMessage(BaseModel):
     sent_at: datetime
     has_attachments: bool
     ingested: bool
+    cached: bool
 
 
 class GmailMessagePage(BaseModel):

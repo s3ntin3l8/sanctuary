@@ -312,6 +312,13 @@ def cleanup_per_test(db_session):
     from app.services.case_service import seed_triage_case
 
     yield
+    # The Gmail raw-message cache lives under DATA_DIR and outlives a DB wipe by
+    # design; tests must not see each other's cached mail.
+    import shutil
+
+    import app.config
+
+    shutil.rmtree(app.config.DATA_DIR / "gmail_raw", ignore_errors=True)
     db_session.rollback()
     for table in reversed(Base.metadata.sorted_tables):
         db_session.execute(table.delete())

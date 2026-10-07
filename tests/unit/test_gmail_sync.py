@@ -570,3 +570,34 @@ def test_disconnect_during_a_sync_is_not_resurrected(gmail_user, db_session):
         "gmail_last_sync_result",
     ):
         assert key not in sj
+
+
+@pytest.mark.unit
+def test_incremental_sync_caches_what_it_fetches_even_if_ingest_fails(
+    gmail_user, db_session
+):
+    from app.services import gmail_cache
+
+    service = _fake_service(messages=[{"id": "good-1"}, {"id": "bad-ingest"}])
+
+    def _ingest(_db, raw, owner_id):
+        if raw == b"raw bad-ingest":
+            raise ValueError("parser bug")
+
+    with (
+        patch(
+            "app.tasks.gmail_sync.get_gmail_service",
+            return_value=GmailConnection(service, None),
+        ),
+        patch(
+            "app.tasks.gmail_sync.fetch_raw_message",
+            side_effect=lambda _s, gid: f"raw {gid}".encode(),
+        ),
+        patch("app.tasks.gmail_sync.ingest_raw_email", side_effect=_ingest),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+
+    assert gmail_cache.read(gmail_user.id, "good-1") == b"raw good-1"
+    assert gmail_cache.read(gmail_user.id, "bad-ingest") == b"raw bad-ingest"

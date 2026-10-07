@@ -23,7 +23,12 @@ from app.schemas.gmail_import import (
     GmailIndexStatus,
     GmailMessagePage,
 )
-from app.services import gmail_index_service, gmail_runs, user_settings_service
+from app.services import (
+    gmail_cache,
+    gmail_index_service,
+    gmail_runs,
+    user_settings_service,
+)
 from app.services.gmail_runs import RunStateUnavailable
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
@@ -80,6 +85,7 @@ def refresh_index(
 def index_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     state = gmail_runs.get_run("index", user.id) or {}
     count, last = gmail_index_service.index_summary(db, user.id)
+    cached_count, cached_bytes = gmail_cache.stats(user.id)
     return GmailIndexStatus(
         running=gmail_runs.is_live(state),
         indexed_count=count,
@@ -88,6 +94,8 @@ def index_status(db: Session = Depends(get_db), user: User = Depends(get_current
         total=state.get("total", 0),
         skipped=state.get("skipped", 0),
         error=state.get("error"),
+        cached_count=cached_count,
+        cached_bytes=cached_bytes,
     )
 
 
@@ -112,6 +120,7 @@ def messages(
         )
     except ValueError as exc:
         raise ApiError(422, "invalid_cursor", "Invalid page cursor.") from exc
+    cached = gmail_cache.cached_ids(user.id, [row.gmail_id for row, _ in rows])
     return GmailMessagePage(
         items=[
             GmailIndexedMessage(
@@ -122,6 +131,7 @@ def messages(
                 sent_at=row.sent_at,
                 has_attachments=row.has_attachments,
                 ingested=ingested,
+                cached=row.gmail_id in cached,
             )
             for row, ingested in rows
         ],
@@ -224,3 +234,11 @@ def cancel_import(request: Request, user: User = Depends(get_current_user)):
     """Stop after the message currently being ingested."""
     if not gmail_runs.cancel_run("import", user.id):
         raise ApiError(409, "no_import_running", "No import is running.")
+
+
+@router.delete("/cache", status_code=204, response_class=Response)
+@limiter.limit("6/minute")
+def clear_cache(request: Request, user: User = Depends(get_current_user)):
+    """Delete the local copies of fetched messages (local files only — nothing in
+    Gmail or in already-imported bundles is touched)."""
+    gmail_cache.clear(user.id)
