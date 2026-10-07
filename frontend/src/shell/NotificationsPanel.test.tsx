@@ -30,6 +30,7 @@ test('badge shows the total and the popover lists each non-empty group with link
     '/costs',
   )
   expect(within(panel).getByText('Saal 3', { exact: false })).toBeVisible()
+  expect(within(panel).getByText('€1,230 open')).toBeVisible()
 
   await user.click(within(panel).getByRole('link', { name: /Ladung AG Hamburg/ }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

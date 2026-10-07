@@ -96,6 +96,13 @@ def test_groups_split_by_window_and_type(db_session, two_users):
     _item(
         db_session, "N-1", "Far Termin", days=45, action_type=ActionItemType.COURT_DATE
     )
+    _item(
+        db_session,
+        "N-1",
+        "Missed Termin",
+        days=-3,
+        action_type=ActionItemType.COURT_DATE,
+    )
     _item(db_session, "N-1", "Opponent's Frist", days=1, addressee="opposing")
     _item(db_session, "N-1", "Done", days=-1, status=ActionItemStatus.COMPLETED)
     _item(db_session, "N-1", "Replaced", days=-1, superseded=True)
@@ -103,10 +110,12 @@ def test_groups_split_by_window_and_type(db_session, two_users):
     g = _groups(build_notifications(db_session, a))
     assert [i.title for i in g["overdue_deadline"].items] == ["Missed Frist"]
     assert [i.title for i in g["upcoming_deadline"].items] == ["Frist this week"]
-    assert [i.title for i in g["hearing"].items] == ["Termin"]
-    assert g["hearing"].items[0].detail == "Saal 3"
-    assert g["hearing"].items[0].link == "/cases/N-1?view=review"
-    assert g["hearing"].items[0].case_title == "Case N-1"
+    # Missed hearings stay in the hearings group rather than becoming
+    # "overdue deadlines"; soonest first.
+    assert [i.title for i in g["hearing"].items] == ["Missed Termin", "Termin"]
+    assert g["hearing"].items[1].detail == "Saal 3"
+    assert g["hearing"].items[1].link == "/cases/N-1?view=review"
+    assert g["hearing"].items[1].case_title == "Case N-1"
 
 
 def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_users):
@@ -160,7 +169,7 @@ def test_overdue_costs_skip_settled_and_future(db_session, two_users):
 
     g = _groups(build_notifications(db_session, a))
     assert [i.title for i in g["overdue_cost"].items] == ["Overdue"]
-    assert g["overdue_cost"].items[0].detail == "100.00 € open"
+    assert g["overdue_cost"].items[0].amount == 100.0
     assert g["overdue_cost"].items[0].link == "/costs"
 
 
@@ -198,3 +207,19 @@ def test_scoped_to_visible_cases(auth_enabled, db_session, two_users):
 
     anonymous = TestClient(app, follow_redirects=False)
     assert anonymous.get("/api/v1/notifications").status_code == 401
+
+
+def test_admin_sees_every_case(db_session, two_users):
+    a, b = two_users
+    _case(db_session, "N-X", a.id)
+    _case(db_session, "N-Y", b.id)
+    _item(db_session, "N-X", "A's Frist", days=-1)
+    _item(db_session, "N-Y", "B's Frist", days=-1)
+    admin = auth_service.get_user_by_email(db_session, "admin@localhost")
+
+    g = _groups(build_notifications(db_session, admin))
+    assert sorted(i.title for i in g["overdue_deadline"].items) == [
+        "A's Frist",
+        "B's Frist",
+    ]
+    assert _groups(build_notifications(db_session, a))["overdue_deadline"].count == 1

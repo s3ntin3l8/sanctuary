@@ -5954,6 +5954,17 @@
       },
       "NotificationItem": {
         "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
           "case_id": {
             "anyOf": [
               {
@@ -6028,6 +6039,7 @@
           "kind",
           "title",
           "detail",
+          "amount",
           "due_at",
           "case_id",
           "case_title",

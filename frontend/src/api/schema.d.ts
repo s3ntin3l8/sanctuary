@@ -4177,6 +4177,8 @@ export interface components {
         };
         /** NotificationItem */
         NotificationItem: {
+            /** Amount */
+            amount: number | null;
             /** Case Id */
             case_id: string | null;
             /** Case Title */

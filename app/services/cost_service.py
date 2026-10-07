@@ -314,17 +314,16 @@ def costs_due(
     for c in costs:
         if c.status in SETTLED_STATUSES or c.due_at is None:
             continue
-        due_at = ensure_utc(c.due_at)
-        if due_at > soon:
+        if c.due_at > soon:
             continue
         due.append(
             CostDue(
                 cost=c,
                 open_amount=max((c.amount_gross or 0) - (c.amount_paid or 0), 0.0),
-                overdue=due_at < now,
+                overdue=c.due_at < now,
             )
         )
-    due.sort(key=lambda d: ensure_utc(d.cost.due_at) if d.cost.due_at else now)
+    due.sort(key=lambda d: d.cost.due_at or now)
     return due
 
 

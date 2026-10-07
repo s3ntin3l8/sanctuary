@@ -111,6 +111,17 @@ def test_home_lists_deadlines_bundles_and_cases(db_session, sample_case):
         sender_email="kanzlei@example.com",
     )
     db_session.add(batch)
+    # Parked for slicing: not awaiting triage, so neither Home nor the rail
+    # badge counts it.
+    db_session.add(
+        IngestBatch(
+            owner_id=admin.id,
+            source_type=IngestBatchSourceType.SCAN,
+            status=IngestBatchStatus.AWAITING_SLICING,
+            case_id="_TRIAGE",
+            subject="Scan stack",
+        )
+    )
     db_session.flush()
     db_session.add(
         Document(

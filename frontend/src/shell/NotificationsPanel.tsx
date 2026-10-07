@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 
 import type { Schemas } from '../api/client'
 import { useNotifications } from '../api/shell'
-import { formatDueRelative, formatShortDate } from '../format'
+import { formatDueRelative, formatEur, formatShortDate } from '../format'
 import { Icon } from '../ui/Icon'
 import { Popover } from '../ui/Popover'
 import { CountBadge, RailButton } from './RailButton'
@@ -80,9 +80,17 @@ function Row({ item, onClick }: { item: Schemas['NotificationItem']; onClick: ()
       <div className="min-w-0 flex-1">
         <div className="truncate text-[12px] text-ink">{item.title}</div>
         <div className="truncate text-[10.5px] text-muted">
-          {item.case_id && <span className="font-mono">{item.case_id}</span>}
-          {item.case_id && item.detail && ' · '}
-          {item.detail}
+          {[
+            item.case_id && (
+              <span key="case" className="font-mono">
+                {item.case_id}
+              </span>
+            ),
+            item.amount != null && <span key="amount">{formatEur(item.amount)} open</span>,
+            item.detail && <span key="detail">{item.detail}</span>,
+          ]
+            .filter(Boolean)
+            .flatMap((node, i) => (i ? [' · ', node] : [node]))}
         </div>
       </div>
       {item.due_at && (

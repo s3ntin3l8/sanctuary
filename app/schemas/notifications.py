@@ -21,6 +21,8 @@ class NotificationItem(BaseModel):
     kind: NotificationKind
     title: str
     detail: str | None
+    amount: float | None
+    """Open amount in EUR for cost rows; the client formats it."""
     due_at: datetime | None
     case_id: str | None
     case_title: str | None
