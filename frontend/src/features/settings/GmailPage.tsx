@@ -149,6 +149,7 @@ export function GmailPage() {
             <input
               id="gmail-since"
               type="date"
+              max={formatIsoDate(new Date().toISOString())}
               value={since}
               onChange={(e) => setSince(e.target.value)}
               className={inputClass}

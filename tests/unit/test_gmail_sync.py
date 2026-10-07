@@ -601,3 +601,37 @@ def test_incremental_sync_caches_what_it_fetches_even_if_ingest_fails(
 
     assert gmail_cache.read(gmail_user.id, "good-1") == b"raw good-1"
     assert gmail_cache.read(gmail_user.id, "bad-ingest") == b"raw bad-ingest"
+
+
+# --- Surfaced errors never carry SQL ------------------------------------------
+
+
+@pytest.mark.unit
+def test_a_database_error_does_not_leak_sql_or_parameters_into_the_status(
+    gmail_user, db_session
+):
+    from sqlalchemy.exc import OperationalError
+
+    leaky = OperationalError(
+        "INSERT INTO ingest_batches (subject, sender_email) VALUES (%(s)s, %(e)s)",
+        {"s": "Kündigung Mandant Vogt", "e": "mandant.vogt@example.com"},
+        Exception("connection lost"),
+    )
+    with (
+        patch("app.tasks.gmail_sync.get_gmail_service", side_effect=leaky),
+        patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
+    ):
+        mock_lock.return_value.__enter__.return_value = True
+        with pytest.raises(OperationalError):
+            gmail_sync.sync_gmail_for_user.run(gmail_user.id)
+
+    db_session.expire_all()
+    error = _get_settings_json(db_session, gmail_user.id)["gmail_last_sync_error"]
+    assert error == "Database error (OperationalError) — see the server log"
+    assert "Vogt" not in error and "INSERT" not in error
+
+
+@pytest.mark.unit
+def test_other_errors_still_show_their_message():
+    assert gmail_sync._public_error(RuntimeError("quota exceeded")) == "quota exceeded"
+    assert len(gmail_sync._public_error(RuntimeError("x" * 900))) == 500

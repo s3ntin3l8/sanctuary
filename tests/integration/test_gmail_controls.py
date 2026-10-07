@@ -319,3 +319,21 @@ def test_missing_encryption_key_is_a_clear_503_on_the_ai_routes(
     assert response.status_code == 503
     assert response.json()["code"] == "secrets_key_unavailable"
     assert "SECRETS_ENCRYPTION_KEY" in response.json()["detail"]
+
+
+def test_reset_sync_refuses_a_date_in_the_future(db_session):
+    from datetime import UTC, datetime, timedelta
+
+    _connect(db_session, _admin(db_session))
+    tomorrow = (datetime.now(UTC) + timedelta(days=1)).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
+
+    refused = client.post("/api/v1/settings/gmail/reset-sync", json={"since": tomorrow})
+    assert refused.status_code == 422
+    assert "future" in refused.json()["detail"]
+    assert (
+        client.post(
+            "/api/v1/settings/gmail/reset-sync", json={"since": today}
+        ).status_code
+        == 200
+    )
