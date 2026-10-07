@@ -69,6 +69,10 @@ setup: .venv ## Install dependencies (prod + dev/test) and pre-commit hooks
 	$(NPM_FE) run build
 	$(PRECOMMIT) install
 	$(PRECOMMIT) install --hook-type pre-push
+	@touch .env
+	@grep -q '^SECRETS_ENCRYPTION_KEY=.' .env || { \
+		printf '\nSECRETS_ENCRYPTION_KEY=%s\n' "$$($(PYTHON) -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> .env; \
+		echo "Generated SECRETS_ENCRYPTION_KEY in .env — back it up: losing it makes stored Gmail/AI credentials unreadable."; }
 
 redis: ## Start Redis (Docker)
 	docker compose up redis -d --wait

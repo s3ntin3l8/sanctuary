@@ -4448,6 +4448,19 @@
         "title": "FinancialsView",
         "type": "object"
       },
+      "GmailAutoSync": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "GmailAutoSync",
+        "type": "object"
+      },
       "GmailBackfill": {
         "properties": {
           "days": {
@@ -4487,14 +4500,40 @@
         "title": "GmailFilters",
         "type": "object"
       },
+      "GmailResetSync": {
+        "properties": {
+          "since": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "title": "GmailResetSync",
+        "type": "object"
+      },
       "GmailView": {
         "properties": {
+          "ai_external": {
+            "title": "Ai External",
+            "type": "boolean"
+          },
           "allowlist": {
             "items": {
               "type": "string"
             },
             "title": "Allowlist",
             "type": "array"
+          },
+          "auto_sync": {
+            "title": "Auto Sync",
+            "type": "boolean"
           },
           "connected": {
             "title": "Connected",
@@ -4511,6 +4550,10 @@
             ],
             "title": "Connected At"
           },
+          "failed_count": {
+            "title": "Failed Count",
+            "type": "integer"
+          },
           "label_filter": {
             "title": "Label Filter",
             "type": "string"
@@ -4526,9 +4569,35 @@
             ],
             "title": "Last Sync At"
           },
+          "last_sync_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Error"
+          },
+          "last_sync_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync Result"
+          },
           "oauth_start_url": {
             "title": "Oauth Start Url",
             "type": "string"
+          },
+          "reconnect_required": {
+            "title": "Reconnect Required",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4537,7 +4606,13 @@
           "last_sync_at",
           "allowlist",
           "label_filter",
-          "oauth_start_url"
+          "oauth_start_url",
+          "auto_sync",
+          "last_sync_result",
+          "last_sync_error",
+          "reconnect_required",
+          "failed_count",
+          "ai_external"
         ],
         "title": "GmailView",
         "type": "object"
@@ -13860,6 +13935,36 @@
       }
     },
     "/api/v1/settings/gmail": {
+      "delete": {
+        "description": "Forget the Gmail grant locally and revoke it at Google (best effort).\n\nRevoking only cancels Sanctuary's own access; nothing in the mailbox is\ntouched. Already-ingested mail stays.",
+        "operationId": "v1_disconnect_api_v1_settings_gmail_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Disconnect",
+        "tags": [
+          "settings"
+        ]
+      },
       "get": {
         "operationId": "v1_gmail_api_v1_settings_gmail_get",
         "responses": {
@@ -13885,6 +13990,48 @@
           }
         },
         "summary": "V1 Gmail",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/auto-sync": {
+      "put": {
+        "description": "Opt in/out of the 5-minute background poll (off by default).",
+        "operationId": "v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailAutoSync"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Set Auto Sync",
         "tags": [
           "settings"
         ]
@@ -13961,6 +14108,73 @@
           }
         },
         "summary": "V1 Save Filters",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/reset-sync": {
+      "post": {
+        "description": "Forget tracked failures and move the sync watermark (default: now).",
+        "operationId": "v1_reset_sync_api_v1_settings_gmail_reset_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailResetSync"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Reset Sync",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/sync": {
+      "post": {
+        "description": "Run one incremental sync now, regardless of the auto-sync switch.",
+        "operationId": "v1_sync_now_api_v1_settings_gmail_sync_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Sync Now",
         "tags": [
           "settings"
         ]

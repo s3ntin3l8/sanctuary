@@ -180,7 +180,7 @@ def test_shared_editor_sees_owner_ingested_doc_in_case(db_session, two_users):
 # --- gmail per-user fan-out -------------------------------------------------
 
 
-def test_gmail_sync_fans_out_per_connected_user(db_session, two_users):
+def test_gmail_sync_fans_out_per_auto_sync_user(db_session, two_users):
     from app.services import user_settings_service
     from app.tasks import gmail_sync
 
@@ -193,7 +193,11 @@ def test_gmail_sync_fans_out_per_connected_user(db_session, two_users):
 
     dispatched: list = []
     with (
-        patch.object(gmail_sync, "user_ids_with_gmail", return_value=[a.id, b.id]),
+        patch.object(
+            user_settings_service,
+            "user_ids_with_gmail_auto_sync",
+            return_value=[a.id, b.id],
+        ),
         patch(
             "app.tasks.dispatch.dispatch_task",
             side_effect=lambda task, *args, **kw: dispatched.append((task, args)),

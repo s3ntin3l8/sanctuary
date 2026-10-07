@@ -1924,6 +1924,33 @@ export interface paths {
         get: operations["v1_gmail_api_v1_settings_gmail_get"];
         put?: never;
         post?: never;
+        /**
+         * V1 Disconnect
+         * @description Forget the Gmail grant locally and revoke it at Google (best effort).
+         *
+         *     Revoking only cancels Sanctuary's own access; nothing in the mailbox is
+         *     touched. Already-ingested mail stays.
+         */
+        delete: operations["v1_disconnect_api_v1_settings_gmail_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/gmail/auto-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * V1 Set Auto Sync
+         * @description Opt in/out of the 5-minute background poll (off by default).
+         */
+        put: operations["v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1961,6 +1988,46 @@ export interface paths {
         /** V1 Save Filters */
         put: operations["v1_save_filters_api_v1_settings_gmail_filters_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/gmail/reset-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Reset Sync
+         * @description Forget tracked failures and move the sync watermark (default: now).
+         */
+        post: operations["v1_reset_sync_api_v1_settings_gmail_reset_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/gmail/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Sync Now
+         * @description Run one incremental sync now, regardless of the auto-sync switch.
+         */
+        post: operations["v1_sync_now_api_v1_settings_gmail_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3756,6 +3823,11 @@ export interface components {
             signal_docs: components["schemas"]["CostSignalDoc"][];
             summary: components["schemas"]["FinancialsSummary"];
         };
+        /** GmailAutoSync */
+        GmailAutoSync: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** GmailBackfill */
         GmailBackfill: {
             /**
@@ -3774,20 +3846,37 @@ export interface components {
              */
             label_filter: string;
         };
+        /** GmailResetSync */
+        GmailResetSync: {
+            /** Since */
+            since?: string | null;
+        };
         /** GmailView */
         GmailView: {
+            /** Ai External */
+            ai_external: boolean;
             /** Allowlist */
             allowlist: string[];
+            /** Auto Sync */
+            auto_sync: boolean;
             /** Connected */
             connected: boolean;
             /** Connected At */
             connected_at: string | null;
+            /** Failed Count */
+            failed_count: number;
             /** Label Filter */
             label_filter: string;
             /** Last Sync At */
             last_sync_at: string | null;
+            /** Last Sync Error */
+            last_sync_error: string | null;
+            /** Last Sync Result */
+            last_sync_result: string | null;
             /** Oauth Start Url */
             oauth_start_url: string;
+            /** Reconnect Required */
+            reconnect_required: boolean;
         };
         /** GraphBundle */
         GraphBundle: {
@@ -8833,6 +8922,68 @@ export interface operations {
             };
         };
     };
+    v1_disconnect_api_v1_settings_gmail_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_set_auto_sync_api_v1_settings_gmail_auto_sync_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailAutoSync"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_backfill_api_v1_settings_gmail_backfill_post: {
         parameters: {
             query?: never;
@@ -8885,6 +9036,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GmailView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_reset_sync_api_v1_settings_gmail_reset_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailResetSync"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_sync_now_api_v1_settings_gmail_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

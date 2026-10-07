@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.exc import OperationalError
 
+from app.core import secrets
 from app.core.timezone import now_utc
 from app.models.database import AppSettings, UserSettings
 from app.models.enums import AuditEventType
@@ -160,25 +161,58 @@ _GMAIL_KEYS = (
     "gmail_allowlist",
     "gmail_label_filter",
     "gmail_connected_at",
+    "gmail_last_sync_at",
+    "gmail_auto_sync",
+    "gmail_last_sync_result",
+    "gmail_last_sync_error",
+    "gmail_reconnect_required",
+    "gmail_failed_message_ids",
+)
+
+# Keys cleared on disconnect. The sender allowlist and label filter are the
+# user's own configuration and survive a reconnect.
+_GMAIL_CONNECTION_KEYS = (
+    "gmail_credentials_json",
+    "gmail_connected_at",
+    "gmail_last_sync_at",
+    "gmail_auto_sync",
+    "gmail_last_sync_result",
+    "gmail_last_sync_error",
+    "gmail_reconnect_required",
+    "gmail_failed_message_ids",
 )
 
 
 def get_gmail_config(db, user_id: int) -> dict:
-    """Return this user's Gmail config keys (empty values when unset)."""
+    """Return this user's Gmail config keys (empty values when unset).
+
+    ``gmail_credentials_json`` is returned as stored (still encrypted) — enough
+    for "is it connected?". Use ``decrypt_gmail_credentials`` to actually use it.
+    """
     settings = _user_settings(db, user_id)
     data = (settings.settings_json or {}) if settings else {}
     return {k: data.get(k) for k in _GMAIL_KEYS}
 
 
+def decrypt_gmail_credentials(stored: str | None) -> str | None:
+    """Plaintext OAuth credentials JSON from the stored (encrypted) value."""
+    return secrets.decrypt(stored) if stored else None
+
+
+def _update_gmail(db, user_id: int, **changes) -> None:
+    settings = _get_or_create_user(db, user_id)
+    data = dict(settings.settings_json or {})
+    data.update(changes)
+    settings.settings_json = data
+    db.flush()
+
+
 def set_gmail_inbox_filters(
     db, user_id: int, *, allowlist: list[str], label_filter: str
 ) -> None:
-    settings = _get_or_create_user(db, user_id)
-    data = dict(settings.settings_json or {})
-    data["gmail_allowlist"] = allowlist
-    data["gmail_label_filter"] = label_filter
-    settings.settings_json = data
-    db.flush()
+    _update_gmail(
+        db, user_id, gmail_allowlist=allowlist, gmail_label_filter=label_filter
+    )
 
 
 def set_gmail_credentials(
@@ -186,18 +220,94 @@ def set_gmail_credentials(
 ) -> None:
     settings = _get_or_create_user(db, user_id)
     data = dict(settings.settings_json or {})
-    data["gmail_credentials_json"] = credentials_json
+    data["gmail_credentials_json"] = secrets.encrypt(credentials_json)
     data["gmail_connected_at"] = connected_at
+    # Anchor incremental sync at connect time so the first poll never pulls the
+    # senders' whole history (that is an explicit, bounded import). A reconnect
+    # keeps the existing watermark.
+    data.setdefault("gmail_last_sync_at", connected_at)
+    data.pop("gmail_last_sync_error", None)
+    data.pop("gmail_reconnect_required", None)
+    # gmail_failed_message_ids is intentionally kept across a reconnect (same
+    # contract as the watermark): those messages still failed and the next sync
+    # retries them; reset_gmail_sync is the deliberate way to forget them.
     settings.settings_json = data
     db.flush()
 
 
-def user_ids_with_gmail(db) -> list[int]:
-    """User ids that have connected Gmail (for the per-user sync fan-out)."""
+def update_gmail_token(db, user_id: int, credentials_json: str) -> None:
+    """Persist a refreshed access token (same grant, so nothing else changes)."""
+    _update_gmail(db, user_id, gmail_credentials_json=secrets.encrypt(credentials_json))
+
+
+def set_gmail_auto_sync(db, user_id: int, enabled: bool) -> None:
+    _update_gmail(db, user_id, gmail_auto_sync=enabled)
+
+
+def record_gmail_sync_outcome(
+    db,
+    user_id: int,
+    *,
+    result: str | None = None,
+    error: str | None = None,
+    reconnect_required: bool = False,
+) -> None:
+    """Record what the last sync/backfill did, or why it failed.
+
+    ``reconnect_required`` marks failures only a fresh OAuth grant can fix
+    (revoked/expired token, over-scoped token, undecryptable credentials).
+    """
+    _update_gmail(
+        db,
+        user_id,
+        gmail_last_sync_result=result,
+        gmail_last_sync_error=error,
+        gmail_reconnect_required=reconnect_required,
+    )
+
+
+def reset_gmail_sync(db, user_id: int, *, since: str) -> None:
+    """Forget tracked failures and move the watermark to ``since``.
+
+    Never clears the watermark: a missing one would let the next sync query the
+    whole mailbox.
+    """
+    _update_gmail(
+        db,
+        user_id,
+        gmail_last_sync_at=since,
+        gmail_failed_message_ids=[],
+        gmail_last_sync_error=None,
+        gmail_reconnect_required=False,
+    )
+
+
+def clear_gmail_connection(db, user_id: int) -> None:
+    settings = _user_settings(db, user_id)
+    if not settings:
+        return
+    data = {
+        k: v
+        for k, v in (settings.settings_json or {}).items()
+        if k not in _GMAIL_CONNECTION_KEYS
+    }
+    settings.settings_json = data
+    db.flush()
+
+
+def user_ids_with_gmail_auto_sync(db) -> list[int]:
+    """User ids with Gmail connected, automatic sync on, and a usable grant."""
     rows = db.query(UserSettings.user_id, UserSettings.settings_json).all()
     out: list[int] = []
     for uid, sj in rows:
-        if isinstance(sj, dict) and sj.get("gmail_credentials_json"):
+        if (
+            isinstance(sj, dict)
+            and sj.get("gmail_credentials_json")
+            and sj.get("gmail_auto_sync")
+            # A revoked/undecryptable grant fails identically on every tick;
+            # polling resumes once the user reconnects (which clears the flag).
+            and not sj.get("gmail_reconnect_required")
+        ):
             out.append(uid)
     return out
 

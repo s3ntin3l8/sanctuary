@@ -17,6 +17,7 @@ from app.config import (
     AI_SUMMARY_MODEL,
     AI_USER_CONTEXT,
 )
+from app.core import secrets as secrets_store
 from app.models.enums import AuditEventType
 from app.services import audit_service
 
@@ -97,7 +98,12 @@ def is_external_endpoint(base_url: str) -> bool:
         return True
 
 
-def _get_ai_section(db) -> dict:
+# Placeholder stored for endpoints that need no key. Not a secret, so it is
+# neither encrypted nor treated as one.
+_NO_KEY = "not-needed"
+
+
+def _raw_ai_section(db) -> dict:
     if db is None:
         return {}
     try:
@@ -109,6 +115,22 @@ def _get_ai_section(db) -> dict:
     except Exception:
         pass
     return {}
+
+
+def _get_ai_section(db) -> dict:
+    """The stored AI section with instance API keys decrypted.
+
+    Decryption sits outside _raw_ai_section's blanket except: a wrong or
+    missing SECRETS_ENCRYPTION_KEY must fail loudly, not silently fall back to
+    the env-default endpoint.
+    """
+    ai = _raw_ai_section(db)
+    instances = []
+    for inst in ai.get("instances", []):
+        if secrets_store.is_encrypted(inst.get("api_key")):
+            inst = {**inst, "api_key": secrets_store.decrypt(inst["api_key"])}
+        instances.append(inst)
+    return {**ai, "instances": instances} if instances else ai
 
 
 def list_instances(db) -> list[dict]:
@@ -217,8 +239,15 @@ def set_active(db, role: str, instance_id: str) -> None:
 
 
 def save_instance(db, instance: dict) -> None:
-    """Create or update an instance (matched by id)."""
+    """Create or update an instance (matched by id).
+
+    ``instance`` carries a plaintext ``api_key``; it is encrypted for storage.
+    """
     from app.services.app_settings_service import _get_or_create
+
+    api_key = instance.get("api_key")
+    if api_key and api_key != _NO_KEY:
+        instance = {**instance, "api_key": secrets_store.encrypt(api_key)}
 
     instance_id = instance.get("id")
     existing = get_instance(db, instance_id) if instance_id else None

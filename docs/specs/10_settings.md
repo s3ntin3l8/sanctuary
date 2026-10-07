@@ -36,6 +36,9 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | `PUT /api/v1/settings/gmail/filters` — save allowlist + label filter (`useSaveGmailFilters`) | ✅ |
 | `GET /api/ingest/gmail/oauth/start` → `GET /api/ingest/gmail/oauth/callback` (`app/api/ingestion_settings.py`; the start URL is returned in `GmailView.oauth_start_url`) | ✅ |
 | `POST /api/v1/settings/gmail/backfill` — enqueue `run_gmail_backfill` task (`useGmailBackfill`) | ✅ |
+| `PUT /api/v1/settings/gmail/auto-sync`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — opt in to the 5-minute poll (off by default), sync now, move the sync watermark, disconnect + revoke (`useSetGmailAutoSync`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
+| Gmail access is read-only: only the `gmail.readonly` scope is accepted (callback and token refresh reject broader grants) and `tests/unit/test_gmail_readonly_guard.py` fails the build on any Gmail mutating call | ✅ |
+| Credentials encrypted at rest — `gmail_credentials_json` and AI endpoint `api_key` are Fernet-encrypted (`enc:v1:` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; startup fails closed if encrypted values exist without the key | ✅ |
 | Database vacuum via settings UI | ❌ not implemented — non-goal for v1 |
 | Per-user settings (multi-user) | ✅ `UserSettings` is keyed by `user_id`; AI/identity/data/export/timezone are global admin settings, account/gmail/appearance are per user |
 
@@ -114,8 +117,14 @@ settings_json shape (defaults):
   },
   "gmail_allowlist": [],          // list[str] — email or domain patterns
   "gmail_label_filter": "",       // optional Gmail label to filter synced messages
-  "gmail_credentials_json": null, // OAuth token blob (set by callback)
-  "gmail_connected_at": null      // ISO datetime string
+  "gmail_credentials_json": null, // OAuth token blob (set by callback), stored encrypted ("enc:v1:...")
+  "gmail_connected_at": null,     // ISO datetime string
+  "gmail_last_sync_at": null,     // sync watermark; set at connect, never cleared (an unset one would mean "whole mailbox")
+  "gmail_auto_sync": false,       // 5-minute background poll; off unless the user opts in
+  "gmail_last_sync_result": null, // outcome of the last sync/backfill
+  "gmail_last_sync_error": null,  // why it failed, if it did
+  "gmail_reconnect_required": false, // failure only a fresh OAuth grant fixes
+  "gmail_failed_message_ids": []  // Gmail ids retried on every sync
 }
 ```
 
@@ -131,7 +140,8 @@ settings_json shape (defaults):
 
 | Section | What it does |
 |---|---|
-| **Gmail Connection** | Shows OAuth status (`gmail_credentials_json` non-null = connected). `[Connect Gmail]` navigates to `GmailView.oauth_start_url`. |
+| **Gmail Connection** | Shows OAuth status (`gmail_credentials_json` non-null = connected), a "Reconnect required" alert when the grant is unusable, and a warning when an active AI endpoint is external (`GmailView.ai_external`). `[Connect Gmail]` navigates to `GmailView.oauth_start_url`; `[Disconnect]` forgets and revokes the grant. |
+| **Sync** | Automatic-sync switch, `[Sync now]`, last result/error, failed-message count, and `[Reset sync state]` (optional "resume from" date; default now). |
 | **Sender Allowlist** | Comma-separated email addresses or domains. Saved to `settings_json.gmail_allowlist`. Only messages from allowlisted senders are synced. |
 | **Label Filter** | Optional Gmail label name. If set, only messages with this label are synced. |
 | **Backfill** | Range select (past 90 days / past year / past 5 years) + `[Backfill]` → `POST /api/v1/settings/gmail/backfill` with `{days: 90 \| 365 \| 1825}` (`useGmailBackfill`); enqueues `run_gmail_backfill` for the current user. |

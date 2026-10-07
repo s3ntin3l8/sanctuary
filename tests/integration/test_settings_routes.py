@@ -222,7 +222,20 @@ def test_gmail_filters_roundtrip(db_session):
     assert _audit(db_session, AuditEventType.SETTINGS_INGESTION_CHANGED)
 
 
+def test_gmail_backfill_requires_connection(db_session):
+    response = client.post("/api/v1/settings/gmail/backfill", json={"days": 90})
+    assert response.status_code == 409
+    assert response.json()["code"] == "gmail_not_connected"
+
+
 def test_gmail_backfill_enqueues_task(db_session):
+    from app.services import user_settings_service
+
+    admin_id = db_session.query(User).filter_by(email="admin@localhost").one().id
+    user_settings_service.set_gmail_credentials(
+        db_session, admin_id, credentials_json="{}", connected_at="2026-01-01"
+    )
+    db_session.commit()
     with patch("app.tasks.dispatch.dispatch_task") as dispatch:
         response = client.post("/api/v1/settings/gmail/backfill", json={"days": 365})
     assert response.status_code == 202
@@ -283,12 +296,15 @@ def test_ai_instance_update_keeps_key_when_omitted(db_session):
     saved = next(
         i for i in _app_settings(db_session)["ai"]["instances"] if i["id"] == inst["id"]
     )
-    assert saved == {
-        **saved,
-        "label": "Renamed",
-        "base_url": "http://x",
-        "api_key": "k1",  # pragma: allowlist secret
-    }
+    assert saved["label"] == "Renamed"
+    assert saved["base_url"] == "http://x"
+    # Stored encrypted, never as plaintext; still resolves to the same key.
+    assert saved["api_key"].startswith("enc:v1:")
+    assert "k1" not in saved["api_key"]
+    from app.services.ai_config import get_instance
+
+    stored_key = get_instance(db_session, inst["id"])["api_key"]
+    assert stored_key == "k1"  # pragma: allowlist secret
 
 
 def test_ai_delete_instance(db_session):
