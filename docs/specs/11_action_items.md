@@ -18,7 +18,7 @@ Companion document to `docs/specs/00_vision.md` §6 and `docs/specs/02_dashboard
 | Court-date extraction at enrichment (Phase 4) | ✅ |
 | Deadlines panel — `frontend/src/features/cases/dashboard/Rail.tsx` (open items from `CaseDetail.action_items`, mine/all addressee toggle, 6-item cap) | ✅ |
 | Open / completed / all tabs and Next Deadline sub-section | — (not in the SPA; `Rail.tsx` lists open items only) |
-| Source-document link per item (item title opens the Document HUD) | ✅ |
+| Source-document link per item (item title opens the inline Review panel for the source document) | ✅ |
 | `PATCH /api/v1/action-items/{item_id}` — complete / reopen / dismiss (`useCaseActionStatus` in `frontend/src/api/caseDetail.ts`) | ✅ |
 | Notification count: overdue deadlines + upcoming (7d) + hearings (30d) | — (not in the SPA; see issue #186) |
 | Dormancy alert (`_compute_dormancy_alert` in `app/services/case_service.py`, 90-day threshold) | ✅ |
@@ -128,7 +128,7 @@ Action items are created exclusively by the AI pipeline; there is no manual crea
 | `dismissed` → `open` | `PATCH /api/v1/action-items/{id}` (`{status: "open"}`) | API only — no reopen control in the SPA |
 | Created | `ActionItemRepository.create_action_item()` | AI pipeline only |
 
-Returns the updated `CaseActionItem`; `useCaseActionStatus` patches it into the cached `CaseDetail`, so the Deadlines panel updates without a reload.
+Returns the updated `CaseActionItem`; `useCaseActionStatus` invalidates the case, cases and home queries, so the Deadlines panel refetches without a reload.
 
 ---
 
@@ -142,7 +142,7 @@ Returns the updated `CaseActionItem`; `useCaseActionStatus` patches it into the 
 - Relative due date (`formatDueRelative`, red when `is_overdue`) + absolute date
 - Addressee chip when the item is not addressed to the user
 - ✓ / × buttons (`can_edit` only) → `useCaseActionStatus`
-- Title — a button that opens the Document HUD when `source_document_id` is set, plain text otherwise
+- Title — a button that opens the inline Review panel (`?view=review`, `DocumentReview.tsx`) for the source document when `source_document_id` is set, plain text otherwise; the full-screen HUD is one step further via "Open HUD"
 
 **6-item cap:** the rail shows the six soonest open items; the type badge, completed/all tabs and the Next Deadline sub-section of the pre-migration panel are not in the SPA.
 
@@ -216,7 +216,7 @@ Until the signal list is populated, no Case Clock section renders in the rail.
 | Case with no open action items | Rail shows "No open deadlines." in muted text |
 | `source_document_id` is null | Title renders as plain text instead of a link |
 | No Case Clock signals | Case Clock sub-section invisible |
-| No next open deadline | Next Deadline sub-section invisible |
+| No open deadlines | Panel shows "No open deadlines." |
 
 ---
 
@@ -224,7 +224,7 @@ Until the signal list is populated, no Case Clock section renders in the rail.
 
 | Key | Scope | Action | Source |
 |---|---|---|---|
-| Click item title | Dashboard | Open Document HUD for source document | `Rail.tsx` → `onOpenDoc(id)` |
+| Click item title | Dashboard | Open the inline Review panel for the source document | `Rail.tsx` → `onOpenDoc(id)` → `CasePage` sets `?view=review` |
 | ✓ / × | Dashboard | Mark done / dismiss | `Rail.tsx` → `useCaseActionStatus` |
 
 ---
@@ -269,12 +269,12 @@ Until the signal list is populated, no Case Clock section renders in the rail.
 
 **Manual:**
 1. `make seed && make run` → open a seeded case → Action Items panel shows open deadlines; relative dates render.
-2. Click an item title with a `source_document_id` → Document HUD slides in.
+2. Click an item title with a `source_document_id` → the Review tab opens on that document.
 3. ✓ on an item → `PATCH /api/v1/action-items/{id}` with `status=completed`; the item leaves the Deadlines list without a reload.
 4. Seed a case with `ingest_date` > 90 days ago on all documents → dormancy alert appears in the AI Brief panel.
 
 **Automated:**
-- `tests/integration/test_v1_case_dashboard.py` — `PATCH /api/v1/action-items/{item}` access and status round-trip.
+- `tests/integration/test_v1_case_dashboard.py` — `PATCH /api/v1/action-items/{item}` returns 404 for a viewer share; `tests/integration/test_v1_documents.py` — the status round-trip.
 - `tests/unit/test_intelligence_action_items.py`, `tests/unit/test_action_items_gate.py` — extraction.
 - No vitest coverage of the Deadlines rail yet.
 
@@ -282,9 +282,9 @@ Until the signal list is populated, no Case Clock section renders in the rail.
 
 ## 16. Success criteria
 
-- All action items in a seeded case are visible in the panel with correct type badges and relative dates.
+- Open action items in a seeded case are visible in the panel with relative dates (type badges are not in the SPA).
 - Status PATCH round-trip: mark completed → item leaves the Deadlines list; `PATCH` back to `open` returns it.
-- Item titles open the correct Document HUD for every item that has a `source_document_id`.
+- Item titles open the Review panel on the correct source document for every item that has a `source_document_id`.
 - Dormancy alert surfaces for cases with > 90 days since last document activity.
 - Notification badge on the sidebar reflects current overdue + upcoming count without page reload (pending issue #186).
 

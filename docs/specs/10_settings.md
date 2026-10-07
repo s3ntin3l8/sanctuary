@@ -27,7 +27,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | `POST`/`PUT`/`DELETE /api/v1/settings/ai/instances[/{instance_id}]` — manage endpoints (base URL, API key, label); `PUT /api/v1/settings/ai/roles/{role}` — bind a model to the chat/embed/ocr role | ✅ |
 | `POST /api/v1/settings/ai/rebuild-index` — resize `document_chunks.embedding` column, reindex all docs; progress via `GET …/reindex/status` | ✅ |
 | `POST /api/v1/settings/ai/reindex` — quick reindex without DDL change | ✅ |
-| `POST /api/v1/settings/ai/instances/{instance_id}/test` — connection probe, result shown as a toast (`useTestInstance`) | ✅ |
+| `POST /api/v1/settings/ai/instances/{instance_id}/test` — connection probe, result shown as an inline health pill next to the instance (`useTestInstance`) | ✅ |
 | `PUT /api/v1/settings/appearance/theme` — persist theme to `settings_json.theme` (`useSaveTheme`) | ✅ |
 | `PUT /api/v1/settings/appearance/dashboard-cards` — persist card visibility (`useSaveDashboardCards`) | ✅ |
 | `POST /api/v1/settings/data/reset-enrichment` — wipe enrichment fields, re-queue (`useMaintenance`) | ✅ |
@@ -134,7 +134,7 @@ settings_json shape (defaults):
 | **Gmail Connection** | Shows OAuth status (`gmail_credentials_json` non-null = connected). `[Connect Gmail]` navigates to `GmailView.oauth_start_url`. |
 | **Sender Allowlist** | Comma-separated email addresses or domains. Saved to `settings_json.gmail_allowlist`. Only messages from allowlisted senders are synced. |
 | **Label Filter** | Optional Gmail label name. If set, only messages with this label are synced. |
-| **Backfill** | `[30d] [90d] [180d]` buttons each POST to `/api/v1/settings/gmail/backfill` with `{days: N}` (`useGmailBackfill`); enqueues `run_gmail_backfill` for the current user. |
+| **Backfill** | Range select (past 90 days / past year / past 5 years) + `[Backfill]` → `POST /api/v1/settings/gmail/backfill` with `{days: 90 \| 365 \| 1825}` (`useGmailBackfill`); enqueues `run_gmail_backfill` for the current user. |
 
 ### Gmail OAuth state machine
 
@@ -168,7 +168,7 @@ AI settings are a list of **endpoint instances** (label, base URL, API key, dete
 
 | Section | What it does |
 |---|---|
-| **Connection** | Per endpoint: `base_url` field + `[Test]` → `POST /api/v1/settings/ai/instances/{instance_id}/test` (`useTestInstance`); result shown as a toast, and the endpoint's model list (`useInstanceModels`) is refetched. |
+| **Connection** | Per endpoint: `base_url` field + `[Test]` → `POST /api/v1/settings/ai/instances/{instance_id}/test` (`useTestInstance`); result shown as an inline health pill. Model discovery is a separate `[Discover models]` action (`useInstanceModels`). |
 | **Provider** | `provider` select (`auto` / `ollama` / `lmstudio` / `openai`). `auto` fingerprints the endpoint: if `/v1/models` returns `{"object":"list"}`, it's LMStudio-compatible; if `/api/tags` returns Ollama model list, it's Ollama; fallback is Ollama. |
 | **API Key** | Only visible/required for OpenAI. LMStudio/Ollama use `"not-needed"`. |
 | **Summary Model** | `<select>` populated by `GET /api/v1/settings/ai/instances/{instance_id}/models` from the live endpoint; saved via `PUT /api/v1/settings/ai/roles/chat`. Default: `qwen3.5:9b`. |
@@ -226,7 +226,7 @@ Database vacuum is **not exposed** in v1 — Postgres autovacuum handles this; e
 | Situation | What renders |
 |---|---|
 | Gmail not connected | Connection section shows "Not connected" + `[Connect Gmail]` button |
-| AI provider unreachable | `POST /api/v1/settings/ai/instances/{instance_id}/test` reports `ok: false`; error toast; model selects show "No models found — check connection" |
+| AI provider unreachable | `POST /api/v1/settings/ai/instances/{instance_id}/test` reports `ok: false`; the instance's health pill turns red; model discovery returns an empty list |
 | Rebuild-index DDL failure | `POST /api/v1/settings/ai/rebuild-index` returns a generic `{detail, code}` error (DDL detail is not leaked) shown as a toast |
 | Settings not yet persisted (first run) | `_get_or_create()` creates a `UserSettings` row with defaults; no error |
 | `settings_json` null | All reads coalesce to `{}` → env var defaults applied by `get_effective_config` |
@@ -261,7 +261,7 @@ Database vacuum is **not exposed** in v1 — Postgres autovacuum handles this; e
 
 **Manual:**
 1. `make run` → open `/settings/gmail` → "Not connected" state visible; `[Connect Gmail]` present.
-2. `/settings/ai` → `[Test]` on an endpoint with Ollama running → success toast; model selects populate.
+2. `/settings/ai` → `[Test]` on an endpoint with Ollama running → green health pill; `[Discover models]` populates the role selects.
 3. Toggle theme to "light" from the rail → `/settings/appearance` reflects the choice after reload.
 4. `/settings/data` → DB stats render with real counts.
 

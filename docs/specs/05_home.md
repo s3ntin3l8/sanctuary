@@ -405,7 +405,7 @@ Home is designed to be navigable without touching the mouse. The SPA currently b
 | `Enter` | Open the highlighted item |
 | `?` | Show keyboard cheat sheet |
 
-Panel-jump letters (`t` / `i` / `d` / `s` / `c`), `r` (mark delta reviewed) and the `Shift+key` end-of-panel jumps are dropped.
+Panel-jump letters (`t` / `i` / `d` / `s` / `c`), `r` (mark delta reviewed) and the `Shift+key` end-of-panel jumps were dropped when #177 was scoped on 2026-10-07: the minimal set above is what the SPA restores.
 
 ---
 

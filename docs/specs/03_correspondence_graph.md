@@ -25,17 +25,17 @@ Companion document to `docs/specs/00_vision.md` §2. Covers the swim-lane SVG gr
 | Significance flag (⚑ on critical nodes) | ✅ |
 | Proof badge (attachment count when `ATTACHES_AS_PROOF` edges present) | ✅ |
 | Reaction emoji overlay (🚩/✅/🔍/⚖️ from triage) | ✅ |
-| Bundle node: collapsible court-relay container with child rows | ✅ |
+| Bundle node: court-relay container with its child rows always rendered (no collapse state) | ✅ |
 | Hidden-tier strip (sticky footer, shows count of filtered-out nodes) | ✅ |
 | `GraphTab.tsx` canvas — drag-pan, ⌘/Ctrl+wheel zoom, fit-to-width on layout | ✅ |
 | `f` fit / `c` center-critical keys, node context menu | — (not in the SPA) |
 | Node click → Document HUD slide-in | ✅ |
 | Node hover → highlight node + incident edges | ✅ |
-| Right-click context menu | ✅ |
+| Right-click context menu | — (not in the SPA) |
 | Per-proceeding scope (graph is scoped to `active_proceeding`) | ✅ |
-| Keyboard: `g` → graph, `f` → fit, `c` → center critical | ✅ |
+| Keyboard: `g` → graph | ✅ (`f` / `c` not in the SPA) |
 | Cross-proceeding ghost nodes | ✅ |
-| Context menu "Add reaction" + "Copy link" buttons | ⚠ placeholder — UI rendered but handlers not yet wired |
+| Context menu "Add reaction" + "Copy link" buttons | — (not in the SPA) |
 | Edge visual distinction for `SUPERSEDES` type | ⚠ stroke-w 0.5, hard to see in dense graphs |
 | `CITED_BY` relationship rendering | N/A — inverse of REFERENCES; intentionally skipped to avoid duplicate arrows |
 
@@ -286,7 +286,7 @@ All bindings live in `KEY_TO_VIEW` / the `keydown` effect in `frontend/src/featu
 3. Graph fits to the viewport width on first render; ⌘/Ctrl + wheel zooms around the cursor. (`f` / `c` keys: not in the SPA.)
 4. Click a node → inline document review panel slides in from the right; "Open HUD" goes to `/document/{id}`.
 5. Hover a node → incident edges highlighted; non-adjacent edges dimmed.
-6. Bundle node with `court_relay=True` → click to expand; children render inside; click again to collapse.
+6. Bundle node with `court_relay=True` → children render inside the container; clicking the header opens the review panel for the relay document.
 
 **Automated (existing):**
 - `tests/unit/test_case_graph_service.py` — layout, filters, edge emission
