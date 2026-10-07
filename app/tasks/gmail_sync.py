@@ -6,6 +6,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import redis
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import REDIS_URL
@@ -87,6 +88,8 @@ def _raw_message(user_id: int, gmail_id: str, get_service) -> bytes:
     ``get_service`` is only called on a cache miss, so a fully cached batch needs
     neither network nor a valid token. A fetched message is cached *before* the
     caller ingests it, so one that fails to ingest can be replayed once fixed.
+    Nothing is cached when the fetch itself fails (including a dead grant) —
+    there is no payload to keep.
     """
     cached = gmail_cache.read(user_id, gmail_id)
     if cached is not None:
@@ -125,6 +128,9 @@ def _ingest_messages(
     succeeded = 0
     failed_ids: list[str] = []
     for msg_id in message_ids:
+        # Unlike the history import, a dead grant is not re-raised per message
+        # here: sync_gmail_for_user connects (and so detects a revoked token)
+        # before it gets this far, and ends the run with "Reconnect required".
         try:
             raw_bytes = _raw_message(user_id, msg_id, lambda: service)
             ingest_raw_email(db, raw_bytes, owner_id=user_id)
@@ -242,6 +248,18 @@ def _connect(db: Session, user_id: int, sj: dict):
         )
         db.commit()
     return connection.service
+
+
+def _public_error(exc: Exception) -> str:
+    """Error text that is safe to show on Settings and the Import page.
+
+    A database error's message carries the SQL statement and its bound
+    parameters (which can include mail subjects/addresses); log those, don't
+    surface them.
+    """
+    if isinstance(exc, SQLAlchemyError):
+        return f"Database error ({type(exc).__name__}) — see the server log"
+    return str(exc)[:500]
 
 
 def _record_failure(
@@ -443,7 +461,7 @@ def sync_gmail_for_user(self, user_id: int):
             return "Reconnect required"
         except Exception as e:
             logger.error(f"Gmail incremental sync failed for user {user_id}: {e}")
-            _record_failure(db, user_id, str(e))
+            _record_failure(db, user_id, _public_error(e))
             raise
         finally:
             db.close()
@@ -523,7 +541,7 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
             return "Reconnect required"
         except Exception as e:
             logger.error("Gmail index failed for user %d: %s", user_id, e)
-            message = str(e)[:500]
+            message = _public_error(e)
             if self.request.retries >= self.max_retries:
                 gmail_runs.finish_run("index", user_id, run_id, error=message)
             else:
@@ -773,7 +791,7 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
     except Exception as e:
         logger.error("Gmail import failed for user %d: %s", user_id, e)
         finished = gmail_runs.finish_run(
-            "import", user_id, run_id, patch=_progress(work), error=str(e)[:500]
+            "import", user_id, run_id, patch=_progress(work), error=_public_error(e)
         )
         if finished:
             _merge_import_outcome(db, user_id, finished, record_status=False)

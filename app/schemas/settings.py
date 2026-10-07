@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import UserRole
 
@@ -61,6 +61,14 @@ class GmailAutoSync(BaseModel):
 class GmailResetSync(BaseModel):
     # Move the sync watermark here; omitted = now. Never cleared.
     since: date | None = None
+
+    @field_validator("since")
+    @classmethod
+    def _not_in_the_future(cls, value: date | None) -> date | None:
+        # A future watermark would silently skip every message until then.
+        if value is not None and value > datetime.now(UTC).date():
+            raise ValueError("since can't be in the future")
+        return value
 
 
 class GmailFilters(BaseModel):
