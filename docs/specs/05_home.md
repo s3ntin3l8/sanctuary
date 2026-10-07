@@ -8,6 +8,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, `docs/dashboard.md`, a
 
 **Last Updated:** April 26, 2026
 **Status:** 🟢 IMPLEMENTED (v1 complete)
+**Implementation:** React page `frontend/src/features/home/HomePage.tsx` (`useHome` / `useReviewAll` in `frontend/src/api/home.ts`) on `GET /api/v1/home` + `POST /api/v1/home/review-all` (`app/api/v1/home.py`, `HomeView` in `app/schemas/`).
 
 | Layer | Status |
 |---|---|
@@ -17,7 +18,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, `docs/dashboard.md`, a
 | Signals panel (alerts/health) | ✅ |
 | Active Cases strip (case cards) | ✅ |
 | Attention scoring logic | ✅ |
-| Keyboard navigation (j/k, Enter) | ✅ |
+| Keyboard navigation (j/k, Enter) | ⏳ j/k/Enter + `?` cheat sheet being restored in #177 (SPA currently has only ⌘K/⌘D) |
 
 ---
 
@@ -219,7 +220,7 @@ One row per case that has at least one new `Document` since `UserSettings.settin
 
 ### The "last visit" timestamp
 
-Stored in `UserSettings.settings_json["last_home_visit"]`. Updated to `now()` whenever the user dismisses the delta feed (via `[review all]` or an explicit dismiss) OR navigates away from Home. This means opening Home passively doesn't "count" as reviewing — only explicit actions advance the timestamp.
+Stored in `UserSettings.settings_json["last_home_visit"]`. Only **[review all]** (`POST /api/v1/home/review-all`, `app/api/v1/home.py`) advances it to `now()`; opening Home passively doesn't "count" as reviewing. Advancing it on navigating away from Home is **not implemented** in the SPA.
 
 ### Empty state
 
@@ -396,22 +397,15 @@ Priority tiers described in §6. Within each tier, most-recently-active first.
 
 ## 9. Keyboard-first interaction
 
-Home is designed to be navigable without touching the mouse.
+Home is designed to be navigable without touching the mouse. The SPA currently binds only the shell-level ⌘K (palette) and ⌘D (theme) in `frontend/src/shell/Shell.tsx`; the rows below are being restored in #177.
 
 | Key | Action |
 |---|---|
 | `j` / `k` | Next / previous item in current panel |
 | `Enter` | Open the highlighted item |
-| `t` | Jump to Today panel |
-| `i` | Jump to Awaiting Triage panel (I for Inbox) |
-| `d` | Jump to Delta feed |
-| `s` | Jump to Signals |
-| `c` | Jump to Active Cases strip |
-| `/` | Focus ⌘K palette (alternate shortcut) |
 | `?` | Show keyboard cheat sheet |
-| `r` | Mark delta reviewed (advance last-visit timestamp) |
 
-Shift+key jumps to the *end* of each panel (e.g., `Shift+T` = last item in Today).
+Panel-jump letters (`t` / `i` / `d` / `s` / `c`), `r` (mark delta reviewed) and the `Shift+key` end-of-panel jumps were dropped when #177 was scoped on 2026-10-07: the minimal set above is what the SPA restores.
 
 ---
 
@@ -469,36 +463,6 @@ Explicit non-goals — these would all pull Home back toward a DMS mental model.
 
 ---
 
-## 13. Files to create / modify
-
-### New
-
-| File | Purpose |
-|---|---|
-| `app/api/home.py` | Home route: aggregated context for all panels |
-| `app/services/home_service.py` | Cross-case aggregation: today's actions, pending triage, delta, signals |
-| `app/services/attention_scoring.py` | Scoring functions per panel (§8) |
-| `app/services/signals.py` | Signal detection: dormancy, Case Clock, system health |
-| `app/templates/pages/home.html` | Main Home template |
-| `app/templates/partials/home/today_panel.html` | Today panel |
-| `app/templates/partials/home/triage_panel.html` | Awaiting Triage panel |
-| `app/templates/partials/home/delta_feed.html` | Delta feed |
-| `app/templates/partials/home/signals_panel.html` | Signals panel |
-| `app/templates/partials/home/active_case_card.html` | Single case card |
-| `app/templates/partials/home/caught_up.html` | Composite empty state |
-| `static/js/home.js` | Keyboard navigation, last-visit timestamp update |
-
-### Modified
-
-| File | Change |
-|---|---|
-| `app/api/dashboard.py` | Either renamed to `home.py` or slimmed down to the global dashboard function only |
-| `app/templates/partials/sidebar.html` | Replaced by rail per navigation architecture (separate effort) |
-| `app/services/case_service.py` | Extend `get_dashboard_stats` to return structured Home context |
-| `app/models/database.py` | (no new columns — Phase 1 already provisioned everything) |
-
----
-
 ## 14. Phase progression map
 
 Home lights up progressively as backing systems come online.
@@ -520,8 +484,8 @@ Home is done when:
 - **Time-to-orient ≤5 seconds**: opening the app and glancing at Home tells you what needs attention without scrolling or clicking.
 - **Ruthless noise filtering**: cases with nothing new don't appear in the attention panels. An inbox with 900 documents and 4 active cases still produces a Home screen that fits on one laptop viewport.
 - **"You're caught up" is reachable**: a user who has just triaged everything and responded to all deadlines sees the composite empty state. Not aspirational — a real daily occurrence.
-- **Keyboard-only navigation works**: `j/k` through every panel, `Enter` opens the highlighted item, zero mouse needed.
-- **Delta timestamp semantics are correct**: opening Home passively doesn't advance the last-visit timestamp; only explicit "review" or navigation does. Bouncing in and out of Home doesn't hide new items.
+- **Keyboard-only navigation works**: `j/k` through every panel, `Enter` opens the highlighted item, zero mouse needed (pending #177).
+- **Delta timestamp semantics are correct**: opening Home passively doesn't advance the last-visit timestamp; only explicit "review all" does. Bouncing in and out of Home doesn't hide new items. Covered by `tests/integration/test_v1_home_and_cases.py` and `frontend/src/features/home/HomePage.test.tsx`.
 - **Panels collapse when empty**: no "No data" decorations taking up vertical space; one-line empty states only.
 - **Signals surface real issues**: Gmail auth issue, failed ingests, dormant cases all reach the user through Signals, not buried in a settings menu.
 - **Active Cases cards reflect the AI brief**: once Phase 5 lands, status lines on cards match the one-line summary you'd get from opening the case.

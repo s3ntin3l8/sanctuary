@@ -7,7 +7,7 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/truthmap`, `/api/v1/claims/*` (`app/api/v1/claims.py`) and `frontend/src/features/cases/dashboard/TruthMapTab.tsx`. References below to `case_view_truthmap.html`, `claim_card.html` or htmx swaps describe the pre-migration implementation.
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/truthmap`, `/api/v1/claims/*` (`app/api/v1/claims.py`) and `frontend/src/features/cases/dashboard/TruthMapTab.tsx`.
 
 | Layer | Status |
 |---|---|
@@ -16,14 +16,14 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 | AI claim extractor with hallucination guards + pipeline gating | ✅ |
 | Celery task `extract_claims_task` + `PipelineStage.CLAIMS` | ✅ |
 | Service — `ClaimService.get_truth_map` + `transition_status` | ✅ |
-| API — `GET /cases/{id}/truthmap?filter=…` + `POST …/claims/{id}/status` | ✅ |
-| Dashboard view tab (`view='truth'`) | ✅ |
-| `partials/case_view_truthmap.html` + `components/claim_card.html` | ✅ |
-| HUD Grounds rail (`partials/hud/_grounds.html`) | ✅ |
-| Inline ⚖ chips on passages via `_build_passage_claim_map` | ✅ |
-| Top-bar tab open-count badge | ✅ |
-| HUD "View in Truth Map →" deep link | ✅ |
-| HUD `[✓ confirm]` button in Grounds rail | ✅ |
+| API — `GET /api/v1/cases/{id}/truthmap?filter=…` + `PUT /api/v1/claims/{id}/status` (`app/api/v1/claims.py`, schemas in `app/schemas/case_detail.py`) | ✅ |
+| Dashboard view tab (`?view=truth`, `frontend/src/features/cases/dashboard/CasePage.tsx`) | ✅ |
+| `TruthMapTab` + `ClaimCard` (`frontend/src/features/cases/dashboard/TruthMapTab.tsx`) via `useTruthMap` / `useClaimStatus` (`frontend/src/api/caseDetail.ts`) | ✅ |
+| HUD Grounds rail (`Grounds` in `frontend/src/features/documents/DocumentReview.tsx`; `grounds` + `claims_status` on `GET /api/v1/documents/{id}/review`) | ✅ |
+| Inline ⚖ chips on passages via `_build_passage_claim_map` → `key_passages[].claim_id` | ✅ |
+| Top-bar tab open-count badge (`CaseDetail.open_claim_count` on the Truth map tab, `CasePage.tsx`) | ✅ |
+| HUD "View in Truth Map →" deep link | — (not in the SPA) |
+| HUD `[✓ confirm]` button in Grounds rail | — (not in the SPA; the rail is read-only, transitions live on the Truth Map claim card) |
 | Per-claim user reactions | ❌ reactions are document-scoped only |
 | Manual claim creation / edit by user | ❌ AI-only in v1 |
 | Filter beyond status (type, originator, proceeding) | ❌ status-only in v1 |
@@ -34,9 +34,9 @@ Companion document to `docs/specs/00_vision.md` §5. Covers the contested-claims
 |---|---|---|---|
 | Reaction surface in Truth Map | "the user's own reactions from triage" | `ClaimService.get_truth_map` batch-loads `UserReaction` per evidence document → emojis on each evidence row | ✅ Accepted |
 | Strength-of-evidence display | "balance of supporting vs. contesting documents" | Role glyphs per evidence row (`✓ ⚠ ✕ 📎`) — no aggregate strength bar | Accepted — per-row evidence is more legible than an aggregated score |
-| Status lifecycle ownership | asserted → contested → refuted / established | `CONTESTED`/`REFUTED` are AI-owned; only `ESTABLISHED` and back-to-`ASSERTED` are user-owned (`claim_service.py:38-43`) | Accepted — explicit AI/User boundary prevents users from misclassifying AI-detected contest |
+| Status lifecycle ownership | asserted → contested → refuted / established | `CONTESTED`/`REFUTED` are AI-owned; only `ESTABLISHED` and back-to-`ASSERTED` are user-owned (`_USER_ALLOWED` in `app/services/claim_service.py`) | Accepted — explicit AI/User boundary prevents users from misclassifying AI-detected contest |
 | Truth Map location | "secondary view on a case (tab or toggle)" | View-mode tab on case dashboard (`?view=truth`) | Accepted |
-| Inline passage claim annotation | "this sentence asserts Claim #12, currently contested" | ⚖ chip on the passage spine via substring match in `_build_passage_claim_map` (`hud_context.py:34-65`) | Accepted — substring match is sufficient for v1; no FK from `ClaimEvidence.excerpt` to a `passage_id` |
+| Inline passage claim annotation | "this sentence asserts Claim #12, currently contested" | ⚖ chip on the passage spine via substring match in `_build_passage_claim_map` (`app/services/hud_context.py`) | Accepted — substring match is sufficient for v1; no FK from `ClaimEvidence.excerpt` to a `passage_id` |
 
 ---
 
@@ -85,13 +85,13 @@ ADV-024-A  Musterklage GmbH vs. XY  [Truth Map active]
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-The Truth Map panel fills the main canvas area when `view='truth'` is active on the case dashboard. The left-column (AI Brief, Parties, Financials) and the Action Items strip remain visible — the Truth Map replaces only the correspondence graph area.
+The Truth Map panel fills the main canvas area when `?view=truth` is active on the case dashboard. The brief rail (AI Brief, Deadlines, Parties, Financials) remains visible — the Truth Map replaces only the correspondence graph area.
 
 ---
 
 ## 1. Data model
 
-### `Claim` — `app/models/database.py:362-398`
+### `Claim` — `app/models/database.py`
 
 ```
 id                    Integer PK
@@ -110,7 +110,7 @@ indexes: ix_claims_case (case_id)
          ix_claims_proceeding (proceeding_id)
 ```
 
-### `ClaimEvidence` — `app/models/database.py:401-425`
+### `ClaimEvidence` — `app/models/database.py`
 
 ```
 id                    Integer PK
@@ -126,9 +126,9 @@ indexes: ix_claim_evidence_claim (claim_id)
          ix_claim_evidence_document (document_id)
 ```
 
-`RelationshipConfidence` (`app/models/enums.py:182-187`) is shared with `DocumentRelationship` — `AI_DETECTED | USER_CONFIRMED | USER_CREATED`.
+`RelationshipConfidence` (`app/models/enums.py`) is shared with `DocumentRelationship` — `AI_DETECTED | USER_CONFIRMED | USER_CREATED`.
 
-### `UserReaction` — `app/models/database.py:428-450`
+### `UserReaction` — `app/models/database.py`
 
 ```
 id                    Integer PK
@@ -196,13 +196,13 @@ The AI owns the "contested" and "refuted" states. The user owns "established" an
 |---|---|---|---|
 | `ASSERTED` → `CONTESTED` | AI (on new CONTESTS evidence) | — | — |
 | any → `REFUTED` | AI (on REFUTES evidence) | — | — |
-| `ASSERTED` or `CONTESTED` → `ESTABLISHED` | User | `POST …/claims/{id}/status` | — |
-| `ESTABLISHED` or `REFUTED` → `ASSERTED` | User | `POST …/claims/{id}/status` | — |
-| any → `CONTESTED` or `REFUTED` | **Forbidden to user** | 422 `"AI-owned: …"` | AI set this; revert via your own filing |
+| `ASSERTED` or `CONTESTED` → `ESTABLISHED` | User | `PUT /api/v1/claims/{id}/status` | — |
+| `ESTABLISHED` or `REFUTED` → `ASSERTED` | User | `PUT /api/v1/claims/{id}/status` | — |
+| any → `CONTESTED` or `REFUTED` | **Forbidden to user** | 422 `bad_transition` (`"AI-owned: …"`) | AI set this; revert via your own filing |
 
-Cross-case mismatch: 404. Wrong target for current status: 422 `"Cannot transition from X to Y"`.
+Claim outside the caller's cases: 404 (`require_claim_access`). Wrong target for current status: 422 `bad_transition` (`"Cannot transition from X to Y"`).
 
-Source: `app/services/claim_service.py:38-43, 144-161`.
+Source: `_USER_ALLOWED` and `ClaimService.transition_status` in `app/services/claim_service.py`.
 
 ---
 
@@ -210,11 +210,11 @@ Source: `app/services/claim_service.py:38-43, 144-161`.
 
 Source: `app/services/intelligence/claim_extractor.py`, `app/tasks/extract_claims.py`.
 
-**Eligibility gate:** only `CRITICAL` and `SIGNIFICANT` documents run through the extractor (`ELIGIBLE_TIERS = {CRITICAL, SIGNIFICANT}` at `claim_extractor.py:25`). `INFORMATIONAL` and `ADMINISTRATIVE` documents are marked `skipped` with reason `ineligible_tier:<tier>`.
+**Eligibility gate:** only `CRITICAL` and `SIGNIFICANT` documents run through the extractor (`ELIGIBLE_TIERS = {CRITICAL, SIGNIFICANT}` in `claim_extractor.py`). `INFORMATIONAL` and `ADMINISTRATIVE` documents are marked `skipped` with reason `ineligible_tier:<tier>`.
 
 **Pipeline gate:** the Celery task `extract_claims_task(doc_id)` only runs after `pipeline_stages.enrich.status == "completed"` and `doc.ai_summary_created_at` is set. Otherwise the task marks `triage_pending` or `enrich_not_completed`.
 
-**AI prompt** (`app/services/intelligence/prompts.py:67-95`):
+**AI prompt** (`CLAIM_EXTRACTOR_SYSTEM` in `app/services/intelligence/prompts.py`):
 
 ```
 Input:
@@ -241,7 +241,7 @@ Output:
 
 ## 4. Service layer
 
-### `ClaimService.get_truth_map(case_id, filter_)` — `app/services/claim_service.py:79-142`
+### `ClaimService.get_truth_map(case_id, filter_)` — `app/services/claim_service.py`
 
 - Joinedloads `Claim.evidence` + `ClaimEvidence.document`
 - Batch-loads reactions for all evidence documents in one query (avoids N+1)
@@ -285,21 +285,17 @@ class TruthMapView:
 
 ## 5. API routes
 
-Source: `app/api/claims.py`.
+Source: `app/api/v1/claims.py`; response models in `app/schemas/case_detail.py`; client hooks in `frontend/src/api/caseDetail.ts`.
 
-### `GET /cases/{case_id}/truthmap?filter=open|established|refuted|all`
+### `GET /api/v1/cases/{case_id}/truthmap?filter=open|established|refuted|all`
 
-Returns `partials/case_view_truthmap.html` partial. HTMX swap target: `#truthmap-panel` (outerHTML). Default filter: `open`. Invalid filter strings collapse to `open`.
+Returns `TruthMapView` JSON: `filter`, `groups[]` (`ClaimGroupView` → `ClaimView` with `allowed_transitions` and its `evidence[]`), `open_claim_count`, `pending_merges`, `pending_evidence`, `pipeline_active_doc_count`, `dedup_job`. Default filter: `open`; `filter` is a `TruthMapFilter` literal, so unknown values are rejected with 422. Fetched by `useTruthMap(caseId, filter)` and rendered by `TruthMapTab`.
 
-Context: `truth_map`, `case`, `originator_colors`, `ClaimStatus`, `ClaimEvidenceRole`, `UserReactionType`.
+### `PUT /api/v1/claims/{claim_id}/status`
 
-### `POST /cases/{case_id}/claims/{claim_id}/status`
+Body: `{"status": …}` (`ClaimStatusUpdate`). Calls `ClaimService.transition_status` and returns the updated `ClaimView`; a forbidden transition is 422 `bad_transition`. `useClaimStatus` invalidates both the `truthmap` and the case `detail` queries on success, so the claim card and the top-bar open-count badge refetch together.
 
-Body: `status=established|asserted` (form-encoded). Calls `ClaimService.transition_status`. On success:
-1. Re-renders `components/claim_card.html` for the updated row (`hx-target="#claim-card-{id}"`)
-2. **HTMX OOB swap** of `<span id="truthmap-badge">` with the updated `open_claim_count`
-
-Both are returned in the same response body.
+Sibling claim routes in the same module: `POST /api/v1/claims/{id}/precedent` (toggle), `DELETE /api/v1/claims/{id}` (dismiss), the merge/evidence proposal confirm/dismiss routes under `/api/v1/claims/proposals/*`, `POST /api/v1/cases/{id}/claims/proposals/merge` (batch) and `POST /api/v1/cases/{id}/claims/find-duplicates`.
 
 ---
 
@@ -309,9 +305,9 @@ Both are returned in the same response body.
 [Open (7)]  [Established (2)]  [Refuted (1)]  [All]
 ```
 
-- Active filter chip styled differently; other chips use `hx-get` to swap the panel.
-- `open` chip shows `open_claim_count` badge; badge is always computed regardless of active filter.
-- **⚠ Known gap:** the `open_claim_count` badge only appears inside the panel header. The dashboard **top-bar Truth tab** does not yet show this count. Remediation: add `<span id="truthmap-badge">{{ truth_map.open_claim_count }}</span>` next to the `Truth` tab in `partials/dashboard/top_bar.html:80-92`; the OOB swap already targets this ID from `claims.py:104-108`.
+- The active filter is local state in `TruthMapTab` (`useState<TruthMapFilter>`); clicking a chip refetches `GET /api/v1/cases/{id}/truthmap?filter=…` through `useTruthMap`.
+- The panel header shows `TruthMapView.open_claim_count` ("N open"); it is always computed regardless of active filter.
+- The dashboard **top-bar Truth map tab** shows the same count from `CaseDetail.open_claim_count` (`CasePage.tsx`); both refetch after every status mutation (§5).
 
 Filter semantics:
 
@@ -337,7 +333,7 @@ Filter semantics:
 | ESTABLISHED | `bg-originator-own` / own-color text |
 | REFUTED | `bg-error` / error text |
 
-**Claim card** (`components/claim_card.html`):
+**Claim card** (`ClaimCard` in `TruthMapTab.tsx`):
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -352,10 +348,9 @@ Filter semantics:
 └────────────────────────────────────────────────────────────────┘
 ```
 
-- **Status chip** — Alpine dropdown (`x-data`) showing user-allowed transitions:
+- **Status buttons** — one `mark …` button per entry in `ClaimView.allowed_transitions` (editors only), each calling `PUT /api/v1/claims/{claim_id}/status` through `useClaimStatus`:
   - If ASSERTED or CONTESTED: `[✓ Mark Established]`
   - If ESTABLISHED or REFUTED: `[↺ Reopen as Asserted]`
-  - HTMX POST to `/cases/{case_id}/claims/{claim_id}/status`
 - **Evidence rows** — one per `EvidenceRow`, ordered by document `issued_date`:
   - Role glyph: `✓` (supports) · `⚠` (contests) · `✕` (refutes) · `📎` (cites_as_proof)
   - Originator color dot matching `OriginatorType`
@@ -369,17 +364,15 @@ Filter semantics:
 
 Two surfaces in the Document HUD feed into or link back to the Truth Map.
 
-### Grounds rail — `partials/hud/_grounds.html`
+### Grounds rail — `Grounds` in `frontend/src/features/documents/DocumentReview.tsx`
 
-Shows all `Claim` rows where `source_document_id == doc.id` — the claims *originated* in this document.
+Shows all `Claim` rows where `source_document_id == doc.id` — the claims *originated* in this document — from `grounds` + `claims_status` on `GET /api/v1/documents/{id}/review` (built by `build_hud_context` in `app/services/hud_context.py`). Each row is claim text + status badge + precedent marker; the rail is read-only — status transitions happen on the Truth Map claim card (§7), so no UI path can request an AI-owned status.
 
-**⚠ Known gap — refute button:** the Grounds rail currently shows a `[✗ refute]` button alongside `[✓ confirm]` for unfinished claims (`_grounds.html:42-62`). This POSTs `status=refuted`, which always returns 422 because `REFUTED` is AI-owned. The button must be removed; leave only `[✓ Mark Established]` for ASSERTED/CONTESTED claims.
+A "View in Truth Map →" deep link from the rail to `/cases/{case_id}?view=truth` is not in the SPA.
 
-**⚠ Known gap — deep link:** the "View in Truth Map →" link currently navigates to `/cases/{case_id}#truthmap` (`_grounds.html:67`). The dashboard uses Alpine `view` state — there is no DOM element at `#truthmap`, so the link lands on the graph view unchanged. Fix: change the link to `/cases/{case_id}?view=truth#claim-{claim.id}`. On dashboard load, `dashboard.js` should read the `?view` query param to set Alpine `view` and scroll `#claim-card-{id}` into viewport.
+### Passage ⚖ chips — `Passages` in `DocumentReview.tsx`
 
-### Passage ⚖ chips — `partials/hud/_passages_spine.html:34-78`
-
-`_build_passage_claim_map()` (`hud_context.py:34-65`) substring-matches `ClaimEvidence.excerpt` text against each `key_passage.text` to derive a `passage_id → claim_id` mapping. Matching passages render a `⚖ #12` chip inline. Clicking the chip navigates to the claim card in the Truth Map via the corrected deep-link above.
+`_build_passage_claim_map()` (`app/services/hud_context.py`) substring-matches `ClaimEvidence.excerpt` text against each `key_passage.text` to derive a `passage_id → claim_id` mapping, exposed as `key_passages[].claim_id` on the review/reader payloads. Matching passages render a `claim #12` chip in the spine (and the section header counts them as `⚖ N`); the reader's `body_html` highlights carry the same mapping via `render_highlighted`. The chip is informational — it does not link to the Truth Map.
 
 This is a substring match, not a FK. If passage text and excerpt diverge after editing, the chip silently disappears — the mismatch is logged but not user-visible.
 
@@ -387,7 +380,7 @@ This is a substring match, not a FK. If passage text and excerpt diverge after e
 
 ## 9. `UserReaction` propagation from triage
 
-1. **Captured at triage** — `TriageService.toggle_reaction(doc_id, reaction, notes)` → `UserReactionRepository.set_reaction(doc_id, reaction, notes)`. One reaction record per `(document_id, reaction_type)` pair (idempotent upsert; toggling the same reaction again deletes it).
+1. **Captured at triage / in the HUD** — `POST /api/v1/documents/{doc_id}/reactions` (`app/api/v1/documents.py`) → `UserReactionRepository.set_reaction(doc_id, reaction, notes)`. One reaction record per `(document_id, reaction_type)` pair (idempotent upsert; posting the same reaction again without `notes` deletes it).
 
 2. **Surfaced in Truth Map** — `ClaimService.get_truth_map` batch-loads reactions for all evidence documents in the case via `UserReactionRepository.get_by_document_ids([…])`. Each `EvidenceRow.reactions` contains all reaction records for that evidence document.
 
@@ -399,17 +392,11 @@ This design is deliberate for v1: reaction-fragmentation (tagging per claim or p
 
 ## 10. Claim cards within the case dashboard
 
-The Truth Map panel is mounted at `pages/case_dashboard.html:88-92`:
+`CasePage.tsx` mounts `<TruthMapTab detail={detail} />` in the main canvas when the `?view=truth` search param is active (`view === 'truth'`).
 
-```html
-<div x-show="view === 'truth'" x-cloak class="h-full overflow-auto custom-scrollbar p-4">
-  {% include "partials/case_view_truthmap.html" %}
-</div>
-```
+The **Deadlines list remains visible** when Truth Map is active — it lives in the brief rail (`Rail.tsx`) beside the canvas and is not replaced by the view switch. This is intentional: a Frist due in 12 days is always relevant regardless of which view you're reading.
 
-The **Action Items strip remains visible** when Truth Map is active — it lives in a separate bottom zone and is not replaced by the view-mode tab switch. This is intentional: a Frist due in 12 days is always relevant regardless of which view you're reading.
-
-The case dashboard builds the initial `truth_map` (filter=`open`) in `case_dashboard_service.py:138-196` at page load. Switching filter chips is a client-side HTMX swap — no full page reload.
+The Truth Map is fetched lazily by `useTruthMap(caseId, filter, enabled)` the first time the tab is shown (filter=`open`); switching filter chips refetches the query — no page reload.
 
 ---
 
@@ -432,10 +419,10 @@ The case dashboard builds the initial `truth_map` (filter=`open`) in `case_dashb
 
 | Key | Action | Implemented |
 |---|---|---|
-| `t` | Switch case dashboard to Truth Map view | ✅ `dashboard.js:375` |
+| `t` | Switch case dashboard to Truth Map view | ✅ `KEY_TO_VIEW` in `CasePage.tsx` |
 | `←` / `→` | Cycle filter chips (Open → Established → Refuted → All → Open) | ❌ to implement |
 | `Enter` on a claim card | Open the source document HUD for `claim.source_document_id` | ❌ to implement |
-| `Esc` | Return to Graph view (same as global Esc behavior) | ✅ (global) |
+| `Esc` | Return to Graph view (same as global Esc behavior) | ❌ in the SPA `Esc` only closes the chat drawer (`CasePage.tsx`) |
 
 ---
 
@@ -455,26 +442,6 @@ The case dashboard builds the initial `truth_map` (filter=`open`) in `case_dashb
 | Open-count badge | `TruthMapView.open_claim_count` | Phase 6 (service) |
 | HUD Grounds claims | `hud_context.py:build_hud_context` `grounds` | Phase 6 |
 | HUD ⚖ passage chips | `hud_context.py:_build_passage_claim_map` | Phase 6 |
-
----
-
-## 14. Files that will change
-
-### Modified
-
-| File | Change |
-|---|---|
-| `app/templates/partials/dashboard/top_bar.html:80-92` | Add `<span id="truthmap-badge">{{ truth_map.open_claim_count if truth_map.open_claim_count else '' }}</span>` next to the Truth tab; only show when count > 0 |
-| `app/services/case_dashboard_service.py:138-196` | Ensure `truth_map.open_claim_count` is available in top-bar context (it already is via `truth_map` in the full context dict) |
-| `app/templates/partials/hud/_grounds.html:42-62` | Remove `[✗ refute]` button; keep `[✓ Mark Established]` only for ASSERTED/CONTESTED claims |
-| `app/templates/partials/hud/_grounds.html:67` | Change href from `#truthmap` to `?view=truth#claim-{{ claim.id }}` |
-| `static/js/dashboard.js` | On DOMContentLoaded, read `?view` query param → set Alpine `view` data; read `#claim-{id}` hash → `scrollIntoView` after panel renders |
-| `docs/specs/00_vision.md` | §5 add link: "see `06_truth_map.md` for the full spec" |
-| `docs/specs/02_dashboard.md` | §9 Truth Map sub-section: link to `06_truth_map.md` |
-
-### Deleted
-
-None.
 
 ---
 
@@ -508,40 +475,34 @@ None.
 ### Manual test steps
 
 1. `make seed && make run` → navigate to `/cases/<seeded-case>?view=truth`
-   - Verify 4 filter chips visible; default `Open` selected; seeded CONTESTED claim visible.
-2. Click `[▾ Mark Established]` on a CONTESTED claim
-   - Claim moves to Established group; CONTESTED group disappears if empty; `Open (N)` badge decrements.
-3. Open document HUD for a document that has claims in the Grounds rail
-   - Verify `[✗ refute]` button is **not** present (after patch).
-   - Verify `[✓ Mark Established]` is present for ASSERTED/CONTESTED claims.
-4. Click "View in Truth Map →" from HUD Grounds
-   - Dashboard switches to Truth Map tab; target claim card is scrolled into viewport.
-5. `?view=truth` in the URL (direct navigate) → Truth Map is active immediately without clicking the tab.
-6. Top-bar Truth tab shows open-count badge matching the panel's `Open (N)` chip.
+   - Verify 4 filter chips visible; default `open` selected; seeded CONTESTED claim visible.
+2. Click `mark established` on a CONTESTED claim
+   - Claim moves to Established group; CONTESTED group disappears if empty; the "N open" count decrements.
+3. Open the document HUD (`/document/{id}`) for a document that has claims in the Grounds rail
+   - Verify the rail lists the claims with status badges and offers no status buttons.
+4. `?view=truth` in the URL (direct navigate) → Truth Map is active immediately without clicking the tab.
+5. Top-bar Truth map tab shows the open-count badge matching the panel's "N open" count.
 
 ### Automated coverage
 
 | Test file | What it covers |
 |---|---|
 | `tests/unit/test_claim_service.py` | `get_truth_map` filters, group order, evidence loading, reactions, open_claim_count, cross-case isolation; `transition_status` allowed/forbidden |
-| `tests/integration/test_truthmap_route.py` | Full HTTP — GET filter variants, 404, POST status transitions, 422 for AI-owned, cross-case 404; "Truth Map" in dashboard HTML |
+| `tests/integration/test_v1_case_dashboard.py` | Full HTTP on `/api/v1` — `test_truth_map_and_claim_transitions` (GET truthmap shape, `allowed_transitions`, PUT status, 422 `bad_transition` for AI-owned, precedent toggle, dismiss), `test_find_duplicates_starts_a_job`, `test_viewer_share_cannot_mutate` (claim routes are read-only for viewer shares) |
+| `frontend/src/features/cases/dashboard/CasePage.test.tsx` | Top-bar Truth map tab renders `open_claim_count` |
 | `tests/unit/test_intelligence_claim_extractor.py` | Extractor logic, status transitions, hallucination guards |
 | `tests/integration/test_claim_deletion.py` | Cascade delete from `DocumentService.delete_document` → `Claim` → `ClaimEvidence` |
 | `tests/unit/test_hud_context.py` | `grounds` aggregation, `claims_status` derivation |
 
-**Add after remediation:**
-- Integration test: `#truthmap-badge` present in `case_dashboard.html` response HTML with correct count.
-- Integration test: `[✗ refute]` button absent from `_grounds.html` response after patch.
-- Integration test: `?view=truth#claim-{id}` link present in `_grounds.html` "View in Truth Map" anchor.
+**Not yet covered:** `TruthMapTab` itself (filter chips, claim card buttons, grouping) has no vitest; the Grounds rail and passage `claim_id` chips in `DocumentReview.tsx` have no automated test yet.
 
 ---
 
 ## 18. Success criteria
 
-- Filter chip swap: panel re-renders in < 200 ms on localhost (HTMX outerHTML swap of pre-built HTML).
-- Top-bar badge: count matches `open_claim_count` from the panel after every `POST .../status` transition (OOB swap keeps them in sync).
-- Status 422 for AI-owned transitions is the only error path reachable from normal UI (refute button removed; no other UI path sends REFUTED).
-- "View in Truth Map →" from HUD: lands on Truth Map tab with the target claim card visible in viewport without manual scrolling.
+- Filter chip change: the `useTruthMap` refetch renders in < 200 ms on localhost.
+- Top-bar badge: `CaseDetail.open_claim_count` matches the panel's `TruthMapView.open_claim_count` after every `PUT /api/v1/claims/{id}/status` (the mutation invalidates both queries).
+- Status 422 for AI-owned transitions is the only error path reachable from normal UI (the claim card only renders the server's `allowed_transitions`; the Grounds rail has no status buttons).
 - Evidence rows are ordered chronologically by document date across all claim cards.
 - Extractor skip reasons are readable in the HUD Grounds rail for every ineligible-tier document.
 - All seeded claims survive a full `make seed` re-seed without FK constraint errors.

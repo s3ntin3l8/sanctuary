@@ -8,6 +8,7 @@ Companion document to `docs/vision.md`. Covers the UI design and implementation 
 
 **Last Updated:** April 26, 2026
 **Status:** 🟢 IMPLEMENTED (v1 complete)
+**Implementation:** React page `frontend/src/features/triage/TriagePage.tsx` (hooks in `frontend/src/api/triage.ts`) on `GET /api/v1/triage` and the `/api/v1/triage/*` mutation routes (`app/api/v1/triage.py`); inline document review via `GET /api/v1/documents/{id}/review` (`app/api/v1/documents.py`).
 
 | Layer | Status |
 |---|---|
@@ -286,24 +287,6 @@ All tables already exist from Phase 1 migrations. Nothing new to migrate for the
 | Extracted claims | `Claim` + `ClaimEvidence` |
 | Proposed links | `DocumentRelationship` (with `confidence=ai_detected`) |
 | Deadlines from cover letters | `ActionItem` |
-
----
-
-## 7. Key files
-
-| File | Role |
-|---|---|
-| `app/api/triage.py` | Routes: confirm_document, confirm_bundle, set_reaction, feed OOB helper |
-| `app/services/triage_service.py` | Bundle aggregation (`get_triage_bundles`), cascade assignment, reaction upsert |
-| `app/repositories/user_reaction.py` | Reaction CRUD |
-| `app/templates/pages/triage.html` | Page-level Alpine state (activeDoc, collapsedBundles, bundleConfirm, filters) |
-| `app/templates/partials/triage_bundle.html` | Bundle header row + document tree + CTA footer |
-| `app/templates/partials/triage_bundle_confirm_modal.html` | Page-level modal for bundle confirm (case + proceeding dropdowns) |
-| `app/templates/partials/triage_card.html` | Per-document card with ✓ badge, pipeline pill, reaction display |
-| `app/templates/partials/triage_metadata_form.html` | Two-state metadata panel (review / confirmed) |
-| `app/templates/partials/document_triage.html` | Right HUD: AI-highlighted text + metadata form + reaction bar |
-| `app/templates/partials/_pipeline_status.html` | Shared Jinja macro: 5-state pipeline pill (used by card and HUD) |
-| `static/input.css` | Tailwind v4 safelist for originator opacity variants |
 
 ---
 

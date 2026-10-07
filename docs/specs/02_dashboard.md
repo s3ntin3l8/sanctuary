@@ -7,7 +7,7 @@ Companion document to `docs/vision.md` and `docs/triage.md`. Covers the primary 
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — React case page (SPA migration phase 5): `frontend/src/features/cases/dashboard/CasePage.tsx` on `GET /api/v1/cases/{id}` (`app/api/v1/case_detail.py`). The Graph view is the default; `?view=review|graph|truth|timeline|fin`, `?proceeding=` and `?filter=` are the URL contract. File names below that mention Jinja partials or `dashboard.js` describe the pre-migration implementation.
+**Status:** 🟢 IMPLEMENTED — React case page (SPA migration phase 5): `frontend/src/features/cases/dashboard/CasePage.tsx` on `GET /api/v1/cases/{id}` (`app/api/v1/case_detail.py`). The Graph view is the default; `?view=review|graph|truth|timeline|fin`, `?proceeding=` and `?filter=` are the URL contract.
 
 | Layer | Status |
 |---|---|
@@ -361,7 +361,7 @@ Each chat thread is a `Conversation` row with `scope_type='case'`, `scope_id=cas
 | **New case, no documents** | Brief: "No documents yet. Upload the first to begin intelligence gathering." Graph empty. Action items empty. Single CTA: `[+ add document]`. |
 | **Only one document so far** | Single node in the graph; brief synthesized from just that doc; no action items unless AI found deadlines. |
 | **All documents are administrative** | Graph shows "2 administrative documents — show all?" hint; user can toggle significance filter to see them. |
-| **AI brief not yet generated** | Brief panel shows shimmer + "AI is analyzing your case — first brief in ~30s". Status updates via htmx poll every 5s. |
+| **AI brief not yet generated** | Brief panel shows shimmer + "AI is analyzing your case — first brief in ~30s". `useCaseDetail` (`frontend/src/api/caseDetail.ts`) re-polls `GET /api/v1/cases/{id}` every 4s while `brief.status === 'processing'`. |
 | **AI brief generation failed** | Red banner on brief: "AI analysis failed: [error]. [retry]". Rest of dashboard still functional. |
 | **No relationships detected yet** | Graph renders as disconnected nodes (no edges). View mode auto-switches to Timeline. Hint at top: "No relationships detected yet — switch to Timeline or wait for Phase 4 AI extraction." |
 | **Case closed** | Status dot muted; "Closed on [date]" shown in top bar; delta banner suppressed; all panels read-only. |
@@ -421,44 +421,6 @@ What populates which zone, from which Phase 1 table.
 | Truth Map (tab) | `Claim` + `ClaimEvidence` + `UserReaction` | Phase 6 |
 | Case Chat | `Conversation` + `ConversationMessage` + AI context | Phase 7 |
 | Document HUD slide-in | `Document` + `Document.key_passages` + reactions | Phase 2 (component) + Phase 4 (content) |
-
----
-
-## 15. Files that will change
-
-Dashboard implementation spans Phase 5 (shell + brief + actions + financials) and Phase 7 (graph renderer). Truth Map tab arrives in Phase 6; chat in Phase 7.
-
-### New
-| File | Purpose |
-|---|---|
-| `app/api/dashboard_case.py` | Case-scoped dashboard route (`GET /cases/<id>`) — returns aggregated context |
-| `app/services/case_dashboard_service.py` | Aggregates brief, proceedings, action items, financials, parties, delta for rendering |
-| `app/services/ai_brief.py` | Brief generation + incremental update logic |
-| `app/services/case_clock.py` | Dormancy detection + typical-range estimation |
-| `app/templates/pages/case_dashboard.html` | Replaces `case_stream.html` as primary case view |
-| `app/templates/partials/dashboard/ai_brief.html` | Left-column brief panel |
-| `app/templates/partials/dashboard/parties.html` | Parties strip |
-| `app/templates/partials/dashboard/financials.html` | Cost summary panel |
-| `app/templates/partials/dashboard/action_items.html` | Open/completed list + Case Clock hints |
-| `app/templates/partials/dashboard/delta_banner.html` | New-documents notification |
-| `app/templates/partials/dashboard/proceeding_switcher.html` | Dropdown + active-proceeding badge |
-| `app/templates/partials/dashboard/view_mode_tabs.html` | Graph/Truth Map/Timeline/Financials toggle |
-| `app/templates/partials/dashboard/correspondence_graph.html` | SVG renderer (Phase 8) |
-| `app/templates/partials/dashboard/truth_map.html` | Claims view (Phase 6) |
-| `app/templates/partials/case_timeline_panel.html` | Flat chronological fallback (already exists) |
-| `app/templates/partials/dashboard/ai_chat.html` | Case-scoped chat panel |
-| `static/js/dashboard.js` | Keyboard shortcuts, view-mode persistence, graph interactions |
-| `static/js/graph_renderer.js` | SVG graph interactions (zoom/pan/hover/click) |
-| `app/repositories/conversation.py` | Conversation + message CRUD (new) |
-
-### Modified
-| File | Change |
-|---|---|
-| `app/api/cases.py` | Redirect `/cases/<id>` to new dashboard route; keep list route |
-| `app/services/case_service.py` | Extend `get_case_with_summary` to include brief, parties, delta context |
-| `app/models/database.py` | (no new columns needed for Phase 5 — already laid down in Phase 1) |
-| `app/services/ingestion/service.py` | Hook: on new-document ingest, trigger incremental brief update task |
-| `app/tasks/ai_summaries.py` | Add `update_case_brief_task(case_id, new_doc_id)` |
 
 ---
 

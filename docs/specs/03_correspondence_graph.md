@@ -7,34 +7,35 @@ Companion document to `docs/specs/00_vision.md` §2. Covers the swim-lane SVG gr
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — layout stays server-side in `CaseGraphService` (`GET /api/v1/cases/{id}/graph?proceeding=&filter=&since=`); rendering, pan/zoom, filters and hover live in `frontend/src/features/cases/dashboard/GraphTab.tsx`. References below to `correspondence_graph.html`, `CaseGraphRenderer` or `dashboard.js` describe the pre-migration implementation.
+**Status:** 🟢 IMPLEMENTED — layout stays server-side in `CaseGraphService` (`GET /api/v1/cases/{id}/graph?proceeding=&filter=&since=`); rendering, pan/zoom, filters and hover live in `frontend/src/features/cases/dashboard/GraphTab.tsx`.
 
 | Layer | Status |
 |---|---|
-| `CaseGraphService.build_payload()` — full graph computation (`case_graph_service.py:181-481`) | ✅ |
-| `GraphPayload` dataclass — serializes all rendering data to template (`case_graph_service.py:60-72`) | ✅ |
+| `CaseGraphService.build_payload()` — full graph computation (`app/services/case_graph_service.py`) | ✅ |
+| `GraphPayload` dataclass (`app/services/case_graph_service.py`) — served as the `GraphView` response model (`app/schemas/case_detail.py`) by `GET /api/v1/cases/{id}/graph` | ✅ |
 | Lane assignment via `_lane_for(doc)` — originator-type → swim lane | ✅ |
 | Attributed-originator override (court-relayed opposing pleadings go to OPPOSING lane) | ✅ |
 | Bundle-header detection (`_is_bundle_header`) — court-relay COVER_LETTER collapse | ✅ |
 | Significance filter (`passes_filter`) — 3 modes: `critical` / `significant+` / `all` | ✅ |
 | Bezier edge routing (`compute_edge_path`) — same-lane straight, cross-lane S-curve | ✅ |
-| `partials/dashboard/correspondence_graph.html` — SVG renderer (282 LoC) | ✅ |
+| `frontend/src/features/cases/dashboard/GraphTab.tsx` — SVG renderer (`useCaseGraph` in `frontend/src/api/caseDetail.ts`) | ✅ |
 | Sticky lane headers + date axis | ✅ |
 | Originator stripe on every node card | ✅ |
 | Thread-open glow ring (amber dashed border on `thread_open` nodes) | ✅ |
 | Significance flag (⚑ on critical nodes) | ✅ |
 | Proof badge (attachment count when `ATTACHES_AS_PROOF` edges present) | ✅ |
 | Reaction emoji overlay (🚩/✅/🔍/⚖️ from triage) | ✅ |
-| Bundle node: collapsible court-relay container with child rows | ✅ |
+| Bundle node: court-relay container with its child rows always rendered (no collapse state) | ✅ |
 | Hidden-tier strip (sticky footer, shows count of filtered-out nodes) | ✅ |
-| `CaseGraphRenderer` class in `dashboard.js` — pan, zoom, fit, centerCritical | ✅ |
+| `GraphTab.tsx` canvas — drag-pan, ⌘/Ctrl+wheel zoom, fit-to-width on layout | ✅ |
+| `f` fit / `c` center-critical keys, node context menu | — (not in the SPA) |
 | Node click → Document HUD slide-in | ✅ |
 | Node hover → highlight node + incident edges | ✅ |
-| Right-click context menu | ✅ |
+| Right-click context menu | — (not in the SPA) |
 | Per-proceeding scope (graph is scoped to `active_proceeding`) | ✅ |
-| Keyboard: `g` → graph, `f` → fit, `c` → center critical | ✅ |
+| Keyboard: `g` → graph | ✅ (`f` / `c` not in the SPA) |
 | Cross-proceeding ghost nodes | ✅ |
-| Context menu "Add reaction" + "Copy link" buttons | ⚠ placeholder — UI rendered but handlers not yet wired |
+| Context menu "Add reaction" + "Copy link" buttons | — (not in the SPA) |
 | Edge visual distinction for `SUPERSEDES` type | ⚠ stroke-w 0.5, hard to see in dense graphs |
 | `CITED_BY` relationship rendering | N/A — inverse of REFERENCES; intentionally skipped to avoid duplicate arrows |
 
@@ -90,7 +91,7 @@ ADV-024-A  Musterklage GmbH vs. XY   [AG Hamburg ▾]   [critical] [significant+
 
 ## 1. `GraphPayload` — the rendering contract
 
-`CaseGraphService.build_payload()` returns a `GraphPayload` dataclass that is the only thing the Jinja template reads. No queries happen in the template.
+`CaseGraphService.build_payload()` returns a `GraphPayload` dataclass; `GET /api/v1/cases/{id}/graph` (`app/api/v1/case_detail.py`) maps it 1:1 onto the `GraphView` response model and `GraphTab.tsx` renders that payload without further requests.
 
 ```python
 @dataclass
@@ -105,10 +106,10 @@ class GraphPayload:
     node_counts: dict  # Per-tier counts (critical/significant/informational/admin_standalone/admin_relay)
     filter: str  # Active filter: "critical" | "significant+" | "all"
     node_count: int  # Total visible nodes
-    edge_count: int  # Total visible edges (used for Timeline auto-fallback)
+    edge_count: int  # Total visible edges (shown in the toolbar counter)
 ```
 
-`edge_count` doubles as the Timeline fallback signal: when `edge_count == 0` on first visit and no persisted view preference exists, `case_dashboard_service.py` defaults to `active_view = 'timeline'`.
+The Timeline auto-fallback on `edge_count == 0` is not in the SPA: `CasePage.tsx` defaults `?view=` to `graph` and `active_view` no longer exists in `case_dashboard_service.py`.
 
 ---
 
@@ -123,7 +124,7 @@ Four swim lanes map `OriginatorType` to a column:
 | OPPOSING | `"opposing"` | `OPPOSING` | Red |
 | THIRD PARTY | `"third"` | `THIRD_PARTY` | Amber |
 
-**Attribution override** (`_lane_for`, `case_graph_service.py:85-118`): if `doc.attributed_originator` is set (e.g. a court-relayed pleading from opposing counsel), it overrides `originator_type` for lane placement. This ensures the document appears in the OPPOSING lane even though it physically arrived via the court's relay.
+**Attribution override** (`_lane_for` in `app/services/case_graph_service.py`): if `doc.attributed_originator` is set (e.g. a court-relayed pleading from opposing counsel), it overrides `originator_type` for lane placement. This ensures the document appears in the OPPOSING lane even though it physically arrived via the court's relay.
 
 Lanes without any visible documents are collapsed to zero width; `svg_width` is computed accordingly.
 
@@ -175,7 +176,7 @@ Edges from a relay bundle use amber stroke (same as the bundle header color) to 
 
 ## 6. Node anatomy
 
-Each node is a 180 × 50 px SVG group rendered in `correspondence_graph.html`:
+Each node is a 180 × 50 px SVG group rendered by `GraphTab.tsx`:
 
 | Element | Condition | Source |
 |---|---|---|
@@ -192,21 +193,21 @@ Each node is a 180 × 50 px SVG group rendered in `correspondence_graph.html`:
 
 ---
 
-## 7. Interaction — `CaseGraphRenderer`
+## 7. Interaction — `GraphTab.tsx`
 
-`CaseGraphRenderer` (defined in `static/js/dashboard.js:1-174`) manages the SVG viewport:
+The `Canvas` component in `frontend/src/features/cases/dashboard/GraphTab.tsx` owns the SVG viewport (a `{scale, tx, ty}` camera in React state):
 
 | Action | Behaviour |
 |---|---|
-| Drag (left-click) | Pan; cursor `grabbing` |
+| Drag (left-click on empty canvas) | Pan; cursor `grabbing` |
 | Ctrl/Cmd + scroll | Zoom in/out, clamped 0.1–5.0×, mouse-relative origin |
-| `f` key | `fitToView()` — recalculates scale and offset to fit all nodes with padding |
-| `c` key | `centerCritical()` — zooms to 1.2× and pans to center the first critical node |
-| Node click | Opens Document HUD via `caseDashboard.selectDoc(id)` |
-| Node hover | `setHighlight(id)` — dims non-adjacent nodes and fades non-incident edges |
-| Node right-click | Context menu: View / Add reaction (stub) / Copy link (stub) |
+| First layout | Fit-to-width once per payload (no manual `f` / `c` keys — not in the SPA) |
+| Node click | Opens the inline `DocumentReview` panel on the right (`GET /api/v1/documents/{id}/review`); "Open HUD" navigates to `/document/{id}` |
+| Node hover | Dims non-adjacent nodes and fades non-incident edges |
+| Lane chip (toolbar) | Toggles a lane filter that dims nodes outside that lane |
+| Node right-click | — (not in the SPA) |
 
-The legend viewport (`#legend-viewport`) counteracts the pan/zoom transform so it stays anchored at top-right regardless of zoom level.
+The lane-header strip is positioned from the camera transform so it stays aligned with its lanes at any zoom level.
 
 ---
 
@@ -214,8 +215,8 @@ The legend viewport (`#legend-viewport`) counteracts the pan/zoom transform so i
 
 | Situation | What renders |
 |---|---|
-| Case with no documents | Empty SVG with lane headers; `edge_count == 0` → auto-fallback to Timeline (see §1) |
-| Case with 1 document | Single node, no edges; auto-fallback to Timeline applies |
+| Case with no documents | Empty SVG with lane headers (no Timeline auto-fallback, see §1) |
+| Case with 1 document | Single node, no edges |
 | All nodes hidden by significance filter | Hidden-tier strip shows count per tier; `[show all]` chip resets filter |
 | No documents in one lane | That lane collapses to zero width |
 | Relationship detection pending | Graph renders nodes without edges; arrows appear after enrichment Celery task |
@@ -225,16 +226,18 @@ The legend viewport (`#legend-viewport`) counteracts the pan/zoom transform so i
 
 ## 9. Keyboard-first interaction
 
+All bindings live in `KEY_TO_VIEW` / the `keydown` effect in `frontend/src/features/cases/dashboard/CasePage.tsx`; they are ignored while an input has focus or a modal is open.
+
 | Key | Scope | Action | Source |
 |---|---|---|---|
-| `g` | Dashboard | Switch to Graph view | `dashboard.js:375` |
-| `f` | Graph active | Fit graph to viewport | `CaseGraphRenderer.fitToView()` |
-| `c` | Graph active | Center + zoom to first critical node | `CaseGraphRenderer.centerCritical()` |
-| `t` | Dashboard | Switch to Truth Map view | `dashboard.js:375` |
-| `l` | Dashboard | Switch to Timeline view | `dashboard.js:374` |
-| `$` | Dashboard | Switch to Financials view | `dashboard.js:375` |
-| `/` | Dashboard | Open case chat (no HUD) or doc chat (HUD open) | `dashboard.js` |
-| `Esc` | Any | Close HUD / context menu / chat | `dashboard.js` |
+| `g` | Dashboard | Switch to Graph view | `KEY_TO_VIEW` in `CasePage.tsx` |
+| `r` | Dashboard | Switch to Review view | `KEY_TO_VIEW` in `CasePage.tsx` |
+| `t` | Dashboard | Switch to Truth Map view | `KEY_TO_VIEW` in `CasePage.tsx` |
+| `l` | Dashboard | Switch to Timeline view | `KEY_TO_VIEW` in `CasePage.tsx` |
+| `$` | Dashboard | Switch to Financials view | `KEY_TO_VIEW` in `CasePage.tsx` |
+| `/` | Dashboard | Open the case chat drawer | `CasePage.tsx` |
+| `Esc` | Dashboard | Close the chat drawer | `CasePage.tsx` |
+| `f` / `c` | Graph active | Fit graph / center first critical node | — (not in the SPA) |
 
 ---
 
@@ -252,23 +255,6 @@ The legend viewport (`#legend-viewport`) counteracts the pan/zoom transform so i
 
 ---
 
-## 11. Files that will change
-
-This spec documents the current implementation without requiring code changes. The two ⚠ items are accepted deviations:
-
-- **Context menu stubs**: "Add reaction" and "Copy link" remain stubs for v1. When implemented, they will POST to `/document/{id}/reaction` and write `document://{id}` to the clipboard.
-- **`SUPERSEDES` stroke weight**: accepted as-is for v1; if usability feedback surfaces, increase stroke-w to 0.75 in `correspondence_graph.html`.
-
-**Modified (cross-reference only):**
-- `docs/specs/02_dashboard.md §3` — replace inline graph description with one-paragraph summary + link to this spec.
-- `docs/specs/00_vision.md §2` — add "See `docs/specs/03_correspondence_graph.md`" link.
-
-**New:** none.
-
-**Deleted:** none.
-
----
-
 ## 12. Phase progression
 
 | Phase | What landed |
@@ -276,14 +262,14 @@ This spec documents the current implementation without requiring code changes. T
 | Phase 1 | `documents` + `proceedings` + `DocumentRelationship` schema |
 | Phase 3 | Triage assignments (`originator_type`, `attributed_originator`, `court_relay`) |
 | Phase 4 | AI relationship detection (`replies_to`, `references`, `attaches_as_proof`, `supersedes`) |
-| Phase 8 | `CaseGraphService` full implementation + SVG template + `CaseGraphRenderer` JS class |
+| Phase 8 | `CaseGraphService` full implementation + SVG renderer (now `GraphTab.tsx` after the SPA migration) |
 
 ---
 
 ## 13. Non-goals
 
 - No force-directed layout (deterministic swim-lane positioning is intentional; force-directed would obscure the structural meaning of lanes).
-- No d3.js or other graph library (the current SVG renderer is self-contained at ~282 LoC).
+- No d3.js or other graph library (the SVG renderer in `GraphTab.tsx` is self-contained).
 - No cross-case graph rollup (graphs are scoped to a single proceeding).
 - No graph export to SVG/PNG (timeline on demand via browser print).
 - No graph editing UI (relationships are AI-detected or inferred from ingest metadata; manual edge creation is out of scope for v1).
@@ -297,23 +283,22 @@ This spec documents the current implementation without requiring code changes. T
 **Manual:**
 1. `make seed && make run` → open `/cases/<seeded-case>` → graph renders with ≥ 3 nodes in correct lanes; relationship arrows visible.
 2. Top-bar filter `[critical]` → only critical nodes remain; hidden-tier strip shows count; `[all]` → all nodes reappear.
-3. Click `f` → graph fits to viewport. Click `c` → first critical node centered with 1.2× zoom.
-4. Click a node → Document HUD slides in from right.
+3. Graph fits to the viewport width on first render; ⌘/Ctrl + wheel zooms around the cursor. (`f` / `c` keys: not in the SPA.)
+4. Click a node → inline document review panel slides in from the right; "Open HUD" goes to `/document/{id}`.
 5. Hover a node → incident edges highlighted; non-adjacent edges dimmed.
-6. Right-click a node → context menu appears with three items.
-7. Open a case with 0 edges (no relationships detected) → dashboard lands on Timeline view.
-8. Bundle node with `court_relay=True` → click to expand; children render inside; click again to collapse.
+6. Bundle node with `court_relay=True` → children render inside the container; clicking the header opens the review panel for the relay document.
 
 **Automated (existing):**
-- `tests/integration/test_case_graph_service.py` (if present — verify before running)
-- `pytest -k graph` for any existing graph-related tests
+- `tests/unit/test_case_graph_service.py` — layout, filters, edge emission
+- `tests/integration/test_v1_case_dashboard.py::test_graph_and_timeline` — `GET /api/v1/cases/{id}/graph` JSON
+- `tests/e2e/test_case_graph.py` — rendered SVG nodes in the browser
+- `frontend/src/features/cases/dashboard/CasePage.test.tsx` — graph is the default view, `?proceeding=` refetch
 
 ---
 
 ## 15. Success criteria
 
-- Graph renders in < 300 ms for cases with up to 200 nodes (SSR is synchronous; no client-side data fetch).
-- `edge_count == 0` on first visit → dashboard auto-selects Timeline view (no empty graph flash).
+- `GET /api/v1/cases/{id}/graph` responds in < 300 ms for cases with up to 200 nodes; the SPA renders from that single fetch (`useCaseGraph`).
 - Lane assignment is deterministic: the same document always appears in the same lane regardless of render order.
 - Significance filter round-trip (`significant+` → `all` → `critical` → `significant+`) leaves graph in correct state.
 - Node hover highlights only the hovered node and its direct edges; no false highlighting.

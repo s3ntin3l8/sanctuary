@@ -7,30 +7,29 @@ Companion document to `docs/specs/00_vision.md` §UI. Covers the per-case chrono
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/timeline` (`CaseTimelineService`) and `frontend/src/features/cases/dashboard/TimelineTab.tsx`. References below to `case_timeline_panel.html` or Alpine state describe the pre-migration implementation.
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/timeline` (`CaseTimelineService`) and `frontend/src/features/cases/dashboard/TimelineTab.tsx`.
 
 | Layer | Status |
 |---|---|
-| Per-case Timeline view-mode tab (`view='timeline'`) in `case_dashboard.html:94-98` | ✅ |
-| `partials/case_timeline_panel.html` — significance pill + title + originator + relative date | ✅ |
-| Document set from `case_dashboard_service.py:158-162` sorted by `issued_date or ingest_date` desc | ✅ |
-| Empty state ("No documents yet.") | ✅ |
-| Keyboard `l` switches to Timeline (`static/js/dashboard.js:374`) | ✅ |
-| Settings default-view selector includes `timeline` (`pages/settings/appearance.html:46-57`) | ✅ |
-| Auto-fallback to Timeline when graph has zero edges | ✅ |
-| Click row → Document HUD slide-in | ✅ |
+| Per-case Timeline view-mode tab (`?view=timeline`, labelled "Calendar", `frontend/src/features/cases/dashboard/CasePage.tsx`) | ✅ |
+| `TimelineTab.tsx` — date, actor dot, kind icon, title, critical / overdue / amount / ⚖ claim-count markers (`useCaseTimeline` in `frontend/src/api/caseDetail.ts`) | ✅ |
+| Event stream from `CaseTimelineService.build_payload` (`app/services/case_timeline_service.py`) via `GET /api/v1/cases/{id}/timeline`, sorted by date ascending | ✅ |
+| Empty state ("No documents yet.") | — (not in the SPA; an empty case renders an empty list behind the `0 / 0` counter) |
+| Keyboard `l` switches to Timeline (`KEY_TO_VIEW` in `CasePage.tsx`) | ✅ |
+| Settings default-view selector includes `timeline` | — (not in the SPA) |
+| Auto-fallback to Timeline when graph has zero edges | — (not in the SPA; `CasePage.tsx` defaults to `graph`) |
+| Click row → Document HUD (`navigate('/document/{id}')` → `frontend/src/features/documents/DocumentPage.tsx`) | ✅ |
 | Cross-case Master Timeline removal | ✅ |
 
 ### Implementation Deviations
 
 | Feature | Vision §UI / Dashboard §9 | Code | Status |
 |---|---|---|---|
-| Timeline as view-mode only | "Timeline exists as a view mode inside each case dashboard." | Implemented via `view='timeline'` Alpine state | ✅ Accepted |
-| Cross-case Master Timeline | "Deleted" (vision §UI:380) | Removed from API, routes, and templates | ✅ Accepted |
-| File path for panel partial | `partials/dashboard/timeline_view.html` | `partials/case_timeline_panel.html` | ✅ Accepted |
-| Lightweight — reuses existing queries | "Lightweight; uses existing document repository queries" | Reuses `documents_sorted` — no additional query | ✅ Accepted |
-| Auto-switch when no relationships | "View mode auto-switches to Timeline" | Logic in `case_dashboard_service.py` defaults to timeline if edges=0 | ✅ Accepted |
-| Click → Document HUD | Implied by `02_dashboard.md §10` | Implemented via HTMX triggers on rows | ✅ Accepted |
+| Timeline as view-mode only | "Timeline exists as a view mode inside each case dashboard." | Implemented via the `?view=timeline` search param in `CasePage.tsx` | ✅ Accepted |
+| Cross-case Master Timeline | "Deleted" (vision §UI:380) | Removed from the API and the SPA routes | ✅ Accepted |
+| Lightweight — reuses existing queries | "Lightweight; uses existing document repository queries" | `CaseTimelineService.build_payload` runs its own aggregation over documents, action items, costs and proceedings behind a separate `GET /api/v1/cases/{id}/timeline` request (see §1) | Deviates — separate query |
+| Auto-switch when no relationships | "View mode auto-switches to Timeline" | Not implemented — `CasePage.tsx` defaults to `graph` regardless of edge count | ❌ Not implemented |
+| Click → Document HUD | Implied by `02_dashboard.md §10` | Document-backed rows are buttons that `navigate('/document/{id}')` (`TimelineTab.tsx`) | ✅ Accepted |
 
 ---
 
@@ -40,7 +39,7 @@ Companion document to `docs/specs/00_vision.md` §UI. Covers the per-case chrono
 
 **Sanctuary Timeline:** the correspondence graph is the primary view because relationships between documents reveal case dynamics that a flat list cannot. The Timeline view exists as a **fallback** — for new cases where relationships have not yet been detected, or for the occasional chronological scan needed by the user. It is never a destination; it is always entered through the case dashboard's view-mode tab. Selecting Timeline from the primary nav has been explicitly removed from the design.
 
-The Timeline renders the same document set that the graph uses, filtered by the same top-bar significance filter, sorted by `issued_date` (falling back to `ingest_date`). The single round-trip to `case_dashboard_service.py` serves all four view modes.
+The Timeline renders every dated event in the case — documents (`issued_date`, falling back to `ingest_date`), action items, legal costs and proceeding milestones — from its own `GET /api/v1/cases/{id}/timeline` request, with client-side actor / kind / future chips rather than the graph's significance filter.
 
 ---
 
@@ -73,60 +72,58 @@ ADV-024-A  Musterklage GmbH vs. XY   [AG Hamburg ▾]   [critical] [significant+
 
 ## 1. Data sourcing
 
-Timeline issues **no additional database query**. It reuses `documents_sorted` already computed by `case_dashboard_service.py:158-162`:
+`GET /api/v1/cases/{case_id}/timeline` (`app/api/v1/case_detail.py`) calls `CaseTimelineService.build_payload(case_id)` (`app/services/case_timeline_service.py`), which merges four sources into one `TimelineEvent` list sorted ascending by date and returns it as `TimelineView` (`app/schemas/case_detail.py`):
 
-```python
-documents_sorted = sorted(
-    data["documents"],
-    key=lambda d: d.issued_date or d.ingest_date,
-    reverse=True,
-)
-```
+| Source | Event kinds | Date |
+|---|---|---|
+| `Document` | filing / order / statement / report / relay / payment (from `DocumentType`, falling back to the actor lane) | `issued_date or ingest_date` |
+| `ActionItem` | hearing (court dates) / deadline | `due_date` |
+| `LegalCost` | payment (debit / credit) | `paid_at or due_at` |
+| `Proceeding` | milestone (opened / closed) | `started_at` / `ended_at` |
 
-`data["documents"]` is the significance-filtered document list for the active proceeding. The same list drives the graph's node set — Timeline is literally the flattened, sorted version of the same data. This keeps the "lightweight" promise: the Timeline adds zero server-side cost to the dashboard render.
+Court relays are emitted as a court event plus one row per substantive child document. The payload also carries `month_buckets` (per-month totals for the ribbon) and a `quiet_gap_days` marker on events preceded by ≥14 days of silence in the same month. The SPA fetches it once per case through `useCaseTimeline` (`frontend/src/api/caseDetail.ts`); the actor, kind and future chips filter client-side in `TimelineTab.tsx`.
 
 ---
 
 ## 2. Row anatomy
 
-Each row in `partials/case_timeline_panel.html` renders:
+Each row in `TimelineTab.tsx` renders one `TimelineEventView`:
 
 | Element | Source | Behaviour |
 |---|---|---|
-| Significance pill | `doc.significance_tier.value` | Color-coded by tier |
-| Title | `doc.title or 'Untitled'` | Truncated to one line |
-| Originator line | `doc.attributed_originator or doc.sender` | Originator name |
-| Date suffix | `doc.issued_date` | Relative time (e.g. "3 days ago") |
-| Hover state | CSS | Signals interactivity |
+| Date | `event.date` | Short date (`formatShortDate`) |
+| Actor dot | `event.actor` | Originator color (`ORIGINATOR_COLOR`) |
+| Kind icon | `event.kind` | `KIND_ICON` lookup |
+| Title | `event.title` | Truncated to one line |
+| Markers | `sig === 'critical'` ⚑ · `is_overdue` · `amount_eur` / `direction` · `claim_count` ⚖ · `note` | Shown only when present |
+| Month header / today line / quiet gap | `month_buckets`, `today`, `quiet_gap_days` | Sticky month heading, dashed "today" divider, "· N quiet days ·" |
+| Hover state | CSS | Document-backed rows only |
 
 ---
 
 ## 3. Interaction — click row → Document HUD
 
-All rows are interactive and use HTMX to load the document HUD into the dashboard slot. This ensures a seamless transition from the flat chronological scan to deep semantic reading.
-
-```html
-<div hx-get="/document/{{ doc.id }}/hud"
-     hx-target="#hud-slot"
-     hx-swap="innerHTML"
-     class="cursor-pointer hover:bg-surface-container-high">
-```
+Rows with a `source_document_id` render as buttons that `navigate('/document/{id}')` — the full Document HUD (`frontend/src/features/documents/DocumentPage.tsx`, `GET /api/v1/documents/{id}/reader`). This keeps the transition from the flat chronological scan to deep semantic reading one click. Rows without a source document (proceeding milestones, costs not tied to a document) are plain, non-interactive rows.
 
 ---
 
 ## 4. Auto-fallback to Timeline
 
-When a case is first opened and has zero detected document relationships (e.g. only one document present), the dashboard automatically switches to the Timeline view to avoid showing a sparse or disconnected graph. This logic is handled by `CaseDashboardService`.
+Design intent: when a case is first opened and has zero detected document relationships (e.g. only one document present), the dashboard should switch to the Timeline view to avoid showing a sparse or disconnected graph.
+
+**Not implemented in the SPA.** `CasePage.tsx` defaults to `graph` whenever `?view` is absent, regardless of `GraphView.edge_count`.
 
 ---
 
 ## 5. Success criteria
 
-- `partials/case_timeline_panel.html` is the only timeline rendering surface.
-- Chronological list inherits significance filtering from the top bar.
-- Rows are clickable and open the document HUD slide-in.
-- Empty graphs default to the timeline view for better user orientation.
+- `TimelineTab.tsx` is the only timeline rendering surface.
+- Chronological list is filterable client-side by actor, kind and future/past chips.
+- Document-backed rows are clickable and open the Document HUD (`/document/{id}`).
+- Empty graphs default to the timeline view for better user orientation — not in the SPA (see §4).
 - Keyboard shortcuts (`l` for timeline, `g` for graph) allow fast switching.
+
+**Automated coverage:** `tests/unit/test_case_timeline_service.py` (ordering, actor derivation, overdue flag, quiet gaps, kind mapping) and `tests/integration/test_v1_case_dashboard.py::test_graph_and_timeline` (`GET /api/v1/cases/{id}/timeline` shape). `TimelineTab` has no vitest yet.
 
 ---
 

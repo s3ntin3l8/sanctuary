@@ -7,7 +7,7 @@ Companion document to `docs/specs/00_vision.md` §8 and `docs/specs/02_dashboard
 ## Implementation Status
 
 **Last Updated:** October 6, 2026
-**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/financials`, `/api/v1/costs/*`, `/api/v1/cost-signals/*` and `frontend/src/features/cases/dashboard/CostsTab.tsx`. References below to `financials_view.html` or out-of-band swaps describe the pre-migration implementation.
+**Status:** 🟢 IMPLEMENTED — `GET /api/v1/cases/{id}/financials`, `/api/v1/costs/*`, `/api/v1/cost-signals/*` and `frontend/src/features/cases/dashboard/CostsTab.tsx`.
 
 | Layer | Status |
 |---|---|
@@ -15,18 +15,19 @@ Companion document to `docs/specs/00_vision.md` §8 and `docs/specs/02_dashboard
 | `Document.cost_delta` JSON + `CostDeltaSchema` validation | ✅ |
 | `Document.cost_candidates` regex pre-extraction at ingest | ✅ |
 | `Case.total_cost_exposure` (cents) + `recompute_total_cost_exposure` rollup | ✅ |
-| `GET /costs` global cross-case browser | ✅ |
-| `GET /costs/new` + `GET /costs/cases/{id}/new` cost form | ✅ |
-| Dashboard left-column `case_financials_panel.html` | ✅ |
-| Dashboard `partials/dashboard/financials_view.html` view-mode tab | ✅ |
-| HUD `partials/hud/_cost_delta.html` + promote-to-cost button | ✅ |
-| `POST /costs` (create) | ✅ |
-| `POST /costs/{id}/update-field` (inline edit) | ✅ |
-| `POST /costs/{id}/pay` | ✅ |
-| `POST /costs/{id}/reimburse` | ✅ |
+| `/costs` global cross-case browser — `frontend/src/features/costs/CostsPage.tsx` on `GET /api/v1/costs` (`CostsOverview`) | ✅ |
+| Cost form — `AddCostModal` in `CostsPage.tsx` (`useCreateCost`) | ✅ |
+| Dashboard rail exposure block — `frontend/src/features/cases/dashboard/Rail.tsx` from `GET /api/v1/cases/{id}` (`financials`) | ✅ |
+| Dashboard Financials view-mode tab — `frontend/src/features/cases/dashboard/CostsTab.tsx` on `GET /api/v1/cases/{id}/financials` (`useFinancials`) | ✅ |
+| HUD cost-signal section — `CostSignals` in `frontend/src/features/documents/DocumentReview.tsx` from `GET /api/v1/documents/{id}/review` (`cost_signals`) | ✅ |
+| Promote-to-cost button | — (not in the SPA; `POST /api/v1/documents/{id}/cost-signals/promote` exists without a caller) |
+| `POST /api/v1/cases/{case_id}/costs` (create) | ✅ |
+| `PATCH /api/v1/costs/{id}` (edit via `EditCostModal`) | ✅ |
+| `POST /api/v1/costs/{id}/pay` / `unpay` | ✅ |
+| `POST /api/v1/costs/{id}/reimburse` / `unreimburse` | ✅ |
 | Per-proceeding cost split | ✅ |
 | Direction semantics consistent between prompt and HUD | ✅ |
-| Overdue/upcoming alerts passed to `/costs` route | ✅ |
+| Overdue/due-soon alerts in `GET /api/v1/costs` (`overdue`, `due_soon`) | ✅ |
 
 ### Implementation Deviations
 
@@ -96,7 +97,7 @@ Statutory basis:
   §91 ZPO — loser-pays reimbursement · JVEG — expert / interpreter fees
 ```
 
-### Surface 3 — Per-document HUD sidebar (`_cost_delta.html`)
+### Surface 3 — Per-document HUD sidebar (`CostSignals` in `DocumentReview.tsx`)
 
 ```
 COST SIGNAL
@@ -104,7 +105,7 @@ Beschluss vom 02.04 introduces:
   + 450 €  Gerichtskostenvorschuss        [incoming — money owed to us]
   Gerichtsgebühren nach GKG
 
-[+ promote to LegalCost]   → creates a VORSCHUSS line item in the ledger
+[+ promote to LegalCost]   → creates a VORSCHUSS line item in the ledger (not in the SPA yet)
 
 Candidates from text:  450 €  · 1.240 EUR  · Nr. 3100 VV RVG
 ```
@@ -127,7 +128,7 @@ cost_delta: JSON | null
 }
 ```
 
-Validated by `CostDeltaSchema` (`app/models/schemas.py:39-46`). Invalid direction collapses to `"none"` at write time.
+Validated by `CostDeltaSchema` (`app/models/schemas.py`). Invalid direction collapses to `"none"` at write time.
 
 **Direction semantics** (canonical definition):
 
@@ -244,8 +245,8 @@ German legal costs are governed by four statutes. Sanctuary tracks all four with
 
 ## 6. CRUD and Promotions
 
-- **Promote Signal:** HUD sidebar button converts a `cost_delta` signal into a `LegalCost` position, calculating `amount_gross` based on category/direction and triggering exposure recomputation.
-- **CRUD Routes:** Full support for `POST /costs`, `POST /costs/{id}/pay`, `POST /costs/{id}/reimburse`, and `POST /costs/{id}/update-field`.
+- **Promote Signal:** `POST /api/v1/documents/{id}/cost-signals/promote` converts a `cost_delta` signal into a `LegalCost` position, calculating `amount_gross` based on category/direction and triggering exposure recomputation (route only; no SPA button yet).
+- **CRUD Routes:** `POST /api/v1/cases/{case_id}/costs`, `PATCH /api/v1/costs/{id}`, `POST /api/v1/costs/{id}/pay|unpay|reimburse|unreimburse` (`app/api/v1/costs.py`; hooks in `frontend/src/api/costs.ts`).
 - **Per-Proceeding Split:** Costs can be assigned to a specific `proceeding_id` or left at case-level.
 - **Exposure Rollup:** `Case.total_cost_exposure` always reflects the current sum of signalled document costs.
 
@@ -259,6 +260,8 @@ German legal costs are governed by four statutes. Sanctuary tracks all four with
 - CRUD operations for payments and reimbursements update the ledger and trigger exposure recomputations.
 - Global costs page correctly displays overdue and upcoming alerts.
 - Correct direction semantics (incoming = received/owed) reflected across all UI surfaces.
+
+Covered by `tests/integration/test_costs_crud.py` (CRUD, overview alerts, promote) and `frontend/src/features/costs/CostsPage.test.tsx` (ledger, add/edit forms).
 
 ---
 

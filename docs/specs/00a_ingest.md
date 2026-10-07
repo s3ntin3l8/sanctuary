@@ -19,7 +19,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, and `docs/dashboard.md
 | Scan folder watcher | ✅ Implemented | `scan_folder.py` |
 | Document slicing (heuristics) | ✅ Implemented | `slicer.py` - 7 signals |
 | Document slicing (AI) | ✅ Implemented | AI refinement pass |
-| .eml upload | ✅ Implemented | `/upload` endpoint |
+| .eml upload | ✅ Implemented | `POST /api/v1/upload` (`app/api/v1/upload.py`) from `IngestModal` in `frontend/src/features/triage/IngestModal.tsx` |
 | Dedup (message-id) | ✅ Implemented | SHA256 fallback |
 | Cover letter detection | ✅ Implemented | Phase 4 AI (`batch_analyzer.py`) |
 | True originator | ✅ Implemented | Via AI pass |
@@ -233,7 +233,7 @@ Users can AirDrop / share from their phone to a sync folder (Dropbox, Syncthing,
 
 ## 4. Document slicing
 
-**Implementation:** `app/api/slicing.py` (5 routes, `prefix="/ingest/slice"`) + `app/templates/pages/slicing_review.html` + `app/tasks/prepare_slicing.py` (heuristic + AI pass) + `app/services/ingestion/slicer.py` (7 heuristic signals).
+**Implementation:** `app/api/v1/slicing.py` (`/api/v1/slicing/{batch_id}` view, `/thumb/{page}`, `/confirm`, `/retry`) + `frontend/src/features/slicing/SlicingPage.tsx` (`useSlicing` / `useSlicingConfirm` / `useSlicingRetry` in `frontend/src/api/triage.ts`, SPA route `/ingest/slice/{batch_id}`) + `app/tasks/prepare_slicing.py` (heuristic + AI pass) + `app/services/ingestion/slicer.py` (7 heuristic signals).
 
 The hardest part of scan ingest: **one scanned PDF usually contains multiple documents.** A typical incoming scan from the lawyer:
 
@@ -347,14 +347,14 @@ Interactions:
 
 ### 4.5 Slice output
 
-`POST /ingest/slice/{batch_id}/confirm` (form field: `cuts` — JSON array of 1-indexed cut positions):
+`POST /api/v1/slicing/{batch_id}/confirm` (JSON body `SlicingConfirm`: `cuts` — array of 1-indexed cut positions):
 
 - Creates N `Document` rows, each with `meta.slice_range = [start_page, end_page]`
 - First slice → `wire_cover_letter()` sets `court_relay=True`; remaining slices wired as children
 - `batch.status` → `PROCESSING`; each slice queued via `process_document_task.delay(doc.id)`
-- Redirects to `/triage` on success
+- Returns `SlicingConfirmed` (`document_ids`); `SlicingPage.tsx` then navigates to `/triage`
 
-`POST /ingest/slice/{batch_id}/retry` — re-enqueues `prepare_slicing_task` for a batch stuck in `AWAITING_SLICING`. Resets `slicing.status` to `"preparing"` before re-enqueue.
+`POST /api/v1/slicing/{batch_id}/retry` — re-enqueues `prepare_slicing_task` for a batch stuck in `AWAITING_SLICING`. Resets `slicing.status` to `"preparing"` before re-enqueue.
 
 AI enrichment proceeds per-slice normally after the Celery tasks pick them up.
 
@@ -381,7 +381,7 @@ Always-available path for mail outside the configured Gmail account — a forwar
 Gmail API returns RFC822 message bytes (via `messages.get(format='raw')`); the .eml upload path also holds RFC822 bytes. A single parser handles both:
 
 ```python
-# app/services/ingest/email_parser.py
+# app/services/ingestion/email_parser.py
 def parse_rfc822(raw_bytes: bytes) -> ParsedEmail:
     # standard lib email.parser
     # extracts: subject, from, to, cc, message-id, date, in-reply-to
@@ -714,41 +714,6 @@ If we add cloud sync or collaboration later, the privacy doc (see §0 cross-refs
 ### New column needed
 
 - `IngestBatch.message_id` — add in Phase 3 startup migration (simple add-column)
-
----
-
-## 18. Files to create / modify
-
-### New
-
-| File | Purpose |
-|---|---|
-| `app/services/ingest/__init__.py` | Module exports |
-| `app/services/ingest/gmail.py` | Gmail API client, OAuth, backfill, continuous sync |
-| `app/services/ingest/scan_folder.py` | Folder watcher, image→PDF conversion |
-| `app/services/ingest/slicer.py` | Heuristic + AI slicing for scanned PDFs |
-| `app/services/ingest/email_parser.py` | Shared RFC822 parser |
-| `app/services/ingest/batch_orchestrator.py` | Creates IngestBatch, dedup, spawns downstream |
-| `app/services/ingest/cover_letter_detector.py` | Heuristic + AI cover-letter detection |
-| `app/services/ingest/originator_attributor.py` | AI-driven attribute_originator assignment |
-| `app/services/ingest/proceeding_detector.py` | Az extraction, match-or-create |
-| `app/api/ingest.py` | Routes: `/ingest/gmail/*`, `/ingest/upload`, `/ingest/slice/*` |
-| `app/templates/pages/gmail_settings.html` | OAuth + allowlist + label filter config UI |
-| `app/templates/pages/slicing_review.html` | The slicing UI (§4.4) |
-| `app/tasks/gmail_sync.py` | Celery / background task for continuous sync |
-| `app/tasks/scan_watcher.py` | Background task for folder watcher |
-| `alembic/versions/<xxx>_add_message_id_to_ingest_batches.py` | Migration for §17 |
-| `scripts/gmail_oauth_setup.py` | One-time CLI setup helper |
-
-### Modified
-
-| File | Change |
-|---|---|
-| `app/models/database.py` | Add `IngestBatch.message_id` column |
-| `app/repositories/ingest_batch.py` | Add `get_by_message_id()` lookup |
-| `app/services/ai_summary.py` | Already wires to Proceeding auto-triage; extend prompt for slicing and originator hints |
-| `app/config.py` | Gmail OAuth client ID/secret config, scan folder path, poll cadence |
-| `CLAUDE.md` | Add ingest setup note under Run section |
 
 ---
 

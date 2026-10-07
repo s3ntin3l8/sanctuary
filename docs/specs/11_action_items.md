@@ -16,19 +16,18 @@ Companion document to `docs/specs/00_vision.md` §6 and `docs/specs/02_dashboard
 | `ActionItemStatus` enum — `open`, `completed`, `dismissed` | ✅ |
 | Frist extraction at ingest (AI analysis, `batch_analyzer.py`) | ✅ |
 | Court-date extraction at enrichment (Phase 4) | ✅ |
-| `partials/case_action_items_panel.html` — open / completed / all tabs, 12-item cap | ✅ |
-| Next Deadline sub-section (earliest open item) | ✅ |
-| Source-document link per item (`source ↗` button opens Document HUD) | ✅ |
-| `PATCH /action-item/{item_id}/status` — complete / reopen / dismiss | ✅ |
-| Notification count: overdue deadlines + upcoming (7d) + hearings (30d) (`helpers.py:99-135`) | ✅ |
-| Dormancy alert (`_compute_dormancy_alert`, `case_service.py:454`, 90-day threshold) | ✅ |
-| Keyboard `a` scrolls to action items panel (`dashboard.js:393-397`) | ✅ |
-| `a` shortcut listed in keyboard-shortcuts modal | ❌ undocumented — see Known gap §8 |
-| Case Clock signals (`_get_case_clock_signals`, `signals.py:73-80`) | ❌ returns `[]` — placeholder only |
+| Deadlines panel — `frontend/src/features/cases/dashboard/Rail.tsx` (open items from `CaseDetail.action_items`, mine/all addressee toggle, 6-item cap) | ✅ |
+| Open / completed / all tabs and Next Deadline sub-section | — (not in the SPA; `Rail.tsx` lists open items only) |
+| Source-document link per item (item title opens the inline Review panel for the source document) | ✅ |
+| `PATCH /api/v1/action-items/{item_id}` — complete / reopen / dismiss (`useCaseActionStatus` in `frontend/src/api/caseDetail.ts`) | ✅ |
+| Notification count: overdue deadlines + upcoming (7d) + hearings (30d) | — (not in the SPA; see issue #186) |
+| Dormancy alert (`_compute_dormancy_alert` in `app/services/case_service.py`, 90-day threshold) | ✅ |
+| Keyboard `a` scrolls to action items panel | — (not in the SPA) |
+| Case Clock signals (`_get_case_clock_signals` in `app/services/signals.py`) | ❌ returns `[]` — placeholder only |
 | Manual action item creation UI | ❌ AI-ingest-only in v1 |
 | Per-item edit (title, due date, description) | ❌ status-only PATCH |
 | Action items in case-chat context | ✅ — `build_case_chat_prompt` includes top 10 open items |
-| Action items in ⌘K results | ✅ — overdue/upcoming included in notifications bar |
+| Action items in ⌘K results | — (not in the SPA; see issue #186) |
 
 ### Implementation Deviations
 
@@ -36,7 +35,7 @@ Companion document to `docs/specs/00_vision.md` §6 and `docs/specs/02_dashboard
 |---|---|---|---|
 | Case-wide (not proceeding-scoped) | "All case-wide by default (not scoped to the current proceeding)" | `get_by_case(case_id)` — no proceeding filter | ✅ |
 | Frist extraction | "Deadlines, court dates, response-required, filing-required" | `ActionItemType` has all four; AI writes them on ingest | ✅ |
-| Source document link | "Click an item → opens source HUD" | `window._dashOpenDoc(id)` via Alpine; present when `source_document_id` non-null | ✅ |
+| Source document link | "Click an item → opens source HUD" | `Rail.tsx` renders the title as a button calling `onOpenDoc(source_document_id)` when non-null | ✅ |
 | Case Clock signal | "Typical duration ranges — AG 9 mo, OLG 12 mo" | `_get_case_clock_signals` placeholder returns `[]` — not yet fed by real data | ❌ — non-goal for v1 |
 | Manual creation | Not specified (AI-only) | No form or POST route for manual creation | ❌ — non-goal for v1 |
 
@@ -55,20 +54,16 @@ Companion document to `docs/specs/00_vision.md` §6 and `docs/specs/02_dashboard
 ```
 ADV-024-A  Musterklage GmbH vs. XY
 ┌──────────────────────────────────────────────────┐
-│  ACTION ITEMS                  [open] [completed] [all]  │
+│  DEADLINES  4                          [mine|all]  │
 ├──────────────────────────────────────────────────┤
-│  [deadline]  Klageerwiderung einreichen   source ↗  │
-│              in 3 days                             │
-│  [deadline]  Stellungnahme Kostenantrag   source ↗  │
-│              in 9 days                             │
-│  [court]     Anhörung AG Hamburg                   │
-│              in 2 weeks                            │
-│  [response]  Antwort auf Schriftsatz RA Müller     │
-│              2 days ago  ← overdue                 │
-├──────────────────────────────────────────────────┤
-│  ⏱  NEXT DEADLINE                                │
-│     Klageerwiderung einreichen                     │
-│     in 3 days  ·  24.04.2026                      │
+│  in 3 days   24.04.2026                  ✓  ×     │
+│  Klageerwiderung einreichen ↗                     │
+│  in 9 days   30.04.2026                  ✓  ×     │
+│  Stellungnahme Kostenantrag ↗                     │
+│  in 2 weeks  05.05.2026                  ✓  ×     │
+│  Anhörung AG Hamburg                              │
+│  2 days ago  19.04.2026  ← overdue       ✓  ×     │
+│  Antwort auf Schriftsatz RA Müller ↗              │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -127,39 +122,35 @@ Action items are created exclusively by the AI pipeline; there is no manual crea
 
 | Transition | Route | Who triggers |
 |---|---|---|
-| `open` → `completed` | `PATCH /action-item/{id}/status` (`status=completed`) | User (Mark done) |
-| `open` → `dismissed` | `PATCH /action-item/{id}/status` (`status=dismissed`) | User (Dismiss) |
-| `completed` → `open` | `PATCH /action-item/{id}/status` (`status=open`) | User (Reopen) |
-| `dismissed` → `open` | `PATCH /action-item/{id}/status` (`status=open`) | User (Reopen) |
+| `open` → `completed` | `PATCH /api/v1/action-items/{id}` (`{status: "completed"}`) | User (✓ in `Rail.tsx`) |
+| `open` → `dismissed` | `PATCH /api/v1/action-items/{id}` (`{status: "dismissed"}`) | User (× in `Rail.tsx`) |
+| `completed` → `open` | `PATCH /api/v1/action-items/{id}` (`{status: "open"}`) | API only — no reopen control in the SPA |
+| `dismissed` → `open` | `PATCH /api/v1/action-items/{id}` (`{status: "open"}`) | API only — no reopen control in the SPA |
 | Created | `ActionItemRepository.create_action_item()` | AI pipeline only |
 
-Returns `204 No Content`; the panel refreshes via HTMX `hx-target="body"` out-of-band swap on the notification badge.
+Returns the updated `CaseActionItem`; `useCaseActionStatus` invalidates the case, cases and home queries, so the Deadlines panel refetches without a reload.
 
 ---
 
 ## 4. Panel
 
-`partials/case_action_items_panel.html` renders inside the dashboard's right column, below the AI Brief.
+`Rail.tsx` renders the Deadlines section in the dashboard's right rail, below the Brief, from `CaseDetail.action_items` (`GET /api/v1/cases/{case_id}`).
 
-**Three-tab filter** (`open` default / `completed` / `all`) — Alpine `x-data="{ filter: 'open' }"` state; no server round-trip on tab switch.
+**Filter:** open items only; a `mine | all` toggle (local state, no round-trip) hides items addressed to someone other than the user.
 
 **Item row:**
-- Type badge (error background for `deadline`; tertiary for others)
-- Title (one line, truncated)
-- Due date — `format_relative_time` filter ("in 3 days", "2 days ago")
-- `source ↗` link if `source_document_id` is set — calls `window._dashOpenDoc(id)` to open the Document HUD
+- Relative due date (`formatDueRelative`, red when `is_overdue`) + absolute date
+- Addressee chip when the item is not addressed to the user
+- ✓ / × buttons (`can_edit` only) → `useCaseActionStatus`
+- Title — a button that opens the inline Review panel (`?view=review`, `DocumentReview.tsx`) for the source document when `source_document_id` is set, plain text otherwise; the full-screen HUD is one step further via "Open HUD"
 
-**12-item cap:** `{% for item in _items[:12] %}` — cases with many action items show the most recent 12 only; the full list is accessible from the completed tab.
-
-**Next Deadline sub-section** (rendered below the list when `_next_item` is non-null):
-- Shows a timer icon, "NEXT DEADLINE" label, item title, relative time, and absolute date (`dd.mm.yyyy`).
-- `_next_item` is the earliest open `deadline` or `court_date` item for the case.
+**6-item cap:** the rail shows the six soonest open items; the type badge, completed/all tabs and the Next Deadline sub-section of the pre-migration panel are not in the SPA.
 
 ---
 
 ## 5. Notification badges
 
-`helpers.py:99-135` builds the notification context for the sidebar badge and global notifications panel:
+The notifications feed planned in issue #186 builds the counts for the sidebar badge and notifications panel — the pre-migration builder was removed with the legacy shell and nothing in the SPA renders these yet:
 
 | Category | Query | Window |
 |---|---|---|
@@ -175,7 +166,7 @@ Total badge count = sum of all five (capped at 5 per category = 25 max before th
 
 ## 6. Dormancy alert
 
-`_compute_dormancy_alert(case, db)` (`case_service.py:454-486`) scans all `ACTIVE` proceedings of a case and returns a warning string if any proceeding has had no document activity for more than 90 days (`DORMANCY_DAYS = 90`).
+`_compute_dormancy_alert(case, db)` in `app/services/case_service.py` scans all `ACTIVE` proceedings of a case and returns a warning string if any proceeding has had no document activity for more than 90 days (`DORMANCY_DAYS = 90`).
 
 **Logic:**
 1. For each active proceeding, find `max(Document.ingest_date)` for that `proceeding_id`.
@@ -189,7 +180,7 @@ The alert string is injected into the AI Brief context and surfaces in the case 
 
 ## 7. Case Clock
 
-`_get_case_clock_signals(db)` in `services/signals.py:73-80` is a **placeholder** that returns `[]`. The intended behavior (when implemented) is to surface signals like "ADV-024-A entering typical hearing window for AG proceedings (Jul–Nov)" based on proceeding type and elapsed time.
+`_get_case_clock_signals(db)` in `app/services/signals.py` is a **placeholder** that returns `[]`. The intended behavior (when implemented) is to surface signals like "ADV-024-A entering typical hearing window for AG proceedings (Jul–Nov)" based on proceeding type and elapsed time.
 
 Case Clock signals use the same `Signal` dataclass as other dashboard signals:
 ```python
@@ -204,7 +195,7 @@ Case Clock signals use the same `Signal` dataclass as other dashboard signals:
 }
 ```
 
-Until the signal list is populated, the Case Clock section in the right-column panel is empty (renders nothing due to the `{% if signals %}` guard).
+Until the signal list is populated, no Case Clock section renders in the rail.
 
 ---
 
@@ -212,7 +203,7 @@ Until the signal list is populated, the Case Clock section in the right-column p
 
 | Gap | Remediation |
 |---|---|
-| `a` shortcut undocumented in keyboard modal | Add `a → scroll to Action Items` row to `partials/hud/_shortcuts.html` |
+| `a` shortcut (scroll to action items) | Not in the SPA; the deadlines are always visible in the rail, so no scroll target is needed |
 | Case Clock signals return `[]` | Non-goal for v1; when proceeding-type durations are calibrated, implement in `_get_case_clock_signals` |
 | No manual action item creation | Non-goal for v1 (see §Non-goals) |
 
@@ -222,11 +213,10 @@ Until the signal list is populated, the Case Clock section in the right-column p
 
 | Situation | What renders |
 |---|---|
-| Case with no action items yet | Panel shows "No action items yet." in muted text |
-| All items completed/dismissed, filter=`open` | "No open action items." with muted text; switch to `completed` tab to see history |
-| `source_document_id` is null | No `source ↗` link appears; item row is narrower |
+| Case with no open action items | Rail shows "No open deadlines." in muted text |
+| `source_document_id` is null | Title renders as plain text instead of a link |
 | No Case Clock signals | Case Clock sub-section invisible |
-| No next open deadline | Next Deadline sub-section invisible |
+| No open deadlines | Panel shows "No open deadlines." |
 
 ---
 
@@ -234,9 +224,8 @@ Until the signal list is populated, the Case Clock section in the right-column p
 
 | Key | Scope | Action | Source |
 |---|---|---|---|
-| `a` | Dashboard | Smooth-scroll to `#action-items-anchor` | `dashboard.js:393-397` |
-| Click "source ↗" | Dashboard | Open Document HUD for source document | `_dashOpenDoc(id)` |
-| Click type badge | Dashboard | No action (badge is presentational only) | — |
+| Click item title | Dashboard | Open the inline Review panel for the source document | `Rail.tsx` → `onOpenDoc(id)` → `CasePage` sets `?view=review` |
+| ✓ / × | Dashboard | Mark done / dismiss | `Rail.tsx` → `useCaseActionStatus` |
 
 ---
 
@@ -252,17 +241,6 @@ Until the signal list is populated, the Case Clock section in the right-column p
 
 ---
 
-## 12. Files that will change
-
-**Modified (documentation cross-reference):**
-- `docs/specs/02_dashboard.md §6` — collapse inline action-items description to one-paragraph summary + link to this spec.
-- `docs/specs/00_vision.md §6` — add "See `docs/specs/11_action_items.md`" footnote.
-- `app/templates/partials/hud/_shortcuts.html` — add `a → Action Items` row (resolves Known gap §8).
-
-**No code changes required** beyond the keyboard-shortcut documentation fix.
-
----
-
 ## 13. Phase progression
 
 | Phase | What landed |
@@ -270,7 +248,7 @@ Until the signal list is populated, the Case Clock section in the right-column p
 | Phase 1 | `ActionItem` schema + `case_id` FK |
 | Phase 3 | Frist extraction from cover letters at ingest |
 | Phase 4 | Court-date + response/filing extraction during AI enrichment |
-| Phase 5 | Dashboard panel (`case_action_items_panel.html`) + notification badges |
+| Phase 5 | Dashboard panel (now `Rail.tsx`) + notification badges |
 | Phase 7 | Action items included in case-chat context (`build_case_chat_prompt`) |
 
 ---
@@ -291,26 +269,24 @@ Until the signal list is populated, the Case Clock section in the right-column p
 
 **Manual:**
 1. `make seed && make run` → open a seeded case → Action Items panel shows open deadlines; relative dates render.
-2. Click `[completed]` tab → completed items appear; `[open]` returns to open items.
-3. Click "source ↗" on an item with a `source_document_id` → Document HUD slides in.
-4. Press `a` → page smoothly scrolls to the action items panel.
-5. `PATCH /action-item/{id}/status` with `status=completed` → item disappears from `open` tab; reappears in `completed`; notification badge decrements.
-6. Seed a case with `ingest_date` > 90 days ago on all documents → dormancy alert appears in the AI Brief panel.
+2. Click an item title with a `source_document_id` → the Review tab opens on that document.
+3. ✓ on an item → `PATCH /api/v1/action-items/{id}` with `status=completed`; the item leaves the Deadlines list without a reload.
+4. Seed a case with `ingest_date` > 90 days ago on all documents → dormancy alert appears in the AI Brief panel.
 
-**Automated (existing):**
-- `tests/unit/test_action_item_repository.py` (if present)
-- `grep -rn 'ActionItem' tests/` to locate current coverage
+**Automated:**
+- `tests/integration/test_v1_case_dashboard.py` — `PATCH /api/v1/action-items/{item}` returns 404 for a viewer share; `tests/integration/test_v1_documents.py` — the status round-trip.
+- `tests/unit/test_intelligence_action_items.py`, `tests/unit/test_action_items_gate.py` — extraction.
+- No vitest coverage of the Deadlines rail yet.
 
 ---
 
 ## 16. Success criteria
 
-- All action items in a seeded case are visible in the panel with correct type badges and relative dates.
-- Status PATCH round-trip: mark completed → item moves to completed tab; mark open → item returns to open tab.
-- `source ↗` links open the correct Document HUD for every item that has a `source_document_id`.
+- Open action items in a seeded case are visible in the panel with relative dates (type badges are not in the SPA).
+- Status PATCH round-trip: mark completed → item leaves the Deadlines list; `PATCH` back to `open` returns it.
+- Item titles open the Review panel on the correct source document for every item that has a `source_document_id`.
 - Dormancy alert surfaces for cases with > 90 days since last document activity.
-- Notification badge on the sidebar reflects current overdue + upcoming count without page reload.
-- `a` key shortcut scrolls to the action items panel from anywhere on the case dashboard.
+- Notification badge on the sidebar reflects current overdue + upcoming count without page reload (pending issue #186).
 
 ---
 
