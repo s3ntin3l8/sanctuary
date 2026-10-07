@@ -397,7 +397,7 @@ Priority tiers described in §6. Within each tier, most-recently-active first.
 
 ## 9. Keyboard-first interaction
 
-Home is designed to be navigable without touching the mouse. `j`/`k` move focus between every row marked `data-nav-row` in DOM order (deadlines, triage bundles, delta cases, signals, case cards), wrapping at the ends; the focused row is the highlight, and Enter is the browser's own link activation. Keys are ignored while typing in a field or while a dialog is open. The `?` cheat sheet is global (`ShortcutsProvider`); each page registers its own section with `usePageShortcuts`.
+Home is designed to be navigable without touching the mouse. `j`/`k` move focus between every row marked `data-nav-row` in DOM order (deadlines, triage bundles, delta cases, signals, case cards), wrapping at the ends; the focused row is the highlight, and Enter is the browser's own link activation. Keys are ignored while typing in a field or while a modal, popover or menu is open; closing a modal hands focus back to the row it was opened from. The `?` cheat sheet is global (`ShortcutsProvider`) and never stacks over another overlay; each page registers its own section with `usePageShortcuts`.
 
 | Key | Action |
 |---|---|

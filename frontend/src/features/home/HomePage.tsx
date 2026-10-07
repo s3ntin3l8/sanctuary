@@ -48,7 +48,7 @@ export function HomePage() {
     document.title = 'Home | The Sanctuary'
   }, [])
   usePageShortcuts('Home', HOME_SHORTCUTS)
-  useRovingRows(!creating)
+  useRovingRows()
 
   const data = home.data
   const processing = queue ? queue.counts.executing + queue.counts.queued : 0

@@ -9,7 +9,7 @@ import {
 } from 'react'
 
 import { Modal } from '../ui/Modal'
-import { hasModifier, isTypingTarget } from './keys'
+import { hasModifier, isTypingTarget, overlayOpen } from './keys'
 
 export type ShortcutRows = readonly (readonly [key: string, action: string])[]
 type Section = { title: string; rows: ShortcutRows }
@@ -65,8 +65,9 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '?' || isTypingTarget(event) || hasModifier(event)) return
+      // Toggle the sheet itself, but never stack it over another overlay.
+      setOpen((v) => (v ? false : overlayOpen() ? v : true))
       event.preventDefault()
-      setOpen((v) => !v)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
