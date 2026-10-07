@@ -1222,6 +1222,52 @@ class HomeBriefing(Base):
     queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class GmailMessageIndex(Base):
+    """Metadata-only mirror of a user's allowlisted Gmail messages.
+
+    Built by ``index_gmail_mailbox`` so the import page can show, group by case
+    reference and order the whole history *before* anything is ingested. It is a
+    cache of the mailbox, not case data: it survives "Clear all data" so a wipe
+    doesn't force a full re-index. Whether a message is ingested is never stored
+    here — it is derived at read time from ``ingest_batches`` so it stays correct
+    after a bundle is deleted.
+    """
+
+    __tablename__ = "gmail_message_index"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "gmail_id", name="uq_gmail_index_owner_gmail"),
+        Index("ix_gmail_index_owner_sent", "owner_id", "sent_at"),
+        Index("ix_gmail_index_owner_group", "owner_id", "group_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    gmail_id: Mapped[str] = mapped_column(String, nullable=False)
+    thread_id: Mapped[str] = mapped_column(String, nullable=False)
+    # RFC 5322 Message-ID header — what ingest_raw_email dedups on.
+    message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    sender: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Case references parsed from this message's own subject.
+    internal_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    az_court: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Effective group: own reference, else inherited from the thread. NULL =
+    # unreferenced. group_kind is "internal_id" or "az_court".
+    group_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    group_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Best-effort: Gmail's metadata format doesn't always list attachment parts.
+    has_attachments: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=_sa_text("false")
+    )
+    size_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow
+    )
+
+
 class UserSettings(Base):
     __tablename__ = "user_settings"
 

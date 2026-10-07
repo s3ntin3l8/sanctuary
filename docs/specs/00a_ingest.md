@@ -14,7 +14,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, and `docs/dashboard.md
 | Feature | Status | Implementation |
 |---------|--------|---------------|
 | Gmail OAuth + allowlist | ✅ Implemented | `gmail.py`, `gmail_sync.py` |
-| Bulk backfill | ✅ Implemented | `run_gmail_backfill` task |
+| History import (index + import page) | ✅ Implemented | `index_gmail_mailbox`, `import_gmail_messages`; `/import` |
 | Continuous sync | ✅ Implemented | `sync_gmail_incremental` task |
 | Scan folder watcher | ✅ Implemented | `scan_folder.py` |
 | Document slicing (heuristics) | ✅ Implemented | `slicer.py` - 7 signals |
@@ -151,17 +151,14 @@ If set: Sanctuary queries `in:inbox label:Legal` and further filters the result 
 
 If unset: only the sender allowlist applies.
 
-### 2.4 Bulk backfill mode
+### 2.4 History import (`/import`)
 
-One-time historical import. User configures a window (`last 90 days`, `last 2 years`, `everything`) and clicks **Run backfill**. Sanctuary:
+Historical mail is imported deliberately, oldest first, never by the continuous sync. In two steps:
 
-1. Queries Gmail for all messages matching the filters within the window
-2. Streams messages in pages of 100
-3. For each message: creates an `IngestBatch`, downloads attachments, kicks off the downstream pipeline
-4. Progress bar shows `X of Y messages imported`
-5. On completion, switches to continuous sync
+1. **Index** (`index_gmail_mailbox`): Sanctuary fetches the *headers* (From, Subject, Date, Message-ID) of every allowlisted message, all time, into `gmail_message_index`. Nothing is ingested. Each subject is parsed for the case reference (`extract_internal_id_from_subject`, else `extract_az_court_from_subject`); a message with no reference inherits the one carried by the oldest referenced message in its Gmail thread. Refreshing only fetches ids not yet indexed. The index survives "Clear all data".
+2. **Import** (`import_gmail_messages`): the page lists the references as groups (oldest history first, an existing case shown as a pill) and imports "the next N oldest", a whole group, or a hand-picked set — oldest first, skipping anything already ingested. In **sequential mode** (default) it ingests one email, waits until that email's documents have finished processing (bounded by a timeout), then the next, so earlier letters are enriched before their replies arrive. A run can be stopped from the page. Run state is written atomically and fenced by run id and hop number, so a stale, cancelled or duplicated hop can never overwrite a newer run; a run that stops reporting for 10 minutes is treated as abandoned and no longer blocks a new one. Disconnecting Gmail forgets the index and stops any running index/import.
 
-Backfill is **resumable** — if interrupted, it picks up from the last-processed Gmail message ID. The user can run it again later for a different window without double-ingesting (see §14 dedup).
+Re-running an import over the same messages is a no-op for ingest (all already seen — see §14 dedup).
 
 ### 2.5 Continuous sync mode
 
@@ -169,7 +166,7 @@ Once seeded, Sanctuary polls the Gmail History API periodically for new messages
 
 - Default poll interval: 5 minutes
 - Uses Gmail's `historyId` cursor so each poll only returns new changes since last sync
-- On new message matching filters: same downstream pipeline as backfill
+- On new message matching filters: same downstream pipeline as the history import
 - Stored cursor in `UserSettings.settings_json["gmail_last_history_id"]`
 
 Future enhancement: Gmail push notifications (Pub/Sub) for near-realtime — not v1.
@@ -606,9 +603,9 @@ Re-running an ingest is safe and produces no duplicates.
 - If yes in same case: link (don't create) — this handles "opposing counsel re-submitted the same exhibit"
 - If yes in a different case: still create (separate matter) but flag the cross-case reference for the user
 
-### 14.3 Bulk backfill replay
+### 14.3 History import replay
 
-A user running backfill again with the same window should be a no-op in terms of ingest (all messages already seen) but may trigger a re-enrichment if AI models have changed. Re-enrichment is opt-in, not automatic.
+Importing the same messages again should be a no-op in terms of ingest (all messages already seen) but may trigger a re-enrichment if AI models have changed. Re-enrichment is opt-in, not automatic.
 
 ---
 
@@ -722,7 +719,7 @@ If we add cloud sync or collaboration later, the privacy doc (see §0 cross-refs
 | Phase | Implementation Status |
 |-------|----------------------|
 | **Phase 2** (triage) | ✅ Implemented - Manual .eml upload works end-to-end through triage |
-| **Phase 3a** (Gmail core) | ✅ Implemented - Gmail OAuth + allowlist, bulk backfill, continuous sync |
+| **Phase 3a** (Gmail core) | ✅ Implemented - Gmail OAuth + allowlist, history import, continuous sync |
 | **Phase 3b** (scan folder) | ✅ Implemented - Folder watcher, single-document ingest |
 | **Phase 3c** (slicing) | ✅ Implemented - Multi-doc slicing with 7 heuristics + AI refinement |
 | **Phase 4** (AI intelligence) | ✅ Implemented - Cover letter detection, originator, proceeding, action items |
@@ -749,7 +746,7 @@ All success criteria verified as implemented:
 
 | Criterion | Status |
 |-----------|--------|
-| **Gmail flow** | ✅ Verified - OAuth, allowlist, backfill, continuous sync all working |
+| **Gmail flow** | ✅ Verified - OAuth, allowlist, history import, continuous sync all working |
 | **Scan flow** | ✅ Verified - Folder watcher + slicing within ~30s |
 | **Slicing review** | ✅ Verified - UI with manual override |
 | **Dedup** | ✅ Verified - message-id + content_hash |

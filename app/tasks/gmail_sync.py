@@ -10,15 +10,19 @@ from sqlalchemy.orm import Session
 
 from app.config import REDIS_URL
 from app.core.secrets import SecretsError
-from app.models.database import UserSettings
-from app.services import user_settings_service
+from app.models.database import GmailMessageIndex, UserSettings
+from app.services import gmail_index_service, gmail_runs, user_settings_service
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
     build_query,
+    fetch_metadata,
     fetch_raw_message,
     get_gmail_service,
+    list_message_ids,
+    parse_metadata,
 )
+from app.services.pipeline_status import batch_pipeline_settled as batch_is_settled
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -29,13 +33,17 @@ logger = logging.getLogger(__name__)
 # doing any real work.
 _WATERMARK_OVERLAP = timedelta(minutes=5)
 
-# Prevents an incremental sync and a backfill (or two overlapping incremental
+# Prevents an incremental sync, an index refresh or an import hop (or two overlapping incremental
 # ticks) for the same mailbox from racing: both would read the same
 # gmail_last_sync_at, both fetch overlapping pages, and whichever commits its
 # settings_json last silently clobbers the other's watermark update. TTL is
 # the crash-recovery backstop, not the primary release path.
 _LOCK_PREFIX = "sanctuary:gmail_sync_lock:"
-_LOCK_TTL_SECONDS = 30 * 60  # 30 min — generous enough for a large backfill
+# Crash-recovery backstop, not a hard guarantee: a full-mailbox index of a very
+# large mailbox could outlive it, in which case a concurrent sync/import may
+# interleave — harmless, since ingest dedups by Message-ID and the index upserts
+# with ON CONFLICT DO NOTHING.
+_LOCK_TTL_SECONDS = 60 * 60
 
 # A message that fails to fetch/ingest is tracked here (by Gmail's own
 # message id, not the RFC822 Message-ID header) instead of just being logged
@@ -47,6 +55,16 @@ _LOCK_TTL_SECONDS = 30 * 60  # 30 min — generous enough for a large backfill
 # the oldest untracked failures are traded away with a log line rather than
 # retried forever.
 _MAX_TRACKED_FAILURES = 200
+
+# Index refresh commits and reports progress every this many messages.
+_INDEX_CHUNK = 200
+
+# Sequential import: how long to wait between "has the last email's pipeline
+# finished?" checks, the gap before the next email when there was nothing to
+# wait for, and the cap after which a stuck batch no longer holds the history.
+_IMPORT_POLL_SECONDS = 15
+_IMPORT_HOP_SECONDS = 2
+_IMPORT_SETTLE_TIMEOUT = timedelta(minutes=30)
 
 _lock_client: redis.Redis | None = None
 _last_warn_at: float = 0.0
@@ -133,7 +151,7 @@ def _maybe_warn(exc: Exception) -> None:
 
 @contextlib.contextmanager
 def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
-    """Best-effort mutex so only one sync (incremental or backfill) runs per
+    """Best-effort mutex so only one sync (incremental, index refresh or import hop) runs per
     mailbox at a time.
 
     Yields True if the lock was acquired (or Redis is unavailable — degrades
@@ -242,6 +260,8 @@ def _ingest_query(
 
 
 def _cap_failures(failed_ids: list[str], user_id: int, source: str) -> list[str]:
+    """Keep the most recently added failures when over the cap (callers append
+    new failures after the older ones, so the oldest are dropped first)."""
     if len(failed_ids) <= _MAX_TRACKED_FAILURES:
         return failed_ids
     logger.warning(
@@ -394,18 +414,14 @@ def sync_gmail_for_user(self, user_id: int):
 @celery_app.task(
     bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=True
 )
-def run_gmail_backfill(self, user_id: int, days: int = 90):
+def index_gmail_mailbox(self, user_id: int, run_id: str):
+    """Mirror the headers of every allowlisted message (all time) into
+    ``gmail_message_index`` so the import page can group and order the whole
+    history without ingesting any of it. Incremental: only ids not yet indexed
+    are fetched. Read-only against Gmail (list + metadata get)."""
     with _user_sync_lock(user_id) as acquired:
         if not acquired:
-            # This is a user-triggered action (the "connect Gmail" flow),
-            # not a beat tick — silently no-op'ing here would leave the user
-            # thinking their backfill ran when it never started. Defer and
-            # retry instead; max_retries=3 at 30s apart bounds the wait.
-            logger.info(
-                "Gmail backfill for user %d deferred — a sync is already in "
-                "progress for this mailbox, retrying shortly",
-                user_id,
-            )
+            # User-triggered: defer rather than silently doing nothing.
             raise self.retry(countdown=30)
 
         from app.config import SessionLocal
@@ -414,60 +430,310 @@ def run_gmail_backfill(self, user_id: int, days: int = 90):
         try:
             settings = _get_user_settings(db, user_id)
             sj = (settings.settings_json or {}) if settings else {}
-            if not sj.get("gmail_credentials_json"):
-                return "Gmail not connected"
-
             allowlist = sj.get("gmail_allowlist", [])
-            if not allowlist:
-                return "Allowlist empty"
+            if not sj.get("gmail_credentials_json") or not allowlist:
+                gmail_runs.finish_run(
+                    "index",
+                    user_id,
+                    run_id,
+                    error="Connect Gmail and set a sender allowlist first.",
+                )
+                return "Not configured"
 
             service = _connect(db, user_id, sj)
-            cutoff_date = datetime.now(UTC) - timedelta(days=days)
-            query = build_query(
-                allowlist,
-                sj.get("gmail_label_filter", ""),
-                after=int(cutoff_date.timestamp()),
-            )
+            query = build_query(allowlist, sj.get("gmail_label_filter", ""))
+            known = gmail_index_service.indexed_gmail_ids(db, user_id)
+            new_ids = [i for i in list_message_ids(service, query) if i not in known]
+            # A retry starts from a clean slate: clears the previous attempt's error.
+            progress = {"total": len(new_ids), "done": 0, "skipped": 0, "error": None}
+            if gmail_runs.update_run("index", user_id, run_id, progress) is None:
+                return "Index superseded"
 
-            count, new_failed_ids = _ingest_query(db, service, user_id, query)
+            skipped = 0
+            for start in range(0, len(new_ids), _INDEX_CHUNK):
+                chunk = new_ids[start : start + _INDEX_CHUNK]
+                raws = fetch_metadata(service, chunk)
+                # Ids Gmail failed to return (quota, 5xx) or we can't parse are
+                # counted, not hidden: the next refresh retries them.
+                skipped += len(set(chunk) - {raw["id"] for raw in raws})
+                metas = []
+                for raw in raws:
+                    try:
+                        metas.append(parse_metadata(raw))
+                    except (KeyError, ValueError, TypeError, AttributeError):
+                        # One malformed message must not lose the rest of the chunk.
+                        skipped += 1
+                        logger.warning(
+                            "Gmail index: unparseable message %s", raw.get("id")
+                        )
+                gmail_index_service.upsert_metadata(db, user_id, metas)
+                db.commit()
+                progress = {"done": start + len(chunk), "skipped": skipped}
+                if gmail_runs.update_run("index", user_id, run_id, progress) is None:
+                    return "Index superseded"
 
-            result = f"Backfilled {count} messages for user {user_id}"
-            if new_failed_ids:
-                result += f" ({len(new_failed_ids)} failed, will retry)"
-
-            # Re-read: a disconnect may have committed while we were fetching,
-            # and writing our watermark/result back would resurrect half of it.
-            db.refresh(settings)
-            if not (settings.settings_json or {}).get("gmail_credentials_json"):
-                return "Gmail disconnected during sync"
-
-            new_json = dict(settings.settings_json or {})
-            if new_failed_ids:
-                # Share the same tracked-failures list incremental sync
-                # drains on every run, rather than dropping backfill
-                # failures on the floor — the next incremental tick (or
-                # another backfill) will retry them.
-                prior = list(new_json.get("gmail_failed_message_ids") or [])
-                new_json["gmail_failed_message_ids"] = _cap_failures(
-                    list(dict.fromkeys(prior + new_failed_ids)),
-                    user_id,
-                    "Gmail backfill",
-                )
-            new_json["gmail_last_sync_result"] = result
-            new_json["gmail_last_sync_error"] = None
-            new_json["gmail_reconnect_required"] = False
-            settings.settings_json = new_json
+            gmail_index_service.assign_group_keys(db, user_id)
             db.commit()
-            return result
+            gmail_runs.finish_run("index", user_id, run_id)
+            return f"Indexed {len(new_ids) - skipped} new messages for user {user_id}"
         except (GmailReconnectRequired, SecretsError) as e:
-            logger.warning(
-                "Gmail backfill for user %d needs a reconnect: %s", user_id, e
-            )
+            logger.warning("Gmail index for user %d needs a reconnect: %s", user_id, e)
             _record_failure(db, user_id, str(e), reconnect_required=True)
+            gmail_runs.finish_run(
+                "index", user_id, run_id, error=f"Reconnect required — {e}"
+            )
             return "Reconnect required"
         except Exception as e:
-            logger.error(f"Gmail backfill failed for user {user_id}: {e}")
-            _record_failure(db, user_id, str(e))
+            logger.error("Gmail index failed for user %d: %s", user_id, e)
+            message = str(e)[:500]
+            if self.request.retries >= self.max_retries:
+                gmail_runs.finish_run("index", user_id, run_id, error=message)
+            else:
+                # Celery retries this: keep the run active (so Refresh stays
+                # disabled) and just show what went wrong.
+                gmail_runs.update_run("index", user_id, run_id, {"error": message})
             raise
         finally:
             db.close()
+
+
+def _import_label(db: Session, user_id: int, gmail_id: str) -> str | None:
+    return (
+        db.query(GmailMessageIndex.subject)
+        .filter(
+            GmailMessageIndex.owner_id == user_id,
+            GmailMessageIndex.gmail_id == gmail_id,
+        )
+        .scalar()
+    )
+
+
+def _merge_import_outcome(
+    db: Session, user_id: int, state: dict, *, record_status: bool = True
+) -> None:
+    """Fold a finished import into the user's sync status: failed ids join the
+    list the incremental sync retries; the result line shows on Settings.
+
+    ``record_status=False`` (an import that died on an error) only merges the
+    failed ids — it must not overwrite the error/reconnect state just recorded.
+    """
+    settings = _get_user_settings(db, user_id)
+    if settings is None:
+        return
+    data = dict(settings.settings_json or {})
+    failed = list(state.get("failed") or [])
+    if failed:
+        data["gmail_failed_message_ids"] = _cap_failures(
+            list(
+                dict.fromkeys(list(data.get("gmail_failed_message_ids") or []) + failed)
+            ),
+            user_id,
+            "Gmail import",
+        )
+    if not record_status:
+        settings.settings_json = data
+        db.commit()
+        return
+    verb = "Cancelled after" if state.get("cancelled") else "Imported"
+    result = f"{verb} {state.get('done', 0)} of {state.get('total', 0)} messages"
+    if failed:
+        result += f" ({len(failed)} failed, will retry)"
+    data["gmail_last_sync_result"] = result
+    data["gmail_last_sync_error"] = None
+    data["gmail_reconnect_required"] = False
+    settings.settings_json = data
+    db.commit()
+
+
+def _import_one(db: Session, service, user_id: int, work: dict, gmail_id: str) -> None:
+    """Ingest one message, updating ``work`` in place."""
+    work["current"] = {
+        "gmail_id": gmail_id,
+        "subject": _import_label(db, user_id, gmail_id),
+    }
+    try:
+        batch = ingest_raw_email(
+            db, fetch_raw_message(service, gmail_id), owner_id=user_id
+        )
+        work["current"]["batch_id"] = batch.id if batch else None
+    except Exception:
+        db.rollback()
+        work["failed"].append(gmail_id)
+        work["current"]["batch_id"] = None
+        logger.exception(
+            "Gmail import: failed to ingest %s for user %d", gmail_id, user_id
+        )
+    work["done"] += 1
+
+
+def _progress(work: dict) -> dict:
+    return {key: work[key] for key in ("done", "remaining", "failed", "current")}
+
+
+@celery_app.task(bind=True, max_retries=0)
+def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
+    """Ingest the queued messages, oldest first.
+
+    The queue lives in the run state (``gmail_runs``), so cancelling is just
+    flipping that state. In sequential mode the task ingests ONE message per
+    hop and re-enqueues itself with a countdown until that email's documents
+    have finished processing — earlier letters are fully enriched before their
+    replies arrive — without ever blocking a worker while it waits.
+
+    Every state write is atomic and keyed on ``run_id``; sequential hops are also
+    fenced by ``hop`` (each re-enqueue carries the next number), so a stale,
+    cancelled, redelivered or duplicated hop stops instead of clobbering anything.
+    """
+    from app.config import SessionLocal
+
+    def _again(delay: int) -> str:
+        self.apply_async(args=[user_id, run_id, hop + 1], countdown=delay)
+        return "waiting"
+
+    def _current() -> dict | None:
+        state = gmail_runs.get_run("import", user_id)
+        if (
+            gmail_runs.is_active(state)
+            and state["run_id"] == run_id  # type: ignore[index]
+            and state.get("hop") == hop  # type: ignore[union-attr]
+        ):
+            return state
+        return None
+
+    def _stopped(work: dict) -> str:
+        """A write found the run cancelled/replaced. For a cancel, still record
+        what this hop got done (incl. failures) so the sync retries them."""
+        latest = gmail_runs.get_run("import", user_id)
+        if latest and latest["run_id"] == run_id:
+            _merge_import_outcome(
+                db,
+                user_id,
+                {
+                    **latest,
+                    "done": max(latest["done"], work["done"]),
+                    "failed": list(dict.fromkeys(latest["failed"] + work["failed"])),
+                },
+            )
+        return "Import cancelled"
+
+    state = _current()
+    if state is None:
+        return "Import no longer active"
+    sequential = state["sequential"]
+    work = {
+        **state,
+        "remaining": list(state["remaining"]),
+        "failed": list(state["failed"]),
+    }
+
+    db = SessionLocal()
+    try:
+        if (
+            sequential
+            and state.get("waiting_on")
+            and not batch_is_settled(db, state["waiting_on"])
+        ):
+            waited = datetime.now(UTC) - datetime.fromisoformat(state["waiting_since"])
+            if waited < _IMPORT_SETTLE_TIMEOUT:
+                # Heartbeat + advance the fence, so the run isn't mistaken for
+                # abandoned while it waits.
+                if (
+                    gmail_runs.update_run(
+                        "import", user_id, run_id, {}, hop=hop, next_hop=hop + 1
+                    )
+                    is None
+                ):
+                    return _stopped(work)
+                return _again(_IMPORT_POLL_SECONDS)
+            logger.warning(
+                "Gmail import for user %d: batch %s did not settle in %s — moving on",
+                user_id,
+                state["waiting_on"],
+                _IMPORT_SETTLE_TIMEOUT,
+            )
+
+        with _user_sync_lock(user_id) as acquired:
+            if not acquired:
+                if (
+                    gmail_runs.update_run(
+                        "import", user_id, run_id, {}, hop=hop, next_hop=hop + 1
+                    )
+                    is None
+                ):
+                    return _stopped(work)
+                return _again(_IMPORT_POLL_SECONDS)
+
+            # Re-check under the lock: fences out a duplicated/redelivered chain.
+            state = _current()
+            if state is None:
+                return "Import no longer active"
+            work = {
+                **state,
+                "remaining": list(state["remaining"]),
+                "failed": list(state["failed"]),
+                "waiting_on": None,
+            }
+            settings = _get_user_settings(db, user_id)
+            service = _connect(
+                db, user_id, (settings.settings_json or {}) if settings else {}
+            )
+            while work["remaining"]:
+                _import_one(db, service, user_id, work, work["remaining"].pop(0))
+                if sequential:
+                    break
+                if (
+                    gmail_runs.update_run(
+                        "import", user_id, run_id, _progress(work), hop=hop
+                    )
+                    is None
+                ):
+                    return _stopped(work)
+
+        if work["remaining"]:
+            batch_id = work["current"].get("batch_id")
+            advanced = gmail_runs.update_run(
+                "import",
+                user_id,
+                run_id,
+                {
+                    **_progress(work),
+                    "waiting_on": batch_id,
+                    "waiting_since": datetime.now(UTC).isoformat(),
+                },
+                hop=hop,
+                next_hop=hop + 1,
+            )
+            if advanced is None:
+                return _stopped(work)
+            return _again(_IMPORT_POLL_SECONDS if batch_id else _IMPORT_HOP_SECONDS)
+
+        finished = gmail_runs.finish_run(
+            "import", user_id, run_id, patch={**_progress(work), "waiting_on": None}
+        )
+        if finished is None:
+            return _stopped(work)
+        _merge_import_outcome(db, user_id, finished)
+        return f"Imported {finished['done']} of {finished['total']} messages"
+    except (GmailReconnectRequired, SecretsError) as e:
+        logger.warning("Gmail import for user %d needs a reconnect: %s", user_id, e)
+        _record_failure(db, user_id, str(e), reconnect_required=True)
+        finished = gmail_runs.finish_run(
+            "import",
+            user_id,
+            run_id,
+            patch=_progress(work),
+            error=f"Reconnect required — {e}",
+        )
+        if finished:
+            _merge_import_outcome(db, user_id, finished, record_status=False)
+        return "Reconnect required"
+    except Exception as e:
+        logger.error("Gmail import failed for user %d: %s", user_id, e)
+        finished = gmail_runs.finish_run(
+            "import", user_id, run_id, patch=_progress(work), error=str(e)[:500]
+        )
+        if finished:
+            _merge_import_outcome(db, user_id, finished, record_status=False)
+        raise
+    finally:
+        db.close()

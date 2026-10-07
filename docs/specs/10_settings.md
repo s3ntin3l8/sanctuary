@@ -14,7 +14,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | Settings shell — `frontend/src/features/settings/SettingsLayout.tsx` (grouped side nav; admin-only tabs hidden for regular users) | ✅ |
 | Page routes (`app/api/settings_page.py`): `/settings` → `/settings/account`, `/settings/{account,gmail,identity,ai,appearance,data,export}`, `/admin/users` — all return `spa_index()`; identity/ai/data/export/admin are admin-only | ✅ |
 | **Account tab** — `AccountPage.tsx`: profile, e-mail, password (`/api/v1/settings/account`, `PUT …/profile`, `PUT …/email`, `PUT …/password`); "Your data" download of everything the user owns (`GET /api/v1/settings/account/export`, Art. 15/20, OAuth credentials redacted, shared cases excluded) | ✅ |
-| **Gmail tab** — `GmailPage.tsx`: OAuth flow, allowlist, label filter, backfill | ✅ |
+| **Gmail tab** — `GmailPage.tsx`: OAuth flow, allowlist, label filter, sync controls, link to the history import | ✅ |
 | **Identity tab** — `IdentityPage.tsx`: own name, own parties, user context (`GET`/`PUT /api/v1/settings/identity`) | ✅ |
 | **AI tab** — `AiPage.tsx`: endpoint instances, per-role model selection (chat/embed/ocr), test connection, reindex, rebuild-index, extraction engine, worker/OCR concurrency, debug redaction | ✅ |
 | **Appearance tab** — `AppearancePage.tsx`: theme (light/dark), dashboard-card visibility, timezone (admin) | ✅ |
@@ -35,7 +35,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | Active proceeding per case — `GET /api/v1/cases/{case_id}?proceeding=` persists the selection via `user_settings_service.set_active_proceeding` | ✅ |
 | `PUT /api/v1/settings/gmail/filters` — save allowlist + label filter (`useSaveGmailFilters`) | ✅ |
 | `GET /api/ingest/gmail/oauth/start` → `GET /api/ingest/gmail/oauth/callback` (`app/api/ingestion_settings.py`; the start URL is returned in `GmailView.oauth_start_url`) | ✅ |
-| `POST /api/v1/settings/gmail/backfill` — enqueue `run_gmail_backfill` task (`useGmailBackfill`) | ✅ |
+| History import — `/import` (`app/api/v1/gmail_import.py`, see `00a_ingest.md` §2.4): index the mailbox, browse by case reference, import oldest first | ✅ |
 | `PUT /api/v1/settings/gmail/auto-sync`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — opt in to the 5-minute poll (off by default), sync now, move the sync watermark, disconnect + revoke (`useSetGmailAutoSync`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
 | Gmail access is read-only: only the `gmail.readonly` scope is accepted (callback and token refresh reject broader grants) and `tests/unit/test_gmail_readonly_guard.py` fails the build on any Gmail mutating call | ✅ |
 | Credentials encrypted at rest — `gmail_credentials_json` and AI endpoint `api_key` are Fernet-encrypted (`enc:v1:` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; startup fails closed if encrypted values exist without the key | ✅ |
@@ -83,7 +83,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 │  Label Filter (optional)                                                  │
 │  [Sanctuary]                                                              │
 │                                                                           │
-│  [Save]          Backfill: [30 days] [90 days] [180 days]                 │
+│  [Save]          [Import history →]                                       │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -121,7 +121,7 @@ settings_json shape (defaults):
   "gmail_connected_at": null,     // ISO datetime string
   "gmail_last_sync_at": null,     // sync watermark; set at connect, never cleared (an unset one would mean "whole mailbox")
   "gmail_auto_sync": false,       // 5-minute background poll; off unless the user opts in
-  "gmail_last_sync_result": null, // outcome of the last sync/backfill
+  "gmail_last_sync_result": null, // outcome of the last sync or import
   "gmail_last_sync_error": null,  // why it failed, if it did
   "gmail_reconnect_required": false, // failure only a fresh OAuth grant fixes
   "gmail_failed_message_ids": []  // Gmail ids retried on every sync
@@ -134,7 +134,7 @@ settings_json shape (defaults):
 
 ## 2. Tab: Gmail
 
-**Routes:** `GET /settings/gmail` (SPA, `GmailPage.tsx`) · `GET /api/v1/settings/gmail` · `PUT /api/v1/settings/gmail/filters` · `GET /api/ingest/gmail/oauth/start` · `GET /api/ingest/gmail/oauth/callback` · `POST /api/v1/settings/gmail/backfill`
+**Routes:** `GET /settings/gmail` (SPA, `GmailPage.tsx`) · `GET /api/v1/settings/gmail` · `PUT /api/v1/settings/gmail/filters` · `GET /api/ingest/gmail/oauth/start` · `GET /api/ingest/gmail/oauth/callback` · `PUT .../auto-sync` · `POST .../sync` · `POST .../reset-sync` · `DELETE /api/v1/settings/gmail` · import page: `/api/v1/gmail/*`
 
 **Sections:**
 
@@ -144,7 +144,7 @@ settings_json shape (defaults):
 | **Sync** | Automatic-sync switch, `[Sync now]`, last result/error, failed-message count, and `[Reset sync state]` (optional "resume from" date; default now). |
 | **Sender Allowlist** | Comma-separated email addresses or domains. Saved to `settings_json.gmail_allowlist`. Only messages from allowlisted senders are synced. |
 | **Label Filter** | Optional Gmail label name. If set, only messages with this label are synced. |
-| **Backfill** | Range select (past 90 days / past year / past 5 years) + `[Backfill]` → `POST /api/v1/settings/gmail/backfill` with `{days: 90 \| 365 \| 1825}` (`useGmailBackfill`); enqueues `run_gmail_backfill` for the current user. |
+| **Import history** | Link to `/import`, the page that indexes the mailbox and imports it grouped by case reference, oldest first. |
 
 ### Gmail OAuth state machine
 

@@ -662,6 +662,53 @@ def compute_overall_state(stages: dict) -> PipelineState:
     return PipelineState.PENDING
 
 
+def batch_pipeline_settled(db: Session, batch_id: int) -> bool:
+    """True when no document in the batch has pipeline work still ahead of it.
+
+    Used to pace history imports: ingesting the next email only once the last
+    one's documents are fully processed means earlier letters are already
+    enriched when their replies arrive. A document with no stage rows yet
+    (process_document_task hasn't initialised it) counts as unsettled, so the
+    gap between dispatch and first stage can't be mistaken for "done". Stages
+    the user dismissed are terminal.
+    """
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchStatus
+
+    batch_status = (
+        db.query(IngestBatch.status).filter(IngestBatch.id == batch_id).scalar()
+    )
+    if batch_status == IngestBatchStatus.AWAITING_SLICING:
+        return True  # needs the user's slice review: no amount of waiting finishes it
+    rows = db.execute(
+        text(
+            """
+            SELECT d.id, dps.status
+            FROM documents d
+            LEFT JOIN document_pipeline_stages dps ON dps.document_id = d.id
+            WHERE d.ingest_batch_id = :batch_id
+            """
+        ),
+        {"batch_id": batch_id},
+    ).fetchall()
+    stages_per_doc: dict[int, dict] = {}
+    all_dismissed: set[int] = set()
+    for doc_id, status in rows:
+        stages = stages_per_doc.setdefault(doc_id, {})
+        if status == StageStatus.DISMISSED.value:
+            all_dismissed.add(doc_id)
+        elif status is not None:
+            stages[f"s{len(stages)}"] = {"status": status}
+            all_dismissed.discard(doc_id)
+    unsettled = {PipelineState.PENDING, PipelineState.RUNNING, PipelineState.PARTIAL}
+    return all(
+        # Only-dismissed stages: the user closed this document out.
+        (not stages and doc_id in all_dismissed)
+        or compute_overall_state(stages) not in unsettled
+        for doc_id, stages in stages_per_doc.items()
+    )
+
+
 def get_upstream_blocking(stage: PipelineStage, stages: dict) -> list[str]:
     """Return stage names that are currently RUNNING upstream of `stage`.
 

@@ -21,9 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 # Tables preserved across a workspace clear: the account, its per-user prefs,
-# global app/AI config (API keys, connected accounts, bootstrap_admin pin), and
-# the audit trail. Everything else is workspace/domain data and is wiped.
-_PRESERVED_TABLES = ("users", "user_settings", "app_settings", "audit_logs")
+# global app/AI config (API keys, connected accounts, bootstrap_admin pin), the
+# audit trail, and the Gmail header index (a mirror of the mailbox, not
+# workspace data — wiping it would force a full re-index before re-importing).
+# Everything else is workspace/domain data and is wiped.
+_PRESERVED_TABLES = (
+    "users",
+    "user_settings",
+    "app_settings",
+    "audit_logs",
+    "gmail_message_index",
+)
 
 
 def reset_ai_enrichment(db: Session) -> tuple[int, int]:

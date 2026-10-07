@@ -255,7 +255,7 @@ Ambient alerts that don't fit the other panels — dormancy warnings, Case Clock
 | **Case Clock window** | Entering a typical-event window (hearing, ruling, etc.) | Shows the Case Clock prediction detail |
 | **Gmail sync issue** | OAuth expired/revoked or sync failing | Opens Gmail settings to reconnect |
 | **Ingest failures** | N documents with `pipeline_state=failed` | Opens triage with failed filter |
-| **Ingest backfill progress** | Bulk Gmail backfill running | Shows progress bar |
+| **Gmail import progress** | History import running | Shows progress bar |
 | **AI provider unreachable** | Ollama/LM Studio/OpenAI endpoint failing | Opens AI provider settings |
 
 ### Severity
