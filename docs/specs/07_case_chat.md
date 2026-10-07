@@ -20,11 +20,11 @@ Companion document to `docs/specs/00_vision.md` §7. Covers both scopes of AI ch
 | User-reaction integration — `format_reactions_for_case/document()` | ✅ |
 | System prompts — `DOC_CHAT_SYSTEM` + `CASE_CHAT_SYSTEM` with citation rules | ✅ |
 | Citation extraction — `[DOC:<id>]` regex → `context_document_ids` JSON | ✅ |
-| Shared panel — `partials/chat/_panel.html` (streaming, citation pills, empty state, suggested prompts) | ✅ |
-| Case chat drawer — `partials/dashboard/ai_chat_stub.html` + top-bar `[✦ Ask AI]` button | ✅ |
-| Document chat drawer — `partials/hud/_chat_drawer.html` + `_ask_ai.html` button | ✅ |
-| Alpine.js client — `static/js/chat.js` (`aiChat()` component, SSE parser, citation renderer) | ✅ |
-| Keyboard `/` → focus chat input; `Esc` → close; `hud-prefill-chat` event | ✅ |
+| Shared panel — `frontend/src/features/chat/ChatDrawer.tsx` (streaming, citation pills, empty state, suggested prompts) | ✅ |
+| Case chat drawer — `ChatDrawer` mounted by `frontend/src/features/cases/dashboard/CasePage.tsx` + top-bar `[✦ Ask AI]` button | ✅ |
+| Document chat drawer — `ChatDrawer` mounted by `frontend/src/features/documents/DocumentPage.tsx` + `[✦ Ask about this document]` button | ✅ |
+| Client hooks — `frontend/src/api/chat.ts` (`useOpenConversation`, `useConversation(s)`, `streamMessage` SSE reader, `citationsFromIds`) | ✅ |
+| Keyboard `/` → open chat drawer; `Esc` → close; passage pick prefills the composer (`ChatDrawer` `prefill` prop) | ✅ |
 | `Case.ai_brief` in case context | ✅ |
 | `UserReaction` rows in context (both scopes) | ✅ |
 | Semantic retrieval — top K=6 documents via `document_chunks.embedding` pgvector | ✅ |
@@ -44,7 +44,7 @@ Companion document to `docs/specs/00_vision.md` §7. Covers both scopes of AI ch
 | Context: `ActionItem` + `Claim` | "Recent ActionItem and Claim records" (`02_dashboard.md §11`) | Context builder includes `ai_brief`, reactions, retrieved docs, open action items, and contested claims | ✅ Accepted |
 | Citation links → passage in HUD | "clickable passage references open the document HUD at **that passage**" | Links include `#p=<passage_id>` fragment | ✅ Accepted |
 | Conversation history | "history dropdown … to return to past threads" | Implemented via History dropdown in panel header | ✅ Accepted |
-| Proceeding scoping toggle | "Optional toggle: Limit to current proceeding" | Implemented via `limitToProceeding` Alpine state | ✅ Accepted |
+| Proceeding scoping toggle | "Optional toggle: Limit to current proceeding" | `ChatDrawer` checkbox sends `proceeding_id` in `MessageSend` | ✅ Accepted |
 
 ---
 
@@ -239,58 +239,44 @@ Includes:
 
 ## 6. Citation rendering
 
-The AI embeds `[DOC:<id>]` markers in its response. The service extracts them with `_DOC_REF_RE = re.compile(r'\[DOC:(\d+)\]')` and streams the resolved document metadata as the `citations` SSE event. The Alpine client (`chat.js:renderContent()`) HTML-escapes the raw text and renders `[DOC:n]` tokens as inline pills; the `citations` event appends clickable document badges below the assistant message.
+The AI embeds `[DOC:<id>]` markers in its response. The service extracts them with `_DOC_REF_RE = re.compile(r'\[DOC:(\d+)\]')` and streams the resolved document metadata as the `citations` SSE event. `ChatDrawer` renders `[DOC:n]` tokens as inline `/document/{id}` links and appends the `citations` frame as clickable document badges below the assistant message.
 
-Citations include `#p=<idx>` fragments when referring to specific passages, and the HUD's `_passages_spine.html` honors these for scroll-to behavior.
+Citations include `#p=<passage_id>` fragments when referring to specific passages; `DocumentPage.tsx` reads the hash on load and scrolls the reader to that passage.
 
 ---
 
-## 7. Frontend — `partials/chat/_panel.html`
+## 7. Client — ChatDrawer
 
-Shared by both scopes. Initialised via `x-data="aiChat({scopeType, scopeId, suggestedPrompts})"`.
+`frontend/src/features/chat/ChatDrawer.tsx` is shared by both scopes; the host page passes `scope` (`{scope_type, scope_id}`), `title`, `suggestions`, `onClose`, and optionally `proceeding` (case scope) or `prefill` (document scope). Hooks live in `frontend/src/api/chat.ts`:
+
+- `useOpenConversation(scope)` → `POST /api/v1/chat/conversations` on mount (latest thread, or `force_new` for `[+]`).
+- `useConversations(scope)` → `GET /api/v1/chat/conversations?scope_type=&scope_id=` for the History dropdown; `useRenameConversation` / `useDeleteConversation` → `PUT …/{id}/title` / `DELETE …/{id}`.
+- `useConversation(id)` → `GET /api/v1/chat/conversations/{id}` for the message list; `useAppendExchange` writes a finished exchange into the TanStack Query cache so a refetch cannot duplicate it.
+- `streamMessage(id, body, onFrame)` → `POST /api/v1/chat/conversations/{id}/messages`, reads the `text/event-stream` body frame by frame (`token` / `citations` / `done`).
 
 **Panel sections (top to bottom):**
 
-| Section | Height | Content |
-|---|---|---|
-| Header | 48px | Scope title + History dropdown + `[+]` (new) + `[×]` (close) |
-| Message list | flex-1, scrollable | User/Assistant bubbles + citation pills |
-| Empty state | centred | ✦ icon + suggested prompts as clickable chips |
-| Error banner | conditional | Red inline banner above input |
-| Input | 56px | `<textarea>` with Enter-to-send |
+| Section | Content |
+|---|---|
+| Header | Scope title + History dropdown + `[+]` (new) + `[×]` (close) |
+| Message list | User/Assistant bubbles + citation pills; `<think>` blocks fold into a "Reasoning" disclosure |
+| Empty state | Suggested prompts as clickable chips |
+| Error banner | Red inline `role="alert"` above the input |
+| Input | "Limit search to {proceeding}" checkbox (case scope) + `<textarea>` with Enter-to-send |
 
-**Streaming cursor:** `<span class="animate-pulse">▌</span>` appended to `streamBuffer` while the SSE stream is open.
-
----
-
-## 8. Alpine.js client — `static/js/chat.js`
-
-`Alpine.data('aiChat', ({scopeType, scopeId, suggestedPrompts}) => ({ … }))`
-
-**Features:**
-- **SSE Parser:** Handles chunked responses and JSON payloads.
-- **Prefill Event:** Listens for `hud-prefill-chat` to populate the draft.
-- **History Management:** Loads and lists past conversations.
-- **Proceeding Scoping:** Optional filtering to the current proceeding.
+While a stream is open the last assistant bubble shows a pulsing cursor.
 
 ---
 
 ## 9. Case dashboard integration
 
-`partials/dashboard/ai_chat_stub.html` wraps `_panel.html` with `scope_type='case'`. The drawer is toggled by `chatOpen` in the `caseDashboard` Alpine scope.
-
-**Top-bar `[✦ Ask AI]` button:**
-```html
-<button @click="chatOpen = true; docChatOpen = false" …>✦ Ask AI</button>
-```
+`CasePage.tsx` mounts `ChatDrawer` with `scope_type='case'` and the active proceeding (for the scope toggle); the top-bar `[✦ Ask AI]` button and the `/` key open it.
 
 ---
 
 ## 10. Document HUD integration
 
-`partials/hud/_chat_drawer.html` wraps `_panel.html` with `scope_type='document'`. The drawer uses `docChatOpen` in the parent Alpine scope.
-
-`partials/hud/_ask_ai.html` renders the `[✦ Ask about this document]` button that sets `docChatOpen = !docChatOpen`.
+`DocumentPage.tsx` mounts `ChatDrawer` with `scope_type='document'`; the `[✦ Ask about this document]` button and the `/` key open it, and "Ask about this passage" opens it with the passage text prefilled.
 
 ---
 
