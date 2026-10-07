@@ -74,7 +74,11 @@ class HomeService:
             self.db.query(IngestBatch)
             .options(joinedload(IngestBatch.documents))
             .filter(
-                IngestBatch.status != IngestBatchStatus.COMPLETED,
+                # Same set as the rail badge (``triage_inbox_count``): bundles
+                # parked for slicing are not awaiting the user's triage.
+                IngestBatch.status.notin_(
+                    (IngestBatchStatus.COMPLETED, IngestBatchStatus.AWAITING_SLICING)
+                ),
                 IngestBatch.owner_id == user_id,
             )
             .all()

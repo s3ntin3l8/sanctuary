@@ -1233,6 +1233,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Notifications
+         * @description Overdue and upcoming deadlines, hearings, the caller's pending triage
+         *     bundles and overdue costs, each group counted in full and capped at five
+         *     rows.
+         */
+        get: operations["v1_notifications_api_v1_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/pins/{pin_id}": {
         parameters: {
             query?: never;
@@ -4140,6 +4162,54 @@ export interface components {
             due_date: string | null;
             /** Title */
             title: string;
+        };
+        /** NotificationGroup */
+        NotificationGroup: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["NotificationItem"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "overdue_deadline" | "upcoming_deadline" | "hearing" | "pending_triage" | "overdue_cost";
+        };
+        /** NotificationItem */
+        NotificationItem: {
+            /** Amount */
+            amount: number | null;
+            /** Case Id */
+            case_id: string | null;
+            /** Case Title */
+            case_title: string | null;
+            /** Detail */
+            detail: string | null;
+            /** Due At */
+            due_at: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "overdue_deadline" | "upcoming_deadline" | "hearing" | "pending_triage" | "overdue_cost";
+            /** Link */
+            link: string;
+            /** Title */
+            title: string;
+        };
+        /** NotificationsView */
+        NotificationsView: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Groups */
+            groups: components["schemas"]["NotificationGroup"][];
+            /** Total */
+            total: number;
         };
         /** OpposingPartiesUpdate */
         OpposingPartiesUpdate: {
@@ -7367,6 +7437,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_notifications_api_v1_notifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsView"];
+                };
             };
             /** @description Error */
             default: {

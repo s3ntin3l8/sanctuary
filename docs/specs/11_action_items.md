@@ -20,7 +20,7 @@ Companion document to `docs/specs/00_vision.md` §6 and `docs/specs/02_dashboard
 | Open / completed / all tabs and Next Deadline sub-section | — (not in the SPA; `Rail.tsx` lists open items only) |
 | Source-document link per item (item title opens the inline Review panel for the source document) | ✅ |
 | `PATCH /api/v1/action-items/{item_id}` — complete / reopen / dismiss (`useCaseActionStatus` in `frontend/src/api/caseDetail.ts`) | ✅ |
-| Notification count: overdue deadlines + upcoming (7d) + hearings (30d) | — (not in the SPA; see issue #186) |
+| Notification count: overdue deadlines + upcoming (7d) + hearings (30d) | ✅ `GET /api/v1/notifications` (`app/services/notifications_service.py`) → rail 🔔 badge and popover (`frontend/src/shell/NotificationsPanel.tsx`) |
 | Dormancy alert (`_compute_dormancy_alert` in `app/services/case_service.py`, 90-day threshold) | ✅ |
 | Keyboard `a` scrolls to action items panel | — (not in the SPA) |
 | Case Clock signals (`_get_case_clock_signals` in `app/services/signals.py`) | ❌ returns `[]` — placeholder only |
@@ -150,17 +150,17 @@ Returns the updated `CaseActionItem`; `useCaseActionStatus` invalidates the case
 
 ## 5. Notification badges
 
-The notifications feed planned in issue #186 builds the counts for the sidebar badge and notifications panel — the pre-migration builder was removed with the legacy shell and nothing in the SPA renders these yet:
+`build_notifications()` in `app/services/notifications_service.py` serves `GET /api/v1/notifications` (`NotificationsView`), which the rail's 🔔 button (`frontend/src/shell/NotificationsPanel.tsx`, `useNotifications()` refetching every 60 s) renders as a popover. Everything is scoped to the caller: action items and costs to the cases they may see (owned ∪ shared; admins see all), triage to the bundles they ingested. Action items follow Home's rule — `status=open`, not superseded, `addressee` is `user` or unset.
 
-| Category | Query | Window |
-|---|---|---|
-| Overdue deadlines | All types, `status=open`, `due_date < now` | Unbounded past |
-| Upcoming deadlines | All types, `status=open`, `due_date` within 7 days | Next 7 days |
-| Upcoming hearings | `action_type=court_date`, `status=open`, `due_date` within 30 days | Next 30 days |
-| Pending triage documents | `needs_review=True` | — |
-| Overdue costs | `LegalCost` with `status=open` past `due_date` | Unbounded past |
+| Group | Query | Window | Row links to |
+|---|---|---|---|
+| `overdue_deadline` | every type except `court_date`, `due_date < now` | Unbounded past | `/cases/{id}?view=review` |
+| `upcoming_deadline` | every type except `court_date`, `due_date` within 7 days | Next 7 days | `/cases/{id}?view=review` |
+| `hearing` | `action_type=court_date`, `due_date` within 30 days, missed ones included | Past + next 30 days | `/cases/{id}?view=review` |
+| `pending_triage` | the caller's `IngestBatch` rows not `completed` / `awaiting_slicing` (same set as the Triage badge and Home) | — | `/triage` |
+| `overdue_cost` | `LegalCost` not paid/reimbursed, `due_at < now` (`cost_service.costs_due`, shared with the ledger's alert strip) | Unbounded past | `/costs` |
 
-Total badge count = sum of all five (capped at 5 per category = 25 max before the limit matters in practice).
+Each group carries its full `count` and at most five `items`; the badge shows `total = Σ count`, and the popover prints "+N more" for capped groups.
 
 ---
 
@@ -286,7 +286,7 @@ Until the signal list is populated, no Case Clock section renders in the rail.
 - Status PATCH round-trip: mark completed → item leaves the Deadlines list; `PATCH` back to `open` returns it.
 - Item titles open the Review panel on the correct source document for every item that has a `source_document_id`.
 - Dormancy alert surfaces for cases with > 90 days since last document activity.
-- Notification badge on the sidebar reflects current overdue + upcoming count without page reload (pending issue #186).
+- Notification badge on the rail reflects the current overdue + upcoming count without a page reload (refetched every 60 s; `tests/integration/test_notifications.py`, `NotificationsPanel.test.tsx`).
 
 ---
 
