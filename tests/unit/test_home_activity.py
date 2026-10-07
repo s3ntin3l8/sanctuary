@@ -137,8 +137,7 @@ def test_every_source_contributes_newest_first(db_session, users):
     assert rows[4]["detail"] == "claims stage · model timeout"
     assert rows[5]["detail"] == "ACT-1 · Case ACT-1"
     assert rows[8]["link"] == f"/document/{doc.id}"
-    # Only the enrich stage counts as "enriched"; extract completion is noise.
-    assert all(r["title"] != "extract" for r in rows)
+    # (The extract-stage completion is not in the list: only enrich counts.)
 
 
 def test_scoped_to_visible_cases_and_capped(db_session, users):
@@ -170,3 +169,24 @@ def test_scoped_to_visible_cases_and_capped(db_session, users):
     assert not any(
         r["kind"] == "case_shared" for r in recent_activity(db_session, a, None)
     )
+
+
+def test_admin_feed_skips_triage_and_uncased_documents(db_session, users):
+    a, b = users
+    now = now_utc()
+    _case(db_session, "ACT-C", a.id)
+    admin = auth_service.get_user_by_email(db_session, "admin@localhost")
+    db_session.add_all(
+        [
+            Document(title="cased.pdf", case_id="ACT-C", ingest_date=now),
+            Document(
+                title="b-triage.pdf", case_id="_TRIAGE", owner_id=b.id, ingest_date=now
+            ),
+            Document(title="orphan.pdf", case_id=None, owner_id=b.id, ingest_date=now),
+        ]
+    )
+    db_session.commit()
+
+    rows = recent_activity(db_session, admin, None)
+    assert [r["title"] for r in rows] == ["cased.pdf"]
+    assert rows[0]["detail"] == "ACT-C · Case ACT-C"

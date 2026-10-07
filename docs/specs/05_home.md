@@ -454,7 +454,7 @@ No illustrations, no empty-state graphics, no upsells. One line each.
 
 Explicit non-goals — these would all pull Home back toward a DMS mental model.
 
-- **Not a global document list.** There's no "recent documents" feed. Documents live inside cases; if you want a specific doc, ⌘K.
+- **Not a global document list.** Documents live inside cases; if you want a specific doc, ⌘K. The activity strip below shows the last few ingests as events, not a browsable document list.
 - **Not a global timeline.** Timeline lives per-case as a view mode. The "Recent activity" strip beside Active cases is the Home end of the vision's Activity Log (`00_vision.md` §"What's NOT a destination"): at most eight rows derived from timestamps the pipeline already writes (`app/services/home_activity.py` — document ingested / enriched, stage failed, deadline or hearing extracted, cost paid, case closed, brief refreshed, case shared), scoped to the visible cases, each linking into the document, case, or ledger. It is not a browsable history: no paging, no filters, and events without a timestamp of their own (bundle confirmations, items ticked off) do not appear.
 - **Not a notifications page.** Notifications are reactive, surfaced via the rail's 🔔 button. Home is proactive — it pulls things forward; it doesn't catalog alerts.
 - **Not a settings page.** Gmail setup, AI provider config, etc. all live under Settings (rail ⚙). Home only *surfaces* when these need attention via the Signals panel.

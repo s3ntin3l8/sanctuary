@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy.orm import InstrumentedAttribute, Query, Session, joinedload
+from sqlalchemy.orm import InstrumentedAttribute, Query, Session, contains_eager
 
 from app.models.database import (
     ActionItem,
@@ -44,8 +44,13 @@ def recent_activity(
     # "label the case" once titles are resolved below.
     raw: list[tuple[str, str, str | None, datetime | None, str | None, str]] = []
 
+    # Pre-case (triage) documents are not case activity; the "_TRIAGE"
+    # sentinel must never surface in the UI.
+    cased = (Document.case_id.isnot(None)) & (Document.case_id != "_TRIAGE")
+
     for d in (
         scoped(db.query(Document), Document.case_id)
+        .filter(cased, Document.ingest_date.isnot(None))
         .order_by(Document.ingest_date.desc())
         .limit(limit)
     ):
@@ -65,8 +70,9 @@ def recent_activity(
             db.query(DocumentPipelineStage).join(DocumentPipelineStage.document),
             Document.case_id,
         )
-        .options(joinedload(DocumentPipelineStage.document))
+        .options(contains_eager(DocumentPipelineStage.document))
         .filter(
+            cased,
             (
                 (DocumentPipelineStage.stage == PipelineStage.ENRICH)
                 & (DocumentPipelineStage.status == StageStatus.COMPLETED)
@@ -153,7 +159,9 @@ def recent_activity(
             )
         )
 
-    owned = {c.id: c.title for c in db.query(Case).filter(Case.owner_id == user.id)}
+    owned: dict[str, str] = {}
+    for cid, title in db.query(Case.id, Case.title).filter(Case.owner_id == user.id):
+        owned[cid] = title
     if owned:
         shares = (
             db.query(CaseShare)
@@ -178,9 +186,9 @@ def recent_activity(
                 )
             )
 
-    dated = [r for r in raw if r[3] is not None]
-    dated.sort(key=lambda r: r[3] or datetime.min, reverse=True)
-    top = dated[:limit]
+    dated = [(r, r[3]) for r in raw if r[3] is not None]
+    dated.sort(key=lambda pair: pair[1], reverse=True)
+    top = [r for r, _ in dated[:limit]]
 
     titles = {
         c.id: c.title
