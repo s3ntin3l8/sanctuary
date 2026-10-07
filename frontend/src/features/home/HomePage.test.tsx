@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test } from 'vitest'
 
@@ -59,4 +59,42 @@ test('shows the caught-up state instead of the panels', async () => {
   renderAt('/', <HomePage />)
   expect(await screen.findByText("You're caught up.")).toBeVisible()
   expect(screen.queryByText('Needs you')).not.toBeInTheDocument()
+})
+
+test('j / k move focus across the panels in order, Enter follows the link, ? lists the keys', async () => {
+  stubApi({
+    'GET /api/v1/home': { body: homeView },
+    'GET /api/v1/worker-queue': { body: emptyQueue },
+  })
+  renderAt('/', <HomePage />)
+  const user = userEvent.setup()
+  await screen.findByRole('heading', { name: 'Good morning, Katharina.' })
+
+  await user.keyboard('j')
+  // First row: the deadline in "Needs you".
+  expect(document.activeElement).toHaveAttribute('href', '/cases/ADV-024-A')
+  expect(document.activeElement).toHaveTextContent('File counter-statement')
+  await user.keyboard('j')
+  // Second: the triage bundle.
+  expect(document.activeElement).toHaveAttribute('href', '/triage')
+  await user.keyboard('k')
+  expect(document.activeElement).toHaveTextContent('File counter-statement')
+  // Wraps backwards to the last row (the active case card).
+  await user.keyboard('k')
+  expect(document.activeElement).toHaveTextContent('Weber ./. Weber')
+
+  // Typing in a field must not move focus.
+  const input = document.createElement('input')
+  document.body.appendChild(input)
+  input.focus()
+  await user.keyboard('j')
+  expect(document.activeElement).toBe(input)
+  input.remove()
+
+  await user.keyboard('?')
+  const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+  expect(within(dialog).getByRole('region', { name: 'Home' })).toBeVisible()
+  expect(within(dialog).getByText('Next / previous item across the panels')).toBeVisible()
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(dialog).not.toBeInTheDocument())
 })

@@ -26,6 +26,7 @@ import { SlicingPage } from './features/slicing/SlicingPage'
 import { TriagePage } from './features/triage/TriagePage'
 import { leaveTo } from './navigation'
 import { Shell } from './shell/Shell'
+import { ShortcutsProvider } from './shell/shortcuts'
 import { ToastProvider } from './ui/toast'
 
 // Every path here must also be served by FastAPI as an SPA route (app/api/spa_pages.py).
@@ -83,7 +84,9 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <RouterProvider router={router} />
+        <ShortcutsProvider>
+          <RouterProvider router={router} />
+        </ShortcutsProvider>
       </ToastProvider>
     </QueryClientProvider>
   )

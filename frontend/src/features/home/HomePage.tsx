@@ -12,6 +12,8 @@ import {
   formatShortDate,
   pluralize,
 } from '../../format'
+import { ROW_ATTR, useRovingRows } from '../../shell/keys'
+import { usePageShortcuts } from '../../shell/shortcuts'
 import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { Icon } from '../../ui/Icon'
@@ -20,6 +22,15 @@ import { CaseCardTile } from '../cases/CaseCardTile'
 import { CreateCaseModal } from '../cases/CreateCaseModal'
 
 type Home = Schemas['HomeView']
+
+const HOME_SHORTCUTS = [
+  ['j / k', 'Next / previous item across the panels'],
+  ['Enter', 'Open the highlighted item'],
+] as const
+
+/** Keyboard-reachable rows: `j`/`k` focus them, Enter follows the link. */
+const ROW = { [ROW_ATTR]: '' } as const
+const ROW_FOCUS = 'focus-visible:bg-accent/10 focus-visible:outline-none'
 
 const ACTION_ICONS: Record<string, string> = {
   court_date: 'event',
@@ -36,6 +47,8 @@ export function HomePage() {
   useEffect(() => {
     document.title = 'Home | The Sanctuary'
   }, [])
+  usePageShortcuts('Home', HOME_SHORTCUTS)
+  useRovingRows(!creating)
 
   const data = home.data
   const processing = queue ? queue.counts.executing + queue.counts.queued : 0
@@ -111,7 +124,7 @@ export function HomePage() {
             >
               <div className="grid grid-cols-3 gap-3">
                 {data.draft_cases.map((c) => (
-                  <CaseCardTile key={c.id} card={c} />
+                  <CaseCardTile key={c.id} card={c} navRow />
                 ))}
               </div>
             </Panel>
@@ -132,7 +145,7 @@ export function HomePage() {
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {data.active_cases.map((c) => (
-                  <CaseCardTile key={c.id} card={c} />
+                  <CaseCardTile key={c.id} card={c} navRow />
                 ))}
               </div>
             )}
@@ -168,7 +181,8 @@ function DeadlinesPanel({ items }: { items: Home['today_items'] }) {
               <li key={item.id}>
                 <Link
                   to={`/cases/${item.case_id}`}
-                  className="grid grid-cols-[18px_1.4fr_1fr_110px] items-center gap-3 py-2 text-[12px] hover:bg-accent/5"
+                  {...ROW}
+                  className={`grid grid-cols-[18px_1.4fr_1fr_110px] items-center gap-3 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
                 >
                   <Icon
                     name={ACTION_ICONS[item.action_type] ?? 'flag'}
@@ -225,7 +239,8 @@ function TriagePanel({ bundles }: { bundles: Home['triage_bundles'] }) {
               <li key={b.id}>
                 <a
                   href="/triage"
-                  className="grid grid-cols-[52px_52px_1fr_auto] items-center gap-3 py-2 text-[12px] hover:bg-accent/5"
+                  {...ROW}
+                  className={`grid grid-cols-[52px_52px_1fr_auto] items-center gap-3 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
                 >
                   <Badge tone="warning" mono>
                     {b.doc_count} docs
@@ -298,7 +313,8 @@ function DeltaPanel({ home }: { home: Home }) {
             <div className="flex items-center gap-2">
               <Link
                 to={`/cases/${d.case_id}`}
-                className="font-mono text-[11px] text-tealink hover:underline"
+                {...ROW}
+                className={`font-mono text-[11px] text-tealink hover:underline ${ROW_FOCUS}`}
               >
                 {d.case_id}
               </Link>
@@ -330,7 +346,11 @@ function SignalsPanel({ signals }: { signals: Home['signals'] }) {
       <ul className="divide-y divide-line2">
         {signals.map((s) => (
           <li key={s.id}>
-            <a href={s.link} className="flex items-start gap-2 py-2 text-[12px] hover:bg-accent/5">
+            <a
+              href={s.link}
+              {...ROW}
+              className={`flex items-start gap-2 py-2 text-[12px] hover:bg-accent/5 ${ROW_FOCUS}`}
+            >
               <Icon
                 name={s.severity === 'warn' ? 'warning' : 'info'}
                 size={16}

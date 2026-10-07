@@ -7,6 +7,8 @@ import { caseKey, type CaseDetail, useCaseDetail, useMarkViewed } from '../../..
 import { useCloseDecision } from '../../../api/cases'
 import { useDraftDecision } from '../../../api/triage'
 
+import { hasModifier, isTypingTarget } from '../../../shell/keys'
+import { usePageShortcuts, useShortcuts } from '../../../shell/shortcuts'
 import { Badge, type Tone } from '../../../ui/Badge'
 import { Button } from '../../../ui/Button'
 import { Icon } from '../../../ui/Icon'
@@ -30,6 +32,11 @@ const VIEWS: [View, string, string][] = [
   ['timeline', 'Calendar', 'l'],
   ['fin', 'Costs', '$'],
 ]
+const CASE_SHORTCUTS = [
+  ...VIEWS.map(([, label, key]) => [key, `${label} view`] as const),
+  ['/', 'Ask the AI about this case'],
+  ['Esc', 'Close the chat drawer'],
+] as const
 const KEY_TO_VIEW: Record<string, View> = {
   g: 'graph',
   t: 'truth',
@@ -114,15 +121,15 @@ function Dashboard({
   }, [markViewedMutate])
   const [chatOpen, setChatOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const shortcuts = useShortcuts()
+  usePageShortcuts('Case', CASE_SHORTCUTS)
   const [sharing, setSharing] = useState(false)
   const active = detail.proceedings.find((p) => p.id === detail.active_proceeding_id) ?? null
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (editing || sharing) return
+      if (isTypingTarget(e) || hasModifier(e)) return
+      if (editing || sharing || shortcuts.open) return
       if (e.key === '/') {
         e.preventDefault()
         setChatOpen(true)
@@ -135,7 +142,7 @@ function Dashboard({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [chatOpen, editing, sharing, setView])
+  }, [chatOpen, editing, sharing, shortcuts.open, setView])
 
   // The detail request persists ?proceeding= as the active proceeding.
   function switchProceeding(id: number) {
