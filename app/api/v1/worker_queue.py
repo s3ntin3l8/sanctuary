@@ -5,17 +5,17 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.api.worker_queue import (
-    _build_queue_items,
-    _first_failed_stage_info,
-    _get_queue_docs,
-    retry_failed_docs_for,
-)
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Document, User
 from app.schemas.worker_queue import FailedDoc, QueueCounts, QueueItem, QueueView
 from app.services.ai_inflight import count_inflight
+from app.services.worker_queue import (
+    _build_queue_items,
+    _first_failed_stage_info,
+    _get_queue_docs,
+    retry_failed_docs_for,
+)
 
 router = APIRouter(prefix="/worker-queue", tags=["worker-queue"])
 

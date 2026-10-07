@@ -432,7 +432,7 @@ def test_retry_failed_only_resets_callers_own_docs(auth_enabled, db_session, two
 
     client = _login("a@example.com")
     with patch("app.tasks.dispatch.dispatch_task") as mock_dispatch:
-        resp = client.post("/api/worker/queue/retry-failed")
+        resp = client.post("/api/v1/worker-queue/retry-failed")
     assert resp.status_code == 200
 
     dispatched_doc_ids = {call.args[1] for call in mock_dispatch.call_args_list}
@@ -440,7 +440,7 @@ def test_retry_failed_only_resets_callers_own_docs(auth_enabled, db_session, two
     assert doc_b.id not in dispatched_doc_ids
 
 
-def test_worker_queue_badge_counts_exclude_other_users_failures(
+def test_worker_queue_counts_exclude_other_users_failures(
     auth_enabled, db_session, two_users
 ):
     a, b = two_users
@@ -455,11 +455,10 @@ def test_worker_queue_badge_counts_exclude_other_users_failures(
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.get("/api/worker/queue/badge")
+    resp = client.get("/api/v1/worker-queue")
     assert resp.status_code == 200
-    # The failed-count pill (bg-error) only renders when n_failed > 0 —
-    # its absence is the real signal that B's failure wasn't counted for A.
-    assert "bg-error" not in resp.text
+    assert resp.json()["counts"]["failed"] == 0
+    assert resp.json()["failed"] == []
 
 
 # --- claims.py -----------------------------------------------------------------

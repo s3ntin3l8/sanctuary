@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -193,7 +192,6 @@ def register_pgvector_adapter(dbapi_conn, connection_record):
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
 
 # Vite build output of the SPA in frontend/ (index.html + hashed assets/).
 FRONTEND_DIST = Path(

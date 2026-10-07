@@ -60,8 +60,9 @@ for _module in (
     costs,
     contacts,
 ):
-    # Legacy Jinja templates resolve routes by name (url_path_for). Prefix every
-    # v1 route name so a v1 handler can never shadow the legacy route it replaces.
+    # Route names double as OpenAPI operation ids and must stay unique app-wide;
+    # the prefix keeps a v1 handler from colliding with the page route of the
+    # same name (see tests/unit/test_route_names_unique.py).
     for _route in _module.router.routes:
         _route.name = f"v1_{_route.name}"
     router.include_router(_module.router)

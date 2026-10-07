@@ -33,8 +33,7 @@ def case_directory() -> Response:
     return spa_index()
 
 
-# Legacy templates still build links with url_path_for("case_detail").
-@router.get("/cases/{case_id}", name="case_detail")
+@router.get("/cases/{case_id}")
 def case_detail(case_id: str) -> Response:
     return spa_index()
 

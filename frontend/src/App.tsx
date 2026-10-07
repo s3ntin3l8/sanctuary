@@ -12,6 +12,7 @@ import { ContactPage } from './features/contacts/ContactPage'
 import { CostsPage } from './features/costs/CostsPage'
 import { DocumentPage } from './features/documents/DocumentPage'
 import { HomePage } from './features/home/HomePage'
+import { NotFoundPage } from './features/NotFoundPage'
 import { AccountPage } from './features/settings/AccountPage'
 import { AiPage } from './features/settings/AiPage'
 import { AppearancePage } from './features/settings/AppearancePage'
@@ -57,6 +58,7 @@ const router = createBrowserRouter([
           { path: '/admin/users', element: <AdminUsersPage /> },
         ],
       },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ])

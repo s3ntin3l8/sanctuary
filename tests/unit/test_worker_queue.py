@@ -1,4 +1,4 @@
-"""Tests for the Processing Queue endpoints and helper functions."""
+"""Tests for the processing queue view (/api/v1/worker-queue) and its helpers."""
 
 from datetime import UTC, datetime
 
@@ -16,31 +16,29 @@ from app.models.enums import (
 
 
 @pytest.mark.unit
-def test_worker_queue_badge_endpoint_returns_200_when_quiet(app_client):
-    """End-to-end: the /badge endpoint must serve normally when there's no
-    contention. Regression guard against the PRAGMA override breaking the
-    happy path."""
-    response = app_client.get("/api/worker/queue/badge")
+def test_worker_queue_is_empty_when_quiet(app_client):
+    """The queue view serves normally with nothing in flight."""
+    response = app_client.get("/api/v1/worker-queue")
     assert response.status_code == 200
+    body = response.json()
+    assert body["counts"] == {
+        "executing": 0,
+        "queued": 0,
+        "failed": 0,
+        "ai_inflight": 0,
+    }
+    assert body["executing"] == body["queued"] == body["failed"] == []
 
 
 @pytest.mark.unit
-def test_worker_queue_panel_endpoint_returns_200_when_quiet(app_client):
-    """End-to-end: the /panel endpoint must serve normally when there's no
-    contention."""
-    response = app_client.get("/api/worker/queue/panel")
-    assert response.status_code == 200
+def test_counts_reflect_queue_items_not_redis(app_client, db_session, sample_case):
+    """The counts must come from queue items (stage rows), not Redis
+    sentinels or raw pipeline_state document counts.
 
-
-@pytest.mark.unit
-def test_badge_reflects_queue_items_not_redis(app_client, db_session, sample_case):
-    """Badge endpoint must count queue items (same as the panel header),
-    not Redis sentinels or raw pipeline_state document counts.
-
-    Regression chain: badge once called count_inflight() (Redis), then
-    counted Documents by pipeline_state (one per doc, even when a doc had
-    multiple concurrent stages). Now it shares compute_queue_counts() with
-    the panel, so badge == "X Active" always."""
+    Regression chain: the rail badge once called count_inflight() (Redis),
+    then counted Documents by pipeline_state (one per doc, even when a doc
+    had multiple concurrent stages). Now the counts are derived from the
+    same items the view lists."""
     from app.models.enums import OriginatorType
 
     doc = Document(
@@ -61,14 +59,15 @@ def test_badge_reflects_queue_items_not_redis(app_client, db_session, sample_cas
     )
     db_session.commit()
 
-    response = app_client.get("/api/worker/queue/badge")
+    response = app_client.get("/api/v1/worker-queue")
     assert response.status_code == 200
-    assert b"1" in response.content
+    assert response.json()["counts"]["executing"] == 1
+    assert response.json()["counts"]["queued"] == 0
 
 
 @pytest.mark.unit
-def test_badge_and_panel_header_agree(app_client, db_session, sample_case):
-    """Badge count must equal the panel header 'X Active' at the same DB snapshot.
+def test_counts_match_items(app_client, db_session, sample_case):
+    """The header counts must equal the listed items at the same DB snapshot.
 
     Realistic fixture: production docs always have stage rows (initialize()
     is called at ingest time). The panel's queue items come from those stage
@@ -114,13 +113,10 @@ def test_badge_and_panel_header_agree(app_client, db_session, sample_case):
     )
     db_session.commit()
 
-    badge_resp = app_client.get("/api/worker/queue/badge")
-    panel_resp = app_client.get("/api/worker/queue/panel")
-    assert badge_resp.status_code == 200
-    assert panel_resp.status_code == 200
-    # Both should show 2 (1 executing + 1 queued)
-    assert b"2" in badge_resp.content
-    assert b"2 Active" in panel_resp.content
+    body = app_client.get("/api/v1/worker-queue").json()
+    assert (body["counts"]["executing"], body["counts"]["queued"]) == (1, 1)
+    assert [i["label"] for i in body["executing"]] == ["Doc RUNNING"]
+    assert [i["label"] for i in body["queued"]] == ["Doc PENDING"]
 
 
 @pytest.mark.unit
@@ -131,7 +127,7 @@ def test_panel_separates_executing_from_queued(db_session, sample_case):
     This is the fix for the screenshot bug: '8 running' was counting
     pipeline_state=PARTIAL docs whose stages were all queued — only one
     doc's stage was actually executing on a worker."""
-    from app.api.worker_queue import _build_queue_items
+    from app.services.worker_queue import _build_queue_items
 
     # One doc with a RUNNING stage — should be executing.
     doc_executing = Document(
@@ -187,7 +183,7 @@ def test_panel_separates_executing_from_queued(db_session, sample_case):
 def test_panel_retrying_classified_as_queued(db_session, sample_case):
     """A stage in RETRYING (waiting for the retry countdown) is NOT a worker
     actively processing — it's queued. Goes in the queued section."""
-    from app.api.worker_queue import _build_queue_items
+    from app.services.worker_queue import _build_queue_items
 
     doc = Document(
         title="Retrying doc",
@@ -214,34 +210,22 @@ def test_panel_retrying_classified_as_queued(db_session, sample_case):
 
 
 @pytest.mark.unit
-def test_ai_calls_chip_appears_when_inflight(app_client, monkeypatch):
-    """The 'X AI calls' chip appears in the panel body when count_inflight() > 0."""
-    import app.api.worker_queue as wq_module
+@pytest.mark.parametrize("inflight", [3, 0])
+def test_ai_inflight_count_comes_from_the_sentinel(app_client, monkeypatch, inflight):
+    """counts.ai_inflight mirrors count_inflight() (the AI-calls chip)."""
+    import app.api.v1.worker_queue as wq_route
 
-    monkeypatch.setattr(wq_module, "count_inflight", lambda: 3)
+    monkeypatch.setattr(wq_route, "count_inflight", lambda: inflight)
 
-    response = app_client.get("/api/worker/queue/panel")
+    response = app_client.get("/api/v1/worker-queue")
     assert response.status_code == 200
-    assert b"3" in response.content
-    assert b"AI calls" in response.content
-
-
-@pytest.mark.unit
-def test_ai_calls_chip_absent_when_idle(app_client, monkeypatch):
-    """The 'AI calls' chip must not appear when count_inflight() returns 0."""
-    import app.api.worker_queue as wq_module
-
-    monkeypatch.setattr(wq_module, "count_inflight", lambda: 0)
-
-    response = app_client.get("/api/worker/queue/panel")
-    assert response.status_code == 200
-    assert b"AI calls" not in response.content
+    assert response.json()["counts"]["ai_inflight"] == inflight
 
 
 @pytest.mark.unit
 def test_build_queue_items_groups_batch_analysis_docs(db_session, sample_case):
     """Docs sharing BATCH_ANALYSIS + same batch_id collapse into one batch item."""
-    from app.api.worker_queue import _build_queue_items
+    from app.services.worker_queue import _build_queue_items
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
@@ -290,7 +274,7 @@ def test_build_queue_items_groups_batch_analysis_docs(db_session, sample_case):
 @pytest.mark.unit
 def test_build_queue_items_non_batch_stage_stays_flat(db_session, sample_case):
     """Docs in a per-doc stage (enrich) remain individual items even if same batch."""
-    from app.api.worker_queue import _build_queue_items
+    from app.services.worker_queue import _build_queue_items
 
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
@@ -333,16 +317,9 @@ def test_build_queue_items_non_batch_stage_stays_flat(db_session, sample_case):
 
 
 @pytest.mark.unit
-def test_panel_doc_rows_show_batch_and_doc_id_badges(
-    app_client, db_session, sample_case
-):
-    """Doc rows must render B#<batch_id> and D#<doc_id> badges inline before the title.
-
-    Covers: standalone doc rows (executing/queued) and failed doc rows.
-    Batch member rows only show D# — tested via the batch grouping fixture
-    which already asserts item structure; the badge presence here covers the
-    flat-doc path that is most common.
-    """
+def test_doc_items_carry_batch_and_doc_ids(app_client, db_session, sample_case):
+    """Flat doc items expose both ids so the queue modal can badge them
+    (B#<batch_id> / D#<doc_id>)."""
     from app.models.enums import OriginatorType
 
     batch = IngestBatch(
@@ -375,11 +352,10 @@ def test_panel_doc_rows_show_batch_and_doc_id_badges(
     db_session.commit()
     db_session.refresh(doc)
 
-    response = app_client.get("/api/worker/queue/panel")
+    response = app_client.get("/api/v1/worker-queue")
     assert response.status_code == 200
-    html = response.text
-
-    batch_badge = f"B#{batch.id}"
-    doc_badge = f"D#{doc.id}"
-    assert batch_badge in html, f"Expected '{batch_badge}' in panel HTML"
-    assert doc_badge in html, f"Expected '{doc_badge}' in panel HTML"
+    (item,) = response.json()["executing"]
+    assert item["kind"] == "doc"
+    assert item["doc_id"] == doc.id
+    assert item["batch_id"] == batch.id
+    assert item["label"] == "Badge Test Doc"

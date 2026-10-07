@@ -21,11 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
 )
-from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -35,6 +35,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1.errors import (
     error_response,
     http_error_response,
+    is_api_path,
     is_api_v1_path,
     validation_error_response,
 )
@@ -46,14 +47,10 @@ from app.config import (
     SCAN_INCOMING_DIR,
     SCAN_PROCESSED_DIR,
     SCAN_PROCESSING_DIR,
-    templates,
 )
 from app.core.log_formatter import LocalTimeFormatter
 from app.core.rate_limit import limiter
-from app.helpers import (
-    format_eur,
-)
-from app.spa import ImmutableStaticFiles
+from app.spa import ImmutableStaticFiles, spa_index
 
 
 # --- Logging Configuration ---
@@ -648,7 +645,7 @@ class SignedCookieSessionMiddleware:
 
 
 # Public paths reachable without authentication. Everything else is default-deny
-# (fail-closed). Prefixes cover static assets and the Phase-2 OIDC routes.
+# (fail-closed). Prefixes cover the SPA bundle and the Phase-2 OIDC routes.
 _PUBLIC_EXACT_PATHS = {
     "/health",
     "/favicon.ico",
@@ -659,7 +656,7 @@ _PUBLIC_EXACT_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/signup",
 }
-_PUBLIC_PATH_PREFIXES = ("/static", "/assets/", "/auth/")
+_PUBLIC_PATH_PREFIXES = ("/assets/", "/auth/")
 
 
 def _is_public_path(path: str) -> bool:
@@ -671,11 +668,8 @@ def _is_public_path(path: str) -> bool:
 def _unauthenticated_response(request: Request) -> Response:
     """Branch the unauthenticated response by request kind.
 
-    HTMX → 401 + HX-Redirect (client-side nav). API/JSON → 401 JSON.
-    Plain HTML navigation → 303 redirect to /login?next=<original>.
+    API/JSON → 401 JSON. Browser navigation → 303 redirect to /login?next=<original>.
     """
-    if request.headers.get("HX-Request") == "true":
-        return Response(status_code=401, headers={"HX-Redirect": "/login"})
     accept = request.headers.get("accept", "")
     if request.url.path.startswith("/api/") or "application/json" in accept:
         return JSONResponse(
@@ -770,9 +764,7 @@ app.add_middleware(AuthGateMiddleware)
 # see AccessLogMiddleware's docstring for why.
 app.add_middleware(AccessLogMiddleware)
 
-# Mount static files early
 PROJECT_ROOT = Path(__file__).parent.parent
-app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
 # Hashed SPA bundle. check_dir=False: the app must still boot (and say so on
 # the SPA routes) when the frontend has not been built yet.
 app.mount(
@@ -793,38 +785,6 @@ async def health_check():
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
 
 
-def _local_strftime(dt, fmt: str) -> str:
-    from datetime import UTC as _UTC
-    from datetime import date
-    from datetime import datetime as _dt
-
-    from app.services.timezone_service import get_user_tz
-
-    if dt is None or dt == "":
-        return ""
-    # Accept ISO-string inputs as well as datetime/date — `stages_dict`
-    # (app/services/pipeline_status.py) emits completed_at/started_at as
-    # `dt.isoformat()` strings into the per-doc pipeline_stages dict, and
-    # templates that read those need the same TZ-aware rendering.
-    if isinstance(dt, str):
-        try:
-            dt = _dt.fromisoformat(dt)
-        except ValueError:
-            return ""
-    if isinstance(dt, _dt):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=_UTC)
-        return dt.astimezone(get_user_tz()).strftime(fmt)
-    if isinstance(dt, date):
-        return dt.strftime(fmt)
-    return ""
-
-
-templates.env.globals["format_eur"] = format_eur
-templates.env.filters["urlencode"] = quote
-templates.env.filters["local_strftime"] = _local_strftime
-
-
 # Rate limiter setup
 # slowapi's handler is typed for RateLimitExceeded specifically; Starlette's
 # add_exception_handler wants a generic Exception handler. This is slowapi's
@@ -842,64 +802,43 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 
 
 # Error page defaults
-DEFAULT_SIDEBAR_COUNTS = {
-    "triage_count": 0,
-    "notification_count": 0,
-    "pending_count": 0,
-    "case_count": 0,
-    "cost_count": 0,
-    "ai_inflight_count": 0,
-}
+def _page_error(status: int, title: str, message: str) -> HTMLResponse:
+    """A dependency-free error page for browser navigations outside the SPA."""
+    body = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        f"<title>{status} · The Sanctuary</title>"
+        "<style>body{font-family:system-ui,sans-serif;background:#0b1220;color:#dbe4f3;"
+        "display:grid;place-items:center;height:100vh;margin:0}main{max-width:32rem;"
+        "text-align:center}h1{font-size:1.4rem}a{color:#5eead4}</style></head><body>"
+        f"<main><h1>{title}</h1><p>{message}</p><p><a href='/'>Back to the Sanctuary</a>"
+        "</p></main></body></html>"
+    )
+    return HTMLResponse(body, status_code=status)
 
 
 async def not_found_handler(request: Request, exc: Exception) -> Response:
-    """Render custom 404 page."""
-    if is_api_v1_path(request.url.path):
+    """JSON for the API, the SPA shell (which shows its not-found view) for pages."""
+    if is_api_path(request.url.path):
         return http_error_response(exc, default_status=404)
-    return templates.TemplateResponse(
-        request,
-        "errors/404.html",
-        {
-            "message": str(exc.detail) if hasattr(exc, "detail") else "Page not found",
-            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
-        },
-        status_code=404,
-    )
+    page = spa_index()
+    page.status_code = 404 if page.status_code == 200 else page.status_code
+    return page
 
 
 async def server_error_handler(request: Request, exc: Exception) -> Response:
-    """Render custom 500 page with logging."""
     logger = logging.getLogger(__name__)
     error_msg = str(exc.detail) if hasattr(exc, "detail") else str(exc)
     logger.error(f"Server error on {request.url.path}: {error_msg}", exc_info=True)
-    if is_api_v1_path(request.url.path):
+    if is_api_path(request.url.path):
         return http_error_response(exc, default_status=500)
-    return templates.TemplateResponse(
-        request,
-        "errors/500.html",
-        {
-            "message": "An unexpected error occurred.",
-            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
-        },
-        status_code=500,
-    )
+    return _page_error(500, "Something went wrong", "An unexpected error occurred.")
 
 
 async def validation_error_handler(request: Request, exc: Exception) -> Response:
-    """Render custom 422 page."""
-    if is_api_v1_path(request.url.path):
+    if is_api_path(request.url.path):
         return http_error_response(exc, default_status=422)
-    return templates.TemplateResponse(
-        request,
-        "errors/422.html",
-        {
-            "message": str(exc.detail)
-            if hasattr(exc, "detail")
-            else "Validation error",
-            "sidebar_counts": DEFAULT_SIDEBAR_COUNTS,
-        },
-        status_code=422,
-    )
+    message = str(exc.detail) if hasattr(exc, "detail") else "Validation error"
+    return _page_error(422, "Request could not be processed", message)
 
 
 # Register exception handlers
@@ -914,7 +853,7 @@ async def http_exception_handler(
     """Status-code handlers above win for 404/422/500; this covers every other
     status under /api/v1 (401, 403, 409, ...), whether raised as ApiError or as
     a plain HTTPException from a shared dependency such as get_current_admin."""
-    if is_api_v1_path(request.url.path):
+    if is_api_path(request.url.path):
         return http_error_response(exc, default_status=500)
     return await fastapi_http_exception_handler(request, exc)
 
@@ -926,7 +865,7 @@ async def request_validation_handler(
     request: Request, exc: RequestValidationError
 ) -> Response:
     """Malformed request bodies: uniform shape under /api/v1, FastAPI's elsewhere."""
-    if is_api_v1_path(request.url.path):
+    if is_api_path(request.url.path):
         return validation_error_response(exc)
     return await request_validation_exception_handler(request, exc)
 
@@ -950,10 +889,6 @@ app.include_router(home_router)
 app.include_router(spa_pages_router)
 app.include_router(ingestion_settings.router)
 app.include_router(settings_page_router)
-
-from app.api.worker_queue import router as worker_queue_router
-
-app.include_router(worker_queue_router)
 
 
 if __name__ == "__main__":

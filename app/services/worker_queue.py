@@ -1,31 +1,26 @@
+"""The processing queue: which documents the workers are handling, for the
+SPA's queue popover (app/api/v1/worker_queue.py) and the shell badge."""
+
 import logging
 
-from fastapi import APIRouter, Depends, Request
 from sqlalchemy import or_
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Query, Session
 
-from app.config import templates
-from app.core.rate_limit import limiter
-from app.dependencies import get_current_user, get_db
 from app.models.database import Document, User
 from app.models.enums import PipelineStage, PipelineState
 from app.services import access_service
-from app.services.ai_inflight import count_inflight
 from app.services.pipeline_status import STAGE_REGISTRY, stages_dict
 
 logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/worker/queue", tags=["worker-queue"])
 
 
 def _visible_to(
     query: Query, owner_id: int | None, visible_case_ids: set[str] | None
 ) -> Query:
     """Restrict a Document query to docs owned by `owner_id` or whose case is
-    in `visible_case_ids`. No-ops when `owner_id` is None (unauthenticated
-    context — matches build_sidebar_counts' unrestricted convention) or when
-    `visible_case_ids` is None (admin)."""
+    in `visible_case_ids`. No-ops when `owner_id` is None (unrestricted
+    context) or when `visible_case_ids` is None (admin)."""
     if owner_id is None or visible_case_ids is None:
         return query
     return query.filter(
@@ -228,77 +223,6 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
     return items
 
 
-def compute_queue_counts(db: Session, owner_id: int | None = None) -> dict[str, int]:
-    """Single source of truth for worker-queue badge and popover counts.
-
-    Stage-level counts (one per running/retrying stage, one per pending
-    doc's first stage) so the rail badge matches the popover's "X Active"
-    header exactly. n_failed stays per-document — a failed doc is one
-    failure regardless of which stage tripped it. Restricted to what
-    `owner_id` may see (None = unrestricted).
-    """
-    running, pending, failed = _get_queue_docs(db, owner_id)
-    queue_items = _build_queue_items(running, pending)
-    return {
-        "n_executing": sum(1 for item in queue_items if item.get("executing")),
-        "n_queued": sum(1 for item in queue_items if not item.get("executing")),
-        "n_failed": len(failed),
-    }
-
-
-@router.get("/badge")
-async def worker_queue_badge(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    counts = compute_queue_counts(db, owner_id=user.id)
-    return templates.TemplateResponse(
-        request,
-        "partials/_worker_queue_badge.html",
-        {
-            "n_active": counts["n_executing"] + counts["n_queued"],
-            "n_failed": counts["n_failed"],
-        },
-    )
-
-
-@router.get("/panel")
-async def worker_queue_panel_body(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    running, pending, failed = _get_queue_docs(db, owner_id=user.id)
-    queue_items = _build_queue_items(running, pending)
-    n_active_ai = count_inflight()
-    # Executing vs queued counts derive directly from queue_items so badges
-    # match what the panel actually renders. "Executing" = a worker is
-    # processing this item right now (status=running); everything else
-    # (pending, retrying, blocked on a gate) counts as queued.
-    n_executing = sum(1 for item in queue_items if item.get("executing"))
-    n_queued = sum(1 for item in queue_items if not item.get("executing"))
-    # Split the items list so the template can render an "Executing" section
-    # and a "Queued" section without re-filtering.
-    executing_items = [item for item in queue_items if item.get("executing")]
-    queued_items = [item for item in queue_items if not item.get("executing")]
-    failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
-    return templates.TemplateResponse(
-        request,
-        "partials/_worker_queue_panel_body.html",
-        {
-            "executing_items": executing_items,
-            "queued_items": queued_items,
-            "failed_docs": failed,
-            "failed_doc_errors": failed_doc_errors,
-            "n_active_ai": n_active_ai,
-            "n_executing": n_executing,
-            "n_queued": n_queued,
-            "n_failed": len(failed),
-        },
-    )
-
-
 def retry_failed_docs_for(db: Session, user: User) -> None:
     """Reset and re-dispatch every FAILED doc the user may see."""
     from app.services.pipeline_status import (
@@ -364,35 +288,3 @@ def retry_failed_docs_for(db: Session, user: User) -> None:
                 doc_id,
             )
             dispatch_task(process_document_task, doc_id)
-
-
-@router.post("/retry-failed")
-@limiter.limit("5/minute")
-async def retry_failed_docs(
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    retry_failed_docs_for(db, user)
-    running, pending, failed = _get_queue_docs(db, owner_id=user.id)
-    queue_items = _build_queue_items(running, pending)
-    n_active_ai = count_inflight()
-    n_executing = sum(1 for item in queue_items if item.get("executing"))
-    n_queued = sum(1 for item in queue_items if not item.get("executing"))
-    executing_items = [item for item in queue_items if item.get("executing")]
-    queued_items = [item for item in queue_items if not item.get("executing")]
-    failed_doc_errors = {doc.id: _first_failed_stage_info(doc) for doc in failed}
-    return templates.TemplateResponse(
-        request,
-        "partials/_worker_queue_panel_body.html",
-        {
-            "executing_items": executing_items,
-            "queued_items": queued_items,
-            "failed_docs": failed,
-            "failed_doc_errors": failed_doc_errors,
-            "n_active_ai": n_active_ai,
-            "n_executing": n_executing,
-            "n_queued": n_queued,
-            "n_failed": len(failed),
-        },
-    )

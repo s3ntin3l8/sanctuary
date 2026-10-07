@@ -68,13 +68,6 @@ def test_protected_route_redirects_to_login(auth_enabled, db_session):
     assert resp.headers["location"].startswith("/login")
 
 
-def test_htmx_request_gets_hx_redirect(auth_enabled, db_session):
-    client = _client()
-    resp = client.get("/", headers={"HX-Request": "true"})
-    assert resp.status_code == 401
-    assert resp.headers.get("HX-Redirect") == "/login"
-
-
 def test_api_request_gets_401_json(auth_enabled, db_session):
     client = _client()
     resp = client.get(

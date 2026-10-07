@@ -1,5 +1,4 @@
-from fastapi import HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi import HTTPException, status
 
 
 class SanctuaryError(Exception):
@@ -74,41 +73,3 @@ def validation_exception(message: str) -> HTTPException:
 def server_error_exception(message: str = "Internal server error") -> HTTPException:
     """Create 500 HTTPException."""
     return http_exception(status.HTTP_500_INTERNAL_SERVER_ERROR, message)
-
-
-async def not_found_handler(request: Request, exc: HTTPException) -> HTMLResponse:
-    """Render custom 404 page."""
-    from app.main import templates
-
-    return templates.TemplateResponse(
-        request,
-        "errors/404.html",
-        {"message": exc.detail},
-        status_code=404,
-    )
-
-
-async def validation_error_handler(
-    request: Request, exc: HTTPException
-) -> HTMLResponse:
-    """Render validation error page."""
-    from app.main import templates
-
-    return templates.TemplateResponse(
-        request,
-        "errors/422.html",
-        {"message": exc.detail},
-        status_code=422,
-    )
-
-
-async def server_error_handler(request: Request, exc: HTTPException) -> HTMLResponse:
-    """Render 500 error page."""
-    from app.main import templates
-
-    return templates.TemplateResponse(
-        request,
-        "errors/500.html",
-        {"message": exc.detail},
-        status_code=500,
-    )

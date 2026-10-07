@@ -1,4 +1,4 @@
-"""Integration tests for POST /api/worker/queue/retry-failed.
+"""Integration tests for POST /api/v1/worker-queue/retry-failed.
 
 Covers the retry_on_db_locked behaviour: one transient lock → retry succeeds;
 permanent lock → skip-and-continue; dispatch_task called exactly once per
@@ -82,7 +82,7 @@ def test_retry_failed_succeeds_after_one_lock(app_client, db_session, sample_cas
         ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):
-        response = app_client.post("/api/worker/queue/retry-failed")
+        response = app_client.post("/api/v1/worker-queue/retry-failed")
 
     assert response.status_code == 200
     assert call_count == 2  # one retry consumed
@@ -104,7 +104,7 @@ def test_retry_failed_skips_permanently_locked_doc(app_client, db_session, sampl
         ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):
-        response = app_client.post("/api/worker/queue/retry-failed")
+        response = app_client.post("/api/v1/worker-queue/retry-failed")
 
     assert response.status_code == 200
     mock_dispatch.assert_not_called()
@@ -136,7 +136,7 @@ def test_retry_failed_dispatch_count_matches_reset_successes(
         ),
         patch("app.tasks.dispatch.dispatch_task") as mock_dispatch,
     ):
-        response = app_client.post("/api/worker/queue/retry-failed")
+        response = app_client.post("/api/v1/worker-queue/retry-failed")
 
     assert response.status_code == 200
     assert mock_dispatch.call_count == 1

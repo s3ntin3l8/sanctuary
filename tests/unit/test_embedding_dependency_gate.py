@@ -1,11 +1,4 @@
-"""Tests for the pipeline-stepper template's TZ handling and the dependency
-gate on generate_embedding_task.
-
-The stepper renders timestamps from `Document.pipeline_stages` which holds
-ISO strings (UTC). Without the local_strftime filter accepting strings, the
-template was emitting raw UTC slices like "2026-05-22 22:15" while the user
-was in Europe/Berlin (UTC+2) and seeing the wrong wall-clock time.
-"""
+"""Dependency gate on generate_embedding_task: embeddings wait for metadata."""
 
 from unittest.mock import patch
 
@@ -13,37 +6,6 @@ import pytest
 
 from app.tasks.generate_embedding import generate_embedding_task
 
-
-@pytest.mark.unit
-def test_local_strftime_accepts_iso_string():
-    """The filter must convert UTC ISO strings (the shape produced by
-    stages_dict in pipeline_status.py) to the user's local timezone."""
-    import app.main  # noqa: F401 — registers the filter on templates.env
-    from app.config import templates
-
-    fn = templates.env.filters["local_strftime"]
-    # 2026-05-22T22:15:00 UTC → 2026-05-23 00:15 in Europe/Berlin (CEST = UTC+2)
-    with patch(
-        "app.services.timezone_service.get_user_tz",
-        return_value=__import__("zoneinfo").ZoneInfo("Europe/Berlin"),
-    ):
-        out = fn("2026-05-22T22:15:00", "%Y-%m-%d %H:%M")
-    assert out == "2026-05-23 00:15"
-
-
-@pytest.mark.unit
-def test_local_strftime_handles_empty_and_garbage():
-    """Empty/None inputs render to empty string. Garbage strings don't crash."""
-    import app.main  # noqa: F401
-    from app.config import templates
-
-    fn = templates.env.filters["local_strftime"]
-    assert fn(None, "%Y-%m-%d") == ""
-    assert fn("", "%Y-%m-%d") == ""
-    assert fn("not-an-iso-string", "%Y-%m-%d") == ""
-
-
-# ---------------------------------------------------------------------------
 # generate_embedding_task dependency gate
 # ---------------------------------------------------------------------------
 

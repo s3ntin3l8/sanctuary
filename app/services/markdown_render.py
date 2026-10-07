@@ -206,6 +206,3 @@ def render_highlighted(
         html = "".join(fallback_anchors) + html
 
     return Markup(html)
-
-
-# Filter name kept for backward compat with existing templates.

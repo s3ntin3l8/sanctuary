@@ -1,14 +1,4 @@
-# --- Stage 1: Build CSS ---
-FROM node:26-slim AS css-builder
-WORKDIR /build
-COPY package*.json ./
-RUN npm install
-COPY static/input.css ./static/
-# Copy templates to allow Tailwind to scan for classes
-COPY app/templates ./app/templates
-RUN npx @tailwindcss/cli -i static/input.css -o static/styles.css
-
-# --- Stage 1b: Build the SPA ---
+# --- Stage 1: Build the SPA ---
 FROM node:26-slim AS frontend-builder
 WORKDIR /build
 COPY frontend/package*.json ./
@@ -65,8 +55,7 @@ COPY --from=py-builder /opt/venv /opt/venv
 # Copy application code
 COPY . .
 
-# Copy built CSS from Stage 1 and the SPA bundle from Stage 1b
-COPY --from=css-builder /build/static/styles.css ./static/styles.css
+# Copy the SPA bundle from Stage 1
 COPY --from=frontend-builder /build/dist ./frontend/dist
 
 # Ensure data directory exists and is writable

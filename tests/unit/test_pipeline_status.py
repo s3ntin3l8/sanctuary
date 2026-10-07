@@ -33,16 +33,15 @@ def test_stage_order_is_unique():
 
 
 @pytest.mark.unit
-def test_stage_display_list_reflects_wallclock_order():
-    """The pipeline stepper renders this list left-to-right. EMBEDDINGS
-    dispatches alongside BATCH_ANALYSIS but finishes much earlier (it's
-    parallel from METADATA-done), so it sits at index 2 — right after
+def test_stage_order_reflects_wallclock_order():
+    """The pipeline bar renders stages left-to-right in registry order.
+    EMBEDDINGS dispatches alongside BATCH_ANALYSIS but finishes much earlier
+    (it's parallel from METADATA-done), so it sits at index 2 — right after
     Metadata, before Batch Analysis. ENTITIES is the rightmost stage on
     the brief-relevant fast-path."""
-    from app.services.pipeline_status import stage_display_list
+    from app.services.pipeline_status import _STAGE_ORDER
 
-    rows = stage_display_list()
-    keys = [r["key"] for r in rows]
+    keys = [spec.stage.value for spec in _STAGE_ORDER]
     assert keys == [
         "extract",
         "metadata",
@@ -53,10 +52,8 @@ def test_stage_display_list_reflects_wallclock_order():
         "claims",
         "entities",
     ]
-    # Each row carries the display fields the stepper template consumes.
-    for r in rows:
-        assert {"key", "icon", "label"} <= r.keys()
-        assert r["icon"] and r["label"]
+    for spec in _STAGE_ORDER:
+        assert spec.icon and spec.label
 
 
 @pytest.mark.unit
