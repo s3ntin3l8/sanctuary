@@ -36,7 +36,8 @@ In the [Google Cloud console](https://console.cloud.google.com/) (the OAuth scre
    https://<your-sanctuary-host>/api/ingest/gmail/oauth/callback
    ```
 
-   (locally: `http://localhost:8000/api/ingest/gmail/oauth/callback`). Copy the **client ID** and **client secret**.
+   (locally: `http://localhost:8000/api/ingest/gmail/oauth/callback`). Copy the **client ID**.
+5. **Create a client secret.** Open the client (*Google Auth Platform → Clients → your client*) and, under **Client secrets**, click **Add secret**. An empty list just means none exists yet. Copy the value immediately: Google shows a secret in full only when it is created (afterwards only its last characters), so if you miss it, add another secret and delete the old one. If the client has no *Client secrets* section at all, it is not a **Web application** client (Android, iOS and Chrome clients have no secret) — create a new client of type *Web application*.
 
 > **Testing mode expires your login every 7 days.** Google invalidates refresh tokens of apps in *Testing* after a week. Sanctuary then shows **Reconnect required** (Settings → Gmail) and stops polling until you click *Reconnect*. This is expected, not a bug.
 
@@ -96,6 +97,7 @@ Fetched mail is cached *before* it is ingested, so a message that failed to inge
 | Symptom | Cause / fix |
 |---|---|
 | Google: `Error 400: redirect_uri_mismatch` | `GMAIL_REDIRECT_URI` differs from the URI in the OAuth client (scheme, host, path, trailing slash). |
+| No client secret to copy (the *Client secrets* list is empty) | None has been created yet — click **Add secret** on the client and copy it right away (section 2, step 5). No *Client secrets* section at all means the client is not a *Web application*; create one. |
 | Google: *Access blocked* / `access_denied` | Your account is not a **test user** on the consent screen (step 2). |
 | **Reconnect required** | The token was revoked or expired (weekly while in *Testing*). Click *Reconnect*. |
 | *"Google granted different permissions than requested"* | The grant included more than read-only Gmail. Reconnect and approve only the Gmail read scope. |
