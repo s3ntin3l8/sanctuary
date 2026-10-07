@@ -1024,6 +1024,10 @@
       "CaseCard": {
         "description": "One case as shown on Home and in the Cases directory.",
         "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
           "client_name": {
             "title": "Client Name",
             "type": "string"
@@ -1127,6 +1131,7 @@
           "status_label",
           "is_draft",
           "pending_close",
+          "can_edit",
           "client_name",
           "opposing_party",
           "proceeding_name",

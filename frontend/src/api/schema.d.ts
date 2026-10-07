@@ -2666,6 +2666,8 @@ export interface components {
          * @description One case as shown on Home and in the Cases directory.
          */
         CaseCard: {
+            /** Can Edit */
+            can_edit: boolean;
             /** Client Name */
             client_name: string;
             /** Days Since Activity */

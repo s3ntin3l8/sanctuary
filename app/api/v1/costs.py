@@ -1,5 +1,5 @@
-"""Cost rows and cost-signal roles as the case dashboard (and, later, the
-costs page) mutate them. Each call returns the fresh row; the client
+"""Cost rows and cost-signal roles as the case dashboard and the costs page
+mutate them. Each call returns the fresh row; the client
 refetches the case financials for the derived totals."""
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Response
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.api.access_guards import (
     require_case_access,
@@ -47,7 +47,7 @@ def costs_overview(
     """The ledger across every case the caller may see."""
     visible = access_service.visible_case_ids(db, user)
     editable = access_service.editable_case_ids(db, user)
-    q = db.query(LegalCost).options(joinedload(LegalCost.case))
+    q = db.query(LegalCost)
     if visible is not None:
         q = q.filter(LegalCost.case_id.in_(visible))
     costs = q.order_by(
@@ -187,35 +187,34 @@ def update_cost(
     db: Session = Depends(get_db),
     cost: LegalCost = Depends(require_cost_access(edit=True)),
 ):
-    data = body.model_dump(exclude_none=True)
+    data = body.model_dump(exclude_unset=True)
     if not data:
         raise ApiError(422, "empty_update", "Nothing to update.")
-    if "title" in data:
-        cost.title = data["title"].strip() or cost.title
-    if "status" in data:
-        cost.status = data["status"]
-    if "category" in data:
-        cost.category = data["category"]
-    if "amount_net" in data:
-        cost.amount_net = data["amount_net"]
-        cost.amount_gross = cost.amount_net * (1 + (cost.vat_rate or 0))
-    if "vat_rate" in data:
-        cost.vat_rate = data["vat_rate"]
-        cost.amount_gross = (cost.amount_net or 0) * (1 + cost.vat_rate)
-    if "amount_paid" in data:
-        cost.amount_paid = data["amount_paid"]
+    if (title := data.get("title")) is not None:
+        cost.title = title.strip() or cost.title
+    if (category := data.get("category")) is not None:
+        cost.category = category
+    if (amount_net := data.get("amount_net")) is not None:
+        cost.amount_net = amount_net
+    if (vat_rate := data.get("vat_rate")) is not None:
+        cost.vat_rate = vat_rate
+    if amount_net is not None or vat_rate is not None:
+        cost.amount_gross = round(
+            (cost.amount_net or 0) * (1 + (cost.vat_rate or 0)), 2
+        )
+    if (amount_paid := data.get("amount_paid")) is not None:
+        cost.amount_paid = amount_paid
+    if (amount_reimbursed := data.get("amount_reimbursed")) is not None:
+        cost.amount_reimbursed = amount_reimbursed
+    if amount_paid is not None or amount_reimbursed is not None:
         _derive_status(cost)
-    if "amount_reimbursed" in data:
-        cost.amount_reimbursed = data["amount_reimbursed"]
-        _derive_status(cost)
-    for field in (
-        "streitwert",
-        "gebuehren_faktor",
-        "issued_at",
-        "due_at",
-        "notes",
-        "is_reimbursable",
-    ):
+    if (status := data.get("status")) is not None:
+        # An explicit status wins over the one derived from the amounts.
+        cost.status = status
+    if (is_reimbursable := data.get("is_reimbursable")) is not None:
+        cost.is_reimbursable = is_reimbursable
+    # Nullable fields: an explicit null clears the value.
+    for field in ("streitwert", "gebuehren_faktor", "issued_at", "due_at", "notes"):
         if field in data:
             setattr(cost, field, data[field])
     return _refreshed(db, cost)

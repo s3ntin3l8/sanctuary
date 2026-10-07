@@ -45,6 +45,54 @@ def test_costs_crud_flow(app_client, sample_case):
 
 
 @pytest.mark.integration
+def test_patch_cost_clears_nullable_fields_and_keeps_explicit_status(
+    app_client, sample_case
+):
+    created = app_client.post(
+        f"/api/v1/cases/{sample_case.id}/costs",
+        json={
+            "category": "anwaltskosten",
+            "title": "Fee",
+            "amount_net": 100.0,
+            "vat_rate": 0.19,
+            "streitwert": 5000.0,
+            "notes": "keep me",
+            "due_at": "2026-05-01T00:00:00Z",
+        },
+    )
+    cost_id = created.json()["id"]
+
+    # An explicit null clears the field; fields left out stay untouched.
+    cleared = app_client.patch(
+        f"/api/v1/costs/{cost_id}", json={"streitwert": None, "due_at": None}
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["streitwert"] is None
+    assert cleared.json()["due_at"] is None
+    assert cleared.json()["notes"] == "keep me"
+
+    # A partial payment would derive "teilweise"; the explicit status wins.
+    disputed = app_client.patch(
+        f"/api/v1/costs/{cost_id}", json={"amount_paid": 10.0, "status": "strittig"}
+    )
+    assert disputed.status_code == 200, disputed.text
+    assert disputed.json()["amount_paid"] == 10.0
+    assert disputed.json()["status"] == "strittig"
+
+    # Without an explicit status the amounts drive it.
+    partial = app_client.patch(f"/api/v1/costs/{cost_id}", json={"amount_paid": 20.0})
+    assert partial.json()["status"] == "teilweise"
+
+    # Gross is rounded to cents when net or VAT changes.
+    vat = app_client.patch(f"/api/v1/costs/{cost_id}", json={"vat_rate": 0.07})
+    assert vat.json()["amount_gross"] == 107.0
+
+    empty = app_client.patch(f"/api/v1/costs/{cost_id}", json={})
+    assert empty.status_code == 422
+    assert empty.json()["code"] == "empty_update"
+
+
+@pytest.mark.integration
 def test_create_cost_derives_gross_and_validates_proceeding(
     app_client, db_session, sample_case
 ):

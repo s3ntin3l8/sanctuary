@@ -9,7 +9,7 @@ client = TestClient(app)
 
 @pytest.mark.integration
 def test_contacts_index_deleted(db_session):
-    """Index page deleted per vision §UI:382; both paths should 404."""
+    """No contact directory (vision §UI:382): the API needs a name, the old path is gone."""
     assert client.get("/api/v1/contacts").status_code == 422
     assert client.get("/contacts/John").status_code == 404
 

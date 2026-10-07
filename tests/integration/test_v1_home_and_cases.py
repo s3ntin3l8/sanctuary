@@ -292,6 +292,26 @@ def test_search_returns_cases_documents_and_unique_contacts(db_session, sample_c
     assert body["total"] == 3
 
 
+def test_search_limit_caps_documents_and_contacts(db_session, sample_case):
+    db_session.add_all(
+        [
+            Document(title=f"Weber letter {i}", case_id=sample_case.id, sender=f"S{i}")
+            for i in range(14)
+        ]
+    )
+    db_session.commit()
+    # ``limit`` is shared six ways across result kinds.
+    body = client.get("/api/v1/search", params={"q": "letter", "limit": 12}).json()
+    assert len(body["documents"]) == 2
+    assert len(body["contacts"]) == 2
+    body = client.get("/api/v1/search", params={"q": "letter", "limit": 120}).json()
+    assert len(body["documents"]) == 14
+    assert len(body["contacts"]) == 14
+    for bad in (5, 121):
+        resp = client.get("/api/v1/search", params={"q": "letter", "limit": bad})
+        assert resp.status_code == 422
+
+
 def test_search_requires_two_characters(db_session):
     resp = client.get("/api/v1/search", params={"q": "W"})
     assert resp.status_code == 422

@@ -98,3 +98,43 @@ test('the add-cost form derives gross from net and VAT', async () => {
     vat_rate: 0.19,
   })
 })
+
+test('the edit modal sends only the fields that changed, nulls included', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/costs': { body: overview },
+    'PATCH /api/v1/costs/7': { body: { ...row, streitwert: null, status: 'strittig' } },
+  })
+  renderAt('/costs', <CostsPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Edit Verfahrensgebühr' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit cost' })
+  await user.clear(within(dialog).getByLabelText('Streitwert (€)'))
+  await user.selectOptions(within(dialog).getByLabelText('Status'), 'strittig')
+  await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(fetch.mock.calls.some(([r]) => r.method === 'PATCH')).toBe(true))
+  const patched = fetch.mock.calls.map(([r]) => r).find((r) => r.method === 'PATCH')
+  expect(await patched?.clone().json()).toEqual({ streitwert: null, status: 'strittig' })
+})
+
+test('the add-cost form only offers open cases the user may edit', async () => {
+  stubApi({
+    'GET /api/v1/costs': { body: { ...overview, cases: [], overdue: [] } },
+    'GET /api/v1/cases': {
+      body: {
+        cases: [
+          caseCard,
+          { ...caseCard, id: 'ADV-030-B', title: 'Shared read-only', can_edit: false },
+          { ...caseCard, id: 'ADV-031-C', title: 'Closed', status: 'closed' },
+        ],
+        counts_by_status: {},
+        total: 3,
+      },
+    },
+  })
+  renderAt('/costs', <CostsPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /Add cost/ }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add cost' })
+  const options = within(within(dialog).getByLabelText('Case')).getAllByRole('option')
+  expect(options.map((o) => o.getAttribute('value')).filter(Boolean)).toEqual(['ADV-024-A'])
+})

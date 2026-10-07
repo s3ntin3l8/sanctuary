@@ -1,7 +1,6 @@
 import logging
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -351,60 +350,9 @@ class CostService:
         costs = self.get_costs_by_case(case_id)
         return CostSummary(list(costs))
 
-    def get_all_costs(self, case_ids: set[str] | None = None) -> Sequence[LegalCost]:
-        """Get all costs, optionally restricted to `case_ids` (None = unrestricted)."""
-        if case_ids is None:
-            return self.cost_repo.get_all()
-        return self.db.query(LegalCost).filter(LegalCost.case_id.in_(case_ids)).all()
-
-    def get_costs_for_page(self, case_ids: set[str] | None = None) -> dict:
-        """Get all costs with grouping for page rendering."""
-        from app.models.database import Case
-
-        costs = self.get_all_costs(case_ids)
-        global_summary = self.get_global_cost_summary(case_ids)
-
-        costs_by_case: dict[str, dict[str, Any]] = {}
-        for cost in costs:
-            if cost.case_id not in costs_by_case:
-                case = self.db.query(Case).filter(Case.id == cost.case_id).first()
-                costs_by_case[cost.case_id] = {
-                    "case": case,
-                    "costs": [],
-                    "summary": None,
-                    "streitwert": None,
-                }
-            costs_by_case[cost.case_id]["costs"].append(cost)
-
-        for case_id, data in costs_by_case.items():
-            data["summary"] = CostSummary(data["costs"])
-            data["streitwert"] = (
-                getattr(data["case"], "streitwert", None) if data["case"] else None
-            )
-
-        return {
-            "all_costs": costs,
-            "costs_by_case": costs_by_case,
-            "global_summary": global_summary,
-        }
-
-    def get_global_cost_summary(self, case_ids: set[str] | None = None) -> CostSummary:
-        """Get cost summary across all cases (or `case_ids`, if given)."""
-        costs = self.get_all_costs(case_ids)
-        return CostSummary(list(costs))
-
     def get_costs_by_status(self, status: CostStatus) -> Sequence[LegalCost]:
         """Get costs by payment status."""
         return self.cost_repo.get_by_status(status)
-
-    def get_pending_costs(
-        self, case_ids: set[str] | None = None
-    ) -> Sequence[LegalCost]:
-        """Get costs pending payment, optionally restricted to `case_ids`."""
-        pending = self.cost_repo.get_pending()
-        if case_ids is None:
-            return pending
-        return [c for c in pending if c.case_id in case_ids]
 
     def create_cost(
         self,

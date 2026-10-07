@@ -292,6 +292,11 @@ function Row({ cost, canEdit }: { cost: CostRow; canEdit: boolean }) {
   )
 }
 
+// The date input is day-granular; compare stored timestamps on the same footing.
+function date0(iso: string) {
+  return new Date(iso.slice(0, 10)).toISOString()
+}
+
 function EditCostModal({
   cost,
   onClose,
@@ -315,20 +320,43 @@ function EditCostModal({
       const v = String(d.get(k) ?? '').trim()
       return v ? new Date(v).toISOString() : null
     }
-    onSave({
+    // Only send what changed: the server treats a present null as "clear".
+    const full: Schemas['CostFieldUpdate'] = {
       title: String(d.get('title')),
       category: String(d.get('category')) as Schemas['CostCategory'],
       status: String(d.get('status')) as Schemas['CostStatus'],
-      amount_net: num('amount_net') ?? undefined,
-      vat_rate: num('vat_rate') === null ? undefined : (num('vat_rate') ?? 0) / 100,
-      amount_paid: num('amount_paid') ?? undefined,
-      amount_reimbursed: num('amount_reimbursed') ?? undefined,
+      amount_net: num('amount_net') ?? cost.amount_net,
+      vat_rate: (num('vat_rate') ?? 0) / 100,
+      amount_paid: num('amount_paid') ?? 0,
+      amount_reimbursed: num('amount_reimbursed') ?? 0,
       streitwert: num('streitwert'),
       gebuehren_faktor: num('gebuehren_faktor'),
       due_at: date('due_at'),
       notes: String(d.get('notes') ?? '') || null,
       is_reimbursable: reimbursable,
-    })
+    }
+    const before: Schemas['CostFieldUpdate'] = {
+      title: cost.title,
+      category: cost.category,
+      status: cost.status,
+      amount_net: cost.amount_net,
+      vat_rate: Math.round((cost.vat_rate ?? 0) * 100) / 100,
+      amount_paid: cost.amount_paid ?? 0,
+      amount_reimbursed: cost.amount_reimbursed ?? 0,
+      streitwert: cost.streitwert ?? null,
+      gebuehren_faktor: cost.gebuehren_faktor ?? null,
+      due_at: cost.due_at ? date0(cost.due_at) : null,
+      notes: cost.notes || null,
+      is_reimbursable: cost.is_reimbursable !== false,
+    }
+    const patch = Object.fromEntries(
+      Object.entries(full).filter(([k, v]) => v !== before[k as keyof typeof before]),
+    ) as Schemas['CostFieldUpdate']
+    if (Object.keys(patch).length === 0) {
+      onClose()
+      return
+    }
+    onSave(patch)
   }
   return (
     <Modal open onClose={onClose} title="Edit cost" subtitle={cost.title} icon="edit" width={560}>
@@ -460,11 +488,10 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
   const toast = useToast()
   const cases = useCasesDirectory()
   const create = useCreateCost()
-  const [net, setNet] = useState(0)
-  const [vat, setVat] = useState(19)
+  const [net, setNet] = useState('')
+  const [vat, setVat] = useState('19')
   const [reimbursable, setReimbursable] = useState(true)
-  // The directory lists visible cases; the server refuses creation on cases the user cannot edit.
-  const editable = cases.data?.cases ?? []
+  const editable = (cases.data?.cases ?? []).filter((c) => c.can_edit && c.status !== 'closed')
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const d = new FormData(e.currentTarget)
@@ -475,8 +502,8 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
         category: str('category') as Schemas['CostCategory'],
         title: str('title'),
         rvg_position: str('rvg_position') || null,
-        amount_net: net,
-        vat_rate: vat / 100,
+        amount_net: Number(net),
+        vat_rate: Number(vat) / 100,
         status: 'offen',
         streitwert: str('streitwert') ? Number(str('streitwert')) : null,
         gebuehren_faktor: str('gebuehren_faktor') ? Number(str('gebuehren_faktor')) : null,
@@ -535,8 +562,8 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
               step="0.01"
               min="0.01"
               required
-              value={net || ''}
-              onChange={(e) => setNet(Number(e.target.value))}
+              value={net}
+              onChange={(e) => setNet(e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -548,14 +575,14 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
               min="0"
               max="100"
               value={vat}
-              onChange={(e) => setVat(Number(e.target.value))}
+              onChange={(e) => setVat(e.target.value)}
               className={inputClass}
             />
           </Field>
           <Field label="Gross (€)">
             <input
               readOnly
-              value={(net * (1 + vat / 100)).toFixed(2)}
+              value={(Number(net) * (1 + Number(vat) / 100)).toFixed(2)}
               className={`${inputClass} opacity-70`}
               aria-label="Gross amount"
             />

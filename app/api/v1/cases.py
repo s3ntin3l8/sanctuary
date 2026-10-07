@@ -21,6 +21,7 @@ from app.schemas.cases import (
     CasesDirectory,
     NextAction,
 )
+from app.services import access_service
 from app.services.case_service import CaseIdTaken, CaseService
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -30,13 +31,16 @@ def case_cards(
     service: CaseService,
     enriched: list[dict[str, Any]],
     *,
+    editable: set[str] | None,
     doc_counts: dict[str, int] | None = None,
     action_counts: dict[str, int] | None = None,
 ) -> list[CaseCard]:
     """Turn ``CaseService.enrich_case_for_card`` dicts into API cards.
 
-    Pass the count dicts when the caller already has them (the directory
-    service computes both) to avoid repeating the two bulk queries.
+    ``editable`` is `access_service.editable_case_ids` for the caller (None
+    = unrestricted). Pass the count dicts when the caller already has them
+    (the directory service computes both) to avoid repeating the two bulk
+    queries.
     """
     ids = [c["id"] for c in enriched]
     if doc_counts is None:
@@ -57,6 +61,7 @@ def case_cards(
                 ),
                 is_draft=c["is_draft"],
                 pending_close=c["pending_close"],
+                can_edit=editable is None or c["id"] in editable,
                 client_name=c["client_name"],
                 opposing_party=c["opposing_party"],
                 proceeding_name=c["proceeding_name"],
@@ -91,6 +96,7 @@ def cases_directory(
         cases=case_cards(
             service,
             data["cases"],
+            editable=access_service.editable_case_ids(db, user),
             doc_counts=data["doc_counts"],
             action_counts=data["deadline_counts"],
         ),

@@ -49,7 +49,6 @@ def contacts_page() -> Response:
     return spa_index()
 
 
-# Legacy templates still link with url_path_for("search_page").
-@router.get("/search", name="search_page")
+@router.get("/search")
 def search_page() -> Response:
     return spa_index()
