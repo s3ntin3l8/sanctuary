@@ -12387,6 +12387,31 @@
         ]
       }
     },
+    "/api/v1/settings/account/export": {
+      "get": {
+        "description": "Download everything the signed-in user owns as a zip (GDPR Art. 15/20):\naccount and settings (OAuth credentials redacted), owned cases with their\ndocuments, claims, deadlines and costs, own triage inbox, reactions, pins,\nconversations and audit entries. Cases shared by others are not included.",
+        "operationId": "v1_export_own_data_api_v1_settings_account_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Export Own Data",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
     "/api/v1/settings/account/password": {
       "put": {
         "operationId": "v1_change_password_api_v1_settings_account_password_put",

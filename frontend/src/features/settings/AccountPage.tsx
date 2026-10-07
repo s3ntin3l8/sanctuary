@@ -3,7 +3,8 @@ import type { FormEvent } from 'react'
 import { useAccount, useChangeEmail, useChangePassword, useUpdateProfile } from '../../api/settings'
 import { initials } from '../../format'
 import { Badge } from '../../ui/Badge'
-import { Button } from '../../ui/Button'
+import { Button, buttonClass } from '../../ui/Button'
+import { Icon } from '../../ui/Icon'
 import { SettingsCard } from '../../ui/SettingsCard'
 import { TextField } from '../../ui/TextField'
 import { QueryState } from '../../ui/QueryState'
@@ -158,6 +159,23 @@ export function AccountPage() {
           </form>
         </SettingsCard>
       )}
+
+      <SettingsCard
+        title="Your data"
+        description="GDPR Art. 15/20: a machine-readable copy of everything you own. One download per hour."
+      >
+        <ul className="list-disc space-y-0.5 pl-5 text-[12px] text-ink2">
+          <li>Your account and settings (connected-account credentials redacted)</li>
+          <li>
+            Cases you own with their documents, claims, deadlines and costs, plus the original files
+          </li>
+          <li>Your triage inbox, reactions, pins, conversations and audit entries</li>
+          <li>Cases shared with you by others are not included</li>
+        </ul>
+        <a href="/api/v1/settings/account/export" className={buttonClass('secondary')} download>
+          <Icon name="download" size={16} /> Download my data
+        </a>
+      </SettingsCard>
     </>
   )
 }

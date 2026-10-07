@@ -1366,6 +1366,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/account/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Export Own Data
+         * @description Download everything the signed-in user owns as a zip (GDPR Art. 15/20):
+         *     account and settings (OAuth credentials redacted), owned cases with their
+         *     documents, claims, deadlines and costs, own triage inbox, reactions, pins,
+         *     conversations and audit entries. Cases shared by others are not included.
+         */
+        get: operations["v1_export_own_data_api_v1_settings_account_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/account/password": {
         parameters: {
             query?: never;
@@ -7648,6 +7671,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AccountView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_export_own_data_api_v1_settings_account_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

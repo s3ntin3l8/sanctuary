@@ -13,13 +13,13 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 |---|---|
 | Settings shell — `frontend/src/features/settings/SettingsLayout.tsx` (grouped side nav; admin-only tabs hidden for regular users) | ✅ |
 | Page routes (`app/api/settings_page.py`): `/settings` → `/settings/account`, `/settings/{account,gmail,identity,ai,appearance,data,export}`, `/admin/users` — all return `spa_index()`; identity/ai/data/export/admin are admin-only | ✅ |
-| **Account tab** — `AccountPage.tsx`: profile, e-mail, password (`/api/v1/settings/account`, `PUT …/profile`, `PUT …/email`, `PUT …/password`) | ✅ |
+| **Account tab** — `AccountPage.tsx`: profile, e-mail, password (`/api/v1/settings/account`, `PUT …/profile`, `PUT …/email`, `PUT …/password`); "Your data" download of everything the user owns (`GET /api/v1/settings/account/export`, Art. 15/20, OAuth credentials redacted, shared cases excluded) | ✅ |
 | **Gmail tab** — `GmailPage.tsx`: OAuth flow, allowlist, label filter, backfill | ✅ |
 | **Identity tab** — `IdentityPage.tsx`: own name, own parties, user context (`GET`/`PUT /api/v1/settings/identity`) | ✅ |
 | **AI tab** — `AiPage.tsx`: endpoint instances, per-role model selection (chat/embed/ocr), test connection, reindex, rebuild-index, extraction engine, worker/OCR concurrency, debug redaction | ✅ |
 | **Appearance tab** — `AppearancePage.tsx`: theme (light/dark), dashboard-card visibility, timezone (admin) | ✅ |
 | **Data tab** — `DataPage.tsx`: database stats, reset-enrichment, clear-all-data, debug logs | ✅ |
-| **Export tab** — `ExportPage.tsx`: download link to `GET /api/v1/settings/data/export` | ✅ |
+| **Export tab** (admin) — `ExportPage.tsx`: whole-workspace download, every user's rows and the entire data directory (`GET /api/v1/settings/data/export`) | ✅ |
 | **Admin › Users** — `frontend/src/features/admin/AdminUsersPage.tsx`: create / activate / role / password reset / delete / reassign cases / signup toggle (`/api/v1/admin/users*`, `PUT /api/v1/admin/signup`) | ✅ |
 | `UserSettings` model — single `settings_json` JSON blob per `user_id` | ✅ |
 | AI provider auto-detection (`ai_provider.py`) — Ollama / LMStudio / OpenAI discriminated by API fingerprinting | ✅ |

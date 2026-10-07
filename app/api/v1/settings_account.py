@@ -7,10 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
 from app.core import security
+from app.core.rate_limit import limiter
+from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import User
+from app.models.enums import AuditEventType
 from app.schemas.settings import AccountView, EmailChange, PasswordChange, ProfileUpdate
-from app.services import auth_service
+from app.services import audit_service, auth_service
+from app.services.export_service import build_user_export_zip
 
 router = APIRouter(prefix="/settings/account", tags=["settings"])
 
@@ -87,3 +91,36 @@ def change_password(
     db.commit()
     request.session.clear()
     request.session.update(auth_service.build_session(user))
+
+
+@router.get("/export", response_class=Response)
+@limiter.limit("1/hour")
+def export_own_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Download everything the signed-in user owns as a zip (GDPR Art. 15/20):
+    account and settings (OAuth credentials redacted), owned cases with their
+    documents, claims, deadlines and costs, own triage inbox, reactions, pins,
+    conversations and audit entries. Cases shared by others are not included."""
+    zip_bytes, manifest = build_user_export_zip(db, user)
+    filename = f"sanctuary_my_data_{now_utc().date().isoformat()}.zip"
+    audit_service.record(
+        db,
+        AuditEventType.DATA_EXPORTED,
+        actor_user_id=user.id,
+        actor_label=user.email,
+        payload={
+            "scope": "user",
+            "table_counts": manifest["table_counts"],
+            "bytes": len(zip_bytes),
+            "files_included": manifest["files_included"],
+        },
+    )
+    db.commit()
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
