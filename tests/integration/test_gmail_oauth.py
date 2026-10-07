@@ -13,6 +13,7 @@ def test_gmail_oauth_start_uses_session_and_redirects():
     """GET /api/ingest/gmail/oauth/start redirects to the Google OAuth authorization URL."""
     flow = MagicMock()
     flow.authorization_url.return_value = ("https://accounts.google.test/auth", None)
+    flow.code_verifier = "verifier-1"
 
     with patch("app.api.ingestion_settings.get_oauth_flow", return_value=flow):
         response = client.get("/api/ingest/gmail/oauth/start", follow_redirects=False)
