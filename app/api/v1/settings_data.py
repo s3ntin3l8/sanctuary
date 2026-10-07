@@ -114,6 +114,7 @@ def export(request: Request, db: Session = Depends(get_db)):
         db,
         AuditEventType.DATA_EXPORTED,
         payload={
+            "scope": "workspace",
             "table_counts": manifest["table_counts"],
             "bytes": len(zip_bytes),
             "files_included": manifest["files_included"],

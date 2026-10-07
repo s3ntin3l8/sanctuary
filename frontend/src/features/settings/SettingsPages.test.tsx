@@ -63,6 +63,11 @@ test('account: saves the display name and surfaces a wrong password', async () =
   await user.type(within(passwordForm).getByLabelText('New password'), 'newpassword1')
   await user.click(screen.getByRole('button', { name: 'Change password' }))
   expect(await screen.findByText('Current password is incorrect.')).toBeVisible()
+
+  expect(screen.getByRole('link', { name: /Download my data/ })).toHaveAttribute(
+    'href',
+    '/api/v1/settings/account/export',
+  )
 })
 
 test('ai: lists endpoints and switching a role endpoint puts the role', async () => {
