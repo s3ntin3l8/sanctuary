@@ -1,4 +1,4 @@
-"""Unit tests for the render_highlighted Jinja filter (app/main.py)."""
+"""Unit tests for render_highlighted (app/services/markdown_render.py)."""
 
 import pytest
 

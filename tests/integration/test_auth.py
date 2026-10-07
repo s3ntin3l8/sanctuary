@@ -215,6 +215,20 @@ def test_unknown_v1_route_is_json_404(auth_enabled, db_session):
     assert resp.json() == {"detail": "Not Found", "code": "not_found"}
 
 
+def test_unknown_page_gets_spa_shell_with_404(auth_enabled, db_session):
+    auth_service.create_user(db_session, email="u@example.com", password="password123")
+    db_session.commit()
+    client = _client()
+    client.post(
+        "/api/v1/auth/login", json={"email": "u@example.com", "password": "password123"}
+    )
+    resp = client.get("/no/such/page")
+    # The SPA shell (the conftest stub of frontend/dist/index.html) with a 404.
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("text/html")
+    assert resp.text == client.get("/login").text
+
+
 def test_unauthenticated_v1_request_is_json_401(auth_enabled, db_session):
     resp = _client().get("/api/v1/does-not-exist")
     assert resp.status_code == 401

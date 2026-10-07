@@ -32,9 +32,8 @@ def parse_email_date(date_str: str) -> datetime | None:
     A naive result from any fallback branch is tagged UTC rather than
     converted from local time — a date-only header like "26.05.2026" means
     that calendar date, and converting via local-time interpretation would
-    shift it across midnight depending on host timezone. This also matches
-    how `_local_strftime` (app/main.py) already treats naive datetimes when
-    rendering, so display is unaffected.
+    shift it across midnight depending on host timezone. The API serialises
+    the value with its UTC offset, so display is unaffected.
     """
     if not date_str:
         return None

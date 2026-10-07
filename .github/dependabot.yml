@@ -49,15 +49,6 @@ updates:
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      npm-deps:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
       interval: "weekly"

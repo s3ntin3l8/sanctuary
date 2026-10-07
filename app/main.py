@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -36,7 +37,6 @@ from app.api.v1.errors import (
     error_response,
     http_error_response,
     is_api_path,
-    is_api_v1_path,
     validation_error_response,
 )
 from app.config import (
@@ -704,7 +704,7 @@ class AuthGateMiddleware:
         from app.config import AUTH_ENABLED
 
         # Dev mode: no gating. The current user is bound lazily downstream
-        # (get_current_user / render_page) on the request-scoped session, so the
+        # (get_current_user) on the request-scoped session, so the
         # gate never touches a database here (keeps it engine-agnostic for tests).
         if not AUTH_ENABLED:
             await self.app(scope, receive, send)
@@ -790,7 +790,7 @@ async def health_check():
 # add_exception_handler wants a generic Exception handler. This is slowapi's
 # own documented registration pattern — a stub mismatch, not a real bug.
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
-    if is_api_v1_path(request.url.path):
+    if is_api_path(request.url.path):
         response = error_response(
             429, "rate_limited", f"Too many attempts ({exc.detail}). Try again later."
         )
@@ -804,6 +804,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 # Error page defaults
 def _page_error(status: int, title: str, message: str) -> HTMLResponse:
     """A dependency-free error page for browser navigations outside the SPA."""
+    message = html.escape(message)
     body = (
         "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         f"<title>{status} · The Sanctuary</title>"
