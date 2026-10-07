@@ -19,7 +19,7 @@ Sanctuary can read your lawyer's emails from Gmail, group them by the case refer
    #       python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-   **Back it up.** Losing it makes stored Gmail/AI credentials unreadable (you would reconnect Gmail and re-enter AI keys). Sanctuary refuses to start if encrypted values exist and the key is missing.
+   **Back it up.** Losing it makes stored Gmail/AI credentials unreadable (you would reconnect Gmail and re-enter AI keys). Sanctuary refuses to start if encrypted credentials are stored and the key is missing; with nothing stored it starts, but connecting Gmail or saving an AI key fails with a 503 until the key is set.
 2. **Know your public URL.** Google only accepts an `https://` redirect URI (or `http://localhost`). Behind a reverse proxy use that URL, e.g. `https://sanctuary.example.org`.
 3. **Redis must be running** (imports are background jobs). It is part of `docker compose` and `make run`.
 
@@ -57,7 +57,7 @@ GMAIL_REDIRECT_URI=https://<your-sanctuary-host>/api/ingest/gmail/oauth/callback
 1. **Settings → Gmail → Connect Gmail.**
 2. Google shows *"Google hasn't verified this app"* — normal for your own Testing app. Choose *Advanced → Go to … (unsafe)*.
 3. The consent screen must list only **"View your email messages and settings"**. If it asks for more, stop and cancel.
-4. Back in Sanctuary, set the **sender allowlist** (comma-separated addresses or domains, e.g. `kanzlei-vogt.de`) and, optionally, a **label filter**. Only mail from allowlisted senders (and with that label, if set) is ever read. A label with spaces is written with hyphens (`my-label`), as in Gmail search.
+4. Back in Sanctuary, set the **sender allowlist** (comma-separated addresses or domains, e.g. `kanzlei-vogt.de`) and, optionally, a **label filter**. Only mail from allowlisted senders (and with that label, if set) is ever read. Sanctuary passes the label to Gmail's search exactly as you type it (`label:<your entry>`), and Gmail search writes a label with spaces using hyphens (`my-label`) — enter it that way, otherwise Gmail treats the second word as a separate search term.
 
 Connecting sets the sync starting point to *now*: nothing older is pulled in automatically.
 
