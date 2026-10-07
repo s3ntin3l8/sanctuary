@@ -7,6 +7,10 @@ Create Date: 2026-10-08 09:00:00.000000
 Data-only migration: the settings JSON blobs held these as plaintext. Only rows
 that actually carry a secret are touched, so a fresh database needs no
 SECRETS_ENCRYPTION_KEY to migrate.
+
+Downgrade decrypts, so it needs the *same* SECRETS_ENCRYPTION_KEY the values were
+encrypted with. A missing or different key makes it stop with a SecretsError —
+that is the key not matching, not data corruption; restore the right key and rerun.
 """
 
 from collections.abc import Callable, Sequence

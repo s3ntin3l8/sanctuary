@@ -228,6 +228,9 @@ def set_gmail_credentials(
     data.setdefault("gmail_last_sync_at", connected_at)
     data.pop("gmail_last_sync_error", None)
     data.pop("gmail_reconnect_required", None)
+    # gmail_failed_message_ids is intentionally kept across a reconnect (same
+    # contract as the watermark): those messages still failed and the next sync
+    # retries them; reset_gmail_sync is the deliberate way to forget them.
     settings.settings_json = data
     db.flush()
 

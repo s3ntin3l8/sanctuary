@@ -125,19 +125,12 @@ def _get_ai_section(db) -> dict:
     the env-default endpoint.
     """
     ai = _raw_ai_section(db)
-    if not any(
-        secrets_store.is_encrypted(i.get("api_key")) for i in ai.get("instances", [])
-    ):
-        return ai
-    return {
-        **ai,
-        "instances": [
-            {**i, "api_key": secrets_store.decrypt(i["api_key"])}
-            if secrets_store.is_encrypted(i.get("api_key"))
-            else i
-            for i in ai.get("instances", [])
-        ],
-    }
+    instances = []
+    for inst in ai.get("instances", []):
+        if secrets_store.is_encrypted(inst.get("api_key")):
+            inst = {**inst, "api_key": secrets_store.decrypt(inst["api_key"])}
+        instances.append(inst)
+    return {**ai, "instances": instances} if instances else ai
 
 
 def list_instances(db) -> list[dict]:

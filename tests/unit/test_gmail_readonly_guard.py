@@ -26,44 +26,45 @@ pytestmark = pytest.mark.unit
 
 APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
-# Gmail API resources and the verbs on them that write, delete, send or relabel.
+# Gmail API resource getters (`service.users().messages()`, ...). The scan is a
+# WHITELIST: wherever the app obtains one of these, the only thing it may do with
+# it is call `.get(...)` or `.list(...)`. Anything else — a known mutator
+# (`trash`, `modify`, `delete`, `send`, ...), a mutator added to the API later,
+# or stashing the resource in a variable where it could be used out of sight — is
+# a violation. The chain does not have to start at `.users()`.
 _GMAIL_RESOURCES = {"messages", "threads", "labels", "drafts", "history", "settings"}
-_GMAIL_MUTATORS = {
-    "modify",
-    "batchModify",
-    "batchDelete",
-    "trash",
-    "untrash",
-    "delete",
-    "send",
-    "insert",
-    "import_",
-    "create",
-    "update",
-    "patch",
-}
+_READ_VERBS = {"get", "list"}
 
 
-def _mutating_gmail_calls(source: str) -> list[int]:
-    """Line numbers of ``<...>.<gmail resource>().<mutator>(...)`` calls."""
+def _non_read_gmail_uses(source: str) -> list[int]:
+    """Line numbers where a Gmail resource is used for anything but get/list."""
+    tree = ast.parse(source)
+    parent = {
+        child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)
+    }
     hits = []
-    for node in ast.walk(ast.parse(source)):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+    for node in ast.walk(tree):
+        # Gmail's resource getters take no arguments; `ChatRepository.messages(id)`
+        # and the like are unrelated and must not trip the scan.
+        is_resource_getter = (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _GMAIL_RESOURCES
+            and not node.args
+            and not node.keywords
+        )
+        if not is_resource_getter:
             continue
-        if node.func.attr not in _GMAIL_MUTATORS:
-            continue
-        receiver = node.func.value
-        while isinstance(receiver, ast.Call | ast.Attribute):
-            if isinstance(receiver, ast.Call):
-                receiver = receiver.func
-                continue
-            if (
-                isinstance(receiver.value, ast.Call)
-                and receiver.attr in _GMAIL_RESOURCES
-            ):
-                hits.append(node.lineno)
-                break
-            receiver = receiver.value
+        verb = parent.get(node)  # `<resource>()` -> `.verb`
+        call = parent.get(verb) if verb is not None else None
+        read_only = (
+            isinstance(verb, ast.Attribute)
+            and verb.attr in _READ_VERBS
+            and isinstance(call, ast.Call)
+            and call.func is verb
+        )
+        if not read_only:
+            hits.append(node.lineno)
     return hits
 
 
@@ -76,25 +77,52 @@ def test_no_gmail_mutating_calls_in_app():
     offenders = {
         str(path.relative_to(APP_DIR.parent)): lines
         for path in APP_DIR.rglob("*.py")
-        if (lines := _mutating_gmail_calls(path.read_text()))
+        if (lines := _non_read_gmail_uses(path.read_text()))
     }
     assert not offenders, f"Gmail mutating calls found: {offenders}"
 
 
-def test_scanner_flags_mutations_and_ignores_reads():
-    """Guard the guard: the scan must actually catch what it claims to."""
-    assert _mutating_gmail_calls(
-        'service.users().messages().trash(userId="me", id=x).execute()'
-    )
-    assert _mutating_gmail_calls(
-        "svc.users().messages().modify(userId='me', id=x, body={}).execute()"
-    )
-    assert _mutating_gmail_calls("svc.users().labels().create(userId='me').execute()")
-    assert not _mutating_gmail_calls(
-        "svc.users().messages().get(userId='me', id=x, format='raw').execute()"
-    )
-    assert not _mutating_gmail_calls("svc.users().messages().list(userId='me')")
-    assert not _mutating_gmail_calls("session.delete(obj); some_list.update({})")
+@pytest.mark.parametrize(
+    "source",
+    [
+        'service.users().messages().trash(userId="me", id=x).execute()',
+        "svc.users().messages().modify(userId='me', id=x, body={}).execute()",
+        "svc.users().labels().create(userId='me').execute()",
+        # No `.users()` in front of the resource: still caught.
+        "service.messages().delete(id='y').execute()",
+        "client.threads().trash(id='t')",
+        # A mutator the API grows later is caught too (whitelist, not blacklist).
+        "svc.users().messages().someFutureWriteVerb(id='y')",
+        # The resource stashed away, to be mutated out of sight.
+        "msgs = svc.users().messages()\nmsgs.trash(id='y')",
+        "x = svc.users().drafts()",
+        # `.get` / `.list` as bare attributes, not calls, do not count as reads.
+        "svc.users().messages().get",
+    ],
+)
+def test_scanner_flags_anything_but_get_and_list(source):
+    """Guard the guard: each of these must be reported, or the scan is blind to it."""
+    assert _non_read_gmail_uses(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "svc.users().messages().get(userId='me', id=x, format='raw').execute()",
+        "svc.users().messages().list(userId='me', q='x')",
+        "service.messages().get(id='y')",
+        "session.delete(obj); some_list.update({}); payload.send(x)",
+        "repo.messages(conversation.id)[:-1]",  # same name, takes an argument
+    ],
+)
+def test_scanner_ignores_reads_and_unrelated_code(source):
+    assert not _non_read_gmail_uses(source)
+
+
+def test_scanner_resource_list_is_what_the_test_says_it_is():
+    """Mutation check: the positives above only mean something because these
+    names are in the scanned set — dropping one must not be silently survivable."""
+    assert {"messages", "threads", "labels", "drafts"} <= _GMAIL_RESOURCES
 
 
 def test_assert_readonly_scopes():
