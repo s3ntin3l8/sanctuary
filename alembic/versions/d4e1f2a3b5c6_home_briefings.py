@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column("summary", sa.Text(), nullable=True),
         sa.Column("priorities", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("model_label", sa.String(), nullable=True),
+        sa.Column("external", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("generated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("queued_at", sa.DateTime(timezone=True), nullable=True),

@@ -2706,6 +2706,8 @@ export interface components {
             day: string;
             /** Error */
             error: string | null;
+            /** External */
+            external: boolean;
             /** Generated At */
             generated_at: string | null;
             /** Model Label */

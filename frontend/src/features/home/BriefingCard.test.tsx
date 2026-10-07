@@ -11,6 +11,7 @@ const ready: Schemas['BriefingView'] = {
   day: '2026-06-17',
   generated_at: '2026-06-17T06:40:00Z',
   model_label: 'qwen3.5:9b',
+  external: false,
   summary: 'Two deadlines land this week. ADV-024-A is due tomorrow.',
   priorities: ['ADV-024-A: file the counter-statement', 'Triage: 2 bundles'],
   error: null,
@@ -64,4 +65,26 @@ test('failed shows the error and refresh re-arms', async () => {
     ).toBe(true),
   )
   expect(await screen.findByText(/Reading today's deadlines/)).toBeVisible()
+})
+
+test('an external endpoint is named, never "local"', async () => {
+  stubApi({ 'GET /api/v1/home/briefing': { body: { ...ready, external: true } } })
+  renderAt('/', <BriefingCard />)
+  const card = await screen.findByRole('region', { name: 'Morning briefing' })
+  expect(card).toHaveTextContent('generated on an external endpoint')
+  expect(card).not.toHaveTextContent('generated locally')
+})
+
+test('a rejected refresh shows the API error', async () => {
+  stubApi({
+    'GET /api/v1/home/briefing': { body: ready },
+    'POST /api/v1/home/briefing/refresh': {
+      status: 429,
+      body: { detail: 'Rate limit exceeded: 6 per 1 hour', code: 'rate_limited' },
+    },
+  })
+  renderAt('/', <BriefingCard />)
+  await screen.findByRole('region', { name: 'Morning briefing' })
+  await userEvent.click(screen.getByRole('button', { name: 'Regenerate briefing' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Rate limit exceeded')
 })

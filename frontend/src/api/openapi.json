@@ -875,6 +875,10 @@
             ],
             "title": "Error"
           },
+          "external": {
+            "title": "External",
+            "type": "boolean"
+          },
           "generated_at": {
             "anyOf": [
               {
@@ -931,6 +935,7 @@
           "day",
           "generated_at",
           "model_label",
+          "external",
           "summary",
           "priorities",
           "error"

@@ -1212,6 +1212,11 @@ class HomeBriefing(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     priorities: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     model_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    # True when the generating endpoint was on the public internet
+    # (ai_config.is_external_endpoint); the card must not claim "local" then.
+    external: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=_sa_text("false")
+    )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -12,15 +12,16 @@ AI calls.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import cast
 
 from sqlalchemy import CursorResult, text
 from sqlalchemy.orm import Session
 
 from app import config
+from app.config import CELERY_TASK_TIME_LIMIT
 from app.models.database import HomeBriefing, User
-from app.services.ai_config import get_chat_config
+from app.services.ai_config import get_chat_config, is_external_endpoint
 from app.services.home_service import HomeService
 from app.services.intelligence._ai_call import call_json_ai
 from app.services.intelligence.ai_options import STAGE_OPTIONS
@@ -29,6 +30,10 @@ from app.services.intelligence.schemas import HomeBriefingOut
 from app.services.timezone_service import get_user_tz
 
 logger = logging.getLogger(__name__)
+
+
+class BriefingUserMissing(LookupError):
+    """The user row is gone; nothing to brief."""
 
 
 def today_for_user() -> date:
@@ -43,8 +48,12 @@ def claim_for_dispatch(db: Session, user_id: int, day: date) -> bool:
 
     Inserts a ``processing`` row when there is none, or resets a finished /
     failed one to ``processing`` — but only while ``queued_at`` is NULL, so
-    a run already in flight is never duplicated."""
+    a run already in flight is never duplicated. A claim older than the
+    Celery hard time limit cannot belong to a live run (worker died, broker
+    dropped the dispatch) and is treated as free, so the day never ends up
+    stuck in ``processing``."""
     now = datetime.now(UTC)
+    stale_before = now - timedelta(seconds=CELERY_TASK_TIME_LIMIT)
     result = db.execute(
         text(
             """
@@ -53,9 +62,10 @@ def claim_for_dispatch(db: Session, user_id: int, day: date) -> bool:
             ON CONFLICT (user_id, day) DO UPDATE
               SET status = 'processing', queued_at = :now, error = NULL
               WHERE home_briefings.queued_at IS NULL
+                 OR home_briefings.queued_at < :stale_before
             """
         ),
-        {"user_id": user_id, "day": day, "now": now},
+        {"user_id": user_id, "day": day, "now": now, "stale_before": stale_before},
     )
     db.commit()
     return cast(CursorResult, result).rowcount == 1
@@ -80,16 +90,23 @@ def briefing_row(db: Session, user_id: int, day: date) -> HomeBriefing | None:
     )
 
 
-def _compose_prompt(data: dict, now: datetime) -> str:
-    def days_until(due: datetime | None) -> str:
+def _compose_prompt(data: dict, day: date, tz: tzinfo) -> str:
+    """One sanitised line per item. Dates are the reader's calendar (``tz``)
+    relative to the row's ``day``, so a retry after midnight still describes
+    the day the row is stored under."""
+
+    def local_date(due: datetime | None) -> date | None:
+        return due.astimezone(tz).date() if due else None
+
+    def days_until(due: date | None) -> str:
         if due is None:
             return "no date"
-        delta = (due.date() - now.date()).days
+        delta = (due - day).days
         return f"{delta}d" if delta >= 0 else f"{-delta}d overdue"
 
     items = [
         f"- {sanitize_oneline(a.title, 120)} [{a.action_type}] case {a.case_id} "
-        f"due {a.due_date.date() if a.due_date else 'unknown'} ({days_until(a.due_date)})"
+        f"due {local_date(a.due_date) or 'unknown'} ({days_until(local_date(a.due_date))})"
         for a in data["today_items"][:12]
     ] or ["none"]
     triage = [
@@ -114,7 +131,7 @@ def _compose_prompt(data: dict, now: datetime) -> str:
     ] or ["none"]
     nl = "\n"
     return (
-        f"Today: {now.date().isoformat()}\n\n"
+        f"Today: {day.isoformat()}\n\n"
         f"Deadlines and hearings:\n{nl.join(items)}\n\n"
         f"Triage inbox:\n{nl.join(triage)}\n\n"
         f"New since last visit:\n{nl.join(delta)}\n\n"
@@ -132,17 +149,16 @@ def generate(user_id: int, day: date) -> None:
     try:
         user = db.get(User, user_id)
         if user is None:
-            raise ValueError(f"user {user_id} not found")
+            raise BriefingUserMissing(f"user {user_id} not found")
         cfg = get_chat_config(db)
         from app.services.ai_provider import chat_provider
 
         chat_provider.reload_from_db(db)
 
         data = HomeService(db).get_home_data(user_id)
-        now = datetime.now(get_user_tz())
         result = call_json_ai(
             system_prompt=HOME_BRIEFING_SYSTEM,
-            user_prompt=_compose_prompt(data, now),
+            user_prompt=_compose_prompt(data, day, get_user_tz()),
             options=STAGE_OPTIONS["home_briefing"],
             debug_label=f"user_{user_id}_briefing_{day.isoformat()}",
             schema=HomeBriefingOut,
@@ -155,8 +171,11 @@ def generate(user_id: int, day: date) -> None:
             raise ValueError(f"briefing row for user {user_id} on {day} vanished")
         row.status = "ready"
         row.summary = result.summary.strip()
-        row.priorities = [p.strip() for p in result.priorities if p.strip()][:3]
+        row.priorities = list(
+            dict.fromkeys(p.strip() for p in result.priorities if p.strip())
+        )[:3]
         row.model_label = cfg.summary_model or None
+        row.external = is_external_endpoint(cfg.base_url)
         row.error = None
         row.generated_at = datetime.now(UTC)
         db.commit()

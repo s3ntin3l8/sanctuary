@@ -24,8 +24,11 @@ export function BriefingCard() {
       <div className="flex items-center gap-2">
         <Icon name="auto_awesome" size={16} className="text-accent" />
         <span className="font-display text-[14px] font-bold">Morning briefing</span>
-        <span className="ml-auto flex items-center gap-1 font-mono text-[10px] text-muted">
-          <Icon name="lock" size={12} /> generated locally
+        <span
+          className={`ml-auto flex items-center gap-1 font-mono text-[10px] ${view.external ? 'text-warning' : 'text-muted'}`}
+        >
+          <Icon name={view.external ? 'public' : 'lock'} size={12} />
+          {view.external ? 'generated on an external endpoint' : 'generated locally'}
           {view.generated_at && ` · ${time.format(new Date(view.generated_at))}`}
           {view.model_label && ` · ${view.model_label}`}
         </span>
@@ -45,6 +48,11 @@ export function BriefingCard() {
           Reading today's deadlines, inbox and signals…
         </p>
       )}
+      {refresh.error && (
+        <p role="alert" className="mt-2 text-[12px] text-danger">
+          {refresh.error.message}
+        </p>
+      )}
       {view.status === 'failed' && (
         <p role="alert" className="mt-2 text-[12.5px] text-danger">
           The briefing could not be generated{view.error ? `: ${view.error}` : '.'}
@@ -55,8 +63,8 @@ export function BriefingCard() {
           <p className="mt-2 text-[13px] leading-relaxed text-ink">{view.summary}</p>
           {view.priorities.length > 0 && (
             <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-[12px] text-ink2">
-              {view.priorities.map((p) => (
-                <li key={p}>{p}</li>
+              {view.priorities.map((p, i) => (
+                <li key={i}>{p}</li>
               ))}
             </ol>
           )}

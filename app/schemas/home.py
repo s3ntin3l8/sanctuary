@@ -91,6 +91,8 @@ class BriefingView(BaseModel):
     day: date
     generated_at: datetime | None
     model_label: str | None
+    external: bool
+    """The model ran on a public endpoint, not this machine or the LAN."""
     summary: str | None
     priorities: list[str]
     error: str | None

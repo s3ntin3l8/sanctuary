@@ -31,6 +31,7 @@ def generate_home_briefing_task(self, user_id: int, day_iso: str):
     """Generate the user's briefing for ``day_iso``. Releases the dispatch
     claim on terminal exit only (not between retries)."""
     from app.services.intelligence.home_briefing_generator import (
+        BriefingUserMissing,
         generate,
         mark_failed,
     )
@@ -40,10 +41,15 @@ def generate_home_briefing_task(self, user_id: int, day_iso: str):
     try:
         generate(user_id, day)
         return {"status": "success", "user_id": user_id, "day": day_iso}
-    except ValueError as e:
+    except BriefingUserMissing as e:
         logger.warning("Briefing for user %s skipped: %s", user_id, e)
-        mark_failed(user_id, day, str(e))
         return {"status": "not_found", "user_id": user_id}
+    except ValueError as e:
+        # call_json_ai: empty answer, thinking loop, schema violation. The
+        # raw text points at debug files; the card gets a readable line.
+        logger.warning("Briefing for user %s: unusable model answer: %s", user_id, e)
+        mark_failed(user_id, day, "The model returned an unusable answer. Try again.")
+        return {"status": "failed", "user_id": user_id, "error": str(e)}
     except (httpx.ReadTimeout, httpx.ConnectError) as e:
         if self.request.retries < self.max_retries:
             terminal = False

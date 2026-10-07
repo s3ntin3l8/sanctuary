@@ -111,6 +111,7 @@ def _briefing_view(row: HomeBriefing) -> BriefingView:
         day=row.day,
         generated_at=row.generated_at,
         model_label=row.model_label,
+        external=bool(row.external),
         summary=row.summary,
         priorities=list(row.priorities or []),
         error=row.error,
@@ -131,7 +132,9 @@ def get_briefing(db: Session = Depends(get_db), user: User = Depends(get_current
     returns ``processing``; the client polls until ``ready`` or ``failed``."""
     day = today_for_user()
     row = briefing_row(db, user.id, day)
-    if row is None:
+    # No row yet, or a run whose claim went stale (worker died): the claim
+    # decides whether anything is dispatched, so a live run is never doubled.
+    if row is None or row.status == "processing":
         _dispatch_briefing(db, user.id, day)
         row = briefing_row(db, user.id, day)
         if row is None:  # pragma: no cover — the claim just inserted it
