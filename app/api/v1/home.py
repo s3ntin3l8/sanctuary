@@ -16,6 +16,7 @@ from app.schemas.home import (
     HomeView,
     PipelineCounts,
 )
+from app.services import access_service
 from app.services.case_service import CaseService
 from app.services.home_service import HomeService
 from app.services.user_settings_service import mark_home_visit
@@ -55,6 +56,7 @@ def _triage_bundle(batch: IngestBatch) -> HomeTriageBundle:
 def home(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     data = HomeService(db).get_home_data(user.id)
     service = CaseService(db)
+    editable = access_service.editable_case_ids(db, user)
     return HomeView(
         greeting=data["greeting"],
         user_name=data["user_name"],
@@ -75,8 +77,8 @@ def home(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
         last_home_visit=data["last_home_visit"],
         delta_cases=[HomeDeltaCase(**d) for d in data["delta_cases"]],
         signals=[HomeSignal(**s) for s in data["signals"]],
-        draft_cases=case_cards(service, data["draft_cases"]),
-        active_cases=case_cards(service, data["active_cases"]),
+        draft_cases=case_cards(service, data["draft_cases"], editable=editable),
+        active_cases=case_cards(service, data["active_cases"], editable=editable),
         caught_up=data["caught_up"],
     )
 

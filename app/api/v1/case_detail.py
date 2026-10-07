@@ -145,9 +145,13 @@ def _resolve_active(
 
 def _summary(case: Case, db: Session) -> FinancialsSummary:
     costs = db.query(LegalCost).filter(LegalCost.case_id == case.id).all()
+    return summary_of(costs, case.total_cost_exposure or 0)
+
+
+def summary_of(costs: list[LegalCost], exposure_cents: int) -> FinancialsSummary:
     s = build_cost_summary(costs, CostStatus)
     return FinancialsSummary(
-        total_cost_exposure_cents=case.total_cost_exposure or 0,
+        total_cost_exposure_cents=exposure_cents,
         booked=s["total_gross"],
         paid=s["total_paid"],
         outstanding=s["total_outstanding"],
@@ -158,6 +162,7 @@ def _summary(case: Case, db: Session) -> FinancialsSummary:
 def _cost_row(c: LegalCost) -> CostRow:
     return CostRow(
         id=c.id,
+        case_id=c.case_id,
         proceeding_id=c.proceeding_id,
         title=c.title,
         category=c.category,
@@ -171,6 +176,11 @@ def _cost_row(c: LegalCost) -> CostRow:
         is_reimbursable=c.is_reimbursable,
         issued_at=c.issued_at,
         due_at=c.due_at,
+        paid_at=c.paid_at,
+        streitwert=c.streitwert,
+        gebuehren_faktor=c.gebuehren_faktor,
+        notes=c.notes,
+        auto_created=bool(c.auto_created),
         source_document_id=c.source_document_id,
     )
 

@@ -32,12 +32,6 @@ class LegalCostRepository(BaseRepository[LegalCost]):
         """Get costs by status."""
         return self.db.query(LegalCost).filter(LegalCost.status == status).all()
 
-    def get_pending(self) -> Sequence[LegalCost]:
-        """Get pending (unpaid) costs."""
-        return (
-            self.db.query(LegalCost).filter(LegalCost.status == CostStatus.OFFEN).all()
-        )
-
     def get_by_case_and_status(
         self, case_id: str, status: CostStatus
     ) -> Sequence[LegalCost]:

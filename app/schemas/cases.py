@@ -29,6 +29,7 @@ class CaseCard(BaseModel):
     status_label: str
     is_draft: bool
     pending_close: bool
+    can_edit: bool
     client_name: str
     opposing_party: str
     proceeding_name: str

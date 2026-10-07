@@ -8,6 +8,8 @@ import { LoginPage } from './features/auth/LoginPage'
 import { SignupPage } from './features/auth/SignupPage'
 import { CasesPage } from './features/cases/CasesPage'
 import { CasePage } from './features/cases/dashboard/CasePage'
+import { ContactPage } from './features/contacts/ContactPage'
+import { CostsPage } from './features/costs/CostsPage'
 import { DocumentPage } from './features/documents/DocumentPage'
 import { HomePage } from './features/home/HomePage'
 import { AccountPage } from './features/settings/AccountPage'
@@ -18,13 +20,14 @@ import { ExportPage } from './features/settings/ExportPage'
 import { GmailPage } from './features/settings/GmailPage'
 import { IdentityPage } from './features/settings/IdentityPage'
 import { SettingsLayout } from './features/settings/SettingsLayout'
+import { SearchPage } from './features/search/SearchPage'
 import { SlicingPage } from './features/slicing/SlicingPage'
 import { TriagePage } from './features/triage/TriagePage'
 import { leaveTo } from './navigation'
 import { Shell } from './shell/Shell'
 import { ToastProvider } from './ui/toast'
 
-// Every path here must also be served by FastAPI as an SPA route (app/spa.py).
+// Every path here must also be served by FastAPI as an SPA route (app/api/spa_pages.py).
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
@@ -37,6 +40,9 @@ const router = createBrowserRouter([
       { path: '/triage', element: <TriagePage /> },
       { path: '/ingest/slice/:batchId', element: <SlicingPage /> },
       { path: '/document/:id', element: <DocumentPage /> },
+      { path: '/costs', element: <CostsPage /> },
+      { path: '/contacts', element: <ContactPage /> },
+      { path: '/search', element: <SearchPage /> },
       {
         element: <SettingsLayout />,
         children: [

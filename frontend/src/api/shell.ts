@@ -32,10 +32,10 @@ export function useRetryFailed() {
   })
 }
 
-export function useSearch(q: string) {
+export function useSearch(q: string, limit = 30) {
   return useQuery<Schemas['SearchResults'], ApiError>({
-    queryKey: ['search', q],
-    queryFn: () => unwrap(api.GET('/api/v1/search', { params: { query: { q } } })),
+    queryKey: ['search', q, limit],
+    queryFn: () => unwrap(api.GET('/api/v1/search', { params: { query: { q, limit } } })),
     enabled: q.trim().length >= 2,
     staleTime: 60_000,
     placeholderData: (previous) => previous,

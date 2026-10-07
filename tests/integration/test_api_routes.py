@@ -38,9 +38,9 @@ def test_costs_page():
 
 
 @pytest.mark.integration
-def test_contacts_index_returns_404():
-    """Index page deleted per vision §UI:382; only detail /contacts/{name} exists."""
-    response = client.get("/contacts")
+def test_contacts_path_segment_returns_404():
+    """There is no contact directory; the detail page is /contacts?name= (vision §UI:382)."""
+    response = client.get("/contacts/anyone")
     assert response.status_code == 404
 
 

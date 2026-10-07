@@ -7,6 +7,7 @@ export const caseCard: Schemas['CaseCard'] = {
   status_label: 'Pre-Trial',
   is_draft: false,
   pending_close: false,
+  can_edit: true,
   client_name: 'A. Weber',
   opposing_party: 'M. Weber',
   proceeding_name: 'AG Hamburg',

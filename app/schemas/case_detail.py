@@ -376,6 +376,7 @@ class ProposalBatchResult(BaseModel):
 
 class CostRow(BaseModel):
     id: int
+    case_id: str
     proceeding_id: int | None
     title: str
     category: CostCategory
@@ -389,6 +390,11 @@ class CostRow(BaseModel):
     is_reimbursable: bool | None
     issued_at: datetime | None
     due_at: datetime | None
+    paid_at: datetime | None
+    streitwert: float | None
+    gebuehren_faktor: float | None
+    notes: str | None
+    auto_created: bool
     source_document_id: int | None
 
 
@@ -445,6 +451,66 @@ class CostFieldUpdate(BaseModel):
     vat_rate: float | None = Field(default=None, ge=0, le=1)
     amount_paid: float | None = Field(default=None, ge=0)
     amount_reimbursed: float | None = Field(default=None, ge=0)
+    streitwert: float | None = Field(default=None, ge=0)
+    gebuehren_faktor: float | None = Field(default=None, gt=0)
+    issued_at: datetime | None = None
+    due_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=4000)
+    is_reimbursable: bool | None = None
+
+
+class CostCreate(BaseModel):
+    """A manually booked cost; gross is derived from net and VAT on the server."""
+
+    proceeding_id: int | None = None
+    category: CostCategory
+    title: str = Field(min_length=1, max_length=300)
+    rvg_position: str | None = Field(default=None, max_length=100)
+    amount_net: float = Field(gt=0)
+    vat_rate: float = Field(default=0.19, ge=0, le=1)
+    status: CostStatus = CostStatus.OFFEN
+    streitwert: float | None = Field(default=None, ge=0)
+    gebuehren_faktor: float | None = Field(default=None, gt=0)
+    issued_at: datetime | None = None
+    due_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=4000)
+    is_reimbursable: bool = True
+
+    @field_validator("title")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title must not be empty")
+        return value
+
+
+class CostReimburse(BaseModel):
+    amount: float | None = Field(default=None, gt=0)
+
+
+class CostCaseGroup(BaseModel):
+    id: str
+    title: str
+    status: CaseStatus
+    can_edit: bool
+    summary: FinancialsSummary
+    costs: list[CostRow]
+
+
+class CostAlert(BaseModel):
+    cost: CostRow
+    case_title: str
+    open_amount: float
+
+
+class CostsOverview(BaseModel):
+    """Every cost the caller may see, grouped by case, with the ledger totals."""
+
+    summary: FinancialsSummary
+    overdue: list[CostAlert]
+    due_soon: list[CostAlert]
+    cases: list[CostCaseGroup]
 
 
 class ClientRoleUpdate(BaseModel):

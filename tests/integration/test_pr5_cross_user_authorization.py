@@ -249,10 +249,73 @@ def test_costs_list_is_scoped_per_user(auth_enabled, db_session, two_users):
     db_session.commit()
 
     client = _login("a@example.com")
-    resp = client.get("/costs")
+    resp = client.get("/api/v1/costs")
     assert resp.status_code == 200
-    assert "Cost owned by A" in resp.text
-    assert "Cost owned by B" not in resp.text
+    titles = {c["title"] for g in resp.json()["cases"] for c in g["costs"]}
+    assert "Cost owned by A" in titles
+    assert "Cost owned by B" not in titles
+
+
+def test_costs_overview_marks_viewer_shares_read_only(
+    auth_enabled, db_session, two_users
+):
+    a, b = two_users
+    case_a = _make_case(db_session, "PR5-COST-A", a.id)
+    db_session.add(
+        CaseShare(case_id=case_a.id, user_id=b.id, permission=CaseAccessLevel.VIEWER)
+    )
+    db_session.add(
+        LegalCost(
+            case_id=case_a.id,
+            category=CostCategory.GERICHTSKOSTEN,
+            title="Shared cost",
+            amount_net=100.0,
+            amount_gross=100.0,
+            status=CostStatus.OFFEN,
+        )
+    )
+    db_session.commit()
+
+    groups = _login("b@example.com").get("/api/v1/costs").json()["cases"]
+    assert [(g["id"], g["can_edit"]) for g in groups] == [(case_a.id, False)]
+    groups = _login("a@example.com").get("/api/v1/costs").json()["cases"]
+    assert [(g["id"], g["can_edit"]) for g in groups] == [(case_a.id, True)]
+
+
+def test_cases_directory_marks_editable_cases(auth_enabled, db_session, two_users):
+    a, b = two_users
+    _make_case(db_session, "PR5-DIR-A", a.id)
+    case_b = _make_case(db_session, "PR5-DIR-B", b.id)
+    db_session.add(
+        CaseShare(case_id=case_b.id, user_id=a.id, permission=CaseAccessLevel.VIEWER)
+    )
+    db_session.commit()
+
+    cards = _login("a@example.com").get("/api/v1/cases").json()["cases"]
+    assert {c["id"]: c["can_edit"] for c in cards} == {
+        "PR5-DIR-A": True,
+        "PR5-DIR-B": False,
+    }
+
+
+def test_contact_documents_are_scoped_to_visible_cases(
+    auth_enabled, db_session, two_users
+):
+    a, b = two_users
+    case_a = _make_case(db_session, "PR5-CT-A", a.id)
+    case_b = _make_case(db_session, "PR5-CT-B", b.id)
+    db_session.add_all(
+        [
+            Document(title="to A", owner_id=a.id, case_id=case_a.id, sender="RA X"),
+            Document(title="to B", owner_id=b.id, case_id=case_b.id, sender="RA X"),
+        ]
+    )
+    db_session.commit()
+
+    body = _login("a@example.com").get("/api/v1/contacts", params={"name": "RA X"})
+    assert body.status_code == 200, body.text
+    assert [d["title"] for d in body.json()["documents"]] == ["to A"]
+    assert [c["id"] for c in body.json()["cases"]] == [case_a.id]
 
 
 def test_create_cost_requires_edit_access_to_case(auth_enabled, db_session, two_users):
@@ -261,12 +324,11 @@ def test_create_cost_requires_edit_access_to_case(auth_enabled, db_session, two_
 
     client = _login("b@example.com")
     resp = client.post(
-        "/costs",
-        data={
-            "case_id": "PR5-COST-A",
+        "/api/v1/cases/PR5-COST-A/costs",
+        json={
             "category": CostCategory.GERICHTSKOSTEN.value,
             "title": "Injected cost",
-            "amount_net": "50",
+            "amount_net": 50,
         },
     )
     assert resp.status_code == 404

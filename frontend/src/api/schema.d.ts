@@ -368,6 +368,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** V1 Create Cost */
+        post: operations["v1_create_cost_api_v1_cases__case_id__costs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cases/{case_id}/dismiss-close": {
         parameters: {
             query?: never;
@@ -786,6 +803,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Contact
+         * @description Documents whose sender contains ``name``, limited to the caller's cases.
+         */
+        get: operations["v1_contact_api_v1_contacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cost-signals/{signal_id}/auto-detect-role": {
         parameters: {
             query?: never;
@@ -819,6 +856,26 @@ export interface paths {
          * @description Who won the cost ruling, from the client's side; overrides any auto-detect.
          */
         put: operations["v1_set_client_role_api_v1_cost_signals__signal_id__client_role_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * V1 Costs Overview
+         * @description The ledger across every case the caller may see.
+         */
+        get: operations["v1_costs_overview_api_v1_costs_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -869,7 +926,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** V1 Mark Reimbursed */
+        /**
+         * V1 Mark Reimbursed
+         * @description Book a reimbursement (§91 ZPO); the full gross unless an amount is given.
+         */
         post: operations["v1_mark_reimbursed_api_v1_costs__cost_id__reimburse_post"];
         delete?: never;
         options?: never;
@@ -1259,7 +1319,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** V1 Search */
+        /**
+         * V1 Search
+         * @description Palette and results page; ``limit`` is split across documents, cases and contacts.
+         */
         get: operations["v1_search_api_v1_search_get"];
         put?: never;
         post?: never;
@@ -2603,6 +2666,8 @@ export interface components {
          * @description One case as shown on Home and in the Cases directory.
          */
         CaseCard: {
+            /** Can Edit */
+            can_edit: boolean;
             /** Client Name */
             client_name: string;
             /** Days Since Activity */
@@ -2871,6 +2936,47 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** ContactCase */
+        ContactCase: {
+            /** Id */
+            id: string;
+            status: components["schemas"]["CaseStatus"];
+            /** Title */
+            title: string;
+        };
+        /** ContactDocument */
+        ContactDocument: {
+            /** Case Id */
+            case_id: string | null;
+            /** Case Title */
+            case_title: string | null;
+            /** Id */
+            id: number;
+            /** Ingest Date */
+            ingest_date: string | null;
+            /** Issued Date */
+            issued_date: string | null;
+            /** Legal Significance */
+            legal_significance: string | null;
+            originator_type: components["schemas"]["OriginatorType"];
+            /** Title */
+            title: string;
+        };
+        /** ContactView */
+        ContactView: {
+            /** Case Count */
+            case_count: number;
+            /** Cases */
+            cases: components["schemas"]["ContactCase"][];
+            /** Document Count */
+            document_count: number;
+            /** Documents */
+            documents: components["schemas"]["ContactDocument"][];
+            /** Last Contact */
+            last_contact: string | null;
+            /** Name */
+            name: string;
+        };
         /** ConversationDetail */
         ConversationDetail: {
             /** Id */
@@ -2919,12 +3025,70 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** CostAlert */
+        CostAlert: {
+            /** Case Title */
+            case_title: string;
+            cost: components["schemas"]["CostRow"];
+            /** Open Amount */
+            open_amount: number;
+        };
+        /** CostCaseGroup */
+        CostCaseGroup: {
+            /** Can Edit */
+            can_edit: boolean;
+            /** Costs */
+            costs: components["schemas"]["CostRow"][];
+            /** Id */
+            id: string;
+            status: components["schemas"]["CaseStatus"];
+            summary: components["schemas"]["FinancialsSummary"];
+            /** Title */
+            title: string;
+        };
         /**
          * CostCategory
          * @description German legal cost categories (Kostenkategorien).
          * @enum {string}
          */
         CostCategory: "gerichtskosten" | "anwaltskosten" | "anwaltskosten_gegner" | "sachverstaendiger" | "vorschuss" | "vollstreckung" | "auslagen" | "sonstiges";
+        /**
+         * CostCreate
+         * @description A manually booked cost; gross is derived from net and VAT on the server.
+         */
+        CostCreate: {
+            /** Amount Net */
+            amount_net: number;
+            category: components["schemas"]["CostCategory"];
+            /** Due At */
+            due_at?: string | null;
+            /** Gebuehren Faktor */
+            gebuehren_faktor?: number | null;
+            /**
+             * Is Reimbursable
+             * @default true
+             */
+            is_reimbursable: boolean;
+            /** Issued At */
+            issued_at?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Proceeding Id */
+            proceeding_id?: number | null;
+            /** Rvg Position */
+            rvg_position?: string | null;
+            /** @default offen */
+            status: components["schemas"]["CostStatus"];
+            /** Streitwert */
+            streitwert?: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Vat Rate
+             * @default 0.19
+             */
+            vat_rate: number;
+        };
         /** CostFieldUpdate */
         CostFieldUpdate: {
             /** Amount Net */
@@ -2934,7 +3098,19 @@ export interface components {
             /** Amount Reimbursed */
             amount_reimbursed?: number | null;
             category?: components["schemas"]["CostCategory"] | null;
+            /** Due At */
+            due_at?: string | null;
+            /** Gebuehren Faktor */
+            gebuehren_faktor?: number | null;
+            /** Is Reimbursable */
+            is_reimbursable?: boolean | null;
+            /** Issued At */
+            issued_at?: string | null;
+            /** Notes */
+            notes?: string | null;
             status?: components["schemas"]["CostStatus"] | null;
+            /** Streitwert */
+            streitwert?: number | null;
             /** Title */
             title?: string | null;
             /** Vat Rate */
@@ -2959,6 +3135,11 @@ export interface components {
             /** Vat Rate */
             vat_rate?: number | null;
         };
+        /** CostReimburse */
+        CostReimburse: {
+            /** Amount */
+            amount?: number | null;
+        };
         /** CostRow */
         CostRow: {
             /** Amount Gross */
@@ -2969,15 +3150,25 @@ export interface components {
             amount_paid: number | null;
             /** Amount Reimbursed */
             amount_reimbursed: number | null;
+            /** Auto Created */
+            auto_created: boolean;
+            /** Case Id */
+            case_id: string;
             category: components["schemas"]["CostCategory"];
             /** Due At */
             due_at: string | null;
+            /** Gebuehren Faktor */
+            gebuehren_faktor: number | null;
             /** Id */
             id: number;
             /** Is Reimbursable */
             is_reimbursable: boolean | null;
             /** Issued At */
             issued_at: string | null;
+            /** Notes */
+            notes: string | null;
+            /** Paid At */
+            paid_at: string | null;
             /** Proceeding Id */
             proceeding_id: number | null;
             /** Rvg Position */
@@ -2985,6 +3176,8 @@ export interface components {
             /** Source Document Id */
             source_document_id: number | null;
             status: components["schemas"]["CostStatus"];
+            /** Streitwert */
+            streitwert: number | null;
             /** Title */
             title: string;
             /** Vat Rate */
@@ -3035,6 +3228,19 @@ export interface components {
          * @enum {string}
          */
         CostStatus: "offen" | "bezahlt" | "erstattet" | "teilweise" | "strittig";
+        /**
+         * CostsOverview
+         * @description Every cost the caller may see, grouped by case, with the ledger totals.
+         */
+        CostsOverview: {
+            /** Cases */
+            cases: components["schemas"]["CostCaseGroup"][];
+            /** Due Soon */
+            due_soon: components["schemas"]["CostAlert"][];
+            /** Overdue */
+            overdue: components["schemas"]["CostAlert"][];
+            summary: components["schemas"]["FinancialsSummary"];
+        };
         /** CoverUpdate */
         CoverUpdate: {
             /** Doc Id */
@@ -5585,6 +5791,41 @@ export interface operations {
             };
         };
     };
+    v1_create_cost_api_v1_cases__case_id__costs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostRow"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_dismiss_close_api_v1_cases__case_id__dismiss_close_post: {
         parameters: {
             query?: never;
@@ -6406,6 +6647,37 @@ export interface operations {
             };
         };
     };
+    v1_contact_api_v1_contacts_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     v1_auto_detect_role_api_v1_cost_signals__signal_id__auto_detect_role_post: {
         parameters: {
             query?: never;
@@ -6456,6 +6728,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_costs_overview_api_v1_costs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostsOverview"];
+                };
             };
             /** @description Error */
             default: {
@@ -6543,7 +6844,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CostReimburse"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -7264,6 +7569,8 @@ export interface operations {
         parameters: {
             query: {
                 q: string;
+                /** @description Across all result kinds */
+                limit?: number;
             };
             header?: never;
             path?: never;

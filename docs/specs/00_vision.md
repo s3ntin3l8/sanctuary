@@ -378,8 +378,8 @@ Each of these was a top-level destination in an earlier sidebar. Each pulled the
 | Removed | Replaced by |
 |---|---|
 | Master Timeline (cross-case flat list) | Deleted. Timeline exists as a view mode inside each case dashboard. See `docs/specs/09_timeline.md`. |
-| Legal Costs (cross-case cost browser) | Case dashboard's Financials view mode; global pending-costs widget on Home; ⌘K aggregates. |
-| Contacts (cross-case contact directory) | ⌘K search. `/contacts` index deleted; `/contacts/{name}` detail-on-demand kept for ⌘K drill-in. `SavedSearch` model removed. |
+| Legal Costs (cross-case cost browser) | Case dashboard's Costs tab; the `/costs` ledger is reachable through ⌘K only (not the rail). |
+| Contacts (cross-case contact directory) | ⌘K search. `/contacts` index deleted; `/contacts?name=` detail-on-demand kept for ⌘K drill-in. `SavedSearch` model removed. |
 | Entities (cross-case entity browser) | ⌘K search. `/entities` page and `app/api/entities.py` deleted. |
 | Activity Log (cross-case feed) | Notifications panel (rail 🔔) and Home feed. Not a navigation destination. |
 

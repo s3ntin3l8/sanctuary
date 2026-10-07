@@ -1,4 +1,4 @@
-"""Screens owned by the SPA; data comes from /api/v1 (cases, triage, slicing, documents)."""
+"""Screens owned by the SPA; data comes from /api/v1."""
 
 from __future__ import annotations
 
@@ -36,4 +36,19 @@ def case_directory() -> Response:
 # Legacy templates still build links with url_path_for("case_detail").
 @router.get("/cases/{case_id}", name="case_detail")
 def case_detail(case_id: str) -> Response:
+    return spa_index()
+
+
+@router.get("/costs")
+def costs_page() -> Response:
+    return spa_index()
+
+
+@router.get("/contacts")
+def contacts_page() -> Response:
+    return spa_index()
+
+
+@router.get("/search")
+def search_page() -> Response:
     return spa_index()

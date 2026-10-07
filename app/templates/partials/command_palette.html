@@ -108,7 +108,7 @@ x-cloak x-show="searchOpen" class="fixed inset-0 z-[9999] flex items-start justi
                     <div class="mb-2">
                         <p class="text-[9px] font-bold text-on-surface-variant uppercase tracking-wider px-3 py-2">Contacts</p>
                         <template x-for="contact in searchResults.contacts.slice(0,3)">
-                            <a :href="'/contacts/' + encodeURIComponent(contact.name)" @click="searchOpen = false" class="block px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
+                            <a :href="'/contacts?name=' + encodeURIComponent(contact.name)" @click="searchOpen = false" class="block px-3 py-2 rounded-lg hover:bg-surface-container-high transition-colors">
                                 <p class="text-sm text-on-surface" x-text="contact.name"></p>
                             </a>
                         </template>
