@@ -39,7 +39,11 @@ _WATERMARK_OVERLAP = timedelta(minutes=5)
 # settings_json last silently clobbers the other's watermark update. TTL is
 # the crash-recovery backstop, not the primary release path.
 _LOCK_PREFIX = "sanctuary:gmail_sync_lock:"
-_LOCK_TTL_SECONDS = 30 * 60  # 30 min — generous enough for a full-mailbox index
+# Crash-recovery backstop, not a hard guarantee: a full-mailbox index of a very
+# large mailbox could outlive it, in which case a concurrent sync/import may
+# interleave — harmless, since ingest dedups by Message-ID and the index upserts
+# with ON CONFLICT DO NOTHING.
+_LOCK_TTL_SECONDS = 60 * 60
 
 # A message that fails to fetch/ingest is tracked here (by Gmail's own
 # message id, not the RFC822 Message-ID header) instead of just being logged
@@ -256,6 +260,8 @@ def _ingest_query(
 
 
 def _cap_failures(failed_ids: list[str], user_id: int, source: str) -> list[str]:
+    """Keep the most recently added failures when over the cap (callers append
+    new failures after the older ones, so the oldest are dropped first)."""
     if len(failed_ids) <= _MAX_TRACKED_FAILURES:
         return failed_ids
     logger.warning(
@@ -454,7 +460,8 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
                 for raw in raws:
                     try:
                         metas.append(parse_metadata(raw))
-                    except (KeyError, ValueError):
+                    except (KeyError, ValueError, TypeError, AttributeError):
+                        # One malformed message must not lose the rest of the chunk.
                         skipped += 1
                         logger.warning(
                             "Gmail index: unparseable message %s", raw.get("id")

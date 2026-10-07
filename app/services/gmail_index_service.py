@@ -27,7 +27,8 @@ from app.services.ingestion.extractors import (
 )
 
 UNREFERENCED = "unreferenced"
-# One import request never queues more than this many messages.
+# Defensive cap for any caller of select_for_import. The API schema is stricter
+# (gmail_ids <= 500, oldest_n <= 100), so this only matters to other callers.
 MAX_IMPORT_MESSAGES = 500
 
 _Idx = GmailMessageIndex

@@ -142,6 +142,29 @@ def test_messages_gmail_did_not_return_are_counted_not_hidden(gmail_user, db_ses
     assert "Indexed 1" in result
 
 
+def test_one_malformed_message_does_not_lose_the_rest_of_the_chunk(
+    gmail_user, db_session
+):
+    # No Date header and a null internalDate: parse_metadata raises TypeError.
+    null_date = {"id": "bad", "internalDate": None, "payload": {"headers": []}}
+    no_payload_headers = {"id": "worse", "internalDate": "0", "payload": None}
+    result, _, _ = _run_index(
+        gmail_user.id,
+        ["g1", "bad", "worse", "g2"],
+        [
+            [
+                _raw("g1", "8372/25 a", 1),
+                null_date,
+                no_payload_headers,
+                _raw("g2", "8372/25 b", 2),
+            ]
+        ],
+    )
+    assert {r.gmail_id for r in db_session.query(GmailMessageIndex)} >= {"g1", "g2"}
+    assert gmail_runs.get_run("index", gmail_user.id)["finished_at"]
+    assert "Indexed" in result
+
+
 def test_index_without_an_allowlist_explains_itself(gmail_user, db_session):
     user_settings_service.set_gmail_inbox_filters(
         db_session, gmail_user.id, allowlist=[], label_filter=""
