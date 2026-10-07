@@ -82,7 +82,7 @@ pyobjc-framework-Cocoa==11.1; sys_platform == 'darwin'
 pyobjc-framework-CoreML==11.1; sys_platform == 'darwin'
 pyobjc-framework-Quartz==11.1; sys_platform == 'darwin'
 pyobjc-framework-Vision==11.1; sys_platform == 'darwin'
-pypdfium2==5.13.0
+pypdfium2==5.14.0
 python-dateutil==2.9.0.post0
 python-docx==1.2.0
 python-dotenv==1.2.4
@@ -97,7 +97,7 @@ referencing==0.37.0
 regex==2026.9.29
 requests==2.34.2
 rich==15.0.0
-rpds-py==2026.6.3
+rpds-py==2026.9.1
 rtree==1.4.1
 safetensors==0.8.0
 scipy==1.18.1
@@ -126,7 +126,7 @@ typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
 uvicorn==0.54.0
-websockets==16.1
+websockets==16.1.1
 xlsxwriter==3.2.9
 psycopg[binary]==3.3.6
 pgvector==0.5.0
