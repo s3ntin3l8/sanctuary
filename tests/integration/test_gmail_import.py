@@ -1,10 +1,11 @@
 """Gmail history import: index grouping, listing, import selection and run control."""
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
+import redis
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -25,22 +26,9 @@ client = TestClient(app)
 CREDS = json.dumps({"token": "t", "refresh_token": "r"})  # pragma: allowlist secret
 
 
-class _FakeRedis:
-    def __init__(self):
-        self.store: dict[str, str] = {}
-
-    def get(self, key):
-        return self.store.get(key)
-
-    def set(self, key, value, ex=None):
-        self.store[key] = value
-
-
 @pytest.fixture(autouse=True)
-def fake_runs():
-    fake = _FakeRedis()
-    with patch.object(gmail_runs, "_get_client", return_value=fake):
-        yield fake
+def _runs(fake_run_state):
+    return fake_run_state
 
 
 def _admin(db) -> int:
@@ -288,19 +276,23 @@ def test_index_refresh_dispatches_once_while_running(db_session):
         assert client.post("/api/v1/gmail/index").status_code == 202
         assert client.post("/api/v1/gmail/index").status_code == 202  # idempotent
     assert dispatch.call_count == 1
+    task, user_id, run_id = dispatch.call_args.args
+    assert run_id == gmail_runs.get_run("index", user_id)["run_id"]
 
 
 def test_index_status_reports_progress_and_counts(db_session):
     uid = _admin(db_session)
     _index(db_session, uid, "a", "8372/25 x", 1)
-    state = gmail_runs.begin_run("index", uid, {"total": 10, "done": 4})
-    assert state
+    assert gmail_runs.begin_run(
+        "index", uid, {"run_id": "r1", "total": 10, "done": 4, "skipped": 2}
+    )
     status = client.get("/api/v1/gmail/index/status").json()
     assert status["running"] is True
     assert (status["done"], status["total"], status["indexed_count"]) == (4, 10, 1)
+    assert status["skipped"] == 2
     assert status["last_indexed_at"]
 
-    gmail_runs.finish_run("index", uid, state, error="boom")
+    gmail_runs.finish_run("index", uid, "r1", error="boom")
     status = client.get("/api/v1/gmail/index/status").json()
     assert status["running"] is False and status["error"] == "boom"
 
@@ -414,7 +406,7 @@ def test_a_finished_import_does_not_block_the_next(db_session):
     _connect(db_session, uid)
     _seed_history(db_session, uid)
     _import(oldest_n=1)
-    gmail_runs.finish_run("import", uid, gmail_runs.get_run("import", uid))
+    gmail_runs.finish_run("import", uid, gmail_runs.get_run("import", uid)["run_id"])
     response, _ = _import(oldest_n=1)
     assert response.status_code == 202
 
@@ -456,3 +448,95 @@ def test_cancel_without_a_running_import_is_a_409(db_session):
     assert (
         response.status_code == 409 and response.json()["code"] == "no_import_running"
     )
+
+
+# --- Robustness --------------------------------------------------------------
+
+
+def test_a_malformed_page_cursor_is_a_422_not_a_500(db_session):
+    response = client.get("/api/v1/gmail/messages", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_cursor"
+
+
+def _age(fake, kind, uid, seconds):
+    """Make a run look like nothing has touched it for `seconds`."""
+    key = f"sanctuary:gmail_{kind}:{uid}"
+    state = json.loads(fake.store[key])
+    state["updated_at"] = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+    fake.store[key] = json.dumps(state)
+
+
+def test_a_run_whose_task_vanished_does_not_lock_the_user_out(
+    db_session, fake_run_state
+):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    _seed_history(db_session, uid)
+    _import(oldest_n=2)
+    _age(fake_run_state, "import", uid, 3600)  # no hop has touched it for an hour
+
+    assert client.get("/api/v1/gmail/import/status").json()["active"] is False
+    response, dispatch = _import(oldest_n=2)  # a fresh run may take over
+    assert response.status_code == 202 and response.json() == {"queued": 2}
+    dispatch.assert_called_once()
+
+
+def test_a_stuck_index_refresh_can_be_started_again(db_session, fake_run_state):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    gmail_runs.begin_run(
+        "index", uid, {"run_id": "old", "total": 0, "done": 0, "skipped": 0}
+    )
+    _age(fake_run_state, "index", uid, 3600)
+    assert client.get("/api/v1/gmail/index/status").json()["running"] is False
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        assert client.post("/api/v1/gmail/index").status_code == 202
+    dispatch.assert_called_once()
+
+
+def test_starting_without_redis_is_a_clear_503_not_a_silent_no_op(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    _seed_history(db_session, uid)
+    down = patch.object(
+        gmail_runs, "_get_client", side_effect=redis.ConnectionError("down")
+    )
+    with down, patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        imported = client.post("/api/v1/gmail/import", json={"oldest_n": 2})
+        indexed = client.post("/api/v1/gmail/index")
+    for response in (imported, indexed):
+        assert response.status_code == 503
+        assert response.json()["code"] == "run_state_unavailable"
+    dispatch.assert_not_called()
+
+
+def test_disconnect_forgets_the_mailbox_mirror_and_stops_runs(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    _seed_history(db_session, uid)
+    _import(oldest_n=2)
+    gmail_runs.begin_run(
+        "index", uid, {"run_id": "r1", "total": 0, "done": 0, "skipped": 0}
+    )
+
+    with patch("app.api.v1.settings_gmail.revoke_token"):
+        assert client.delete("/api/v1/settings/gmail").status_code == 200
+
+    # A different account may be connected next: nothing of the old one lingers.
+    assert db_session.query(GmailMessageIndex).count() == 0
+    assert gmail_runs.is_active(gmail_runs.get_run("import", uid)) is False
+    assert gmail_runs.is_active(gmail_runs.get_run("index", uid)) is False
+
+
+def test_disconnect_works_even_when_redis_is_down(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    _seed_history(db_session, uid)
+    down = patch.object(
+        gmail_runs, "_get_client", side_effect=redis.ConnectionError("down")
+    )
+    with down, patch("app.api.v1.settings_gmail.revoke_token"):
+        response = client.delete("/api/v1/settings/gmail")
+    assert response.status_code == 200 and response.json()["connected"] is False
+    assert db_session.query(GmailMessageIndex).count() == 0

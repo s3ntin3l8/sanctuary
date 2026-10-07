@@ -24,6 +24,7 @@ from app.schemas.gmail_import import (
     GmailMessagePage,
 )
 from app.services import gmail_index_service, gmail_runs, user_settings_service
+from app.services.gmail_runs import RunStateUnavailable
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
@@ -36,6 +37,14 @@ def _require_ready(db: Session, user: User) -> None:
         raise ApiError(
             409, "gmail_allowlist_empty", "Add a sender to the allowlist first."
         )
+
+
+def _run_state_down() -> ApiError:
+    return ApiError(
+        503,
+        "run_state_unavailable",
+        "Redis is unreachable, so the run can't be tracked. Start Redis and retry.",
+    )
 
 
 def _iso(value: str | None) -> datetime | None:
@@ -54,8 +63,17 @@ def refresh_index(
     from app.tasks.gmail_sync import index_gmail_mailbox
 
     _require_ready(db, user)
-    if gmail_runs.begin_run("index", user.id, {"total": 0, "done": 0}):
-        dispatch_task(index_gmail_mailbox, user.id)
+    run_id = uuid.uuid4().hex
+    try:
+        started = gmail_runs.begin_run(
+            "index",
+            user.id,
+            {"run_id": run_id, "total": 0, "done": 0, "skipped": 0, "error": None},
+        )
+    except RunStateUnavailable as exc:
+        raise _run_state_down() from exc
+    if started:
+        dispatch_task(index_gmail_mailbox, user.id, run_id)
 
 
 @router.get("/index/status", response_model=GmailIndexStatus)
@@ -63,11 +81,12 @@ def index_status(db: Session = Depends(get_db), user: User = Depends(get_current
     state = gmail_runs.get_run("index", user.id) or {}
     count, last = gmail_index_service.index_summary(db, user.id)
     return GmailIndexStatus(
-        running=gmail_runs.is_active(state),
+        running=gmail_runs.is_live(state),
         indexed_count=count,
         last_indexed_at=last,
         done=state.get("done", 0),
         total=state.get("total", 0),
+        skipped=state.get("skipped", 0),
         error=state.get("error"),
     )
 
@@ -87,9 +106,12 @@ def messages(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rows, next_cursor = gmail_index_service.list_messages(
-        db, user.id, group=group, cursor=cursor, limit=limit
-    )
+    try:
+        rows, next_cursor = gmail_index_service.list_messages(
+            db, user.id, group=group, cursor=cursor, limit=limit
+        )
+    except ValueError as exc:
+        raise ApiError(422, "invalid_cursor", "Invalid page cursor.") from exc
     return GmailMessagePage(
         items=[
             GmailIndexedMessage(
@@ -134,16 +156,27 @@ def start_import(
         return GmailImportQueued(queued=0)
 
     run_id = uuid.uuid4().hex
-    started = gmail_runs.begin_run(
+    try:
+        started = _begin_import(user.id, run_id, ids, body.sequential)
+    except RunStateUnavailable as exc:
+        raise _run_state_down() from exc
+    if started is None:
+        raise ApiError(409, "import_running", "An import is already running.")
+    dispatch_task(import_gmail_messages, user.id, run_id)
+    return GmailImportQueued(queued=len(ids))
+
+
+def _begin_import(user_id: int, run_id: str, ids: list[str], sequential: bool):
+    return gmail_runs.begin_run(
         "import",
-        user.id,
+        user_id,
         {
             "run_id": run_id,
             "total": len(ids),
             "done": 0,
             "remaining": ids,
             "failed": [],
-            "sequential": body.sequential,
+            "sequential": sequential,
             "waiting_on": None,
             "waiting_since": None,
             "current": None,
@@ -151,10 +184,6 @@ def start_import(
             "error": None,
         },
     )
-    if started is None:
-        raise ApiError(409, "import_running", "An import is already running.")
-    dispatch_task(import_gmail_messages, user.id, run_id)
-    return GmailImportQueued(queued=len(ids))
 
 
 @router.get("/import/status", response_model=GmailImportStatus)
@@ -175,7 +204,7 @@ def import_status(user: User = Depends(get_current_user)):
             finished_at=None,
         )
     return GmailImportStatus(
-        active=gmail_runs.is_active(state),
+        active=gmail_runs.is_live(state),
         total=state["total"],
         done=state["done"],
         failed_count=len(state["failed"]),

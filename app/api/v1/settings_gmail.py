@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, time
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -19,7 +20,12 @@ from app.schemas.settings import (
     GmailResetSync,
     GmailView,
 )
-from app.services import audit_service, user_settings_service
+from app.services import (
+    audit_service,
+    gmail_index_service,
+    gmail_runs,
+    user_settings_service,
+)
 from app.services.ai_config import (
     get_chat_config,
     get_embed_config,
@@ -27,6 +33,8 @@ from app.services.ai_config import (
     is_external_endpoint,
 )
 from app.services.ingestion.gmail import revoke_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings/gmail", tags=["settings"])
 
@@ -177,6 +185,16 @@ def disconnect(
     if credentials:
         revoke_token(credentials)
     user_settings_service.clear_gmail_connection(db, user.id)
+    # The mirrored mailbox and any running index/import belong to this grant; a
+    # different account may be connected next.
+    gmail_index_service.clear_index(db, user.id)
+    try:
+        for kind in ("index", "import"):
+            gmail_runs.cancel_run(kind, user.id)
+    except gmail_runs.RunStateUnavailable:
+        # Disconnecting must work without Redis. With the credentials gone any
+        # still-running hop fails at its next Gmail call and ends its own run.
+        logger.warning("Could not cancel Gmail runs on disconnect (Redis unavailable)")
     _audit(db, user, "disconnect")
     db.commit()
     return _view(db, user)

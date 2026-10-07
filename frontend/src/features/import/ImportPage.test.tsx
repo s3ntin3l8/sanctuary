@@ -25,6 +25,7 @@ const index = {
   last_indexed_at: '2026-10-07T07:00:00+00:00',
   done: 0,
   total: 0,
+  skipped: 0,
   error: null,
 }
 const idle = {
@@ -257,4 +258,29 @@ test('import: without a Gmail connection it points at the settings', async () =>
     'Connect Gmail in Gmail settings first.',
   )
   expect(screen.getByRole('button', { name: /Refresh index/ })).toBeDisabled()
+})
+
+test('import: tells you when some messages could not be read from Gmail', async () => {
+  stubApi({
+    ...base,
+    'GET /api/v1/gmail/index/status': { body: { ...index, skipped: 3 } },
+  })
+  renderAt('/import', <ImportPage />)
+  expect(await screen.findByText(/3 messages couldn.t be read from Gmail/)).toBeVisible()
+})
+
+test('import: an index error while Celery retries says so, and a final failure says failed', async () => {
+  stubApi({
+    ...base,
+    'GET /api/v1/gmail/index/status': {
+      body: { ...index, running: true, done: 0, total: 10, error: 'quota' },
+    },
+  })
+  const { unmount } = renderAt('/import', <ImportPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('hit an error and is retrying — quota')
+  unmount()
+
+  stubApi({ ...base, 'GET /api/v1/gmail/index/status': { body: { ...index, error: 'quota' } } })
+  renderAt('/import', <ImportPage />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('Index refresh failed — quota')
 })

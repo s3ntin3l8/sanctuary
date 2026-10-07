@@ -672,6 +672,14 @@ def batch_pipeline_settled(db: Session, batch_id: int) -> bool:
     gap between dispatch and first stage can't be mistaken for "done". Stages
     the user dismissed are terminal.
     """
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchStatus
+
+    batch_status = (
+        db.query(IngestBatch.status).filter(IngestBatch.id == batch_id).scalar()
+    )
+    if batch_status == IngestBatchStatus.AWAITING_SLICING:
+        return True  # needs the user's slice review: no amount of waiting finishes it
     rows = db.execute(
         text(
             """

@@ -200,7 +200,18 @@ export function ImportPage() {
             : 'Connect Gmail in Gmail settings first.'}
         </Alert>
       )}
-      {index.error && <Alert>Index refresh failed — {index.error}</Alert>}
+      {index.error && (
+        <Alert>
+          {index.running ? 'Index refresh hit an error and is retrying' : 'Index refresh failed'} —{' '}
+          {index.error}
+        </Alert>
+      )}
+      {!index.running && index.skipped > 0 && (
+        <p className="mb-4 text-warning">
+          {pluralize(index.skipped, 'message')} couldn&apos;t be read from Gmail last time — refresh
+          the index again to retry.
+        </p>
+      )}
 
       {index.running && (
         <div className="mb-4 space-y-1.5 rounded-xl border border-line bg-card px-4 py-3">

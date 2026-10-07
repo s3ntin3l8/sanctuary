@@ -579,3 +579,74 @@ def app_client():
     from app.main import app
 
     return TestClient(app)
+
+
+class FakeRunRedis:
+    """In-memory stand-in for the Redis client behind app.services.gmail_runs.
+
+    Supports get/set and the WATCH/MULTI/EXEC pipeline the run state uses for
+    its atomic writes. ``contend`` makes the next N EXECs raise WatchError, as if
+    another writer had changed the key, to exercise the retry loop.
+    """
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+        self.contend = 0
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def set(self, key, value, ex=None):
+        self.store[key] = value
+
+    def pipeline(self):
+        return _FakePipeline(self)
+
+
+class _FakePipeline:
+    def __init__(self, redis_like: FakeRunRedis):
+        self._redis = redis_like
+        self._queued: list[tuple[str, str]] = []
+        self._buffering = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def watch(self, *keys):
+        self._buffering = False
+
+    def unwatch(self):
+        self._buffering = False
+
+    def get(self, key):
+        return self._redis.get(key)
+
+    def multi(self):
+        self._buffering = True
+
+    def set(self, key, value, ex=None):
+        self._queued.append((key, value))
+
+    def execute(self):
+        import redis
+
+        if self._redis.contend > 0:
+            self._redis.contend -= 1
+            self._queued.clear()
+            raise redis.WatchError("changed")
+        for key, value in self._queued:
+            self._redis.store[key] = value
+        self._queued.clear()
+
+
+@pytest.fixture
+def fake_run_state():
+    """Patch the Gmail run-state Redis client with an in-memory fake."""
+    from app.services import gmail_runs
+
+    fake = FakeRunRedis()
+    with patch.object(gmail_runs, "_get_client", return_value=fake):
+        yield fake

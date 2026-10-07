@@ -15,6 +15,9 @@ class GmailIndexStatus(BaseModel):
     # Progress of the running refresh (new messages being fetched).
     done: int
     total: int
+    # Messages Gmail didn't return (quota/5xx) or that couldn't be parsed this
+    # run; a further refresh retries them.
+    skipped: int
     error: str | None
 
 

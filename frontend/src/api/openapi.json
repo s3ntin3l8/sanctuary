@@ -4766,6 +4766,10 @@
             "title": "Running",
             "type": "boolean"
           },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -4777,6 +4781,7 @@
           "last_indexed_at",
           "done",
           "total",
+          "skipped",
           "error"
         ],
         "title": "GmailIndexStatus",

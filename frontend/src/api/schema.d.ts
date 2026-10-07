@@ -4016,6 +4016,8 @@ export interface components {
             last_indexed_at: string | null;
             /** Running */
             running: boolean;
+            /** Skipped */
+            skipped: number;
             /** Total */
             total: number;
         };

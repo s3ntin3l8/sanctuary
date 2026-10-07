@@ -103,6 +103,12 @@ def assign_group_keys(db: Session, owner_id: int) -> None:
     db.flush()
 
 
+def clear_index(db: Session, owner_id: int) -> None:
+    """Forget the mirrored mailbox (on disconnect: a different account may follow)."""
+    db.query(_Idx).filter(_Idx.owner_id == owner_id).delete(synchronize_session=False)
+    db.flush()
+
+
 def index_summary(db: Session, owner_id: int) -> tuple[int, datetime | None]:
     count, last = (
         db.query(func.count(_Idx.id), func.max(_Idx.indexed_at))
@@ -177,8 +183,11 @@ def _encode_cursor(sent_at: datetime, row_id: int) -> str:
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, int]:
-    sent_at, row_id = json.loads(base64.urlsafe_b64decode(cursor.encode()))
-    return datetime.fromisoformat(sent_at), row_id
+    try:
+        sent_at, row_id = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+        return datetime.fromisoformat(sent_at), int(row_id)
+    except Exception as exc:  # any malformed cursor is the caller's error
+        raise ValueError("invalid cursor") from exc
 
 
 def _group_filter(group: str):

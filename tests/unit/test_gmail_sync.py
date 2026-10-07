@@ -367,7 +367,7 @@ def test_index_refresh_retries_on_lock_collision_instead_of_silently_no_opping(
     ):
         with gmail_sync._user_sync_lock(gmail_user.id):
             with pytest.raises(Retry):
-                gmail_sync.index_gmail_mailbox.run(gmail_user.id)
+                gmail_sync.index_gmail_mailbox.run(gmail_user.id, "idx-1")
 
     mock_retry.assert_called_once_with(countdown=30)
 

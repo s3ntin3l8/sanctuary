@@ -66,8 +66,9 @@ export function useGmailImportStatus() {
     queryFn: async () => {
       const status = await unwrap(api.GET('/api/v1/gmail/import/status'))
       const previous = queryClient.getQueryData<S['GmailImportStatus']>(['gmail', 'import'])
-      // Imported-counts move while a run is active, and once more when it ends.
-      if (status.active || previous?.active) {
+      // Counts only move when a message was ingested or the run started/ended;
+      // refetching the whole index on every idle poll would be wasted work.
+      if (status.done !== previous?.done || status.active !== previous?.active) {
         queryClient.invalidateQueries({ queryKey: ['gmail', 'groups'] })
         queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
       }
