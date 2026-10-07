@@ -71,19 +71,27 @@ def test_user_export_contains_only_what_the_caller_owns(
 
     from app.models.database import (
         ActionItem,
+        AuditLog,
         Case,
         CaseShare,
+        Claim,
+        ClaimEvidence,
         Document,
+        DocumentRelationship,
         LegalCost,
         UserReaction,
     )
     from app.models.enums import (
         ActionItemType,
+        AuditEventType,
         CaseAccessLevel,
         CaseStatus,
+        ClaimEvidenceRole,
+        ClaimStatus,
         CostCategory,
         CostStatus,
         Jurisdiction,
+        RelationshipType,
         UserReactionType,
     )
     from app.services import auth_service, export_service
@@ -136,9 +144,47 @@ def test_user_export_contains_only_what_the_caller_owns(
     triage_a = Document(
         title="A scan", case_id=None, owner_id=a.id, file_path="_TRIAGE/scan.pdf"
     )
-    triage_b = Document(title="B scan", case_id=None, owner_id=b.id)
-    db_session.add_all([doc_a, doc_b, doc_s, triage_a, triage_b])
+    # Real ingest paths tag pre-case documents "_TRIAGE" rather than NULL.
+    (data_dir / "_TRIAGE" / "ib-7").mkdir()
+    (data_dir / "_TRIAGE" / "ib-7" / "mail.pdf").write_bytes(b"%PDF m")
+    triage_a2 = Document(
+        title="A mail",
+        case_id="_TRIAGE",
+        owner_id=a.id,
+        file_path="_TRIAGE/ib-7/mail.pdf",
+    )
+    triage_b = Document(title="B scan", case_id="_TRIAGE", owner_id=b.id)
+    # A stored path that resolves outside the data directory is skipped.
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"%PDF o")
+    escaped = Document(title="A escaped", case_id="X-A", file_path=f"../{outside.name}")
+    db_session.add_all([doc_a, doc_b, doc_s, triage_a, triage_a2, triage_b, escaped])
     db_session.flush()
+    # One claim with evidence in A's and in B's case: the claim row ships,
+    # only A's evidence row does. A relationship into B's case does not ship.
+    claim = Claim(claim_text="Custody was contested", status=ClaimStatus.ASSERTED)
+    db_session.add(claim)
+    db_session.flush()
+    db_session.add_all(
+        [
+            ClaimEvidence(
+                claim_id=claim.id, document_id=doc_a.id, role=ClaimEvidenceRole.ASSERTS
+            ),
+            ClaimEvidence(
+                claim_id=claim.id, document_id=doc_b.id, role=ClaimEvidenceRole.ASSERTS
+            ),
+            DocumentRelationship(
+                from_document_id=doc_a.id,
+                to_document_id=doc_b.id,
+                relationship_type=RelationshipType.REFERENCES,
+            ),
+            DocumentRelationship(
+                from_document_id=doc_a.id,
+                to_document_id=triage_a.id,
+                relationship_type=RelationshipType.REFERENCES,
+            ),
+        ]
+    )
     db_session.add_all(
         [
             ActionItem(
@@ -186,7 +232,17 @@ def test_user_export_contains_only_what_the_caller_owns(
     assert "SECRET" not in zf.read("data/user_settings.jsonl").decode()
 
     assert [c["id"] for c in _rows(zf, "cases")] == ["X-A"]
-    assert sorted(d["title"] for d in _rows(zf, "documents")) == ["A letter", "A scan"]
+    assert sorted(d["title"] for d in _rows(zf, "documents")) == [
+        "A escaped",
+        "A letter",
+        "A mail",
+        "A scan",
+    ]
+    assert [c["claim_text"] for c in _rows(zf, "claims")] == ["Custody was contested"]
+    assert [e["document_id"] for e in _rows(zf, "claim_evidence")] == [doc_a.id]
+    assert [r["to_document_id"] for r in _rows(zf, "document_relationships")] == [
+        triage_a.id
+    ]
     assert [i["title"] for i in _rows(zf, "action_items")] == ["A Frist"]
     assert _rows(zf, "legal_costs") == []
     # Reactions are the user's own, even on a document they merely view.
@@ -195,15 +251,20 @@ def test_user_export_contains_only_what_the_caller_owns(
     assert [s["case_id"] for s in _rows(zf, "case_shares")] == ["X-S"]
 
     files = sorted(n for n in zf.namelist() if n.startswith("files/"))
-    assert files == ["files/X-A/letter.pdf", "files/_TRIAGE/scan.pdf"]
-    assert manifest["files_included"] == 2
+    assert files == [
+        "files/X-A/letter.pdf",
+        "files/_TRIAGE/ib-7/mail.pdf",
+        "files/_TRIAGE/scan.pdf",
+    ]
+    assert manifest["files_included"] == 3
+    audit = db_session.query(AuditLog).filter_by(actor_user_id=a.id).one()
+    assert audit.event_type == AuditEventType.DATA_EXPORTED
+    assert audit.payload["scope"] == "user"
     assert Path(data_dir / "X-B" / "letter.pdf").exists()  # untouched, just not shipped
 
 
 @pytest.mark.integration
-def test_user_export_is_open_to_regular_users_and_rate_limited(
-    auth_enabled, db_session
-):
+def test_user_export_is_open_to_regular_users(auth_enabled, db_session):
     from app.services import auth_service
 
     auth_service.create_user(db_session, email="u@example.com", password=PASSWORD)
@@ -211,3 +272,19 @@ def test_user_export_is_open_to_regular_users_and_rate_limited(
     c = _login("u@example.com")
     assert c.get("/api/v1/settings/data/export").status_code == 403
     assert c.get("/api/v1/settings/account/export").status_code == 200
+
+
+@pytest.mark.integration
+def test_user_export_is_limited_to_one_per_hour(auth_enabled, db_session):
+    from app.services import auth_service
+
+    auth_service.create_user(db_session, email="u@example.com", password=PASSWORD)
+    db_session.commit()
+    c = _login("u@example.com")
+    limiter.enabled = True
+    try:
+        assert c.get("/api/v1/settings/account/export").status_code == 200
+        second = c.get("/api/v1/settings/account/export")
+    finally:
+        limiter.enabled = False
+    assert second.status_code == 429

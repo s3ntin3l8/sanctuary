@@ -183,9 +183,11 @@ def build_user_export_zip(db: Session, user: User) -> tuple[bytes, dict]:
         .filter(
             or_(
                 Document.case_id.in_(case_ids),
-                # Pre-case documents are visible by owner only (see the
-                # invariant on Document.owner_id).
-                (Document.case_id.is_(None)) & (Document.owner_id == user.id),
+                # Pre-case documents (triage) are visible by owner only; they
+                # carry "_TRIAGE" or no case id at all (see the invariant on
+                # Document.owner_id and access_guards._NO_CASE).
+                or_(Document.case_id.is_(None), Document.case_id == "_TRIAGE")
+                & (Document.owner_id == user.id),
             )
         )
         .all()
