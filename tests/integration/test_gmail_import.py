@@ -540,3 +540,70 @@ def test_disconnect_works_even_when_redis_is_down(db_session):
         response = client.delete("/api/v1/settings/gmail")
     assert response.status_code == 200 and response.json()["connected"] is False
     assert db_session.query(GmailMessageIndex).count() == 0
+
+
+# --- Local cache -------------------------------------------------------------
+
+
+def test_messages_and_status_report_what_is_cached(db_session):
+    from app.services import gmail_cache
+
+    uid = _admin(db_session)
+    _index(db_session, uid, "a", "8372/25 x", 1)
+    _index(db_session, uid, "b", "8372/25 y", 2)
+    gmail_cache.write(uid, "b", b"12345")
+
+    items = client.get("/api/v1/gmail/messages", params={"group": "8372-25"}).json()[
+        "items"
+    ]
+    assert [(m["gmail_id"], m["cached"]) for m in items] == [("a", False), ("b", True)]
+    status = client.get("/api/v1/gmail/index/status").json()
+    assert (status["cached_count"], status["cached_bytes"]) == (1, 5)
+
+
+def test_clearing_the_cache_deletes_local_copies_only(db_session):
+    from app.services import gmail_cache
+
+    uid = _admin(db_session)
+    _index(db_session, uid, "a", "8372/25 x", 1, message_id="<a@x>")
+    gmail_cache.write(uid, "a", b"raw")
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        subject="x",
+        message_id="<a@x>",
+        owner_id=uid,
+    )
+    db_session.add(batch)
+    db_session.commit()
+
+    assert client.delete("/api/v1/gmail/cache").status_code == 204
+
+    assert gmail_cache.stats(uid) == (0, 0)
+    assert (
+        db_session.get(IngestBatch, batch.id) is not None
+    )  # imported bundles untouched
+    assert db_session.query(GmailMessageIndex).count() == 1  # and so is the index
+    assert client.delete("/api/v1/gmail/cache").status_code == 204  # idempotent
+
+
+def test_clearing_the_cache_leaves_other_users_alone(db_session):
+    from app.services import auth_service, gmail_cache
+
+    other = auth_service.create_user(
+        db_session,
+        email="other-cache@example.com",
+        password="password123",  # pragma: allowlist secret
+    )
+    gmail_cache.write(other.id, "theirs", b"x")
+    client.delete("/api/v1/gmail/cache")
+    assert gmail_cache.read(other.id, "theirs") == b"x"
+
+
+def test_clear_all_data_keeps_the_cache_directory_and_its_files(db_session):
+    from app.services import gmail_cache
+    from app.services.maintenance_service import clear_all_data
+
+    uid = _admin(db_session)
+    gmail_cache.write(uid, "a", b"raw")
+    clear_all_data(db_session)
+    assert gmail_cache.read(uid, "a") == b"raw"

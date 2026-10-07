@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models.database import GmailMessageIndex, UserSettings
-from app.services import gmail_index_service, gmail_runs, user_settings_service
+from app.services import (
+    gmail_cache,
+    gmail_index_service,
+    gmail_runs,
+    user_settings_service,
+)
 from app.services.ingestion.gmail import GmailConnection, GmailReconnectRequired
 from app.tasks import gmail_sync
 
@@ -291,6 +296,8 @@ class _Import:
     """Patches around one import hop; records ingests and re-enqueues."""
 
     def __init__(self, ingest=None, settled=True, locked=True):
+        self.fetched: list[str] = []  # ids actually requested from Gmail
+        self.connect = MagicMock(return_value=GmailConnection(MagicMock(), None))
         self.ingested: list[bytes] = []
         self.batch_ids = iter(range(100, 200))
         self.ingest = ingest or self._default_ingest
@@ -301,16 +308,14 @@ class _Import:
         self.ingested.append(raw)
         return SimpleNamespace(id=next(self.batch_ids))
 
+    def _fetch(self, _service, gmail_id):
+        self.fetched.append(gmail_id)
+        return gmail_id.encode()
+
     def hop(self, user_id, run_id="run-1", hop=0):
         with (
-            patch(
-                "app.tasks.gmail_sync.get_gmail_service",
-                return_value=GmailConnection(MagicMock(), None),
-            ),
-            patch(
-                "app.tasks.gmail_sync.fetch_raw_message",
-                side_effect=lambda _svc, gid: gid.encode(),
-            ),
+            patch("app.tasks.gmail_sync.get_gmail_service", self.connect),
+            patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=self._fetch),
             patch("app.tasks.gmail_sync.ingest_raw_email", side_effect=self.ingest),
             patch("app.tasks.gmail_sync.batch_is_settled", return_value=self.settled),
             patch.object(gmail_sync.import_gmail_messages, "apply_async") as again,
@@ -563,3 +568,97 @@ def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_se
     state = _state(gmail_user.id)
     assert state["finished_at"] and "Reconnect required" in state["error"]
     assert _settings(db_session, gmail_user.id)["gmail_reconnect_required"] is True
+
+
+# --- local cache -------------------------------------------------------------
+
+
+def test_fetched_mail_is_cached_before_it_is_ingested(gmail_user, db_session):
+    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+
+    def _ingest(_db, raw, owner_id):
+        # By the time ingest runs, the raw message is already safely on disk.
+        assert gmail_cache.read(gmail_user.id, "g1") == b"g1"
+        return SimpleNamespace(id=1)
+
+    imp = _Import(ingest=_ingest)
+    imp.hop(gmail_user.id)
+    assert imp.fetched == ["g1"]
+
+
+def test_a_message_that_fails_to_ingest_is_still_cached(gmail_user, db_session):
+    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+
+    def _boom(*_a, **_k):
+        raise ValueError("parser bug")
+
+    _Import(ingest=_boom).hop(gmail_user.id)
+    assert gmail_cache.read(gmail_user.id, "g1") == b"g1"  # can be replayed once fixed
+
+
+def test_cached_mail_is_imported_without_touching_gmail(gmail_user, db_session):
+    for gid in ("g1", "g2"):
+        gmail_cache.write(gmail_user.id, gid, f"cached {gid}".encode())
+    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+
+    imp = _Import()
+    assert imp.hop(gmail_user.id) == "Imported 2 of 2 messages"
+
+    assert imp.ingested == [b"cached g1", b"cached g2"]
+    assert imp.fetched == []  # no Gmail fetch...
+    imp.connect.assert_not_called()  # ...and no Gmail connection at all
+
+
+def test_only_cache_misses_cost_a_gmail_connection(gmail_user, db_session):
+    gmail_cache.write(gmail_user.id, "g1", b"cached g1")
+    _start(db_session, gmail_user.id, ["g1", "g2", "g3"], sequential=False)
+
+    imp = _Import()
+    imp.hop(gmail_user.id)
+
+    assert imp.ingested == [b"cached g1", b"g2", b"g3"]
+    assert imp.fetched == ["g2", "g3"]
+    assert imp.connect.call_count == 1  # built once, on the first miss
+
+
+def test_cached_mail_imports_even_when_the_grant_is_revoked(gmail_user, db_session):
+    gmail_cache.write(gmail_user.id, "g1", b"cached g1")
+    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+    imp = _Import()
+    imp.connect.side_effect = GmailReconnectRequired("revoked")
+
+    assert imp.hop(gmail_user.id) == "Imported 1 of 1 messages"
+    assert imp.ingested == [b"cached g1"]
+
+
+def test_a_revoked_grant_on_a_cache_miss_ends_the_run_instead_of_failing_the_message(
+    gmail_user, db_session
+):
+    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    imp = _Import()
+    imp.connect.side_effect = GmailReconnectRequired("revoked")
+
+    assert imp.hop(gmail_user.id) == "Reconnect required"
+    state = _state(gmail_user.id)
+    assert state["failed"] == []  # the message isn't blamed for the dead token
+    assert "Reconnect required" in state["error"]
+
+
+def test_a_wipe_followed_by_a_reimport_is_deterministic_and_offline(
+    gmail_user, db_session
+):
+    from app.services.maintenance_service import clear_all_data
+
+    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    first = _Import()
+    first.hop(gmail_user.id)
+    assert first.fetched == ["g1", "g2"]
+
+    clear_all_data(db_session)  # Settings -> Data -> Clear all data
+
+    assert gmail_cache.stats(gmail_user.id)[0] == 2  # the cache outlived the wipe
+    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    again = _Import()
+    again.hop(gmail_user.id)
+    assert again.fetched == [] and again.ingested == [b"g1", b"g2"]
+    again.connect.assert_not_called()

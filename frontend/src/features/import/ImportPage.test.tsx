@@ -27,6 +27,8 @@ const index = {
   total: 0,
   skipped: 0,
   error: null,
+  cached_count: 0,
+  cached_bytes: 0,
 }
 const idle = {
   active: false,
@@ -82,6 +84,7 @@ const messages = {
       sent_at: '2024-01-02T10:00:00+00:00',
       has_attachments: true,
       ingested: true,
+      cached: true,
     },
     {
       gmail_id: 'g2',
@@ -91,6 +94,7 @@ const messages = {
       sent_at: '2024-02-10T10:00:00+00:00',
       has_attachments: false,
       ingested: false,
+      cached: false,
     },
   ],
   next_cursor: null,
@@ -283,4 +287,49 @@ test('import: an index error while Celery retries says so, and a final failure s
   stubApi({ ...base, 'GET /api/v1/gmail/index/status': { body: { ...index, error: 'quota' } } })
   renderAt('/import', <ImportPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent('Index refresh failed — quota')
+})
+
+test('import: shows what is cached locally and marks cached messages', async () => {
+  stubApi({
+    ...base,
+    'GET /api/v1/gmail/index/status': {
+      body: { ...index, cached_count: 12, cached_bytes: 3 * 1024 * 1024 },
+    },
+  })
+  renderAt('/import', <ImportPage />)
+
+  expect(await screen.findByText(/12 cached \(3\.0 MB\)/)).toBeVisible()
+  await userEvent.setup().click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
+  const cachedRow = (await screen.findByText('Schriftsatz vom 2. Januar')).closest(
+    'li',
+  ) as HTMLElement
+  const freshRow = screen.getByText('Ladung zur Verhandlung').closest('li') as HTMLElement
+  expect(within(cachedRow).getByText('Cached locally')).toBeInTheDocument()
+  expect(within(freshRow).queryByText('Cached locally')).not.toBeInTheDocument()
+})
+
+test('import: clearing the cache asks first and says it only touches local copies', async () => {
+  const fetch = stubApi({
+    ...base,
+    'GET /api/v1/gmail/index/status': { body: { ...index, cached_count: 2, cached_bytes: 2048 } },
+    'DELETE /api/v1/gmail/cache': { status: 204, body: null },
+  })
+  renderAt('/import', <ImportPage />)
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: /Clear cache/ }))
+  const dialog = screen.getByRole('dialog')
+  expect(dialog).toHaveTextContent('Nothing in Gmail and no already-imported bundle is touched')
+  expect(sent(fetch, 'DELETE', '/api/v1/gmail/cache')).toBeUndefined()
+
+  await user.click(within(dialog).getByRole('button', { name: 'Clear cache' }))
+  await waitFor(() => expect(sent(fetch, 'DELETE', '/api/v1/gmail/cache')).toBeDefined())
+  expect(await screen.findByRole('status')).toHaveTextContent('Local mail cache cleared')
+})
+
+test('import: no cache, no clear button', async () => {
+  stubApi(base)
+  renderAt('/import', <ImportPage />)
+  await screen.findByText(/7 messages indexed/)
+  expect(screen.queryByRole('button', { name: /Clear cache/ })).not.toBeInTheDocument()
 })

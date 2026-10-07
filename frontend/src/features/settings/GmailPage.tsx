@@ -220,7 +220,7 @@ export function GmailPage() {
           })
         }}
         title="Disconnect Gmail?"
-        body="Sanctuary forgets the Gmail connection and revokes its own access at Google. Mail already imported stays; nothing in your mailbox is touched. Your sender allowlist is kept."
+        body="Sanctuary forgets the Gmail connection and revokes its own access at Google. Mail already imported stays; nothing in your mailbox is touched. Your sender allowlist is kept. Raw copies of fetched mail stay on this machine until you clear the cache on the Import page."
         label="Disconnect"
         danger
         pending={disconnect.isPending}

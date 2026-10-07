@@ -1196,6 +1196,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gmail/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * V1 Clear Cache
+         * @description Delete the local copies of fetched messages (local files only — nothing in
+         *     Gmail or in already-imported bundles is touched).
+         */
+        delete: operations["v1_clear_cache_api_v1_gmail_cache_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gmail/groups": {
         parameters: {
             query?: never;
@@ -4006,6 +4027,10 @@ export interface components {
         };
         /** GmailIndexStatus */
         GmailIndexStatus: {
+            /** Cached Bytes */
+            cached_bytes: number;
+            /** Cached Count */
+            cached_count: number;
             /** Done */
             done: number;
             /** Error */
@@ -4023,6 +4048,8 @@ export interface components {
         };
         /** GmailIndexedMessage */
         GmailIndexedMessage: {
+            /** Cached */
+            cached: boolean;
             /** Gmail Id */
             gmail_id: string;
             /** Has Attachments */
@@ -7793,6 +7820,33 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SummaryView"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_clear_cache_api_v1_gmail_cache_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

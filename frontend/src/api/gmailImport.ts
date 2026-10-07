@@ -59,6 +59,17 @@ export function useRefreshGmailIndex() {
   })
 }
 
+export function useClearGmailCache() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, ApiError>({
+    mutationFn: () => unwrap(api.DELETE('/api/v1/gmail/cache')),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gmail', 'index'] })
+      queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+    },
+  })
+}
+
 export function useGmailImportStatus() {
   const queryClient = useQueryClient()
   return useQuery<S['GmailImportStatus'], ApiError>({
