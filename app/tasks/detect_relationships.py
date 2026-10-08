@@ -12,51 +12,6 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-def _dispatch_claims_safely(doc_id: int) -> None:
-    """Atomically claim CLAIMS and dispatch extract_claims_task. Without the
-    claim, a doc whose CLAIMS task is queued-behind-a-busy-worker gets seen as
-    PENDING by `recover_stuck_pending_dispatches` and double-dispatched —
-    two concurrent extract_claims_task runs then trip the stale-cleanup race
-    and the second wipes the first's work if it produces 0 claims. See
-    doc_39 / 2026-05-26 22:00-22:12 incident.
-
-    Mirrors the pattern in enrich_document._dispatch_if_pending: only the
-    worker that wins the PENDING→RUNNING CAS actually dispatches.
-
-    On broker failure, mark CLAIMS failed instead of leaving the stage stuck
-    in RUNNING (we already claimed it)."""
-    from app.dependencies import get_db_session
-    from app.services.pipeline_status import claim_stage_for_dispatch, mark_failed
-    from app.tasks.extract_claims import extract_claims_task
-
-    db = get_db_session()
-    try:
-        if not claim_stage_for_dispatch(doc_id, PipelineStage.CLAIMS, db):
-            logger.debug(
-                "Doc #%d: CLAIMS already claimed by another dispatcher — "
-                "skipping cascade dispatch",
-                doc_id,
-            )
-            return
-    finally:
-        db.close()
-
-    try:
-        extract_claims_task.delay(doc_id)
-    except Exception as e:
-        logger.error(
-            "Doc #%d: extract_claims dispatch failed — marking CLAIMS failed: %s",
-            doc_id,
-            e,
-            exc_info=True,
-        )
-        db = get_db_session()
-        try:
-            mark_failed(doc_id, PipelineStage.CLAIMS, db, error=f"dispatch failed: {e}")
-        finally:
-            db.close()
-
-
 @celery_app.task(
     bind=True,
     max_retries=3,
@@ -104,10 +59,9 @@ def detect_relationships_task(self, doc_id: int):
                 doc_id, PipelineStage.RELATIONSHIPS, db, reason="enrich_not_completed"
             )
             logger.info(
-                "Doc #%d: relationships skipped (enrich_not_completed) — still dispatching claims",
+                "Doc #%d: relationships skipped (enrich_not_completed)",
                 doc_id,
             )
-            _dispatch_claims_safely(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -118,10 +72,9 @@ def detect_relationships_task(self, doc_id: int):
                 doc_id, PipelineStage.RELATIONSHIPS, db, reason="missing_ai_summary"
             )
             logger.info(
-                "Doc #%d: relationships skipped (missing_ai_summary) — still dispatching claims",
+                "Doc #%d: relationships skipped (missing_ai_summary)",
                 doc_id,
             )
-            _dispatch_claims_safely(doc_id)
             return {
                 "status": "skipped",
                 "doc_id": doc_id,
@@ -162,10 +115,9 @@ def detect_relationships_task(self, doc_id: int):
         finally:
             db.close()
         logger.info(
-            "Doc #%d: relationships failed — still dispatching claims",
+            "Doc #%d: relationships failed",
             doc_id,
         )
-        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except SA_OperationalError as e:
         if is_db_locked(e) and self.request.retries < self.max_retries:
@@ -201,10 +153,9 @@ def detect_relationships_task(self, doc_id: int):
         finally:
             db.close()
         logger.info(
-            "Doc #%d: relationships failed — still dispatching claims",
+            "Doc #%d: relationships failed",
             doc_id,
         )
-        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         if self.request.retries < self.max_retries:
@@ -239,10 +190,9 @@ def detect_relationships_task(self, doc_id: int):
         finally:
             db.close()
         logger.info(
-            "Doc #%d: relationships failed — still dispatching claims",
+            "Doc #%d: relationships failed",
             doc_id,
         )
-        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except SoftTimeLimitExceeded as e:
         # An Exception subclass — must come before the generic branch below
@@ -260,11 +210,9 @@ def detect_relationships_task(self, doc_id: int):
         finally:
             db.close()
         logger.info(
-            "Doc #%d: relationships failed (soft time limit) — still "
-            "dispatching claims",
+            "Doc #%d: relationships failed (soft time limit)",
             doc_id,
         )
-        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
         retry_if_transient_ai_error(self, doc_id, PipelineStage.RELATIONSHIPS, e)
@@ -277,10 +225,9 @@ def detect_relationships_task(self, doc_id: int):
         finally:
             db.close()
         logger.info(
-            "Doc #%d: relationships failed — still dispatching claims",
+            "Doc #%d: relationships failed",
             doc_id,
         )
-        _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
 
     db = get_db_session()
@@ -299,9 +246,8 @@ def detect_relationships_task(self, doc_id: int):
         db.close()
 
     logger.info(
-        "Doc #%d: relationships %s — dispatching claims",
+        "Doc #%d: relationships %s",
         doc_id,
         "skipped" if skipped else "complete",
     )
-    _dispatch_claims_safely(doc_id)
     return {"status": "success", "doc_id": doc_id}

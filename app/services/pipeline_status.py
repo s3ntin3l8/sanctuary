@@ -114,8 +114,8 @@ class StageSpec:
 #   metadata_task: METADATA, then fans out to BATCH_ANALYSIS (gated on all
 #     batch siblings' METADATA done) AND EMBEDDINGS (parallel).
 #   analyze_batch_task: BATCH_ANALYSIS → ENRICH per doc.
-#   enrich_document_task: ENRICH → RELATIONSHIPS, ENTITIES (parallel siblings).
-#   detect_relationships_task: RELATIONSHIPS → CLAIMS.
+#   enrich_document_task: ENRICH → RELATIONSHIPS, CLAIMS, ENTITIES (parallel
+#     siblings; only RELATIONSHIPS is held by the per-case history gate).
 #
 # Display order (`order` field) reflects when each stage finishes in wallclock
 # time on the typical fast-path: EMBEDDINGS dispatches alongside BATCH_ANALYSIS
@@ -198,7 +198,7 @@ STAGE_REGISTRY: dict[PipelineStage, StageSpec] = {
         order=6,
         label="Claims",
         icon="format_list_bulleted",
-        depends_on=(PipelineStage.RELATIONSHIPS,),
+        depends_on=(PipelineStage.ENRICH,),
         downstream=(),
         retry_task="app.tasks.extract_claims.extract_claims_task",
     ),
@@ -1645,105 +1645,93 @@ def recover_stuck_pending_dispatches(
         ):
             continue
 
-        # Find the head pending stage in cascade order.
-        head_spec = None
-        for spec in _STAGE_ORDER:
-            if spec.stage in skip_stages:
-                # Batch-level stage: never dispatch from here, but it still
-                # blocks downstream stages when not yet terminal. The original
-                # unconditional `continue` was the bug that stranded ib-0033:
-                # pending BATCH_ANALYSIS was invisible, so ENRICH was dispatched
-                # prematurely, gate-blocked itself to SKIPPED, and the batch
-                # analyzer's _enrich_if_pending CAS then found no PENDING row.
-                stage_record = stages.get(spec.stage.value, {})
-                status = (
-                    stage_record.get("status")
-                    if isinstance(stage_record, dict)
-                    else None
-                )
-                if status not in (
-                    StageStatus.COMPLETED.value,
-                    StageStatus.SKIPPED.value,
-                ):
-                    break
-                continue
-            stage_record = stages.get(spec.stage.value, {})
-            if not isinstance(stage_record, dict):
-                continue
-            status = stage_record.get("status")
-            if status == StageStatus.PENDING.value:
-                head_spec = spec
-                break
-            if status not in (
-                StageStatus.COMPLETED.value,
-                StageStatus.SKIPPED.value,
+        # Every PENDING stage whose whole upstream chain is terminal-ok is
+        # ready to run. Siblings (RELATIONSHIPS / CLAIMS / ENTITIES) are judged
+        # independently, so one held or failed sibling never hides another's
+        # lost dispatch. BATCH_ANALYSIS is batch-level and dispatched by
+        # recover_unclaimed_ready_batches above, but as a dependency it still
+        # blocks ENRICH and everything after it until terminal.
+        def _status(stage: PipelineStage, stages: dict = stages) -> str | None:
+            record = stages.get(stage.value)
+            return record.get("status") if isinstance(record, dict) else None
+
+        ready_specs = [
+            spec
+            for spec in _STAGE_ORDER
+            if spec.stage not in skip_stages
+            and spec.dispatch_arg == "doc_id"
+            and _status(spec.stage) == StageStatus.PENDING.value
+            and all(
+                _status(dep) in (StageStatus.COMPLETED.value, StageStatus.SKIPPED.value)
+                for dep in _UPSTREAM[spec.stage]
+            )
+        ]
+
+        doc_redispatched = False
+        for head_spec in ready_specs:
+            # Held by the history gate: an earlier document of the case is still
+            # being enriched, so this stage is waiting on purpose, not lost. (The
+            # gate opens by itself after RELATIONSHIPS_GATE_MAX_WAIT.)
+            if (
+                head_spec.stage == PipelineStage.RELATIONSHIPS
+                and not relationships_gate_open(db, doc.id)
             ):
-                # Non-terminal upstream blocker (failed) — let it be.
-                break
+                continue
 
-        if head_spec is None or head_spec.dispatch_arg != "doc_id":
-            continue
+            # See docstring: a PENDING EXTRACT may be queue-waiting (legit) rather
+            # than lost (recoverable). If the ingest worker is presumed alive
+            # (recent extract activity), assume queue-waiting and skip.
+            if head_spec.stage == PipelineStage.EXTRACT and ingest_worker_alive:
+                continue
 
-        # Held by the history gate: an earlier document of the case is still being
-        # enriched, so this stage is waiting on purpose, not lost. (The gate opens
-        # by itself after RELATIONSHIPS_GATE_MAX_WAIT.)
-        if (
-            head_spec.stage == PipelineStage.RELATIONSHIPS
-            and not relationships_gate_open(db, doc.id)
-        ):
-            continue
+            # Lazy imports — pipeline_status is also imported during task execution.
+            from app.tasks.dispatch import dispatch_task
 
-        # See docstring: a PENDING EXTRACT may be queue-waiting (legit) rather
-        # than lost (recoverable). If the ingest worker is presumed alive
-        # (recent extract activity), assume queue-waiting and skip.
-        if head_spec.stage == PipelineStage.EXTRACT and ingest_worker_alive:
-            continue
+            module_path, name = head_spec.retry_task.rsplit(".", 1)
+            try:
+                task = getattr(importlib.import_module(module_path), name)
+            except (ImportError, AttributeError):
+                logger.exception(
+                    "Stuck-pending recovery: cannot resolve retry_task %s for doc %d",
+                    head_spec.retry_task,
+                    doc.id,
+                )
+                continue
 
-        # Lazy imports — pipeline_status is also imported during task execution.
-        from app.tasks.dispatch import dispatch_task
+            # Self-claiming stages (metadata_task) must be dispatched UNCLAIMED:
+            # the task flips PENDING→RUNNING itself on entry. Pre-claiming here
+            # would leave the stage RUNNING with the dispatched task skipping as
+            # "already_claimed" — the recovery deadlock that stranded ib-0001. The
+            # task's own atomic claim provides the same double-dispatch dedup.
+            if head_spec.self_claims:
+                dispatch_task(task, doc.id)
+                doc_redispatched = True
+                continue
 
-        module_path, name = head_spec.retry_task.rsplit(".", 1)
-        try:
-            task = getattr(importlib.import_module(module_path), name)
-        except (ImportError, AttributeError):
-            logger.exception(
-                "Stuck-pending recovery: cannot resolve retry_task %s for doc %d",
-                head_spec.retry_task,
-                doc.id,
-            )
-            continue
+            # Atomic claim before dispatch — without this, a stage that is PENDING
+            # at snapshot time but whose task is already queued (waiting behind a
+            # busy worker) gets a second .delay() from us. Two concurrent extract_*
+            # tasks then run on the same doc, the second deletes the first's
+            # auto-claims via stale-cleanup, and if the second produces 0 the
+            # first's work is gone. See doc_39 / 2026-05-26 22:00-22:12 incident.
+            # claim_stage_for_dispatch is the same primitive every cascade
+            # dispatcher uses (document_processing, enrich_document); recovery
+            # was the outlier that skipped it. Stages whose task mark_starts
+            # unconditionally (extract, enrich, …) rely on this pre-claim for dedup.
+            if not claim_stage_for_dispatch(doc.id, head_spec.stage, db):
+                logger.debug(
+                    "Stuck-pending recovery: stage %s for doc %d already claimed "
+                    "by another worker — skipping",
+                    head_spec.stage.value,
+                    doc.id,
+                )
+                continue
 
-        # Self-claiming stages (metadata_task) must be dispatched UNCLAIMED:
-        # the task flips PENDING→RUNNING itself on entry. Pre-claiming here
-        # would leave the stage RUNNING with the dispatched task skipping as
-        # "already_claimed" — the recovery deadlock that stranded ib-0001. The
-        # task's own atomic claim provides the same double-dispatch dedup.
-        if head_spec.self_claims:
             dispatch_task(task, doc.id)
+            doc_redispatched = True
+
+        if doc_redispatched:
             redispatched.append(doc.id)
-            continue
-
-        # Atomic claim before dispatch — without this, a stage that is PENDING
-        # at snapshot time but whose task is already queued (waiting behind a
-        # busy worker) gets a second .delay() from us. Two concurrent extract_*
-        # tasks then run on the same doc, the second deletes the first's
-        # auto-claims via stale-cleanup, and if the second produces 0 the
-        # first's work is gone. See doc_39 / 2026-05-26 22:00-22:12 incident.
-        # claim_stage_for_dispatch is the same primitive every cascade
-        # dispatcher uses (document_processing, enrich_document); recovery
-        # was the outlier that skipped it. Stages whose task mark_starts
-        # unconditionally (extract, enrich, …) rely on this pre-claim for dedup.
-        if not claim_stage_for_dispatch(doc.id, head_spec.stage, db):
-            logger.debug(
-                "Stuck-pending recovery: stage %s for doc %d already claimed "
-                "by another worker — skipping",
-                head_spec.stage.value,
-                doc.id,
-            )
-            continue
-
-        dispatch_task(task, doc.id)
-        redispatched.append(doc.id)
 
     return {"docs_redispatched": len(redispatched), "doc_ids": redispatched}
 

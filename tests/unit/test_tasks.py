@@ -413,10 +413,8 @@ def test_enrich_runs_when_batch_analysis_skipped_manual_upload(
 
 
 @pytest.mark.unit
-def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed(
-    db_session, sample_document
-):
-    """detect_relationships_task skips itself and dispatches extract_claims_task when enrichment is not completed."""
+def test_detect_relationships_skips_when_enrichment_failed(db_session, sample_document):
+    """detect_relationships_task skips itself when enrichment is not completed."""
     from app.models.enums import PipelineStage, StageStatus
 
     _set_doc_stages(
@@ -430,17 +428,6 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch("app.services.pipeline_status.mark_started"),
         patch("app.services.pipeline_status.mark_skipped") as mock_mark_skipped,
-        # _dispatch_claims_safely now gates on claim_stage_for_dispatch (Issue
-        # #4 race fix). The test setup deletes the CLAIMS pipeline row so the
-        # real CAS would return False — mock it to True since this test is
-        # about the dispatch decision, not the claim primitive.
-        patch(
-            "app.services.pipeline_status.claim_stage_for_dispatch",
-            return_value=True,
-        ),
-        patch(
-            "app.tasks.extract_claims.extract_claims_task.delay"
-        ) as mock_claims_delay,
         patch.object(db_session, "close", return_value=None),
     ):
         mock_get_db.return_value = db_session
@@ -450,11 +437,10 @@ def test_detect_relationships_skips_and_dispatches_claims_when_enrichment_failed
     assert result["status"] == "skipped"
     assert result["reason"] == "enrich_not_completed"
     mock_mark_skipped.assert_called_once()
-    mock_claims_delay.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit
-def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missing(
+def test_detect_relationships_skips_when_ai_summary_missing(
     db_session, sample_document
 ):
     """detect_relationships_task skips when ENRICH completed but produced no ai_summary."""
@@ -473,13 +459,6 @@ def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missin
         patch("app.dependencies.get_db_session") as mock_get_db,
         patch("app.services.pipeline_status.mark_started"),
         patch("app.services.pipeline_status.mark_skipped") as mock_mark_skipped,
-        patch(
-            "app.services.pipeline_status.claim_stage_for_dispatch",
-            return_value=True,
-        ),
-        patch(
-            "app.tasks.extract_claims.extract_claims_task.delay"
-        ) as mock_claims_delay,
         patch.object(db_session, "close", return_value=None),
     ):
         mock_get_db.return_value = db_session
@@ -489,7 +468,6 @@ def test_detect_relationships_skips_and_dispatches_claims_when_ai_summary_missin
     assert result["status"] == "skipped"
     assert result["reason"] == "missing_ai_summary"
     mock_mark_skipped.assert_called_once()
-    mock_claims_delay.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit
@@ -599,9 +577,6 @@ def test_detect_relationships_retries_once_on_timeout_then_fails(
             side_effect=httpx.ReadTimeout("simulated"),
         ),
         patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
-        patch(
-            "app.tasks.detect_relationships._dispatch_claims_safely"
-        ) as mock_dispatch_claims,
         patch.object(
             detect_relationships_task, "retry", side_effect=retry_sentinel
         ) as mock_retry,
@@ -617,7 +592,6 @@ def test_detect_relationships_retries_once_on_timeout_then_fails(
             detect_relationships_task.request.clear()
         mock_retry.assert_called_once()
         mock_mark_failed.assert_not_called()
-        mock_dispatch_claims.assert_not_called()
 
         detect_relationships_task.request.update({"retries": 1})
         try:
@@ -627,7 +601,6 @@ def test_detect_relationships_retries_once_on_timeout_then_fails(
 
     assert result["status"] == "failed"
     mock_mark_failed.assert_called_once()
-    mock_dispatch_claims.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit
@@ -650,9 +623,6 @@ def test_detect_relationships_retries_connect_error_with_backoff_then_fails(
             side_effect=httpx.ConnectError("simulated"),
         ),
         patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
-        patch(
-            "app.tasks.detect_relationships._dispatch_claims_safely"
-        ) as mock_dispatch_claims,
         patch.object(
             detect_relationships_task, "retry", side_effect=retry_sentinel
         ) as mock_retry,
@@ -679,11 +649,10 @@ def test_detect_relationships_retries_connect_error_with_backoff_then_fails(
 
     assert result["status"] == "failed"
     mock_mark_failed.assert_called_once()
-    mock_dispatch_claims.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit
-def test_detect_relationships_soft_time_limit_fails_without_retry_and_dispatches_claims(
+def test_detect_relationships_soft_time_limit_fails_without_retry(
     db_session, sample_document
 ):
     """PR3a: a soft time limit must not retry — it means "wrap up now" — but
@@ -700,9 +669,6 @@ def test_detect_relationships_soft_time_limit_fails_without_retry_and_dispatches
             side_effect=SoftTimeLimitExceeded("simulated"),
         ),
         patch("app.services.pipeline_status.mark_failed") as mock_mark_failed,
-        patch(
-            "app.tasks.detect_relationships._dispatch_claims_safely"
-        ) as mock_dispatch_claims,
         patch.object(detect_relationships_task, "retry") as mock_retry,
         patch.object(db_session, "close", return_value=None),
     ):
@@ -717,7 +683,6 @@ def test_detect_relationships_soft_time_limit_fails_without_retry_and_dispatches
     assert result["status"] == "failed"
     mock_retry.assert_not_called()
     mock_mark_failed.assert_called_once()
-    mock_dispatch_claims.assert_called_once_with(sample_document.id)
 
 
 @pytest.mark.unit

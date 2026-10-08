@@ -293,3 +293,108 @@ def test_the_queue_says_why_a_held_document_is_waiting(db_session, sample_case):
 
     assert item(held).note == "Waiting for earlier documents of the case"
     assert item(plain).note is None
+
+
+# --- CLAIMS fans out off ENRICH, independent of the gate ----------------------
+
+
+def _claims_pending(db, doc_id: int, relationships: str) -> None:
+    for stage, status in (("claims", "pending"), ("relationships", relationships)):
+        db.query(DocumentPipelineStage).filter_by(
+            document_id=doc_id, stage=stage
+        ).update({"status": status})
+    db.commit()
+
+
+def test_enrich_success_dispatches_claims_even_while_relationships_is_held(
+    db_session, sample_case
+):
+    _doc(db_session, sample_case.id, enrich="running")  # closes the gate
+    later = _doc(db_session, sample_case.id, enrich="running")
+    _claims_pending(db_session, later, "pending")
+
+    with (
+        patch("app.dependencies.get_db_session", return_value=db_session),
+        patch("app.services.intelligence.document_enricher.enrich"),
+        patch.object(db_session, "close", return_value=None),
+        patch.object(enrich_document, "_trigger_cost_rollup"),
+        patch.object(enrich_document, "_dispatch_safely") as dispatch_safely,
+    ):
+        db_session.query(DocumentPipelineStage).filter_by(
+            document_id=later, stage="enrich"
+        ).update({"status": "pending"})
+        db_session.commit()
+        enrich_document.enrich_document_task.run(later)
+
+    dispatched = {c.args[1] for c in dispatch_safely.call_args_list}
+    assert PipelineStage.CLAIMS in dispatched
+    assert PipelineStage.RELATIONSHIPS not in dispatched  # still held
+    assert _stage(db_session, later, "relationships").reason == (
+        RELATIONSHIPS_HOLD_REASON
+    )
+
+
+@pytest.mark.parametrize("relationships", ["pending", "failed"])
+def test_the_sweeper_recovers_a_lost_claims_dispatch_behind_relationships(
+    db_session, sample_case, relationships
+):
+    from app.tasks.extract_claims import extract_claims_task
+
+    _doc(db_session, sample_case.id, enrich="running")  # RELATIONSHIPS stays held
+    stranded = _doc(db_session, sample_case.id)
+    if relationships == "pending":
+        hold_relationships(db_session, stranded)
+    _claims_pending(db_session, stranded, relationships)
+
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        result = pipeline_status.recover_stuck_pending_dispatches(db_session)
+
+    assert stranded in result["doc_ids"]
+    assert [(c.args[0], c.args[1]) for c in dispatch.call_args_list] == [
+        (extract_claims_task, stranded)
+    ]
+
+
+def test_retry_failed_redispatches_each_failed_sibling_stage(db_session, sample_case):
+    from app.services import worker_queue
+
+    doc_id = _doc(db_session, sample_case.id)
+    _claims_pending(db_session, doc_id, "failed")
+    db_session.query(DocumentPipelineStage).filter_by(
+        document_id=doc_id, stage="claims"
+    ).update({"status": "failed"})
+    db_session.get(Document, doc_id).pipeline_state = PipelineState.FAILED
+    db_session.commit()
+
+    with (
+        patch.object(
+            worker_queue.access_service, "visible_case_ids", return_value=None
+        ),
+        patch("app.services.triage_retry.dispatch_pipeline_retry") as dispatch,
+    ):
+        worker_queue.retry_failed_docs_for(db_session, type("U", (), {"id": 1})())
+
+    assert {c.args[2] for c in dispatch.call_args_list} == {
+        PipelineStage.RELATIONSHIPS,
+        PipelineStage.CLAIMS,
+    }
+
+
+def test_refresh_review_reasons_locks_the_document_row(db_session, sample_case):
+    from sqlalchemy import event
+
+    from app.services.ingestion.service import refresh_review_reasons
+
+    doc = db_session.get(Document, _doc(db_session, sample_case.id))
+    seen: list[str] = []
+
+    def capture(conn, cursor, statement, *args):
+        seen.append(statement)
+
+    event.listen(db_session.get_bind(), "before_cursor_execute", capture)
+    try:
+        refresh_review_reasons(doc, db_session)
+    finally:
+        event.remove(db_session.get_bind(), "before_cursor_execute", capture)
+
+    assert any("FOR UPDATE" in s for s in seen)

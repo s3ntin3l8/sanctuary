@@ -207,7 +207,16 @@ def refresh_review_reasons(doc: Document, db, *, commit: bool = True) -> None:
     """Recompute and persist `review_reasons` / `needs_review` for one document.
 
     Pass commit=False when called inside a larger transaction that will commit later.
+
+    RELATIONSHIPS and CLAIMS finish concurrently and each does a full recompute,
+    so the standalone (commit=True) path locks the row and re-reads it first: the
+    later writer then sees the other stage's committed edges/evidence instead of
+    overwriting its reason with a stale snapshot.
     """
+    if commit:
+        db.query(Document).filter(
+            Document.id == doc.id
+        ).with_for_update().populate_existing().one()
     reasons = compute_review_reasons(doc, confirmed=False)
     doc.review_reasons = reasons
     doc.needs_review = len(reasons) > 0

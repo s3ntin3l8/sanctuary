@@ -88,7 +88,7 @@ _TASKS = {
     PipelineStage.RELATIONSHIPS: (
         "app.tasks.detect_relationships.detect_relationships_task",
         "app.services.intelligence.relationship_detector.detect",
-        ["app.tasks.detect_relationships._dispatch_claims_safely"],
+        [],
     ),
 }
 

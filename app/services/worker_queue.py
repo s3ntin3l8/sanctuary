@@ -226,6 +226,8 @@ def _build_queue_items(running: list[Document], pending: list[Document]) -> list
 def retry_failed_docs_for(db: Session, user: User) -> None:
     """Reset and re-dispatch every FAILED doc the user may see."""
     from app.services.pipeline_status import (
+        _DOWNSTREAM,
+        _UPSTREAM,
         STAGE_REGISTRY,
         reset_failed_stages_only,
         retry_on_db_locked,
@@ -278,6 +280,20 @@ def retry_failed_docs_for(db: Session, user: User) -> None:
                 earliest.stage.value,
             )
             dispatch_pipeline_retry(doc_id, doc.ingest_batch_id, earliest.stage, db)
+            # Sibling stages (e.g. RELATIONSHIPS and CLAIMS both fan out of
+            # ENRICH) don't chain off each other, so a failed sibling whose
+            # upstream is intact needs its own dispatch. Stages downstream of
+            # `earliest` are re-run by it and are left alone.
+            rerun = {earliest.stage, *_DOWNSTREAM.get(earliest.stage, ())}
+            for spec in failed_specs:
+                if spec.stage in rerun or spec.dispatch_arg != "doc_id":
+                    continue
+                if all(
+                    pre_reset.get(dep.value, {}).get("status")
+                    in ("completed", "skipped")
+                    for dep in _UPSTREAM[spec.stage]
+                ):
+                    dispatch_pipeline_retry(doc_id, doc.ingest_batch_id, spec.stage, db)
         else:
             # No recognised failed stage — fall back to head task (EXTRACT).
             from app.tasks.document_processing import process_document_task
