@@ -889,6 +889,30 @@ def aggregate_pipeline_summary(stages_per_doc: list[dict]) -> dict:
     return {"total": len(stages_per_doc), **counts}
 
 
+def _stage_status(db: Session, doc_id: int, stage: PipelineStage) -> str | None:
+    return db.execute(
+        text(
+            "SELECT status FROM document_pipeline_stages "
+            "WHERE document_id = :d AND stage = :s"
+        ),
+        {"d": doc_id, "s": stage.value},
+    ).scalar()
+
+
+def terminal_failure_cascade(stage: PipelineStage) -> tuple[PipelineStage, ...]:
+    """Downstream stages to fail when ``stage`` fails terminally for one document.
+
+    The registry's downstream list minus BATCH_ANALYSIS: that stage is shared by
+    the whole batch, so failing it for one document would poison every sibling's
+    readiness check (see ``METADATA_FAILURE_CASCADE``). Use this for any
+    per-document give-up; reset_stage keeps the full list because a retry does
+    want BATCH_ANALYSIS redone.
+    """
+    return tuple(
+        s for s in _DOWNSTREAM.get(stage, []) if s != PipelineStage.BATCH_ANALYSIS
+    )
+
+
 def _orphan_resets_so_far(db: Session, doc_id: int, stage: PipelineStage) -> int:
     return (
         db.execute(
@@ -945,8 +969,9 @@ def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
             )
         db.commit()
         return
-    cascade = METADATA_FAILURE_CASCADE if stage == PipelineStage.METADATA else None
-    mark_failed_with_cascade(doc.id, stage, db, error=error, cascade=cascade)
+    mark_failed_with_cascade(
+        doc.id, stage, db, error=error, cascade=terminal_failure_cascade(stage)
+    )
 
 
 def recover_orphaned_running_stages(
@@ -988,7 +1013,8 @@ def recover_orphaned_running_stages(
     so a document that deterministically hangs the worker stops cycling.
 
     Returns {"docs_reset": N, "stages_reset": N, "stages_failed": N,
-    "batches_reset": N}.
+    "batches_reset": N} where ``batches_reset`` counts every batch that had a
+    document touched (not only those whose BATCH_ANALYSIS was reset).
     """
     from app.config import CELERY_TASK_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
     from app.models.database import Document, IngestBatch
@@ -1064,7 +1090,6 @@ def recover_orphaned_running_stages(
     affected_batch_ids: set[int] = set()
     batch_analysis_reset_ids: set[int] = set()
 
-    _IN_FLIGHT = {StageStatus.RUNNING.value, StageStatus.RETRYING.value}
     for doc in docs:
         stages: dict = stages_dict(doc)
         stuck: list[tuple[str, bool]] = []  # (stage key, provably orphaned)
@@ -1138,6 +1163,12 @@ def recover_orphaned_running_stages(
             except ValueError:
                 continue
 
+            # The snapshot above may be stale by now: an earlier iteration for
+            # this same document can have failed-and-cascaded this very stage,
+            # or the task can have finished. Never overwrite a settled row.
+            if _stage_status(db, doc.id, stage_enum) not in _IN_FLIGHT:
+                continue
+
             # Only a *provable* orphan counts toward the cap: the heuristic
             # path also fires on every worker restart (min_age_seconds=0),
             # which says nothing about the document itself.
@@ -1152,7 +1183,7 @@ def recover_orphaned_running_stages(
             # downstream stages. reset_stage() is for user-initiated retries where
             # re-running downstream is intentional; here we're just clearing an
             # in-flight lock left by a crash.
-            _update_stage(
+            if not _update_stage(
                 doc.id,
                 stage_enum,
                 db,
@@ -1166,7 +1197,9 @@ def recover_orphaned_running_stages(
                     "next_at": None,
                 },
                 commit=False,
-            )
+                only_if_status_in=_IN_FLIGHT,
+            ):
+                continue  # settled between the check above and this write
             if provable:
                 db.execute(
                     text(
@@ -1967,9 +2000,11 @@ def _update_stage(
         db.execute(
             text(
                 "INSERT INTO document_pipeline_stages "
-                "(document_id, stage, status, started_at, completed_at, error, reason, attempt, max_attempts, next_at) "
+                "(document_id, stage, status, started_at, completed_at, error, reason, "
+                "attempt, max_attempts, next_at, orphan_resets) "
                 "VALUES (:_doc_id, :_stage, :_status, :_k_started_at, :_k_completed_at, "
-                ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at)"
+                ":_k_error, :_k_reason, :_k_attempt, :_k_max_attempts, :_k_next_at, "
+                "COALESCE(:_k_orphan_resets, 0))"
             ),
             ins,
         )

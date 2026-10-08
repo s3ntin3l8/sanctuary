@@ -317,3 +317,76 @@ def test_slicing_retry_stamps_a_fresh_dispatch_time_and_clears_recovered(
     assert slicing["status"] == "preparing"
     assert slicing["dispatched_at"] > old
     assert "recovered" not in slicing
+
+
+# --- review follow-ups ---------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_cap_failure_is_not_undone_by_a_second_stuck_stage_on_the_same_document(
+    db_session, doc
+):
+    """METADATA hits the cap and cascades ENRICH to FAILED; ENRICH was also in
+    the sweep's snapshot as stuck and must not be reset back to PENDING."""
+    _set(db_session, doc.id, "extract", "completed")
+    _set(db_session, doc.id, "metadata", "running", started_at=_hours_ago(5))
+    db_session.execute(
+        text(
+            "UPDATE document_pipeline_stages SET orphan_resets = 3 "
+            "WHERE document_id = :d AND stage = 'metadata'"
+        ),
+        {"d": doc.id},
+    )
+    db_session.commit()
+    _set(db_session, doc.id, "enrich", "running", started_at=_hours_ago(5))
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert result["stages_failed"] == 1
+    assert _row(db_session, doc.id, "metadata")[0] == "failed"
+    assert _row(db_session, doc.id, "enrich")[0] == "failed"  # cascade survived
+
+
+@pytest.mark.integration
+def test_a_stage_that_finished_since_the_snapshot_is_not_reset(db_session, doc):
+    _set(db_session, doc.id, "enrich", "running", started_at=_hours_ago(5))
+    real = recover_orphaned_running_stages.__globals__["_stage_status"]
+
+    def _finished_meanwhile(db, doc_id, stage):
+        mark_completed(doc_id, stage, db)  # the task completed after the snapshot
+        return real(db, doc_id, stage)
+
+    with patch(
+        "app.services.pipeline_status._stage_status", side_effect=_finished_meanwhile
+    ):
+        result = recover_orphaned_running_stages(db_session)
+
+    assert result["stages_reset"] == 0
+    assert _row(db_session, doc.id, "enrich")[0] == "completed"
+
+
+@pytest.mark.integration
+def test_terminal_failure_cascade_never_includes_the_batch_shared_stage():
+    from app.services.pipeline_status import terminal_failure_cascade
+
+    for stage in PipelineStage:
+        assert PipelineStage.BATCH_ANALYSIS not in terminal_failure_cascade(stage)
+    # ...and still cascades to the per-document stages after it.
+    assert PipelineStage.ENRICH in terminal_failure_cascade(PipelineStage.METADATA)
+
+
+@pytest.mark.integration
+def test_defensive_stage_insert_starts_the_orphan_count_at_zero(db_session, doc):
+    db_session.execute(
+        text(
+            "DELETE FROM document_pipeline_stages "
+            "WHERE document_id = :d AND stage = 'embeddings'"
+        ),
+        {"d": doc.id},
+    )
+    db_session.commit()
+
+    mark_completed(doc.id, PipelineStage.EMBEDDINGS, db_session)  # row recreated
+
+    status, _, _, resets = _row(db_session, doc.id, "embeddings")
+    assert (status, resets) == ("completed", 0)
