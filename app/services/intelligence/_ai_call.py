@@ -66,6 +66,8 @@ def _parse_litellm_error_code(body: bytes) -> str | None:
     """Extract the error code from a LiteLLM JSON error response body."""
     try:
         err = json.loads(body).get("error") or {}
+        if not isinstance(err, dict):
+            return None  # LM Studio native body: {"error": "<message>"}
         return err.get("code") or err.get("type") or None
     except Exception:
         return None
@@ -80,6 +82,11 @@ def _parse_litellm_error_summary(body: bytes) -> str | None:
     try:
         err = json.loads(body).get("error") or {}
     except Exception:
+        return None
+    if isinstance(err, str):
+        # LM Studio native body: {"error": "<message>"}, no litellm envelope.
+        return err.strip() or None
+    if not isinstance(err, dict):
         return None
     msg = (err.get("message") or "").strip()
     typ = (err.get("type") or "").strip()
@@ -113,6 +120,15 @@ def is_transient_backend_error(exc: Exception) -> bool:
     """
     msg = str(exc)
     return any(m in msg for m in _TRANSIENT_BACKEND_MARKERS)
+
+
+def is_transient_ai_http_error(exc: httpx.HTTPStatusError) -> bool:
+    """True when an AI HTTP error is worth retrying: any 5xx, or a 4xx whose
+    body carries a transient-backend marker. Plain 4xx (bad key, bad request,
+    context overflow) would fail identically on retry."""
+    if exc.response.status_code >= 500:
+        return True
+    return is_transient_backend_error(exc)
 
 
 def _scope_file(debug_dir, debug_label: str, ingest_batch_id: int | None = None):

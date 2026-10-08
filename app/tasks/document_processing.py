@@ -9,6 +9,7 @@ from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
 from app.dependencies import get_db_session
 from app.models.database import Document
 from app.models.enums import PipelineStage
+from app.services.intelligence._ai_call import is_transient_ai_http_error
 from app.services.model_gate import ModelGateTimeout
 from app.services.pipeline_status import (
     METADATA_FAILURE_CASCADE,
@@ -517,8 +518,17 @@ def _run_phase1_summary(doc_id: int) -> None:
                 # task instead of failing the doc (see metadata_task).
                 db2.rollback()
                 raise
-            except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
-                if isinstance(e, SA_OperationalError) and not is_db_locked(e):
+            except _TRANSIENT_AI_ERRORS + (
+                SA_OperationalError,
+                httpx.HTTPStatusError,
+            ) as e:
+                permanent = (
+                    isinstance(e, SA_OperationalError) and not is_db_locked(e)
+                ) or (
+                    isinstance(e, httpx.HTTPStatusError)
+                    and not is_transient_ai_http_error(e)
+                )
+                if permanent:
                     db2.rollback()
                     mark_failed_with_cascade(
                         doc_id,
