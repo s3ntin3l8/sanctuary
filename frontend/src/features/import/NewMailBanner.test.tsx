@@ -96,7 +96,7 @@ test('banner: announces new mail and imports all of it', async () => {
   expect(await screen.findByRole('status')).toHaveTextContent('Queued 2 messages')
   expect(await body(fetch, 'POST', '/api/v1/gmail/import')).toEqual({
     new: true,
-    })
+  })
 })
 
 test('banner: review lists the messages and imports a hand-picked few', async () => {
@@ -116,7 +116,7 @@ test('banner: review lists the messages and imports a hand-picked few', async ()
   await waitFor(async () =>
     expect(await body(fetch, 'POST', '/api/v1/gmail/import')).toEqual({
       new: true,
-          gmail_ids: ['n2'],
+      gmail_ids: ['n2'],
     }),
   )
 })
