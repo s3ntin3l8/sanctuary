@@ -551,7 +551,9 @@ def ingest_scanned_file(
 
     if page_count == 1:
         # Single-page: create Document directly and dispatch
-        content_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+        # source_hash is already the SHA-256 of this file's bytes (the scan driver
+        # computed it), so don't read the whole PDF into memory a second time.
+        content_hash = source_hash
         doc = Document(
             title=pdf_path.name,
             owner_id=owner_id,

@@ -19,6 +19,7 @@ from app.config import (
 )
 from app.core.paths import to_storage_path
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
+from app.services.ingestion.converters import MAX_FILE_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -94,13 +95,29 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
         )
         return 0
 
+    # Bound memory before touching the content: the file is hashed in chunks
+    # (never held whole) and rendered page by page later, but an unbounded drop
+    # into the folder would still cost unbounded time and disk. Same cap as
+    # uploads.
     try:
-        file_bytes = dest_path.read_bytes()
+        size = dest_path.stat().st_size
     except OSError as exc:
         _fail_batch(processing_batch_dir, batch_id, f"Could not read file: {exc}")
         return 0
+    if size > MAX_FILE_SIZE:
+        _fail_batch(
+            processing_batch_dir,
+            batch_id,
+            f"File is {size / (1024 * 1024):.1f} MB; the ingest folder accepts at "
+            f"most {MAX_FILE_SIZE // (1024 * 1024)} MB. Split the scan and try again.",
+        )
+        return 0
 
-    source_hash = hashlib.sha256(file_bytes).hexdigest()
+    try:
+        source_hash = _sha256_file(dest_path)
+    except OSError as exc:
+        _fail_batch(processing_batch_dir, batch_id, f"Could not read file: {exc}")
+        return 0
 
     if owner_id is not None:
         try:
