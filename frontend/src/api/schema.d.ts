@@ -1544,7 +1544,8 @@ export interface paths {
         post?: never;
         /**
          * V1 Reject Relationship
-         * @description Drop a relationship suggestion; reopens the target's thread if nothing confirmed remains.
+         * @description Drop a relationship and remember the rejection so later detection runs
+         *     don't recreate it; reopens the target's thread if nothing confirmed remains.
          */
         delete: operations["v1_reject_relationship_api_v1_relationships__rel_id__delete"];
         options?: never;

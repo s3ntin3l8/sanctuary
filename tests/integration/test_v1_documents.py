@@ -454,3 +454,30 @@ def test_confirming_an_email_header_relationship_is_a_noop(db_session, sample_ca
     )
     # Rejecting is still allowed.
     assert client.delete(f"/api/v1/relationships/{rel.id}").status_code == 204
+
+
+def test_rejecting_a_relationship_remembers_it(db_session, sample_case):
+    from app.models.database import RejectedRelationship
+    from app.repositories.document_relationship import insert_edge_if_absent
+
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    other = _doc(db_session, admin.id, title="Other")
+    rel = DocumentRelationship(
+        from_document_id=doc.id,
+        to_document_id=other.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+        confidence=RelationshipConfidence.AI_DETECTED,
+    )
+    db_session.add(rel)
+    db_session.commit()
+
+    assert client.delete(f"/api/v1/relationships/{rel.id}").status_code == 204
+    db_session.expire_all()
+    assert db_session.query(RejectedRelationship).count() == 1
+    assert not insert_edge_if_absent(
+        db_session,
+        from_document_id=doc.id,
+        to_document_id=other.id,
+        relationship_type=RelationshipType.REPLIES_TO,
+    )

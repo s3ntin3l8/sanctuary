@@ -276,3 +276,23 @@ def test_batch_without_headers_is_a_noop(db_session, sample_case):
     _doc(db_session, batch, sample_case.id)
     assert link_batch(db_session, batch.id) == 0
     assert _edges(db_session) == []
+
+
+@pytest.mark.unit
+def test_rejected_header_edge_is_not_recreated(db_session, sample_case):
+    from app.repositories.document_relationship import reject_edge
+
+    parent_b = _batch(db_session, "<p@x>")
+    _doc(db_session, parent_b, sample_case.id)
+    reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", refs=["<p@x>"])
+    _doc(db_session, reply_b, sample_case.id)
+    assert link_batch(db_session, reply_b.id) == 1
+    db_session.commit()
+
+    reject_edge(db_session, db_session.query(DocumentRelationship).one())
+    db_session.commit()
+
+    assert link_batch(db_session, reply_b.id) == 0
+    assert link_batch(db_session, parent_b.id) == 0
+    db_session.commit()
+    assert _edges(db_session) == []

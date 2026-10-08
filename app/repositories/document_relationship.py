@@ -5,9 +5,47 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased
 
 from app.core.timezone import now_utc
-from app.models.database import Document, DocumentRelationship
+from app.models.database import Document, DocumentRelationship, RejectedRelationship
 from app.models.enums import RelationshipConfidence, RelationshipType
 from app.repositories.base import BaseRepository
+
+
+def is_rejected(
+    db: Session,
+    *,
+    from_document_id: int,
+    to_document_id: int,
+    relationship_type: RelationshipType,
+) -> bool:
+    """True if the user already rejected this (from, to, type) edge."""
+    return (
+        db.query(RejectedRelationship.id)
+        .filter(
+            RejectedRelationship.from_document_id == from_document_id,
+            RejectedRelationship.to_document_id == to_document_id,
+            RejectedRelationship.relationship_type == relationship_type,
+        )
+        .first()
+        is not None
+    )
+
+
+def reject_edge(db: Session, rel: DocumentRelationship) -> None:
+    """Delete an edge and remember the rejection so it is not recreated.
+
+    The caller owns the transaction.
+    """
+    db.execute(
+        pg_insert(RejectedRelationship)
+        .values(
+            from_document_id=rel.from_document_id,
+            to_document_id=rel.to_document_id,
+            relationship_type=rel.relationship_type,
+            rejected_at=now_utc(),
+        )
+        .on_conflict_do_nothing(constraint="uq_rejected_relationships_edge")
+    )
+    db.delete(rel)
 
 
 def insert_edge_if_absent(
@@ -19,13 +57,26 @@ def insert_edge_if_absent(
     confidence: RelationshipConfidence = RelationshipConfidence.AI_DETECTED,
     notes: str | None = None,
 ) -> bool:
-    """Insert an edge unless (from, to, type) already exists; True if inserted.
+    """Insert an edge unless (from, to, type) already exists or was rejected by
+    the user; True if inserted.
 
     Race-safe: ``ON CONFLICT DO NOTHING`` on ``uq_document_relationships_edge``
     means two concurrent writers (re-extraction, batch analysis) cannot trip the
     unique constraint and fail the surrounding commit, which a check-then-add
     pattern does. The caller owns the transaction.
+
+    The rejection check is a plain read before the insert, so a rejection
+    committed between the two can still be missed by one concurrent writer. The
+    edge then reappears once and the user can reject it again; nothing else
+    cleans it up. Closing the window would need the check inside the INSERT.
     """
+    if is_rejected(
+        db,
+        from_document_id=from_document_id,
+        to_document_id=to_document_id,
+        relationship_type=relationship_type,
+    ):
+        return False
     result = db.execute(
         pg_insert(DocumentRelationship)
         .values(

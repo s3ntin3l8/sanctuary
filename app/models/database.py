@@ -876,6 +876,44 @@ class DocumentRelationship(Base):
     )
 
 
+class RejectedRelationship(Base):
+    """An edge the user rejected, so no later detection run writes it again.
+
+    Keyed on the same (from, to, type) triple as ``DocumentRelationship``;
+    ``insert_edge_if_absent`` consults it. Dies with either document.
+    """
+
+    __tablename__ = "rejected_relationships"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_document_id",
+            "to_document_id",
+            "relationship_type",
+            name="uq_rejected_relationships_edge",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    to_document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    relationship_type: Mapped[RelationshipType] = mapped_column(
+        SAEnum(RelationshipType), nullable=False
+    )
+    rejected_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False
+    )
+
+
 class ActionItem(Base):
     """Deadlines, court dates, and other case-level actions.
 
