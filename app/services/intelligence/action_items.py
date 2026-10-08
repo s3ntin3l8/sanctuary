@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -199,7 +200,9 @@ def create_from_payload(
         # A court_date on a day is the hearing itself, so it absorbs other-type
         # items on that day: a later non-court_date item is a duplicate, and an
         # earlier one is promoted to court_date instead of adding a second row.
-        # Distinct non-hearing types on one day still coexist.
+        # Distinct non-hearing types on one day still coexist, until a court_date
+        # arrives: then the lowest-id other-type row that day is promoted and
+        # the remaining distinct rows are retained.
         if raw_type != ActionItemType.COURT_DATE.value:
             if (due_date.date(), ActionItemType.COURT_DATE.value) in existing_keys:
                 continue
@@ -208,7 +211,7 @@ def create_from_payload(
                 db.query(ActionItem)
                 .filter(
                     ActionItem.case_id == case_id,
-                    ActionItem.due_date == due_date,
+                    func.date(ActionItem.due_date) == due_date.date(),
                     ActionItem.superseded.is_(False),
                 )
                 .order_by(ActionItem.id)
