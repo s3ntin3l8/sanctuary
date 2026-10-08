@@ -188,13 +188,16 @@ def prune_ai_debug_logs_task():
 def recover_pipeline_task():
     """Run all pipeline + background-job recovery heuristics (orphaned stages,
     stuck dispatches, stuck batches, unclaimed metadata-phase barriers, empty
-    batches, stale reindex/dedup jobs)."""
+    batches, EMBEDDINGS stranded behind a failed stage, lost slicing
+    preparation, stale reindex/dedup jobs)."""
     from app.config import SessionLocal
     from app.services.pipeline_status import (
+        recover_embeddings_behind_failed_stage,
         recover_empty_batches,
         recover_orphaned_running_stages,
         recover_stuck_batches,
         recover_stuck_pending_dispatches,
+        recover_stuck_slicing_prep,
         recover_unclaimed_ready_batches,
         recover_unclaimed_ready_metadata_phases,
     )
@@ -211,6 +214,8 @@ def recover_pipeline_task():
         unclaimed = recover_unclaimed_ready_batches(db)
         unclaimed_metadata = recover_unclaimed_ready_metadata_phases(db)
         empty_batches = recover_empty_batches(db)
+        stranded_embeddings = recover_embeddings_behind_failed_stage(db)
+        slicing_prep = recover_stuck_slicing_prep(db)
         stale_reindex = recover_stale_reindex_job(db)
         stale_dedup = recover_stale_dedup_jobs(db)
         if stale_reindex or stale_dedup:
@@ -228,6 +233,7 @@ def recover_pipeline_task():
             "status": "success",
             "orphaned_docs": orphaned.get("docs_reset", 0),
             "orphaned_stages": orphaned.get("stages_reset", 0),
+            "orphaned_stages_failed": orphaned.get("stages_failed", 0),
             "stuck_dispatches": dispatches.get("docs_redispatched", 0),
             "stuck_batches": batches.get("batches_recovered", 0),
             "unclaimed_batches": unclaimed.get("batches_dispatched", 0),
@@ -235,6 +241,10 @@ def recover_pipeline_task():
                 "batches_dispatched", 0
             ),
             "empty_batches": empty_batches.get("batches_deleted", 0),
+            "stranded_embeddings": stranded_embeddings.get("dispatched", 0)
+            + stranded_embeddings.get("skipped", 0),
+            "slicing_prep_recovered": len(slicing_prep.get("redispatched", [])),
+            "slicing_prep_failed": len(slicing_prep.get("failed", [])),
             "stale_reindex": 1 if stale_reindex else 0,
             "stale_dedup": len(stale_dedup),
         }

@@ -337,8 +337,9 @@ def prepare(batch_id: int) -> None:
             return
 
         if not batch.raw_source_path:
-            logger.error("prepare_slicing: batch %d has no raw_source_path", batch_id)
-            return
+            # Raise (not return) so the handler below records slicing as failed
+            # instead of leaving it "preparing" forever.
+            raise ValueError(f"batch {batch_id} has no raw_source_path")
         pdf_path = resolve_storage_path(batch.raw_source_path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found at {pdf_path}")

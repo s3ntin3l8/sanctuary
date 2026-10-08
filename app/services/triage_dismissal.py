@@ -101,7 +101,14 @@ def delete_bundle(
         batch = db.get(IngestBatch, batch_id)
         if not batch:
             return False
-        if batch.status == IngestBatchStatus.AWAITING_SLICING:
+        # A batch whose slicing preparation failed (or was lost and given up on
+        # by the recovery sweep) has nothing in flight and no cuts to confirm,
+        # so it must be deletable; one still preparing or ready is not.
+        slicing_state = ((batch.meta or {}).get("slicing") or {}).get("status")
+        if (
+            batch.status == IngestBatchStatus.AWAITING_SLICING
+            and slicing_state != "failed"
+        ):
             raise ValueError(
                 f"Cannot delete batch {batch_id} in {batch.status.value} state. "
                 "Wait for processing to finish, or retry the bundle first."

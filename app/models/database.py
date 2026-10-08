@@ -337,6 +337,13 @@ class DocumentPipelineStage(Base):
     attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     next_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # How many times the orphan sweeper reset this stage after it provably blew
+    # the Celery time limit. Past a small cap the stage is failed instead of
+    # reset, so a poison document can't cycle reset->redispatch forever (#150).
+    # Cleared when the stage completes or a user retries it.
+    orphan_resets: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     document: Mapped["Document"] = relationship("Document", back_populates="stage_rows")
 

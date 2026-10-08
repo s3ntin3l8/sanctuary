@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.errors import ApiError
 from app.core.paths import resolve_storage_path
 from app.core.rate_limit import limiter
+from app.core.timezone import now_utc
 from app.dependencies import get_current_user, get_db
 from app.models.database import IngestBatch, User
 from app.models.enums import IngestBatchStatus
@@ -153,7 +154,11 @@ def retry(
     if slicing.get("status") == "preparing":
         raise ApiError(409, "already_preparing", "Slicing is already being prepared.")
     meta = dict(locked.meta or {})
-    meta["slicing"] = {**slicing, "status": "preparing"}
+    meta["slicing"] = {
+        **{k: v for k, v in slicing.items() if k != "recovered"},
+        "status": "preparing",
+        "dispatched_at": now_utc().isoformat(),
+    }
     locked.meta = meta
     db.commit()
     dispatch_task(prepare_slicing_task, locked.id)
