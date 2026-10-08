@@ -225,6 +225,7 @@ function Pipeline({ review }: { review: Review }) {
   const failed = stages.filter((s) => s.status === 'failed')
   const running = stages.find((s) => s.status === 'running' || s.status === 'retrying')
   const complete = stages.length > 0 && done === stages.length
+  const ocrFailures = review.pipeline.ocr_page_failures
   return (
     <section className="border-b border-line2 px-4.5 py-2.5" aria-label="Pipeline">
       <div className="flex flex-wrap items-center gap-2.5">
@@ -234,7 +235,11 @@ function Pipeline({ review }: { review: Review }) {
             <span
               key={s.key}
               title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
-              className={`h-[5px] w-[18px] rounded-sm ${SEGMENT[s.status ?? ''] ?? 'bg-line3'}`}
+              className={`h-[5px] w-[18px] rounded-sm ${
+                s.key === 'extract' && ocrFailures.length > 0 && s.status === 'completed'
+                  ? 'bg-warning'
+                  : (SEGMENT[s.status ?? ''] ?? 'bg-line3')
+              }`}
             />
           ))}
         </div>
@@ -275,6 +280,27 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         )}
       </div>
+      {ocrFailures.length > 0 && (
+        <div
+          role="alert"
+          className="mt-1.5 flex items-center gap-2 text-[10px] text-warning"
+          data-testid="ocr-page-failures"
+        >
+          <Icon name="warning" size={13} />
+          <span className="min-w-0 flex-1">
+            OCR failed on {ocrFailures.length === 1 ? 'page' : 'pages'} {ocrFailures.join(', ')};
+            the text is incomplete.
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={retry.isPending}
+            onClick={() => retry.mutate('extract', { onError: (e) => toast(e.message, 'error') })}
+          >
+            Re-extract
+          </Button>
+        </div>
+      )}
       {failed[0]?.error && (
         <button
           type="button"

@@ -115,6 +115,19 @@ def test_review_view_shape(db_session, sample_case):
     assert [c["id"] for c in body["cases"]] == [sample_case.id]
 
 
+def test_review_pipeline_reports_ocr_page_failures(db_session):
+    admin = _admin(db_session)
+    clean = _doc(db_session, admin.id)
+    partial = _doc(db_session, admin.id, meta={"page_failures": [3, 1]})
+
+    def failures(doc):
+        body = client.get(f"/api/v1/documents/{doc.id}/review").json()
+        return body["pipeline"]["ocr_page_failures"]
+
+    assert failures(clean) == []
+    assert failures(partial) == [1, 3]
+
+
 def test_review_requires_access(auth_enabled, db_session):
     from app.services import auth_service
 

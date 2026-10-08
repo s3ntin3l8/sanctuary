@@ -357,6 +357,7 @@ export const documentReview: Schemas['DocumentReview'] = {
     { field: 'issued_date', label: 'Issued', value: '2026-06-14', confidence: 'medium' },
   ],
   pipeline: {
+    ocr_page_failures: [],
     state: 'completed',
     stages: [
       {

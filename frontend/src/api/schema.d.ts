@@ -4863,6 +4863,8 @@ export interface components {
         PipelineState: "pending" | "running" | "completed" | "failed" | "dismissed" | "partial";
         /** PipelineView */
         PipelineView: {
+            /** Ocr Page Failures */
+            ocr_page_failures: number[];
             /** Stages */
             stages: components["schemas"]["StageView"][];
             state: components["schemas"]["PipelineState"];
