@@ -1,12 +1,12 @@
 """4b — Per-document relationship detection against prior docs in the same proceeding."""
 
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document, DocumentRelationship, Proceeding
 from app.models.enums import RelationshipConfidence, RelationshipType, SignificanceTier
+from app.repositories.document_relationship import insert_edge_if_absent
 from app.services.ai_config import get_chat_config
 from app.services.embeddings import nearest_document_ids
 from app.services.intelligence._ai_call import call_json_ai
@@ -284,17 +284,15 @@ def detect(doc_id: int) -> str | None:
                     continue
 
             notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
-            db.add(
-                DocumentRelationship(
-                    from_document_id=doc_id,
-                    to_document_id=to_id,
-                    relationship_type=rel_type_enum,
-                    confidence=RelationshipConfidence.AI_DETECTED,
-                    notes=notes[:500],
-                    ingest_date=datetime.now(UTC),
-                )
-            )
-            new_count += 1
+            if insert_edge_if_absent(
+                db,
+                from_document_id=doc_id,
+                to_document_id=to_id,
+                relationship_type=rel_type_enum,
+                confidence=RelationshipConfidence.AI_DETECTED,
+                notes=notes[:500],
+            ):
+                new_count += 1
 
         db.commit()
         logger.info(

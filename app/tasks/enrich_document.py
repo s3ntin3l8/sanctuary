@@ -61,7 +61,8 @@ def enrich_document_task(self, doc_id: int):
                 # requires status='pending', so a SKIPPED row was silently dropped
                 # and the doc was stranded. Matches generate_embedding_task which
                 # leaves the stage PENDING on gate-block rather than marking SKIPPED.
-                reset_stage(doc_id, PipelineStage.ENRICH, db)
+                # force: this task owns the RUNNING ENRICH stage it is deferring.
+                reset_stage(doc_id, PipelineStage.ENRICH, db, force=True)
                 logger.info(
                     "Doc #%d: deferring enrich — batch_analysis not yet terminal "
                     "(status=%s); reset to PENDING for _enrich_if_pending redispatch",
