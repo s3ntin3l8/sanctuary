@@ -51,7 +51,14 @@ def create_from_payload(
     Also deduplicates across documents: skips any item whose (due_date, action_type)
     already exists for the case from another source document. This prevents the
     letter + Verfügung pattern (German Ladungen) from producing two identical
-    court-date action items.
+    court-date action items. A ``court_date`` also dedups against other-type
+    items on the same day (the same hearing classified differently by another
+    document): a later non-court_date item is skipped, and when a court_date
+    arrives the single lowest-id other-type row that day is promoted to it
+    (reopened if dismissed, re-sourced to the court document). Any further
+    distinct rows that day are retained. Promotion only happens when the
+    court_date is new: if one already exists for the day, a repeat court_date
+    is a plain duplicate and leaves other-type rows as they are.
 
     When source_doc_date is provided, drops actions whose due_date is more than
     one day before source_doc_date — guards against the AI extracting past
@@ -191,6 +198,41 @@ def create_from_payload(
         key = (due_date.date(), raw_type)
         if key in existing_keys:
             continue
+
+        # The same hearing is often classified differently across documents
+        # (Ladung -> court_date, cover letter -> response_required/deadline).
+        # A court_date on a day is the hearing itself, so it absorbs other-type
+        # items on that day: a later non-court_date item is a duplicate, and an
+        # earlier one is promoted to court_date instead of adding a second row.
+        # Distinct non-hearing types on one day still coexist (see docstring).
+        if raw_type != ActionItemType.COURT_DATE.value:
+            if (due_date.date(), ActionItemType.COURT_DATE.value) in existing_keys:
+                continue
+        else:
+            twin = (
+                db.query(ActionItem)
+                .filter(
+                    ActionItem.case_id == case_id,
+                    ActionItem.due_date >= due_date,
+                    ActionItem.due_date < due_date + timedelta(days=1),
+                    ActionItem.superseded.is_(False),
+                )
+                .order_by(ActionItem.id)
+                .first()
+            )
+            if twin is not None:
+                existing_keys.discard((due_date.date(), twin.action_type.value))
+                twin.action_type = ActionItemType.COURT_DATE
+                # The promoted row is now the hearing, sourced from the court
+                # document: a user's dismissal of the earlier "respond by"
+                # item must not hide it, and re-enriching the original cover
+                # letter must not purge (and re-create) it.
+                if twin.status == ActionItemStatus.DISMISSED:
+                    twin.status = ActionItemStatus.OPEN
+                if source_doc_id is not None:
+                    twin.source_document_id = source_doc_id
+                existing_keys.add(key)
+                continue
 
         # Tombstone guard: if any item at this date was previously superseded,
         # a rescheduling notice established it as void — don't re-insert.
