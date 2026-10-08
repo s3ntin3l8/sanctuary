@@ -271,7 +271,8 @@ def test_the_sweeper_starts_a_held_stage_once_the_gate_has_opened(
         result = pipeline_status.recover_stuck_pending_dispatches(db_session)
 
     assert held in result["doc_ids"]
-    assert dispatch.call_args.args[1] == held
+    # The sweep dispatches every ready stage, in no guaranteed document order.
+    assert held in [c.args[1] for c in dispatch.call_args_list]
 
 
 # --- Processing queue -----------------------------------------------------------
