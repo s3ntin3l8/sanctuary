@@ -7,7 +7,6 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.models.database import Document, IngestBatch
 from app.models.enums import DocumentRole, DocumentType, SignificanceTier
 from app.models.schemas import (
@@ -339,6 +338,8 @@ def enrich(doc_id: int) -> None:
       2. AI phase    — call the model with no session held.
       3. Write phase — open a fresh session, apply results, commit, close.
     """
+    from app.config import SessionLocal
+
     # --- Phase 1: read ---
     db: Session = SessionLocal()
     try:

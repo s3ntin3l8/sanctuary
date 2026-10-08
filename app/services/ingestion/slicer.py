@@ -12,7 +12,6 @@ import pypdfium2 as pdfium
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.core.async_utils import run_async
 from app.core.paths import resolve_storage_path
 from app.models.database import IngestBatch
@@ -323,6 +322,8 @@ def _combine_proposed_cuts(
 
 def prepare(batch_id: int) -> None:
     """Render thumbnails, OCR, run heuristics + AI, write proposed_cuts to batch.meta."""
+    from app.config import SessionLocal
+
     db: Session = SessionLocal()
     try:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()

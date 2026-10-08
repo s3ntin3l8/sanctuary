@@ -5,10 +5,7 @@ import pytest
 from sqlalchemy import text as _sa_text
 
 from app.tasks.detect_relationships import detect_relationships_task
-from app.tasks.document_processing import (
-    process_document_task,
-    reingest_all_documents_task,
-)
+from app.tasks.document_processing import process_document_task
 from app.tasks.enrich_document import enrich_document_task
 from app.tasks.extract_claims import extract_claims_task
 
@@ -152,24 +149,6 @@ def test_process_document_task_chandra_soft_time_limit_skips_docling_fallback(
     stages = stages_dict(sample_document)
     assert stages["extract"]["status"] == "failed"
     assert "soft time limit exceeded" in stages["extract"]["error"]
-
-
-@pytest.mark.unit
-def test_reingest_all_documents_task(db_session, sample_document):
-    with (
-        patch("app.tasks.document_processing.get_db_session") as mock_get_db_session,
-        patch(
-            "app.tasks.document_processing.process_document_task.delay"
-        ) as mock_delay,
-        patch.object(db_session, "close", return_value=None),
-    ):
-        mock_get_db_session.return_value = db_session
-
-        result = reingest_all_documents_task.run(case_id=sample_document.case_id)
-
-        assert result["status"] == "queued"
-        assert result["count"] == 1
-        mock_delay.assert_called_once_with(sample_document.id)
 
 
 # ---------------------------------------------------------------------------

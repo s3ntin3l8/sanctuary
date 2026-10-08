@@ -134,7 +134,6 @@ async def upload(
                 target_case_id,
                 db,
                 parent_id,
-                skip_processing=True,
                 ingest_batch_id=batch_id,
                 owner_id=user.id,
             )

@@ -44,7 +44,7 @@ async def test_dim_mismatch_raises(db_session):
     fake_response.raise_for_status = lambda: None
 
     with (
-        patch.object(emb_module, "SessionLocal", lambda: db_session),
+        patch("app.config.SessionLocal", lambda: db_session),
         patch.object(
             emb_module.embed_provider, "get_embedding_params", new_callable=AsyncMock
         ) as mock_params,

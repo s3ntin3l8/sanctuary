@@ -69,8 +69,8 @@ async def test_ingest_file_preserves_existing_file_with_same_name(db_session):
         "app.services.ingestion.service.aiofiles.open",
         side_effect=lambda path, mode: _AsyncFile(path, mode),
     ):
-        doc1 = await ingest_file(first, db=db_session, skip_processing=True)
-        doc2 = await ingest_file(second, db=db_session, skip_processing=True)
+        doc1 = await ingest_file(first, db=db_session)
+        doc2 = await ingest_file(second, db=db_session)
 
     # Stored paths are relative to DATA_DIR — resolve before reading.
     assert doc1.file_path != doc2.file_path

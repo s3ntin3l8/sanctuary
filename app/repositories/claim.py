@@ -1,9 +1,9 @@
 from collections.abc import Sequence
-from datetime import datetime
 
 from sqlalchemy import distinct, func, not_
 from sqlalchemy.orm import Session, aliased
 
+from app.core.timezone import now_utc
 from app.models.database import Claim, ClaimEvidence, Document
 from app.models.enums import ClaimEvidenceRole, ClaimStatus, ClaimType
 from app.repositories.base import BaseRepository
@@ -171,9 +171,9 @@ class ClaimRepository(BaseRepository[Claim]):
             claim_type=claim_type,
             status=status,
             is_precedent=is_precedent,
-            first_made_at=datetime.now(),
-            last_updated_at=datetime.now(),
+            first_made_at=now_utc(),
+            last_updated_at=now_utc(),
         )
 
     def update_status(self, claim_id: int, status: ClaimStatus) -> Claim | None:
-        return self.update(claim_id, status=status, last_updated_at=datetime.now())
+        return self.update(claim_id, status=status, last_updated_at=now_utc())

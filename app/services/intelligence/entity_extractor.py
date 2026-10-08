@@ -5,7 +5,6 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
@@ -299,6 +298,8 @@ def extract(doc_id: int) -> str | None:
     Returns a non-empty skip reason if skipped, or None if it ran.
     Three-phase: read → close DB → AI call → write.
     """
+    from app.config import SessionLocal
+
     # Phase 1: read + skip checks
     db: Session = SessionLocal()
     try:

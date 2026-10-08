@@ -305,7 +305,7 @@ def test_malformed_ai_response_propagates_exception(db_session, doc_with_content
 
     with (
         patch(
-            "app.services.intelligence.document_enricher.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),

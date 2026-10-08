@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import Proceeding
 from app.models.enums import ProceedingCourtLevel, ProceedingStatus
 from app.repositories.base import BaseRepository
@@ -78,12 +79,12 @@ class ProceedingRepository(BaseRepository[Proceeding]):
             az_court=az_court,
             started_at=started_at,
             status=ProceedingStatus.ACTIVE,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def close(self, proceeding_id: int) -> Proceeding | None:
         return self.update(
             proceeding_id,
             status=ProceedingStatus.CLOSED,
-            ended_at=datetime.now(),
+            ended_at=now_utc(),
         )

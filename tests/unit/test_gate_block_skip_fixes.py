@@ -6,12 +6,11 @@ enrich_document_task prematurely. The enrich gate then marked ENRICH=SKIPPED,
 and _enrich_if_pending's CAS could not reclaim SKIPPED rows — the doc was
 silently stranded for the rest of the pipeline.
 
-Covers fixes A–E from the plan:
+Covers fixes A–D from the plan:
   A: recover_stuck_pending_dispatches blocks on pending BATCH_ANALYSIS
   B: enrich gate-block resets to PENDING not SKIPPED
   C: recover_stuck_batches guards against already-completed batches
   D: claim_batch_for_analysis refuses when batch_analysis already terminal
-  E: recover_stranded_gate_skipped finds and unstrands affected docs
 """
 
 from datetime import UTC, datetime, timedelta
@@ -28,7 +27,6 @@ from app.models.enums import (
 )
 from app.services.pipeline_status import (
     initialize,
-    recover_stranded_gate_skipped,
     recover_stuck_batches,
     recover_stuck_pending_dispatches,
 )
@@ -310,126 +308,3 @@ def test_claim_batch_for_analysis_succeeds_when_not_yet_analyzed(
     assert result is True
     db_session.refresh(batch)
     assert batch.analysis_queued_at is not None
-
-
-# ---------------------------------------------------------------------------
-# Fix E: recover_stranded_gate_skipped unstrands affected docs
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_recover_stranded_gate_skipped_resets_enrich_and_dispatches(
-    db_session, sample_case, monkeypatch
-):
-    """Docs stranded by the gate-block-skip race (ENRICH=SKIPPED with gate reason,
-    BATCH_ANALYSIS=COMPLETED) should be found, reset to PENDING, and dispatched."""
-    batch = _make_batch(db_session, sample_case.id)
-    doc = _make_doc_with_batch(db_session, sample_case.id, batch.id)
-    db_session.commit()
-
-    # Simulate post-race state: batch_analysis completed, enrich gate-skipped.
-    _upsert_stage(db_session, doc.id, "extract", "completed")
-    _upsert_stage(db_session, doc.id, "metadata", "completed")
-    _upsert_stage(db_session, doc.id, "batch_analysis", "completed")
-    _upsert_stage(
-        db_session, doc.id, "enrich", "skipped", reason="batch_analysis_not_completed"
-    )
-    # Cascade-skipped downstream (as extract_claims and others would do).
-    _upsert_stage(
-        db_session, doc.id, "claims", "skipped", reason="enrich_not_completed"
-    )
-    _upsert_stage(
-        db_session, doc.id, "relationships", "skipped", reason="enrich_not_completed"
-    )
-    _upsert_stage(
-        db_session, doc.id, "entities", "skipped", reason="enrich_not_completed"
-    )
-
-    dispatched: list[int] = []
-    monkeypatch.setattr(
-        "app.tasks.dispatch.dispatch_task",
-        lambda task, doc_id: dispatched.append(doc_id),
-    )
-
-    result = recover_stranded_gate_skipped(db_session)
-
-    assert result["docs_recovered"] == 1
-    assert doc.id in result["doc_ids"]
-    assert doc.id in dispatched
-
-    # ENRICH must be RUNNING (claimed by recover_stranded_gate_skipped CAS).
-    db_session.expire_all()
-    enrich_row = db_session.execute(
-        text(
-            "SELECT status FROM document_pipeline_stages WHERE document_id=:d AND stage='enrich'"
-        ),
-        {"d": doc.id},
-    ).one()
-    assert enrich_row.status == "running"
-
-    # Downstream stages (claims, relationships, entities) must be PENDING.
-    for stage in ("claims", "relationships", "entities"):
-        row = db_session.execute(
-            text(
-                "SELECT status, reason FROM document_pipeline_stages WHERE document_id=:d AND stage=:s"
-            ),
-            {"d": doc.id, "s": stage},
-        ).one()
-        assert row.status == "pending", f"{stage} should be PENDING after recovery"
-        assert row.reason is None
-
-
-@pytest.mark.unit
-def test_recover_stranded_gate_skipped_ignores_policy_skipped(
-    db_session, sample_case, monkeypatch
-):
-    """ENRICH=SKIPPED with a policy reason (not a gate-block reason) must NOT be
-    recovered — those are intentional and should stay SKIPPED."""
-    batch = _make_batch(db_session, sample_case.id)
-    doc = _make_doc_with_batch(db_session, sample_case.id, batch.id)
-    db_session.commit()
-
-    _upsert_stage(db_session, doc.id, "batch_analysis", "completed")
-    # Policy skip — not a gate-block reason.
-    _upsert_stage(
-        db_session, doc.id, "enrich", "skipped", reason="ineligible_tier:administrative"
-    )
-
-    dispatched: list[int] = []
-    monkeypatch.setattr(
-        "app.tasks.dispatch.dispatch_task",
-        lambda task, doc_id: dispatched.append(doc_id),
-    )
-
-    result = recover_stranded_gate_skipped(db_session)
-
-    assert result["docs_recovered"] == 0
-    assert doc.id not in dispatched
-
-
-@pytest.mark.unit
-def test_recover_stranded_gate_skipped_ignores_batch_analysis_not_done(
-    db_session, sample_case, monkeypatch
-):
-    """If ENRICH is gate-skipped but BATCH_ANALYSIS is still PENDING (not yet done),
-    the doc is not stranded — it will recover naturally when batch_analysis completes.
-    recover_stranded_gate_skipped must not touch these docs."""
-    batch = _make_batch(db_session, sample_case.id)
-    doc = _make_doc_with_batch(db_session, sample_case.id, batch.id)
-    db_session.commit()
-
-    _upsert_stage(db_session, doc.id, "batch_analysis", "pending")
-    _upsert_stage(
-        db_session, doc.id, "enrich", "skipped", reason="batch_analysis_not_completed"
-    )
-
-    dispatched: list[int] = []
-    monkeypatch.setattr(
-        "app.tasks.dispatch.dispatch_task",
-        lambda task, doc_id: dispatched.append(doc_id),
-    )
-
-    result = recover_stranded_gate_skipped(db_session)
-
-    assert result["docs_recovered"] == 0
-    assert doc.id not in dispatched

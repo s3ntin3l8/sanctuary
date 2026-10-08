@@ -3,9 +3,9 @@ import re
 import time
 
 import httpx
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy.exc import OperationalError
 
-from app.config import SessionLocal
 from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
 from app.services.ai_inflight import track_ai_call_async
@@ -129,6 +129,8 @@ async def generate_embedding(doc_id: int):
     Silent failure here was previously masking docs that never got an embedding
     written but were still flagged COMPLETED, so search would miss them.
     """
+    from app.config import SessionLocal
+
     db = SessionLocal()
     # Only recorded once a provider call is actually attempted — a doc with
     # no content (early return below) never called a model, so nothing to log.
@@ -308,6 +310,12 @@ async def reindex_all_docs(db, progress_cb=None) -> dict:
                     reindexed += 1
                 else:
                     failed += 1
+            except SoftTimeLimitExceeded:
+                # An Exception subclass — must come before the generic branch
+                # below, or a soft time limit would be swallowed as an
+                # ordinary per-doc failure instead of stopping the task so
+                # Celery's hard limit doesn't kill it mid-write.
+                raise
             except Exception as e:
                 logger.warning(f"Reindex failed for doc {doc.id}: {e}")
                 # _embed_document_chunks's DELETE-then-add-then-commit for

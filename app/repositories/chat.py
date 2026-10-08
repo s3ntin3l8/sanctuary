@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import Conversation, ConversationMessage
 
 
@@ -32,7 +31,7 @@ class ChatRepository:
             scope_type=scope_type,
             scope_id=scope_id,
             user_id=user_id,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
         self.db.add(conv)
         self.db.commit()
@@ -54,7 +53,7 @@ class ChatRepository:
             role=role,
             content=content,
             context_document_ids=context_document_ids,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
         self.db.add(msg)
         self.db.commit()

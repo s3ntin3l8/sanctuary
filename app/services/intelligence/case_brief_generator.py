@@ -7,7 +7,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session, defer
 
-from app.config import SessionLocal
 from app.models.database import ActionItem, Case, Document
 from app.models.enums import (
     ActionItemStatus,
@@ -303,6 +302,8 @@ Open action items:
 
 def generate(case_id: str) -> None:
     """Run AI case brief generation for a single case."""
+    from app.config import SessionLocal
+
     if case_id == _TRIAGE:
         logger.info("Skipping case brief generation for _TRIAGE")
         return

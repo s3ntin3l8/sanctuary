@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.core.timezone import ensure_utc
+from app.core.timezone import ensure_utc, now_utc
 from app.models.database import CostSignal, Document, LegalCost
 from app.models.enums import (
     CostCategory,
@@ -433,7 +433,7 @@ class CostService:
             return None
         cost.amount_paid = cost.amount_gross or 0.0
         cost.status = CostStatus.BEZAHLT
-        cost.paid_at = datetime.now()
+        cost.paid_at = now_utc()
         self.db.flush()
         self.db.refresh(cost)
         return cost

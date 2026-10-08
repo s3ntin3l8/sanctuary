@@ -1,9 +1,9 @@
 from collections.abc import Sequence
-from datetime import datetime
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased
 
+from app.core.timezone import now_utc
 from app.models.database import Document, DocumentRelationship
 from app.models.enums import RelationshipConfidence, RelationshipType
 from app.repositories.base import BaseRepository
@@ -82,7 +82,7 @@ class DocumentRelationshipRepository(BaseRepository[DocumentRelationship]):
             relationship_type=relationship_type,
             confidence=confidence,
             notes=notes,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def confirm(self, rel_id: int) -> DocumentRelationship | None:

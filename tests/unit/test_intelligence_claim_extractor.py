@@ -136,7 +136,7 @@ def test_new_claims_created(db_session, significant_doc, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -200,7 +200,7 @@ def test_court_doc_claims_arrive_established(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -240,7 +240,7 @@ def test_non_court_doc_claims_arrive_asserted(db_session, significant_doc):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -298,7 +298,7 @@ def test_court_relay_doc_claims_arrive_asserted(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -356,7 +356,7 @@ def test_attributed_originator_overrides_court_originator(db_session, sample_cas
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -426,7 +426,7 @@ def test_established_claim_not_auto_refuted(db_session, significant_doc, sample_
     # in-extractor guard is the thing being tested.
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -502,7 +502,7 @@ def test_evidence_link_contests_creates_proposal_and_confirm_flips_status(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -576,7 +576,7 @@ def test_evidence_link_refutes_creates_proposal_and_confirm_flips_status(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -626,7 +626,7 @@ def test_hallucination_guard_drops_invalid_claim_id(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -682,7 +682,7 @@ def test_hallucination_guard_drops_invalid_role(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -720,7 +720,7 @@ def test_hallucination_guard_drops_invalid_claim_type(db_session, significant_do
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -754,7 +754,7 @@ def test_skips_administrative_tier(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -788,7 +788,7 @@ def test_relay_doc_skipped(db_session, sample_case):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -840,7 +840,7 @@ def test_retry_clears_stale_asserted_claims(db_session, significant_doc, sample_
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -926,7 +926,7 @@ def test_retry_preserves_claims_with_cross_doc_evidence(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -1000,7 +1000,7 @@ def test_retry_preserves_evidence_pointing_at_other_docs_claims(
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -1065,7 +1065,7 @@ def test_extract_debounces_when_recent_asserts_exist(db_session, significant_doc
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -1101,7 +1101,7 @@ def test_extract_proceeds_when_no_recent_asserts(db_session, significant_doc):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),

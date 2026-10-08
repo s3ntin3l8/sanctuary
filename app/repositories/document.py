@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, defer
 
+from app.core.timezone import now_utc
 from app.models.database import Document
 from app.models.enums import OriginatorType, SignificanceTier
 from app.repositories.base import BaseRepository
@@ -146,7 +147,7 @@ class DocumentRepository(BaseRepository[Document]):
             sender=sender,
             file_path=file_path,
             needs_review=True,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def get_by_proceeding(

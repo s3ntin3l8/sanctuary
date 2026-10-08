@@ -45,7 +45,7 @@ async def test_normalization():
 
             # 2. Ingest file
             print(f"Ingesting {filename}...")
-            doc = await ingest_file(upload_file, db=db, skip_processing=True)
+            doc = await ingest_file(upload_file, db=db)
 
             print(
                 f"Document created: ID={doc.id}, Title={doc.title}, Original Filename={doc.original_filename}"

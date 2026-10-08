@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.models.database import Document, DocumentRelationship, IngestBatch
 from app.models.enums import (
     DocumentRole,
@@ -741,6 +740,8 @@ def analyze(batch_id: int) -> bool:
     Early-exit writes (standalone assignment) happen in the read session
     because they are fast and don't involve any AI call.
     """
+    from app.config import SessionLocal
+
     # --- Phase 1: read (and handle early-exit writes) ---
     db: Session = SessionLocal()
     try:

@@ -156,7 +156,7 @@ def test_ingestion_cascade(db_session, email_batch):
 
     with (
         patch(
-            "app.services.intelligence.batch_analyzer.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -189,7 +189,7 @@ def test_ingestion_cascade(db_session, email_batch):
     enrich_result = _mock_enrich_result()
     with (
         patch(
-            "app.services.intelligence.document_enricher.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),
@@ -225,7 +225,7 @@ def test_ingestion_cascade(db_session, email_batch):
 
     with (
         patch(
-            "app.services.intelligence.claim_extractor.SessionLocal",
+            "app.config.SessionLocal",
             return_value=db_session,
         ),
         patch.object(db_session, "close"),

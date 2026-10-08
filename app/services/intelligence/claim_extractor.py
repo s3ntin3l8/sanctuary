@@ -18,7 +18,6 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.config import SessionLocal
 from app.core.timezone import now_utc
 from app.models.database import (
     Claim,
@@ -298,6 +297,8 @@ def extract(doc_id: int) -> str | None:
 
     Returns a non-empty skip reason if skipped, or None if it ran.
     """
+    from app.config import SessionLocal
+
     # Phase 1: read + stale-claim cleanup (brief write, commits before AI call)
     db: Session = SessionLocal()
     try:

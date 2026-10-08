@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import DocumentPin
 
 
@@ -22,8 +21,8 @@ class DocumentPinRepository:
             passage_id=passage_id,
             note=note,
             user_id=user_id,
-            ingest_date=datetime.now(),
-            updated_at=datetime.now(),
+            ingest_date=now_utc(),
+            updated_at=now_utc(),
         )
         self.db.add(pin)
         self.db.flush()
@@ -45,7 +44,7 @@ class DocumentPinRepository:
         if pin is None:
             return None
         pin.note = note
-        pin.updated_at = datetime.now()
+        pin.updated_at = now_utc()
         self.db.flush()
         return pin
 

@@ -221,14 +221,12 @@ def setup_test_db(test_engine):
     app.dependency_overrides[get_db] = override_get_db
     # Patch get_db_session where background tasks open their own sessions, and
     # globally neutralize the EXTRACT pipeline entry so no request handler ever
-    # runs it implicitly during tests. Two dispatch surfaces reach
-    # process_document_task:
-    #   * `.delay`       — the direct caller reingest_all_documents_task.
-    #   * `.apply_async` — what dispatch_task() invokes for the upload path.
-    # Under CELERY_TASK_ALWAYS_EAGER=true (the suite default) either would run
+    # runs it implicitly during tests. dispatch_task() reaches
+    # process_document_task via `.apply_async` (the upload path).
+    # Under CELERY_TASK_ALWAYS_EAGER=true (the suite default) it would run
     # the task body inline — cascading into metadata_task (real AI httpx) and
     # concurrent writes to the shared test SQLite on an unmanaged daemon thread
-    # that outlives the test. No-op both so uploads stay "queued, not run".
+    # that outlives the test. No-op it so uploads stay "queued, not run".
     fake_dispatch = MagicMock()
 
     with (

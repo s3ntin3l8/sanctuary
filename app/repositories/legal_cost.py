@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import LegalCost
 from app.models.enums import CostCategory, CostStatus
 from app.repositories.base import BaseRepository
@@ -140,7 +141,7 @@ class LegalCostRepository(BaseRepository[LegalCost]):
             due_at=due_at,
             source_document_id=source_document_id,
             proceeding_id=proceeding_id,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def update_status(

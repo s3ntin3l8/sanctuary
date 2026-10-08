@@ -148,7 +148,6 @@ async def test_ingest_file_uses_batch_subfolder_in_triage(tmp_path):
             db=db,
             case_id=None,
             ingest_batch_id=5,
-            skip_processing=True,
         )
 
     # The directory _TRIAGE/ib-5 must have been created on disk
@@ -191,7 +190,6 @@ async def test_ingest_file_without_batch_id_uses_flat_triage(tmp_path):
             db=db,
             case_id=None,
             ingest_batch_id=None,
-            skip_processing=True,
         )
 
     # Should land in flat _TRIAGE/, NOT in a ib-* subfolder

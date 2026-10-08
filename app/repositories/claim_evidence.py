@@ -1,7 +1,6 @@
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import ClaimEvidence
 from app.models.enums import ClaimEvidenceRole, RelationshipConfidence
 from app.repositories.base import BaseRepository
@@ -25,7 +24,7 @@ class ClaimEvidenceRepository(BaseRepository[ClaimEvidence]):
             role=role,
             excerpt=excerpt,
             confidence=confidence,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def evidence_exists(

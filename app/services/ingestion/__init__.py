@@ -2,10 +2,7 @@ from app.services.ingestion.converters import (
     ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE,
     convert_file,
-    get_allowed_extensions,
-    is_allowed_extension,
     is_valid_docling_output,
-    parse_eml_file,
 )
 from app.services.ingestion.extractors import (
     extract_case_id,
@@ -28,10 +25,7 @@ __all__ = [
     "ALLOWED_EXTENSIONS",
     "MAX_FILE_SIZE",
     "convert_file",
-    "get_allowed_extensions",
-    "is_allowed_extension",
     "is_valid_docling_output",
-    "parse_eml_file",
     "extract_case_id",
     "extract_cost_candidates",
     "extract_issued_date",

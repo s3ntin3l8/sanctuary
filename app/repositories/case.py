@@ -1,9 +1,9 @@
 from collections.abc import Sequence
-from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.timezone import now_utc
 from app.models.database import Case
 from app.models.enums import CaseStatus, Jurisdiction
 from app.repositories.base import BaseRepository
@@ -145,7 +145,7 @@ class CaseRepository(BaseRepository[Case]):
             status=status,
             jurisdiction=jurisdiction,
             owner_id=owner_id,
-            ingest_date=datetime.now(),
+            ingest_date=now_utc(),
         )
 
     def update_status(self, case_id: str, status: CaseStatus) -> Case | None:
@@ -154,7 +154,7 @@ class CaseRepository(BaseRepository[Case]):
         if case:
             case.status = status
             if status == CaseStatus.CLOSED:
-                case.closed_at = datetime.now()
+                case.closed_at = now_utc()
             self.db.flush()
             self.db.refresh(case)
         return case
