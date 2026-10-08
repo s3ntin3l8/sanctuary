@@ -1163,6 +1163,7 @@ def recover_orphaned_running_stages(
         if not stuck:
             continue
 
+        doc_stages_reset = 0
         for stage_key, provable in stuck:
             try:
                 stage_enum = PipelineStage(stage_key)
@@ -1216,15 +1217,19 @@ def recover_orphaned_running_stages(
                     {"d": doc.id, "s": stage_enum.value},
                 )
             stages_reset += 1
+            doc_stages_reset += 1
             if stage_enum == PipelineStage.BATCH_ANALYSIS and doc.ingest_batch_id:
                 batch_analysis_reset_ids.add(doc.ingest_batch_id)
 
-        db.refresh(doc)
-        doc.pipeline_state = compute_overall_state(stages_dict(doc))
-
-        docs_reset += 1
-        if doc.ingest_batch_id:
-            affected_batch_ids.add(doc.ingest_batch_id)
+        # Only a document where at least one reset actually landed counts as
+        # "reset" (cap-failed stages are counted in stages_failed, and a stage
+        # that settled since the snapshot changed nothing).
+        if doc_stages_reset:
+            db.refresh(doc)
+            doc.pipeline_state = compute_overall_state(stages_dict(doc))
+            docs_reset += 1
+            if doc.ingest_batch_id:
+                affected_batch_ids.add(doc.ingest_batch_id)
 
     for batch_id in affected_batch_ids:
         batch = db.query(IngestBatch).filter(IngestBatch.id == batch_id).first()
@@ -1796,10 +1801,10 @@ def recover_stuck_slicing_prep(
         except (ValueError, TypeError):
             dispatched_at = None
         if dispatched_at is None:
-            # Pre-dates the timestamp: start its clock now rather than guess.
-            slicing["dispatched_at"] = now.isoformat()
-            batch.meta = {**(batch.meta or {}), "slicing": slicing}
-            continue
+            # Pre-dates the timestamp: the batch's own age is the best bound we
+            # have, so an old one is treated as lost and recovered (instead of
+            # being stamped "now", which would hide it from every later sweep).
+            dispatched_at = ensure_utc(batch.ingest_date) or now
         if dispatched_at > cutoff:
             continue
         if not slicing.get("recovered"):
@@ -1864,6 +1869,7 @@ def recover_embeddings_behind_failed_stage(
                  AND emb.stage = :embeddings AND emb.status = :pending
                 JOIN document_pipeline_stages f
                   ON f.document_id = d.id AND f.status = :failed
+                 AND f.stage IN (:extract, :metadata)
                 WHERE d.pipeline_state = :failed
                 GROUP BY d.id
                 HAVING MAX(f.completed_at) IS NULL OR MAX(f.completed_at) < :cutoff
@@ -1871,6 +1877,8 @@ def recover_embeddings_behind_failed_stage(
             ),
             {
                 "embeddings": PipelineStage.EMBEDDINGS.value,
+                "extract": PipelineStage.EXTRACT.value,
+                "metadata": PipelineStage.METADATA.value,
                 "pending": StageStatus.PENDING.value,
                 "failed": StageStatus.FAILED.value,
                 "cutoff": cutoff,

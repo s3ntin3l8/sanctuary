@@ -239,19 +239,46 @@ def test_lost_slicing_prep_is_redispatched_once_then_failed_and_deletable(db_ses
 
 
 @pytest.mark.integration
-def test_fresh_and_legacy_slicing_prep_are_not_touched(db_session):
+def test_fresh_slicing_prep_is_not_touched(db_session):
     fresh = _slicing_batch(db_session, dispatched_at=now_utc().isoformat())
-    legacy = _slicing_batch(db_session)  # no timestamp: pre-dates this change
+    legacy_fresh = _slicing_batch(db_session)  # no timestamp, but just created
 
     with patch("app.tasks.dispatch.dispatch_task") as dispatch:
         result = recover_stuck_slicing_prep(db_session)
 
     dispatch.assert_not_called()
     assert result == {"redispatched": [], "failed": []}
-    db_session.refresh(legacy)
     db_session.refresh(fresh)
-    assert legacy.meta["slicing"]["status"] == "preparing"
-    assert "dispatched_at" in legacy.meta["slicing"]  # its clock starts now
+    db_session.refresh(legacy_fresh)
+    assert fresh.meta["slicing"]["status"] == "preparing"
+    assert legacy_fresh.meta["slicing"] == {"status": "preparing"}  # meta untouched
+
+
+@pytest.mark.integration
+def test_old_batch_without_a_timestamp_is_recovered_not_hidden(db_session):
+    """A multi-page batch that pre-dates dispatched_at and whose prep was lost
+    must be rescued, then failed — never stamped 'now' and skipped for ever."""
+    legacy = _slicing_batch(db_session)  # preparing, no dispatched_at
+    legacy.ingest_date = now_utc() - timedelta(hours=9)
+    db_session.commit()
+
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        first = recover_stuck_slicing_prep(db_session)
+    assert first["redispatched"] == [legacy.id]
+    assert dispatch.call_count == 1
+
+    db_session.refresh(legacy)
+    meta = dict(legacy.meta)
+    meta["slicing"] = {
+        **meta["slicing"],
+        "dispatched_at": (now_utc() - timedelta(hours=9)).isoformat(),
+    }
+    legacy.meta = meta
+    db_session.commit()
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        second = recover_stuck_slicing_prep(db_session)
+    assert second["failed"] == [legacy.id]
+    dispatch.assert_not_called()
 
 
 @pytest.mark.integration
@@ -410,3 +437,83 @@ def test_batch_analysis_give_up_keeps_an_earlier_failure_cause(db_session, doc):
     _fail_poison_stage(db_session, doc, PipelineStage.BATCH_ANALYSIS)
 
     assert _row(db_session, doc.id, "batch_analysis")[1] == "original cause"
+
+
+@pytest.mark.integration
+def test_cap_failure_alone_does_not_count_as_a_document_reset(db_session, doc):
+    _set(db_session, doc.id, "extract", "completed")
+    _set(db_session, doc.id, "metadata", "running", started_at=_hours_ago(5))
+    db_session.execute(
+        text(
+            "UPDATE document_pipeline_stages SET orphan_resets = 3 "
+            "WHERE document_id = :d AND stage = 'metadata'"
+        ),
+        {"d": doc.id},
+    )
+    db_session.commit()
+
+    result = recover_orphaned_running_stages(db_session)
+
+    assert (result["docs_reset"], result["stages_reset"], result["stages_failed"]) == (
+        0,
+        0,
+        1,
+    )
+
+
+@pytest.mark.integration
+def test_metadata_give_up_leaves_a_healthy_siblings_batch_analysis_alone(
+    db_session, doc, sample_case
+):
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+    from app.services.pipeline_status import _fail_poison_stage
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+    )
+    db_session.add(batch)
+    db_session.flush()
+    sibling = Document(
+        title="S", content="x", case_id=sample_case.id, ingest_batch_id=batch.id
+    )
+    db_session.add(sibling)
+    db_session.flush()
+    initialize(sibling, batched=True, db=db_session)
+    doc.ingest_batch_id = batch.id
+    db_session.commit()
+    _set(db_session, sibling.id, "batch_analysis", "completed")
+    _set(db_session, doc.id, "metadata", "running")
+
+    _fail_poison_stage(db_session, doc, PipelineStage.METADATA)
+
+    assert _row(db_session, doc.id, "metadata")[0] == "failed"
+    assert _row(db_session, doc.id, "enrich")[0] == "failed"
+    assert _row(db_session, doc.id, "batch_analysis")[0] != "failed"
+    assert _row(db_session, sibling.id, "batch_analysis")[0] == "completed"
+
+
+@pytest.mark.integration
+def test_a_failed_enrich_alone_does_not_route_through_the_embeddings_sweep(
+    db_session, doc
+):
+    """ENRICH is a cascade target, not a root failure: with EXTRACT/METADATA fine
+    the embeddings are not stranded and must not be touched by this sweep."""
+    _set(db_session, doc.id, "extract", "completed")
+    _set(db_session, doc.id, "metadata", "completed")
+    _set(
+        db_session,
+        doc.id,
+        "enrich",
+        "failed",
+        completed_at=now_utc() - timedelta(minutes=30),
+    )
+    db_session.execute(
+        text("UPDATE documents SET pipeline_state = 'failed' WHERE id = :d"),
+        {"d": doc.id},
+    )
+    db_session.commit()
+
+    with patch("app.tasks.dispatch.dispatch_task") as dispatch:
+        assert recover_embeddings_behind_failed_stage(db_session)["doc_ids"] == []
+    dispatch.assert_not_called()
