@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage
 from app.services.pipeline_status import is_db_locked, stages_dict
+from app.tasks.ai_retry import retry_if_transient_ai_error
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,7 @@ def extract_claims_task(self, doc_id: int):
         trigger_case_brief_if_ready(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
+        retry_if_transient_ai_error(self, doc_id, PipelineStage.CLAIMS, e)
         logger.error(f"Doc {doc_id} claim extraction task failed: {e}", exc_info=True)
         db = get_db_session()
         try:

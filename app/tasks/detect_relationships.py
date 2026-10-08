@@ -6,6 +6,7 @@ from sqlalchemy.exc import OperationalError as SA_OperationalError
 
 from app.models.enums import PipelineStage, StageStatus
 from app.services.pipeline_status import is_db_locked, stages_dict
+from app.tasks.ai_retry import retry_if_transient_ai_error
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -266,6 +267,7 @@ def detect_relationships_task(self, doc_id: int):
         _dispatch_claims_safely(doc_id)
         return {"status": "failed", "doc_id": doc_id, "error": str(e)}
     except Exception as e:
+        retry_if_transient_ai_error(self, doc_id, PipelineStage.RELATIONSHIPS, e)
         logger.error(
             f"Doc {doc_id} relationship detection task failed: {e}", exc_info=True
         )
