@@ -42,7 +42,11 @@ def _connect(db, uid, *, sync_point=SYNC_POINT, label_filter=""):
 
 
 def _index(db, uid, gmail_id, day, *, received=None, subject="8372/25 x"):
-    """Index a message sent on Jan ``day``; ``received`` defaults to the same day."""
+    """Index a message sent on Jan ``day``; ``received`` defaults to the same day.
+
+    ``received=0`` stores ``received_at`` as NULL, faking a row indexed before that
+    column existed (production ``parse_metadata`` always sets it).
+    """
     arrived = received if received is not None else day
     gmail_index_service.upsert_metadata(
         db,

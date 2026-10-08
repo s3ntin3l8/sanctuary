@@ -120,7 +120,8 @@ settings_json shape (defaults):
   "gmail_credentials_json": null, // OAuth token blob (set by callback), stored encrypted ("enc:v1:...")
   "gmail_connected_at": null,     // ISO datetime string
   "gmail_last_sync_at": null,     // sync watermark; set at connect, never cleared (an unset one would mean "whole mailbox")
-  "gmail_auto_sync": false,       // 5-minute background poll; off unless the user opts in
+  "gmail_sync_mode": "notify",    // "off" | "notify" | "auto" — what the 5-minute background run does; set at connect
+  "gmail_last_check_at": null,    // ISO datetime of the last new-mail check (notify mode)
   "gmail_last_sync_result": null, // outcome of the last sync or import
   "gmail_last_sync_error": null,  // why it failed, if it did
   "gmail_reconnect_required": false, // failure only a fresh OAuth grant fixes
