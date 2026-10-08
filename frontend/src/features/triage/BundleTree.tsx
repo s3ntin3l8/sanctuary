@@ -25,7 +25,7 @@ export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
     op.mutate(vars, { onError: (e) => toast(e.message, 'error') })
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <div className="mb-2 flex items-center gap-2">
         <Icon name="account_tree" size={14} className="text-accent" />
         <h4 className="text-[9.5px] font-bold tracking-[.1em] text-muted uppercase">
@@ -56,7 +56,7 @@ export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
           </span>
         )}
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <div className="space-y-2">
         {bundle.sub_groups.map((g) => (
           <div key={g.id} className="rounded-lg border border-line2">
             <GroupHeader
