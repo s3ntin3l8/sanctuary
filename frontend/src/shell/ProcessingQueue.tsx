@@ -177,7 +177,10 @@ function QueueSection({
             <span className="font-mono text-[10px] text-muted">
               {item.kind === 'batch' ? `B#${item.batch_id}` : `D#${item.doc_id}`}
             </span>
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {item.label}
+              {item.note && <span className="ml-2 text-[10px] text-muted">{item.note}</span>}
+            </span>
             {item.kind === 'batch' && (
               <span className="font-mono text-[10px] text-muted">
                 {pluralize(item.doc_count, 'doc')}

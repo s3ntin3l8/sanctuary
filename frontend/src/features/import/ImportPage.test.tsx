@@ -36,11 +36,9 @@ const idle = {
   total: 0,
   done: 0,
   failed_count: 0,
-  sequential: true,
   cancelled: false,
   error: null,
   current_subject: null,
-  waiting: false,
   started_at: null,
   finished_at: null,
 }
@@ -175,7 +173,6 @@ test('import: expanding a group shows its messages, already imported ones cannot
   expect(await screen.findByRole('status')).toHaveTextContent('Queued 1 message')
   expect(await sent(fetch, 'POST', '/api/v1/gmail/import')?.clone().json()).toEqual({
     gmail_ids: ['g2'],
-    sequential: true,
     new: false,
   })
 })
@@ -191,27 +188,22 @@ test('import: "next N oldest" covers everything, or just the open reference', as
 
   await user.click(await screen.findByRole('button', { name: 'Import' }))
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
-  expect(await post()).toEqual({ oldest_n: 25, group: null, sequential: true, new: false })
+  expect(await post()).toEqual({ oldest_n: 25, group: null, new: false })
 
   await user.click(screen.getByRole('button', { name: 'Expand 8372/25' }))
   expect(await screen.findByText('8372/25', { selector: 'strong' })).toBeVisible()
   const count = screen.getByRole('spinbutton', { name: 'How many' })
   await user.clear(count)
   await user.type(count, '10')
-  await user.click(screen.getByRole('checkbox', { name: /strictly in order/ }))
+  expect(screen.queryByRole('checkbox', { name: /strictly in order/ })).toBeNull()
   fetch.mockClear()
   await user.click(screen.getByRole('button', { name: 'Import' }))
 
   await waitFor(() => expect(sent(fetch, 'POST', '/api/v1/gmail/import')).toBeDefined())
-  expect(await post()).toEqual({
-    oldest_n: 10,
-    group: '8372-25',
-    sequential: false,
-    new: false,
-  })
+  expect(await post()).toEqual({ oldest_n: 10, group: '8372-25', new: false })
 })
 
-test('import: a running import shows what it is waiting for and can be stopped', async () => {
+test('import: a running import shows what is being imported and can be stopped', async () => {
   const fetch = stubApi({
     ...base,
     'GET /api/v1/gmail/import/status': {
@@ -220,7 +212,6 @@ test('import: a running import shows what it is waiting for and can be stopped',
         active: true,
         total: 5,
         done: 2,
-        waiting: true,
         current_subject: 'Ladung zur Verhandlung',
       },
     },
@@ -229,7 +220,7 @@ test('import: a running import shows what it is waiting for and can be stopped',
   renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText(/Importing 2\/5/)).toHaveTextContent(
-    'waiting for “Ladung zur Verhandlung” to finish processing',
+    'Importing 2/5 · “Ladung zur Verhandlung”',
   )
   expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled()
   await userEvent.setup().click(screen.getByRole('button', { name: 'Stop' }))

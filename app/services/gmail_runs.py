@@ -1,16 +1,14 @@
 """Progress/control state for long-running Gmail jobs (index refresh, import).
 
-One JSON blob per (kind, user) in Redis. The import is a chain of short Celery
-hops that read this state each time, so it is also the control channel:
-``cancel_run`` flips it and the next hop stops.
+One JSON blob per (kind, user) in Redis. The Celery task reads and writes this
+state as it goes, so it is also the control channel: ``cancel_run`` flips it and
+the task stops at its next write.
 
-Every write is an optimistic read-modify-write (WATCH/MULTI) keyed on ``run_id``
-(and, for imports, a ``hop`` counter), so:
+Every write is an optimistic read-modify-write (WATCH/MULTI) keyed on ``run_id``,
+so:
 
-* a cancel can never be overwritten by a hop that read the state earlier;
-* a stale hop of an old run can never clobber a newer run;
-* a redelivered/duplicated hop is fenced out — only the hop whose number matches
-  the stored one may advance the chain.
+* a cancel can never be overwritten by a task that read the state earlier;
+* a stale task of an old run can never clobber a newer run.
 
 A run that stops heartbeating (``updated_at``) is considered abandoned, so a lost
 task cannot lock the user out until the Redis key expires.
@@ -35,7 +33,7 @@ RunKind = Literal["index", "import"]
 
 _ACTIVE_TTL_SECONDS = 24 * 3600
 _FINISHED_TTL_SECONDS = 3600
-# A live run touches its state at least every ~15s (index chunk / import hop). No
+# A live run touches its state at least every ~15s (index chunk / imported message). No
 # touch for this long means the task that owned it is gone.
 _STALE_SECONDS = 600
 _MAX_CONTENTION_RETRIES = 5
@@ -141,7 +139,6 @@ def begin_run(
             **state,
             "started_at": now_utc().isoformat(),
             "finished_at": None,
-            "hop": 0,
         }
         return new, new
 
@@ -153,27 +150,17 @@ def update_run(
     user_id: int,
     run_id: str,
     patch: dict[str, Any],
-    *,
-    hop: int | None = None,
-    next_hop: int | None = None,
 ) -> dict[str, Any] | None:
     """Merge ``patch`` into the active run ``run_id``.
 
-    Returns the new state, or None when the run was cancelled, finished,
-    replaced by a newer one, or (with ``hop``) already advanced by another hop —
-    the caller must stop. An empty patch is a heartbeat.
+    Returns the new state, or None when the run was cancelled, finished or
+    replaced by a newer one — the caller must stop. An empty patch is a heartbeat.
     """
 
     def fn(current):
-        if (
-            not is_active(current)
-            or current["run_id"] != run_id  # type: ignore[index]
-            or (hop is not None and current.get("hop") != hop)  # type: ignore[union-attr]
-        ):
+        if not is_active(current) or current["run_id"] != run_id:  # type: ignore[index]
             return None, None
         new = {**current, **patch}  # type: ignore[dict-item]
-        if next_hop is not None:
-            new["hop"] = next_hop
         return new, new
 
     return _transact(kind, user_id, fn)

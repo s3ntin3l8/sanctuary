@@ -21,9 +21,9 @@ function Summary({ run }: { run: GmailRun }) {
         Importing {run.done}/{run.total}
         {run.current_subject && (
           <span className="text-muted">
-            {run.waiting ? ' · waiting for “' : ' · “'}
+            {' · “'}
             {run.current_subject}
-            {run.waiting ? '” to finish processing' : '”'}
+            {'”'}
           </span>
         )}
       </>

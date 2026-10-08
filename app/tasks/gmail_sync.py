@@ -29,7 +29,6 @@ from app.services.ingestion.gmail import (
     list_message_ids,
     parse_metadata,
 )
-from app.services.pipeline_status import batch_pipeline_settled as batch_is_settled
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ logger = logging.getLogger(__name__)
 # doing any real work.
 _WATERMARK_OVERLAP = timedelta(minutes=5)
 
-# Prevents an incremental sync, an index refresh or an import hop (or two overlapping incremental
+# Prevents an incremental sync, an index refresh or an import (or two overlapping incremental
 # ticks) for the same mailbox from racing: both would read the same
 # gmail_last_sync_at, both fetch overlapping pages, and whichever commits its
 # settings_json last silently clobbers the other's watermark update. TTL is
@@ -66,12 +65,8 @@ _MAX_TRACKED_FAILURES = 200
 # Index refresh commits and reports progress every this many messages.
 _INDEX_CHUNK = 200
 
-# Sequential import: how long to wait between "has the last email's pipeline
-# finished?" checks, the gap before the next email when there was nothing to
-# wait for, and the cap after which a stuck batch no longer holds the history.
-_IMPORT_POLL_SECONDS = 15
-_IMPORT_HOP_SECONDS = 2
-_IMPORT_SETTLE_TIMEOUT = timedelta(minutes=30)
+# A busy mailbox (another sync/index holds the lock) defers an import this long.
+_IMPORT_LOCK_RETRY_SECONDS = 15
 
 _lock_client: redis.Redis | None = None
 _last_warn_at: float = 0.0
@@ -196,7 +191,7 @@ def _maybe_warn(exc: Exception) -> None:
 
 @contextlib.contextmanager
 def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
-    """Best-effort mutex so only one sync (incremental, index refresh or import hop) runs per
+    """Best-effort mutex so only one sync (incremental, index refresh or import) runs per
     mailbox at a time.
 
     Yields True if the lock was acquired (or Redis is unavailable — degrades
@@ -670,16 +665,14 @@ def _import_one(
         "subject": _import_label(db, user_id, gmail_id),
     }
     try:
-        batch = ingest_raw_email(
+        ingest_raw_email(
             db, _raw_message(user_id, gmail_id, get_service), owner_id=user_id
         )
-        work["current"]["batch_id"] = batch.id if batch else None
     except (GmailReconnectRequired, SecretsError):
         raise  # not this message's fault: end the run and ask for a reconnect
     except Exception:
         db.rollback()
         work["failed"].append(gmail_id)
-        work["current"]["batch_id"] = None
         logger.exception(
             "Gmail import: failed to ingest %s for user %d", gmail_id, user_id
         )
@@ -691,38 +684,33 @@ def _progress(work: dict) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=0)
-def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
-    """Ingest the queued messages, oldest first.
+def import_gmail_messages(self, user_id: int, run_id: str):
+    """Ingest the queued messages, oldest first, in one pass.
+
+    Every email is ingested right away — its documents then run through the
+    pipeline concurrently (extraction and the per-document AI stages overlap
+    across emails). Only relationship detection waits for the earlier documents of
+    its case (see pipeline_status.relationships_gate_open), so history still links
+    up. Ingesting in ``sent_at`` order keeps document ids chronological, which is
+    what "earlier" means to that gate.
 
     The queue lives in the run state (``gmail_runs``), so cancelling is just
-    flipping that state. In sequential mode the task ingests ONE message per
-    hop and re-enqueues itself with a countdown until that email's documents
-    have finished processing — earlier letters are fully enriched before their
-    replies arrive — without ever blocking a worker while it waits.
-
-    Every state write is atomic and keyed on ``run_id``; sequential hops are also
-    fenced by ``hop`` (each re-enqueue carries the next number), so a stale,
-    cancelled, redelivered or duplicated hop stops instead of clobbering anything.
+    flipping that state. Every write is atomic and keyed on ``run_id``, and the
+    queue is re-read under the mailbox lock, so a stale (cancelled or replaced) or
+    redelivered task stops or resumes from the stored progress instead of
+    clobbering anything.
     """
     from app.config import SessionLocal
 
-    def _again(delay: int) -> str:
-        self.apply_async(args=[user_id, run_id, hop + 1], countdown=delay)
-        return "waiting"
-
-    def _current() -> dict | None:
+    def _active() -> dict | None:
         state = gmail_runs.get_run("import", user_id)
-        if (
-            gmail_runs.is_active(state)
-            and state["run_id"] == run_id  # type: ignore[index]
-            and state.get("hop") == hop  # type: ignore[union-attr]
-        ):
+        if gmail_runs.is_active(state) and state["run_id"] == run_id:  # type: ignore[index]
             return state
         return None
 
     def _stopped(work: dict) -> str:
         """A write found the run cancelled/replaced. For a cancel, still record
-        what this hop got done (incl. failures) so the sync retries them."""
+        what this task got done (incl. failures) so the sync retries them."""
         latest = gmail_runs.get_run("import", user_id)
         if latest and latest["run_id"] == run_id:
             _merge_import_outcome(
@@ -736,10 +724,9 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
             )
         return "Import cancelled"
 
-    state = _current()
+    state = _active()
     if state is None:
         return "Import no longer active"
-    sequential = state["sequential"]
     work = {
         **state,
         "remaining": list(state["remaining"]),
@@ -748,50 +735,26 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
 
     db = SessionLocal()
     try:
-        if (
-            sequential
-            and state.get("waiting_on")
-            and not batch_is_settled(db, state["waiting_on"])
-        ):
-            waited = datetime.now(UTC) - datetime.fromisoformat(state["waiting_since"])
-            if waited < _IMPORT_SETTLE_TIMEOUT:
-                # Heartbeat + advance the fence, so the run isn't mistaken for
-                # abandoned while it waits.
-                if (
-                    gmail_runs.update_run(
-                        "import", user_id, run_id, {}, hop=hop, next_hop=hop + 1
-                    )
-                    is None
-                ):
-                    return _stopped(work)
-                return _again(_IMPORT_POLL_SECONDS)
-            logger.warning(
-                "Gmail import for user %d: batch %s did not settle in %s — moving on",
-                user_id,
-                state["waiting_on"],
-                _IMPORT_SETTLE_TIMEOUT,
-            )
-
         with _user_sync_lock(user_id) as acquired:
             if not acquired:
-                if (
-                    gmail_runs.update_run(
-                        "import", user_id, run_id, {}, hop=hop, next_hop=hop + 1
-                    )
-                    is None
-                ):
+                # Another sync/index holds the mailbox: heartbeat (so the run isn't
+                # mistaken for abandoned) and try again shortly.
+                if gmail_runs.update_run("import", user_id, run_id, {}) is None:
                     return _stopped(work)
-                return _again(_IMPORT_POLL_SECONDS)
+                self.apply_async(
+                    args=[user_id, run_id], countdown=_IMPORT_LOCK_RETRY_SECONDS
+                )
+                return "waiting"
 
-            # Re-check under the lock: fences out a duplicated/redelivered chain.
-            state = _current()
+            # Re-read under the lock: resumes from stored progress after a
+            # redelivery and fences out a run that was cancelled meanwhile.
+            state = _active()
             if state is None:
                 return "Import no longer active"
             work = {
                 **state,
                 "remaining": list(state["remaining"]),
                 "failed": list(state["failed"]),
-                "waiting_on": None,
             }
             # Built lazily: messages already in the local cache need no Gmail
             # connection (or valid token) at all.
@@ -800,36 +763,14 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
             )
             while work["remaining"]:
                 _import_one(db, get_service, user_id, work, work["remaining"].pop(0))
-                if sequential:
-                    break
                 if (
-                    gmail_runs.update_run(
-                        "import", user_id, run_id, _progress(work), hop=hop
-                    )
+                    gmail_runs.update_run("import", user_id, run_id, _progress(work))
                     is None
                 ):
                     return _stopped(work)
 
-        if work["remaining"]:
-            batch_id = work["current"].get("batch_id")
-            advanced = gmail_runs.update_run(
-                "import",
-                user_id,
-                run_id,
-                {
-                    **_progress(work),
-                    "waiting_on": batch_id,
-                    "waiting_since": datetime.now(UTC).isoformat(),
-                },
-                hop=hop,
-                next_hop=hop + 1,
-            )
-            if advanced is None:
-                return _stopped(work)
-            return _again(_IMPORT_POLL_SECONDS if batch_id else _IMPORT_HOP_SECONDS)
-
         finished = gmail_runs.finish_run(
-            "import", user_id, run_id, patch={**_progress(work), "waiting_on": None}
+            "import", user_id, run_id, patch=_progress(work)
         )
         if finished is None:
             return _stopped(work)

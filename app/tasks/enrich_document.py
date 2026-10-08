@@ -81,6 +81,7 @@ def enrich_document_task(self, doc_id: int):
             if metadata_status == "failed":
                 mark_skipped(doc_id, PipelineStage.ENRICH, db, reason="metadata_failed")
                 logger.info("Doc #%d: skipping enrich — METADATA failed", doc_id)
+                release_relationship_gate(doc_id)
                 return {
                     "status": "skipped",
                     "doc_id": doc_id,
@@ -262,8 +263,10 @@ def enrich_document_task(self, doc_id: int):
 
     logger.info("Doc #%d: enrich complete — dispatching relationships", doc_id)
 
-    _dispatch_if_pending(doc_id, PipelineStage.RELATIONSHIPS)
+    _dispatch_relationships(doc_id)
     _dispatch_if_pending(doc_id, PipelineStage.ENTITIES)
+    # Later documents of this case may have been waiting for this one's ENRICH.
+    release_relationship_gate(doc_id)
 
     _trigger_cost_rollup(doc_id)
 
@@ -322,6 +325,64 @@ def _dispatch_if_pending(doc_id: int, stage: PipelineStage) -> None:
         _dispatch_safely(doc_id, stage)
 
 
+def _dispatch_relationships(doc_id: int) -> None:
+    """Start relationship detection, unless an earlier document of the case is
+    still being enriched: then leave the stage PENDING (with the reason) and let
+    ``release_relationship_gate`` start it once that document is done. Detection
+    links a document to its predecessors, so it must see them enriched; every
+    other stage runs without waiting."""
+    from app.dependencies import get_db_session
+    from app.services.pipeline_status import (
+        hold_relationships,
+        relationships_gate_open,
+    )
+
+    db = get_db_session()
+    try:
+        if not relationships_gate_open(db, doc_id):
+            hold_relationships(db, doc_id)
+            logger.info(
+                "Doc #%d: relationships held until earlier documents are enriched",
+                doc_id,
+            )
+            return
+    finally:
+        db.close()
+    _dispatch_if_pending(doc_id, PipelineStage.RELATIONSHIPS)
+
+
+def release_relationship_gate(doc_id: int) -> None:
+    """``doc_id``'s ENRICH just reached a terminal state: start the held
+    RELATIONSHIPS stages of its case whose predecessors are now all enriched.
+    Each start goes through the same pending→running claim as any dispatch, so
+    concurrent releases (or the recovery sweep) can't start one twice."""
+    from app.dependencies import get_db_session
+    from app.models.database import Document
+    from app.services.pipeline_status import (
+        held_relationship_doc_ids,
+        relationship_gate_case_id,
+        relationships_gate_open,
+    )
+
+    db = get_db_session()
+    try:
+        doc = db.get(Document, doc_id)
+        case_id = relationship_gate_case_id(db, doc) if doc else None
+        ready = (
+            [
+                held_id
+                for held_id in held_relationship_doc_ids(db, case_id)
+                if relationships_gate_open(db, held_id)
+            ]
+            if case_id
+            else []
+        )
+    finally:
+        db.close()
+    for held_id in ready:
+        _dispatch_if_pending(held_id, PipelineStage.RELATIONSHIPS)
+
+
 def _fail_enrich_terminally(doc_id: int, error: str) -> None:
     """Mark ENRICH failed and cascade the failure to RELATIONSHIPS/CLAIMS/
     ENTITIES, then make sure the case-brief CAS gets a chance to fire for
@@ -345,6 +406,7 @@ def _fail_enrich_terminally(doc_id: int, error: str) -> None:
         mark_failed_with_cascade(doc_id, PipelineStage.ENRICH, db, error=error)
     finally:
         db.close()
+    release_relationship_gate(doc_id)
     trigger_case_brief_if_ready(doc_id)
 
 

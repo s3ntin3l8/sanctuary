@@ -93,7 +93,6 @@ export function ImportPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // Raw text, so clearing the field to retype doesn't fight a clamp on every keystroke.
   const [oldestInput, setOldestInput] = useState('25')
-  const [sequential, setSequential] = useState(true)
   const [confirmClear, setConfirmClear] = useState(false)
 
   useEffect(() => {
@@ -205,7 +204,7 @@ export function ImportPage() {
 
       {run && run.total > 0 && <GmailImportStatus run={run} variant="full" />}
 
-      <NewMailBanner sequential={sequential} busy={importing || start.isPending} />
+      <NewMailBanner busy={importing || start.isPending} />
 
       {index.indexed_count > 0 && (
         <>
@@ -227,20 +226,12 @@ export function ImportPage() {
             <span>
               oldest from <strong>{scope ? referenceLabel(scope) : 'all references'}</strong>
             </span>
-            <label className="ml-2 flex items-center gap-1.5 text-muted">
-              <input
-                type="checkbox"
-                checked={sequential}
-                onChange={(e) => setSequential(e.target.checked)}
-              />
-              Import strictly in order (slower)
-            </label>
             <div className="ml-auto flex items-center gap-2">
               {selected.size > 0 && (
                 <Button
                   variant="secondary"
                   disabled={importing || start.isPending}
-                  onClick={() => runImport({ gmail_ids: [...selected], sequential, new: false })}
+                  onClick={() => runImport({ gmail_ids: [...selected], new: false })}
                 >
                   Import selected ({selected.size})
                 </Button>
@@ -248,12 +239,7 @@ export function ImportPage() {
               <Button
                 disabled={importing || start.isPending}
                 onClick={() =>
-                  runImport({
-                    oldest_n: oldestN,
-                    group: scope?.key ?? null,
-                    sequential,
-                    new: false,
-                  })
+                  runImport({ oldest_n: oldestN, group: scope?.key ?? null, new: false })
                 }
               >
                 Import

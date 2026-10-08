@@ -24,11 +24,9 @@ def idle_status() -> GmailImportStatus:
         total=0,
         done=0,
         failed_count=0,
-        sequential=True,
         cancelled=False,
         error=None,
         current_subject=None,
-        waiting=False,
         started_at=None,
         finished_at=None,
     )
@@ -40,11 +38,9 @@ def status_from_state(state: dict[str, Any]) -> GmailImportStatus:
         total=state["total"],
         done=state["done"],
         failed_count=len(state["failed"]),
-        sequential=state["sequential"],
         cancelled=state["cancelled"],
         error=state.get("error"),
         current_subject=(state.get("current") or {}).get("subject"),
-        waiting=bool(state.get("waiting_on")),
         started_at=_iso(state.get("started_at")),
         finished_at=_iso(state.get("finished_at")),
     )

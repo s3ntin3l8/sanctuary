@@ -44,7 +44,6 @@ const idle = {
   total: 0,
   done: 0,
   failed_count: 0,
-  sequential: true,
   cancelled: false,
   error: null,
   current_subject: null,
@@ -85,7 +84,7 @@ async function body(fetch: ReturnType<typeof stubApi>, method: string, path: str
   return r?.clone().json()
 }
 
-test('banner: announces new mail and imports all of it, strictly in order by default', async () => {
+test('banner: announces new mail and imports all of it', async () => {
   const fetch = importPage({
     'POST /api/v1/gmail/import': { status: 202, body: { queued: 2 } },
   })
@@ -97,8 +96,7 @@ test('banner: announces new mail and imports all of it, strictly in order by def
   expect(await screen.findByRole('status')).toHaveTextContent('Queued 2 messages')
   expect(await body(fetch, 'POST', '/api/v1/gmail/import')).toEqual({
     new: true,
-    sequential: true,
-  })
+    })
 })
 
 test('banner: review lists the messages and imports a hand-picked few', async () => {
@@ -118,8 +116,7 @@ test('banner: review lists the messages and imports a hand-picked few', async ()
   await waitFor(async () =>
     expect(await body(fetch, 'POST', '/api/v1/gmail/import')).toEqual({
       new: true,
-      sequential: true,
-      gmail_ids: ['n2'],
+          gmail_ids: ['n2'],
     }),
   )
 })

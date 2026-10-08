@@ -331,7 +331,7 @@ def test_import_next_n_oldest_across_everything(db_session):
     assert response.status_code == 202 and response.json() == {"queued": 3}
     state = gmail_runs.get_run("import", uid)
     assert state["remaining"] == ["a1", "b1", "a2"]  # oldest first, across groups
-    assert state["total"] == 3 and state["sequential"] is True
+    assert state["total"] == 3
     task, user_id, run_id = dispatch.call_args.args
     assert (user_id, run_id) == (uid, state["run_id"])
 
@@ -372,13 +372,13 @@ def test_import_an_explicit_pick_is_still_ordered_oldest_first(db_session):
     assert gmail_runs.get_run("import", uid)["remaining"] == ["b1", "a3"]
 
 
-def test_import_before_a_date_and_non_sequential(db_session):
+def test_import_before_a_date(db_session):
     uid = _admin(db_session)
     _connect(db_session, uid)
     _seed_history(db_session, uid)
-    _import(before="2024-01-03", sequential=False)
+    _import(before="2024-01-03")
     state = gmail_runs.get_run("import", uid)
-    assert state["remaining"] == ["a1", "b1"] and state["sequential"] is False
+    assert state["remaining"] == ["a1", "b1"]
 
 
 def test_import_with_nothing_left_queues_nothing(db_session):
@@ -441,7 +441,6 @@ def test_import_status_while_running_and_after_cancel(db_session):
 
     status = client.get("/api/v1/gmail/import/status").json()
     assert status["active"] is True and status["total"] == 3 and status["done"] == 0
-    assert status["waiting"] is False
 
     assert client.delete("/api/v1/gmail/import").status_code == 204
     status = client.get("/api/v1/gmail/import/status").json()
@@ -481,7 +480,7 @@ def test_a_run_whose_task_vanished_does_not_lock_the_user_out(
     _connect(db_session, uid)
     _seed_history(db_session, uid)
     _import(oldest_n=2)
-    _age(fake_run_state, "import", uid, 3600)  # no hop has touched it for an hour
+    _age(fake_run_state, "import", uid, 3600)  # nothing has touched it for an hour
 
     assert client.get("/api/v1/gmail/import/status").json()["active"] is False
     response, dispatch = _import(oldest_n=2)  # a fresh run may take over
