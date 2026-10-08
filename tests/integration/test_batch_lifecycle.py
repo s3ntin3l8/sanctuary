@@ -142,13 +142,16 @@ def test_gmail_index_treats_a_no_document_message_as_ingested(db_session, user):
 # --- #145: counters and the sweep --------------------------------------------------------
 
 
-def _batch(db, owner_id, status=IngestBatchStatus.PENDING, age_hours=0, docs=0):
+def _batch(
+    db, owner_id, status=IngestBatchStatus.PENDING, age_hours=0, docs=0, meta=None
+):
     batch = IngestBatch(
         owner_id=owner_id,
         source_type=IngestBatchSourceType.EMAIL,
         status=status,
         subject="s",
         ingest_date=now_utc() - timedelta(hours=age_hours),
+        meta=meta,
     )
     db.add(batch)
     db.flush()
@@ -191,10 +194,26 @@ def test_empty_batch_sweep_deletes_stale_empties_but_spares_the_rest(db_session,
     from app.services.pipeline_status import recover_empty_batches
 
     stale_empty = _batch(db_session, user.id, age_hours=3)
+    # COMPLETED says nothing about being a tombstone: only meta.reason does, so a
+    # change to what COMPLETED means can never expose a tombstone to the sweep.
+    completed_empty = _batch(
+        db_session, user.id, status=IngestBatchStatus.COMPLETED, age_hours=3
+    )
     fresh_empty = _batch(db_session, user.id, age_hours=0)  # upload still adding docs
     with_docs = _batch(db_session, user.id, age_hours=3, docs=1)
     tombstone = _batch(
-        db_session, user.id, status=IngestBatchStatus.COMPLETED, age_hours=3
+        db_session,
+        user.id,
+        status=IngestBatchStatus.COMPLETED,
+        age_hours=3,
+        meta={"reason": "no_new_documents"},
+    )
+    tombstone_other_status = _batch(
+        db_session,
+        user.id,
+        status=IngestBatchStatus.PENDING,
+        age_hours=3,
+        meta={"reason": "no_new_documents"},
     )
     slicing = _batch(
         db_session, user.id, status=IngestBatchStatus.AWAITING_SLICING, age_hours=3
@@ -202,9 +221,15 @@ def test_empty_batch_sweep_deletes_stale_empties_but_spares_the_rest(db_session,
 
     result = recover_empty_batches(db_session)
 
-    assert result["batch_ids"] == [stale_empty.id]
+    assert sorted(result["batch_ids"]) == sorted([stale_empty.id, completed_empty.id])
     remaining = {b.id for b in _batches(db_session)}
-    assert remaining == {fresh_empty.id, with_docs.id, tombstone.id, slicing.id}
+    assert remaining == {
+        fresh_empty.id,
+        with_docs.id,
+        tombstone.id,
+        tombstone_other_status.id,
+        slicing.id,
+    }
 
 
 # --- #155: archived but never committed ----------------------------------------------------
@@ -318,3 +343,40 @@ def test_ingest_one_records_the_owner_next_to_the_archived_file(
 
     sidecars = list(scan_dirs["processed"].glob("*/*/.owner"))
     assert len(sidecars) == 1 and sidecars[0].read_text() == str(user.id)
+
+
+@pytest.mark.integration
+def test_reconcile_failure_does_not_poison_the_tick_session(
+    db_session, user, scan_dirs
+):
+    """scan_and_ingest runs the reconcile on its own session, so a recovered file
+    that fails to ingest cannot break the same tick's incoming/ work."""
+    from app.services.ingestion import scan_folder
+
+    _archived(scan_dirs, "bad-1", age_seconds=3600, owner=user.id)
+    (
+        scan_dirs["processed"] / now_utc().date().isoformat() / "bad-1" / "original.pdf"
+    ).write_bytes(b"not a pdf at all")
+    good = scan_dirs["incoming"] / "good.pdf"
+    good.write_bytes(_pdf_bytes("good"))
+    old = time.time() - 60
+    os.utime(good, (old, old))
+
+    seen = []
+    real = scan_folder.reconcile_processed_orphans
+
+    def _spy(db, **kw):
+        seen.append(db)
+        return real(db, **kw)
+
+    with (
+        patch("app.tasks.dispatch.dispatch_task"),
+        patch("app.services.ingestion.scan_folder._MTIME_GUARD_SECONDS", 0),
+        patch("app.services.ingestion.scan_folder._last_reconcile_at", 0.0),
+        patch.object(scan_folder, "reconcile_processed_orphans", side_effect=_spy),
+    ):
+        created = scan_folder.scan_and_ingest(db_session)
+
+    assert seen and seen[0] is not db_session  # isolated session
+    assert created == 1  # the good file still ingested
+    assert (scan_dirs["failed"] / "bad-1").exists()  # the bad one was parked

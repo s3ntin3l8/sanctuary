@@ -12,7 +12,11 @@ from app.config import DATA_DIR
 from app.core.paths import to_storage_path
 from app.models.database import Document, IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
-from app.repositories.ingest_batch import IngestBatchRepository
+from app.repositories.ingest_batch import (
+    NO_NEW_DOCUMENTS,
+    IngestBatchRepository,
+    is_no_document_tombstone,
+)
 from app.services.ingestion.email_parser import parse_rfc822
 from app.services.ingestion.extractors import (
     extract_az_court_from_subject,
@@ -111,17 +115,6 @@ def _try_assign_case_from_subject(
             )
 
 
-NO_NEW_DOCUMENTS = "no_new_documents"
-
-
-def _is_no_document_tombstone(batch: IngestBatch) -> bool:
-    """A committed, inert record that this email produced nothing to ingest."""
-    return (
-        batch.status == IngestBatchStatus.COMPLETED
-        and (batch.meta or {}).get("reason") == NO_NEW_DOCUMENTS
-    )
-
-
 def ingest_raw_email(
     db: Session,
     raw_bytes: bytes,
@@ -153,7 +146,7 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
-            if _is_no_document_tombstone(existing):
+            if is_no_document_tombstone(existing):
                 logger.info(
                     "Email message-id %s already ingested as a no-document batch "
                     "#%d — skipping",
@@ -193,7 +186,7 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
-            if _is_no_document_tombstone(existing):
+            if is_no_document_tombstone(existing):
                 logger.info(
                     "Email (fallback hash) already ingested as a no-document "
                     "batch #%d — skipping",

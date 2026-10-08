@@ -331,7 +331,12 @@ def scan_and_ingest(db: Session) -> int:
     global _last_reconcile_at
     if time.time() - _last_reconcile_at >= _RECONCILE_INTERVAL_SECONDS:
         _last_reconcile_at = time.time()
-        reconcile_processed_orphans(db, default_owner_id=admin_id)
+        # Its own session: a failure while re-ingesting an orphan rolls back,
+        # and that must not touch this tick's session or its incoming/ work.
+        from app.config import SessionLocal
+
+        with SessionLocal() as reconcile_db:
+            reconcile_processed_orphans(reconcile_db, default_owner_id=admin_id)
 
     processed = 0
     for entry in candidates:

@@ -153,3 +153,36 @@ def test_repeated_flushes_move_the_original_file_once(db_session, data_dir):
     assert not (data_dir / "MOVE-A").exists() or not any(
         (data_dir / "MOVE-A").iterdir()
     )
+
+
+@pytest.mark.integration
+def test_failure_while_reverting_a_failed_move_is_logged_not_raised(
+    db_session, data_dir, caplog
+):
+    case = _case(db_session)
+    doc, src = _triage_doc(db_session, data_dir, "Order", "a.pdf")
+    _assign(doc, case)
+
+    class _Boom:
+        def __enter__(self):
+            raise RuntimeError("db down")
+
+        def __exit__(self, *a):
+            return False
+
+    real_session_local = app.config.SessionLocal
+    calls = {"n": 0}
+
+    def _session_local():
+        calls["n"] += 1
+        # 1st: the committed-row check; 2nd: the revert, which fails.
+        return real_session_local() if calls["n"] == 1 else _Boom()
+
+    with (
+        patch("app.models.database.shutil.move", side_effect=OSError("disk full")),
+        patch("app.config.SessionLocal", _session_local),
+        caplog.at_level("ERROR"),
+    ):
+        db_session.commit()  # must not raise even though the revert failed
+
+    assert any("Could not revert file_path" in r.message for r in caplog.records)

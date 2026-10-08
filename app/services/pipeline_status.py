@@ -1019,11 +1019,11 @@ def recover_empty_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
     committed, a batch whose ingest crashed mid-way, rows left by older code
     that did not roll back an all-duplicate email.
 
-    Spared: COMPLETED batches (the deliberate no-document tombstone that keeps a
-    message from being re-imported — see ``NO_NEW_DOCUMENTS``) and
-    AWAITING_SLICING ones (their documents are created when the user confirms
-    the cuts). The age floor keeps a batch whose documents are still being
-    created (``upload`` commits the batch first) out of the sweep.
+    Spared: the deliberate no-document tombstone that keeps a message from being
+    re-imported (identified by ``meta.reason``, see ``NO_NEW_DOCUMENTS``, not by
+    status) and AWAITING_SLICING batches (their documents are created when the
+    user confirms the cuts). The age floor keeps a batch whose documents are
+    still being created (``upload`` commits the batch first) out of the sweep.
 
     Returns {"batches_deleted": N, "batch_ids": [...]}.
     """
@@ -1031,15 +1031,15 @@ def recover_empty_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
 
     from app.models.database import Document, IngestBatch
     from app.models.enums import IngestBatchStatus
+    from app.repositories.ingest_batch import is_not_tombstone_clause
 
     cutoff = now_utc() - timedelta(seconds=max_age_seconds)
     empty = (
         db.query(IngestBatch)
         .filter(
             IngestBatch.ingest_date < cutoff,
-            IngestBatch.status.notin_(
-                (IngestBatchStatus.COMPLETED, IngestBatchStatus.AWAITING_SLICING)
-            ),
+            IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+            is_not_tombstone_clause(),
             ~exists().where(Document.ingest_batch_id == IngestBatch.id),
         )
         .all()

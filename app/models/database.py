@@ -471,6 +471,10 @@ def move_document_file_on_assignment(mapper, connection, target):
         pending.pop(target.id, None)
 
 
+# The two Session-level hooks below are deliberately global: every commit and
+# every soft rollback in the app passes through them. That is bounded — both
+# return immediately when ``session.info`` has no queued moves, which is the
+# case for everything except confirming/reassigning a document's case.
 @event.listens_for(Session, "after_commit")
 def _run_pending_file_moves(session):
     """Perform the file moves queued by ``move_document_file_on_assignment``.
@@ -506,13 +510,23 @@ def _run_pending_file_moves(session):
                 )
                 revert.append((doc_id, old_rel))
     if revert:
-        with SessionLocal() as fix:
-            for doc_id, old_rel in revert:
-                fix.execute(
-                    _sa_text("UPDATE documents SET file_path = :p WHERE id = :id"),
-                    {"p": old_rel, "id": doc_id},
-                )
-            fix.commit()
+        # Best-effort, like the rest of this hook: the caller's transaction is
+        # already committed, so a failure here must not surface as an error in
+        # code that has finished its work. Log it; the move failure above was
+        # already logged with the paths needed to repair the row by hand.
+        try:
+            with SessionLocal() as fix:
+                for doc_id, old_rel in revert:
+                    fix.execute(
+                        _sa_text("UPDATE documents SET file_path = :p WHERE id = :id"),
+                        {"p": old_rel, "id": doc_id},
+                    )
+                fix.commit()
+        except Exception:
+            logger.exception(
+                "Could not revert file_path for documents %s after a failed file move",
+                [doc_id for doc_id, _ in revert],
+            )
 
 
 @event.listens_for(Session, "after_soft_rollback")
