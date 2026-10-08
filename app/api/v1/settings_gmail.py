@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, time
 
+import httplib2
 from fastapi import APIRouter, Depends, Request, Response
+from google.auth.exceptions import TransportError
+from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
@@ -40,6 +43,10 @@ from app.services.ingestion.gmail import (
     estimate_matches,
     revoke_token,
 )
+
+# What a Gmail call raises when Google or the network misbehaves. Anything else is
+# a programming error and should surface as a 500 in the logs, not a "502".
+_GMAIL_TRANSPORT_ERRORS = (HttpError, httplib2.HttpLib2Error, TransportError, OSError)
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +144,7 @@ def preview_filters(
         )
     except GmailReconnectRequired as exc:
         raise ApiError(409, "gmail_reconnect_required", str(exc)) from exc
-    except Exception as exc:  # Google/network failure: a preview must not 500
+    except _GMAIL_TRANSPORT_ERRORS as exc:  # Google/network failure, not a bug
         logger.warning("Gmail filter preview failed for user %d: %s", user.id, exc)
         raise ApiError(
             502, "gmail_unreachable", "Couldn't reach Gmail to count matches."

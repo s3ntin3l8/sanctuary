@@ -523,3 +523,30 @@ def test_filter_preview_reports_a_dead_grant_and_gmail_outages(db_session):
     with patch("app.api.v1.settings_gmail.connect_gmail", side_effect=OSError("down")):
         resp = client.post(url, json=body)
     assert resp.status_code == 502 and resp.json()["code"] == "gmail_unreachable"
+
+
+def test_filter_preview_surfaces_programming_errors_instead_of_calling_them_502(
+    db_session,
+):
+    _connect(db_session, _admin(db_session))
+    quiet = TestClient(app, raise_server_exceptions=False)
+    quiet.cookies = client.cookies
+    with patch(
+        "app.api.v1.settings_gmail.connect_gmail", side_effect=AttributeError("bug")
+    ):
+        resp = quiet.post(
+            "/api/v1/settings/gmail/filters/preview", json={"allowlist": ["a@firm.de"]}
+        )
+    assert resp.status_code == 500
+
+
+def test_filter_preview_maps_a_google_http_error_to_502(db_session):
+    from googleapiclient.errors import HttpError
+
+    _connect(db_session, _admin(db_session))
+    err = HttpError(MagicMock(status=503, reason="down"), b"unavailable")
+    with patch("app.api.v1.settings_gmail.connect_gmail", side_effect=err):
+        resp = client.post(
+            "/api/v1/settings/gmail/filters/preview", json={"allowlist": ["a@firm.de"]}
+        )
+    assert resp.status_code == 502 and resp.json()["code"] == "gmail_unreachable"
