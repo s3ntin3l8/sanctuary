@@ -510,3 +510,107 @@ def test_iso_datetime_due_date_is_parsed(db_session, sample_case):
         db_session.query(ActionItem).filter(ActionItem.case_id == sample_case.id).one()
     )
     assert item.due_date.date().isoformat() == "2025-09-22"
+
+
+def _two_docs(db_session, case_id):
+    from app.models.database import Document
+    from app.models.enums import OriginatorType
+
+    docs = [
+        Document(
+            title=t,
+            content="x",
+            case_id=case_id,
+            originator_type=OriginatorType.COURT,
+        )
+        for t in ("Begleitschreiben", "Ladung")
+    ]
+    db_session.add_all(docs)
+    db_session.flush()
+    return docs
+
+
+def _create(db_session, case_id, doc, action_type, due, sample_doc_date):
+    count = create_from_payload(
+        case_id=case_id,
+        source_doc_id=doc.id,
+        proceeding_id=None,
+        actions=[{"title": "Termin", "action_type": action_type, "due_date": due}],
+        db=db_session,
+        source_doc_date=sample_doc_date,
+    )
+    db_session.flush()
+    return count
+
+
+def _rows(db_session, case_id):
+    from app.models.database import ActionItem
+
+    return db_session.query(ActionItem).filter(ActionItem.case_id == case_id).all()
+
+
+@pytest.mark.unit
+def test_court_date_absorbs_earlier_other_type_item_on_same_day(
+    db_session, sample_case, future_action, sample_doc_date
+):
+    from app.models.enums import ActionItemType
+
+    cover, ladung = _two_docs(db_session, sample_case.id)
+    due = future_action["due_date"]
+
+    assert (
+        _create(
+            db_session, sample_case.id, cover, "response_required", due, sample_doc_date
+        )
+        == 1
+    )
+    assert (
+        _create(db_session, sample_case.id, ladung, "court_date", due, sample_doc_date)
+        == 0
+    )
+
+    rows = _rows(db_session, sample_case.id)
+    assert len(rows) == 1
+    assert rows[0].action_type == ActionItemType.COURT_DATE
+
+
+@pytest.mark.unit
+def test_other_type_item_is_skipped_when_court_date_exists_on_same_day(
+    db_session, sample_case, future_action, sample_doc_date
+):
+    from app.models.enums import ActionItemType
+
+    cover, ladung = _two_docs(db_session, sample_case.id)
+    due = future_action["due_date"]
+
+    assert (
+        _create(db_session, sample_case.id, ladung, "court_date", due, sample_doc_date)
+        == 1
+    )
+    assert (
+        _create(db_session, sample_case.id, cover, "deadline", due, sample_doc_date)
+        == 0
+    )
+
+    rows = _rows(db_session, sample_case.id)
+    assert [r.action_type for r in rows] == [ActionItemType.COURT_DATE]
+
+
+@pytest.mark.unit
+def test_distinct_non_hearing_types_on_same_day_still_coexist(
+    db_session, sample_case, future_action, sample_doc_date
+):
+    cover, other = _two_docs(db_session, sample_case.id)
+    due = future_action["due_date"]
+
+    assert (
+        _create(
+            db_session, sample_case.id, cover, "response_required", due, sample_doc_date
+        )
+        == 1
+    )
+    assert (
+        _create(db_session, sample_case.id, other, "payment_due", due, sample_doc_date)
+        == 1
+    )
+    assert len(_rows(db_session, sample_case.id)) == 2
