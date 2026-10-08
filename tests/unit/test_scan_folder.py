@@ -1,5 +1,6 @@
 """Unit tests for the scan folder ingest driver."""
 
+import contextlib
 import time
 from unittest.mock import MagicMock, patch
 
@@ -292,3 +293,116 @@ def test_sweep_stale_processing_dirs_moves_abandoned_claims_to_failed(tmp_path):
     assert (failed / "abandoned-batch" / "error.log").exists()
     # The still-in-progress claim must be left alone.
     assert fresh_dir.exists()
+
+
+def _dirs(tmp_path):
+    dirs = {n: tmp_path / n for n in ("incoming", "processing", "processed", "failed")}
+    for d in dirs.values():
+        d.mkdir()
+    return dirs
+
+
+def _scan_patches(dirs):
+    return (
+        patch("app.services.ingestion.scan_folder.SCAN_INCOMING_DIR", dirs["incoming"]),
+        patch(
+            "app.services.ingestion.scan_folder.SCAN_PROCESSING_DIR",
+            dirs["processing"],
+        ),
+        patch(
+            "app.services.ingestion.scan_folder.SCAN_PROCESSED_DIR", dirs["processed"]
+        ),
+        patch("app.services.ingestion.scan_folder.SCAN_FAILED_DIR", dirs["failed"]),
+        patch("app.services.ingestion.scan_folder._MTIME_GUARD_SECONDS", 0),
+    )
+
+
+@pytest.mark.unit
+def test_oversized_scan_is_rejected_before_it_is_read_or_ingested(tmp_path):
+    """#141: the scan folder had no size cap, so one huge drop could be hashed
+    and rendered whole. It now goes to failed/ with an explanation."""
+    from app.services.ingestion.scan_folder import _ingest_one
+
+    dirs = _dirs(tmp_path)
+    big = dirs["incoming"] / "huge.pdf"
+    big.write_bytes(b"%PDF-1.4 " + b"0" * 4096)
+
+    with contextlib.ExitStack() as stack:
+        for p in _scan_patches(dirs):
+            stack.enter_context(p)
+        stack.enter_context(
+            patch("app.services.ingestion.scan_folder.MAX_FILE_SIZE", 1024)
+        )
+        ingest = stack.enter_context(
+            patch("app.services.ingestion.scan_folder.ingest_scanned_file")
+        )
+        sha = stack.enter_context(
+            patch("app.services.ingestion.scan_folder._sha256_file")
+        )
+        assert _ingest_one(MagicMock(), big, owner_id=1) == 0
+
+    ingest.assert_not_called()
+    sha.assert_not_called()  # rejected on size alone, content never read
+    (failed,) = list(dirs["failed"].iterdir())
+    assert "accepts at most" in (failed / "error.log").read_text()
+
+
+@pytest.mark.unit
+def test_hashing_streams_the_file_in_chunks(tmp_path):
+    import hashlib
+
+    from app.services.ingestion.scan_folder import _sha256_file
+
+    path = tmp_path / "f.pdf"
+    data = b"x" * (3 * 1024 * 1024 + 17)
+    path.write_bytes(data)
+
+    reads = []
+    real_open = open
+
+    def _spy_open(*a, **k):
+        fh = real_open(*a, **k)
+        real_read = fh.read
+
+        def _read(n=-1):
+            reads.append(n)
+            return real_read(n)
+
+        fh.read = _read
+        return fh
+
+    with patch("builtins.open", _spy_open):
+        digest = _sha256_file(path)
+
+    assert digest == hashlib.sha256(data).hexdigest()
+    assert -1 not in reads and len(reads) > 2  # never read whole, several chunks
+
+
+@pytest.mark.unit
+def test_single_page_scan_reuses_the_hash_instead_of_rereading_the_file(
+    db_session, tmp_path
+):
+    """The orchestrator used to read the whole PDF a second time for the same hash."""
+    from pathlib import Path
+
+    from app.models.database import Document
+    from app.services.ingestion.batch_orchestrator import ingest_scanned_file
+
+    pdf = tmp_path / "scan.pdf"
+    pdf.write_bytes(b"%PDF-1.4 single page")
+    mock_pdf = MagicMock()
+    mock_pdf.__len__ = MagicMock(return_value=1)
+
+    with (
+        patch("app.services.ingestion.batch_orchestrator.pdfium") as pdfium,
+        patch("app.services.ingestion.batch_orchestrator.dispatch_task"),
+        patch.object(
+            Path, "read_bytes", side_effect=AssertionError("file was read whole")
+        ),
+    ):
+        pdfium.PdfDocument.return_value = mock_pdf
+        batch = ingest_scanned_file(db_session, pdf, "b-1", "a" * 64)
+
+    assert batch is not None
+    doc = db_session.query(Document).filter(Document.ingest_batch_id == batch.id).one()
+    assert doc.content_hash == "a" * 64

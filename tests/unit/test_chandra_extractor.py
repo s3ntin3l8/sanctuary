@@ -34,13 +34,35 @@ def _fake_gate(*_args, **_kwargs):
     yield "sentinel"
 
 
+def _patch_render(page_count: int, rendered: list | None = None):
+    """Patch page counting + lazy rendering for a ``page_count``-page document."""
+    pngs = [f"page-{i}".encode() for i in range(page_count)]
+
+    def _gen(*_a, **_k):
+        for png in pngs:
+            if rendered is not None:
+                rendered.append(png)
+            yield png
+
+    stack = contextlib.ExitStack()
+    stack.enter_context(
+        patch(
+            "app.services.ingestion.chandra_extractor._page_count",
+            return_value=page_count,
+        )
+    )
+    stack.enter_context(
+        patch(
+            "app.services.ingestion.chandra_extractor._render_pages",
+            side_effect=_gen,
+        )
+    )
+    return stack
+
+
 def _patch_common(page_count: int):
     """Patch rendering + HTTP + both gates; return (render_mock, ocr_page_mock, slot_mock)."""
-    pngs = [f"page-{i}".encode() for i in range(page_count)]
-    render = patch(
-        "app.services.ingestion.chandra_extractor._render_pdf_to_pngs",
-        return_value=pngs,
-    )
+    render = _patch_render(page_count)
     ocr_page = patch(
         "app.services.ingestion.chandra_extractor._ocr_one_page",
         return_value="<p>hi</p>",
@@ -145,10 +167,7 @@ def test_document_deadline_returns_partial_result_for_pages_still_in_flight():
         return "<p>fast</p>"
 
     with (
-        patch(
-            "app.services.ingestion.chandra_extractor._render_pdf_to_pngs",
-            return_value=pngs,
-        ),
+        _patch_render(page_count),
         patch(
             "app.services.ingestion.chandra_extractor._ocr_one_page",
             side_effect=_one_slow_page,
@@ -181,3 +200,113 @@ def test_document_deadline_returns_partial_result_for_pages_still_in_flight():
     assert result["metadata"]["page_failures"] == [page_count]
     assert "document deadline exceeded" in result["content"]
     assert result["content"].count("fast") == page_count - 1
+
+
+@pytest.mark.unit
+def test_only_a_bounded_window_of_pages_is_rendered_ahead_of_ocr():
+    """The point of #141: a 40-page scan must not have 40 PNGs in memory. With
+    2 workers, page N+2 is not rendered until an earlier page's OCR finished."""
+    import threading
+
+    rendered: list[bytes] = []
+    gate_open = threading.Event()
+    started = threading.Semaphore(0)
+
+    def _blocked_page(png_bytes, *, url, headers, model, timeout):
+        started.release()
+        gate_open.wait(timeout=10)
+        return "<p>x</p>"
+
+    result: dict = {}
+
+    def _run():
+        with (
+            _patch_render(8, rendered),
+            patch(
+                "app.services.ingestion.chandra_extractor._ocr_one_page",
+                side_effect=_blocked_page,
+            ),
+            patch(
+                "app.services.ingestion.chandra_extractor.model_gate",
+                side_effect=_fake_gate,
+            ),
+            patch(
+                "app.services.ingestion.chandra_extractor.ocr_slot",
+                side_effect=_fake_gate,
+            ),
+        ):
+            result["r"] = extract_with_chandra(
+                "doc.pdf", ocr_config=_OCR_CFG, max_workers=2
+            )
+
+    t = threading.Thread(target=_run)
+    t.start()
+    assert started.acquire(timeout=10) and started.acquire(timeout=10)
+    # Two pages are mid-OCR (blocked); the producer must be waiting, not racing ahead.
+    import time
+
+    time.sleep(0.5)
+    assert len(rendered) == 2, f"rendered {len(rendered)} pages ahead of OCR"
+
+    gate_open.set()
+    t.join(timeout=20)
+    assert len(rendered) == 8
+    assert result["r"]["metadata"]["pages"] == 8
+    assert result["r"]["metadata"]["page_failures"] == []
+    assert [c["meta"]["page"] for c in result["r"]["chunks"]] == list(range(1, 9))
+
+
+@pytest.mark.unit
+def test_pages_not_started_before_the_deadline_are_reported_incomplete():
+    import threading
+
+    release = threading.Event()
+
+    def _slow(png_bytes, *, url, headers, model, timeout):
+        release.wait(timeout=5)
+        return "<p>late</p>"
+
+    try:
+        with (
+            _patch_render(6),
+            patch(
+                "app.services.ingestion.chandra_extractor._ocr_one_page",
+                side_effect=_slow,
+            ),
+            patch(
+                "app.services.ingestion.chandra_extractor.model_gate",
+                side_effect=_fake_gate,
+            ),
+            patch(
+                "app.services.ingestion.chandra_extractor.ocr_slot",
+                side_effect=_fake_gate,
+            ),
+            pytest.raises(Exception, match="All 6 pages failed"),
+        ):
+            extract_with_chandra(
+                "doc.pdf", ocr_config=_OCR_CFG, max_workers=2, document_deadline=0.5
+            )
+    finally:
+        release.set()
+
+
+@pytest.mark.unit
+def test_render_pages_streams_real_pdf_pages_and_closes_handles(tmp_path):
+    import pypdfium2 as pdfium
+
+    from app.services.ingestion.chandra_extractor import _page_count, _render_pages
+
+    doc = pdfium.PdfDocument.new()
+    for _ in range(3):
+        doc.new_page(100, 100)
+    path = tmp_path / "three.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    assert _page_count(str(path)) == 3
+    gen = _render_pages(str(path), dpi=50)
+    first = next(gen)
+    assert first.startswith(b"\x89PNG")
+    gen.close()  # stopping early must not leak the PDF handle or raise
+
+    assert len(list(_render_pages(str(path), dpi=50))) == 3
