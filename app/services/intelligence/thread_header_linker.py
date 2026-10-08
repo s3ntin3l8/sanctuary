@@ -17,15 +17,30 @@ Edge semantics, by what the header proves:
 Both carry ``RelationshipConfidence.EMAIL_HEADER``. Direction matches the AI
 detector: from = the reply, to = the earlier document.
 
+Fallback for mail whose RFC headers resolve to nothing we ingested (stripped or
+rewritten by a relay): Gmail groups a conversation under one ``threadId``, kept
+in the Gmail metadata index keyed by Message-ID. The nearest *earlier* batch of
+the same thread earns a ``REFERENCES`` edge — "same conversation", never
+"replies to", so it can't close a thread. Headers always win when they resolve.
+The index only exists for mailboxes that were indexed, so without it this is a
+no-op.
+
 Emails arrive in any order (concurrent Gmail import), so linking a batch also
-re-resolves every batch that names it as an ancestor.
+re-resolves every batch that names it as an ancestor, by header or by thread.
 """
 
 import logging
+from typing import NamedTuple
 
+from sqlalchemy import and_, literal, select, tuple_
 from sqlalchemy.orm import Session
 
-from app.models.database import Document, DocumentRelationship, IngestBatch
+from app.models.database import (
+    Document,
+    DocumentRelationship,
+    GmailMessageIndex,
+    IngestBatch,
+)
 from app.models.enums import (
     DocumentRole,
     RelationshipConfidence,
@@ -42,6 +57,13 @@ _NOTES = {
     RelationshipType.REPLIES_TO: "email header: In-Reply-To",
     RelationshipType.REFERENCES: "email header: References",
 }
+_THREAD_NOTE = "email header: Gmail thread"
+
+
+class _Parent(NamedTuple):
+    lead: Document
+    rel_type: RelationshipType
+    note: str
 
 
 def lead_document(db: Session, batch_id: int) -> Document | None:
@@ -70,9 +92,46 @@ def lead_document(db: Session, batch_id: int) -> Document | None:
     return None
 
 
-def _resolve_parent(
-    db: Session, batch: IngestBatch
-) -> tuple[Document, RelationshipType] | None:
+def _thread_mates(
+    db: Session, batch: IngestBatch, *, earlier: bool
+) -> list[IngestBatch]:
+    """Same-owner batches in this batch's Gmail thread, ordered by arrival.
+
+    ``earlier`` selects those received before this batch, nearest first;
+    otherwise those received after it, oldest first.
+    """
+    if not batch.message_id:
+        return []
+    idx = GmailMessageIndex
+    own_threads = select(idx.thread_id).where(
+        idx.owner_id == batch.owner_id, idx.message_id == batch.message_id
+    )
+    arrival = tuple_(IngestBatch.received_at, IngestBatch.id)
+    here = tuple_(literal(batch.received_at), literal(batch.id))
+    mates = (
+        db.query(IngestBatch)
+        .join(
+            idx,
+            and_(
+                idx.owner_id == IngestBatch.owner_id,
+                idx.message_id == IngestBatch.message_id,
+            ),
+        )
+        .filter(
+            IngestBatch.owner_id == batch.owner_id,
+            IngestBatch.id != batch.id,
+            idx.thread_id.in_(own_threads),
+            arrival < here if earlier else arrival > here,
+        )
+    )
+    if earlier:
+        mates = mates.order_by(IngestBatch.received_at.desc(), IngestBatch.id.desc())
+    else:
+        mates = mates.order_by(IngestBatch.received_at, IngestBatch.id)
+    return list({b.id: b for b in mates.all()}.values())
+
+
+def _resolve_parent(db: Session, batch: IngestBatch) -> _Parent | None:
     """Nearest ingested ancestor's lead document and the edge type it earns."""
     repo = IngestBatchRepository(db)
     # In-Reply-To is the immediate parent, so it wins over References when both
@@ -90,7 +149,12 @@ def _resolve_parent(
             continue
         lead = lead_document(db, parent.id)
         if lead is not None:
-            return lead, rel_type
+            return _Parent(lead, rel_type, _NOTES[rel_type])
+
+    for mate in _thread_mates(db, batch, earlier=True):
+        lead = lead_document(db, mate.id)
+        if lead is not None:
+            return _Parent(lead, RelationshipType.REFERENCES, _THREAD_NOTE)
     return None
 
 
@@ -128,8 +192,8 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
             lead is not None
             and resolved is not None
             and rel.from_document_id == lead.id
-            and rel.to_document_id == resolved[0].id
-            and rel.relationship_type == resolved[1]
+            and rel.to_document_id == resolved.lead.id
+            and rel.relationship_type == resolved.rel_type
         ):
             continue
         affected.add(rel.to_document_id)
@@ -144,7 +208,7 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
 
     if lead is None or resolved is None:
         return 0
-    target, rel_type = resolved
+    target, rel_type, note = resolved.lead, resolved.rel_type, resolved.note
 
     inserted = insert_edge_if_absent(
         db,
@@ -152,7 +216,7 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
         to_document_id=target.id,
         relationship_type=rel_type,
         confidence=RelationshipConfidence.EMAIL_HEADER,
-        notes=_NOTES[rel_type],
+        notes=note,
     )
     if not inserted:
         # An AI suggestion for the same edge is superseded by the header fact;
@@ -172,7 +236,7 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
             and existing.confidence == RelationshipConfidence.AI_DETECTED
         ):
             existing.confidence = RelationshipConfidence.EMAIL_HEADER
-            existing.notes = _NOTES[rel_type]
+            existing.notes = note
             inserted = True
             # The AI edge had flagged the source as "unresolved_relationship";
             # as a header fact it no longer does. Same transaction, so no commit.
@@ -196,12 +260,11 @@ def link_batch(db: Session, batch_id: int) -> int:
         return 0
 
     affected: set[int] = set()
-    written = 0
-    if batch.in_reply_to or batch.thread_refs:
-        written += _link_reply(db, batch, affected)
+    written = _link_reply(db, batch, affected)
 
     # Out-of-order import: batches that already name this one as an ancestor
-    # may now have a (nearer) resolvable parent.
+    # (by header) or that arrived later in the same Gmail thread may now have a
+    # (nearer) resolvable parent.
     if batch.message_id:
         descendants = (
             db.query(IngestBatch)
@@ -213,7 +276,8 @@ def link_batch(db: Session, batch_id: int) -> int:
             )
             .all()
         )
-        for child in descendants:
+        later_in_thread = _thread_mates(db, batch, earlier=False)
+        for child in {c.id: c for c in [*descendants, *later_in_thread]}.values():
             written += _link_reply(db, child, affected)
 
     db.flush()
