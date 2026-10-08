@@ -79,6 +79,17 @@ celery_app = Celery(
     ],
 )
 
+MAINTENANCE_QUEUE = "maintenance"
+# Short, DB-only housekeeping that must keep ticking while LLM/OCR work is
+# backed up. Tasks that call a model (claim-embedding retry), do real ingest
+# work (Gmail sync, scan-folder tick) or take a model_gate stay on their own
+# queues.
+MAINTENANCE_TASKS = (
+    "app.tasks.maintenance.recover_pipeline_task",
+    "app.tasks.maintenance.prune_ai_debug_logs_task",
+    "app.tasks.thread_open_scan.thread_open_scan_task",
+)
+
 celery_app.conf.beat_schedule = {
     "sync-gmail-every-5-minutes": {
         "task": "app.tasks.gmail_sync.sync_gmail_incremental",
@@ -140,14 +151,18 @@ celery_app.conf.update(
     # when task_always_eager is False.
     task_eager_propagates=os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower()
     == "true",
-    # Two-queue split: heavy Docling/Tesseract OCR is pinned to the `ingest`
+    # Three-queue split: heavy Docling/Tesseract OCR is pinned to the `ingest`
     # queue (concurrency UI-controlled, default 4 — see get_ocr_concurrency /
     # app/services/ocr_slots.py for the matching per-page semaphore),
     # everything else (LLM calls, embeddings, light I/O) lands on `ai`
     # (concurrency UI-controlled, default 2 to match LMStudio's two-slot
-    # capacity — see get_worker_concurrency).
+    # capacity — see get_worker_concurrency). The periodic recovery sweep and
+    # other short DB-only housekeeping run on `maintenance`, on a worker of
+    # their own: the sweep is what catches a worker stuck on a long model_gate
+    # wait, so it must never queue behind one (#144).
     task_default_queue="ai",
     task_routes={
         "app.tasks.document_processing.process_document_task": {"queue": "ingest"},
+        **{name: {"queue": MAINTENANCE_QUEUE} for name in MAINTENANCE_TASKS},
     },
 )

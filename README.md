@@ -36,7 +36,7 @@ You can use the provided `Makefile` for common development tasks:
 
 ```bash
 make setup      # Install dependencies and hooks
-make run        # Start FastAPI server (http://127.0.0.1:8000) + both Celery workers + beat scheduler
+make run        # Start FastAPI server (http://127.0.0.1:8000) + the three Celery workers (ingest, ai, maintenance) + beat scheduler
 make watch-frontend  # Rebuild the SPA on change (Terminal 2)
 make frontend-test   # SPA typecheck + lint + vitest
 make test       # Run all tests

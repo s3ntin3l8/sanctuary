@@ -7,15 +7,16 @@ PYTEST := $(PYTHON) -m pytest
 PRECOMMIT := .venv/bin/pre-commit
 ALEMBIC := .venv/bin/alembic
 
-# Single source of truth for the two-queue Celery split (see app/tasks/celery_app.py).
+# Single source of truth for the three-queue Celery split (see app/tasks/celery_app.py).
 CELERY := $(PYTHON) -m celery -A app.tasks.celery_app
 INGEST_WORKER := $(CELERY) worker -n ingest@%h --loglevel=INFO -Q ingest --concurrency=4
 AI_WORKER := $(CELERY) worker -n ai@%h --loglevel=INFO -Q ai --concurrency=3
+MAINTENANCE_WORKER := $(CELERY) worker -n maintenance@%h --loglevel=INFO -Q maintenance --concurrency=2
 BEAT := $(CELERY) beat --loglevel=INFO
 
 NPM_FE := npm --prefix frontend
 
-.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
+.PHONY: help setup run run-stable run-debug server worker worker-ingest worker-ai worker-maintenance frontend-build watch-frontend frontend-test api-types test test-unit test-integration test-e2e test-e2e-isolated seed migrate lint clean redis db-up prod prod-down _check-no-celery
 
 test: ## Run all tests (excludes E2E)
 	rm -rf .pytest_cache __pycache__ app/__pycache__ app/*/__pycache__ app/*/*/__pycache__ 2>/dev/null || true
@@ -95,9 +96,10 @@ _check-no-celery: ## Internal: refuse to start if celery beat/workers already ru
 		exit 1; \
 	fi
 
-run: _check-no-celery db-up redis ## Start Postgres+Redis, web server, ingest worker (OCR), AI worker, and beat scheduler
+run: _check-no-celery db-up redis ## Start Postgres+Redis, web server, ingest (OCR), maintenance and AI workers, and beat scheduler
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload & \
 	$(INGEST_WORKER) & \
+	$(MAINTENANCE_WORKER) & \
 	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(AI_WORKER)
@@ -105,13 +107,15 @@ run: _check-no-celery db-up redis ## Start Postgres+Redis, web server, ingest wo
 run-stable: _check-no-celery db-up redis ## Start without --reload (use for ingestion/pipeline testing — avoids recovery loops)
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) & \
 	$(INGEST_WORKER) & \
+	$(MAINTENANCE_WORKER) & \
 	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(AI_WORKER)
 
-run-debug: _check-no-celery db-up redis ## Start server with DEBUG logging (+ Postgres, Redis, both workers)
+run-debug: _check-no-celery db-up redis ## Start server with DEBUG logging (+ Postgres, Redis, all workers)
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload --log-level debug & \
 	LOG_LEVEL=debug DEBUG=True $(INGEST_WORKER) & \
+	LOG_LEVEL=debug DEBUG=True $(MAINTENANCE_WORKER) & \
 	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
 	LOG_LEVEL=debug DEBUG=True $(AI_WORKER)
@@ -119,8 +123,9 @@ run-debug: _check-no-celery db-up redis ## Start server with DEBUG logging (+ Po
 server: ##  web server
 	@$(UVICORN) app.main:app --host $(HOST) --port $(PORT) --reload
 
-worker: _check-no-celery ## Start both Celery workers (ingest + ai) and beat scheduler
+worker: _check-no-celery ## Start all three Celery workers (ingest + maintenance + ai) and beat scheduler
 	@$(INGEST_WORKER) & \
+	$(MAINTENANCE_WORKER) & \
 	$(BEAT) & \
 	trap 'kill 0' EXIT INT TERM; \
 	$(AI_WORKER)
@@ -130,6 +135,9 @@ worker-ingest: ## Start only the ingest (OCR) Celery worker
 
 worker-ai: ## Start only the AI Celery worker (LLM/embeddings/light I/O)
 	$(AI_WORKER)
+
+worker-maintenance: ## Start only the maintenance Celery worker (recovery sweep, housekeeping)
+	$(MAINTENANCE_WORKER)
 
 frontend-build: ## Build the SPA (frontend/ -> frontend/dist, served by the app)
 	$(NPM_FE) run build
