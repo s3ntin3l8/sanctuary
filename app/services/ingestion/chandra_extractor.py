@@ -25,6 +25,7 @@ import io
 import logging
 import threading
 import time
+from collections.abc import Generator
 from concurrent.futures import ALL_COMPLETED, Future, ThreadPoolExecutor, wait
 from typing import Any
 
@@ -161,24 +162,45 @@ class ChandraExtractionError(RuntimeError):
     """Raised when chandra extraction fails irrecoverably (no usable text)."""
 
 
-def _render_pdf_to_pngs(file_path: str, *, dpi: int = CHANDRA_DPI) -> list[bytes]:
-    """Render every page of a PDF to PNG bytes with pypdfium2.
+def _page_count(file_path: str) -> int:
+    pdf = pdfium.PdfDocument(file_path)
+    try:
+        return len(pdf)
+    finally:
+        pdf.close()
+
+
+def _render_pages(
+    file_path: str, *, dpi: int = CHANDRA_DPI
+) -> Generator[bytes, None, None]:
+    """Lazily render a PDF's pages, in order, to PNG bytes with pypdfium2.
 
     Matches the rendering convention used by `app/services/ingestion/converters.py`
-    (scale = dpi / 72, bitmap.to_pil → PNG). All pages — no max-pages cap;
+    (scale = dpi / 72, bitmap.to_pil -> PNG). All pages -- no max-pages cap;
     extraction has to see the whole document or we'd silently lose content.
+
+    A generator on purpose: at 192 DPI one page's PNG is hundreds of KB, so
+    rendering a whole scan up front held every page in memory for the whole OCR
+    run. Consumers pull one page at a time and the page/bitmap/image handles are
+    closed as soon as its PNG is built. pypdfium2 is not thread-safe, so this
+    must be drained from a single thread.
     """
     pdf = pdfium.PdfDocument(file_path)
     try:
         scale = dpi / 72
-        out: list[bytes] = []
         for i in range(len(pdf)):
-            bitmap = pdf[i].render(scale=scale)
+            page = pdf[i]
+            bitmap = page.render(scale=scale)
             img = bitmap.to_pil()
-            buf = io.BytesIO()
-            img.save(buf, format="PNG", optimize=True)
-            out.append(buf.getvalue())
-        return out
+            try:
+                buf = io.BytesIO()
+                img.save(buf, format="PNG", optimize=True)
+                png = buf.getvalue()
+            finally:
+                img.close()
+                bitmap.close()
+                page.close()
+            yield png
     finally:
         pdf.close()
 
@@ -304,8 +326,8 @@ def extract_with_chandra(
     if api_key and api_key != "not-needed":
         headers["Authorization"] = f"Bearer {api_key}"
 
-    page_pngs = _render_pdf_to_pngs(file_path, dpi=dpi)
-    if not page_pngs:
+    page_count = _page_count(file_path)
+    if not page_count:
         raise ChandraExtractionError(f"PDF has no renderable pages: {file_path}")
 
     # Set once the document deadline has passed. _ocr_safe checks this before
@@ -369,7 +391,7 @@ def extract_with_chandra(
                 exc,
             )
 
-    workers = max(1, min(max_workers, len(page_pngs)))
+    workers = max(1, min(max_workers, page_count))
     results: list[tuple[int, str, str, float, Exception | None]] = []
     # Hold the chandra family lock for the whole document so the per-page
     # ThreadPoolExecutor below shares one gate acquisition. This prevents
@@ -387,28 +409,47 @@ def extract_with_chandra(
         # Docling on every gate-contended document.
         start = time.perf_counter()
         pool = ThreadPoolExecutor(max_workers=workers)
+        pages = _render_pages(file_path, dpi=dpi)
         try:
-            future_pages: dict[Future, int] = {
-                pool.submit(_ocr_safe, item): item[0]
-                for item in enumerate(page_pngs, start=1)
-            }
+            # At most `workers` rendered pages exist at once (queued for a thread,
+            # waiting on the global ocr_slot, or mid-call): a permit is taken
+            # before a page is rendered and returned when its OCR future ends.
+            in_flight = threading.BoundedSemaphore(workers)
+            future_pages: dict[Future, int] = {}
+            unsubmitted: list[int] = []
+            for idx in range(1, page_count + 1):
+                remaining = max(0.0, document_deadline - (time.perf_counter() - start))
+                if not in_flight.acquire(timeout=remaining):
+                    unsubmitted = list(range(idx, page_count + 1))
+                    break
+                try:
+                    png = next(pages)
+                except BaseException:
+                    in_flight.release()
+                    raise
+                fut = pool.submit(_ocr_safe, (idx, png))
+                fut.add_done_callback(lambda _f: in_flight.release())
+                future_pages[fut] = idx
+                del png  # the future's argument is now the only reference
+
             remaining = max(0.0, document_deadline - (time.perf_counter() - start))
             done, not_done = wait(
                 future_pages, timeout=remaining, return_when=ALL_COMPLETED
             )
             for fut in done:
                 results.append(fut.result())
-            if not_done:
+            if not_done or unsubmitted:
                 logger.warning(
                     "chandra document deadline (%ss) exceeded for %s — "
-                    "%d/%d page(s) still in flight, returning partial result",
+                    "%d/%d page(s) still in flight or never started, "
+                    "returning partial result",
                     document_deadline,
                     file_path,
-                    len(not_done),
-                    len(future_pages),
+                    len(not_done) + len(unsubmitted),
+                    page_count,
                 )
-                for fut in not_done:
-                    idx = future_pages[fut]
+                incomplete = [future_pages[fut] for fut in not_done] + unsubmitted
+                for idx in incomplete:
                     results.append(
                         (
                             idx,
@@ -429,6 +470,7 @@ def extract_with_chandra(
             # straight past the `if not_done` branch above without ever
             # setting it.
             abandoned.set()
+            pages.close()  # release the PDF handle even if rendering stopped early
             # Not a plain `with` block: on a deadline exceeded, we must not
             # block here waiting for the still-running pages either — they
             # stay bounded by their own per-page httpx timeout and simply
