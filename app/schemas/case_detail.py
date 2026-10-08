@@ -7,11 +7,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.database import Case
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
-    BriefState,
     CaseAccessLevel,
     CaseStatus,
     CaseType,
@@ -55,11 +53,14 @@ class PartyView(BaseModel):
     document_count: int = 0
 
 
+BriefStatus = Literal["ready", "processing", "failed", "none"]
+
+
 class BriefView(BaseModel):
     """The last good `Case.ai_brief` (content fields stay filled while a refresh
     is `processing` or has `failed`) plus the regeneration job state."""
 
-    status: Literal["ready", "processing", "failed", "none"]
+    status: BriefStatus
     error: str | None = None
     posture: str | None = None
     pressure_points: list[str] = Field(default_factory=list)
@@ -538,25 +539,3 @@ class SharingView(BaseModel):
 class ShareCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     permission: CaseAccessLevel
-
-
-def brief_view(case: Case) -> BriefView:
-    """The last good brief plus the job state of its regeneration."""
-    raw = case.ai_brief or {}
-    status: Literal["ready", "processing", "failed", "none"]
-    if case.brief_state == BriefState.PROCESSING:
-        status = "processing"
-    elif case.brief_state == BriefState.FAILED:
-        status = "failed"
-    else:
-        status = "ready" if raw else "none"
-    return BriefView(
-        status=status,
-        error=case.brief_error if status == "failed" else None,
-        posture=raw.get("posture"),
-        pressure_points=[str(p) for p in raw.get("pressure_points") or []],
-        next_move=raw.get("next_move"),
-        detected_status=raw.get("detected_status"),
-        status_rationale=raw.get("status_rationale"),
-        updated_at=case.ai_brief_updated_at if raw else None,
-    )

@@ -42,10 +42,11 @@ def _flag(ev: TimelineEvent, today) -> str:
         if ev.is_overdue:
             days = (today.date() - ev.date.date()).days
             label = "date passed" if ev.kind == "hearing" else "past due"
-            return f"OVERDUE (open, {days} days {label}) "
+            unit = "day" if days == 1 else "days"
+            return f"OVERDUE (open, {days} {unit} {label}) "
         if ev.is_future:
             return "UPCOMING "
-        return ""
+        return "DUE TODAY "
     if ev.kind == "payment":
         amount = f"€{ev.amount_eur:.2f} " if ev.amount_eur is not None else ""
         return f"{ev.direction or 'debit'} {amount}"

@@ -155,6 +155,15 @@ def test_payment_and_open_past_hearing_and_late_due_time(
 
     block = format_chronology_for_case(db_session, sample_case.id)
 
-    assert "OVERDUE (open, 1 days past due) Late evening" in block
+    assert "OVERDUE (open, 1 day past due) Late evening" in block
     assert "OVERDUE (open, 4 days date passed) Old hearing" in block
     assert "payment" in block and "€" in block
+
+
+@pytest.mark.unit
+def test_open_deadline_due_today_is_flagged(db_session, sample_case):
+    today = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    db_session.add(_item(sample_case.id, "Due now", today))
+    db_session.commit()
+
+    assert "DUE TODAY Due now" in format_chronology_for_case(db_session, sample_case.id)

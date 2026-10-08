@@ -42,6 +42,7 @@ from app.models.enums import (
 from app.repositories.claim import ClaimRepository
 from app.repositories.proceeding import ProceedingRepository
 from app.schemas.case_detail import (
+    BriefStatus,
     BriefView,
     CaseActionItem,
     CaseDetail,
@@ -65,7 +66,6 @@ from app.schemas.case_detail import (
     SignificanceFilter,
     TimelineEventView,
     TimelineView,
-    brief_view,
 )
 from app.schemas.document_review import ActionStatusUpdate
 from app.services import access_service, auth_service, user_settings_service
@@ -404,6 +404,28 @@ def set_action_item_status(
 
 
 # --- Brief -------------------------------------------------------------------
+
+
+def brief_view(case: Case) -> BriefView:
+    """The last good brief plus the job state of its regeneration."""
+    raw = case.ai_brief or {}
+    status: BriefStatus
+    if case.brief_state == BriefState.PROCESSING:
+        status = "processing"
+    elif case.brief_state == BriefState.FAILED:
+        status = "failed"
+    else:
+        status = "ready" if raw else "none"
+    return BriefView(
+        status=status,
+        error=case.brief_error if status == "failed" else None,
+        posture=raw.get("posture"),
+        pressure_points=[str(p) for p in raw.get("pressure_points") or []],
+        next_move=raw.get("next_move"),
+        detected_status=raw.get("detected_status"),
+        status_rationale=raw.get("status_rationale"),
+        updated_at=case.ai_brief_updated_at if raw else None,
+    )
 
 
 @router.get("/cases/{case_id}/brief", response_model=BriefView)
