@@ -155,8 +155,9 @@ celery_app.conf.update(
     # queue (concurrency UI-controlled, default 4 — see get_ocr_concurrency /
     # app/services/ocr_slots.py for the matching per-page semaphore),
     # everything else (LLM calls, embeddings, light I/O) lands on `ai`
-    # (concurrency UI-controlled, default 2 to match LMStudio's two-slot
-    # capacity — see get_worker_concurrency). The periodic recovery sweep and
+    # (concurrency UI-controlled; the Docker entrypoint boots with the stored
+    # value, default 2 to match LMStudio's two-slot capacity, while `make run`
+    # starts 3 — see get_worker_concurrency). The periodic recovery sweep and
     # other short DB-only housekeeping run on `maintenance`, on a worker of
     # their own: the sweep is what catches a worker stuck on a long model_gate
     # wait, so it must never queue behind one (#144).

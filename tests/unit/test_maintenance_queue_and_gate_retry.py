@@ -123,19 +123,24 @@ def test_gate_timeout_fails_and_cascades_once_retries_are_spent(db_session, doc)
 
 
 @pytest.mark.unit
-def test_metadata_task_first_delivery_claims_the_stage_but_a_retry_does_not(
-    db_session, doc
+@pytest.mark.parametrize(
+    ("retries", "claims_metadata"),
+    [(0, True), (1, False)],
+    ids=["first-delivery-claims", "celery-retry-continues-own-claim"],
+)
+def test_metadata_task_claims_the_stage_only_on_the_first_delivery(
+    db_session, doc, retries, claims_metadata
 ):
-    """A Celery retry continues the task's own claim: the stage is RETRYING, which
-    the pending->running CAS would reject (and wrongly skip the retry)."""
+    """A Celery retry continues the task's own claim: the stage is RETRYING then,
+    which the pending->running CAS would reject (and wrongly skip the retry)."""
     from app.tasks import document_processing as dp
 
     db_session.execute(
         text(
-            "UPDATE document_pipeline_stages SET status = 'retrying' "
+            "UPDATE document_pipeline_stages SET status = :s "
             "WHERE document_id = :d AND stage = 'metadata'"
         ),
-        {"d": doc.id},
+        {"d": doc.id, "s": "pending" if retries == 0 else "retrying"},
     )
     db_session.commit()
 
@@ -145,14 +150,15 @@ def test_metadata_task_first_delivery_claims_the_stage_but_a_retry_does_not(
         patch.object(dp, "_run_phase1_summary") as run,
         patch(
             "app.services.pipeline_status.claim_stage_for_dispatch",
-            return_value=False,
+            return_value=True,
         ) as claim,
         patch.object(dp.metadata_task, "request_stack") as stack,
     ):
-        stack.top.request.retries = 1
+        stack.top.retries = retries
         dp.metadata_task.run(doc.id)
 
-    # Later stages (embeddings, ...) are claimed as usual; METADATA must not be.
+    # Later stages (embeddings, ...) are claimed as usual; only METADATA's claim
+    # depends on the delivery.
     claimed = [c.args[1] for c in claim.call_args_list]
-    assert PipelineStage.METADATA not in claimed
+    assert (PipelineStage.METADATA in claimed) is claims_metadata
     run.assert_called_once_with(doc.id)
