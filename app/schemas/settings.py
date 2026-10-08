@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
+from app.services.ingestion.gmail import LABEL_FORBIDDEN
 
 # --- Account -----------------------------------------------------------------
 
@@ -71,9 +73,38 @@ class GmailResetSync(BaseModel):
         return value
 
 
+# A domain ("firm.de", "@firm.de") or an address ("a@firm.de"). Letters, digits and
+# a few separators only — no ":" or spaces, so "from:x@y.de", "in:anywhere" or
+# "a OR b" can never be smuggled in as an operator.
+_DOMAIN = r"([A-Za-z0-9-]+\.)+[A-Za-z]{2,}"
+_SENDER_RE = re.compile(rf"^(@?{_DOMAIN}|[A-Za-z0-9._%+-]+@{_DOMAIN})$")
+
+
 class GmailFilters(BaseModel):
     allowlist: list[str]
     label_filter: str = ""
+
+    @model_validator(mode="after")
+    def _clean_and_require_a_filter(self) -> GmailFilters:
+        # Mail is only ever pulled for a bounded slice of the mailbox, so a
+        # filter is mandatory: senders, a label, or both.
+        self.allowlist = [e.strip() for e in self.allowlist if e.strip()]
+        self.label_filter = self.label_filter.strip()
+        for entry in self.allowlist:
+            if not _SENDER_RE.match(entry):
+                raise ValueError(
+                    f"'{entry}' isn't an email address or domain "
+                    "(e.g. lawyer@firm.de or firm.de)"
+                )
+        if any(c in self.label_filter for c in LABEL_FORBIDDEN):
+            raise ValueError("The label can't contain quotes or line breaks")
+        if not self.allowlist and not self.label_filter:
+            raise ValueError("Set a sender allowlist or a label — or both")
+        return self
+
+
+class GmailFilterPreview(BaseModel):
+    estimate: int
 
 
 # --- Identity & context (global) ---------------------------------------------

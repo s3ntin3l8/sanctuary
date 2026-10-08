@@ -20,6 +20,7 @@ from app.services.ingestion.gmail import (
     assert_readonly_scopes,
     build_query,
     get_gmail_service,
+    has_filter,
 )
 
 pytestmark = pytest.mark.unit
@@ -193,5 +194,30 @@ def test_build_query():
     assert build_query(["a@x.de"]) == "(from:a@x.de)"
     assert (
         build_query(["a@x.de", "b.de"], "Sanctuary", after=10, before=20)
-        == "(from:a@x.de OR from:b.de) label:Sanctuary after:10 before:20"
+        == '(from:a@x.de OR from:b.de) label:"Sanctuary" after:10 before:20'
     )
+
+
+def test_build_query_label_alone_is_a_filter():
+    assert build_query([], "Sanctuary") == 'label:"Sanctuary"'
+    assert build_query([], "Sanctuary", after=5) == 'label:"Sanctuary" after:5'
+
+
+def test_build_query_quotes_the_label_so_it_cannot_add_operators():
+    # A label is one quoted term; the date operators still come from the caller.
+    assert build_query(["a@x.de"], "x OR in:anywhere") == (
+        '(from:a@x.de) label:"x OR in:anywhere"'
+    )
+
+
+@pytest.mark.parametrize("allowlist,label", [([], ""), ([], "   "), (None, None)])
+def test_build_query_refuses_an_unbounded_search(allowlist, label):
+    assert not has_filter(allowlist, label)
+    with pytest.raises(ValueError):
+        build_query(allowlist or [], label or "")
+
+
+def test_has_filter():
+    assert has_filter(["a@x.de"], "")
+    assert has_filter([], "Sanctuary")
+    assert has_filter(["a@x.de"], "Sanctuary")

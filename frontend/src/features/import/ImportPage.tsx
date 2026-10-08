@@ -152,7 +152,7 @@ export function ImportPage() {
   const total = groups.reduce((sum, g) => sum + g.count, 0)
   const imported = groups.reduce((sum, g) => sum + g.ingested_count, 0)
   const importing = run?.active ?? false
-  const ready = gmail.connected && gmail.allowlist.length > 0
+  const ready = gmail.connected && (gmail.allowlist.length > 0 || gmail.label_filter !== '')
   const scope = groups.find((g) => g.key === expanded)
   const oldestN = Math.min(100, Math.max(1, parseInt(oldestInput, 10) || 1))
 
@@ -182,7 +182,7 @@ export function ImportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] p-6 text-[12px]">
+    <div className="text-[12px]">
       <header className="mb-4 flex items-center gap-3">
         <div>
           <h1 className="font-display text-[22px] font-extrabold">Import history</h1>
@@ -194,12 +194,6 @@ export function ImportPage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Link
-            to="/settings/gmail"
-            className="text-[11px] text-muted underline-offset-2 hover:underline"
-          >
-            Gmail settings
-          </Link>
           {index.cached_count > 0 && (
             <Button
               variant="secondary"
@@ -224,7 +218,7 @@ export function ImportPage() {
       {!ready && (
         <Alert>
           {gmail.connected
-            ? 'Add a sender to the allowlist in Gmail settings before indexing.'
+            ? 'Set a sender allowlist or a label on the Gmail page before indexing.'
             : 'Connect Gmail in Gmail settings first.'}
         </Alert>
       )}

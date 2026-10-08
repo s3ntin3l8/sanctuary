@@ -114,9 +114,28 @@ function sent(fetch: ReturnType<typeof stubApi>, method: string, path: string) {
     .find((r) => r.method === method && new URL(r.url).pathname === path)
 }
 
+test('import: a label alone is enough to index; no filter at all asks for one', async () => {
+  const stub = {
+    ...base,
+    'GET /api/v1/settings/gmail': { body: { ...gmail, allowlist: [], label_filter: 'Sanctuary' } },
+  }
+  stubApi(stub)
+  const { unmount } = renderAt('/settings/gmail/import', <ImportPage />)
+  expect(await screen.findByRole('button', { name: /Refresh index/ })).toBeEnabled()
+  unmount()
+
+  stubApi({
+    ...base,
+    'GET /api/v1/settings/gmail': { body: { ...gmail, allowlist: [], label_filter: '' } },
+  })
+  renderAt('/settings/gmail/import', <ImportPage />)
+  expect(await screen.findByText(/Set a sender allowlist or a label/)).toBeVisible()
+  expect(screen.getByRole('button', { name: /Refresh index/ })).toBeDisabled()
+})
+
 test('import: lists case references oldest first with the case each files into', async () => {
   stubApi(base)
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText('7 messages indexed · refreshed 2026-10-07')).toBeVisible()
   const rows = (await screen.findAllByRole('row')).slice(1)
@@ -139,7 +158,7 @@ test('import: expanding a group shows its messages, already imported ones cannot
     ...base,
     'POST /api/v1/gmail/import': { status: 202, body: { queued: 1 } },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
 
   await user.click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
@@ -161,7 +180,7 @@ test('import: "next N oldest" covers everything, or just the open reference', as
     ...base,
     'POST /api/v1/gmail/import': { status: 202, body: { queued: 5 } },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
   const post = () => sent(fetch, 'POST', '/api/v1/gmail/import')?.clone().json()
 
@@ -197,7 +216,7 @@ test('import: a running import shows what it is waiting for and can be stopped',
     },
     'DELETE /api/v1/gmail/import': { status: 204, body: null },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText(/Importing 2\/5/)).toHaveTextContent(
     'waiting for “Ladung zur Verhandlung” to finish processing',
@@ -220,7 +239,7 @@ test('import: a finished run reports what happened', async () => {
       },
     },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByText(/Imported 5 of 5/)).toHaveTextContent('1 failed')
 })
 
@@ -233,7 +252,7 @@ test('import: with nothing indexed it asks for a refresh and starts indexing', a
     'GET /api/v1/gmail/groups': { body: { groups: [] } },
     'POST /api/v1/gmail/index': { status: 202, body: null },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText(/Nothing indexed yet/)).toBeVisible()
   await userEvent.setup().click(screen.getByRole('button', { name: /Refresh index/ }))
@@ -245,7 +264,7 @@ test('import: shows index progress while the mailbox is being read', async () =>
     ...base,
     'GET /api/v1/gmail/index/status': { body: { ...index, running: true, done: 200, total: 800 } },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByText('Reading message headers — 200 of 800')).toBeVisible()
   expect(screen.getByRole('button', { name: /Indexing/ })).toBeDisabled()
 })
@@ -257,7 +276,7 @@ test('import: without a Gmail connection it points at the settings', async () =>
     'GET /api/v1/gmail/index/status': { body: { ...index, indexed_count: 0 } },
     'GET /api/v1/gmail/groups': { body: { groups: [] } },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'Connect Gmail in Gmail settings first.',
   )
@@ -269,7 +288,7 @@ test('import: tells you when some messages could not be read from Gmail', async 
     ...base,
     'GET /api/v1/gmail/index/status': { body: { ...index, skipped: 3 } },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByText(/3 messages couldn.t be read from Gmail/)).toBeVisible()
 })
 
@@ -280,12 +299,12 @@ test('import: an index error while Celery retries says so, and a final failure s
       body: { ...index, running: true, done: 0, total: 10, error: 'quota' },
     },
   })
-  const { unmount } = renderAt('/import', <ImportPage />)
+  const { unmount } = renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent('hit an error and is retrying — quota')
   unmount()
 
   stubApi({ ...base, 'GET /api/v1/gmail/index/status': { body: { ...index, error: 'quota' } } })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   expect(await screen.findByRole('alert')).toHaveTextContent('Index refresh failed — quota')
 })
 
@@ -296,7 +315,7 @@ test('import: shows what is cached locally and marks cached messages', async () 
       body: { ...index, cached_count: 12, cached_bytes: 3 * 1024 * 1024 },
     },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
 
   expect(await screen.findByText(/12 cached \(3\.0 MB\)/)).toBeVisible()
   await userEvent.setup().click(await screen.findByRole('button', { name: 'Expand 8372/25' }))
@@ -314,7 +333,7 @@ test('import: clearing the cache asks first and says it only touches local copie
     'GET /api/v1/gmail/index/status': { body: { ...index, cached_count: 2, cached_bytes: 2048 } },
     'DELETE /api/v1/gmail/cache': { status: 204, body: null },
   })
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   const user = userEvent.setup()
 
   await user.click(await screen.findByRole('button', { name: /Clear cache/ }))
@@ -329,7 +348,7 @@ test('import: clearing the cache asks first and says it only touches local copie
 
 test('import: no cache, no clear button', async () => {
   stubApi(base)
-  renderAt('/import', <ImportPage />)
+  renderAt('/settings/gmail/import', <ImportPage />)
   await screen.findByText(/7 messages indexed/)
   expect(screen.queryByRole('button', { name: /Clear cache/ })).not.toBeInTheDocument()
 })

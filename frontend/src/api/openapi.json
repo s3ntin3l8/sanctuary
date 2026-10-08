@@ -4461,6 +4461,19 @@
         "title": "GmailAutoSync",
         "type": "object"
       },
+      "GmailFilterPreview": {
+        "properties": {
+          "estimate": {
+            "title": "Estimate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estimate"
+        ],
+        "title": "GmailFilterPreview",
+        "type": "object"
+      },
       "GmailFilters": {
         "properties": {
           "allowlist": {
@@ -14746,6 +14759,48 @@
           }
         },
         "summary": "V1 Save Filters",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/gmail/filters/preview": {
+      "post": {
+        "description": "How many messages these (not yet saved) filters would match \u2014 one read-only\nlist call, so an over-broad filter is obvious before it is saved.",
+        "operationId": "v1_preview_filters_api_v1_settings_gmail_filters_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GmailFilters"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GmailFilterPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "V1 Preview Filters",
         "tags": [
           "settings"
         ]

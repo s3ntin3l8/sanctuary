@@ -14,7 +14,7 @@ Companion document to `docs/vision.md`, `docs/triage.md`, and `docs/dashboard.md
 | Feature | Status | Implementation |
 |---------|--------|---------------|
 | Gmail OAuth + allowlist | ✅ Implemented | `gmail.py`, `gmail_sync.py` |
-| History import (index + import page) | ✅ Implemented | `index_gmail_mailbox`, `import_gmail_messages`; `/import` |
+| History import (index + import page) | ✅ Implemented | `index_gmail_mailbox`, `import_gmail_messages`; `/settings/gmail/import` |
 | Continuous sync | ✅ Implemented | `sync_gmail_incremental` task |
 | Scan folder watcher | ✅ Implemented | `scan_folder.py` |
 | Document slicing (heuristics) | ✅ Implemented | `slicer.py` - 7 signals |
@@ -147,11 +147,13 @@ A second, narrower guardrail. User sets a Gmail filter in Gmail itself (e.g., "m
 gmail_label_filter: "Legal"
 ```
 
-If set: Sanctuary queries `in:inbox label:Legal` and further filters the result by the sender allowlist. Both filters must match.
+If set: Sanctuary queries `label:"Legal"` (quoted, so the value can't add search operators) and, when an allowlist is set too, requires both to match.
 
 If unset: only the sender allowlist applies.
 
-### 2.4 History import (`/import`)
+**At least one of allowlist or label is required.** Saving with neither is rejected (422), every list call refuses to run without one (`build_query` / `has_filter`), and the Settings page offers a read-only *Preview matches* count (`POST /api/v1/settings/gmail/filters/preview`, one `messages.list` call) so an over-broad filter is visible before it is relied on.
+
+### 2.4 History import (`/settings/gmail/import`)
 
 Historical mail is imported deliberately, oldest first, never by the continuous sync. In two steps:
 

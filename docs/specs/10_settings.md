@@ -35,7 +35,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | Active proceeding per case — `GET /api/v1/cases/{case_id}?proceeding=` persists the selection via `user_settings_service.set_active_proceeding` | ✅ |
 | `PUT /api/v1/settings/gmail/filters` — save allowlist + label filter (`useSaveGmailFilters`) | ✅ |
 | `GET /api/ingest/gmail/oauth/start` → `GET /api/ingest/gmail/oauth/callback` (`app/api/ingestion_settings.py`; the start URL is returned in `GmailView.oauth_start_url`) | ✅ |
-| History import — `/import` (`app/api/v1/gmail_import.py`, see `00a_ingest.md` §2.4): index the mailbox, browse by case reference, import oldest first | ✅ |
+| History import — `/settings/gmail/import` (`app/api/v1/gmail_import.py`, see `00a_ingest.md` §2.4): index the mailbox, browse by case reference, import oldest first | ✅ |
 | `PUT /api/v1/settings/gmail/auto-sync`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — opt in to the 5-minute poll (off by default), sync now, move the sync watermark, disconnect + revoke (`useSetGmailAutoSync`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
 | Gmail access is read-only: only the `gmail.readonly` scope is accepted (callback and token refresh reject broader grants) and `tests/unit/test_gmail_readonly_guard.py` fails the build on any Gmail mutating call | ✅ |
 | Credentials encrypted at rest — `gmail_credentials_json` and AI endpoint `api_key` are Fernet-encrypted (`enc:v1:` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; startup fails closed if encrypted values exist without the key | ✅ |
@@ -141,10 +141,9 @@ settings_json shape (defaults):
 | Section | What it does |
 |---|---|
 | **Gmail Connection** | Shows OAuth status (`gmail_credentials_json` non-null = connected), a "Reconnect required" alert when the grant is unusable, and a warning when an active AI endpoint is external (`GmailView.ai_external`). `[Connect Gmail]` navigates to `GmailView.oauth_start_url`; `[Disconnect]` forgets and revokes the grant. |
-| **Sync** | Automatic-sync switch, `[Sync now]`, last result/error, failed-message count, and `[Reset sync state]` (optional "resume from" date; default now). |
-| **Sender Allowlist** | Comma-separated email addresses or domains. Saved to `settings_json.gmail_allowlist`. Only messages from allowlisted senders are synced. |
-| **Label Filter** | Optional Gmail label name. If set, only messages with this label are synced. |
-| **Import history** | Link to `/import`, the page that indexes the mailbox and imports it grouped by case reference, oldest first. |
+| **What Sanctuary reads** | Sender allowlist (comma-separated addresses or domains, `settings_json.gmail_allowlist`) and label filter (`gmail_label_filter`). **At least one is required** (422 otherwise); `[Preview matches]` shows Gmail's estimate for the unsaved filters. |
+| **Sync** | Automatic-sync switch, `[Sync now]`, sync point, last result/error, failed-message count, and `[Change sync point…]` (modal: optional "resume from" date, default now; forgets failed messages). |
+| **Import history** | Link to `/settings/gmail/import`, a sub-page of Settings (own nav entry) that indexes the mailbox and imports it grouped by case reference, oldest first. |
 
 ### Gmail OAuth state machine
 

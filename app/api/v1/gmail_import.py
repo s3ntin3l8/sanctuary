@@ -30,6 +30,7 @@ from app.services import (
     user_settings_service,
 )
 from app.services.gmail_runs import RunStateUnavailable
+from app.services.ingestion.gmail import has_filter
 
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
@@ -38,9 +39,9 @@ def _require_ready(db: Session, user: User) -> None:
     cfg = user_settings_service.get_gmail_config(db, user.id)
     if not cfg.get("gmail_credentials_json"):
         raise ApiError(409, "gmail_not_connected", "Connect Gmail first.")
-    if not cfg.get("gmail_allowlist"):
+    if not has_filter(cfg.get("gmail_allowlist"), cfg.get("gmail_label_filter")):
         raise ApiError(
-            409, "gmail_allowlist_empty", "Add a sender to the allowlist first."
+            409, "gmail_filter_missing", "Set a sender allowlist or a label first."
         )
 
 

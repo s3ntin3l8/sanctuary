@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, time
 
+import httplib2
 from fastapi import APIRouter, Depends, Request, Response
+from google.auth.exceptions import TransportError
+from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.api.v1.errors import ApiError
@@ -16,6 +19,7 @@ from app.models.database import User
 from app.models.enums import AuditEventType
 from app.schemas.settings import (
     GmailAutoSync,
+    GmailFilterPreview,
     GmailFilters,
     GmailResetSync,
     GmailView,
@@ -32,7 +36,17 @@ from app.services.ai_config import (
     get_ocr_config,
     is_external_endpoint,
 )
-from app.services.ingestion.gmail import revoke_token
+from app.services.ingestion.gmail import (
+    GmailReconnectRequired,
+    build_query,
+    connect_gmail,
+    estimate_matches,
+    revoke_token,
+)
+
+# What a Gmail call raises when Google or the network misbehaves. Anything else is
+# a programming error and should surface as a 500 in the logs, not a "502".
+_GMAIL_TRANSPORT_ERRORS = (HttpError, httplib2.HttpLib2Error, TransportError, OSError)
 
 logger = logging.getLogger(__name__)
 
@@ -103,12 +117,39 @@ def save_filters(
     user_settings_service.set_gmail_inbox_filters(
         db,
         user.id,
-        allowlist=[e.strip() for e in body.allowlist if e.strip()],
-        label_filter=body.label_filter.strip(),
+        allowlist=body.allowlist,
+        label_filter=body.label_filter,
     )
     _audit(db, user, "filters")
     db.commit()
     return _view(db, user)
+
+
+@router.post("/filters/preview", response_model=GmailFilterPreview)
+@limiter.limit("10/minute")
+def preview_filters(
+    request: Request,
+    body: GmailFilters,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """How many messages these (not yet saved) filters would match — one read-only
+    list call, so an over-broad filter is obvious before it is saved."""
+    _require_connected(db, user)
+    sj = user_settings_service.get_gmail_config(db, user.id)
+    try:
+        service = connect_gmail(db, user.id, sj)
+        estimate = estimate_matches(
+            service, build_query(body.allowlist, body.label_filter)
+        )
+    except GmailReconnectRequired as exc:
+        raise ApiError(409, "gmail_reconnect_required", str(exc)) from exc
+    except _GMAIL_TRANSPORT_ERRORS as exc:  # Google/network failure, not a bug
+        logger.warning("Gmail filter preview failed for user %d: %s", user.id, exc)
+        raise ApiError(
+            502, "gmail_unreachable", "Couldn't reach Gmail to count matches."
+        ) from exc
+    return GmailFilterPreview(estimate=estimate)
 
 
 @router.put("/auto-sync", response_model=GmailView)

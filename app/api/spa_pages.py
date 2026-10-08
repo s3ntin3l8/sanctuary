@@ -38,11 +38,6 @@ def case_detail(case_id: str) -> Response:
     return spa_index()
 
 
-@router.get("/import")
-def import_page() -> Response:
-    return spa_index()
-
-
 @router.get("/costs")
 def costs_page() -> Response:
     return spa_index()

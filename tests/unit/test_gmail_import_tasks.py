@@ -75,7 +75,7 @@ def _settings(db, user_id):
 def _run_index(user_id, ids, metadata, *, run_id="idx-1", begin=True):
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(MagicMock(), None),
         ),
         patch(
@@ -105,7 +105,7 @@ def test_index_stores_headers_groups_them_and_reports_progress(gmail_user, db_se
     assert "Indexed 2" in result
     # Every message of the allowlisted senders, all time — and the label filter applies.
     query = listed.call_args.args[1]
-    assert "from:lawyer@example.com" in query and "label:Sanctuary" in query
+    assert "from:lawyer@example.com" in query and 'label:"Sanctuary"' in query
     assert "after:" not in query
     rows = {r.gmail_id: r for r in db_session.query(GmailMessageIndex)}
     assert rows["g1"].internal_id == "8372-25"
@@ -170,7 +170,7 @@ def test_one_malformed_message_does_not_lose_the_rest_of_the_chunk(
     assert "Indexed" in result
 
 
-def test_index_without_an_allowlist_explains_itself(gmail_user, db_session):
+def test_index_without_any_filter_explains_itself(gmail_user, db_session):
     user_settings_service.set_gmail_inbox_filters(
         db_session, gmail_user.id, allowlist=[], label_filter=""
     )
@@ -178,13 +178,13 @@ def test_index_without_an_allowlist_explains_itself(gmail_user, db_session):
     result, listed, _ = _run_index(gmail_user.id, [], [])
     assert result == "Not configured"
     listed.assert_not_called()
-    assert "allowlist" in gmail_runs.get_run("index", gmail_user.id)["error"]
+    assert "allowlist or a label" in gmail_runs.get_run("index", gmail_user.id)["error"]
 
 
 def test_index_needing_a_reconnect_is_recorded_not_retried(gmail_user, db_session):
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             side_effect=GmailReconnectRequired("revoked"),
         ),
         _locked() as lock,
@@ -204,7 +204,8 @@ def _failing_index(user_id, *, retries_left):
     gmail_runs.begin_run("index", user_id, {"run_id": "idx-1"})
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service", side_effect=RuntimeError("boom")
+            "app.services.ingestion.gmail.get_gmail_service",
+            side_effect=RuntimeError("boom"),
         ),
         patch.object(
             gmail_sync.index_gmail_mailbox, "max_retries", 0 if not retries_left else 3
@@ -314,7 +315,7 @@ class _Import:
 
     def hop(self, user_id, run_id="run-1", hop=0):
         with (
-            patch("app.tasks.gmail_sync.get_gmail_service", self.connect),
+            patch("app.services.ingestion.gmail.get_gmail_service", self.connect),
             patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=self._fetch),
             patch("app.tasks.gmail_sync.ingest_raw_email", side_effect=self.ingest),
             patch("app.tasks.gmail_sync.batch_is_settled", return_value=self.settled),
@@ -554,7 +555,7 @@ def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_se
     _start(db_session, gmail_user.id, ["g1"])
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             side_effect=GmailReconnectRequired("revoked"),
         ),
         _locked() as lock,

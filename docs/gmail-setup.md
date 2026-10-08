@@ -58,13 +58,13 @@ GMAIL_REDIRECT_URI=https://<your-sanctuary-host>/api/ingest/gmail/oauth/callback
 1. **Settings → Gmail → Connect Gmail.**
 2. Google shows *"Google hasn't verified this app"* — normal for your own Testing app. Choose *Advanced → Go to … (unsafe)*.
 3. The consent screen must list only **"View your email messages and settings"**. If it asks for more, stop and cancel.
-4. Back in Sanctuary, set the **sender allowlist** (comma-separated addresses or domains, e.g. `kanzlei-vogt.de`) and, optionally, a **label filter**. Only mail from allowlisted senders (and with that label, if set) is ever read. Sanctuary passes the label to Gmail's search exactly as you type it (`label:<your entry>`), and Gmail search writes a label with spaces using hyphens (`my-label`) — enter it that way, otherwise Gmail treats the second word as a separate search term.
+4. Back in Sanctuary, open **Settings → Gmail → What Sanctuary reads** and set the **sender allowlist** (comma-separated addresses or domains, e.g. `kanzlei-vogt.de`), a **label**, or both — at least one is required, so Sanctuary can never be pointed at your whole mailbox. Only mail from allowlisted senders (and with that label, if set) is ever read. Click **Preview matches** to see roughly how many messages the filters match before you rely on them. Sanctuary sends the label to Gmail's search quoted (`label:"<your entry>"`), so enter it as it appears in Gmail, spaces and `/` included.
 
 Connecting sets the sync starting point to *now*: nothing older is pulled in automatically.
 
 ## 5. Import the history (oldest first)
 
-Open **Import history** (Settings → Gmail, or *Import from Gmail* on the Triage page).
+Open **Import history** (Settings → Gmail → Import history, or *Import from Gmail* on the Triage page). It lives inside Settings, so the settings navigation stays on the left.
 
 1. **Refresh index.** Reads only the *headers* (sender, subject, date) of every allowlisted message, all time. Nothing is imported yet. The page then lists the case references found in subjects — file numbers like `8372/25` and court Aktenzeichen — oldest history first. Replies with no reference inherit the one in their thread; the rest are under *No reference*.
 2. **Create the case first** for a reference you want filed automatically. The case ID must be the file number with `/` replaced by `-` (`8372/25` → `8372-25`); a court reference matches the Aktenzeichen of one of the case's proceedings. The table shows the matching case, or *no case yet*. Imported mail for a reference with no case lands in Triage unfiled.
@@ -75,7 +75,7 @@ Open **Import history** (Settings → Gmail, or *Import from Gmail* on the Triag
 
 - **Sync now** (Settings → Gmail) fetches mail received since the sync starting point.
 - **Automatic sync** polls every 5 minutes and is **off by default**; switch it on when you want it.
-- **Reset sync state** moves the starting point (today or an earlier date) and forgets failed messages. It is never cleared, so the next sync can never pull the whole mailbox.
+- **Change sync point…** (in the Sync card) moves the starting point (today or an earlier date) and forgets failed messages. It is never cleared, so the next sync can never pull the whole mailbox.
 
 ## 7. Re-importing for testing
 
@@ -103,6 +103,6 @@ Fetched mail is cached *before* it is ingested, so a message that failed to inge
 | *"Google granted different permissions than requested"* | The grant included more than read-only Gmail. Reconnect and approve only the Gmail read scope. |
 | 503 mentioning `SECRETS_ENCRYPTION_KEY`, or the app won't start | The key is missing or wrong (step 1). Restore the original key from your backup. |
 | 503 "Redis is unreachable" when starting an import | Start Redis (`docker compose up -d redis`). |
-| "Connect Gmail first" / "Add a sender to the allowlist first" | Complete step 4. |
+| "Connect Gmail first" / "Set a sender allowlist or a label first" | Complete step 4. |
 | Index finishes but a few messages are "couldn't be read" | Gmail rate-limited the batch; *Refresh index* again to retry them. |
 | An import seems stuck on "waiting for …" | Sequential mode is waiting for that email's documents to finish processing (AI queue). It moves on by itself after 30 minutes, or press *Stop*. |

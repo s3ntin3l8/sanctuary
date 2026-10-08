@@ -2107,6 +2107,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/gmail/filters/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * V1 Preview Filters
+         * @description How many messages these (not yet saved) filters would match — one read-only
+         *     list call, so an over-broad filter is obvious before it is saved.
+         */
+        post: operations["v1_preview_filters_api_v1_settings_gmail_filters_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/gmail/reset-sync": {
         parameters: {
             query?: never;
@@ -3940,6 +3961,11 @@ export interface components {
         GmailAutoSync: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** GmailFilterPreview */
+        GmailFilterPreview: {
+            /** Estimate */
+            estimate: number;
         };
         /** GmailFilters */
         GmailFilters: {
@@ -9467,6 +9493,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GmailView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    v1_preview_filters_api_v1_settings_gmail_filters_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailFilters"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GmailFilterPreview"];
                 };
             };
             /** @description Error */

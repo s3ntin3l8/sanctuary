@@ -35,12 +35,12 @@ def _admin(db) -> int:
     return db.query(User).filter_by(email="admin@localhost").one().id
 
 
-def _connect(db, uid, allowlist=("lawyer@example.com",)):
+def _connect(db, uid, allowlist=("lawyer@example.com",), label_filter=""):
     user_settings_service.set_gmail_credentials(
         db, uid, credentials_json=CREDS, connected_at="2026-01-01T00:00:00+00:00"
     )
     user_settings_service.set_gmail_inbox_filters(
-        db, uid, allowlist=list(allowlist), label_filter=""
+        db, uid, allowlist=list(allowlist), label_filter=label_filter
     )
     db.commit()
 
@@ -267,7 +267,14 @@ def test_index_refresh_needs_a_ready_mailbox(db_session):
     assert client.post("/api/v1/gmail/index").json()["code"] == "gmail_not_connected"
     uid = _admin(db_session)
     _connect(db_session, uid, allowlist=())
-    assert client.post("/api/v1/gmail/index").json()["code"] == "gmail_allowlist_empty"
+    assert client.post("/api/v1/gmail/index").json()["code"] == "gmail_filter_missing"
+
+
+def test_index_refresh_accepts_a_label_without_senders(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid, allowlist=(), label_filter="Sanctuary")
+    with patch("app.tasks.dispatch.dispatch_task"):
+        assert client.post("/api/v1/gmail/index").status_code == 202
 
 
 def test_index_refresh_dispatches_once_while_running(db_session):

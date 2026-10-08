@@ -432,3 +432,121 @@ def test_google_rejecting_the_code_is_a_readable_400_not_a_bare_bad_request(db_s
     detail = response.json()["detail"]
     assert "invalid_grant" in detail and "Start again" in detail
     assert not _sj(db_session, _admin(db_session)).get("gmail_credentials_json")
+
+
+# --- Filters: a sender or a label is required -------------------------------
+
+
+@pytest.mark.parametrize(
+    "body,fragment",
+    [
+        ({"allowlist": [], "label_filter": ""}, "allowlist or a label"),
+        ({"allowlist": ["  "], "label_filter": "  "}, "allowlist or a label"),
+        ({"allowlist": ["not an address"]}, "isn't an email address or domain"),
+        ({"allowlist": ["a@b@c.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["from:foo@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["to:me@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["in:anywhere"]}, "isn't an email address or domain"),
+        ({"allowlist": ["a@bar.de OR b@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["bar.de) OR (from:x"]}, "isn't an email address or domain"),
+        ({"allowlist": [], "label_filter": "“Sanctuary”"}, "quotes"),
+        ({"allowlist": [], "label_filter": 'x" OR in:anywhere'}, "quotes"),
+    ],
+)
+def test_filters_reject_unbounded_or_malformed_input(db_session, body, fragment):
+    resp = client.put("/api/v1/settings/gmail/filters", json=body)
+    assert resp.status_code == 422
+    assert fragment in resp.text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"allowlist": ["info@haidlfunk.de"]},
+        {"allowlist": ["haidlfunk.de", "@firm.de"], "label_filter": "Sanctuary"},
+        {"allowlist": [], "label_filter": "Sanctuary"},
+    ],
+)
+def test_filters_accept_a_sender_a_label_or_both(db_session, body):
+    resp = client.put("/api/v1/settings/gmail/filters", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["allowlist"] == body["allowlist"]
+
+
+def test_filter_preview_counts_matches_without_saving(db_session):
+    uid = _admin(db_session)
+    _connect(db_session, uid)
+    service = MagicMock()
+    listing = service.users.return_value.messages.return_value.list
+    listing.return_value.execute.return_value = {"resultSizeEstimate": 214}
+
+    with patch("app.api.v1.settings_gmail.connect_gmail", return_value=service):
+        resp = client.post(
+            "/api/v1/settings/gmail/filters/preview",
+            json={"allowlist": [], "label_filter": "Sanctuary"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"estimate": 214}
+    listing.assert_called_once_with(userId="me", q='label:"Sanctuary"', maxResults=1)
+    assert "gmail_label_filter" not in _sj(db_session, uid) or (
+        _sj(db_session, uid)["gmail_label_filter"] != "Sanctuary"
+    )
+
+
+def test_filter_preview_needs_a_connection_and_a_filter(db_session):
+    body = {"allowlist": ["a@firm.de"]}
+    assert (
+        client.post("/api/v1/settings/gmail/filters/preview", json=body).json()["code"]
+        == "gmail_not_connected"
+    )
+    _connect(db_session, _admin(db_session))
+    assert (
+        client.post(
+            "/api/v1/settings/gmail/filters/preview", json={"allowlist": []}
+        ).status_code
+        == 422
+    )
+
+
+def test_filter_preview_reports_a_dead_grant_and_gmail_outages(db_session):
+    from app.services.ingestion.gmail import GmailReconnectRequired
+
+    _connect(db_session, _admin(db_session))
+    body = {"allowlist": ["a@firm.de"]}
+    url = "/api/v1/settings/gmail/filters/preview"
+    with patch(
+        "app.api.v1.settings_gmail.connect_gmail",
+        side_effect=GmailReconnectRequired("gone"),
+    ):
+        assert client.post(url, json=body).json()["code"] == "gmail_reconnect_required"
+    with patch("app.api.v1.settings_gmail.connect_gmail", side_effect=OSError("down")):
+        resp = client.post(url, json=body)
+    assert resp.status_code == 502 and resp.json()["code"] == "gmail_unreachable"
+
+
+def test_filter_preview_surfaces_programming_errors_instead_of_calling_them_502(
+    db_session,
+):
+    _connect(db_session, _admin(db_session))
+    quiet = TestClient(app, raise_server_exceptions=False)
+    quiet.cookies = client.cookies
+    with patch(
+        "app.api.v1.settings_gmail.connect_gmail", side_effect=AttributeError("bug")
+    ):
+        resp = quiet.post(
+            "/api/v1/settings/gmail/filters/preview", json={"allowlist": ["a@firm.de"]}
+        )
+    assert resp.status_code == 500
+
+
+def test_filter_preview_maps_a_google_http_error_to_502(db_session):
+    from googleapiclient.errors import HttpError
+
+    _connect(db_session, _admin(db_session))
+    err = HttpError(MagicMock(status=503, reason="down"), b"unavailable")
+    with patch("app.api.v1.settings_gmail.connect_gmail", side_effect=err):
+        resp = client.post(
+            "/api/v1/settings/gmail/filters/preview", json={"allowlist": ["a@firm.de"]}
+        )
+    assert resp.status_code == 502 and resp.json()["code"] == "gmail_unreachable"
