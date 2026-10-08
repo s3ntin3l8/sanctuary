@@ -1,7 +1,7 @@
 """gmail sync mode (off/notify/auto) replaces the auto-sync flag; index gains received_at
 
 Revision ID: b8d2f4a6c0e1
-Revises: a3c9e5b7d1f4
+Revises: e8a4c2f6b9d1
 Create Date: 2026-10-08 18:00:00.000000
 
 Data migration: ``gmail_auto_sync`` (bool) becomes ``gmail_sync_mode`` for every
@@ -22,7 +22,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "b8d2f4a6c0e1"  # pragma: allowlist secret
-down_revision: str | Sequence[str] | None = "a3c9e5b7d1f4"  # pragma: allowlist secret
+down_revision: str | Sequence[str] | None = "e8a4c2f6b9d1"  # pragma: allowlist secret
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

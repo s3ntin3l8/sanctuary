@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, time
+from typing import cast
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ from app.schemas.gmail_import import (
     GmailMessagePage,
     GmailNewMessages,
 )
+from app.schemas.settings import SyncMode
 from app.services import (
     gmail_cache,
     gmail_import_status,
@@ -152,7 +154,7 @@ def _new_view(db: Session, user: User) -> GmailNewMessages:
     since = _sync_point(cfg) if cfg.get("gmail_credentials_json") else None
     checked = cfg.get("gmail_last_check_at")
     checked_at = datetime.fromisoformat(checked) if checked else None
-    mode = cfg.get("gmail_sync_mode") or "off"
+    mode = cast(SyncMode, cfg.get("gmail_sync_mode") or "off")
     if since is None:
         return GmailNewMessages(
             count=0, sync_mode=mode, since=None, checked_at=checked_at, items=[]
