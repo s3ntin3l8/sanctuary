@@ -48,6 +48,16 @@ from app.config import AI_READ_TIMEOUT, REDIS_URL
 
 logger = logging.getLogger(__name__)
 
+
+class ModelGateTimeout(TimeoutError):
+    """Waited the full acquire timeout for the model slot (another family held it).
+
+    A TimeoutError subclass so existing handlers keep working, but distinct from
+    a network/read timeout: the model itself was never called, so retrying the
+    task later is safe and usually succeeds once the other family drains.
+    """
+
+
 _KEY_PREFIX = "sanctuary:model_gate:"
 _CALL_KEY_PREFIX = _KEY_PREFIX + "call:"
 
@@ -316,7 +326,7 @@ def model_gate(
                         if started_wait_at is None:
                             started_wait_at = now
                         if now >= deadline:
-                            raise TimeoutError(
+                            raise ModelGateTimeout(
                                 f"model_gate: timed out after {timeout:.0f}s "
                                 f"deferring for ingest queue "
                                 f"(label={label or '<unlabeled>'})"
@@ -384,7 +394,7 @@ def model_gate(
                 )
                 wait_logged = True
             if now >= deadline:
-                raise TimeoutError(
+                raise ModelGateTimeout(
                     f"model_gate: timed out after {timeout:.0f}s waiting for {family} "
                     f"(label={label or '<unlabeled>'})"
                 )

@@ -79,7 +79,7 @@ All routes follow REST conventions. See `app/api/` for the complete listing: `ap
 ## Run
 ```bash
 make setup      # Install/Update
-make run        # App + both Celery workers + beat scheduler (Terminal 1)
+make run        # App + the three Celery workers (ingest, ai, maintenance) + beat scheduler (Terminal 1)
 make watch-frontend  # Terminal 2: rebuild the SPA on change (frontend/dist, served by the app)
 make frontend-test   # SPA typecheck + lint + vitest
 make api-types  # Regenerate the SPA's API types after changing app/api/v1
@@ -88,7 +88,7 @@ make test       # Run Tests
 make lint       # Pre-commit hooks
 make migrate    # Run migrations
 ```
-`make run` starts everything needed for the AI pipeline in one process group — no separate worker terminal needed (default `CELERY_TASK_ALWAYS_EAGER=false`). To run the web server and workers as separate processes instead (e.g. to restart one without the other), use `make server` + `make worker` in two terminals. `make worker-ingest` / `make worker-ai` start a single queue standalone.
+`make run` starts everything needed for the AI pipeline in one process group — no separate worker terminal needed (default `CELERY_TASK_ALWAYS_EAGER=false`). To run the web server and workers as separate processes instead (e.g. to restart one without the other), use `make server` + `make worker` in two terminals. `make worker-ingest` / `make worker-ai` / `make worker-maintenance` start a single queue standalone. The `maintenance` queue (recovery sweep, thread scan, log pruning) has its own worker so the sweep never waits behind LLM- or OCR-gated work.
 
 `get_db()` in `app/dependencies.py`. Migrations: `alembic revision --autogenerate -m "..." && alembic upgrade head`
 

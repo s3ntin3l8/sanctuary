@@ -9,10 +9,23 @@ from app.config import EXTRACT_TASK_SOFT_TIME_LIMIT, EXTRACT_TASK_TIME_LIMIT
 from app.dependencies import get_db_session
 from app.models.database import Document
 from app.models.enums import PipelineStage
+from app.services.model_gate import ModelGateTimeout
 from app.services.pipeline_status import is_db_locked, stages_dict
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+# Celery-level retries when metadata_task cannot get the model slot within the
+# gate's own 30-minute acquire timeout (#143). A scan backlog keeps the chandra
+# (OCR) family busy for a long time, and the gate's drain-first bias makes qwen
+# wait behind it, so one 30-minute wait is not proof the doc is unprocessable.
+# Failing the doc outright (the old behaviour) cascaded ENRICH/RELATIONSHIPS/
+# CLAIMS/ENTITIES to FAILED over what is just queueing. 4 retries × (up to
+# 30 min gate wait + 5 min pause) bound the total wait at ~2.5-3 h before the
+# doc is finally failed. This is deliberately NOT part of the in-process retry
+# loop: three more 30-minute waits would blow the task's soft time limit.
+_GATE_RETRY_MAX = 4
+_GATE_RETRY_COUNTDOWN = 5 * 60
 
 _TRANSIENT_AI_ERRORS = (
     httpx.ReadTimeout,
@@ -245,8 +258,13 @@ def process_document_task(self, doc_id: int):
         db.close()
 
 
-@celery_app.task(name="app.tasks.document_processing.metadata_task", queue="ai")
-def metadata_task(doc_id: int):
+@celery_app.task(
+    bind=True,
+    name="app.tasks.document_processing.metadata_task",
+    queue="ai",
+    max_retries=_GATE_RETRY_MAX,
+)
+def metadata_task(self, doc_id: int):
     """Phase 1 metadata (LLM) + downstream fan-out (batch analysis + embeddings).
 
     Runs on the `ai` queue (concurrency=3) so sibling docs can have their
@@ -279,13 +297,20 @@ def metadata_task(doc_id: int):
             # doc. If the claim fails (concurrent runner won, or stage already
             # running/retrying/failed) we return early; the winning runner owns
             # the downstream fan-out so we must not double-dispatch it either.
-            if not claim_stage_for_dispatch(doc_id, PipelineStage.METADATA, db):
+            # A Celery retry (retries > 0) is a continuation of our own claim:
+            # the stage is RETRYING then, which the pending→running CAS rejects.
+            if self.request.retries == 0 and not claim_stage_for_dispatch(
+                doc_id, PipelineStage.METADATA, db
+            ):
                 logger.info(
                     "Doc #%d: METADATA already claimed by another worker — skipping",
                     doc_id,
                 )
                 return {"status": "already_claimed", "doc_id": doc_id}
-            _run_phase1_summary(doc_id)
+            try:
+                _run_phase1_summary(doc_id)
+            except ModelGateTimeout as exc:
+                _retry_or_fail_after_gate_timeout(self, doc_id, exc)
 
         # Re-read after _run_phase1_summary, which manages its own DB sessions.
         db.refresh(doc)
@@ -419,6 +444,55 @@ _METADATA_MAX_RETRIES = 3
 _METADATA_BACKOFF = [10, 30, 60]  # seconds between attempts 1→2, 2→3, and final
 
 
+def _retry_or_fail_after_gate_timeout(task, doc_id: int, exc: ModelGateTimeout) -> None:
+    """Re-queue metadata_task after a model-gate timeout, or fail the doc once
+    the retry budget is spent (then return so the caller carries on through its
+    normal post-failure flow: batch claim, case brief).
+
+    Raises ``celery.exceptions.Retry`` (via ``task.retry``) while retries remain.
+    """
+    from app.services.pipeline_status import mark_failed_with_cascade, schedule_retry
+
+    db = get_db_session()
+    try:
+        if task.request.retries < task.max_retries:
+            logger.warning(
+                "Doc #%d: METADATA could not get the model slot (%s) — "
+                "retry %d/%d in %ds",
+                doc_id,
+                exc,
+                task.request.retries + 1,
+                task.max_retries,
+                _GATE_RETRY_COUNTDOWN,
+            )
+            schedule_retry(
+                doc_id,
+                PipelineStage.METADATA,
+                db,
+                error=str(exc),
+                attempt=task.request.retries + 1,
+                max_attempts=task.max_retries,
+                countdown=_GATE_RETRY_COUNTDOWN,
+            )
+        else:
+            logger.warning(
+                "Doc #%d: METADATA gave up waiting for the model slot after %d retries",
+                doc_id,
+                task.max_retries,
+            )
+            mark_failed_with_cascade(
+                doc_id,
+                PipelineStage.METADATA,
+                db,
+                error=f"model busy after {task.max_retries} retries: {exc}",
+                cascade=_METADATA_FAILURE_CASCADE,
+            )
+            return
+    finally:
+        db.close()
+    raise task.retry(exc=exc, countdown=_GATE_RETRY_COUNTDOWN) from exc
+
+
 def _run_phase1_summary(doc_id: int) -> None:
     """Run Phase 1 metadata extraction with transient-error retry.
 
@@ -452,6 +526,11 @@ def _run_phase1_summary(doc_id: int) -> None:
                 _summarize_document_sync(doc_id, db2)
                 mark_completed(doc_id, PipelineStage.METADATA, db2)
                 return
+            except ModelGateTimeout:
+                # The model was never called; the caller re-queues the whole
+                # task instead of failing the doc (see metadata_task).
+                db2.rollback()
+                raise
             except _TRANSIENT_AI_ERRORS + (SA_OperationalError,) as e:
                 if isinstance(e, SA_OperationalError) and not is_db_locked(e):
                     db2.rollback()

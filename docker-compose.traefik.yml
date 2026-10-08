@@ -170,15 +170,39 @@ services:
       redis:
         condition: service_healthy
 
+  # Recovery sweep + housekeeping (queue `maintenance`, see
+  # app/tasks/celery_app.py). Its own worker so the sweep that catches stuck
+  # LLM/OCR tasks never queues behind them. Fixed concurrency.
+  worker-maintenance:
+    build: .
+    container_name: sanctuary-worker-maintenance
+    restart: unless-stopped
+    command: ["sh", "/app/docker/worker-maintenance-entrypoint.sh"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-sanctuary}:${POSTGRES_PASSWORD:-sanctuary}@db:5432/${POSTGRES_DB:-sanctuary}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_TASK_ALWAYS_EAGER=false
+    volumes:
+      - ./data:/app/data
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # --- Alternative: single combined worker ----------------------------------
-  # For a lighter single-box deployment, replace worker-ingest + worker-ai
-  # above with ONE service consuming both queues plus beat (keep the same
+  # For a lighter single-box deployment, replace worker-ingest + worker-ai +
+  # worker-maintenance above with ONE service consuming all three queues plus beat (keep the same
   # env_file/environment/extra_hosts/volumes/networks/depends_on as above):
   #
   #   worker:
   #     command: >
   #       python -m celery -A app.tasks.celery_app worker -B
-  #       -n worker@%h --loglevel=INFO -Q ingest,ai --concurrency=4
+  #       -n worker@%h --loglevel=INFO -Q ingest,ai,maintenance --concurrency=4
   #       --without-gossip --without-mingle --without-heartbeat
   #
   # Trade-off: --concurrency is a fixed value here, not the DB-driven
