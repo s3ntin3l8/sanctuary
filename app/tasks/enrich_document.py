@@ -262,9 +262,12 @@ def enrich_document_task(self, doc_id: int):
     finally:
         db.close()
 
-    logger.info("Doc #%d: enrich complete — dispatching relationships", doc_id)
+    logger.info("Doc #%d: enrich complete — dispatching downstream stages", doc_id)
 
     _dispatch_relationships(doc_id)
+    # CLAIMS and ENTITIES need only ENRICH's output; neither waits on the
+    # relationships gate.
+    _dispatch_if_pending(doc_id, PipelineStage.CLAIMS)
     _dispatch_if_pending(doc_id, PipelineStage.ENTITIES)
     # Later documents of this case may have been waiting for this one's ENRICH.
     release_relationship_gate(doc_id)
@@ -280,6 +283,10 @@ def _task_for_stage(stage: PipelineStage):
         from app.tasks.detect_relationships import detect_relationships_task
 
         return detect_relationships_task
+    if stage == PipelineStage.CLAIMS:
+        from app.tasks.extract_claims import extract_claims_task
+
+        return extract_claims_task
     if stage == PipelineStage.ENTITIES:
         from app.tasks.extract_entities import extract_entities_task
 
