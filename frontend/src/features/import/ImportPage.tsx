@@ -136,7 +136,7 @@ export function ImportPage() {
   const total = groups.reduce((sum, g) => sum + g.count, 0)
   const imported = groups.reduce((sum, g) => sum + g.ingested_count, 0)
   const importing = run?.active ?? false
-  const ready = gmail.connected && (gmail.allowlist.length > 0 || gmail.label_filter !== '')
+  const ready = gmail.connected && (gmail.allowlist.length > 0 || gmail.label_filter.trim() !== '')
   const scope = groups.find((g) => g.key === expanded)
   const oldestN = Math.min(100, Math.max(1, parseInt(oldestInput, 10) || 1))
 

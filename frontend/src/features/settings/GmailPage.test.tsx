@@ -171,3 +171,10 @@ test('gmail: saving filters keeps edits typed after clicking Save', async () => 
   await user.type(label, '2')
   expect(label).toHaveValue('Sanctuary2')
 })
+
+test('gmail: preview explains why it is disabled when not connected', async () => {
+  stubApi({ 'GET /api/v1/settings/gmail': { body: { ...gmail, connected: false } } })
+  renderAt('/settings/gmail', <GmailPage />)
+  expect(await screen.findByRole('button', { name: 'Preview matches' })).toBeDisabled()
+  expect(screen.getAllByText('Connect Gmail first').length).toBeGreaterThan(0)
+})
