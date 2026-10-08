@@ -109,7 +109,7 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
             processing_batch_dir,
             batch_id,
             f"File is {size / (1024 * 1024):.1f} MB; the ingest folder accepts at "
-            f"most {MAX_FILE_SIZE // (1024 * 1024)} MB. Split the scan and try again.",
+            f"most {MAX_FILE_SIZE / (1024 * 1024):g} MB. Split the scan and try again.",
         )
         return 0
 

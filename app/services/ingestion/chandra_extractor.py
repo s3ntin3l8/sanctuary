@@ -163,6 +163,9 @@ class ChandraExtractionError(RuntimeError):
 
 
 def _page_count(file_path: str) -> int:
+    # Opened separately from _render_pages on purpose: reopening a PDF is cheap
+    # next to threading the count out of the generator's handle, and it lets the
+    # caller fail fast on an empty document before taking the model gate.
     pdf = pdfium.PdfDocument(file_path)
     try:
         return len(pdf)
@@ -474,8 +477,10 @@ def extract_with_chandra(
             # Not a plain `with` block: on a deadline exceeded, we must not
             # block here waiting for the still-running pages either — they
             # stay bounded by their own per-page httpx timeout and simply
-            # finish in the background. cancel_futures drops any page that
-            # hadn't started yet.
+            # finish in the background. abandoned.set() above is what makes a
+            # not-yet-started page thread short-circuit; cancel_futures is only
+            # belt and braces for a future that is still queued (the bounded
+            # in-flight window means there should be none).
             pool.shutdown(wait=False, cancel_futures=True)
 
     results.sort(key=lambda r: r[0])  # restore page order (submit+wait doesn't)
