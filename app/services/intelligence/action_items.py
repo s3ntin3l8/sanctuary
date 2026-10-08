@@ -56,7 +56,9 @@ def create_from_payload(
     document): a later non-court_date item is skipped, and when a court_date
     arrives the single lowest-id other-type row that day is promoted to it
     (reopened if dismissed, re-sourced to the court document). Any further
-    distinct rows that day are retained.
+    distinct rows that day are retained. Promotion only happens when the
+    court_date is new: if one already exists for the day, a repeat court_date
+    is a plain duplicate and leaves other-type rows as they are.
 
     When source_doc_date is provided, drops actions whose due_date is more than
     one day before source_doc_date — guards against the AI extracting past
@@ -227,7 +229,8 @@ def create_from_payload(
                 # letter must not purge (and re-create) it.
                 if twin.status == ActionItemStatus.DISMISSED:
                     twin.status = ActionItemStatus.OPEN
-                twin.source_document_id = source_doc_id
+                if source_doc_id is not None:
+                    twin.source_document_id = source_doc_id
                 existing_keys.add(key)
                 continue
 
