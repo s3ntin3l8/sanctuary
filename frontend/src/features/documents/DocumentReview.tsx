@@ -836,6 +836,8 @@ function Relationships({ review }: { review: Review }) {
                   <Icon name="close" size={14} />
                 </button>
               </>
+            ) : r.confidence === 'email_header' ? (
+              <Badge tone="neutral">email header</Badge>
             ) : (
               <Badge tone="success">confirmed</Badge>
             )}

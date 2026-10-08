@@ -193,3 +193,38 @@ test('the proceeding picker lists only the assigned case’s proceedings', async
     }),
   )
 })
+
+test('email-header relationships get a badge, not confirm/reject controls', async () => {
+  stub({
+    'GET /api/v1/documents/2211/review': {
+      body: {
+        ...documentReview,
+        relationships: [
+          {
+            id: 501,
+            doc_id: 1500,
+            title: 'Antragsschrift',
+            rel_type: 'replies_to',
+            confidence: 'ai_detected',
+            direction: 'out',
+          },
+          {
+            id: 502,
+            doc_id: 1501,
+            title: 'Beschluss',
+            rel_type: 'replies_to',
+            confidence: 'email_header',
+            direction: 'out',
+          },
+        ],
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  expect(await screen.findByText('email header')).toBeInTheDocument()
+  // Only the AI suggestion can be confirmed or rejected.
+  expect(screen.getAllByRole('button', { name: 'Confirm relationship' })).toHaveLength(1)
+  expect(screen.getAllByRole('button', { name: 'Reject relationship' })).toHaveLength(1)
+})

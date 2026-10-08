@@ -232,6 +232,15 @@ def detect(doc_id: int) -> str | None:
             .all()
         )
         existing_set = {(r.to_document_id, r.relationship_type) for r in existing_rels}
+        # Documents that already reply to this one (e.g. an out-of-order email
+        # header edge from a lower id). The reverse REPLIES_TO would be a 2-cycle.
+        replied_by = {
+            r[0]
+            for r in db.query(DocumentRelationship.from_document_id).filter(
+                DocumentRelationship.to_document_id == doc_id,
+                DocumentRelationship.relationship_type == RelationshipType.REPLIES_TO,
+            )
+        }
         candidate_date_map = {c.id: c.issued_date for c in candidates}
         model = cfg.summary_model
         # doc and candidates remain accessible after session closes
@@ -265,6 +274,15 @@ def detect(doc_id: int) -> str | None:
 
             rel_type_enum = RelationshipType(rel_type_raw)
             if (to_id, rel_type_enum) in existing_set:
+                continue
+
+            if rel_type_enum == RelationshipType.REPLIES_TO and to_id in replied_by:
+                logger.info(
+                    "Doc %d: dropping replies_to→%d — %d already replies to this doc",
+                    doc_id,
+                    to_id,
+                    to_id,
+                )
                 continue
 
             if rel_type_enum in (

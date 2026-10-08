@@ -533,3 +533,50 @@ def test_detect_reraises_and_rolls_back_on_write_phase_failure(
     ):
         with pytest.raises(RuntimeError, match="simulated write failure"):
             detect(new_doc.id)
+
+
+@pytest.mark.unit
+def test_replies_to_that_would_mirror_an_existing_reply_is_dropped(
+    db_session, proceeding_with_docs
+):
+    """An out-of-order email-header edge (lower id replies to the new doc) must
+    not be mirrored by the AI into a replies_to 2-cycle."""
+    _, prior1, _, new_doc = proceeding_with_docs
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=prior1.id,
+            to_document_id=new_doc.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.EMAIL_HEADER,
+        )
+    )
+    db_session.commit()
+
+    ai_result = {
+        "relationships": [
+            {
+                "to_document_id": prior1.id,
+                "relationship_type": "replies_to",
+                "confidence": "high",
+                "notes": "mirror",
+            }
+        ]
+    }
+    with (
+        patch("app.config.SessionLocal", return_value=db_session),
+        patch.object(db_session, "close"),
+        patch(
+            "app.services.intelligence.relationship_detector._call_relationship_detector_sync",
+            return_value=ai_result,
+        ),
+    ):
+        from app.services.intelligence.relationship_detector import detect
+
+        detect(new_doc.id)
+
+    assert (
+        db_session.query(DocumentRelationship)
+        .filter(DocumentRelationship.from_document_id == new_doc.id)
+        .count()
+        == 0
+    )

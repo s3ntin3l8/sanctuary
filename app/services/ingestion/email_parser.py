@@ -26,6 +26,21 @@ _BOILERPLATE_RE = re.compile(
 )
 
 
+_MESSAGE_ID_RE = re.compile(r"<[^<>\s]+>")
+
+
+def parse_message_ids(header: str | None) -> list[str]:
+    """Extract the ``<msg-id>`` tokens from an In-Reply-To / References header.
+
+    Brackets are kept so the tokens compare equal to a stored ``Message-ID``
+    header. Folding whitespace, comments and stray text between ids are
+    ignored; order is preserved and duplicates dropped.
+    """
+    if not header:
+        return []
+    return list(dict.fromkeys(_MESSAGE_ID_RE.findall(str(header))))
+
+
 def parse_email_date(date_str: str) -> datetime | None:
     """Parse RFC 5322 date string to a timezone-aware (UTC) datetime object.
 
@@ -203,6 +218,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     attachment_manifest = _parse_attachment_manifest(body) if body else []
     email_note = _extract_email_note(body) if body else ""
 
+    # In-Reply-To names the direct parent; References lists the whole ancestry
+    # oldest-first. thread_refs is the union in that order (parent last).
+    reply_ids = parse_message_ids(msg.get("In-Reply-To", ""))
+    in_reply_to = reply_ids[0] if reply_ids else None
+    thread_refs = list(
+        dict.fromkeys(parse_message_ids(msg.get("References", "")) + reply_ids)
+    )
+
     return {
         "sender": msg.get("From", ""),
         "to": msg.get("To", ""),
@@ -213,8 +236,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         "body": body,
         "attachments": attachments,
         "reply_to": msg.get("Reply-To", ""),
-        "in_reply_to": msg.get("In-Reply-To", ""),
-        "references": msg.get("References", ""),
+        "in_reply_to": in_reply_to,
+        "thread_refs": thread_refs,
         "attachment_manifest": attachment_manifest,
         "email_note": email_note,
     }

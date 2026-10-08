@@ -1564,6 +1564,10 @@ export interface paths {
         /**
          * V1 Confirm Relationship
          * @description Promote an AI-detected relationship to user-confirmed; closes the target's thread.
+         *
+         *     Email-header edges are already facts about the mail — there is nothing to
+         *     confirm, and promoting one would turn a References-only link into a
+         *     thread-closing claim. They can still be rejected.
          */
         post: operations["v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post"];
         delete?: never;
@@ -5076,7 +5080,7 @@ export interface components {
          * @description Provenance of a document relationship.
          * @enum {string}
          */
-        RelationshipConfidence: "ai_detected" | "user_confirmed" | "user_created";
+        RelationshipConfidence: "ai_detected" | "user_confirmed" | "user_created" | "email_header";
         /**
          * RelationshipType
          * @description How one document relates to another.

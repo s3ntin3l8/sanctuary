@@ -210,6 +210,10 @@ def ingest_raw_email(
         received_at=received_date,
     )
     batch.message_id = msg_id
+    # Kept for every email (attachments or not): the body doc that used to carry
+    # these in meta["threading"] is discarded whenever attachments are present.
+    batch.in_reply_to = parsed.get("in_reply_to")
+    batch.thread_refs = parsed.get("thread_refs") or None
     if source_hash:
         batch.source_hash = source_hash
 
@@ -335,13 +339,6 @@ def _ingest_email_docs_and_commit(
             f.write(parsed["body"])
         written_paths.append(body_path)
 
-        threading_meta = None
-        if parsed.get("in_reply_to") or parsed.get("references"):
-            threading_meta = {
-                "in_reply_to": parsed.get("in_reply_to"),
-                "references": parsed.get("references"),
-            }
-
         _subject_internal_id = extract_internal_id_from_subject(subject)
         doc = Document(
             title=subject,
@@ -356,7 +353,6 @@ def _ingest_email_docs_and_commit(
             sender=parsed["sender"] or None,
             received_date=received_date,
             issued_date=received_date,
-            meta={"threading": threading_meta} if threading_meta else None,
             page_count=0,
         )
         from app.services.pipeline_status import initialize as _pipeline_init
