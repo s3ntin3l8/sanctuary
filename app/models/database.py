@@ -1397,6 +1397,10 @@ class GmailMessageIndex(Base):
         UniqueConstraint("owner_id", "gmail_id", name="uq_gmail_index_owner_gmail"),
         Index("ix_gmail_index_owner_sent", "owner_id", "sent_at"),
         Index("ix_gmail_index_owner_group", "owner_id", "group_key"),
+        # Message-ID <-> batch join (ingested-ness, thread_header_linker) and
+        # the thread lookup behind the Gmail-thread fallback.
+        Index("ix_gmail_index_owner_message", "owner_id", "message_id"),
+        Index("ix_gmail_index_owner_thread", "owner_id", "thread_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
