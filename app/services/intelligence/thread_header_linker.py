@@ -156,7 +156,8 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
     )
     if not inserted:
         # An AI suggestion for the same edge is superseded by the header fact;
-        # USER_* rows stay as they are.
+        # USER_* rows stay as they are. No row at all means the user rejected
+        # this edge earlier — respect that.
         existing = (
             db.query(DocumentRelationship)
             .filter(
@@ -164,9 +165,12 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
                 DocumentRelationship.to_document_id == target.id,
                 DocumentRelationship.relationship_type == rel_type,
             )
-            .one()
+            .first()
         )
-        if existing.confidence == RelationshipConfidence.AI_DETECTED:
+        if (
+            existing is not None
+            and existing.confidence == RelationshipConfidence.AI_DETECTED
+        ):
             existing.confidence = RelationshipConfidence.EMAIL_HEADER
             existing.notes = _NOTES[rel_type]
             inserted = True

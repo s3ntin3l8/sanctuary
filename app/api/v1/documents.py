@@ -672,12 +672,14 @@ def reject_relationship(
     rel: DocumentRelationship = Depends(_owned_relationship),
     db: Session = Depends(get_db),
 ):
-    """Drop a relationship suggestion; reopens the target's thread if nothing confirmed remains."""
+    """Drop a relationship and remember the rejection so later detection runs
+    don't recreate it; reopens the target's thread if nothing confirmed remains."""
+    from app.repositories.document_relationship import reject_edge
     from app.services.ingestion.service import refresh_review_reasons
     from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
     source_id, target_id = rel.from_document_id, rel.to_document_id
-    db.delete(rel)
+    reject_edge(db, rel)
     db.commit()
     recompute_thread_open(target_id, db)
     source = db.get(Document, source_id)
