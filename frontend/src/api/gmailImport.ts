@@ -101,6 +101,10 @@ export function useCancelGmailImport() {
   const queryClient = useQueryClient()
   return useMutation<unknown, ApiError>({
     mutationFn: () => unwrap(api.DELETE('/api/v1/gmail/import')),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gmail', 'import'] }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gmail', 'import'] }),
+        queryClient.invalidateQueries({ queryKey: ['worker-queue'] }),
+      ]),
   })
 }

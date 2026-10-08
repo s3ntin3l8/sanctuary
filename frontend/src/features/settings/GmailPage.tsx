@@ -114,6 +114,7 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
           >
             Preview matches
           </Button>
+          {!gmail.connected && <span className="text-[11px] text-muted">Connect Gmail first</span>}
           {empty && <Badge tone="warning">Required</Badge>}
           {estimate !== null && (
             <span className="text-[11.5px] text-muted">

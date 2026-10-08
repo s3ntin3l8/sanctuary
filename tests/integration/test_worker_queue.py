@@ -143,3 +143,91 @@ def test_retry_failed_dispatch_count_matches_reset_successes(
     dispatched_doc_id = mock_dispatch.call_args[0][1]
     assert dispatched_doc_id == doc1.id
     assert dispatched_doc_id != doc2.id
+
+
+# --- Gmail import run surfaced on the queue ---------------------------------
+
+
+def _import_run(uid: int, *, total=3, done=1, **extra):
+    from app.services import gmail_runs
+
+    state = {
+        "run_id": "r1",
+        "total": total,
+        "done": done,
+        "remaining": [],
+        "failed": [],
+        "sequential": True,
+        "cancelled": False,
+        "waiting_on": None,
+        "current": {"subject": "Schriftsatz 8372/25"},
+        "error": None,
+        **extra,
+    }
+    assert gmail_runs.begin_run("import", uid, state)
+
+
+@pytest.fixture
+def gmail_runs_state(fake_run_state):
+    return fake_run_state
+
+
+def _admin_id(db_session) -> int:
+    from app.models.database import User
+
+    return db_session.query(User).filter_by(email="admin@localhost").one().id
+
+
+def test_queue_has_no_gmail_import_when_none_ran(app_client, gmail_runs_state):
+    body = app_client.get("/api/v1/worker-queue").json()
+    assert body["gmail_import"] is None
+
+
+def test_queue_shows_a_live_import_and_counts_what_is_left(
+    app_client, db_session, gmail_runs_state
+):
+    _import_run(_admin_id(db_session), total=3, done=1)
+    body = app_client.get("/api/v1/worker-queue").json()
+
+    run = body["gmail_import"]
+    assert run["active"] is True
+    assert (run["done"], run["total"]) == (1, 3)
+    assert run["current_subject"] == "Schriftsatz 8372/25"
+    assert body["counts"]["queued"] == 2  # the two messages not yet fetched
+
+
+def test_a_finished_import_stays_for_ten_minutes_then_goes(
+    app_client, db_session, gmail_runs_state
+):
+    import json
+    from datetime import timedelta
+
+    from app.services import gmail_runs
+
+    uid = _admin_id(db_session)
+    _import_run(uid, total=3, done=3)
+    gmail_runs.finish_run("import", uid, "r1")
+
+    body = app_client.get("/api/v1/worker-queue").json()
+    assert body["gmail_import"]["active"] is False
+    assert body["counts"]["queued"] == 0  # finished: nothing awaiting
+
+    key = f"sanctuary:gmail_import:{uid}"
+    state = json.loads(gmail_runs_state.store[key])
+    state["finished_at"] = (datetime.now(UTC) - timedelta(minutes=11)).isoformat()
+    gmail_runs_state.store[key] = json.dumps(state)
+    assert app_client.get("/api/v1/worker-queue").json()["gmail_import"] is None
+
+
+def test_queue_survives_redis_being_down(app_client):
+    import redis
+
+    from app.services import gmail_runs
+
+    class Down:
+        def get(self, *_):
+            raise redis.ConnectionError("down")
+
+    with patch.object(gmail_runs, "_get_client", return_value=Down()):
+        resp = app_client.get("/api/v1/worker-queue")
+    assert resp.status_code == 200 and resp.json()["gmail_import"] is None

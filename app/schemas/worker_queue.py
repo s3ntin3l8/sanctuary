@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.models.enums import PipelineStage
+from app.schemas.gmail_import import GmailImportStatus
 
 
 class QueueItem(BaseModel):
@@ -38,3 +39,5 @@ class QueueView(BaseModel):
     executing: list[QueueItem]
     queued: list[QueueItem]
     failed: list[FailedDoc]
+    # The user's Gmail import while it runs (and briefly after), else None.
+    gmail_import: GmailImportStatus | None = None

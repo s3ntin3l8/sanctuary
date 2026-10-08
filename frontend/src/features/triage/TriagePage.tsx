@@ -18,6 +18,7 @@ import { Button, buttonClass } from '../../ui/Button'
 import { Chip } from '../../ui/Chip'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
+import { GmailImportStatus, useGmailRunBanner } from '../import/GmailImportStatus'
 import { BundleStateBar } from '../../ui/PipelineBar'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
@@ -103,6 +104,7 @@ export function TriagePage() {
   }
 
   const stats = query.data?.stats
+  const gmailRun = useGmailRunBanner()
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center gap-4 border-b border-line bg-panel px-6 py-4">
@@ -134,6 +136,12 @@ export function TriagePage() {
           </Button>
         </div>
       </header>
+
+      {gmailRun.run && (
+        <div className="px-6 pt-3">
+          <GmailImportStatus run={gmailRun.run} variant="compact" onDismiss={gmailRun.dismiss} />
+        </div>
+      )}
 
       <div className="flex items-center gap-2 px-6 py-3">
         {(Object.keys(STATUS_LABEL) as Status[]).map((s) => (

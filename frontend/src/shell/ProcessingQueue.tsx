@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { useRetryFailed, useWorkerQueue } from '../api/shell'
 import type { Schemas } from '../api/client'
+import { GmailImportStatus } from '../features/import/GmailImportStatus'
 import { pluralize } from '../format'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
@@ -50,6 +51,11 @@ export function ProcessingQueue() {
           <div className="text-muted">
             {counts?.executing} executing · {counts?.queued} queued · {counts?.ai_inflight} AI calls
           </div>
+          {queue.gmail_import?.active && (
+            <div className="mt-1 text-muted">
+              Importing from Gmail · {queue.gmail_import.done}/{queue.gmail_import.total}
+            </div>
+          )}
           <div className="mt-2 flex items-center gap-1 text-[10px] text-muted">
             <Icon name="lock" size={12} /> local
           </div>
@@ -110,6 +116,11 @@ function QueueModal({
         ))}
       </div>
       {retry.error && <p className="mb-2 text-[11px] text-danger">{retry.error.message}</p>}
+      {queue?.gmail_import && (
+        <div className="mb-3">
+          <GmailImportStatus run={queue.gmail_import} variant="compact" onNavigate={onClose} />
+        </div>
+      )}
       {queue && total === 0 && queue.counts.failed === 0 ? (
         <p className="py-6 text-center text-[12px] text-muted">All document pipelines idle.</p>
       ) : (

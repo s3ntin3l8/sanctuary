@@ -4906,6 +4906,7 @@ export interface components {
             executing: components["schemas"]["QueueItem"][];
             /** Failed */
             failed: components["schemas"]["FailedDoc"][];
+            gmail_import?: components["schemas"]["GmailImportStatus"] | null;
             /** Queued */
             queued: components["schemas"]["QueueItem"][];
         };

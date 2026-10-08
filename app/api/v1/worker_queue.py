@@ -9,6 +9,7 @@ from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Document, User
 from app.schemas.worker_queue import FailedDoc, QueueCounts, QueueItem, QueueView
+from app.services import gmail_import_status
 from app.services.ai_inflight import count_inflight
 from app.services.worker_queue import (
     _build_queue_items,
@@ -63,16 +64,25 @@ def queue_view(db: Session, user: User) -> QueueView:
                 error=info["error"],
             )
         )
+    gmail_import = gmail_import_status.recent_import_status(user.id)
+    # Messages an import has yet to fetch are queued work too, so the rail badge
+    # reflects them instead of showing idle while the import is between emails.
+    awaiting = (
+        max(0, gmail_import.total - gmail_import.done)
+        if gmail_import and gmail_import.active
+        else 0
+    )
     return QueueView(
         counts=QueueCounts(
             executing=len(executing),
-            queued=len(queued),
+            queued=len(queued) + awaiting,
             failed=len(failed_docs),
             ai_inflight=count_inflight(),
         ),
         executing=executing,
         queued=queued,
         failed=failed_docs,
+        gmail_import=gmail_import,
     )
 
 

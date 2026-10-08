@@ -25,6 +25,7 @@ from app.schemas.gmail_import import (
 )
 from app.services import (
     gmail_cache,
+    gmail_import_status,
     gmail_index_service,
     gmail_runs,
     user_settings_service,
@@ -51,10 +52,6 @@ def _run_state_down() -> ApiError:
         "run_state_unavailable",
         "Redis is unreachable, so the run can't be tracked. Start Redis and retry.",
     )
-
-
-def _iso(value: str | None) -> datetime | None:
-    return datetime.fromisoformat(value) if value else None
 
 
 @router.post("/index", status_code=202, response_class=Response)
@@ -199,34 +196,7 @@ def _begin_import(user_id: int, run_id: str, ids: list[str], sequential: bool):
 
 @router.get("/import/status", response_model=GmailImportStatus)
 def import_status(user: User = Depends(get_current_user)):
-    state = gmail_runs.get_run("import", user.id)
-    if not state:
-        return GmailImportStatus(
-            active=False,
-            total=0,
-            done=0,
-            failed_count=0,
-            sequential=True,
-            cancelled=False,
-            error=None,
-            current_subject=None,
-            waiting=False,
-            started_at=None,
-            finished_at=None,
-        )
-    return GmailImportStatus(
-        active=gmail_runs.is_live(state),
-        total=state["total"],
-        done=state["done"],
-        failed_count=len(state["failed"]),
-        sequential=state["sequential"],
-        cancelled=state["cancelled"],
-        error=state.get("error"),
-        current_subject=(state.get("current") or {}).get("subject"),
-        waiting=bool(state.get("waiting_on")),
-        started_at=_iso(state.get("started_at")),
-        finished_at=_iso(state.get("finished_at")),
-    )
+    return gmail_import_status.import_status(user.id)
 
 
 @router.delete("/import", status_code=204, response_class=Response)

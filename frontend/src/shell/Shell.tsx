@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router'
 
-import { useShell } from '../api/shell'
+import { useShell, useWorkerQueue } from '../api/shell'
+import { useToast } from '../ui/toast'
 import { currentTheme, toggleTheme } from '../theme'
 import { CommandPalette } from './CommandPalette'
 import { NotificationsPanel } from './NotificationsPanel'
@@ -14,6 +15,25 @@ export function Shell() {
   const shell = useShell().data
   const [palette, setPalette] = useState(false)
   const [theme, setThemeState] = useState(currentTheme)
+  const toast = useToast()
+  const run = useWorkerQueue().data?.gmail_import
+  // Started-at of the run last seen live, so its end is announced exactly once —
+  // and a run that was already over when the page loaded never is.
+  const liveRun = useRef<string | null>(null)
+  useEffect(() => {
+    if (!run) return
+    if (run.active) {
+      liveRun.current = run.started_at ?? null
+    } else if (liveRun.current !== null && liveRun.current === (run.started_at ?? null)) {
+      liveRun.current = null
+      toast(
+        run.cancelled
+          ? `Gmail import stopped after ${run.done} of ${run.total} — see Triage`
+          : `Gmail import finished: ${run.done} imported${run.failed_count > 0 ? ` · ${run.failed_count} failed` : ''} — see Triage`,
+        run.failed_count > 0 ? 'error' : 'success',
+      )
+    }
+  }, [run, toast])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
