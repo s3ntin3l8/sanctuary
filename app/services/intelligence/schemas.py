@@ -219,7 +219,6 @@ class BatchAnalysis(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     bundles: list[_Bundle] = Field(default_factory=list)
-    detected_actions: list[_ActionItem] = Field(default_factory=list)
 
 
 class _Relationship(BaseModel):

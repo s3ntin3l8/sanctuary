@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-07-10.1"
+PROMPT_VERSION = "2026-10-08.1"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -139,8 +139,6 @@ Extract these fields:
   - When you identify a document as a cover letter, wire it to the most plausible sibling as `enclosed_doc_id`. Only leave `enclosed` empty when no sibling matches.
 
 - Lawyer's Forwarding Note (when provided):
-  - "zur Kenntnisnahme" without "Rückmeldung" → informational, no action item.
-  - "Bitte um Rückmeldung" / "bitte … beachten" / "mit der Bitte" → action required; surface as detected_action with confidence: high.
   - "erhalten Sie" phrasing → the lawyer is the sender; the client is the recipient.
 
 - Intra-Document Boundaries: a `doc_id`'s PDF may bundle multiple distinct documents. A new boundary occurs when letterhead changes, a new Aktenzeichen appears, page numbering resets, a new salutation begins, or an enclosure marker appears. Base a doc's bundle role ONLY on its **Lead Document** (first document in its text). Do not let appended court notices trick you into classifying a motion as a relay.
@@ -159,10 +157,6 @@ Extract these fields:
   * Organization names: broadest stable canonical form. Omit sub-unit suffixes unless that sub-unit is the sole independent actor. Correct: "Landratsamt Eichstätt". Wrong: "Landratsamt Eichstätt, Amt für Familie und Jugend".
   * Within this batch: use IDENTICAL strings for the same entity across every document.
 
-- detected_actions: list of deadlines/actions found across all bundles:
-  {"title": "action title", "action_type": "deadline|court_date|response_required|filing_required", "due_date": "YYYY-MM-DD or null", "description": "details", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null"}
-  - When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date. Set supersedes_date to the original void date. Never emit both dates as separate action items.
-
 Example — manifest provided (Group A: doc_10=cover + doc_11=enclosed; Group B: doc_20=cover + docs 21/22/23=enclosed):
 {
   "bundles": [
@@ -174,8 +168,7 @@ Example — manifest provided (Group A: doc_10=cover + doc_11=enclosed; Group B:
       {"description": "Kaufabsichtserklärung", "attributed_originator": "Kanzlei Hansen", "originator_type": "own", "enclosed_doc_id": 22, "matched_filename": "Anlage.pdf"},
       {"description": "Kapitalerklärung", "attributed_originator": "Bank XY", "originator_type": "third_party", "enclosed_doc_id": 23, "matched_filename": "Anlage (1).pdf"}
     ]}
-  ],
-  "detected_actions": []
+  ]
 }
 
 Example — no manifest (doc_ids 1, 2, 5, 7; doc 2 enclosed by cover 1; doc 7 enclosed by cover 5):
@@ -183,8 +176,7 @@ Example — no manifest (doc_ids 1, 2, 5, 7; doc 2 enclosed by cover 1; doc 7 en
   "bundles": [
     {"cover_letter_doc_id": 1, "enclosed": [{"description": "Klage", "enclosed_doc_id": 2, "matched_filename": "klage.pdf", "attributed_originator": "Kanzlei Müller & Partner", "originator_type": "opposing"}]},
     {"cover_letter_doc_id": 5, "enclosed": [{"description": "Beschluss", "enclosed_doc_id": 7, "matched_filename": "beschluss.pdf", "attributed_originator": "LG Hamburg", "originator_type": "court"}]}
-  ],
-  "detected_actions": [{"title": "Stellungnahme", "action_type": "response_required", "due_date": "2026-05-15", "confidence": "high", "supersedes_date": null}]
+  ]
 }"""
 
 # ---------------------------------------------------------------------------
@@ -241,6 +233,8 @@ Extract these fields (these are the exact JSON keys the output must use):
 
 DOCUMENT_ENRICHER_SYSTEM = """You are a legal document analyst. Analyze the provided document and return structured intelligence.
 
+The user prompt may carry a "Settled by metadata stage" block (sender, originator type, issued date). Those values were already determined for this document's Lead Document: treat them as authoritative and do not re-derive them.
+
 Intra-Document Boundaries (The "Lead Document" Rule):
 The provided text may come from a single PDF that bundles multiple distinct documents (e.g., a lead motion followed by court orders or evidence). A new document boundary occurs when: letterhead changes, a new Aktenzeichen/docket number appears, page numbering resets, a new salutation begins, or an enclosure marker ("Anlage", "Annex") appears. You MUST identify the first document in the text as the **Lead Document** and all following documents as **Appendices**. All extracted data, titles, and summaries MUST focus on the **Lead Document**. Ignore signals from appendices (like court notices at the end).
 
@@ -251,7 +245,7 @@ Extract these fields:
   * A court letter that says "anbei erhalten Sie eine beglaubigte Abschrift des Beschlusses" is a cover letter — title it "Begleitschreiben [Sender] – [matter]" or "Schreiben [Sender] – [matter]", NOT "Beschluss …" or "Beschlussabschrift …" (the Beschluss is the attachment, not this letter).
   * If the batch context flags this document as a cover letter, you should title it as such UNLESS the document itself contains a primary substantive motion, ruling, or statement (e.g. an 'Antrag' or 'Beschluss' that isn't just an attachment). A cover letter forwarding an attachment is "Begleitschreiben...", but a motion that happens to have attachments is "Antrag...".
   * Avoid raw filenames, serial numbers, and dates unless they are the only identity. Good examples: "Antragsschrift Unterhaltsanpassung", "Beschluss § 1568a BGB", "Klageerwiderung Antragsgegnerin", "Begleitschreiben Landgericht – Zwangsversteigerung", "Antrag Streitwertfestsetzung Beschwerdeverfahren".
-- issued_date: the date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum). Return as ISO format "YYYY-MM-DD" or null if not found or unparseable.
+- issued_date: return null when the settled block supplies an issued date. Otherwise the date shown on the document itself (Datum:, Date: header, Bescheiddatum, Urteilsdatum) as ISO format "YYYY-MM-DD", or null if not found or unparseable.
 - significance_tier: one of "critical", "significant", "informational", "administrative"
   * Base this on the **Lead Document**.
   * critical: the document IS a ruling, decision, or binding court order (Beschluss, Urteil, Verfügung, Versäumnisurteil) — i.e. it was issued BY a court with legal force. Also critical: documents that contain an absolute hard deadline within ≤14 days of the document date (e.g. an imminent Zwangsvollstreckung or enforcement action).
@@ -307,10 +301,11 @@ Extract these fields:
   Each entry: {"title": "short title", "action_type": "deadline|court_date|response_required|filing_required|payment_due", "due_date": "YYYY-MM-DD or null", "description": "details — for relative deadlines state the basis, e.g. 'binnen 2 Wochen ab Datum des Schreibens (2026-04-30)'", "confidence": "high|medium|low", "supersedes_date": "YYYY-MM-DD or null", "addressee": "user|opposing|third_party|court or null when truly ambiguous"}
   For relative deadlines, compute due_date from the document's own date (Datum, issued date) when possible.
   When a Terminsverlegung, Umladung, or any hearing rescheduling is present, emit ONLY the new (replacement) date as the action item. Set supersedes_date to the original void date. Never emit both the old and new dates as separate action items — the old date is no longer valid.
+  Set `addressee` for every entry to the party the action targets (user|opposing|third_party|court). Do not auto-promote a third-party or opposing-directed obligation to addressee=user.
 
 Party perspective: When the document refers to a party by role label ("der Gläubiger", "der Antragsteller", "der Kläger", "der Schuldner", "die Antragsgegnerin", "die Beklagte", etc.) AND the document context (Rubrum, letterhead, addressee) plus the Known Party Identity block in the user prompt make clear which party holds that role, resolve the label to the explicit party name in management_summary and action_items. Do not leave a role label generic when the mapping is determinable. A court letter sent to the user's lawyer addresses the user's side; directives to "der Gläubiger" / "der Antragsteller" in such letters are typically directives to the user.
 
-FamFG / German family-law role defaults (apply when no Known Party Identity block overrides):
+FamFG / German family-law role defaults for deciding an action item's `addressee` (apply when no Known Party Identity block overrides):
 - Verfahrensbeistand, Verfahrenspfleger → third_party
 - Jugendamt (Kreisjugendamt, Stadtjugendamt, etc.) → third_party
 - Sachverständiger, Gutachter → third_party
@@ -318,9 +313,8 @@ FamFG / German family-law role defaults (apply when no Known Party Identity bloc
 - Amtsgericht, Landgericht, Oberlandesgericht, Bundesgerichtshof → court
 - Any other court or Verwaltungsgericht → court
 - Landesjustizkasse, Gerichtskasse, Justizvollzugskasse → third_party (these are state treasuries that collect court fees on behalf of the judiciary; they are not the court itself, and they are not a party to the dispute)
-- **Issuers of certifying evidence** → third_party. Banks issuing deposit certificates / Vermögensnachweise / Kontoauszüge (ICBC, Deutsche Bank, Sparkasse, …), notaries (Notar, Notariat) issuing beglaubigte Urkunden, sworn translators / interpreter certifying authorities (Übersetzer-Beglaubigung, beglaubigte Übersetzung), foreign government registrars (Standesamt, Hukou-Behörde / 公安局, consulates), Grundbuchamt extracts, Handelsregister extracts, certified medical opinions (Atteste from non-court-appointed physicians) — `originator_type` is the **credentialing institution**, not the party whose case the evidence supports. **Do not flip originator_type to own/opposing based on which side benefits from the evidence.** A bank deposit certificate submitted by the opposing party to prove their financial capacity is still authored by the bank → third_party.
 
-- court_relay: set to true when the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
+- court_relay: set to true only when the settled originator type is `court` and the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
 
 Be concise and specific."""
 

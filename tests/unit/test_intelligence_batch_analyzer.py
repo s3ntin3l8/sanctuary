@@ -68,7 +68,6 @@ def test_cover_letter_detected(db_session, batch_with_two_docs):
                 "matched_filename": "Klageerwiderung.pdf",
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
@@ -111,7 +110,6 @@ def test_enclosed_doc_id_wires_enclosure_with_null_matched_filename(
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
@@ -143,7 +141,6 @@ def test_enclosed_doc_id_rejects_self_reference(db_session, batch_with_two_docs)
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
@@ -179,7 +176,6 @@ def test_apply_batch_results_persists_encloses_relationship(
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
@@ -214,7 +210,6 @@ def test_apply_batch_results_encloses_idempotent(db_session, batch_with_two_docs
                 ],
             }
         ],
-        "detected_actions": [],
     }
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
     db_session.commit()
@@ -257,7 +252,6 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
         "is_cover_letter": False,
         "court_relay": False,
         "enclosed_descriptions": [],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [doc], result, db_session)
@@ -269,33 +263,21 @@ def test_single_doc_gets_standalone_role(db_session, sample_case):
 
 
 @pytest.mark.unit
-def test_action_items_created(db_session, sample_case, batch_with_two_docs):
+def test_batch_analysis_creates_no_action_items(
+    db_session, sample_case, batch_with_two_docs
+):
     from app.models.database import ActionItem
 
     batch, cover, enclosure = batch_with_two_docs
 
-    detected = [
-        {
-            "title": "File response",
-            "action_type": "deadline",
-            "due_date": "2025-06-30",
-            "description": "Must respond to opposing motion",
-            "confidence": "high",
-        }
-    ]
     result = {
         "cover_letter_doc_id": cover.id,
         "is_cover_letter": True,
         "court_relay": False,
         "enclosed_descriptions": [],
-        "detected_actions": detected,
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
-
-    # Batch analyzer stores detected_actions as hints; it does NOT create ActionItem rows.
-    db_session.refresh(batch)
-    assert batch.detected_actions == detected
 
     # No ActionItem rows created at batch-analysis time — enricher is sole owner.
     items = (
@@ -362,7 +344,6 @@ def test_metadata_originator_not_overwritten_by_batch(db_session, sample_case):
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [court_relay, lawyer_letter], result, db_session)
@@ -423,7 +404,6 @@ def test_null_cover_letter_doc_id_leaves_doc_standalone(db_session, sample_case)
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [standalone], result, db_session)
@@ -488,7 +468,6 @@ def test_metadata_attributed_originator_preserved_for_non_court_enclosure(
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, enclosure], result, db_session)
@@ -611,7 +590,6 @@ def test_completion_sweep_claims_unbundled_proceeding_siblings(db_session, sampl
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     docs = [cover, enclosure_ai, enclosure_swept, own_letter, different_proc_doc]
@@ -721,7 +699,6 @@ def test_two_cover_letters_dont_swallow_each_other(db_session, sample_case):
                 ],
             },
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, docs, result, db_session)
@@ -807,7 +784,6 @@ def test_batch_overrides_court_originator_with_party_type(db_session, sample_cas
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, party_filing], result, db_session)
@@ -886,7 +862,6 @@ def test_completion_sweep_sets_attributed_originator_from_sender(
                 "enclosed": [],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, unclaimed], result, db_session)
@@ -960,7 +935,6 @@ def test_completion_sweep_skips_attributed_originator_for_court_doc(
 
     result = {
         "bundles": [{"cover_letter_doc_id": cover.id, "enclosed": []}],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, court_order], result, db_session)
@@ -1035,7 +1009,6 @@ def test_batch_does_not_override_court_for_ruling_enclosure(db_session, sample_c
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, ruling], result, db_session)
@@ -1105,7 +1078,6 @@ def test_batch_still_overrides_court_when_sender_is_party(db_session, sample_cas
                 ],
             }
         ],
-        "detected_actions": [],
     }
 
     _apply_batch_results(batch.id, [cover, party_motion], result, db_session)

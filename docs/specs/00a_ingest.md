@@ -556,7 +556,7 @@ ActionItem {
 }
 ```
 
-AI returns a list of `detected_actions` with confidence per item; low-confidence actions show in triage but require user confirmation before going live. High-confidence actions land directly.
+The per-document enricher is the only extractor of action items; supersession (Terminsverlegung) is resolved case-wide in `action_items.create_from_payload`.
 
 ---
 

@@ -7,8 +7,13 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from app.models.database import Document, IngestBatch
-from app.models.enums import DocumentRole, DocumentType, SignificanceTier
+from app.models.database import Document
+from app.models.enums import (
+    DocumentRole,
+    DocumentType,
+    OriginatorType,
+    SignificanceTier,
+)
 from app.models.schemas import (
     AISummarySchema,
     CostDeltaKind,
@@ -62,13 +67,10 @@ def _call_enricher_sync(
     doc: Document,
     model: str = "",
     reactions_block: str = "",
-    batch_detected_actions: list[dict] | None = None,
     party_context: str = "",
     base_url: str | None = None,
 ) -> dict:
     """Synchronous AI call to enrich a single document. No DB session held."""
-    import json
-
     content_preview = get_content_preview(doc, 60000)
 
     batch_context = ""
@@ -87,35 +89,31 @@ def _call_enricher_sync(
     dates_context = ""
     if doc.received_date:
         dates_context += f"\nReceived date: {doc.received_date.strftime('%Y-%m-%d')}"
-    if doc.issued_date:
-        dates_context += f"\nIssued date: {doc.issued_date.strftime('%Y-%m-%d')}"
 
-    batch_actions_context = ""
-    if batch_detected_actions:
-        batch_actions_context = (
-            "\n\nBatch-detected actions (from cross-document analysis of all documents "
-            "in this email/delivery):\n"
-            + json.dumps(batch_detected_actions, ensure_ascii=False, indent=2)
-            + "\nFor each batch-detected action with confidence: high and a due_date, "
-            "include it in your action_items ONLY when THIS document is the most-direct "
-            "source — defined as: (1) a Verfügung/Ladung/court order setting the date, OR "
-            "(2) when no order document exists in the batch, the cover letter announcing it. "
-            "Do NOT include the action if another document in the batch is a more-direct "
-            "source (the dedup constraint on (case_id, due_date, action_type) prevents "
-            "double-creation). For confidence: low actions, apply the strict "
-            "'directly establishes' filter. Set supersedes_date as indicated.\n"
-            "Set the `addressee` for every entry — including batch-detected items — to "
-            "the party the action targets (user|opposing|third_party|court). Do not "
-            "auto-promote a third-party or opposing-directed obligation to addressee=user."
-        )
+    # What the METADATA stage settled (read from the doc now, so BATCH_ANALYSIS
+    # overrides are included). Handing these over keeps ENRICH from re-deriving
+    # them and disagreeing with METADATA.
+    settled_lines = []
+    if doc.sender:
+        settled_lines.append(f"Sender: {doc.sender}")
+    if doc.originator_type and doc.originator_type != OriginatorType.UNKNOWN:
+        settled_lines.append(f"Originator type: {doc.originator_type.value}")
+    if doc.issued_date:
+        settled_lines.append(f"Issued date: {doc.issued_date.strftime('%Y-%m-%d')}")
+    settled_context = (
+        "\n\nSettled by metadata stage (authoritative — do not re-derive):\n"
+        + "\n".join(settled_lines)
+        if settled_lines
+        else ""
+    )
 
     party_block = (party_context + "\n\n") if party_context else ""
 
     from app.services.intelligence.prompts import fence
 
     prompt = (
-        f"{party_block}{batch_context}{dates_context}{reactions_block}"
-        f"{batch_actions_context}\n\n{fence(content_preview, 'document')}"
+        f"{party_block}{batch_context}{dates_context}{settled_context}"
+        f"{reactions_block}\n\n{fence(content_preview, 'document')}"
     ).lstrip("\n")
 
     result = call_json_ai(
@@ -362,16 +360,6 @@ def enrich(doc_id: int) -> None:
         case_id = doc.case_id
         proceeding_id = doc.proceeding_id
         issued_date = doc.issued_date
-        # Load batch-level detected actions as hints for the enricher AI.
-        batch_detected_actions: list[dict] = []
-        if doc.ingest_batch_id:
-            batch = (
-                db.query(IngestBatch)
-                .filter(IngestBatch.id == doc.ingest_batch_id)
-                .first()
-            )
-            if batch and batch.detected_actions:
-                batch_detected_actions = batch.detected_actions
         # Load party identity so the enricher can resolve originator roles and
         # determine court_relay without a hint-feedback loop.
         from app.services.case_service import get_case_opposing_parties
@@ -397,7 +385,6 @@ def enrich(doc_id: int) -> None:
         doc,
         model=model,
         reactions_block=reactions_block,
-        batch_detected_actions=batch_detected_actions or None,
         party_context=party_context,
     )
 
@@ -410,7 +397,6 @@ def enrich(doc_id: int) -> None:
             return
         _apply_enrichment(doc, result, db=db)
 
-        from app.models.enums import OriginatorType
         from app.services.intelligence.action_items import (
             create_from_payload,
             purge_action_items_from_doc,

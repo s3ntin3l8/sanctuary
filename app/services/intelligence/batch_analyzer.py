@@ -327,7 +327,6 @@ def _apply_batch_results(
         return
 
     bundles = result.get("bundles")
-    detected_actions = result.get("detected_actions") or []
 
     doc_map = {d.id: d for d in docs}
     claimed_ids: set[int] = set()
@@ -551,12 +550,6 @@ def _apply_batch_results(
         batch.case_id = first_cover.case_id
         if first_cover.proceeding_id and not batch.proceeding_id:
             batch.proceeding_id = first_cover.proceeding_id
-
-    # Store batch-level detected actions on the batch so each document enricher
-    # can read them as hints and decide which apply to its own document.
-    # The enricher is the sole creator of ActionItem rows.
-    if batch and detected_actions:
-        batch.detected_actions = detected_actions
 
     # Single-relay fallback: when the AI didn't produce a bundle but exactly
     # one doc in the batch is flagged as a court relay (set in Phase 1 from

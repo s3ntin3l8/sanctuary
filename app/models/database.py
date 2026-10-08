@@ -740,7 +740,6 @@ class IngestBatch(Base):
     )
     source_hash: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    detected_actions: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     attachment_manifest: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )  # [{filename, timestamp, source_label, doc_id}]
