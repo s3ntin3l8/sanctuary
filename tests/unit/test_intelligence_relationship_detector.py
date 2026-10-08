@@ -299,7 +299,7 @@ def test_get_prior_docs_blends_semantic_candidate(db_session, sample_case, monke
     monkeypatch.setattr(rd, "_SEMANTIC_SLOTS", 1)
     monkeypatch.setattr(rd, "nearest_document_ids", lambda *args, **kw: [target_id])
 
-    result_ids = {d.id for d in rd._get_prior_docs(new_doc, db_session)}
+    result_ids = {c.doc.id for c in rd._get_prior_docs(new_doc, db_session)}
 
     assert a.id in result_ids, "semantic candidate outside recency window missing"
     assert c.id in result_ids, "most-recent doc should still lead"
@@ -325,8 +325,8 @@ def test_get_prior_docs_recency_only_when_embeddings_unavailable(
     monkeypatch.setattr(rd, "nearest_document_ids", lambda *a, **k: [])
 
     result = rd._get_prior_docs(new_doc, db_session)
-    assert [d.id for d in result] == [c.id, b.id]  # id desc, capped at 2
-    assert a.id not in {d.id for d in result}
+    assert [x.doc.id for x in result] == [c.id, b.id]  # closest first, capped at 2
+    assert a.id not in {x.doc.id for x in result}
 
 
 @pytest.mark.unit
@@ -346,7 +346,7 @@ def test_get_prior_docs_dedups_semantic_already_in_recency(
     monkeypatch.setattr(rd, "nearest_document_ids", lambda *a, **k: [b.id, c.id])
 
     result = rd._get_prior_docs(new_doc, db_session)
-    ids = [d.id for d in result]
+    ids = [x.doc.id for x in result]
     assert sorted(ids) == sorted([a.id, b.id, c.id])
     assert len(ids) == len(set(ids))  # no dup
 
@@ -616,13 +616,15 @@ def test_priors_follow_document_date_not_arrival_order(
     assert newer.id < late_old.id
 
     # The newer doc sees the late-arriving older letter ...
-    assert late_old.id in {d.id for d in rd._get_prior_docs(newer, db_session)}
+    assert late_old.id in {c.doc.id for c in rd._get_prior_docs(newer, db_session)}
     # ... and the older letter does not see the newer one, despite the lower id.
-    assert newer.id not in {d.id for d in rd._get_prior_docs(late_old, db_session)}
+    assert newer.id not in {c.doc.id for c in rd._get_prior_docs(late_old, db_session)}
     # Undated docs keep arrival order: the earlier-arrived undated doc is a prior
     # of the later-arrived dated ones only by id.
     assert undated_early.id > newer.id
-    assert undated_early.id not in {d.id for d in rd._get_prior_docs(newer, db_session)}
+    assert undated_early.id not in {
+        c.doc.id for c in rd._get_prior_docs(newer, db_session)
+    }
 
 
 @pytest.mark.unit
@@ -652,3 +654,52 @@ def test_prior_filter_ties_break_on_id_and_undated_use_arrival(db_session, sampl
             if x.id == y.id:
                 continue
             assert (x.id in ids(prior_filter(y))) == (y.id in ids(successor_filter(x)))
+
+
+@pytest.mark.unit
+def test_thread_matches_lead_the_threading_pool_and_tags_are_set(
+    db_session, sample_case, monkeypatch
+):
+    """#56: same-Aktenzeichen docs outrank closer-dated strangers in the threading
+    pool; topical hits are tagged, and a doc in both pools carries both tags."""
+    from app.services.intelligence import relationship_detector as rd
+
+    monkeypatch.setattr(rd, "MAX_CANDIDATES", 3)
+    monkeypatch.setattr(rd, "_SEMANTIC_SLOTS", 1)
+
+    match_old = _dated(db_session, sample_case, "same AZ", datetime(2025, 1, 1))
+    match_old.az_court = "003 F 426/25"
+    stranger_new = _dated(db_session, sample_case, "stranger", datetime(2025, 5, 1))
+    stranger_newer = _dated(db_session, sample_case, "stranger2", datetime(2025, 5, 2))
+    topical = _dated(db_session, sample_case, "topic", datetime(2024, 1, 1))
+    doc = _dated(db_session, sample_case, "new", datetime(2025, 6, 1))
+    doc.az_court = "003 F 426/25"
+    db_session.commit()
+
+    monkeypatch.setattr(
+        rd, "nearest_document_ids", lambda *a, **k: [topical.id, match_old.id]
+    )
+    result = rd._get_prior_docs(doc, db_session)
+    by_id = {c.doc.id: c.via for c in result}
+
+    # 1 topical slot + 2 thread slots: the AZ match outranks the stranger_newer
+    # despite being older, then date order; topical-only fills the reserved slot.
+    assert [c.doc.id for c in result] == [match_old.id, stranger_newer.id, topical.id]
+    assert by_id[match_old.id] == {"thread", "topic"}
+    assert by_id[stranger_newer.id] == {"thread"}
+    assert by_id[topical.id] == {"topic"}
+    assert stranger_new.id not in by_id
+
+
+@pytest.mark.unit
+def test_candidate_summary_exposes_az_and_via(db_session, sample_case):
+    from app.services.intelligence import relationship_detector as rd
+
+    d = _dated(db_session, sample_case, "t", datetime(2025, 1, 1))
+    d.az_court = "1 UF 1/26"
+    line = rd._build_candidate_summary(rd._Candidate(d, frozenset({"thread", "topic"})))
+    assert "AZ=1 UF 1/26" in line
+    assert "Via=thread+topic" in line
+    assert "AZ=-" in rd._build_candidate_summary(
+        rd._Candidate(_dated(db_session, sample_case, "u", None), frozenset({"topic"}))
+    )

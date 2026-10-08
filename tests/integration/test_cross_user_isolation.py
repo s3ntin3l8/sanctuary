@@ -102,7 +102,7 @@ def test_relationship_candidates_in_triage_stay_within_owner(db_session, two_use
     ):
         candidates = _get_prior_docs(a_new, db_session)
 
-    assert [c.id for c in candidates] == [a_old.id]
+    assert [c.doc.id for c in candidates] == [a_old.id]
 
 
 # --- HUD relationships ------------------------------------------------------------

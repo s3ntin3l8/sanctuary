@@ -1,8 +1,9 @@
 """4b — Per-document relationship detection against prior docs in the same proceeding."""
 
 import logging
+from typing import NamedTuple
 
-from sqlalchemy import and_, literal, or_, tuple_
+from sqlalchemy import and_, case, literal, or_, tuple_
 from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document, DocumentRelationship, Proceeding
@@ -28,6 +29,19 @@ MAX_CANDIDATES = 20
 _SEMANTIC_SLOTS = 6
 # pgvector KNN is global; over-fetch then prune to this case/tier/prior-id.
 _KNN_OVERFETCH = 6
+
+
+class _Candidate(NamedTuple):
+    """A prior doc plus which candidate pool(s) surfaced it: ``"thread"``
+    (same-thread signals / recency) and/or ``"topic"`` (semantic KNN)."""
+
+    doc: Document
+    via: frozenset[str]
+
+
+def thread_slots() -> int:
+    """Slots the threading pool gets; the rest are reserved for topical hits."""
+    return MAX_CANDIDATES - _SEMANTIC_SLOTS
 
 
 def _get_first_passage(doc: Document) -> str:
@@ -90,16 +104,23 @@ def successor_filter(doc: Document):
     )
 
 
-def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
-    """Return up to MAX_CANDIDATES prior docs in the same case, combining a
-    recency window with semantic nearest-neighbours.
+def _get_prior_docs(doc: Document, db: Session) -> list[_Candidate]:
+    """Return up to MAX_CANDIDATES prior docs in the same case, each tagged with
+    the candidate pool that surfaced it.
 
-    Recency (closest earlier document date first) is the high-precision half: direct replies are almost
-    always to recent docs, and it always catches same-batch siblings whose
-    embeddings may not be indexed yet. Semantic KNN is the high-recall half: it
-    surfaces relevant *older* docs that fall outside the recency window. The
-    union is strictly >= the recency-only behaviour, so it cannot regress.
-    Recency candidates lead; semantic-only candidates fill the remaining slots.
+    The relation types want different signals, so there are two pools:
+
+    * **thread** (``replies_to`` / ``supersedes``): docs sharing the new doc's
+      Aktenzeichen / file reference / proceeding first, then the closest earlier
+      document date. High precision, and it always catches same-batch siblings
+      whose embeddings may not be indexed yet. Embedding similarity is a weak
+      proxy here — a terse reply is topically thin.
+    * **topic** (``references`` / ``attaches_as_proof``): pgvector nearest
+      neighbours, which surface relevant *older* docs outside the threading pool.
+
+    The union is strictly >= the recency-only behaviour. A doc surfaced by both
+    pools carries both tags. Thread candidates lead; topical-only candidates
+    fill the reserved ``_SEMANTIC_SLOTS``.
     """
     case_id = doc.case_id
     if not case_id and doc.proceeding_id:
@@ -131,43 +152,53 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
             q = q.filter(Document.owner_id == doc.owner_id)
         return q
 
-    recent = (
-        _scoped()
-        .order_by(Document.issued_date.desc().nulls_last(), Document.id.desc())
-        .limit(MAX_CANDIDATES)
-        .all()
-    )
-    recent_ids = {c.id for c in recent}
+    thread_order = [Document.issued_date.desc().nulls_last(), Document.id.desc()]
+    signals = []
+    if doc.az_court:
+        signals.append(Document.az_court == doc.az_court)
+    if doc.internal_id:
+        signals.append(Document.internal_id == doc.internal_id)
+    if doc.proceeding_id is not None:
+        signals.append(Document.proceeding_id == doc.proceeding_id)
+    if signals:
+        thread_order.insert(0, case((or_(*signals), 0), else_=1))
+    threading = _scoped().order_by(*thread_order).limit(MAX_CANDIDATES).all()
+    thread_ids = {c.id for c in threading}
 
-    # Semantic neighbours the recency window did NOT already include.
+    # Semantic neighbours, whether or not the threading pool already has them.
     knn_ids = nearest_document_ids(
         _build_query_text(doc), db, k=MAX_CANDIDATES * _KNN_OVERFETCH
     )
-    extra_ids = [i for i in knn_ids if i not in recent_ids]
-    semantic: list[Document] = []
-    if extra_ids:
+    topical: list[Document] = []
+    if knn_ids:
         # Re-apply case/tier/prior filters so global KNN hits from other cases or
         # wrong tiers are pruned, then restore KNN distance order.
-        docs = _scoped().filter(Document.id.in_(extra_ids)).all()
-        rank = {doc_id: pos for pos, doc_id in enumerate(extra_ids)}
-        docs.sort(key=lambda d: rank.get(d.id, len(extra_ids)))
-        semantic = docs
+        docs = _scoped().filter(Document.id.in_(knn_ids)).all()
+        rank = {doc_id: pos for pos, doc_id in enumerate(knn_ids)}
+        docs.sort(key=lambda d: rank.get(d.id, len(knn_ids)))
+        topical = docs
 
-    if not semantic:
-        # Recency-only — also the embed-failure / cold-index fallback. Identical
-        # to the pre-A1 behaviour, so this path cannot regress.
-        return recent
+    # Blend: the closest topical-only neighbours take up to _SEMANTIC_SLOTS, the
+    # threading pool fills the remainder. With no topical-only hits (embed
+    # failure, cold index) this is the threading pool alone, so it cannot regress.
+    topic_ids = {d.id for d in topical}
+    topic_only = [d for d in topical if d.id not in thread_ids]
+    sem_take = topic_only[:_SEMANTIC_SLOTS]
+    rec_take = threading[: MAX_CANDIDATES - len(sem_take)]
+    out = [
+        _Candidate(
+            d, frozenset({"thread", "topic"} if d.id in topic_ids else {"thread"})
+        )
+        for d in rec_take
+    ]
+    out += [_Candidate(d, frozenset({"topic"})) for d in sem_take]
+    return out[:MAX_CANDIDATES]
 
-    # Blend: give the closest semantic neighbours up to _SEMANTIC_SLOTS, fill the
-    # remainder with the most recent. Recency leads (high precision for replies),
-    # semantic-only candidates trail (recall for older referenced docs).
-    sem_take = semantic[:_SEMANTIC_SLOTS]
-    rec_take = recent[: MAX_CANDIDATES - len(sem_take)]
-    return (rec_take + sem_take)[:MAX_CANDIDATES]
 
-
-def _build_candidate_summary(candidate: Document) -> str:
+def _build_candidate_summary(cand: _Candidate) -> str:
     from app.services.intelligence.prompts import sanitize_oneline
+
+    candidate = cand.doc
 
     first_passage = _get_first_passage(candidate)
 
@@ -178,6 +209,8 @@ def _build_candidate_summary(candidate: Document) -> str:
         f"ID={candidate.id} | "
         f"{sanitize_oneline(candidate.title, 200)} | "
         f"Date={candidate.issued_date.date() if candidate.issued_date else 'unknown'} | "
+        f"AZ={sanitize_oneline(candidate.az_court, 60) or '-'} | "
+        f"Via={'+'.join(sorted(cand.via))} | "
         f"Author={sanitize_oneline(candidate.attributed_originator or candidate.sender, 100) or 'unknown'} | "
         f"Summary={sanitize_oneline(sig, 200)} | "
         f"Key passage: {sanitize_oneline(first_passage, 200)}"
@@ -186,7 +219,7 @@ def _build_candidate_summary(candidate: Document) -> str:
 
 def _call_relationship_detector_sync(
     doc: Document,
-    candidates: list[Document],
+    candidates: list[_Candidate],
     model: str = "",
 ) -> dict:
     """AI call only — no DB session held."""
@@ -265,7 +298,7 @@ def detect(doc_id: int) -> str | None:
             logger.info(f"Doc {doc_id}: {reason}")
             return reason
 
-        valid_candidate_ids = {c.id for c in candidates}
+        valid_candidate_ids = {c.doc.id for c in candidates}
         existing_rels = (
             db.query(
                 DocumentRelationship.to_document_id,

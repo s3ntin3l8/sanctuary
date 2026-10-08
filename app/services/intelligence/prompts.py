@@ -347,7 +347,7 @@ RELATIONSHIP_DETECTOR_SYSTEM = """You are a legal document analyst. Your task: i
 
 You will be given:
 1. The new document's title, summary, and key passage
-2. A numbered list of candidate prior documents (each with ID, title, date, author, key passage)
+2. A numbered list of candidate prior documents (each with ID, title, date, Aktenzeichen (AZ), author, key passage, and `Via`: the signal that surfaced it)
 
 If a value is unknown, use null.
 
@@ -365,6 +365,7 @@ Rules:
 - references: this document cites or mentions the target without directly responding
 - supersedes: this document replaces or overrides the target — only valid when the new document is dated AFTER the target; never use for a document that predates the target
 - attaches_as_proof: this document submits or relies on the target as evidence — an exhibit/Anlage it tenders as proof of an assertion — distinct from merely referencing it. No date-ordering constraint: the proof may predate the new document.
+- Via=thread marks candidates from the same thread (same Aktenzeichen/file/proceeding, or the closest earlier dates); Via=topic marks candidates found by topical similarity only. replies_to and supersedes almost always target thread candidates; references and attaches_as_proof may target either
 - Only include relationships you are confident about (skip uncertain ones)
 - Return an empty list if no clear relationships exist"""
 
