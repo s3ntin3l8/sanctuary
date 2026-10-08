@@ -221,3 +221,60 @@ def test_recompute_thread_open_reopens_on_reject(
     assert result is True
     db_session.expire_all()
     assert db_session.get(Document, thread_open_doc.id).thread_open is True
+
+
+@pytest.mark.unit
+def test_email_header_replies_to_closes_thread(db_session, thread_open_doc, reply_doc):
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=reply_doc.id,
+            to_document_id=thread_open_doc.id,
+            relationship_type=RelationshipType.REPLIES_TO,
+            confidence=RelationshipConfidence.EMAIL_HEADER,
+            ingest_date=datetime.now(),
+        )
+    )
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import (
+        recompute_thread_open,
+        scan_and_close_threads,
+    )
+
+    assert recompute_thread_open(thread_open_doc.id, db_session) is False
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is False
+
+    # The bulk scanner agrees with the per-document recompute.
+    db_session.get(Document, thread_open_doc.id).thread_open = True
+    db_session.commit()
+    scan_and_close_threads(db_session)
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is False
+
+
+@pytest.mark.unit
+def test_email_header_references_edge_does_not_close_thread(
+    db_session, thread_open_doc, reply_doc
+):
+    """A References-only match says "same conversation", not "answered"."""
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=reply_doc.id,
+            to_document_id=thread_open_doc.id,
+            relationship_type=RelationshipType.REFERENCES,
+            confidence=RelationshipConfidence.EMAIL_HEADER,
+            ingest_date=datetime.now(),
+        )
+    )
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import (
+        recompute_thread_open,
+        scan_and_close_threads,
+    )
+
+    assert recompute_thread_open(thread_open_doc.id, db_session) is True
+    scan_and_close_threads(db_session)
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is True

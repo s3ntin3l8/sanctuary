@@ -1,5 +1,6 @@
 import email
 import email.utils
+import logging
 import re
 from datetime import datetime
 from email.policy import default
@@ -7,6 +8,8 @@ from email.policy import default
 from markdownify import markdownify
 
 from app.core.timezone import ensure_utc
+
+logger = logging.getLogger(__name__)
 
 # Matches beA/court-email attachment manifest lines:
 # "SCHR_ LG IN V_ 26_05_26.PDF: 26.05.2026 08:24 - "Landgericht Ingolstadt""
@@ -24,6 +27,24 @@ _BOILERPLATE_RE = re.compile(
     r"confidential|vertraulich|disclaimer)\b",
     re.IGNORECASE,
 )
+
+
+_MESSAGE_ID_RE = re.compile(r"<[^<>\s]+>")
+
+
+def parse_message_ids(header: str | None) -> list[str]:
+    """Extract the ``<msg-id>`` tokens from an In-Reply-To / References header.
+
+    Brackets are kept so the tokens compare equal to a stored ``Message-ID``
+    header. Folding whitespace, comments and stray text between ids are
+    ignored; order is preserved and duplicates dropped.
+    """
+    if not header:
+        return []
+    ids = list(dict.fromkeys(_MESSAGE_ID_RE.findall(str(header))))
+    if not ids:
+        logger.debug("Threading header has no <msg-id> token: %r", str(header)[:120])
+    return ids
 
 
 def parse_email_date(date_str: str) -> datetime | None:
@@ -203,6 +224,14 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
     attachment_manifest = _parse_attachment_manifest(body) if body else []
     email_note = _extract_email_note(body) if body else ""
 
+    # In-Reply-To names the direct parent; References lists the whole ancestry
+    # oldest-first. thread_refs is the union in that order (parent last).
+    reply_ids = parse_message_ids(msg.get("In-Reply-To", ""))
+    in_reply_to = reply_ids[0] if reply_ids else None
+    thread_refs = list(
+        dict.fromkeys(parse_message_ids(msg.get("References", "")) + reply_ids)
+    )
+
     return {
         "sender": msg.get("From", ""),
         "to": msg.get("To", ""),
@@ -213,8 +242,8 @@ def parse_rfc822(raw_bytes: bytes) -> dict:
         "body": body,
         "attachments": attachments,
         "reply_to": msg.get("Reply-To", ""),
-        "in_reply_to": msg.get("In-Reply-To", ""),
-        "references": msg.get("References", ""),
+        "in_reply_to": in_reply_to,
+        "thread_refs": thread_refs,
         "attachment_manifest": attachment_manifest,
         "email_note": email_note,
     }

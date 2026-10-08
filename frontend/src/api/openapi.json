@@ -7769,7 +7769,8 @@
         "enum": [
           "ai_detected",
           "user_confirmed",
-          "user_created"
+          "user_created",
+          "email_header"
         ],
         "title": "RelationshipConfidence",
         "type": "string"
@@ -13575,7 +13576,7 @@
     },
     "/api/v1/relationships/{rel_id}/confirm": {
       "post": {
-        "description": "Promote an AI-detected relationship to user-confirmed; closes the target's thread.",
+        "description": "Promote an AI-detected relationship to user-confirmed; closes the target's thread.\n\nEmail-header edges are already facts about the mail \u2014 there is nothing to\nconfirm, and promoting one would turn a References-only link into a\nthread-closing claim. They can still be rejected.",
         "operationId": "v1_confirm_relationship_api_v1_relationships__rel_id__confirm_post",
         "parameters": [
           {

@@ -251,6 +251,23 @@ def analyze_batch_task(self, batch_id: int):
     finally:
         db.close()
 
+    # Deterministic header edges need the cover-letter/parent wiring settled
+    # above, but no AI and no ENRICH, so they land before the RELATIONSHIPS
+    # stage. A failure here must not hold up enrichment.
+    from app.services.intelligence.thread_header_linker import link_batch
+
+    db = SessionLocal()
+    try:
+        link_batch(db, batch_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "Batch #%d: email-header linking failed", batch_id, exc_info=True
+        )
+    finally:
+        db.close()
+
     logger.info(
         "Batch #%d: batch_analysis %s — enqueueing enrich for %d doc(s)",
         batch_id,

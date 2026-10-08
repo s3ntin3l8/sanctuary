@@ -678,6 +678,9 @@ class IngestBatch(Base):
     __table_args__ = (
         Index("ix_ingest_batches_case", "case_id"),
         Index("ix_ingest_batches_received", "received_at"),
+        # Reverse lookup for out-of-order imports: which batches name this
+        # Message-ID as an ancestor (``thread_refs @> '["<id>"]'``).
+        Index("ix_ingest_batches_thread_refs", "thread_refs", postgresql_using="gin"),
         # Dedup keys are per-owner, never global: two users independently
         # ingesting the same email (e.g. both CC'd) or the same scanned file
         # must each get their own batch. NULLs (the common case — most
@@ -709,6 +712,11 @@ class IngestBatch(Base):
         String, nullable=True
     )  # path to original .eml/scan
     message_id: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    # RFC 5322 threading headers, parsed to ``<msg-id>`` tokens. in_reply_to is
+    # the direct parent; thread_refs the whole ancestry (References + parent,
+    # oldest first). Consumed by thread_header_linker for deterministic edges.
+    in_reply_to: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    thread_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     case_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("cases.id", ondelete="SET NULL"),

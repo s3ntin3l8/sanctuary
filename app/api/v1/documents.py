@@ -647,10 +647,17 @@ def confirm_relationship(
     rel: DocumentRelationship = Depends(_owned_relationship),
     db: Session = Depends(get_db),
 ):
-    """Promote an AI-detected relationship to user-confirmed; closes the target's thread."""
+    """Promote an AI-detected relationship to user-confirmed; closes the target's thread.
+
+    Email-header edges are already facts about the mail — there is nothing to
+    confirm, and promoting one would turn a References-only link into a
+    thread-closing claim. They can still be rejected.
+    """
     from app.services.ingestion.service import refresh_review_reasons
     from app.services.intelligence.thread_open_scanner import recompute_thread_open
 
+    if rel.confidence == RelationshipConfidence.EMAIL_HEADER:
+        return
     source_id, target_id = rel.from_document_id, rel.to_document_id
     rel.confidence = RelationshipConfidence.USER_CONFIRMED
     db.commit()

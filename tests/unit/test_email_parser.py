@@ -11,6 +11,7 @@ from app.services.ingestion.email_parser import (
     _extract_email_note,
     _parse_attachment_manifest,
     parse_email_date,
+    parse_message_ids,
     parse_rfc822,
 )
 
@@ -353,3 +354,40 @@ def test_extract_email_note_truncates_long_text():
     note = _extract_email_note("wort " * 400)  # ~2000 chars, no boilerplate
     assert len(note) <= 802
     assert note.endswith("…")
+
+
+# --- threading headers ---
+
+
+def test_parse_message_ids_handles_folding_junk_and_duplicates():
+    header = "<a@x>\r\n\t<b@x> stray text (comment) <a@x>  <c@x>"
+    assert parse_message_ids(header) == ["<a@x>", "<b@x>", "<c@x>"]
+
+
+@pytest.mark.parametrize("header", [None, "", "no ids here", "<unterminated"])
+def test_parse_message_ids_empty(header):
+    assert parse_message_ids(header) == []
+
+
+def test_parse_rfc822_threading_headers():
+    raw = (
+        b"From: a@example.com\n"
+        b"Message-ID: <r@x>\n"
+        b"In-Reply-To: <p@x>\n"
+        b"References: <g@x>\n <p@x>\n"
+        b"\nBody"
+    )
+    result = parse_rfc822(raw)
+    assert result["in_reply_to"] == "<p@x>"
+    assert result["thread_refs"] == ["<g@x>", "<p@x>"]
+
+
+def test_parse_rfc822_in_reply_to_missing_from_references_is_appended():
+    raw = b"From: a@example.com\nIn-Reply-To: <p@x>\nReferences: <g@x>\n\nBody"
+    assert parse_rfc822(raw)["thread_refs"] == ["<g@x>", "<p@x>"]
+
+
+def test_parse_rfc822_without_threading_headers():
+    result = parse_rfc822(_simple_email())
+    assert result["in_reply_to"] is None
+    assert result["thread_refs"] == []

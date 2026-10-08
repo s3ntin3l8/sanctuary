@@ -222,6 +222,9 @@ class RelationshipConfidence(enum.StrEnum):
     AI_DETECTED = "ai_detected"
     USER_CONFIRMED = "user_confirmed"
     USER_CREATED = "user_created"
+    # Derived deterministically from RFC 5322 In-Reply-To/References headers —
+    # a fact about the mail, not an AI suggestion, so it needs no review.
+    EMAIL_HEADER = "email_header"
 
 
 class ActionItemType(enum.StrEnum):
