@@ -792,6 +792,7 @@ def retry_all_stages(
             meta.pop("reload_fired", None)
             batch.meta = meta
             db.commit()
+        # Commits on its own; must run before the EXTRACT dispatch below.
         rearm_batch_barriers(doc.ingest_batch_id, db)
     db.refresh(doc)
     dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT, db)

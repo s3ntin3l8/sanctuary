@@ -26,6 +26,11 @@ def rearm_batch_barriers(batch_id: int, db) -> None:
         {"batch_id": batch_id},
     )
     db.commit()
+    logger.info(
+        "Re-armed batch %d barriers (metadata_phase_queued_at, analysis_queued_at) "
+        "for EXTRACT retry",
+        batch_id,
+    )
 
 
 def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> None:

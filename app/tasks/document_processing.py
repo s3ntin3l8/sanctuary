@@ -341,13 +341,14 @@ def metadata_task(self, doc_id: int):
                 else:
                     # Claim failed — either someone else won the race, or the
                     # batch is already analyzed (idempotency guard fired because
-                    # a doc in the batch has batch_analysis terminal). That doc
-                    # may be a sibling (this doc's batch_analysis was
-                    # cascade-reset to pending by a metadata retry but will
-                    # never be claimed) or this doc itself (single-doc batch:
-                    # batch_analysis was SKIPPED on the first run). Detect it
-                    # and promote + dispatch enrich directly so the doc isn't
-                    # permanently stranded.
+                    # a doc in the batch has batch_analysis terminal). Detect
+                    # it and promote + dispatch enrich directly so the doc isn't
+                    # permanently stranded:
+                    #   Case A: a sibling already analyzed — this doc's
+                    #     batch_analysis was cascade-reset to pending by a
+                    #     metadata retry but will never be claimed.
+                    #   Case B: this doc's own stage is terminal (single-doc
+                    #     batch: batch_analysis was SKIPPED on the first run).
                     from sqlalchemy import text
 
                     batch_already_done = db_batch.execute(
