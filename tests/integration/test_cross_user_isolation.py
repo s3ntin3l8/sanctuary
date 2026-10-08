@@ -423,3 +423,31 @@ def test_migration_drops_only_cross_owner_triage_edges(db_session, two_users):
         for r in db_session.query(DocumentRelationship).all()
     }
     assert left == {(a1.id, a2.id), (a2.id, in_case.id)}
+
+
+@pytest.mark.integration
+def test_claim_view_shows_the_callers_own_triage_evidence(
+    auth_enabled, db_session, two_users
+):
+    """A claim evidenced only by the caller's untriaged documents has no visible
+    real case; it must still render that evidence, not an empty list."""
+    a, b = two_users
+    doc_a = _triage_doc(db_session, a.id, "A triage evidence")
+    doc_b = _triage_doc(db_session, b.id, "B triage evidence")
+    claim = Claim(claim_text="Triage fact", status=ClaimStatus.ASSERTED)
+    db_session.add(claim)
+    db_session.flush()
+    for doc in (doc_a, doc_b):
+        db_session.add(
+            ClaimEvidence(
+                claim_id=claim.id, document_id=doc.id, role=ClaimEvidenceRole.ASSERTS
+            )
+        )
+    db_session.commit()
+
+    client = _client()
+    _login(client, "a@example.com")
+    resp = client.post(f"/api/v1/claims/{claim.id}/precedent")
+
+    assert resp.status_code == 200
+    assert [e["document_id"] for e in resp.json()["evidence"]] == [doc_a.id]

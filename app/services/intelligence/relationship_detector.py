@@ -88,6 +88,8 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
         if case_id == "_TRIAGE":
             # _TRIAGE is one bucket shared by every user: candidates (and the
             # edges built from them) must stay within the uploader's own docs.
+            # Any other case_id that is shared across users in future needs the
+            # same treatment, or the cross-owner leak silently comes back.
             q = q.filter(Document.owner_id == doc.owner_id)
         return q
 

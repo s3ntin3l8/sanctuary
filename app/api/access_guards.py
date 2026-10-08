@@ -275,14 +275,15 @@ def _check_case_ids(db: Session, user: User, case_ids: set[str], *, edit: bool) 
     a case the caller can't see. The accepted trade-off is that an edit to a
     claim shared across cases changes it for every linked case.
     """
-    visible = [cid for cid in case_ids if _check_case_id(db, user, cid, edit=False)]
+    if not case_ids:
+        return False
+    cases = db.query(Case).filter(Case.id.in_(case_ids)).all()  # one query, not K
+    visible = [c for c in cases if access_service.can_view_case(db, user, c)]
     if not visible:
         return False
-    return (
-        all(_check_case_id(db, user, cid, edit=True) for cid in visible)
-        if edit
-        else True
-    )
+    if not edit:
+        return True
+    return all(access_service.can_edit_case(db, user, c) for c in visible)
 
 
 def claim_access_allowed(db: Session, user: User, claim_id: int, *, edit: bool) -> bool:

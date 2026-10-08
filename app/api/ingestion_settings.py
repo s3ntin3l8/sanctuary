@@ -54,13 +54,14 @@ async def gmail_oauth_callback(
     user: User = Depends(get_current_user),
 ):
     saved_state = request.session.pop(OAUTH_STATE_COOKIE, None)
+    # Consume the PKCE verifier together with the state, so neither outlives a
+    # failed callback.
+    code_verifier = request.session.pop(OAUTH_VERIFIER_KEY, None)
     # Both None must not pass: that would let a forged callback link an
     # attacker's Gmail account to this session.
     if not saved_state or state != saved_state:
         logger.warning("OAuth state mismatch: expected=%s got=%s", saved_state, state)
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
-
-    code_verifier = request.session.pop(OAUTH_VERIFIER_KEY, None)
 
     flow = get_oauth_flow()
     try:

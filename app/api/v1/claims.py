@@ -175,12 +175,15 @@ def _single_claim(db: Session, user: User, claim_id: int) -> ClaimView:
     case_id = next(
         (c for (c,) in case_ids if c and (visible is None or c in visible)), None
     )
-    if case_id:
-        view = ClaimService(db).get_truth_map(case_id, "all", viewer=user)
-        for g in view.groups:
-            for row in g.claims:
-                if row.claim.id == claim_id:
-                    return _claim_view(row)
+    # A claim evidenced only by the caller's own untriaged documents has no
+    # visible real case; render it through the _TRIAGE bucket instead (the
+    # viewer filter keeps only their own documents) so the evidence the
+    # access guard promised is actually shown.
+    view = ClaimService(db).get_truth_map(case_id or "_TRIAGE", "all", viewer=user)
+    for g in view.groups:
+        for row in g.claims:
+            if row.claim.id == claim_id:
+                return _claim_view(row)
     return _claim_view(ClaimRow(claim=claim))
 
 
