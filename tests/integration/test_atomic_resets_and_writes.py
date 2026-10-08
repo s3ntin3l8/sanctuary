@@ -102,6 +102,17 @@ def test_reset_stage_force_resets_the_tasks_own_running_stage(db_session, doc):
 
 
 @pytest.mark.integration
+def test_force_only_lifts_the_guard_for_the_target_stage(db_session, doc):
+    _set(db_session, doc.id, "enrich", "running")
+    _set(db_session, doc.id, "claims", "running")
+
+    assert reset_stage(doc.id, PipelineStage.ENRICH, db_session, force=True) is True
+
+    assert _status(db_session, doc.id, "enrich") == "pending"
+    assert _status(db_session, doc.id, "claims") == "running"  # not clobbered
+
+
+@pytest.mark.integration
 def test_reset_stage_leaves_a_running_downstream_stage_alone(db_session, doc):
     _set(db_session, doc.id, "enrich", "completed")
     _set(db_session, doc.id, "claims", "running")

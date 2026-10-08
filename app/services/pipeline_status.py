@@ -555,6 +555,8 @@ def reset_stage(
 
     ``force=True`` is for a task resetting its *own* in-flight stage (e.g. the
     enrich gate deferring itself) — nobody else can legitimately own it then.
+    It only lifts the guard for ``stage`` itself: a downstream stage that is in
+    flight is never clobbered, forced or not.
     """
     guard = () if force else _IN_FLIGHT
     if not _update_stage(
@@ -577,7 +579,7 @@ def reset_stage(
             status=StageStatus.PENDING,
             extra_sets=dict(_RESET_SETS),
             commit=False,
-            unless_status_in=guard,
+            unless_status_in=_IN_FLIGHT,
         )
     db.commit()
     return True
