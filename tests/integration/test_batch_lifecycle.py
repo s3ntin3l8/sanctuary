@@ -89,18 +89,22 @@ def test_all_duplicate_attachments_leave_a_tombstone_not_a_pending_batch(
 ):
     from app.services.ingestion.batch_orchestrator import ingest_raw_email
 
+    # batch_orchestrator bound DATA_DIR at import, so patch it there too —
+    # otherwise the attachment lands in the session-wide data dir and leaks into
+    # tests that glob it (test_email_ingest_cleanup).
     monkeypatch.setattr(app.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr("app.services.ingestion.batch_orchestrator.DATA_DIR", tmp_path)
     pdf = _pdf_bytes("same attachment")
     first = ingest_raw_email(
         db_session,
-        _eml(attachments=[("a.pdf", pdf)], message_id="<one@example.com>"),
+        _eml(attachments=[("dup_notice.pdf", pdf)], message_id="<one@example.com>"),
         owner_id=user.id,
     )
     assert first is not None  # real document ingested
 
     again = ingest_raw_email(
         db_session,
-        _eml(attachments=[("a.pdf", pdf)], message_id="<two@example.com>"),
+        _eml(attachments=[("dup_notice.pdf", pdf)], message_id="<two@example.com>"),
         owner_id=user.id,
     )
 
