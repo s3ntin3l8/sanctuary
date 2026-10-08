@@ -173,9 +173,9 @@ def enrich_document_task(self, doc_id: int):
         # treat as transient — those clear within seconds and a retry will
         # succeed. _ai_call.is_transient_backend_error inspects the body
         # summary that _stream_response splices into the exception text.
-        from app.services.intelligence._ai_call import is_transient_backend_error
+        from app.services.intelligence._ai_call import is_transient_ai_http_error
 
-        if 400 <= e.response.status_code < 500 and not is_transient_backend_error(e):
+        if not is_transient_ai_http_error(e):
             logger.error(
                 "Doc #%d: AI returned HTTP %d — failing immediately (no retry): %s",
                 doc_id,
