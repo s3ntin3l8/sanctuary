@@ -116,13 +116,15 @@ def test_rejecting_twice_is_harmless(db_session, two_docs):
 
 
 @pytest.mark.unit
-def test_rejection_dies_with_either_document(db_session, two_docs):
-    older, newer = two_docs
+@pytest.mark.parametrize("deleted", ["to_document", "from_document"])
+def test_rejection_dies_with_either_document(db_session, two_docs, deleted):
+    older, newer = two_docs  # the edge runs newer -> older
     reject_edge(db_session, _edge(db_session, older, newer))
     db_session.commit()
     assert db_session.query(RejectedRelationship).count() == 1
 
-    db_session.delete(db_session.get(Document, older.id))
+    victim = older if deleted == "to_document" else newer
+    db_session.delete(db_session.get(Document, victim.id))
     db_session.commit()
 
     assert db_session.query(RejectedRelationship).count() == 0

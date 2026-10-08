@@ -64,6 +64,11 @@ def insert_edge_if_absent(
     means two concurrent writers (re-extraction, batch analysis) cannot trip the
     unique constraint and fail the surrounding commit, which a check-then-add
     pattern does. The caller owns the transaction.
+
+    The rejection check is a plain read before the insert, so a rejection
+    committed between the two can still be missed by one concurrent writer. The
+    edge then reappears once and the user can reject it again; nothing else
+    cleans it up. Closing the window would need the check inside the INSERT.
     """
     if is_rejected(
         db,
