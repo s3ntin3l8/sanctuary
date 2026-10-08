@@ -278,3 +278,37 @@ def test_email_header_references_edge_does_not_close_thread(
     scan_and_close_threads(db_session)
     db_session.expire_all()
     assert db_session.get(Document, thread_open_doc.id).thread_open is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "rel_type", [RelationshipType.REPLIES_TO, RelationshipType.REFERENCES]
+)
+def test_user_created_edge_closes_thread(
+    db_session, thread_open_doc, reply_doc, rel_type
+):
+    """A link the user drew by hand says the same thing as confirming one."""
+    db_session.add(
+        DocumentRelationship(
+            from_document_id=reply_doc.id,
+            to_document_id=thread_open_doc.id,
+            relationship_type=rel_type,
+            confidence=RelationshipConfidence.USER_CREATED,
+            ingest_date=datetime.now(),
+        )
+    )
+    db_session.commit()
+
+    from app.services.intelligence.thread_open_scanner import (
+        recompute_thread_open,
+        scan_and_close_threads,
+    )
+
+    assert recompute_thread_open(thread_open_doc.id, db_session) is False
+
+    # The bulk scanner agrees with the per-document recompute.
+    db_session.get(Document, thread_open_doc.id).thread_open = True
+    db_session.commit()
+    scan_and_close_threads(db_session)
+    db_session.expire_all()
+    assert db_session.get(Document, thread_open_doc.id).thread_open is False

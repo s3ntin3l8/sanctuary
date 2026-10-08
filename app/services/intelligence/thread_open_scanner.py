@@ -1,10 +1,11 @@
 """4d — Thread-open close-out: keep `thread_open` consistent with trusted edges.
 
-Two kinds of edge close a thread: USER_CONFIRMED `replies_to`/`references`, and
-EMAIL_HEADER `replies_to` (the mail's own In-Reply-To names the target). AI_DETECTED
-edges are suggestions only — the user must confirm before a thread is considered
-resolved. EMAIL_HEADER `references` edges only say "same conversation", so they
-never close a thread.
+Two kinds of edge close a thread: user-asserted `replies_to`/`references`
+(USER_CONFIRMED, or USER_CREATED — a link the user drew by hand), and EMAIL_HEADER
+`replies_to` (the mail's own In-Reply-To names the target). AI_DETECTED edges are
+suggestions only — the user must confirm before a thread is considered resolved.
+EMAIL_HEADER `references` edges only say "same conversation", so they never close
+a thread.
 
 Source of truth for which document_types start a thread: `document_enricher.THREAD_OPEN_TYPES`.
 """
@@ -23,12 +24,16 @@ from app.services.intelligence.document_enricher import THREAD_OPEN_TYPES
 logger = logging.getLogger(__name__)
 
 _CLOSING_REL_TYPES = (RelationshipType.REPLIES_TO, RelationshipType.REFERENCES)
+_USER_ASSERTED = (
+    RelationshipConfidence.USER_CONFIRMED,
+    RelationshipConfidence.USER_CREATED,
+)
 
 # SQL twin of the ORM predicate in recompute_thread_open. SAEnum stores enum
 # .name (uppercase), hence the uppercase literals.
 _CLOSING_EDGE_SQL = """(
                     (relationship_type IN ('REPLIES_TO', 'REFERENCES')
-                     AND confidence = 'USER_CONFIRMED')
+                     AND confidence IN ('USER_CONFIRMED', 'USER_CREATED'))
                     OR (relationship_type = 'REPLIES_TO'
                         AND confidence = 'EMAIL_HEADER')
                   )"""
@@ -51,8 +56,7 @@ def recompute_thread_open(doc_id: int, db: Session) -> bool | None:
             or_(
                 and_(
                     DocumentRelationship.relationship_type.in_(_CLOSING_REL_TYPES),
-                    DocumentRelationship.confidence
-                    == RelationshipConfidence.USER_CONFIRMED,
+                    DocumentRelationship.confidence.in_(_USER_ASSERTED),
                 ),
                 and_(
                     DocumentRelationship.relationship_type
