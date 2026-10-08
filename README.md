@@ -299,9 +299,7 @@ Embeddings live as `pgvector` columns directly on `document_chunks.embedding` an
 `claims.embedding` — no separate vector table:
 
 ```python
-embedding: Mapped[list[float] | None] = mapped_column(
-    Vector(), nullable=True
-)
+embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 ```
 
 The ORM type is unsized; the dimension lives in the database column, set at migration time
