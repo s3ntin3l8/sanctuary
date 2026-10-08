@@ -16,6 +16,7 @@ from app.models.database import (
     ClaimMergeProposal,
     Document,
     DocumentPipelineStage,
+    User,
     UserReaction,
 )
 from app.models.enums import (
@@ -26,6 +27,7 @@ from app.models.enums import (
 )
 from app.repositories.claim import ClaimRepository
 from app.repositories.user_reaction import UserReactionRepository
+from app.services import access_service
 
 TruthMapFilter = Literal["open", "established", "refuted", "all"]
 
@@ -156,8 +158,37 @@ class ClaimService:
         self._claim_repo = ClaimRepository(db)
         self._reaction_repo = UserReactionRepository(db)
 
+    def _visible_doc_filter(self, viewer: User):
+        """Predicate over Document rows: may ``viewer`` see this document?
+
+        Claims are global, so a claim's evidence can sit in cases the viewer
+        has no access to; those rows (and anything that would reveal them)
+        must not be rendered (#159).
+        """
+        visible = access_service.visible_case_ids(self._db, viewer)
+
+        def _can_see(doc: Document | None) -> bool:
+            return doc is not None and access_service.can_see_object(
+                viewer, visible, owner_id=doc.owner_id, case_id=doc.case_id
+            )
+
+        return _can_see
+
+    def _visible_claim_ids(self, claim_ids: set[int], viewer: User) -> set[int]:
+        """Subset of ``claim_ids`` with at least one evidence doc the viewer can see."""
+        if not claim_ids:
+            return set()
+        can_see = self._visible_doc_filter(viewer)
+        rows = (
+            self._db.query(ClaimEvidence.claim_id, Document)
+            .join(Document, Document.id == ClaimEvidence.document_id)
+            .filter(ClaimEvidence.claim_id.in_(claim_ids))
+            .all()
+        )
+        return {cid for cid, doc in rows if can_see(doc)}
+
     def get_truth_map(
-        self, case_id: str, filter_: TruthMapFilter = "open"
+        self, case_id: str, filter_: TruthMapFilter, *, viewer: User
     ) -> TruthMapView:
         target_statuses = _FILTER_STATUSES[filter_]
 
@@ -174,7 +205,15 @@ class ClaimService:
             ).filter(Claim.id.in_([c.id for c in claims])).all()
 
         # Batch-load reactions for all evidence documents
-        doc_ids = list({ev.document_id for claim in claims for ev in claim.evidence})
+        can_see = self._visible_doc_filter(viewer)
+        doc_ids = list(
+            {
+                ev.document_id
+                for claim in claims
+                for ev in claim.evidence
+                if can_see(ev.document)
+            }
+        )
         reactions_by_doc: dict[int, list[UserReaction]] = {}
         for reaction in self._reaction_repo.get_by_document_ids(doc_ids):
             reactions_by_doc.setdefault(reaction.document_id, []).append(reaction)
@@ -192,6 +231,7 @@ class ClaimService:
                         reactions=reactions_by_doc.get(ev.document_id, []),
                     )
                     for ev in claim.evidence
+                    if can_see(ev.document)
                 ],
                 key=cmp_to_key(_compare_evidence_rows_by_date),
             )
@@ -216,12 +256,12 @@ class ClaimService:
         # perspective. A proposal is "in this case" if either side has
         # evidence in this case — typically both sides do, but we accept
         # cross-case overlap for the rendering.
-        pending_merges = self._load_pending_merges_for_case(case_id)
+        pending_merges = self._load_pending_merges_for_case(case_id, viewer)
 
         # Pending cross-doc evidence proposals (the path to REFUTED status).
         # Surfaced here at case level so confirmed REFUTES proposals actually
         # land — they used to be reachable only via the per-document HUD.
-        pending_evidence = self._load_pending_evidence_for_case(case_id)
+        pending_evidence = self._load_pending_evidence_for_case(case_id, viewer)
 
         # Count docs in this case that still have a pending/running stage —
         # used by the empty-state UI to say "claims will appear once N docs
@@ -249,9 +289,13 @@ class ClaimService:
             pipeline_active_doc_count=pipeline_active_doc_count,
         )
 
-    def _load_pending_merges_for_case(self, case_id: str) -> list[PendingMergeRow]:
+    def _load_pending_merges_for_case(
+        self, case_id: str, viewer: User
+    ) -> list[PendingMergeRow]:
         """Find ClaimMergeProposal rows where at least one side has
-        ClaimEvidence in `case_id`. Hydrates both claim texts for the UI."""
+        ClaimEvidence in `case_id` and *both* sides have evidence the viewer
+        can see (otherwise the other claim's text would leak). Hydrates both
+        claim texts for the UI."""
         rows = (
             self._db.query(ClaimMergeProposal)
             .filter(ClaimMergeProposal.status == ProposalStatus.PENDING)
@@ -289,11 +333,17 @@ class ClaimService:
             .all()
         }
 
+        visible_claim_ids = self._visible_claim_ids(relevant_claim_ids, viewer)
         out: list[PendingMergeRow] = []
         for r in rows:
             if (
                 r.new_claim_id not in in_case_claim_ids
                 and r.existing_claim_id not in in_case_claim_ids
+            ):
+                continue
+            if (
+                r.new_claim_id not in visible_claim_ids
+                or r.existing_claim_id not in visible_claim_ids
             ):
                 continue
             new_claim = claims_by_id.get(r.new_claim_id)
@@ -313,7 +363,9 @@ class ClaimService:
             )
         return out
 
-    def _load_pending_evidence_for_case(self, case_id: str) -> list[PendingEvidenceRow]:
+    def _load_pending_evidence_for_case(
+        self, case_id: str, viewer: User
+    ) -> list[PendingEvidenceRow]:
         """Find PENDING ClaimEvidenceProposal rows touching this case — either
         the source document is in this case OR the target claim has evidence
         in this case. Skips proposals targeting dismissed claims."""
@@ -370,12 +422,16 @@ class ClaimService:
             .all()
         }
 
+        can_see = self._visible_doc_filter(viewer)
+        visible_target_ids = self._visible_claim_ids(set(claims_by_id), viewer)
         out: list[PendingEvidenceRow] = []
         for r in rows:
             target = claims_by_id.get(r.target_claim_id)
             if target is None:
                 continue  # target was dismissed or deleted
             doc = docs_by_id.get(r.source_document_id)
+            if not can_see(doc) or r.target_claim_id not in visible_target_ids:
+                continue  # would reveal a document/claim outside the viewer's access
             if (
                 r.source_document_id not in in_case_doc_ids
                 and r.target_claim_id not in in_case_target_ids

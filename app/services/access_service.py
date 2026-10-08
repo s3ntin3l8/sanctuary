@@ -40,6 +40,25 @@ def visible_case_ids(db: Session, user: User | None) -> set[str] | None:
     return owned | _shared_case_ids(db, user.id)
 
 
+def can_see_object(
+    user: User | None,
+    visible: set[str] | None,
+    *,
+    owner_id: int | None,
+    case_id: str | None,
+) -> bool:
+    """Per-row visibility test, given ``visible`` from `visible_case_ids`.
+
+    Untriaged rows (no case, or the shared ``_TRIAGE`` bucket) are visible only
+    to their owner (or an admin); case rows follow the case's visibility.
+    """
+    if not case_id or case_id == "_TRIAGE":
+        return is_admin(user) or (
+            user is not None and owner_id is not None and owner_id == user.id
+        )
+    return visible is None or case_id in visible
+
+
 def editable_case_ids(db: Session, user: User | None) -> set[str] | None:
     """Case ids the user may edit (owner ∪ EDITOR shares).
 

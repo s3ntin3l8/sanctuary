@@ -14,7 +14,7 @@ case-transition events.
 import logging
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.database import (
@@ -94,60 +94,6 @@ def reset_and_reenrich(db: Session, docs: list) -> None:
         # in between the status read above and reset_stage just now.
         if claim_stage_for_dispatch(doc.id, PipelineStage.ENRICH, db):
             dispatch_task(enrich_document_task, doc.id)
-
-
-def find_next_review_doc(
-    db: Session, after_doc_id: int, owner_id: int | None = None
-) -> Document | None:
-    """Find the next triage doc needing review after the given one.
-
-    Sibling-first: prefer another doc in the same bundle. Otherwise, the
-    first doc in the next bundle. Returns None when the queue is clear.
-
-    ``owner_id`` restricts both the sibling lookup and the fallback bundle
-    scan to that user's own triage inbox. A batch has one owner, so a
-    sibling in the same batch as ``after_doc_id`` is always *that batch's*
-    owner's — but ``after_doc_id`` is not always the caller's own doc
-    anymore (an admin, or an EDITOR-shared user via ?context=triage, can
-    delete someone else's triage doc), so without this filter "next" could
-    still advance the caller into a different user's untriaged document.
-    """
-    from app.services.triage_bundles import get_triage_bundles
-
-    doc_repo = DocumentRepository(db)
-    current = doc_repo.get(after_doc_id)
-    if not current:
-        return None
-
-    if current.ingest_batch_id:
-        sibling_query = db.query(Document).filter(
-            Document.ingest_batch_id == current.ingest_batch_id,
-            Document.id != after_doc_id,
-            or_(Document.case_id == "_TRIAGE", Document.needs_review.is_(True)),
-        )
-        if owner_id is not None:
-            sibling_query = sibling_query.filter(Document.owner_id == owner_id)
-        sibling = sibling_query.order_by(Document.ingest_date.asc()).first()
-        if sibling:
-            return sibling
-
-    bundles = get_triage_bundles(db, owner_id=owner_id)
-    seen_current_bundle = False
-    for bundle in bundles:
-        if any(d.id == after_doc_id for d in bundle.documents):
-            seen_current_bundle = True
-            continue
-        if seen_current_bundle:
-            for d in bundle.documents:
-                if d.needs_review or d.case_id == "_TRIAGE":
-                    return d
-
-    # Fallback: any needs_review doc anywhere (if sort changed under us).
-    for bundle in bundles:
-        for d in bundle.documents:
-            if d.id != after_doc_id and (d.needs_review or d.case_id == "_TRIAGE"):
-                return d
-    return None
 
 
 def confirm_document(

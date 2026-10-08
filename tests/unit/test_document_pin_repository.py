@@ -125,7 +125,11 @@ def test_pin_delete_nonexistent(db_session):
 @pytest.mark.unit
 def test_passage_pin_counts_multi_pin(db_session, doc_with_case, sample_user):
     """Multiple pins on the same passage sum correctly in passage_pin_counts."""
+    from app.models.database import User
+    from app.models.enums import UserRole
     from app.services.hud_context import build_hud_context
+
+    _ADMIN = User(id=999_001, email="admin@example.com", role=UserRole.ADMIN)
 
     repo = DocumentPinRepository(db_session)
     repo.create(doc_with_case.id, "pid1", note="A", user_id=sample_user.id)
@@ -133,7 +137,7 @@ def test_passage_pin_counts_multi_pin(db_session, doc_with_case, sample_user):
     repo.create(doc_with_case.id, "pid2", note="C", user_id=sample_user.id)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc_with_case)
+    ctx = build_hud_context(db_session, doc_with_case, viewer=_ADMIN)
     counts = ctx["passage_pin_counts"]
     assert counts.get("pid1", 0) == 2
     assert counts.get("pid2", 0) == 1
@@ -141,9 +145,13 @@ def test_passage_pin_counts_multi_pin(db_session, doc_with_case, sample_user):
 
 @pytest.mark.unit
 def test_hud_context_includes_pins_key(db_session, doc_with_case):
+    from app.models.database import User
+    from app.models.enums import UserRole
     from app.services.hud_context import build_hud_context
 
-    ctx = build_hud_context(db_session, doc_with_case)
+    _ADMIN = User(id=999_001, email="admin@example.com", role=UserRole.ADMIN)
+
+    ctx = build_hud_context(db_session, doc_with_case, viewer=_ADMIN)
     assert "pins" in ctx
     assert "passage_pin_counts" in ctx
     assert isinstance(ctx["pins"], list)

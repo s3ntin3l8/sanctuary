@@ -16,9 +16,11 @@ from app.models.database import (
     Document,
     DocumentPin,
     DocumentRelationship,
+    User,
     UserReaction,
 )
 from app.models.enums import OriginatorType as _OriginatorType
+from app.services import access_service
 from app.services.case_dashboard_service import (
     key_passages_for_template,
     neighbor_doc_ids,
@@ -90,8 +92,14 @@ def _build_claim_excerpt_map(
     return result
 
 
-def _build_relationships(db: Session, doc: Document) -> tuple[list[dict], list[dict]]:
-    """Return (rels_out, rels_in) as flat dicts for template use."""
+def _build_relationships(
+    db: Session, doc: Document, viewer: User
+) -> tuple[list[dict], list[dict]]:
+    """Return (rels_out, rels_in) as flat dicts for template use.
+
+    Edges to documents the viewer cannot see (another user's triage doc, a case
+    they have no access to) are dropped, so titles never leak across owners.
+    """
     rels_out = (
         db.query(DocumentRelationship)
         .filter(DocumentRelationship.from_document_id == doc.id)
@@ -108,17 +116,23 @@ def _build_relationships(db: Session, doc: Document) -> tuple[list[dict], list[d
     }
     titles: dict[int, str] = {}
     if related_ids:
+        visible = access_service.visible_case_ids(db, viewer)
         for row in (
-            db.query(Document.id, Document.title)
+            db.query(Document.id, Document.title, Document.owner_id, Document.case_id)
             .filter(Document.id.in_(related_ids))
             .all()
         ):
-            titles[row[0]] = row[1] or "Untitled"
+            if access_service.can_see_object(
+                viewer, visible, owner_id=row[2], case_id=row[3]
+            ):
+                titles[row[0]] = row[1] or "Untitled"
 
     def _flatten(rels, *, side: str) -> list[dict]:
         out = []
         for rel in rels:
             other_id = rel.to_document_id if side == "out" else rel.from_document_id
+            if other_id not in titles:
+                continue  # not visible to the viewer (or deleted)
             rel_type = (
                 rel.relationship_type.value if rel.relationship_type else "related"
             )
@@ -141,6 +155,7 @@ def build_hud_context(
     db: Session,
     doc: Document,
     *,
+    viewer: User,
     mode: str = "read",
     context: str = "overlay",
     cases: list | None = None,
@@ -225,7 +240,7 @@ def build_hud_context(
     key_passages = key_passages_for_template(doc.key_passages)
     prev_doc_id, next_doc_id, doc_position, proceeding_total = neighbor_doc_ids(db, doc)
     originator_color = originator_color_for_doc(doc)
-    relationships_out, relationships_in = _build_relationships(db, doc)
+    relationships_out, relationships_in = _build_relationships(db, doc, viewer)
     passage_claim_map = _build_passage_claim_map(db, doc, key_passages)
     claim_excerpt_map = _build_claim_excerpt_map(db, doc, passage_claim_map)
 

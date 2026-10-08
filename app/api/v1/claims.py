@@ -38,6 +38,7 @@ from app.schemas.case_detail import (
     TruthMapFilter,
     TruthMapView,
 )
+from app.services import access_service
 from app.services import claim_proposal_service as proposal_svc
 from app.services import user_settings_service as uss
 from app.services.claim_service import _USER_ALLOWED, ClaimRow, ClaimService
@@ -88,8 +89,10 @@ def _dedup_job(raw: dict | None) -> DedupJob | None:
     )
 
 
-def _truth_map(db: Session, case_id: str, filter_: TruthMapFilter) -> TruthMapView:
-    view = ClaimService(db).get_truth_map(case_id, filter_)
+def _truth_map(
+    db: Session, user: User, case_id: str, filter_: TruthMapFilter
+) -> TruthMapView:
+    view = ClaimService(db).get_truth_map(case_id, filter_, viewer=user)
     return TruthMapView(
         filter=filter_,
         groups=[
@@ -111,8 +114,9 @@ def truth_map(
     filter: TruthMapFilter = Query("open"),
     db: Session = Depends(get_db),
     case: Case = Depends(require_case_access()),
+    user: User = Depends(get_current_user),
 ):
-    return _truth_map(db, case.id, filter)
+    return _truth_map(db, user, case.id, filter)
 
 
 # --- Claims ------------------------------------------------------------------
@@ -123,23 +127,25 @@ def set_claim_status(
     body: ClaimStatusUpdate,
     db: Session = Depends(get_db),
     claim: Claim = Depends(require_claim_access(edit=True)),
+    user: User = Depends(get_current_user),
 ):
     try:
         ClaimService(db).transition_status(claim.id, body.status)
     except ValueError as e:
         raise ApiError(422, "bad_transition", str(e)) from e
     db.commit()
-    return _single_claim(db, claim.id)
+    return _single_claim(db, user, claim.id)
 
 
 @router.post("/claims/{claim_id}/precedent", response_model=ClaimView)
 def toggle_precedent(
     db: Session = Depends(get_db),
     claim: Claim = Depends(require_claim_access(edit=True)),
+    user: User = Depends(get_current_user),
 ):
     claim.is_precedent = not claim.is_precedent
     db.commit()
-    return _single_claim(db, claim.id)
+    return _single_claim(db, user, claim.id)
 
 
 @router.delete("/claims/{claim_id}", status_code=204, response_class=Response)
@@ -151,22 +157,33 @@ def dismiss_claim(
     db.commit()
 
 
-def _single_claim(db: Session, claim_id: int) -> ClaimView:
+def _single_claim(db: Session, user: User, claim_id: int) -> ClaimView:
     """The claim with its evidence chain, as the truth map would show it."""
     claim = db.get(Claim, claim_id)
     assert claim is not None
-    case_id = (
+    # Render through a case the caller can actually see — the claim may also be
+    # evidenced from cases they cannot (#159).
+    visible = access_service.visible_case_ids(db, user)
+    case_ids = (
         db.query(Document.case_id)
         .join(ClaimEvidence, ClaimEvidence.document_id == Document.id)
         .filter(ClaimEvidence.claim_id == claim_id, Document.case_id != "_TRIAGE")
-        .first()
+        .distinct()
+        .order_by(Document.case_id)
+        .all()
     )
-    if case_id and case_id[0]:
-        view = ClaimService(db).get_truth_map(case_id[0], "all")
-        for g in view.groups:
-            for row in g.claims:
-                if row.claim.id == claim_id:
-                    return _claim_view(row)
+    case_id = next(
+        (c for (c,) in case_ids if c and (visible is None or c in visible)), None
+    )
+    # A claim evidenced only by the caller's own untriaged documents has no
+    # visible real case; render it through the _TRIAGE bucket instead (the
+    # viewer filter keeps only their own documents) so the evidence the
+    # access guard promised is actually shown.
+    view = ClaimService(db).get_truth_map(case_id or "_TRIAGE", "all", viewer=user)
+    for g in view.groups:
+        for row in g.claims:
+            if row.claim.id == claim_id:
+                return _claim_view(row)
     return _claim_view(ClaimRow(claim=claim))
 
 

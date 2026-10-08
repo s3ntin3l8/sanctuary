@@ -457,7 +457,9 @@ def _require_editable_target(db: Session, user: User, case_id: str) -> Case | No
     if case_id == "_TRIAGE":
         return None
     case = db.get(Case, case_id)
-    if case is None:
+    # Same 404 for "missing" and "not yours": a 403 here would confirm that a
+    # case the caller cannot see exists.
+    if case is None or not access_service.can_view_case(db, user, case):
         raise ApiError(404, "not_found", f"Case {case_id} not found.")
     if not access_service.can_edit_case(db, user, case):
         raise ApiError(403, "forbidden", "You cannot assign to that case.")

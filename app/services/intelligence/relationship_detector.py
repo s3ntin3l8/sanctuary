@@ -76,7 +76,7 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
         return []
 
     def _scoped():
-        return (
+        q = (
             db.query(Document)
             .options(defer(Document.content))
             .filter(
@@ -85,6 +85,13 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
                 Document.significance_tier.in_(list(CANDIDATE_TIERS)),
             )
         )
+        if case_id == "_TRIAGE":
+            # _TRIAGE is one bucket shared by every user: candidates (and the
+            # edges built from them) must stay within the uploader's own docs.
+            # Any other case_id that is shared across users in future needs the
+            # same treatment, or the cross-owner leak silently comes back.
+            q = q.filter(Document.owner_id == doc.owner_id)
+        return q
 
     recent = _scoped().order_by(Document.id.desc()).limit(MAX_CANDIDATES).all()
     recent_ids = {c.id for c in recent}

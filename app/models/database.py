@@ -840,6 +840,13 @@ class Claim(Base):
     through ClaimEvidence → Document → Document.case_id. A finding established
     in case A's documents can be evidence-linked from case B's documents
     without duplicating the claim record.
+
+    Visibility (#159): evidence, proposals and merge candidates are only ever
+    rendered for documents/cases the viewer can see — nothing hints that the
+    claim is also referenced from a case they cannot access. Editing is
+    checked against the linked cases the editor can see and ignores the rest
+    (a denial must not reveal them), so an edit to a claim shared across
+    cases changes it for every linked case. That is the accepted trade-off.
     """
 
     __tablename__ = "claims"

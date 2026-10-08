@@ -512,12 +512,14 @@ def test_claim_precedent_toggle_ok_for_owner(auth_enabled, db_session, two_users
     assert resp.status_code == 200
 
 
-def test_update_claim_status_cannot_be_used_via_own_case_to_mutate_other_case_claim(
+def test_claim_edit_ignores_unseen_case_and_never_reveals_it(
     auth_enabled, db_session, two_users
 ):
     """A claim can be evidence-linked from documents in two different cases
-    (claims are global). Edit access to one linked case must not be enough
-    to mutate the claim's globally-shared status."""
+    (claims are global). Editing is checked against the linked cases the
+    caller can *see* only (#159), so a denial can never reveal that another
+    case also references the claim. The accepted trade-off: the edit applies to
+    the shared claim. The response must not carry the unseen case's evidence."""
     from app.models.database import Claim, ClaimEvidence
     from app.models.enums import ClaimEvidenceRole, ClaimStatus
 
@@ -550,10 +552,13 @@ def test_update_claim_status_cannot_be_used_via_own_case_to_mutate_other_case_cl
         f"/api/v1/claims/{claim.id}/status",
         json={"status": ClaimStatus.ESTABLISHED.value},
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == ClaimStatus.ESTABLISHED.value
+    assert [e["document_id"] for e in body["evidence"]] == [doc_a.id]
 
     db_session.expire_all()
-    assert db_session.get(Claim, claim.id).status == ClaimStatus.ASSERTED
+    assert db_session.get(Claim, claim.id).status == ClaimStatus.ESTABLISHED
 
 
 def test_batch_merge_proposal_cannot_confirm_via_unrelated_case_edit_access(
