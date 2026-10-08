@@ -16,6 +16,7 @@ from app.models.enums import (
 )
 from app.services import pipeline_status
 from app.services.intelligence import relationship_backfill as bf
+from app.services.intelligence import relationship_detector as rd
 
 pytestmark = pytest.mark.unit
 
@@ -150,7 +151,9 @@ def test_triage_doc_never_backfills(db_session, sample_case):
 
 def test_cap_and_recency_window_and_knn(db_session, sample_case, monkeypatch):
     monkeypatch.setattr(bf, "MAX_BACKFILL", 2)
-    monkeypatch.setattr(bf, "MAX_CANDIDATES", 2)
+    # Threading pool = 3 - 1 = 2 slots.
+    monkeypatch.setattr(rd, "MAX_CANDIDATES", 3)
+    monkeypatch.setattr(rd, "_SEMANTIC_SLOTS", 1)
     newer = [
         _doc(
             db_session,

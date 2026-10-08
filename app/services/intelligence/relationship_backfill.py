@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models.database import Document, DocumentPipelineStage
 from app.models.enums import PipelineStage, StageStatus
 from app.services.embeddings import nearest_document_ids
+from app.services.intelligence import relationship_detector as rd
 from app.services.intelligence.relationship_detector import (
     _KNN_OVERFETCH,
     CANDIDATE_TIERS,
@@ -92,15 +93,16 @@ def stale_successors(db: Session, doc: Document) -> list[int]:
 
 
 def _in_recency_window(db: Session, doc: Document, succ: Document) -> bool:
-    """True when fewer than ``MAX_CANDIDATES`` of ``succ``'s priors lie between
-    ``doc`` and ``succ`` — i.e. ``doc`` was inside ``succ``'s recency window."""
+    """True when fewer than the threading pool's slots of ``succ``'s priors lie
+    between ``doc`` and ``succ`` — i.e. ``doc`` was inside ``succ``'s recency
+    window (same-Aktenzeichen docs outrank by date, so this is an approximation)."""
     between = (
         _case_scope(doc, db)
         .filter(prior_filter(succ), successor_filter(doc))
         .with_entities(func.count(Document.id))
         .scalar()
     )
-    return (between or 0) < MAX_CANDIDATES
+    return (between or 0) < rd.thread_slots()
 
 
 def dispatch_backfill(doc_id: int) -> int:
