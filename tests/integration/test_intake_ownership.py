@@ -139,7 +139,7 @@ def test_assign_to_other_users_case_forbidden(auth_enabled, db_session, two_user
         "/api/v1/triage/batch/assign",
         json={"keys": [f"batch-{a_batch.id}"], "case_id": "OTHER-C"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
     # C must NOT have gained any document.
     db_session.expire_all()
     assert db_session.query(Document).filter(Document.case_id == "OTHER-C").count() == 0

@@ -2,9 +2,12 @@
 
 import pytest
 
-from app.models.database import Case, CaseStatus, Document, IngestBatch
-from app.models.enums import IngestBatchSourceType
+from app.models.database import Case, CaseStatus, Document, IngestBatch, User
+from app.models.enums import IngestBatchSourceType, UserRole
 from app.services.hud_context import build_hud_context
+
+# Transient admin viewer: sees everything, never touches the DB.
+_ADMIN = User(id=999_001, email="admin@example.com", role=UserRole.ADMIN)
 
 
 def _make_batch(db_session) -> int:
@@ -28,7 +31,7 @@ def test_build_hud_context_returns_required_keys(db_session, case_and_batch):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc)
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN)
 
     required = {
         "doc",
@@ -62,7 +65,7 @@ def test_build_hud_context_default_mode_and_context(db_session, case_and_batch):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc)
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN)
     assert ctx["mode"] == "read"
     assert ctx["context"] == "overlay"
 
@@ -83,7 +86,7 @@ def test_bundle_nav_middle_doc(db_session):
     db_session.commit()
 
     middle = docs[1]
-    ctx = build_hud_context(db_session, middle)
+    ctx = build_hud_context(db_session, middle, viewer=_ADMIN)
 
     # Siblings are ordered by id; middle doc should have prev and next.
     assert ctx["bundle_prev_id"] == docs[0].id
@@ -100,7 +103,7 @@ def test_bundle_nav_first_doc(db_session):
         docs.append(d)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, docs[0])
+    ctx = build_hud_context(db_session, docs[0], viewer=_ADMIN)
     assert ctx["bundle_prev_id"] is None
     assert ctx["bundle_next_id"] == docs[1].id
 
@@ -115,7 +118,7 @@ def test_bundle_nav_last_doc(db_session):
         docs.append(d)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, docs[2])
+    ctx = build_hud_context(db_session, docs[2], viewer=_ADMIN)
     assert ctx["bundle_prev_id"] == docs[1].id
     assert ctx["bundle_next_id"] is None
 
@@ -127,7 +130,7 @@ def test_bundle_nav_single_doc(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc)
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN)
     assert ctx["bundle_prev_id"] is None
     assert ctx["bundle_next_id"] is None
 
@@ -138,7 +141,7 @@ def test_bundle_nav_no_batch(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc)
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN)
     assert ctx["bundle_prev_id"] is None
     assert ctx["bundle_next_id"] is None
 
@@ -151,7 +154,7 @@ def test_embedded_context_with_cases_adds_triage_keys(db_session):
     db_session.commit()
 
     ctx = build_hud_context(
-        db_session, doc, mode="review", context="embedded", cases=[]
+        db_session, doc, viewer=_ADMIN, mode="review", context="embedded", cases=[]
     )
     assert ctx["context"] == "embedded"
     assert ctx["mode"] == "review"
@@ -168,7 +171,7 @@ def test_embedded_context_without_cases_no_triage_keys(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc, context="embedded")
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN, context="embedded")
     assert "cases" not in ctx
     assert "OriginatorType" in ctx  # always injected now (Fix #2)
     assert "is_draft_case" not in ctx
@@ -185,7 +188,9 @@ def test_is_draft_case_true_for_draft(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc, context="embedded", cases=[case])
+    ctx = build_hud_context(
+        db_session, doc, viewer=_ADMIN, context="embedded", cases=[case]
+    )
     assert ctx["is_draft_case"] is True
 
 
@@ -196,7 +201,7 @@ def test_hud_context_handles_doc_with_no_data(db_session):
     db_session.add(doc)
     db_session.commit()
 
-    ctx = build_hud_context(db_session, doc)
+    ctx = build_hud_context(db_session, doc, viewer=_ADMIN)
     assert ctx["reactions"] == []
     assert ctx["grounds"] == []
     assert ctx["actions"] == []

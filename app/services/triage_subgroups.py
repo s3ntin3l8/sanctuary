@@ -210,7 +210,13 @@ def reorder_documents(
     else:
         if lead_doc_id is not None:
             doc = db.get(Document, lead_doc_id)
-            if doc and doc.sub_group_id:
+            # Only trust the doc's sub-group if it belongs to *this* batch —
+            # lead_doc_id comes from the client.
+            if (
+                doc
+                and doc.ingest_batch_id == batch_id
+                and doc.sub_group_id in {g.id for g in groups}
+            ):
                 target_sub_group_id = doc.sub_group_id
         if target_sub_group_id is None:
             target_sub_group_id = groups[0].id if groups else None

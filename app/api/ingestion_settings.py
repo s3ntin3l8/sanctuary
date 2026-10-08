@@ -30,7 +30,7 @@ OAUTH_VERIFIER_KEY = "oauth_code_verifier"
 
 @router.get("/gmail/oauth/start")
 @limiter.limit("20/minute")
-async def gmail_oauth_start(request: Request):
+async def gmail_oauth_start(request: Request, user: User = Depends(get_current_user)):
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_COOKIE] = state
     flow = get_oauth_flow()
@@ -54,7 +54,9 @@ async def gmail_oauth_callback(
     user: User = Depends(get_current_user),
 ):
     saved_state = request.session.pop(OAUTH_STATE_COOKIE, None)
-    if state != saved_state:
+    # Both None must not pass: that would let a forged callback link an
+    # attacker's Gmail account to this session.
+    if not saved_state or state != saved_state:
         logger.warning("OAuth state mismatch: expected=%s got=%s", saved_state, state)
         raise HTTPException(status_code=400, detail="OAuth state mismatch")
 

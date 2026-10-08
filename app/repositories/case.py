@@ -37,31 +37,30 @@ class CaseRepository(BaseRepository[Case]):
             query = query.filter(Case.is_draft.is_(False))
         return query.order_by(Case.title.asc()).all()
 
-    def list_for_picker(self, owner_id: int | None = None) -> Sequence[Case]:
+    def list_for_picker(self, owner_id: int) -> Sequence[Case]:
         """Cases shown in the case-assignment picker (triage HUD, confirm modal).
 
         Excludes the `_TRIAGE` singleton and AI-created drafts. Sorted by title
         for stable rendering. Centralised here because the same query was open-
         coded in 6+ routes.
 
-        When ``owner_id`` is given, restricted to that user's *editable* cases
-        (owned ∪ EDITOR shares) — assigning a triage item to a case is a write
+        Restricted to the user's *editable* cases (owned ∪ EDITOR shares;
+        everything for an admin) — assigning a triage item to a case is a write
         to it, so the picker must never offer a case the user can only view.
-        ``None`` (the default) matches the unrestricted/admin/no-user-context
-        callers this method already had before per-user scoping existed.
+        ``owner_id`` is required so no caller can get an unscoped list by
+        omission.
         """
         query = self.db.query(Case).filter(
             Case.id != "_TRIAGE", Case.is_draft.is_(False)
         )
-        if owner_id is not None:
-            from app.models.database import User
-            from app.services import access_service
+        from app.models.database import User
+        from app.services import access_service
 
-            editable = access_service.editable_case_ids(
-                self.db, self.db.get(User, owner_id)
-            )
-            if editable is not None:
-                query = query.filter(Case.id.in_(editable))
+        editable = access_service.editable_case_ids(
+            self.db, self.db.get(User, owner_id)
+        )
+        if editable is not None:
+            query = query.filter(Case.id.in_(editable))
         return query.order_by(Case.title.asc()).all()
 
     def get_all_sorted_by_date(

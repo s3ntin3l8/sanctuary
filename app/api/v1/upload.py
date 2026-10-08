@@ -9,6 +9,7 @@ from typing import Literal, cast
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api.access_guards import check_owned_or_case_access
 from app.api.v1.errors import ApiError
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
@@ -33,6 +34,17 @@ def _editable_case(db: Session, user: User, case_id: str | None) -> Case | None:
     if case is None or not access_service.can_edit_case(db, user, case):
         raise ApiError(404, "not_found", "Case not found.")
     return case
+
+
+def _editable_parent(db: Session, user: User, parent_id: int | None) -> None:
+    """404 unless the user may edit the document the upload will be attached to."""
+    if parent_id is None:
+        return
+    parent = db.get(Document, parent_id)
+    if parent is None or not check_owned_or_case_access(
+        db, user, owner_id=parent.owner_id, case_id=parent.case_id, edit=True
+    ):
+        raise ApiError(404, "not_found", "Parent document not found.")
 
 
 @router.get("/target", response_model=UploadTarget)
@@ -72,6 +84,7 @@ async def upload(
     from app.tasks.dispatch import dispatch_task
 
     case = _editable_case(db, user, case_id)
+    _editable_parent(db, user, parent_id)
     target_case_id = case.id if case else None
     valid = [f for f in files if f.filename]
     if not valid:

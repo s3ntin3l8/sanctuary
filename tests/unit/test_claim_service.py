@@ -4,7 +4,14 @@ from datetime import datetime
 
 import pytest
 
-from app.models.database import Case, Claim, ClaimEvidence, Document, UserReaction
+from app.models.database import (
+    Case,
+    Claim,
+    ClaimEvidence,
+    Document,
+    User,
+    UserReaction,
+)
 from app.models.enums import (
     CaseStatus,
     ClaimEvidenceRole,
@@ -14,11 +21,15 @@ from app.models.enums import (
     OriginatorType,
     RelationshipConfidence,
     UserReactionType,
+    UserRole,
 )
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+_ADMIN = User(id=999_001, email="admin@example.com", role=UserRole.ADMIN)
 
 
 @pytest.fixture
@@ -127,7 +138,7 @@ def test_get_truth_map_open_returns_asserted_and_contested(
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     statuses_in_view = {row.claim.id for group in view.groups for row in group.claims}
     assert contested.id in statuses_in_view
@@ -148,7 +159,7 @@ def test_get_truth_map_open_groups_contested_before_asserted(
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     group_statuses = [g.status for g in view.groups if g.claims]
     assert group_statuses[0] == ClaimStatus.CONTESTED
@@ -164,7 +175,7 @@ def test_get_truth_map_all_returns_four_groups(db_session, cs_case, doc_a):
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "all")
+    view = svc.get_truth_map(cs_case.id, "all", viewer=_ADMIN)
 
     assert (
         len(view.groups) == 5
@@ -190,7 +201,7 @@ def test_get_truth_map_open_count_always_reflects_open_claims(
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "established")
+    view = svc.get_truth_map(cs_case.id, "established", viewer=_ADMIN)
 
     assert view.open_claim_count == 2  # contested + asserted, not established
 
@@ -222,7 +233,7 @@ def test_get_truth_map_excludes_other_case_claims(db_session, cs_case, doc_a):
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "all")
+    view = svc.get_truth_map(cs_case.id, "all", viewer=_ADMIN)
 
     all_ids = {row.claim.id for group in view.groups for row in group.claims}
     assert len(all_ids) == 1
@@ -245,7 +256,7 @@ def test_evidence_rows_attached_to_claim(db_session, cs_case, doc_a, doc_b):
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     claim_rows = [row for group in view.groups for row in group.claims]
     assert len(claim_rows) == 1
@@ -266,7 +277,7 @@ def test_evidence_ordered_by_received_date_asc(db_session, cs_case, doc_a, doc_b
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     evidence_rows = view.groups[0].claims[0].evidence
     # 3 rows total (ASSERTS from _make_claim + 2 explicit). doc_a-rooted
@@ -294,7 +305,7 @@ def test_reactions_attached_to_evidence_rows(db_session, cs_case, doc_a, sample_
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     evidence_row = view.groups[0].claims[0].evidence[0]
     assert len(evidence_row.reactions) == 1
@@ -312,7 +323,7 @@ def test_no_reactions_when_none_tagged(db_session, cs_case, doc_a):
     db_session.commit()
 
     svc = ClaimService(db_session)
-    view = svc.get_truth_map(cs_case.id, "open")
+    view = svc.get_truth_map(cs_case.id, "open", viewer=_ADMIN)
 
     evidence_row = view.groups[0].claims[0].evidence[0]
     assert evidence_row.reactions == []

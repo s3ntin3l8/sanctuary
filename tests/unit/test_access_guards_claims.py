@@ -72,10 +72,10 @@ def test_view_allowed_via_either_linked_case(db_session, two_users):
 
 
 @pytest.mark.unit
-def test_edit_requires_both_linked_cases(db_session, two_users):
-    """Editing the same cross-case claim requires access to *every* linked
-    case — neither A nor B alone can edit it, only an admin (or a user who
-    owns/is shared on both) could."""
+def test_edit_ignores_linked_cases_the_user_cannot_see(db_session, two_users):
+    """Editing a cross-case claim needs edit access to every linked case the
+    user can *see*. Cases they cannot see are ignored, so "edit denied" can
+    never reveal that the claim is also referenced elsewhere (#159)."""
     a, b = two_users
     case_a = _make_case(db_session, "GUARD-A", a.id)
     case_b = _make_case(db_session, "GUARD-B", b.id)
@@ -89,8 +89,33 @@ def test_edit_requires_both_linked_cases(db_session, two_users):
         (doc_b, ClaimEvidenceRole.SUPPORTS),
     )
 
+    assert claim_access_allowed(db_session, a, claim.id, edit=True) is True
+    assert claim_access_allowed(db_session, b, claim.id, edit=True) is True
+
+
+@pytest.mark.unit
+def test_edit_requires_edit_on_every_visible_linked_case(db_session, two_users):
+    """A user who can see two linked cases but only edit one may not edit."""
+    from app.models.database import CaseShare
+    from app.models.enums import CaseAccessLevel
+
+    a, b = two_users
+    case_a = _make_case(db_session, "GUARD-A", a.id)
+    case_b = _make_case(db_session, "GUARD-B", b.id)
+    db_session.add(
+        CaseShare(case_id=case_b.id, user_id=a.id, permission=CaseAccessLevel.VIEWER)
+    )
+    doc_a = Document(title="A doc", owner_id=a.id, case_id=case_a.id)
+    doc_b = Document(title="B doc", owner_id=b.id, case_id=case_b.id)
+    db_session.add_all([doc_a, doc_b])
+    db_session.flush()
+    claim = _claim_with_evidence(
+        db_session,
+        (doc_a, ClaimEvidenceRole.ASSERTS),
+        (doc_b, ClaimEvidenceRole.SUPPORTS),
+    )
+
     assert claim_access_allowed(db_session, a, claim.id, edit=True) is False
-    assert claim_access_allowed(db_session, b, claim.id, edit=True) is False
 
 
 @pytest.mark.unit
@@ -113,12 +138,11 @@ def test_triage_only_claim_ownership_fallback_view(db_session, two_users):
 
 
 @pytest.mark.unit
-def test_triage_only_claim_ownership_fallback_edit_requires_sole_owner(
+def test_triage_only_claim_ownership_fallback_edit_needs_own_document(
     db_session, two_users
 ):
-    """Editing a _TRIAGE-only claim evidenced by two different owners'
-    documents must not be unilaterally allowed for either owner — same
-    all-vs-any asymmetry as the real-case branch."""
+    """Another user's untriaged documents are invisible, so owning one
+    evidencing document is enough to edit; owning none is not."""
     a, b = two_users
     doc_a = Document(title="A triage doc", owner_id=a.id, case_id="_TRIAGE")
     doc_b = Document(title="B triage doc", owner_id=b.id, case_id="_TRIAGE")
@@ -130,8 +154,8 @@ def test_triage_only_claim_ownership_fallback_edit_requires_sole_owner(
         (doc_b, ClaimEvidenceRole.SUPPORTS),
     )
 
-    assert claim_access_allowed(db_session, a, claim.id, edit=True) is False
-    assert claim_access_allowed(db_session, b, claim.id, edit=True) is False
+    assert claim_access_allowed(db_session, a, claim.id, edit=True) is True
+    assert claim_access_allowed(db_session, b, claim.id, edit=True) is True
 
     # A claim evidenced only by A's own triage docs: A alone may edit it.
     solo_claim = _claim_with_evidence(db_session, (doc_a, ClaimEvidenceRole.ASSERTS))

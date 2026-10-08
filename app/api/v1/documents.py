@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.access_guards import (
+    check_owned_or_case_access,
     require_action_item_access,
     require_case_access,
     require_document_access,
@@ -188,7 +189,9 @@ def reader_view(db: Session, user: User, doc: Document) -> DocumentReader:
 
 def _review_fields(db: Session, user: User, doc: Document) -> tuple[dict, dict]:
     cases = list(CaseRepository(db).list_for_picker(owner_id=user.id))
-    ctx = build_hud_context(db, doc, mode="review", context="embedded", cases=cases)
+    ctx = build_hud_context(
+        db, doc, viewer=user, mode="review", context="embedded", cases=cases
+    )
     conf = doc.extraction_confidence or {}
     editable = access_service.editable_case_ids(db, user)
     proc_q = db.query(Proceeding).order_by(Proceeding.court_name.asc())
@@ -629,13 +632,8 @@ def _owned_relationship(
         doc = db.get(Document, doc_id)
         if doc is None:
             raise ApiError(404, "not_found", "Relationship not found.")
-        case = (
-            db.get(Case, doc.case_id)
-            if doc.case_id and doc.case_id != "_TRIAGE"
-            else None
-        )
-        allowed = doc.owner_id == user.id or (
-            case is not None and access_service.can_edit_case(db, user, case)
+        allowed = check_owned_or_case_access(
+            db, user, owner_id=doc.owner_id, case_id=doc.case_id, edit=True
         )
         if not allowed:
             raise ApiError(404, "not_found", "Relationship not found.")
