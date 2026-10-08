@@ -330,17 +330,25 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
     # Mutates summary_data in place; logs any rule that fired.
     reconcile_ai_fields(doc, summary_data)
 
-    # 1. Update core fields (AI is authoritative)
+    # 1. Update core fields (AI is authoritative, except where the user has
+    #    already set the value in triage: confirm_document stamps those
+    #    "user_set" and a re-run must not undo them).
+    user_set = {
+        key
+        for key, val in (doc.extraction_confidence or {}).items()
+        if val == "user_set"
+    }
+
     sender_raw = summary_data.get("sender")
     cleaned_sender = _sanitize_sender(sender_raw)
-    if cleaned_sender:
+    if cleaned_sender and "sender" not in user_set:
         doc.sender = cleaned_sender
 
     parsed_ot = parse_originator_type(summary_data.get("originator_type"))
-    if parsed_ot is not None:
+    if parsed_ot is not None and "originator_type" not in user_set:
         doc.originator_type = parsed_ot
 
-    if summary_data.get("issued_date"):
+    if summary_data.get("issued_date") and "issued_date" not in user_set:
         raw_date = str(summary_data["issued_date"]).strip()
         parsed_date = None
         for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
@@ -377,7 +385,7 @@ def enrich_document_with_ai(doc: Document, summary_data: dict, db: Session) -> N
             v = val.strip().lower()
             if v not in ("high", "medium", "low"):
                 continue
-            if key not in _KNOWN_CONF_KEYS:
+            if key not in _KNOWN_CONF_KEYS or key in user_set:
                 continue
             new_conf[key] = v
         doc.extraction_confidence = new_conf
