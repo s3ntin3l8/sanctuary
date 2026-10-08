@@ -4,7 +4,7 @@ import re
 
 # Bump when any prompt in this module changes.
 # Used to correlate AI debug log entries to prompt versions.
-PROMPT_VERSION = "2026-10-08.1"
+PROMPT_VERSION = "2026-10-08.2"
 # Bumping convention: every commit that edits a system prompt or user-suffix
 # string in this file bumps PROMPT_VERSION in the same commit. Format
 # `YYYY-MM-DD.N` (N starts at 1 each day, increments within the day). The
@@ -314,7 +314,7 @@ FamFG / German family-law role defaults for deciding an action item's `addressee
 - Any other court or Verwaltungsgericht → court
 - Landesjustizkasse, Gerichtskasse, Justizvollzugskasse → third_party (these are state treasuries that collect court fees on behalf of the judiciary; they are not the court itself, and they are not a party to the dispute)
 
-- court_relay: set to true only when the settled originator type is `court` and the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
+- court_relay: if the settled block does not list originator type `court`, set it to false. Otherwise set to true when the document's letterhead sender is a court BUT the substantive content (Schriftsatz, Antrag, Stellungnahme) was authored by a party — i.e. the court is acting as a postal relay, not as the author. Set to false in all other cases. A court's own ruling (Beschluss, Urteil, Verfügung) is never a relay.
 
 Be concise and specific."""
 
