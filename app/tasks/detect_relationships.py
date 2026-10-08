@@ -17,8 +17,13 @@ logger = logging.getLogger(__name__)
     max_retries=3,
     name="app.tasks.detect_relationships.detect_relationships_task",
 )
-def detect_relationships_task(self, doc_id: int):
-    """Detect AI relationships from this doc to prior docs in the same proceeding."""
+def detect_relationships_task(self, doc_id: int, backfill: bool = True):
+    """Detect AI relationships from this doc to prior docs in the same case.
+
+    With ``backfill`` (the default) a successful run also re-queues detection for
+    the newer docs that ran before this one existed (see ``relationship_backfill``).
+    Those re-runs pass ``backfill=False`` so the pass never cascades.
+    """
     from app.dependencies import get_db_session
     from app.services.intelligence.relationship_detector import detect
     from app.services.pipeline_status import (
@@ -244,6 +249,19 @@ def detect_relationships_task(self, doc_id: int):
                 refresh_review_reasons(doc, db)
     finally:
         db.close()
+
+    if backfill and not skipped:
+        try:
+            from app.services.intelligence.relationship_backfill import (
+                dispatch_backfill,
+            )
+
+            dispatch_backfill(doc_id)
+        except Exception:
+            # Best-effort: a backfill problem must not fail this doc's own stage.
+            logger.warning(
+                "Doc #%d: relationship backfill failed", doc_id, exc_info=True
+            )
 
     logger.info(
         "Doc #%d: relationships %s",

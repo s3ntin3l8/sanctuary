@@ -584,3 +584,71 @@ def test_replies_to_that_would_mirror_an_existing_reply_is_dropped(
         .count()
         == 0
     )
+
+
+def _dated(db, case, title, issued, tier=SignificanceTier.CRITICAL):
+    doc = Document(
+        title=title,
+        content="x",
+        case_id=case.id,
+        significance_tier=tier,
+        originator_type=OriginatorType.COURT,
+        issued_date=issued,
+    )
+    db.add(doc)
+    db.flush()
+    return doc
+
+
+@pytest.mark.unit
+def test_priors_follow_document_date_not_arrival_order(
+    db_session, sample_case, monkeypatch
+):
+    """#57: a late-scanned OLD letter (high id) is a prior of the newer docs, and
+    they are not priors of it."""
+    from app.services.intelligence import relationship_detector as rd
+
+    monkeypatch.setattr(rd, "nearest_document_ids", lambda *a, **k: [])
+    newer = _dated(db_session, sample_case, "newer", datetime(2025, 6, 1))
+    late_old = _dated(db_session, sample_case, "late scan", datetime(2025, 1, 1))
+    undated_early = _dated(db_session, sample_case, "undated", None)
+    db_session.commit()
+    assert newer.id < late_old.id
+
+    # The newer doc sees the late-arriving older letter ...
+    assert late_old.id in {d.id for d in rd._get_prior_docs(newer, db_session)}
+    # ... and the older letter does not see the newer one, despite the lower id.
+    assert newer.id not in {d.id for d in rd._get_prior_docs(late_old, db_session)}
+    # Undated docs keep arrival order: the earlier-arrived undated doc is a prior
+    # of the later-arrived dated ones only by id.
+    assert undated_early.id > newer.id
+    assert undated_early.id not in {d.id for d in rd._get_prior_docs(newer, db_session)}
+
+
+@pytest.mark.unit
+def test_prior_filter_ties_break_on_id_and_undated_use_arrival(db_session, sample_case):
+    from app.services.intelligence.relationship_detector import (
+        prior_filter,
+        successor_filter,
+    )
+
+    same_day = datetime(2025, 3, 3)
+    u1 = _dated(db_session, sample_case, "u1", None)
+    a = _dated(db_session, sample_case, "a", same_day)
+    b = _dated(db_session, sample_case, "b", same_day)
+    u2 = _dated(db_session, sample_case, "u2", None)
+    db_session.commit()
+
+    def ids(pred):
+        return {d.id for d in db_session.query(Document).filter(pred)}
+
+    assert a.id in ids(prior_filter(b)) and b.id not in ids(prior_filter(a))
+    assert u1.id in ids(prior_filter(u2)) and u2.id not in ids(prior_filter(u1))
+    # A dated doc also sees earlier-arrived undated docs.
+    assert u1.id in ids(prior_filter(b))
+    # successor_filter is the inverse relation.
+    for x in (a, b, u1, u2):
+        for y in (a, b, u1, u2):
+            if x.id == y.id:
+                continue
+            assert (x.id in ids(prior_filter(y))) == (y.id in ids(successor_filter(x)))

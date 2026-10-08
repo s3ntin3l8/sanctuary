@@ -2,6 +2,7 @@
 
 import logging
 
+from sqlalchemy import and_, literal, or_, tuple_
 from sqlalchemy.orm import Session, defer
 
 from app.models.database import Document, DocumentRelationship, Proceeding
@@ -52,11 +53,48 @@ def _build_query_text(doc: Document) -> str:
     return "\n".join(p for p in parts if p).strip()
 
 
+def prior_filter(doc: Document):
+    """SQL predicate: documents that come *before* ``doc`` in the case.
+
+    "Before" is by document date (``issued_date``, id as tie-break), not by
+    arrival order, so an old letter that was scanned late still sees only older
+    docs and the newer docs see it. A dated doc's priors are the dated docs
+    with an earlier ``(issued_date, id)``, plus undated docs that arrived
+    earlier; an undated doc falls back to arrival order (``id``).
+    """
+    if doc.issued_date is None:
+        return Document.id < doc.id
+    return or_(
+        and_(
+            Document.issued_date.is_not(None),
+            tuple_(Document.issued_date, Document.id)
+            < tuple_(literal(doc.issued_date), literal(doc.id)),
+        ),
+        and_(Document.issued_date.is_(None), Document.id < doc.id),
+    )
+
+
+def successor_filter(doc: Document):
+    """SQL predicate: documents for which ``doc`` is a prior (the inverse of
+    ``prior_filter``)."""
+    if doc.issued_date is None:
+        # An undated doc is a prior of a doc exactly when it arrived earlier.
+        return Document.id > doc.id
+    return or_(
+        and_(
+            Document.issued_date.is_not(None),
+            tuple_(Document.issued_date, Document.id)
+            > tuple_(literal(doc.issued_date), literal(doc.id)),
+        ),
+        and_(Document.issued_date.is_(None), Document.id > doc.id),
+    )
+
+
 def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
     """Return up to MAX_CANDIDATES prior docs in the same case, combining a
     recency window with semantic nearest-neighbours.
 
-    Recency (id DESC) is the high-precision half: direct replies are almost
+    Recency (closest earlier document date first) is the high-precision half: direct replies are almost
     always to recent docs, and it always catches same-batch siblings whose
     embeddings may not be indexed yet. Semantic KNN is the high-recall half: it
     surfaces relevant *older* docs that fall outside the recency window. The
@@ -81,7 +119,7 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
             .options(defer(Document.content))
             .filter(
                 Document.case_id == case_id,
-                Document.id < doc.id,  # Strictly prior documents
+                prior_filter(doc),  # Strictly prior documents (by date)
                 Document.significance_tier.in_(list(CANDIDATE_TIERS)),
             )
         )
@@ -93,7 +131,12 @@ def _get_prior_docs(doc: Document, db: Session) -> list[Document]:
             q = q.filter(Document.owner_id == doc.owner_id)
         return q
 
-    recent = _scoped().order_by(Document.id.desc()).limit(MAX_CANDIDATES).all()
+    recent = (
+        _scoped()
+        .order_by(Document.issued_date.desc().nulls_last(), Document.id.desc())
+        .limit(MAX_CANDIDATES)
+        .all()
+    )
     recent_ids = {c.id for c in recent}
 
     # Semantic neighbours the recency window did NOT already include.
@@ -241,7 +284,6 @@ def detect(doc_id: int) -> str | None:
                 DocumentRelationship.relationship_type == RelationshipType.REPLIES_TO,
             )
         }
-        candidate_date_map = {c.id: c.issued_date for c in candidates}
         model = cfg.summary_model
         # doc and candidates remain accessible after session closes
     finally:
@@ -284,22 +326,6 @@ def detect(doc_id: int) -> str | None:
                     to_id,
                 )
                 continue
-
-            if rel_type_enum in (
-                RelationshipType.SUPERSEDES,
-                RelationshipType.REPLIES_TO,
-            ):
-                target_date = candidate_date_map.get(to_id)
-                if doc.issued_date and target_date and doc.issued_date < target_date:
-                    logger.info(
-                        "Doc %d: dropping %s→%d — new doc (%s) predates target (%s)",
-                        doc_id,
-                        rel_type_raw,
-                        to_id,
-                        doc.issued_date.date(),
-                        target_date.date(),
-                    )
-                    continue
 
             notes = f"AI confidence: {rel.get('confidence', 'unknown')}. {rel.get('notes', '')}"
             if insert_edge_if_absent(
