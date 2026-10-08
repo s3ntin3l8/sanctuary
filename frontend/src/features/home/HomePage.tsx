@@ -305,8 +305,8 @@ function DeltaPanel({ home }: { home: Home }) {
       meta={formatShortDate(home.last_home_visit)}
       action={
         <Button
+          size="sm"
           variant="secondary"
-          className="px-2.5 py-1 text-[11px]"
           disabled={reviewAll.isPending}
           onClick={() => reviewAll.mutate()}
         >

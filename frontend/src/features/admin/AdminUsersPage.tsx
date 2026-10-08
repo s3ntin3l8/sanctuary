@@ -148,8 +148,8 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
         {!isSelf && (
           <>
             <Button
+              size="sm"
               variant="secondary"
-              className="px-2.5 py-1 text-[11px]"
               disabled={toggle.isPending}
               onClick={() =>
                 toggle.mutate({ id: user.id, isActive: !user.is_active }, { onError: fail })
@@ -158,8 +158,8 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
               {user.is_active ? 'Deactivate' : 'Activate'}
             </Button>
             <Button
+              size="sm"
               variant="secondary"
-              className="px-2.5 py-1 text-[11px]"
               disabled={setRole.isPending}
               onClick={() =>
                 setRole.mutate(
@@ -170,11 +170,7 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
             >
               {user.role === 'admin' ? 'Make user' : 'Make admin'}
             </Button>
-            <Button
-              variant="secondary"
-              className="border-danger/40 px-2.5 py-1 text-[11px] text-danger"
-              onClick={() => setConfirmDelete(true)}
-            >
+            <Button size="sm" variant="danger-outline" onClick={() => setConfirmDelete(true)}>
               Delete
             </Button>
           </>
@@ -208,12 +204,7 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
             autoComplete="new-password"
             placeholder="new password"
           />
-          <Button
-            type="submit"
-            variant="secondary"
-            className="px-2.5 py-2 text-[11px]"
-            disabled={reset.isPending}
-          >
+          <Button type="submit" variant="secondary" disabled={reset.isPending}>
             Reset
           </Button>
         </form>
@@ -236,7 +227,6 @@ function UserRow({ user, isSelf, others }: { user: User; isSelf: boolean; others
             </Field>
             <Button
               variant="secondary"
-              className="px-2.5 py-2 text-[11px]"
               disabled={newOwner === '' || reassign.isPending}
               onClick={() =>
                 newOwner !== '' &&

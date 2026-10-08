@@ -139,8 +139,8 @@ export function GraphTab({ detail, selectedDoc, onOpen }: Props) {
           >
             <div className="mb-2 flex items-center gap-2">
               <Button
+                size="sm"
                 variant="secondary"
-                className="px-2 py-1 text-[11px]"
                 onClick={() => navigate(`/document/${panelDoc}`)}
               >
                 <Icon name="open_in_full" size={13} /> Open HUD

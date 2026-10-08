@@ -134,3 +134,62 @@ test('keyboard: Enter on a row action does not toggle the row, ⌘↵ opens conf
   await user.keyboard('{Meta>}{Enter}{/Meta}')
   expect(await screen.findByRole('dialog')).toBeVisible()
 })
+
+test('the case card re-routes the bundle from an inline picker', async () => {
+  const fetch = stub({
+    'POST /api/v1/triage/confirm': {
+      body: {
+        bundle: null,
+        next_doc_id: null,
+        case: { id: 'ADV-019-C', title: 'Brandt GmbH ./. Keller', action: 'assigned' },
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  await user.click(await screen.findByRole('button', { name: 'Change case' }))
+  await user.click(screen.getByRole('menuitem', { name: /ADV-019-C/ }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, '/triage/confirm')).toMatchObject({
+      action: 'assign_case',
+      batch_id: 42,
+      case_id: 'ADV-019-C',
+      proceeding_id: null,
+    }),
+  )
+  expect(await screen.findByRole('status')).toHaveTextContent('Assigned to ADV-019-C')
+})
+
+test('the proceeding picker lists only the assigned case’s proceedings', async () => {
+  const fetch = stub({
+    'GET /api/v1/documents/2211/review': {
+      body: {
+        ...documentReview,
+        case: { id: 'ADV-024-A', title: 'Weber ./. Weber', is_draft: false },
+      },
+    },
+    'POST /api/v1/triage/confirm': {
+      body: {
+        bundle: null,
+        next_doc_id: null,
+        case: { id: 'ADV-024-A', title: 'Weber ./. Weber', action: 'assigned' },
+      },
+    },
+  })
+  renderAt('/triage', <TriagePage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: /ib-0042/ }))
+  await user.click(await screen.findByRole('button', { name: 'Change proceeding' }))
+  const items = screen.getAllByRole('menuitem')
+  expect(items).toHaveLength(2)
+  expect(items[0]).toHaveTextContent('Amtsgericht Hamburg · 003 F 426/25')
+  expect(items[1]).toHaveTextContent('— none —')
+  await user.click(screen.getByRole('menuitem', { name: /Amtsgericht Hamburg/ }))
+  await waitFor(async () =>
+    expect(await postedJson(fetch, '/triage/confirm')).toMatchObject({
+      case_id: 'ADV-024-A',
+      proceeding_id: 5,
+    }),
+  )
+})

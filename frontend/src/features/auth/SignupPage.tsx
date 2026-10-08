@@ -73,7 +73,7 @@ export function SignupPage() {
           minLength={8}
           autoComplete="new-password"
         />
-        <Button type="submit" className="w-full" disabled={signup.isPending}>
+        <Button type="submit" size="lg" className="w-full" disabled={signup.isPending}>
           {firstRun ? 'Create admin account' : 'Create account'}
         </Button>
       </form>

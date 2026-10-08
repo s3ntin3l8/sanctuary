@@ -43,7 +43,8 @@ function StopButton({ className }: { className?: string }) {
   return (
     <Button
       variant="secondary"
-      className={`px-2.5 py-1 text-[11px] ${className ?? ''}`}
+      size="sm"
+      className={className}
       disabled={cancel.isPending}
       onClick={() => cancel.mutate(undefined, { onError: (err) => toast(err.message, 'error') })}
     >

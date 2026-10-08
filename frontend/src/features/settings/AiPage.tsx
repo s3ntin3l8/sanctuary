@@ -129,14 +129,14 @@ function InstanceRow({
         )}
       </div>
       <Button
+        size="sm"
         variant="secondary"
-        className="px-3 py-1 text-[11px]"
         disabled={test.isPending}
         onClick={() => test.mutate(inst.id)}
       >
         Test
       </Button>
-      <Button variant="secondary" className="px-3 py-1 text-[11px]" onClick={onEdit}>
+      <Button size="sm" variant="secondary" onClick={onEdit}>
         Edit
       </Button>
     </li>
@@ -224,11 +224,7 @@ function EndpointModal({
         )}
         <div className="flex gap-2 pt-1">
           {instance && (
-            <Button
-              variant="secondary"
-              className="border-danger/40 text-danger"
-              onClick={() => setConfirmRemove(true)}
-            >
+            <Button variant="danger-outline" onClick={() => setConfirmRemove(true)}>
               Remove
             </Button>
           )}
@@ -367,8 +363,8 @@ function RoleCard({
               ))}
             </select>
             <Button
+              size="sm"
               variant="secondary"
-              className="px-2"
               aria-label={`Discover models for ${role.label}`}
               disabled={!role.active_id || models.isFetching}
               onClick={() => models.refetch()}
@@ -411,16 +407,16 @@ function EmbeddingIndex({ settings }: { settings: Schemas['AiSettingsView'] }) {
         )}
         <span className="flex-1" />
         <Button
+          size="sm"
           variant="secondary"
-          className="px-3 py-1 text-[11px]"
           disabled={running || rebuild.isPending}
           onClick={() => setConfirm(true)}
         >
           Rebuild index
         </Button>
         <Button
+          size="sm"
           variant="secondary"
-          className="px-3 py-1 text-[11px]"
           disabled={running || reindex.isPending}
           onClick={() =>
             reindex.mutate(undefined, { onError: (err) => toast(err.message, 'error') })

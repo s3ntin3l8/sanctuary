@@ -200,15 +200,15 @@ function CaseRow({ card }: { card: CaseCard }) {
           <Icon name="auto_awesome" size={14} className="text-warning" />
           <span className="flex-1">AI suggests closing this case.</span>
           <Button
+            size="sm"
             variant="secondary"
-            className="px-3 py-1 text-[11px]"
             disabled={decide.isPending}
             onClick={() => decide.mutate({ caseId: card.id, decision: 'dismiss' })}
           >
             Keep open
           </Button>
           <Button
-            className="px-3 py-1 text-[11px]"
+            size="sm"
             disabled={decide.isPending}
             onClick={() => decide.mutate({ caseId: card.id, decision: 'confirm' })}
           >

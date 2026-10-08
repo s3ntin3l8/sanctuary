@@ -59,8 +59,7 @@ export function DataPage() {
             </div>
           </div>
           <Button
-            variant="secondary"
-            className="border-danger/40 text-danger"
+            variant="danger-outline"
             disabled={reset.isPending}
             onClick={() => setConfirm('reset')}
           >
@@ -74,11 +73,7 @@ export function DataPage() {
               Deletes every case, document and file. Keeps accounts, settings and the audit log.
             </div>
           </div>
-          <Button
-            className="bg-[#dc2626] text-white"
-            disabled={clear.isPending}
-            onClick={() => setConfirm('clear')}
-          >
+          <Button variant="danger" disabled={clear.isPending} onClick={() => setConfirm('clear')}>
             Clear
           </Button>
         </div>

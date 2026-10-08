@@ -91,7 +91,7 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
           label="Assume worst case for cost projections"
         />
         <div className="flex justify-end">
-          <Button type="submit" className="px-3 py-1.5 text-[11.5px]" disabled={update.isPending}>
+          <Button type="submit" disabled={update.isPending}>
             Save case
           </Button>
         </div>
@@ -153,14 +153,13 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
                 </select>
               </Field>
               <div className="flex gap-1">
-                <Button type="submit" variant="secondary" className="px-2 py-1.5 text-[11px]">
+                <Button type="submit" variant="secondary">
                   Save
                 </Button>
                 {p.is_deletable && (
                   <Button
                     type="button"
-                    variant="secondary"
-                    className="px-2 py-1.5 text-[11px] text-danger"
+                    variant="danger-outline"
                     aria-label={`Delete proceeding ${p.court_name}`}
                     onClick={() => setDeleteProc(p)}
                   >
@@ -198,8 +197,9 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
         </h3>
         {!purging ? (
           <Button
-            variant="secondary"
-            className="mt-2 px-2.5 py-1 text-[11px] text-danger"
+            size="sm"
+            variant="danger-outline"
+            className="mt-2"
             onClick={() => setPurging(true)}
           >
             Purge this case…
@@ -218,11 +218,7 @@ function EditCaseForm({ onClose, detail }: Omit<Props, 'open'>) {
             <Field label={`Type "purge ${detail.id}" to delete everything on disk`}>
               <input name="confirm" className={inputClass} autoComplete="off" />
             </Field>
-            <Button
-              type="submit"
-              className="bg-danger px-2.5 py-1.5 text-[11px]"
-              disabled={purge.isPending}
-            >
+            <Button type="submit" variant="danger" disabled={purge.isPending}>
               Purge
             </Button>
           </form>

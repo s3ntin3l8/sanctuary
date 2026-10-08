@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, Fragment, useState } from 'react'
 import { Link } from 'react-router'
 
 import type { Schemas } from '../../api/client'
@@ -22,6 +22,7 @@ import { Modal } from '../../ui/Modal'
 import { QueryState } from '../../ui/QueryState'
 import { TextField } from '../../ui/TextField'
 import { useToast } from '../../ui/toast'
+import { type Routing, RoutingCards } from '../triage/RoutingPickers'
 
 type Review = Schemas['DocumentReview']
 
@@ -42,8 +43,9 @@ const REACTIONS: [Schemas['UserReactionType'], string, string][] = [
 
 type Props = {
   docId: number
-  onReassign?: (review: Review) => void
   onOpenHud?: (docId: number) => void
+  /** Triage only: lets the case and proceeding cards re-route the bundle. */
+  routing?: Routing
 }
 
 /** What the full-screen HUD wires into the passage spine. */
@@ -55,14 +57,14 @@ export type PassageHooks = {
 }
 
 /** The intelligence panel for one document in the triage inline review. */
-export function DocumentReview({ docId, onReassign, onOpenHud }: Props) {
+export function DocumentReview({ docId, onOpenHud, routing }: Props) {
   const query = useDocumentReview(docId)
   const review = query.data
   if (!review) return <QueryState error={query.error} pending={query.isPending} />
   return (
-    <div className="space-y-3 text-[12px]">
+    <div className="text-[12px]">
       <Header review={review} onOpenHud={onOpenHud} />
-      <ReviewSections review={review} onReassign={onReassign} />
+      <ReviewSections review={review} routing={routing} />
     </div>
   )
 }
@@ -70,53 +72,72 @@ export function DocumentReview({ docId, onReassign, onOpenHud }: Props) {
 /** The rail sections shared by the triage review and the HUD (`passages` adds spine behaviour). */
 export function ReviewSections({
   review,
-  onReassign,
+  routing,
   passages,
   singleColumn = false,
 }: {
   review: Review
-  onReassign?: (review: Review) => void
+  routing?: Routing
   passages?: PassageHooks
   singleColumn?: boolean
 }) {
   return (
     <>
       <Pipeline review={review} />
-      <CaseAndProceeding review={review} onReassign={onReassign} />
+      <CaseAndProceeding review={review} routing={routing} />
       <Metadata review={review} />
       <Summary review={review} />
       <Passages review={review} hooks={passages} />
-      <div className={singleColumn ? 'space-y-3' : 'grid grid-cols-2 gap-3'}>
-        <Relationships review={review} />
-        <Grounds review={review} />
-        <Actions review={review} />
-        <CostSignals review={review} />
+      <div className="border-b border-line2 px-4.5 py-3">
+        <div className={singleColumn ? 'space-y-3' : 'grid grid-cols-2 gap-3'}>
+          <Relationships review={review} />
+          <Grounds review={review} />
+          <Actions review={review} />
+          <CostSignals review={review} />
+        </div>
       </div>
       <Reactions review={review} />
     </>
   )
 }
 
+const SECTION_TITLE = 'text-[9px] font-bold tracking-[.1em] uppercase'
+
 function Section({
   title,
   meta,
+  icon,
+  accent = false,
+  boxed = false,
+  className = '',
   children,
   action,
   dataAttr,
 }: {
   title: string
-  meta?: string
+  meta?: React.ReactNode
+  icon?: string
+  accent?: boolean
+  /** A card inside a grid cell instead of a full-width ruled section. */
+  boxed?: boolean
+  className?: string
   children: React.ReactNode
   action?: React.ReactNode
   dataAttr?: Record<string, string>
 }) {
   return (
-    <section className="rounded-xl border border-line bg-card2 p-3" {...dataAttr}>
-      <header className="mb-2 flex items-center gap-2">
-        <h4 className="text-[9.5px] font-extrabold tracking-[.12em] text-muted uppercase">
-          {title}
-        </h4>
-        {meta && <span className="font-mono text-[10px] text-muted">{meta}</span>}
+    <section
+      className={`${boxed ? 'rounded-[11px] border border-line bg-card p-3' : 'border-b border-line2 px-4.5 py-3'} ${className}`}
+      {...dataAttr}
+    >
+      <header className="mb-2.5 flex items-center gap-2">
+        {icon && <Icon name={icon} size={13} className="text-accent" />}
+        <h4 className={`${SECTION_TITLE} ${accent ? 'text-accent' : 'text-muted'}`}>{title}</h4>
+        {typeof meta === 'string' ? (
+          <span className="font-mono text-[10px] text-muted">{meta}</span>
+        ) : (
+          meta
+        )}
         {action && <span className="ml-auto">{action}</span>}
       </header>
       {children}
@@ -134,9 +155,9 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
         ? 'warning'
         : 'neutral'
   return (
-    <header className="flex items-start gap-2">
+    <header className="flex items-center gap-2.5 border-b border-line2 px-4.5 py-3">
       <span
-        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ORIGINATOR_COLOR[review.originator_type]}`}
+        className={`h-2 w-2 shrink-0 rounded-full ${ORIGINATOR_COLOR[review.originator_type]}`}
       />
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -166,7 +187,7 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
             {review.title}
           </button>
         )}
-        <div className="font-mono text-[10px] text-muted">
+        <div className="mt-0.5 font-mono text-[10px] text-muted">
           #d-{review.id} · {review.originator_type.replace('_', ' ')}
           {review.document_type && ` · ${review.document_type}`}
           {review.issued_date && ` · ${formatIsoDate(review.issued_date)}`}
@@ -178,18 +199,23 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
       </div>
       {review.significance_tier && <Badge tone={tierTone}>{review.significance_tier}</Badge>}
       {onOpenHud && (
-        <Button
-          variant="secondary"
-          className="px-2.5 py-1 text-[11px]"
-          onClick={() => onOpenHud(review.id)}
-        >
-          <Icon name="open_in_full" size={14} /> HUD
+        <Button variant="secondary" size="sm" onClick={() => onOpenHud(review.id)}>
+          <Icon name="open_in_full" size={12} /> HUD
         </Button>
       )}
     </header>
   )
 }
 
+const SEGMENT: Record<string, string> = {
+  completed: 'bg-success',
+  skipped: 'bg-success',
+  running: 'animate-pulse bg-warning',
+  retrying: 'animate-pulse bg-warning',
+  failed: 'bg-danger',
+}
+
+/** One line: a segment per stage, then a verdict. Failures surface their retry controls inline. */
 function Pipeline({ review }: { review: Review }) {
   const retry = useStageRetry(review.id)
   const toast = useToast()
@@ -197,59 +223,65 @@ function Pipeline({ review }: { review: Review }) {
   const stages = review.pipeline.stages
   const done = stages.filter((s) => s.status === 'completed' || s.status === 'skipped').length
   const failed = stages.filter((s) => s.status === 'failed')
+  const running = stages.find((s) => s.status === 'running' || s.status === 'retrying')
+  const complete = stages.length > 0 && done === stages.length
   return (
-    <Section
-      title="Pipeline"
-      meta={`${done}/${stages.length} · ${review.pipeline.state}`}
-      action={
-        failed.length > 0 && (
-          <Button
-            variant="secondary"
-            className="px-2 py-0.5 text-[10px]"
-            disabled={retry.isPending}
-            onClick={() => retry.mutate('all', { onError: (e) => toast(e.message, 'error') })}
-          >
-            Retry all
-          </Button>
-        )
-      }
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        {stages.map((s) => (
-          <span
-            key={s.key}
-            title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
-            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${
-              s.status === 'failed'
-                ? 'border-danger/40 text-danger'
-                : s.status === 'running' || s.status === 'retrying'
-                  ? 'border-warning/40 text-warning'
-                  : s.status === 'completed'
-                    ? 'border-accent/30 text-tealink'
-                    : 'border-line text-muted'
-            }`}
-          >
-            {s.label}
-            {s.status === 'failed' && (
+    <section className="border-b border-line2 px-4.5 py-2.5" aria-label="Pipeline">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <h4 className={`${SECTION_TITLE} text-muted`}>Pipeline</h4>
+        <div className="flex gap-0.5" role="img" aria-label={`${done} of ${stages.length} stages`}>
+          {stages.map((s) => (
+            <span
+              key={s.key}
+              title={`${s.label}: ${s.status ?? 'queued'}${s.error ? `\n${s.error}` : ''}`}
+              className={`h-[5px] w-[18px] rounded-sm ${SEGMENT[s.status ?? ''] ?? 'bg-line3'}`}
+            />
+          ))}
+        </div>
+        {complete ? (
+          <span className="flex items-center gap-1 text-[10px] text-success">
+            <Icon name="check_circle" size={13} /> All {stages.length} stages complete
+          </span>
+        ) : failed.length > 0 ? (
+          <span className="text-[10px] text-danger">{failed.length} failed</span>
+        ) : running ? (
+          <span className="text-[10px] text-warning">Running: {running.label}</span>
+        ) : (
+          <span className="font-mono text-[10px] text-muted">
+            {done}/{stages.length} · {review.pipeline.state}
+          </span>
+        )}
+        {failed.length > 0 && (
+          <span className="ml-auto flex flex-wrap items-center gap-1">
+            {failed.map((s) => (
               <button
+                key={s.key}
                 type="button"
                 aria-label={`Retry ${s.label}`}
                 onClick={() => retry.mutate(s.key, { onError: (e) => toast(e.message, 'error') })}
-                className="hover:text-ink"
+                className="inline-flex items-center gap-1 rounded border border-danger/40 px-1.5 py-0.5 font-mono text-[10px] text-danger hover:bg-danger/10"
               >
-                <Icon name="replay" size={12} />
+                <Icon name="replay" size={11} /> {s.label}
               </button>
-            )}
+            ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={retry.isPending}
+              onClick={() => retry.mutate('all', { onError: (e) => toast(e.message, 'error') })}
+            >
+              Retry all
+            </Button>
           </span>
-        ))}
+        )}
       </div>
       {failed[0]?.error && (
         <button
           type="button"
           aria-expanded={errorOpen}
           onClick={() => setErrorOpen((open) => !open)}
-          className={`mt-1 flex w-full items-start gap-1 text-left font-mono text-[10px] text-danger hover:underline ${
-            errorOpen ? 'whitespace-pre-wrap break-words' : ''
+          className={`mt-1.5 flex w-full items-start gap-1 text-left font-mono text-[10px] text-danger hover:underline ${
+            errorOpen ? 'break-words whitespace-pre-wrap' : ''
           }`}
         >
           <span aria-hidden="true">{errorOpen ? '▾' : '▸'}</span>
@@ -258,150 +290,197 @@ function Pipeline({ review }: { review: Review }) {
           </span>
         </button>
       )}
-    </Section>
+    </section>
   )
 }
 
-function CaseAndProceeding({
-  review,
-  onReassign,
-}: {
-  review: Review
-  onReassign?: (r: Review) => void
-}) {
+function CaseAndProceeding({ review, routing }: { review: Review; routing?: Routing }) {
   const draft = useDraftDecision()
   const toast = useToast()
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <Section
-        title="Case"
-        action={
-          onReassign && (
-            <button
-              type="button"
-              onClick={() => onReassign(review)}
-              className="text-[10px] text-tealink hover:underline"
-            >
-              change
-            </button>
-          )
-        }
-      >
-        {review.case ? (
-          <div>
-            <div className="flex items-center gap-2">
-              <Link
-                to={`/cases/${review.case.id}`}
-                className="font-mono text-[12px] font-semibold text-tealink hover:underline"
-              >
-                {review.case.id}
-              </Link>
-              {review.case.is_draft && <Badge tone="warning">draft</Badge>}
-            </div>
-            <div className="truncate text-[11px] text-muted">{review.case.title}</div>
-            {review.case.is_draft && (
-              <div className="mt-2 flex gap-1">
-                <Button
-                  className="px-2 py-0.5 text-[10px]"
-                  disabled={draft.isPending}
-                  onClick={() =>
-                    draft.mutate(
-                      { caseId: review.case?.id ?? '', decision: 'confirm' },
-                      {
-                        onSuccess: () => toast('Draft case ratified'),
-                        onError: (e) => toast(e.message, 'error'),
-                      },
-                    )
-                  }
-                >
-                  Ratify
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="px-2 py-0.5 text-[10px] text-danger"
-                  disabled={draft.isPending}
-                  onClick={() =>
-                    draft.mutate(
-                      { caseId: review.case?.id ?? '', decision: 'reject' },
-                      {
-                        onSuccess: () => toast('Draft case rejected'),
-                        onError: (e) => toast(e.message, 'error'),
-                      },
-                    )
-                  }
-                >
-                  Reject
-                </Button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <span className="text-muted">Unassigned · in triage</span>
-        )}
-      </Section>
-      <Section title="Proceeding">
-        {review.proceeding ? (
-          <div>
-            <div className="flex items-center gap-2 font-mono text-[12px] font-semibold">
-              {review.proceeding.az_court ?? '—'}
-              <Badge tone="accent">{review.proceeding.court_level.toUpperCase()}</Badge>
-            </div>
-            <div className="truncate text-[11px] text-muted">{review.proceeding.court_name}</div>
-          </div>
-        ) : (
-          <span className="text-muted">
-            {review.az_court ? `AZ ${review.az_court} · no proceeding yet` : 'No proceeding'}
+    <section className="border-b border-line2 px-4.5 py-3">
+      <h4 className={`${SECTION_TITLE} mb-2 text-muted`}>
+        Case &amp; proceeding{' '}
+        {routing && (
+          <span className="font-normal tracking-normal text-muted2 normal-case italic">
+            · click to reassign
           </span>
         )}
-      </Section>
-    </div>
+      </h4>
+      {routing ? (
+        <RoutingCards review={review} routing={routing} />
+      ) : (
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="rounded-[9px] border border-line bg-card px-[11px] py-[9px]">
+            <div className="mb-1.5 text-[8px] font-bold tracking-[.1em] text-muted2 uppercase">
+              Case
+            </div>
+            {review.case ? (
+              <>
+                <div className="flex items-center gap-[7px]">
+                  <Link
+                    to={`/cases/${review.case.id}`}
+                    className="font-mono text-[13px] font-semibold hover:underline"
+                  >
+                    {review.case.id}
+                  </Link>
+                  {review.case.is_draft && (
+                    <Badge tone="warning" pill>
+                      draft
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-1 truncate text-[10px] text-muted">{review.case.title}</div>
+              </>
+            ) : (
+              <span className="text-[11px] text-muted">Unassigned · in triage</span>
+            )}
+          </div>
+          <div className="rounded-[9px] border border-line bg-card px-[11px] py-[9px]">
+            <div className="mb-1.5 text-[8px] font-bold tracking-[.1em] text-muted2 uppercase">
+              Proceeding
+            </div>
+            {review.proceeding ? (
+              <>
+                <div className="flex items-center gap-[7px]">
+                  <span className="font-mono text-[12px]">{review.proceeding.az_court ?? '—'}</span>
+                  <Badge tone="accent" pill>
+                    {review.proceeding.court_level.toUpperCase()}
+                  </Badge>
+                </div>
+                <div className="mt-1 truncate text-[10px] text-muted">
+                  {review.proceeding.court_name}
+                </div>
+              </>
+            ) : (
+              <span className="text-[11px] text-muted">
+                {review.az_court ? `AZ ${review.az_court} · no proceeding yet` : 'No proceeding'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {review.case?.is_draft && (
+        <div className="mt-2 flex gap-1.5">
+          <Button
+            size="sm"
+            disabled={draft.isPending}
+            onClick={() =>
+              draft.mutate(
+                { caseId: review.case?.id ?? '', decision: 'confirm' },
+                {
+                  onSuccess: () => toast('Draft case ratified'),
+                  onError: (e) => toast(e.message, 'error'),
+                },
+              )
+            }
+          >
+            Ratify
+          </Button>
+          <Button
+            size="sm"
+            variant="danger-outline"
+            disabled={draft.isPending}
+            onClick={() =>
+              draft.mutate(
+                { caseId: review.case?.id ?? '', decision: 'reject' },
+                {
+                  onSuccess: () => toast('Draft case rejected'),
+                  onError: (e) => toast(e.message, 'error'),
+                },
+              )
+            }
+          >
+            Reject
+          </Button>
+        </div>
+      )}
+    </section>
   )
 }
 
-const CONF_CLASS: Record<string, string> = {
-  high: 'border-l-success',
-  medium: 'border-l-warning bg-warning/5',
-  low: 'border-l-danger bg-danger/5',
+const CONF_ROW: Record<string, { row: string; label: string; dot: string }> = {
+  high: { row: 'border-l-success bg-card', label: 'text-muted2', dot: 'bg-success' },
+  medium: {
+    row: 'border-l-warning bg-warning/6 ring-1 ring-warning/16',
+    label: 'text-warning',
+    dot: 'bg-warning',
+  },
+  low: {
+    row: 'border-l-danger bg-danger/6 ring-1 ring-danger/18',
+    label: 'text-danger',
+    dot: 'bg-danger',
+  },
 }
+const CONF_NONE = { row: 'border-l-line3 bg-card', label: 'text-muted2', dot: '' }
+const MONO_FIELD = /_date$|^internal_id$|^az_court$/
 
 function Metadata({ review }: { review: Review }) {
   const [editing, setEditing] = useState(false)
   const flagged = review.metadata.filter(
     (f) => f.confidence === 'low' || f.confidence === 'medium',
   ).length
+  const graded = review.metadata.some((f) => f.confidence)
   return (
     <Section
       title="Metadata review"
+      icon="edit_note"
       meta={
-        flagged > 0
-          ? `${flagged} need review`
-          : review.needs_review
-            ? review.review_reasons.join(', ')
-            : 'all confirmed'
+        flagged > 0 ? (
+          <Badge tone="warning" pill>
+            {flagged} need review
+          </Badge>
+        ) : review.needs_review ? (
+          review.review_reasons.join(', ')
+        ) : (
+          'all confirmed'
+        )
       }
       action={
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          className="tracking-wide uppercase"
           onClick={() => setEditing(true)}
-          className="text-[10px] text-tealink hover:underline"
         >
           Edit
-        </button>
+        </Button>
       }
     >
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
-        {review.metadata.map((f) => (
-          <div
-            key={f.field}
-            className={`rounded-md border border-line2 border-l-2 px-2 py-1 ${CONF_CLASS[f.confidence ?? ''] ?? 'border-l-line3'}`}
-          >
-            <dt className="text-[9px] font-bold tracking-[.1em] text-muted uppercase">{f.label}</dt>
-            <dd className="truncate font-mono text-[11px]" title={f.value ?? ''}>
-              {f.value ?? <span className="text-muted2">—</span>}
-            </dd>
-          </div>
-        ))}
+      <dl className="grid grid-cols-2 gap-[7px]">
+        {review.metadata.map((f) => {
+          const c = CONF_ROW[f.confidence ?? ''] ?? CONF_NONE
+          return (
+            <div
+              key={f.field}
+              className={`flex items-center gap-2 rounded-md border-l-2 px-[9px] py-1.5 ${c.row}`}
+            >
+              <dt
+                className={`w-[62px] shrink-0 text-[8px] font-bold tracking-[.08em] uppercase ${c.label}`}
+              >
+                {f.label}
+              </dt>
+              <dd
+                className={`min-w-0 flex-1 truncate text-[11px] ${MONO_FIELD.test(f.field) ? 'font-mono' : ''}`}
+                title={f.value ?? ''}
+              >
+                {f.value ?? <span className="text-muted2">—</span>}
+              </dd>
+              {c.dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />}
+            </div>
+          )
+        })}
       </dl>
+      {graded && (
+        <p className="mt-2 flex items-center gap-1.5 text-[9.5px] text-muted2 italic">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          high
+          <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-warning" />
+          medium
+          <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-danger" />
+          low — only flagged fields pull the eye
+        </p>
+      )}
       <MetadataModal open={editing} onClose={() => setEditing(false)} review={review} />
     </Section>
   )
@@ -553,41 +632,21 @@ function Summary({ review }: { review: Review }) {
   const retry = useStageRetry(review.id)
   const toast = useToast()
   const s = review.summary
+  const state = s.approved_at
+    ? `approved ${formatIsoDate(s.approved_at)}`
+    : s.bullets.length
+      ? 'generated'
+      : (s.enrich_status ?? 'pending')
   return (
     <Section
       title="AI summary"
+      icon="smart_toy"
+      accent
+      className="bg-linear-160 from-aibg to-transparent"
       meta={
-        s.approved_at
-          ? `approved ${formatIsoDate(s.approved_at)}`
-          : s.bullets.length
-            ? 'generated'
-            : (s.enrich_status ?? 'pending')
-      }
-      action={
-        s.bullets.length > 0 && !s.approved_at ? (
-          <span className="flex gap-1">
-            <Button
-              className="px-2 py-0.5 text-[10px]"
-              disabled={act.isPending}
-              onClick={() => act.mutate('approve', { onError: (e) => toast(e.message, 'error') })}
-            >
-              Approve
-            </Button>
-            <Button
-              variant="secondary"
-              className="px-2 py-0.5 text-[10px]"
-              disabled={act.isPending || retry.isPending}
-              onClick={() =>
-                act.mutate('reject', {
-                  onSuccess: () => retry.mutate('enrich'),
-                  onError: (e) => toast(e.message, 'error'),
-                })
-              }
-            >
-              Regenerate
-            </Button>
-          </span>
-        ) : null
+        <Badge tone={s.bullets.length ? 'success' : 'neutral'} pill>
+          {state}
+        </Badge>
       }
     >
       {s.bullets.length === 0 ? (
@@ -597,14 +656,40 @@ function Summary({ review }: { review: Review }) {
             : 'No summary yet.'}
         </p>
       ) : (
-        <ul className="space-y-1">
+        <div className="grid grid-cols-[max-content_1fr] items-start gap-x-[11px] gap-y-2">
           {s.bullets.map((b) => (
-            <li key={b.kind} className="flex gap-2">
-              <Badge tone={BULLET_TONE[b.kind]}>{b.kind}</Badge>
-              <span className="leading-relaxed">{b.text}</span>
-            </li>
+            <Fragment key={b.kind}>
+              <Badge tone={BULLET_TONE[b.kind]} pill className="justify-center">
+                {b.kind}
+              </Badge>
+              <span className="text-[11.5px] leading-normal text-ink2">{b.text}</span>
+            </Fragment>
           ))}
-        </ul>
+        </div>
+      )}
+      {s.bullets.length > 0 && !s.approved_at && (
+        <div className="mt-3 flex gap-2">
+          <Button
+            size="sm"
+            disabled={act.isPending}
+            onClick={() => act.mutate('approve', { onError: (e) => toast(e.message, 'error') })}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={act.isPending || retry.isPending}
+            onClick={() =>
+              act.mutate('reject', {
+                onSuccess: () => retry.mutate('enrich'),
+                onError: (e) => toast(e.message, 'error'),
+              })
+            }
+          >
+            Regenerate
+          </Button>
+        </div>
       )}
     </Section>
   )
@@ -627,7 +712,7 @@ function Passages({ review, hooks }: { review: Review; hooks?: PassageHooks }) {
       title="Key passages"
       meta={`${review.key_passages.length}${claims ? ` · ⚖ ${claims}` : ''}`}
     >
-      <ul className="space-y-2">
+      <ul className="space-y-1.5">
         {review.key_passages.map((p) => {
           const active = hooks?.activePassageId === p.id
           const body = (
@@ -646,7 +731,7 @@ function Passages({ review, hooks }: { review: Review; hooks?: PassageHooks }) {
             <li
               key={p.id}
               data-spine-passage={p.id}
-              className={`rounded-r border-l-2 pl-2 ${PASSAGE_TONE[p.kind ?? 'neutral'] ?? 'border-line3'} ${active ? 'bg-accent/8' : ''}`}
+              className={`rounded-[7px] border-l-[3px] px-2.5 py-2 ${PASSAGE_TONE[p.kind ?? 'neutral'] ?? 'border-line3'} ${active ? 'bg-accent/8' : 'bg-card'}`}
             >
               {hooks ? (
                 <div className="flex items-start gap-1">
@@ -702,6 +787,7 @@ function Relationships({ review }: { review: Review }) {
   const toast = useToast()
   return (
     <Section
+      boxed
       title="Relationships"
       meta={review.relationships.length ? `${review.relationships.length}` : 'none'}
     >
@@ -769,6 +855,7 @@ const CLAIM_TONE: Record<string, Tone> = {
 function Grounds({ review }: { review: Review }) {
   return (
     <Section
+      boxed
       title="Grounds"
       meta={
         review.claims_status === 'ran'
@@ -803,6 +890,7 @@ function Actions({ review }: { review: Review }) {
   const toast = useToast()
   return (
     <Section
+      boxed
       title="Detected actions"
       meta={review.actions.length ? `${review.actions.length}` : 'none'}
     >
@@ -865,6 +953,7 @@ function Actions({ review }: { review: Review }) {
 function CostSignals({ review }: { review: Review }) {
   return (
     <Section
+      boxed
       title="Cost signal"
       meta={review.cost_signals.length ? `${review.cost_signals.length}` : 'none'}
     >
@@ -890,6 +979,7 @@ function Reactions({ review }: { review: Review }) {
   const note = review.reactions.find((r) => r.notes)?.notes ?? ''
   return (
     <Section
+      className="bg-panel2"
       title="Your reaction"
       meta="recalled by the AI later"
       dataAttr={{ 'data-reaction-bar': '' }}
@@ -929,12 +1019,7 @@ function Reactions({ review }: { review: Review }) {
           aria-label="Reaction note"
           className={inputClass}
         />
-        <Button
-          type="submit"
-          variant="secondary"
-          className="px-3 py-1 text-[11px]"
-          disabled={react.isPending}
-        >
+        <Button size="sm" type="submit" variant="secondary" disabled={react.isPending}>
           Save
         </Button>
       </form>

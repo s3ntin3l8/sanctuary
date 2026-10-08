@@ -34,11 +34,7 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={pending}
-            className={danger ? 'bg-[#dc2626] text-white' : ''}
-          >
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={pending}>
             {label}
           </Button>
         </>

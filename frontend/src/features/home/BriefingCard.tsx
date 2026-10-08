@@ -33,8 +33,8 @@ export function BriefingCard() {
           {view.model_label && ` · ${view.model_label}`}
         </span>
         <Button
+          size="sm"
           variant="secondary"
-          className="px-2 py-1 text-[11px]"
           disabled={busy}
           onClick={() => refresh.mutate()}
           aria-label="Regenerate briefing"
