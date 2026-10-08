@@ -22,6 +22,8 @@ import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 import { GmailImportStatus } from './GmailImportStatus'
+import { MessageRow } from './MessageRow'
+import { NewMailBanner } from './NewMailBanner'
 
 type Group = Schemas['GmailGroup']
 
@@ -52,39 +54,12 @@ function GroupMessages({
     <div className="border-t border-line2 bg-panel2/40">
       <ul>
         {items.map((m) => (
-          <li
+          <MessageRow
             key={m.gmail_id}
-            className="grid grid-cols-[24px_88px_200px_1fr_20px_20px_20px] items-center gap-2 px-4 py-1.5"
-          >
-            <input
-              type="checkbox"
-              aria-label={`Select ${m.subject ?? m.gmail_id}`}
-              checked={selected.has(m.gmail_id)}
-              disabled={m.ingested}
-              onChange={() => onToggle(m.gmail_id)}
-            />
-            <span className="font-mono text-[11px] text-muted">{formatIsoDate(m.sent_at)}</span>
-            <span className="truncate text-muted">{m.sender}</span>
-            <span className="truncate">{m.subject ?? '(no subject)'}</span>
-            {m.has_attachments ? (
-              <Icon name="attach_file" size={14} className="text-muted" />
-            ) : (
-              <span />
-            )}
-            {m.cached ? (
-              <span title="Cached locally — importing it needs no Gmail">
-                <Icon name="save" size={14} className="text-muted" />
-                <span className="sr-only">Cached locally</span>
-              </span>
-            ) : (
-              <span />
-            )}
-            {m.ingested ? (
-              <Icon name="check_circle" size={14} filled className="text-success" />
-            ) : (
-              <span />
-            )}
-          </li>
+            message={m}
+            selected={selected.has(m.gmail_id)}
+            onToggle={onToggle}
+          />
         ))}
       </ul>
       {query.hasNextPage && (
@@ -230,6 +205,8 @@ export function ImportPage() {
 
       {run && run.total > 0 && <GmailImportStatus run={run} variant="full" />}
 
+      <NewMailBanner sequential={sequential} busy={importing || start.isPending} />
+
       {index.indexed_count > 0 && (
         <>
           <section
@@ -263,7 +240,7 @@ export function ImportPage() {
                 <Button
                   variant="secondary"
                   disabled={importing || start.isPending}
-                  onClick={() => runImport({ gmail_ids: [...selected], sequential })}
+                  onClick={() => runImport({ gmail_ids: [...selected], sequential, new: false })}
                 >
                   Import selected ({selected.size})
                 </Button>
@@ -271,7 +248,12 @@ export function ImportPage() {
               <Button
                 disabled={importing || start.isPending}
                 onClick={() =>
-                  runImport({ oldest_n: oldestN, group: scope?.key ?? null, sequential })
+                  runImport({
+                    oldest_n: oldestN,
+                    group: scope?.key ?? null,
+                    sequential,
+                    new: false,
+                  })
                 }
               >
                 Import

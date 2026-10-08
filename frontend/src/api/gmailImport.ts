@@ -17,6 +17,7 @@ export const useGmailIndexStatus = () => {
       if (previous?.running && !status.running) {
         queryClient.invalidateQueries({ queryKey: ['gmail', 'groups'] })
         queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+        queryClient.invalidateQueries({ queryKey: ['gmail', 'new'] })
       }
       return status
     },
@@ -82,6 +83,7 @@ export function useGmailImportStatus() {
       if (status.done !== previous?.done || status.active !== previous?.active) {
         queryClient.invalidateQueries({ queryKey: ['gmail', 'groups'] })
         queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+        queryClient.invalidateQueries({ queryKey: ['gmail', 'new'] })
       }
       return status
     },
@@ -93,7 +95,11 @@ export function useStartGmailImport() {
   const queryClient = useQueryClient()
   return useMutation<S['GmailImportQueued'], ApiError, S['GmailImportRequest']>({
     mutationFn: (body) => unwrap(api.POST('/api/v1/gmail/import', { body })),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gmail', 'import'] }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gmail', 'import'] }),
+        queryClient.invalidateQueries({ queryKey: ['gmail', 'new'] }),
+      ]),
   })
 }
 
@@ -106,5 +112,39 @@ export function useCancelGmailImport() {
         queryClient.invalidateQueries({ queryKey: ['gmail', 'import'] }),
         queryClient.invalidateQueries({ queryKey: ['worker-queue'] }),
       ]),
+  })
+}
+
+const NEW_MAIL_POLL_MS = 60_000
+
+/** Mail that arrived after the sync point and awaits a decision (notify mode). */
+export const useGmailNew = () =>
+  useQuery<S['GmailNewMessages'], ApiError>({
+    queryKey: ['gmail', 'new'],
+    queryFn: () => unwrap(api.GET('/api/v1/gmail/new')),
+    refetchInterval: NEW_MAIL_POLL_MS,
+  })
+
+/** Ask Gmail for new mail now. The check runs in the background, so look again shortly. */
+export function useCheckGmailNew() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, ApiError>({
+    mutationFn: () => unwrap(api.POST('/api/v1/gmail/new/check')),
+    onSuccess: () => {
+      for (const delay of [3_000, 8_000, 15_000]) {
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ['gmail', 'new'] }), delay)
+      }
+    },
+  })
+}
+
+export function useDismissGmailNew() {
+  const queryClient = useQueryClient()
+  return useMutation<S['GmailNewMessages'], ApiError>({
+    mutationFn: () => unwrap(api.POST('/api/v1/gmail/new/dismiss')),
+    onSuccess: (view) => {
+      queryClient.setQueryData(['gmail', 'new'], view)
+      queryClient.invalidateQueries({ queryKey: ['settings', 'gmail'] })
+    },
   })
 }

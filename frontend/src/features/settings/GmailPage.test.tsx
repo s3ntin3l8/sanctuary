@@ -12,7 +12,8 @@ const gmail = {
   allowlist: ['lawyer@example.com'],
   label_filter: '',
   oauth_start_url: '/api/ingest/gmail/oauth/start',
-  auto_sync: false,
+  sync_mode: 'notify',
+  last_check_at: null,
   last_sync_result: null,
   last_sync_error: null,
   reconnect_required: false,
@@ -26,26 +27,46 @@ function sentTo(fetch: ReturnType<typeof stubApi>, method: string, path: string)
     .find((r) => r.method === method && new URL(r.url).pathname === path)
 }
 
-test('gmail: automatic sync is off by default and the switch opts in', async () => {
+test('gmail: new connections notify by default, and the mode can be changed', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/gmail': { body: gmail },
-    'PUT /api/v1/settings/gmail/auto-sync': { body: { ...gmail, auto_sync: true } },
+    'PUT /api/v1/settings/gmail/sync-mode': { body: { ...gmail, sync_mode: 'auto' } },
   })
   renderAt('/settings/gmail', <GmailPage />)
-  const toggle = await screen.findByRole('switch', { name: 'Automatic sync' })
-  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  const notify = await screen.findByRole('radio', { name: /Notify me/ })
+  expect(notify).toBeChecked()
+  expect(screen.getByRole('radio', { name: /^Off/ })).not.toBeChecked()
 
-  await userEvent.setup().click(toggle)
+  const auto = screen.getByRole('radio', { name: /Import automatically/ })
+  await userEvent.setup().click(auto)
 
-  await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
-  expect(await sentTo(fetch, 'PUT', '/api/v1/settings/gmail/auto-sync')?.clone().json()).toEqual({
-    enabled: true,
+  await waitFor(() => expect(auto).toBeChecked())
+  expect(await sentTo(fetch, 'PUT', '/api/v1/settings/gmail/sync-mode')?.clone().json()).toEqual({
+    mode: 'auto',
   })
 })
 
-test('gmail: sync now queues a sync', async () => {
+test('gmail: the modes are disabled until Gmail is connected', async () => {
+  stubApi({ 'GET /api/v1/settings/gmail': { body: { ...gmail, connected: false } } })
+  renderAt('/settings/gmail', <GmailPage />)
+  expect(await screen.findByRole('radio', { name: /Notify me/ })).toBeDisabled()
+})
+
+test('gmail: in notify mode the button checks for mail instead of importing it', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/gmail': { body: gmail },
+    'POST /api/v1/gmail/new/check': { status: 202, body: null },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull()
+  await userEvent.setup().click(await screen.findByRole('button', { name: 'Check for new mail' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Checking for new mail')
+  expect(sentTo(fetch, 'POST', '/api/v1/gmail/new/check')).toBeDefined()
+})
+
+test('gmail: sync now queues a sync when the mode is off', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/gmail': { body: { ...gmail, sync_mode: 'off' } },
     'POST /api/v1/settings/gmail/sync': { status: 202, body: null },
   })
   renderAt('/settings/gmail', <GmailPage />)
@@ -80,7 +101,7 @@ test('gmail: disconnecting needs a confirmation', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/gmail': { body: gmail },
     'DELETE /api/v1/settings/gmail': {
-      body: { ...gmail, connected: false, last_sync_at: null, auto_sync: false },
+      body: { ...gmail, connected: false, last_sync_at: null, sync_mode: 'off' },
     },
   })
   renderAt('/settings/gmail', <GmailPage />)

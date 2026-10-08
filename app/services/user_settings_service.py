@@ -162,12 +162,20 @@ _GMAIL_KEYS = (
     "gmail_label_filter",
     "gmail_connected_at",
     "gmail_last_sync_at",
-    "gmail_auto_sync",
+    "gmail_sync_mode",
+    "gmail_last_check_at",
     "gmail_last_sync_result",
     "gmail_last_sync_error",
     "gmail_reconnect_required",
     "gmail_failed_message_ids",
 )
+
+# How the mailbox is watched in the background:
+#   off    — nothing; "Sync now" / "Check now" only
+#   notify — headers of new mail are indexed every 5 min and offered for import
+#   auto   — new mail is imported as it arrives
+SYNC_MODES = ("off", "notify", "auto")
+DEFAULT_SYNC_MODE = "notify"
 
 # Keys cleared on disconnect. The sender allowlist and label filter are the
 # user's own configuration and survive a reconnect.
@@ -175,7 +183,8 @@ _GMAIL_CONNECTION_KEYS = (
     "gmail_credentials_json",
     "gmail_connected_at",
     "gmail_last_sync_at",
-    "gmail_auto_sync",
+    "gmail_sync_mode",
+    "gmail_last_check_at",
     "gmail_last_sync_result",
     "gmail_last_sync_error",
     "gmail_reconnect_required",
@@ -226,6 +235,9 @@ def set_gmail_credentials(
     # senders' whole history (that is an explicit, bounded import). A reconnect
     # keeps the existing watermark.
     data.setdefault("gmail_last_sync_at", connected_at)
+    # New connections only look for new mail (and ask) — nothing is imported
+    # without a click unless the user opts in to "auto". A reconnect keeps the mode.
+    data.setdefault("gmail_sync_mode", DEFAULT_SYNC_MODE)
     data.pop("gmail_last_sync_error", None)
     data.pop("gmail_reconnect_required", None)
     # gmail_failed_message_ids is intentionally kept across a reconnect (same
@@ -240,8 +252,26 @@ def update_gmail_token(db, user_id: int, credentials_json: str) -> None:
     _update_gmail(db, user_id, gmail_credentials_json=secrets.encrypt(credentials_json))
 
 
-def set_gmail_auto_sync(db, user_id: int, enabled: bool) -> None:
-    _update_gmail(db, user_id, gmail_auto_sync=enabled)
+def set_gmail_sync_mode(db, user_id: int, mode: str) -> None:
+    if mode not in SYNC_MODES:
+        raise ValueError(f"unknown Gmail sync mode: {mode}")
+    _update_gmail(db, user_id, gmail_sync_mode=mode)
+
+
+def record_gmail_check(db, user_id: int, checked_at: str) -> None:
+    """A new-mail check reached Gmail, so the grant works: clear any stale error."""
+    _update_gmail(
+        db,
+        user_id,
+        gmail_last_check_at=checked_at,
+        gmail_last_sync_error=None,
+        gmail_reconnect_required=False,
+    )
+
+
+def set_gmail_sync_point(db, user_id: int, since: str) -> None:
+    """Move the sync point without forgetting failed messages (unlike reset)."""
+    _update_gmail(db, user_id, gmail_last_sync_at=since)
 
 
 def record_gmail_sync_outcome(
@@ -295,20 +325,19 @@ def clear_gmail_connection(db, user_id: int) -> None:
     db.flush()
 
 
-def user_ids_with_gmail_auto_sync(db) -> list[int]:
-    """User ids with Gmail connected, automatic sync on, and a usable grant."""
-    rows = db.query(UserSettings.user_id, UserSettings.settings_json).all()
-    out: list[int] = []
-    for uid, sj in rows:
+def gmail_users_by_mode(db) -> dict[str, list[int]]:
+    """Connected, usable-grant users grouped by sync mode (``off`` users omitted)."""
+    out: dict[str, list[int]] = {"notify": [], "auto": []}
+    for uid, sj in db.query(UserSettings.user_id, UserSettings.settings_json).all():
         if (
             isinstance(sj, dict)
             and sj.get("gmail_credentials_json")
-            and sj.get("gmail_auto_sync")
             # A revoked/undecryptable grant fails identically on every tick;
             # polling resumes once the user reconnects (which clears the flag).
             and not sj.get("gmail_reconnect_required")
+            and sj.get("gmail_sync_mode") in out
         ):
-            out.append(uid)
+            out[sj["gmail_sync_mode"]].append(uid)
     return out
 
 

@@ -317,24 +317,29 @@ def _cap_failures(failed_ids: list[str], user_id: int, source: str) -> list[str]
 
 @celery_app.task(bind=True, max_retries=2)
 def sync_gmail_incremental(self):
-    """Beat entry point — fan out one incremental sync per opted-in mailbox.
+    """Beat entry point — fan out per mailbox, by the user's sync mode.
 
-    Only users who switched automatic sync on are polled; everyone else syncs
-    on demand ("Sync now"). Ingested emails are owned by that user (their
-    triage inbox).
+    ``auto`` users have new mail imported; ``notify`` users only have its headers
+    indexed so it can be offered for import (``off`` users aren't touched and
+    sync/check on demand).
     """
     from app.config import SessionLocal
     from app.tasks.dispatch import dispatch_task
 
     db = SessionLocal()
     try:
-        user_ids = user_settings_service.user_ids_with_gmail_auto_sync(db)
+        by_mode = user_settings_service.gmail_users_by_mode(db)
     finally:
         db.close()
 
-    for uid in user_ids:
+    for uid in by_mode["auto"]:
         dispatch_task(sync_gmail_for_user, uid)
-    return f"Dispatched Gmail sync for {len(user_ids)} user(s)"
+    for uid in by_mode["notify"]:
+        dispatch_task(check_gmail_new, uid)
+    return (
+        f"Dispatched Gmail sync for {len(by_mode['auto'])} and "
+        f"new-mail check for {len(by_mode['notify'])} user(s)"
+    )
 
 
 @celery_app.task(
@@ -450,6 +455,91 @@ def sync_gmail_for_user(self, user_id: int):
             db.close()
 
 
+def _index_chunk(db: Session, service, user_id: int, chunk: list[str]) -> int:
+    """Fetch the headers of ``chunk`` and mirror them into the index (read-only
+    against Gmail). Returns how many ids couldn't be indexed — Gmail didn't return
+    them (quota, 5xx) or they didn't parse — so the next refresh retries them."""
+    raws = fetch_metadata(service, chunk)
+    skipped = len(set(chunk) - {raw["id"] for raw in raws})
+    metas = []
+    for raw in raws:
+        try:
+            metas.append(parse_metadata(raw))
+        except (KeyError, ValueError, TypeError, AttributeError):
+            # One malformed message must not lose the rest of the chunk.
+            skipped += 1
+            logger.warning("Gmail index: unparseable message %s", raw.get("id"))
+    gmail_index_service.upsert_metadata(db, user_id, metas)
+    db.commit()
+    return skipped
+
+
+@celery_app.task(
+    bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=True
+)
+def check_gmail_new(self, user_id: int):
+    """Notify mode: index the headers of mail that arrived since the sync point so
+    the app can offer it for import. Never ingests — importing stays a click.
+    Read-only against Gmail (list + metadata get)."""
+    with _user_sync_lock(user_id) as acquired:
+        if not acquired:
+            return (
+                "Busy"  # a sync/index/import holds the mailbox; the next tick retries
+            )
+
+        checked_at = datetime.now(UTC)
+        from app.config import SessionLocal
+
+        db = SessionLocal()
+        try:
+            settings = _get_user_settings(db, user_id)
+            sj = (settings.settings_json or {}) if settings else {}
+            if not sj.get("gmail_credentials_json"):
+                return "Gmail not connected"
+            allowlist = sj.get("gmail_allowlist", [])
+            if not has_filter(allowlist, sj.get("gmail_label_filter")):
+                return "No sender allowlist or label set"
+            last_sync = sj.get("gmail_last_sync_at")
+            if not last_sync:
+                user_settings_service.reset_gmail_sync(
+                    db, user_id, since=checked_at.isoformat()
+                )
+                db.commit()
+                return "Initialized sync watermark"
+
+            service = connect_gmail(db, user_id, sj)
+            query = build_query(
+                allowlist,
+                sj.get("gmail_label_filter", ""),
+                after=int(datetime.fromisoformat(last_sync).timestamp()),
+            )
+            known = gmail_index_service.indexed_gmail_ids(db, user_id)
+            new_ids = [i for i in list_message_ids(service, query) if i not in known]
+            skipped = 0
+            for start in range(0, len(new_ids), _INDEX_CHUNK):
+                skipped += _index_chunk(
+                    db, service, user_id, new_ids[start : start + _INDEX_CHUNK]
+                )
+            gmail_index_service.assign_group_keys(db, user_id)
+            user_settings_service.record_gmail_check(
+                db, user_id, checked_at.isoformat()
+            )
+            db.commit()
+            return (
+                f"Checked: {len(new_ids) - skipped} new message(s) for user {user_id}"
+            )
+        except (GmailReconnectRequired, SecretsError) as e:
+            logger.warning("Gmail check for user %d needs a reconnect: %s", user_id, e)
+            _record_failure(db, user_id, str(e), reconnect_required=True)
+            return "Reconnect required"
+        except Exception as e:
+            logger.error("Gmail new-mail check failed for user %d: %s", user_id, e)
+            _record_failure(db, user_id, _public_error(e))
+            raise
+        finally:
+            db.close()
+
+
 @celery_app.task(
     bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=True
 )
@@ -493,22 +583,7 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
             skipped = 0
             for start in range(0, len(new_ids), _INDEX_CHUNK):
                 chunk = new_ids[start : start + _INDEX_CHUNK]
-                raws = fetch_metadata(service, chunk)
-                # Ids Gmail failed to return (quota, 5xx) or we can't parse are
-                # counted, not hidden: the next refresh retries them.
-                skipped += len(set(chunk) - {raw["id"] for raw in raws})
-                metas = []
-                for raw in raws:
-                    try:
-                        metas.append(parse_metadata(raw))
-                    except (KeyError, ValueError, TypeError, AttributeError):
-                        # One malformed message must not lose the rest of the chunk.
-                        skipped += 1
-                        logger.warning(
-                            "Gmail index: unparseable message %s", raw.get("id")
-                        )
-                gmail_index_service.upsert_metadata(db, user_id, metas)
-                db.commit()
+                skipped += _index_chunk(db, service, user_id, chunk)
                 progress = {"done": start + len(chunk), "skipped": skipped}
                 if gmail_runs.update_run("index", user_id, run_id, progress) is None:
                     return "Index superseded"

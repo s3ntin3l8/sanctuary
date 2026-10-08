@@ -18,10 +18,10 @@ from app.dependencies import get_current_user, get_db
 from app.models.database import User
 from app.models.enums import AuditEventType
 from app.schemas.settings import (
-    GmailAutoSync,
     GmailFilterPreview,
     GmailFilters,
     GmailResetSync,
+    GmailSyncMode,
     GmailView,
 )
 from app.services import (
@@ -76,7 +76,8 @@ def _view(db: Session, user: User) -> GmailView:
         allowlist=list(cfg.get("gmail_allowlist") or []),
         label_filter=cfg.get("gmail_label_filter") or "",
         oauth_start_url=OAUTH_START_URL,
-        auto_sync=bool(cfg.get("gmail_auto_sync")),
+        sync_mode=cfg.get("gmail_sync_mode") or "off",
+        last_check_at=cfg.get("gmail_last_check_at"),
         last_sync_result=cfg.get("gmail_last_sync_result"),
         last_sync_error=cfg.get("gmail_last_sync_error"),
         reconnect_required=bool(cfg.get("gmail_reconnect_required")),
@@ -152,18 +153,18 @@ def preview_filters(
     return GmailFilterPreview(estimate=estimate)
 
 
-@router.put("/auto-sync", response_model=GmailView)
+@router.put("/sync-mode", response_model=GmailView)
 @limiter.limit("20/minute")
-def set_auto_sync(
+def set_sync_mode(
     request: Request,
-    body: GmailAutoSync,
+    body: GmailSyncMode,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Opt in/out of the 5-minute background poll (off by default)."""
+    """Off, notify (index new mail and ask) or auto (import new mail as it arrives)."""
     _require_connected(db, user)
-    user_settings_service.set_gmail_auto_sync(db, user.id, body.enabled)
-    _audit(db, user, "auto_sync_on" if body.enabled else "auto_sync_off")
+    user_settings_service.set_gmail_sync_mode(db, user.id, body.mode)
+    _audit(db, user, f"sync_mode_{body.mode}")
     db.commit()
     return _view(db, user)
 

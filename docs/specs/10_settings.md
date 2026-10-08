@@ -36,7 +36,7 @@ Companion document to `docs/specs/00_vision.md` §UI (⚙ rail icon). Covers all
 | `PUT /api/v1/settings/gmail/filters` — save allowlist + label filter (`useSaveGmailFilters`) | ✅ |
 | `GET /api/ingest/gmail/oauth/start` → `GET /api/ingest/gmail/oauth/callback` (`app/api/ingestion_settings.py`; the start URL is returned in `GmailView.oauth_start_url`) | ✅ |
 | History import — `/settings/gmail/import` (`app/api/v1/gmail_import.py`, see `00a_ingest.md` §2.4): index the mailbox, browse by case reference, import oldest first | ✅ |
-| `PUT /api/v1/settings/gmail/auto-sync`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — opt in to the 5-minute poll (off by default), sync now, move the sync watermark, disconnect + revoke (`useSetGmailAutoSync`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
+| `PUT /api/v1/settings/gmail/sync-mode`, `POST .../sync`, `POST .../reset-sync`, `DELETE /api/v1/settings/gmail` — choose off / notify (default) / auto for the 5-minute background run, sync now, move the sync watermark, disconnect + revoke (`useSetGmailSyncMode`, `useGmailSyncNow`, `useResetGmailSync`, `useDisconnectGmail`) | ✅ |
 | Gmail access is read-only: only the `gmail.readonly` scope is accepted (callback and token refresh reject broader grants) and `tests/unit/test_gmail_readonly_guard.py` fails the build on any Gmail mutating call | ✅ |
 | Credentials encrypted at rest — `gmail_credentials_json` and AI endpoint `api_key` are Fernet-encrypted (`enc:v1:` prefix, `app/core/secrets.py`) with `SECRETS_ENCRYPTION_KEY`; startup fails closed if encrypted values exist without the key | ✅ |
 | Database vacuum via settings UI | ❌ not implemented — non-goal for v1 |
@@ -120,7 +120,8 @@ settings_json shape (defaults):
   "gmail_credentials_json": null, // OAuth token blob (set by callback), stored encrypted ("enc:v1:...")
   "gmail_connected_at": null,     // ISO datetime string
   "gmail_last_sync_at": null,     // sync watermark; set at connect, never cleared (an unset one would mean "whole mailbox")
-  "gmail_auto_sync": false,       // 5-minute background poll; off unless the user opts in
+  "gmail_sync_mode": "notify",    // "off" | "notify" | "auto" — what the 5-minute background run does; set at connect
+  "gmail_last_check_at": null,    // ISO datetime of the last new-mail check (notify mode)
   "gmail_last_sync_result": null, // outcome of the last sync or import
   "gmail_last_sync_error": null,  // why it failed, if it did
   "gmail_reconnect_required": false, // failure only a fresh OAuth grant fixes
@@ -134,7 +135,7 @@ settings_json shape (defaults):
 
 ## 2. Tab: Gmail
 
-**Routes:** `GET /settings/gmail` (SPA, `GmailPage.tsx`) · `GET /api/v1/settings/gmail` · `PUT /api/v1/settings/gmail/filters` · `GET /api/ingest/gmail/oauth/start` · `GET /api/ingest/gmail/oauth/callback` · `PUT .../auto-sync` · `POST .../sync` · `POST .../reset-sync` · `DELETE /api/v1/settings/gmail` · import page: `/api/v1/gmail/*`
+**Routes:** `GET /settings/gmail` (SPA, `GmailPage.tsx`) · `GET /api/v1/settings/gmail` · `PUT /api/v1/settings/gmail/filters` · `GET /api/ingest/gmail/oauth/start` · `GET /api/ingest/gmail/oauth/callback` · `PUT .../sync-mode` · `POST .../sync` · `POST .../reset-sync` · `DELETE /api/v1/settings/gmail` · import page: `/api/v1/gmail/*`
 
 **Sections:**
 
@@ -142,7 +143,7 @@ settings_json shape (defaults):
 |---|---|
 | **Gmail Connection** | Shows OAuth status (`gmail_credentials_json` non-null = connected), a "Reconnect required" alert when the grant is unusable, and a warning when an active AI endpoint is external (`GmailView.ai_external`). `[Connect Gmail]` navigates to `GmailView.oauth_start_url`; `[Disconnect]` forgets and revokes the grant. |
 | **What Sanctuary reads** | Sender allowlist (comma-separated addresses or domains, `settings_json.gmail_allowlist`) and label filter (`gmail_label_filter`). **At least one is required** (422 otherwise); `[Preview matches]` shows Gmail's estimate for the unsaved filters. |
-| **Sync** | Automatic-sync switch, `[Sync now]`, sync point, last result/error, failed-message count, and `[Change sync point…]` (modal: optional "resume from" date, default now; forgets failed messages). |
+| **Sync** | New-mail mode (Off · Notify me · Import automatically), `[Check for new mail]` (notify) or `[Sync now]`, sync point, last result/error, failed-message count, and `[Change sync point…]` (modal: optional "resume from" date, default now; forgets failed messages). |
 | **Import history** | Link to `/settings/gmail/import`, a sub-page of Settings (own nav entry) that indexes the mailbox and imports it grouped by case reference, oldest first. |
 
 ### Gmail OAuth state machine

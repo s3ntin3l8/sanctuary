@@ -298,6 +298,12 @@ def parse_metadata(message: dict) -> dict:
     if sent_at is None:  # unparseable/missing Date: fall back to Gmail's receipt time
         sent_at = datetime.fromtimestamp(int(message["internalDate"]) / 1000, tz=UTC)
 
+    received_at = None
+    if message.get("internalDate"):
+        received_at = datetime.fromtimestamp(
+            int(message["internalDate"]) / 1000, tz=UTC
+        )
+
     _, sender = parseaddr(headers.get("from", ""))
     mime_type = payload.get("mimeType", "")
     return {
@@ -307,6 +313,7 @@ def parse_metadata(message: dict) -> dict:
         "sender": sender.lower() or None,
         "subject": _decode_header_value(headers.get("subject", "")) or None,
         "sent_at": sent_at,
+        "received_at": received_at,
         # The metadata format may omit parts; multipart/mixed is the usual
         # envelope for a message that carries attachments.
         "has_attachments": _payload_has_attachment(payload)

@@ -8,9 +8,10 @@ import {
   useGmailSyncNow,
   useResetGmailSync,
   useSaveGmailFilters,
-  useSetGmailAutoSync,
+  useSetGmailSyncMode,
 } from '../../api/settings'
 import { formatIsoDate } from '../../format'
+import { useCheckGmailNew } from '../../api/gmailImport'
 import { Alert } from '../../ui/Alert'
 import { Badge } from '../../ui/Badge'
 import { Button, buttonClass } from '../../ui/Button'
@@ -20,7 +21,6 @@ import type { Schemas } from '../../api/client'
 import { Icon } from '../../ui/Icon'
 import { Modal } from '../../ui/Modal'
 import { SettingsCard } from '../../ui/SettingsCard'
-import { Toggle } from '../../ui/Toggle'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
 
@@ -186,11 +186,30 @@ function SyncPointModal({ open, onClose }: { open: boolean; onClose: () => void 
   )
 }
 
+const SYNC_MODES = [
+  {
+    value: 'off',
+    label: 'Off',
+    hint: 'Nothing runs in the background. "Sync now" imports new mail when you ask.',
+  },
+  {
+    value: 'notify',
+    label: 'Notify me',
+    hint: 'Every 5 minutes, look for new mail and tell me. I review it and choose what to import.',
+  },
+  {
+    value: 'auto',
+    label: 'Import automatically',
+    hint: 'Every 5 minutes, import new mail matching the filters into Triage.',
+  },
+] as const
+
 export function GmailPage() {
   const gmailQuery = useGmail()
   const gmail = gmailQuery.data
-  const autoSync = useSetGmailAutoSync()
+  const setMode = useSetGmailSyncMode()
   const syncNow = useGmailSyncNow()
+  const checkNew = useCheckGmailNew()
   const disconnect = useDisconnectGmail()
   const toast = useToast()
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
@@ -247,35 +266,65 @@ export function GmailPage() {
 
       <SettingsCard
         title="Sync"
-        description="Sync fetches mail received since the sync point. Older mail is imported deliberately via Import history."
+        description="New mail is whatever arrived after the sync point. Older mail is imported deliberately via Import history."
       >
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <div className="text-[13px] font-semibold">Automatic sync</div>
-            <div className="text-[11px] text-muted">Poll every 5 minutes. Off by default.</div>
-          </div>
-          <Toggle
-            label="Automatic sync"
-            checked={gmail.auto_sync}
-            disabled={!gmail.connected || autoSync.isPending}
-            onChange={(enabled) =>
-              autoSync.mutate({ enabled }, { onError: (err) => toast(err.message, 'error') })
-            }
-          />
-        </div>
+        <fieldset className="space-y-2" disabled={!gmail.connected || setMode.isPending}>
+          <legend className="mb-1 text-[13px] font-semibold">New mail</legend>
+          {SYNC_MODES.map((m) => (
+            <label
+              key={m.value}
+              className={`flex cursor-pointer items-start gap-2.5 rounded-[9px] border px-3 py-2 ${
+                gmail.sync_mode === m.value ? 'border-accent/50 bg-accent/5' : 'border-line'
+              }`}
+            >
+              <input
+                type="radio"
+                name="gmail-sync-mode"
+                value={m.value}
+                checked={gmail.sync_mode === m.value}
+                onChange={() =>
+                  setMode.mutate(
+                    { mode: m.value },
+                    { onError: (err) => toast(err.message, 'error') },
+                  )
+                }
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-[12.5px] font-semibold">{m.label}</span>
+                <span className="block text-[11px] text-muted">{m.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            disabled={!gmail.connected || syncNow.isPending}
-            onClick={() =>
-              syncNow.mutate(undefined, {
-                onSuccess: () => toast('Sync queued'),
-                onError: (err) => toast(err.message, 'error'),
-              })
-            }
-          >
-            Sync now
-          </Button>
+          {gmail.sync_mode === 'notify' ? (
+            <Button
+              variant="secondary"
+              disabled={!gmail.connected || checkNew.isPending}
+              onClick={() =>
+                checkNew.mutate(undefined, {
+                  onSuccess: () => toast('Checking for new mail'),
+                  onError: (err) => toast(err.message, 'error'),
+                })
+              }
+            >
+              Check for new mail
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              disabled={!gmail.connected || syncNow.isPending}
+              onClick={() =>
+                syncNow.mutate(undefined, {
+                  onSuccess: () => toast('Sync queued'),
+                  onError: (err) => toast(err.message, 'error'),
+                })
+              }
+            >
+              Sync now
+            </Button>
+          )}
           {!gmail.connected && <Badge>Connect Gmail first</Badge>}
           <span className="font-mono text-[11px] text-muted">
             {gmail.last_sync_at
