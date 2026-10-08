@@ -76,7 +76,7 @@ from app.services.pipeline_status import (
     retry_on_db_locked,
     stages_dict,
 )
-from app.services.triage_retry import dispatch_pipeline_retry
+from app.services.triage_retry import dispatch_pipeline_retry, rearm_batch_barriers
 
 router = APIRouter(tags=["documents"])
 
@@ -754,6 +754,8 @@ def retry_stage(
     elif not reset_stage(doc.id, stage, db):
         # A dispatcher claimed the stage after the status check above.
         raise ApiError(409, "in_flight", f"Stage '{stage.value}' is already running.")
+    if stage == PipelineStage.EXTRACT and doc.ingest_batch_id:
+        rearm_batch_barriers(doc.ingest_batch_id, db)
     db.refresh(doc)
     dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, stage, db)
     return pipeline_view(doc)
@@ -790,6 +792,8 @@ def retry_all_stages(
             meta.pop("reload_fired", None)
             batch.meta = meta
             db.commit()
+        # Commits on its own; must run before the EXTRACT dispatch below.
+        rearm_batch_barriers(doc.ingest_batch_id, db)
     db.refresh(doc)
     dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, PipelineStage.EXTRACT, db)
     return pipeline_view(doc)
