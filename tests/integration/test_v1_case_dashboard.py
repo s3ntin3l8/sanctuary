@@ -22,6 +22,7 @@ from app.models.database import (
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    BriefState,
     CaseStatus,
     ClaimEvidenceRole,
     ClaimStatus,
@@ -372,6 +373,24 @@ def test_case_and_proceeding_mutations(db_session, dash):
             client.post("/api/v1/cases/DASH-001/brief/refresh").json()["status"]
             == "processing"
         )
+
+    # A refresh must not blank the last good brief, and a failure keeps it too.
+    case = db_session.get(Case, "DASH-001")
+    case.ai_brief = {"posture": "Kept posture", "pressure_points": ["pp"]}
+    case.ai_brief_updated_at = datetime(2026, 1, 1)
+    case.brief_state = BriefState.IDLE
+    db_session.commit()
+    with patch("app.tasks.dispatch.dispatch_task"):
+        refreshing = client.post("/api/v1/cases/DASH-001/brief/refresh").json()
+    assert refreshing["status"] == "processing"
+    assert refreshing["posture"] == "Kept posture"
+    case = db_session.get(Case, "DASH-001")
+    case.brief_state = BriefState.FAILED
+    case.brief_error = "timeout"
+    db_session.commit()
+    failed = client.get("/api/v1/cases/DASH-001/brief").json()
+    assert failed["status"] == "failed" and failed["error"] == "timeout"
+    assert failed["posture"] == "Kept posture"
 
     p2 = dash["p2"].id
     renamed = client.patch(f"/api/v1/proceedings/{p2}", json={"az_court": "7 UF 9/26"})

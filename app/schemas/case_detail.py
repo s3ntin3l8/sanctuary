@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -53,10 +53,14 @@ class PartyView(BaseModel):
     document_count: int = 0
 
 
-class BriefView(BaseModel):
-    """`Case.ai_brief` as written by the brief generator, or its job state."""
+BriefStatus = Literal["ready", "processing", "failed", "none"]
 
-    status: Literal["ready", "processing", "failed", "none"]
+
+class BriefView(BaseModel):
+    """The last good `Case.ai_brief` (content fields stay filled while a refresh
+    is `processing` or has `failed`) plus the regeneration job state."""
+
+    status: BriefStatus
     error: str | None = None
     posture: str | None = None
     pressure_points: list[str] = Field(default_factory=list)
@@ -535,22 +539,3 @@ class SharingView(BaseModel):
 class ShareCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     permission: CaseAccessLevel
-
-
-def brief_view(raw: dict[str, Any] | None, updated_at: datetime | None) -> BriefView:
-    """Normalise the three shapes `Case.ai_brief` can hold."""
-    if not raw:
-        return BriefView(status="none")
-    if raw.get("status") == "processing":
-        return BriefView(status="processing")
-    if raw.get("status") == "failed":
-        return BriefView(status="failed", error=raw.get("error"))
-    return BriefView(
-        status="ready",
-        posture=raw.get("posture"),
-        pressure_points=[str(p) for p in raw.get("pressure_points") or []],
-        next_move=raw.get("next_move"),
-        detected_status=raw.get("detected_status"),
-        status_rationale=raw.get("status_rationale"),
-        updated_at=updated_at,
-    )

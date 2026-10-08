@@ -61,7 +61,11 @@ def test_format_claims_for_case_includes_status_and_evidence_counts(
     block = format_claims_for_case(db_session, sample_case.id)
 
     assert "Contested or Asserted Claims (Truth Map):" in block
-    assert "[contested] Contested fact (Evidence: 1 supports, 1 contests)" in block
+    assert (
+        "[contested] Contested fact (Evidence: 1 supports, 1 contests, first made"
+        in block
+    )
+    assert f"[DOC:{source_doc.id}])" in block
 
 
 @pytest.mark.unit

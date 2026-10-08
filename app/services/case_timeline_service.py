@@ -82,6 +82,7 @@ class TimelineEvent:
     is_future: bool  # date > today
     claim_count: int = 0  # distinct claims linked to this document
     rel_count: int = 0  # document relationships (from + to)
+    status: str | None = None  # ActionItem: open | completed | dismissed
 
 
 def _kind_for_doc(doc: Document, actor: str) -> str:
@@ -316,6 +317,7 @@ class CaseTimelineService:
                     direction=None,
                     is_overdue=is_overdue,
                     is_future=date > today,
+                    status=status_val,
                 )
             )
 

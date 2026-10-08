@@ -33,6 +33,7 @@ from app.models.database import (
 )
 from app.models.enums import (
     ActionItemStatus,
+    BriefState,
     CaseStatus,
     ClaimStatus,
     CostStatus,
@@ -41,6 +42,7 @@ from app.models.enums import (
 from app.repositories.claim import ClaimRepository
 from app.repositories.proceeding import ProceedingRepository
 from app.schemas.case_detail import (
+    BriefStatus,
     BriefView,
     CaseActionItem,
     CaseDetail,
@@ -64,7 +66,6 @@ from app.schemas.case_detail import (
     SignificanceFilter,
     TimelineEventView,
     TimelineView,
-    brief_view,
 )
 from app.schemas.document_review import ActionStatusUpdate
 from app.services import access_service, auth_service, user_settings_service
@@ -289,7 +290,7 @@ def case_detail(
             )
         ],
         opposing_parties=list(case.opposing_parties or []),
-        brief=brief_view(case.ai_brief, case.ai_brief_updated_at),
+        brief=_serialize_brief(case),
         financials=_summary(case, db),
         open_claim_count=int(open_claims),
         dormancy_alert=_compute_dormancy_alert(case, db),
@@ -405,9 +406,31 @@ def set_action_item_status(
 # --- Brief -------------------------------------------------------------------
 
 
+def _serialize_brief(case: Case) -> BriefView:
+    """The last good brief plus the job state of its regeneration."""
+    raw = case.ai_brief or {}
+    status: BriefStatus
+    if case.brief_state == BriefState.PROCESSING:
+        status = "processing"
+    elif case.brief_state == BriefState.FAILED:
+        status = "failed"
+    else:
+        status = "ready" if raw else "none"
+    return BriefView(
+        status=status,
+        error=case.brief_error if status == "failed" else None,
+        posture=raw.get("posture"),
+        pressure_points=[str(p) for p in raw.get("pressure_points") or []],
+        next_move=raw.get("next_move"),
+        detected_status=raw.get("detected_status"),
+        status_rationale=raw.get("status_rationale"),
+        updated_at=case.ai_brief_updated_at if raw else None,
+    )
+
+
 @router.get("/cases/{case_id}/brief", response_model=BriefView)
 def get_brief(case: Case = Depends(require_case_access())):
-    return brief_view(case.ai_brief, case.ai_brief_updated_at)
+    return _serialize_brief(case)
 
 
 @router.post("/cases/{case_id}/brief/refresh", response_model=BriefView)
@@ -420,10 +443,11 @@ def refresh_brief(
     from app.tasks.dispatch import dispatch_task
     from app.tasks.generate_case_brief import refresh_case_brief_task
 
-    case.ai_brief = {"status": "processing"}
+    case.brief_state = BriefState.PROCESSING
+    case.brief_error = None
     db.commit()
     dispatch_task(refresh_case_brief_task, case.id)
-    return BriefView(status="processing")
+    return _serialize_brief(case)
 
 
 # --- Graph / timeline / financials -----------------------------------------

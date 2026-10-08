@@ -1,11 +1,16 @@
 from datetime import datetime
 
 from app.models.database import ActionItem, Claim, ClaimEvidence, Document
-from app.models.enums import ActionItemStatus, ClaimEvidenceRole, ClaimStatus
+from app.models.enums import (
+    ActionItemStatus,
+    BriefState,
+    ClaimEvidenceRole,
+    ClaimStatus,
+)
 from app.services.chat.context_builder import build_case_chat_prompt
 
 
-def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_case):
+def test_build_case_chat_prompt_includes_chronology_and_claims(db_session, sample_case):
     # Source document for the Claim's source_document_id FK.
     source_doc = Document(
         title="Source", content="x", case_id=sample_case.id, needs_review=False
@@ -57,7 +62,30 @@ def test_build_case_chat_prompt_includes_actions_and_claims(db_session, sample_c
         retrieved_hits=[],
     )
 
-    assert "Open Action Items / Deadlines:" in prompt
-    assert "30.04.2026: Frist test" in prompt
+    assert "Case chronology (oldest first):" in prompt
+    assert "OVERDUE (open," in prompt
+    assert "Test Deadline" in prompt
+    assert "[from DOC:None]" not in prompt
+    assert "Open Action Items / Deadlines:" not in prompt
     assert "Contested or Asserted Claims (Truth Map):" in prompt
-    assert "[contested] Contested fact (Evidence: 1 supports, 0 contests)" in prompt
+    assert (
+        "[contested] Contested fact (Evidence: 1 supports, 0 contests, first made"
+        in prompt
+    )
+    assert f"[DOC:{source_doc.id}]" in prompt
+
+
+def test_build_case_chat_prompt_shows_brief_while_refreshing(db_session, sample_case):
+    sample_case.ai_brief = {"posture": "Kept posture", "pressure_points": []}
+    sample_case.brief_state = BriefState.PROCESSING
+    db_session.commit()
+
+    prompt = build_case_chat_prompt(
+        case=sample_case,
+        db=db_session,
+        history=[],
+        user_message="q",
+        retrieved_hits=[],
+    )
+
+    assert "Posture: Kept posture" in prompt

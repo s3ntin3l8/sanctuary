@@ -37,6 +37,8 @@ export function Rail({
       a.status === 'open' && (audience === 'all' || a.addressee === null || a.addressee === 'user'),
   )
   const brief = detail.brief
+  // The last good brief stays visible while a refresh runs or after it failed.
+  const hasBrief = brief.posture !== null || brief.next_move !== null
   return (
     <aside
       aria-label="Case brief"
@@ -64,12 +66,17 @@ export function Rail({
             </button>
           )}
         </header>
-        {brief.status === 'processing' && <p className="text-muted">Generating brief…</p>}
+        {brief.status === 'processing' && (
+          <p className="mb-2 text-muted">{hasBrief ? 'Refreshing brief…' : 'Generating brief…'}</p>
+        )}
         {brief.status === 'failed' && (
-          <p className="text-danger">Brief failed{brief.error ? `: ${brief.error}` : ''}.</p>
+          <p className="mb-2 text-danger">
+            {hasBrief ? 'Refresh failed' : 'Brief failed'}
+            {brief.error ? `: ${brief.error}` : ''}.
+          </p>
         )}
         {brief.status === 'none' && <p className="text-muted">No brief yet.</p>}
-        {brief.status === 'ready' && (
+        {hasBrief && (
           <div className="space-y-2 leading-relaxed text-ink2">
             {brief.posture && <p>{brief.posture}</p>}
             {(brief.pressure_points ?? []).length > 0 && (

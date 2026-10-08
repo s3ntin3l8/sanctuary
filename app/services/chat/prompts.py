@@ -21,6 +21,7 @@ Rules:
 6. Be direct. This is a professional legal tool; avoid padding.
 7. Match the language of the user's question (German or English).
 8. Cap your answer at ~400 words unless the user asks for more.
+9. The "Case chronology" is the authoritative sequence of events. Answer "when" and "how did this develop" questions from it and cite the [DOC:<doc_id>] on the line you use. "OVERDUE" means an item is still open past its due date — do not call it missed.
 """
 
 SUGGESTED_DOC_PROMPTS = [
