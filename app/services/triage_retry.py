@@ -7,6 +7,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def rearm_batch_barriers(batch_id: int, db) -> None:
+    """Re-arm the batch's one-shot CAS flags before a re-run of EXTRACT.
+
+    metadata_phase_queued_at (OCR→chat barrier) and analysis_queued_at (batch
+    analysis) are set once and never reset on their own, so a re-extract of a
+    single doc would otherwise find them already set: the barrier would refuse
+    to dispatch METADATA and the analysis claim would refuse to dispatch
+    ENRICH, leaving both to the (minutes-late) recovery sweep.
+    """
+    from sqlalchemy import text
+
+    db.execute(
+        text(
+            "UPDATE ingest_batches SET metadata_phase_queued_at = NULL, "
+            "analysis_queued_at = NULL WHERE id = :batch_id"
+        ),
+        {"batch_id": batch_id},
+    )
+    db.commit()
+
+
 def dispatch_pipeline_retry(doc_id: int, batch_id: int | None, stage, db) -> None:
     """Dispatch (or re-dispatch) a stage's retry task, claiming it first.
 

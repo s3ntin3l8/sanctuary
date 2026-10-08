@@ -341,9 +341,11 @@ def metadata_task(self, doc_id: int):
                 else:
                     # Claim failed — either someone else won the race, or the
                     # batch is already analyzed (idempotency guard fired because
-                    # sibling docs have batch_analysis=completed). In the second
-                    # case this doc's batch_analysis was cascade-reset to pending
-                    # by a metadata retry but will never be claimed. Detect it
+                    # a doc in the batch has batch_analysis terminal). That doc
+                    # may be a sibling (this doc's batch_analysis was
+                    # cascade-reset to pending by a metadata retry but will
+                    # never be claimed) or this doc itself (single-doc batch:
+                    # batch_analysis was SKIPPED on the first run). Detect it
                     # and promote + dispatch enrich directly so the doc isn't
                     # permanently stranded.
                     from sqlalchemy import text
@@ -355,16 +357,25 @@ def metadata_task(self, doc_id: int):
                             JOIN document_pipeline_stages dps2
                               ON dps2.document_id = d2.id
                             WHERE d2.ingest_batch_id = :bid
-                              AND d2.id != :doc_id
                               AND dps2.stage = 'batch_analysis'
                               AND dps2.status IN ('completed', 'failed', 'skipped')
                             LIMIT 1
                             """
                         ),
-                        {"bid": doc.ingest_batch_id, "doc_id": doc_id},
+                        {"bid": doc.ingest_batch_id},
                     ).scalar()
                     if batch_already_done:
-                        mark_completed(doc_id, PipelineStage.BATCH_ANALYSIS, db_batch)
+                        # Don't rewrite a stage that is already terminal (a
+                        # SKIPPED single-doc analysis must stay SKIPPED).
+                        own_batch_stage = (
+                            stages_dict(doc)
+                            .get(PipelineStage.BATCH_ANALYSIS.value, {})
+                            .get("status")
+                        )
+                        if own_batch_stage not in ("completed", "failed", "skipped"):
+                            mark_completed(
+                                doc_id, PipelineStage.BATCH_ANALYSIS, db_batch
+                            )
                         logger.info(
                             "Doc #%d: batch #%d already analyzed — promoted "
                             "batch_analysis to completed, dispatching enrich directly",

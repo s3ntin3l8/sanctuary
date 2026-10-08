@@ -13,11 +13,14 @@ from app.models.database import (
     Document,
     DocumentPipelineStage,
     DocumentRelationship,
+    IngestBatch,
     User,
 )
 from app.models.enums import (
     ActionItemType,
     CaseStatus,
+    IngestBatchSourceType,
+    IngestBatchStatus,
     PipelineStage,
     PipelineState,
     RelationshipConfidence,
@@ -494,3 +497,61 @@ def test_rejecting_a_relationship_remembers_it(db_session, sample_case):
         to_document_id=other.id,
         relationship_type=RelationshipType.REPLIES_TO,
     )
+
+
+def _batch_with_stale_barriers(db, doc):
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        received_at=datetime.now(UTC),
+        status=IngestBatchStatus.PENDING,
+        metadata_phase_queued_at=datetime.now(UTC),
+        analysis_queued_at=datetime.now(UTC),
+    )
+    db.add(batch)
+    db.flush()
+    doc.ingest_batch_id = batch.id
+    db.add_all(
+        DocumentPipelineStage(
+            document_id=doc.id, stage=stage, status=StageStatus.COMPLETED
+        )
+        for stage in (PipelineStage.EXTRACT, PipelineStage.METADATA)
+    )
+    db.commit()
+    return batch
+
+
+def test_single_doc_extract_retries_rearm_the_batch_barriers(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    batch = _batch_with_stale_barriers(db_session, doc)
+
+    with patch("app.api.v1.documents.dispatch_pipeline_retry"):
+        for url in (
+            f"/api/v1/documents/{doc.id}/pipeline/extract/retry",
+            f"/api/v1/documents/{doc.id}/pipeline/retry-all",
+        ):
+            batch.metadata_phase_queued_at = batch.analysis_queued_at = datetime.now(
+                UTC
+            )
+            db_session.commit()
+            assert client.post(url).status_code == 200
+            db_session.refresh(batch)
+            assert batch.metadata_phase_queued_at is None, url
+            assert batch.analysis_queued_at is None, url
+            db_session.query(DocumentPipelineStage).filter_by(
+                document_id=doc.id
+            ).update({"status": StageStatus.COMPLETED})
+            db_session.commit()
+
+
+def test_non_extract_stage_retry_leaves_batch_barriers_alone(db_session):
+    admin = _admin(db_session)
+    doc = _doc(db_session, admin.id)
+    batch = _batch_with_stale_barriers(db_session, doc)
+
+    with patch("app.api.v1.documents.dispatch_pipeline_retry"):
+        r = client.post(f"/api/v1/documents/{doc.id}/pipeline/enrich/retry")
+    assert r.status_code == 200
+    db_session.refresh(batch)
+    assert batch.metadata_phase_queued_at is not None
+    assert batch.analysis_queued_at is not None

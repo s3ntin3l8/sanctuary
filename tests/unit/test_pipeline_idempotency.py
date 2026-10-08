@@ -228,3 +228,85 @@ def test_metadata_soft_time_limit_during_retry_backoff_cascades_to_failed(
     # batch-shared stage. For this non-batched doc it was already "skipped"
     # by initialize(); the cascade must not have touched it either way.
     assert stages[PipelineStage.BATCH_ANALYSIS.value]["status"] == "skipped"
+
+
+@pytest.mark.unit
+def test_metadata_task_dispatches_enrich_for_single_doc_batch_with_stale_claim(
+    db_session, monkeypatch
+):
+    """A re-extracted single-doc batch (analysis_queued_at still set, own
+    batch_analysis SKIPPED) must still hand off to ENRICH from metadata_task,
+    and must leave the SKIPPED stage as it was."""
+    from datetime import UTC, datetime
+
+    from app.models.database import Case, Document, IngestBatch
+    from app.models.enums import (
+        CaseStatus,
+        IngestBatchSourceType,
+        IngestBatchStatus,
+        Jurisdiction,
+        OriginatorType,
+    )
+    from app.services.pipeline_status import (
+        initialize,
+        mark_completed,
+        mark_skipped,
+    )
+
+    db_session.add(
+        Case(
+            id="_IP3", title="T", status=CaseStatus.INTAKE, jurisdiction=Jurisdiction.DE
+        )
+    )
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL,
+        received_at=datetime.now(UTC),
+        status=IngestBatchStatus.PENDING,
+        analysis_queued_at=datetime.now(UTC),
+    )
+    db_session.add(batch)
+    db_session.flush()
+    doc = Document(
+        title="x",
+        content="x",
+        case_id="_IP3",
+        ingest_batch_id=batch.id,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add(doc)
+    db_session.flush()
+    initialize(doc, batched=True, db=db_session)
+    db_session.commit()
+    mark_completed(doc.id, PipelineStage.EXTRACT, db_session)
+    mark_skipped(
+        doc.id,
+        PipelineStage.BATCH_ANALYSIS,
+        db_session,
+        reason="single-doc or empty batch",
+    )
+
+    enriched: list[int] = []
+    monkeypatch.setattr(
+        "app.tasks.document_processing._run_phase1_summary",
+        lambda doc_id: mark_completed(doc_id, PipelineStage.METADATA, db_session),
+    )
+    monkeypatch.setattr(
+        "app.tasks.generate_embedding.generate_embedding_task.delay",
+        lambda doc_id: None,
+    )
+    monkeypatch.setattr(
+        "app.tasks.enrich_document.enrich_document_task.delay",
+        lambda doc_id: enriched.append(doc_id),
+    )
+    monkeypatch.setattr("app.dependencies.get_db_session", lambda: db_session)
+
+    from app.tasks.document_processing import metadata_task
+
+    metadata_task(doc.id)
+
+    assert enriched == [doc.id]
+    db_session.refresh(doc)
+    assert (
+        stages_dict(doc)[PipelineStage.BATCH_ANALYSIS.value]["status"]
+        == StageStatus.SKIPPED.value
+    )
