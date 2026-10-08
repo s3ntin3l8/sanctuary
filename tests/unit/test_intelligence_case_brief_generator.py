@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.models.enums import CaseStatus
+from app.models.enums import BriefState, CaseStatus
 from app.services.intelligence.case_brief_generator import (
     _apply_brief,
     _compute_parties,
@@ -59,6 +59,8 @@ def test_apply_brief_happy_path():
     ]
     assert case.ai_brief["next_move"] == "File response by 2026-05-01."
     assert isinstance(case.ai_brief_updated_at, datetime)
+    assert case.brief_state == BriefState.IDLE
+    assert case.brief_error is None
 
 
 @pytest.mark.unit
@@ -165,6 +167,29 @@ def test_apply_brief_invalid_detected_status_keeps_current_status():
 
     assert case.status == CaseStatus.TRIAL
     db.query.assert_not_called()
+
+
+@pytest.mark.unit
+def test_call_brief_sync_prompt_carries_chronology_not_action_items():
+    from unittest.mock import patch
+
+    from app.services.intelligence.case_brief_generator import _call_brief_sync
+
+    case = _make_case()
+    case.title = "T"
+    case.total_cost_exposure = 0
+    case.proceedings = []
+    with patch("app.services.intelligence.case_brief_generator.call_json_ai") as call:
+        call.return_value.model_dump.return_value = {}
+        _call_brief_sync(
+            case,
+            [],
+            "",
+            chronology_context="Case chronology (oldest first):\n  2025-01-01 ...",
+        )
+    prompt = call.call_args.kwargs["user_prompt"]
+    assert "Case chronology (oldest first):" in prompt
+    assert "Open action items" not in prompt
 
 
 # ---------------------------------------------------------------------------

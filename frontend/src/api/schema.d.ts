@@ -2941,7 +2941,8 @@ export interface components {
         };
         /**
          * BriefView
-         * @description `Case.ai_brief` as written by the brief generator, or its job state.
+         * @description The last good `Case.ai_brief` (content fields stay filled while a refresh
+         *     is `processing` or has `failed`) plus the regeneration job state.
          */
         BriefView: {
             /** Detected Status */

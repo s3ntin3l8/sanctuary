@@ -56,9 +56,20 @@ def format_claims_for_case(
     for c in claims:
         supports = sum(1 for e in c.evidence if e.role == ClaimEvidenceRole.SUPPORTS)
         contests = sum(1 for e in c.evidence if e.role == ClaimEvidenceRole.CONTESTS)
+        origin = min(
+            (e for e in c.evidence if e.role == ClaimEvidenceRole.ASSERTS),
+            key=lambda e: e.id,
+            default=None,
+        )
+        anchor = (
+            f", first made {c.first_made_at.date()}"
+            + (f" [DOC:{origin.document_id}]" if origin else "")
+            if c.first_made_at
+            else ""
+        )
         lines.append(
             f"  - [{c.status.value}] {sanitize_oneline(c.claim_text, 300)} "
-            f"(Evidence: {supports} supports, {contests} contests)"
+            f"(Evidence: {supports} supports, {contests} contests{anchor})"
         )
 
     return "Contested or Asserted Claims (Truth Map):\n" + "\n".join(lines)

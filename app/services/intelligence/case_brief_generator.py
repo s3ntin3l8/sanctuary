@@ -7,9 +7,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session, defer
 
-from app.models.database import ActionItem, Case, Document
+from app.models.database import Case, Document
 from app.models.enums import (
-    ActionItemStatus,
+    BriefState,
     CaseStatus,
     OriginatorType,
 )
@@ -20,6 +20,7 @@ from app.services.intelligence._court_identity import (
     is_third_party_default_name,
 )
 from app.services.intelligence.ai_options import STAGE_OPTIONS
+from app.services.intelligence.chronology_context import format_chronology_for_case
 from app.services.intelligence.claim_context import (
     format_claims_for_case,
     format_entities_for_case,
@@ -217,21 +218,24 @@ def _apply_brief(case: Case, result: dict, db: Session) -> None:
         "close_suggestion_rationale": status_rationale if case.pending_close else "",
     }
     case.ai_brief_updated_at = datetime.now(UTC)
+    case.brief_state = BriefState.IDLE
+    case.brief_error = None
 
 
 def _mark_processing(case_id: str, db: Session) -> None:
-    """Set case.ai_brief to processing status and commit."""
+    """Flag the brief as regenerating and commit; the last good brief stays."""
     case = db.query(Case).filter(Case.id == case_id).first()
     if case:
-        case.ai_brief = {"status": "processing"}
+        case.brief_state = BriefState.PROCESSING
+        case.brief_error = None
         db.commit()
 
 
 def _call_brief_sync(
     case: Case,
     docs: list,
-    action_items: list,
     reactions_context: str,
+    chronology_context: str = "",
     claims_context: str = "",
     entities_context: str = "",
     model: str = "",
@@ -263,14 +267,6 @@ def _call_brief_sync(
         for d in docs
     )
 
-    action_lines = (
-        chr(10).join(
-            f"- {sanitize_oneline(a.title, 200)} ({a.action_type}) due {a.due_date}"
-            for a in action_items
-        )
-        or "None"
-    )
-
     prompt = f"""Case: {sanitize_oneline(case.title, 200)} ({case.id}) — current_status: {case.status}
 Cost exposure: {case.total_cost_exposure or 0} cents
 
@@ -280,8 +276,7 @@ Proceedings:
 Documents ({len(docs)}):
 {doc_lines}
 
-Open action items:
-{action_lines}
+{("\n" + chronology_context) if chronology_context else ""}
 {("\n" + claims_context) if claims_context else ""}
 {("\n" + entities_context) if entities_context else ""}
 {("\n" + reactions_context) if reactions_context else ""}"""
@@ -335,16 +330,7 @@ def generate(case_id: str) -> None:
             .all()
         )
 
-        action_items = (
-            db.query(ActionItem)
-            .filter(
-                ActionItem.case_id == case_id,
-                ActionItem.status == ActionItemStatus.OPEN,
-            )
-            .order_by(ActionItem.due_date.asc())
-            .all()
-        )
-
+        chronology_context = format_chronology_for_case(db, case_id)
         reactions_context = format_reactions_for_case(db, case_id)
         claims_context = format_claims_for_case(db, case_id)
         entities_context = format_entities_for_case(db, case_id)
@@ -360,8 +346,8 @@ def generate(case_id: str) -> None:
             result = _call_brief_sync(
                 case,
                 docs,
-                action_items,
                 reactions_context,
+                chronology_context=chronology_context,
                 claims_context=claims_context,
                 entities_context=entities_context,
                 model=cfg.summary_model,
@@ -414,7 +400,8 @@ def mark_brief_failed(case_id: str, error: str) -> None:
     try:
         case = db.query(Case).filter(Case.id == case_id).first()
         if case:
-            case.ai_brief = {"status": "failed", "error": error}
+            case.brief_state = BriefState.FAILED
+            case.brief_error = error
             db.commit()
     finally:
         db.close()

@@ -252,13 +252,19 @@ def test_refresh_case_brief_soft_time_limit_marks_failed_without_retry(
 @pytest.mark.unit
 def test_mark_brief_failed_writes_failed_status(db_session, sample_case):
     from app.models.database import Case
+    from app.models.enums import BriefState
     from app.services.intelligence.case_brief_generator import mark_brief_failed
+
+    sample_case.ai_brief = {"posture": "kept"}
+    db_session.commit()
 
     mark_brief_failed(sample_case.id, "simulated error")
 
     db_session.expire_all()
     case = db_session.query(Case).filter(Case.id == sample_case.id).first()
-    assert case.ai_brief == {"status": "failed", "error": "simulated error"}
+    assert case.brief_state == BriefState.FAILED
+    assert case.brief_error == "simulated error"
+    assert case.ai_brief == {"posture": "kept"}
 
 
 @pytest.mark.unit

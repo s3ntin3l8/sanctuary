@@ -245,6 +245,14 @@ class ActionItemStatus(enum.StrEnum):
     DISMISSED = "dismissed"
 
 
+class BriefState(enum.StrEnum):
+    """Job state of the case brief; the brief itself lives in Case.ai_brief."""
+
+    IDLE = "idle"
+    PROCESSING = "processing"
+    FAILED = "failed"
+
+
 class ClaimType(enum.StrEnum):
     FACTUAL = "factual"
     LEGAL = "legal"

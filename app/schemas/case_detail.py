@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.database import Case
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
+    BriefState,
     CaseAccessLevel,
     CaseStatus,
     CaseType,
@@ -54,7 +56,8 @@ class PartyView(BaseModel):
 
 
 class BriefView(BaseModel):
-    """`Case.ai_brief` as written by the brief generator, or its job state."""
+    """The last good `Case.ai_brief` (content fields stay filled while a refresh
+    is `processing` or has `failed`) plus the regeneration job state."""
 
     status: Literal["ready", "processing", "failed", "none"]
     error: str | None = None
@@ -537,20 +540,22 @@ class ShareCreate(BaseModel):
     permission: CaseAccessLevel
 
 
-def brief_view(raw: dict[str, Any] | None, updated_at: datetime | None) -> BriefView:
-    """Normalise the three shapes `Case.ai_brief` can hold."""
-    if not raw:
-        return BriefView(status="none")
-    if raw.get("status") == "processing":
-        return BriefView(status="processing")
-    if raw.get("status") == "failed":
-        return BriefView(status="failed", error=raw.get("error"))
+def brief_view(case: Case) -> BriefView:
+    """The last good brief plus the job state of its regeneration."""
+    raw = case.ai_brief or {}
+    if case.brief_state == BriefState.PROCESSING:
+        status = "processing"
+    elif case.brief_state == BriefState.FAILED:
+        status = "failed"
+    else:
+        status = "ready" if raw else "none"
     return BriefView(
-        status="ready",
+        status=status,
+        error=case.brief_error if status == "failed" else None,
         posture=raw.get("posture"),
         pressure_points=[str(p) for p in raw.get("pressure_points") or []],
         next_move=raw.get("next_move"),
         detected_status=raw.get("detected_status"),
         status_rationale=raw.get("status_rationale"),
-        updated_at=updated_at,
+        updated_at=case.ai_brief_updated_at if raw else None,
     )

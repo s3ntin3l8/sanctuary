@@ -33,6 +33,7 @@ from app.models.database import (
 )
 from app.models.enums import (
     ActionItemStatus,
+    BriefState,
     CaseStatus,
     ClaimStatus,
     CostStatus,
@@ -289,7 +290,7 @@ def case_detail(
             )
         ],
         opposing_parties=list(case.opposing_parties or []),
-        brief=brief_view(case.ai_brief, case.ai_brief_updated_at),
+        brief=brief_view(case),
         financials=_summary(case, db),
         open_claim_count=int(open_claims),
         dormancy_alert=_compute_dormancy_alert(case, db),
@@ -407,7 +408,7 @@ def set_action_item_status(
 
 @router.get("/cases/{case_id}/brief", response_model=BriefView)
 def get_brief(case: Case = Depends(require_case_access())):
-    return brief_view(case.ai_brief, case.ai_brief_updated_at)
+    return brief_view(case)
 
 
 @router.post("/cases/{case_id}/brief/refresh", response_model=BriefView)
@@ -420,10 +421,11 @@ def refresh_brief(
     from app.tasks.dispatch import dispatch_task
     from app.tasks.generate_case_brief import refresh_case_brief_task
 
-    case.ai_brief = {"status": "processing"}
+    case.brief_state = BriefState.PROCESSING
+    case.brief_error = None
     db.commit()
     dispatch_task(refresh_case_brief_task, case.id)
-    return BriefView(status="processing")
+    return brief_view(case)
 
 
 # --- Graph / timeline / financials -----------------------------------------

@@ -3,13 +3,12 @@
 from sqlalchemy.orm import Session
 
 from app.models.database import (
-    ActionItem,
     Case,
     ConversationMessage,
     Document,
 )
-from app.models.enums import ActionItemStatus
 from app.services.case_dashboard_service import key_passages_for_template
+from app.services.intelligence.chronology_context import format_chronology_for_case
 from app.services.intelligence.claim_context import format_claims_for_case
 from app.services.intelligence.reaction_context import (
     format_reactions_for_case,
@@ -61,7 +60,7 @@ def build_case_chat_prompt(
 ) -> str:
     brief = case.ai_brief or {}
     brief_block = ""
-    if isinstance(brief, dict) and brief.get("status") != "processing":
+    if brief:
         parts = []
         if brief.get("posture"):
             parts.append(f"Posture: {brief['posture']}")
@@ -92,25 +91,7 @@ def build_case_chat_prompt(
             )
         retrieved_block = "Retrieved documents:\n" + "\n\n".join(sections)
 
-    # Fetch open ActionItems
-    actions = (
-        db.query(ActionItem)
-        .filter(
-            ActionItem.case_id == case.id, ActionItem.status == ActionItemStatus.OPEN
-        )
-        .order_by(ActionItem.due_date.asc())
-        .limit(10)
-        .all()
-    )
-    actions_block = ""
-    if actions:
-        lines = []
-        for a in actions:
-            due = a.due_date.strftime("%d.%m.%Y") if a.due_date else "no date"
-            lines.append(
-                f"  - {due}: {a.description} [from DOC:{a.source_document_id}]"
-            )
-        actions_block = "Open Action Items / Deadlines:\n" + "\n".join(lines)
+    chronology_block = format_chronology_for_case(db, case.id)
 
     # Fetch open Claims (Wave 2A: scope via ClaimEvidence → Document join).
     claims_block = format_claims_for_case(db, case.id)
@@ -123,7 +104,7 @@ Cost exposure: {case.total_cost_exposure or 0} cents
 Case AI Brief:
 {brief_block or "(not yet generated)"}
 
-{actions_block}
+{chronology_block}
 
 {claims_block}
 

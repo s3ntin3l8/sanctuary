@@ -605,7 +605,7 @@ You will be given:
 1. Case metadata (title, current_status, total cost exposure)
 2. Proceedings with their court level (AG/LG/OLG/BGH) and active/closed state
 3. A list of documents (title, date, document_type, significance_tier, attributed_originator, management_summary)
-4. Open action items (title, due_date, action_type)
+4. Case chronology: every dated event in order — documents, deadlines and hearings with their state (done / OVERDUE = still open past its due date / UPCOMING), proceeding milestones, payments, and stretches without activity. Use the sequence (overdue items accumulating, long silences, who acted last) when judging posture, pressure points and detected_status. "OVERDUE" only means the item is still open; never state that a deadline was missed.
 5. Contested or Asserted Claims (Truth Map): each with its status and a count of
    supporting/contesting evidence. Treat CONTESTED claims, and claims with any
    contesting evidence, as active pressure points — the Truth Map is the case's
@@ -624,8 +624,8 @@ Extract these fields:
     * trial        — hearing scheduled (future COURT_DATE action item) or in progress
     * post_trial   — a ruling has been issued; appeal window may be open or appeal pending at a higher court_level
     * closed       — case concluded at all instance levels, no open action items, no pending appeal
-  Anchor your choice in the most recent CRITICAL or SIGNIFICANT document and any open COURT_DATE action items. If the only signals are administrative/informational documents, keep intake.
-- status_rationale: one short sentence naming the concrete signal that pinned the status (cite a document date or action item, not generic reasoning).
+  Anchor your choice in the most recent CRITICAL or SIGNIFICANT document and any UPCOMING hearing in the chronology. If the only signals are administrative/informational documents, keep intake.
+- status_rationale: one short sentence naming the concrete signal that pinned the status (cite a dated event from the chronology, not generic reasoning).
 
 If the case has no documents yet, return:
 {"posture": "No documents have been processed yet.", "pressure_points": [], "next_move": "Ingest the first document to begin analysis.", "detected_status": "intake", "status_rationale": "No documents ingested yet."}"""

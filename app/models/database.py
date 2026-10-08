@@ -68,6 +68,7 @@ from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
     AuditEventType,
+    BriefState,
     CaseAccessLevel,
     CaseStatus,
     CaseType,
@@ -587,7 +588,11 @@ class Case(Base):
     # Phase 1: cumulative AI intelligence + parties + exposure
     ai_brief: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True
-    )  # living AI understanding of the case
+    )  # last successfully generated brief; job state lives in brief_state
+    brief_state: Mapped[BriefState] = mapped_column(
+        SAEnum(BriefState), default=BriefState.IDLE, nullable=False
+    )
+    brief_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_brief_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
     )

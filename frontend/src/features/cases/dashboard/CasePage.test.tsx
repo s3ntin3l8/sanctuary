@@ -89,6 +89,18 @@ test('renders the header, spine, review panel and brief rail', async () => {
   )
 })
 
+test('a refreshing or failed brief keeps the last good brief on screen', async () => {
+  stub({
+    'GET /api/v1/cases/ADV-024-A': {
+      body: { ...caseDetail, brief: { ...caseDetail.brief, status: 'failed', error: 'timeout' } },
+    },
+  })
+  page('/cases/ADV-024-A?view=review')
+  const rail = await screen.findByRole('complementary', { name: 'Case brief' })
+  expect(await within(rail).findByText('Client seeks sole custody.')).toBeVisible()
+  expect(within(rail).getByText('Refresh failed: timeout.')).toBeVisible()
+})
+
 test('the graph is the default view; switching the proceeding refetches with ?proceeding=', async () => {
   const fetch = stub()
   page()
