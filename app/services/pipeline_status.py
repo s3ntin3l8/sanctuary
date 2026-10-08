@@ -567,6 +567,19 @@ _RESET_SETS: dict = {
 }
 
 
+def clear_extraction_stamp(doc) -> None:
+    """Drop the extractor stamp so a deliberate re-extract isn't short-circuited.
+
+    ``process_document_task`` skips OCR when ``meta`` carries ``extractor`` +
+    ``chunks`` (a guard against duplicate dispatches). A user-requested retry
+    must pass that guard, so every EXTRACT reset clears the stamp first.
+    """
+    meta = dict(doc.meta or {})
+    removed = [meta.pop(k, None) for k in ("extractor", "chunks", "page_failures")]
+    if any(v is not None for v in removed):
+        doc.meta = meta
+
+
 def reset_stage(
     doc_id: int, stage: PipelineStage, db: Session, *, force: bool = False
 ) -> bool:
@@ -595,6 +608,12 @@ def reset_stage(
         unless_status_in=guard,
     ):
         return False  # in flight: the guarded UPDATE matched nothing, nothing to undo
+    if stage == PipelineStage.EXTRACT:
+        from app.models.database import Document
+
+        doc = db.get(Document, doc_id)
+        if doc is not None:
+            clear_extraction_stamp(doc)
     for downstream in _DOWNSTREAM.get(stage, []):
         # A downstream stage that is in flight keeps running; it re-runs on its
         # own schedule once its upstream completes again.
@@ -656,6 +675,11 @@ def reset_all_stages(doc_id: int, db: Session) -> list[str]:
     if in_flight:
         db.rollback()
         return in_flight
+    from app.models.database import Document
+
+    doc = db.get(Document, doc_id)
+    if doc is not None:
+        clear_extraction_stamp(doc)
     db.commit()
     return []
 

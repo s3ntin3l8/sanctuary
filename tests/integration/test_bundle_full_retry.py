@@ -91,9 +91,7 @@ def test_full_retry_resets_extract_and_dispatches_it(
     db_session.commit()
 
     with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
-        response = app_client.post(
-            f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": True}
-        )
+        response = app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
 
     assert response.status_code == 200
     db_session.refresh(doc)
@@ -120,7 +118,7 @@ def test_full_retry_preserves_confirmed_case(app_client, db_session):
     db_session.commit()
 
     with patch("app.services.triage_retry.dispatch_pipeline_retry"):
-        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": True})
+        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
 
     db_session.refresh(doc)
     assert doc.case_id == "CONF-001"
@@ -134,7 +132,7 @@ def test_full_retry_resets_draft_case(app_client, db_session):
     db_session.commit()
 
     with patch("app.services.triage_retry.dispatch_pipeline_retry"):
-        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": True})
+        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
 
     db_session.refresh(doc)
     assert doc.case_id == "_TRIAGE"
@@ -149,7 +147,7 @@ def test_full_retry_preserves_confirmed_proceeding(app_client, db_session):
     db_session.commit()
 
     with patch("app.services.triage_retry.dispatch_pipeline_retry"):
-        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": True})
+        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
 
     db_session.refresh(doc)
     assert doc.proceeding_id == p.id
@@ -164,30 +162,48 @@ def test_full_retry_resets_draft_proceeding(app_client, db_session):
     db_session.commit()
 
     with patch("app.services.triage_retry.dispatch_pipeline_retry"):
-        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": True})
+        app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
 
     db_session.refresh(doc)
     assert doc.proceeding_id is None
 
 
 @pytest.mark.integration
-def test_standard_retry_still_skips_extract(app_client, db_session, sample_case):
+def test_partial_reset_keeps_extract_and_stamp(db_session, sample_case):
+    """``retry-all`` resets with full=False: extraction and its stamp survive."""
+    from app.services.triage_retry import reset_batch_for_retry
+
     batch = _make_batch(db_session, sample_case.id)
     doc = _make_doc(db_session, batch)
+    doc.meta = {"extractor": "chandra-ocr-2", "chunks": [{"page": 1}]}
     db_session.commit()
 
-    with patch("app.services.triage_retry.dispatch_pipeline_retry") as mock_dispatch:
-        # full=false is default
-        app_client.post(
-            f"/api/v1/triage/bundles/{batch.id}/retry", json={"full": False}
-        )
-
+    reset_batch_for_retry(batch, db_session, full=False)
     db_session.refresh(doc)
-    # EXTRACT stays COMPLETED
+
     assert (
         stages_dict(doc)[PipelineStage.EXTRACT.value]["status"]
         == StageStatus.COMPLETED.value
     )
+    assert doc.meta["extractor"] == "chandra-ocr-2"
 
-    dispatched_stages = {call.args[2] for call in mock_dispatch.call_args_list}
-    assert PipelineStage.EXTRACT not in dispatched_stages
+
+@pytest.mark.integration
+def test_full_retry_clears_extraction_stamp(app_client, db_session, sample_case):
+    """The 'already extracted' guard must not swallow a deliberate retry."""
+    batch = _make_batch(db_session, sample_case.id)
+    doc = _make_doc(db_session, batch)
+    doc.meta = {
+        "extractor": "chandra-ocr-2",
+        "chunks": [{"page": 1, "failed": True}],
+        "page_failures": [1],
+        "keep": "me",
+    }
+    db_session.commit()
+
+    with patch("app.services.triage_retry.dispatch_pipeline_retry"):
+        response = app_client.post(f"/api/v1/triage/bundles/{batch.id}/retry")
+
+    assert response.status_code == 200
+    db_session.refresh(doc)
+    assert doc.meta == {"keep": "me"}

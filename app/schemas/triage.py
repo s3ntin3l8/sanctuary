@@ -143,10 +143,6 @@ class TriageView(BaseModel):
     slicing_queue: list[SlicingQueueItem]
 
 
-class BundleRetry(BaseModel):
-    full: bool = False
-
-
 class RetryAllResult(BaseModel):
     retried: int
 

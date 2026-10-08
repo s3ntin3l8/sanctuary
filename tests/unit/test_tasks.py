@@ -762,6 +762,42 @@ def test_extract_claims_refreshes_review_reasons_on_success(
 
 
 @pytest.mark.unit
+def test_extract_claims_debounced_run_is_completed_not_skipped(
+    db_session, sample_document
+):
+    """A debounced run's claims are authoritative: the stage must not read 'skipped'."""
+    from datetime import UTC, datetime
+
+    from app.models.enums import PipelineStage, StageStatus
+
+    _set_doc_stages(
+        db_session,
+        sample_document,
+        {PipelineStage.ENRICH.value: {"status": StageStatus.COMPLETED.value}},
+    )
+    sample_document.ai_summary_created_at = datetime.now(UTC)
+    db_session.commit()
+
+    with (
+        patch("app.dependencies.get_db_session") as mock_get_db,
+        patch("app.services.pipeline_status.mark_started"),
+        patch("app.services.pipeline_status.mark_completed") as mock_completed,
+        patch("app.services.pipeline_status.mark_skipped") as mock_skipped,
+        patch(
+            "app.services.intelligence.claim_extractor.extract",
+            return_value="recent_extraction",
+        ),
+        patch("app.services.intelligence.orchestrator.trigger_case_brief_if_ready"),
+        patch.object(db_session, "close", return_value=None),
+    ):
+        mock_get_db.return_value = db_session
+        extract_claims_task.run(sample_document.id)
+
+    mock_completed.assert_called_once()
+    mock_skipped.assert_not_called()
+
+
+@pytest.mark.unit
 def test_extract_claims_failure_triggers_case_brief(db_session, sample_document):
     """When claim extraction fails permanently (retries exhausted), trigger_case_brief_if_ready is still called."""
     from datetime import datetime

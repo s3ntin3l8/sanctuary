@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
+
+import { useOpenDocument } from '../documents/useOpenDocument'
 
 import type { Schemas } from '../../api/client'
 import {
@@ -44,11 +46,20 @@ export function TriagePage() {
   const [filters, setFilters] = useState<TriageFilters>(defaultFilters)
   const [status, setStatus] = useState<Status>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [expanded, setExpanded] = useState<string | null>(null)
+  // In the URL so coming back from the HUD reopens the same bundle.
+  const expanded = params.get('bundle')
+  const toggleExpanded = (key: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (next.get('bundle') === key) next.delete('bundle')
+        else next.set('bundle', key)
+        return next
+      },
+      { replace: true },
+    )
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
-  const [retryTarget, setRetryTarget] = useState<{ bundle: TriageBundle; full: boolean } | null>(
-    null,
-  )
+  const [retryTarget, setRetryTarget] = useState<TriageBundle | null>(null)
   const [retryAllOpen, setRetryAllOpen] = useState(false)
   const query = useTriage(filters)
   const retryAll = useRetryAll()
@@ -285,9 +296,9 @@ export function TriagePage() {
                 })
               }
               expanded={expanded === b.key}
-              onToggle={() => setExpanded((k) => (k === b.key ? null : b.key))}
+              onToggle={() => toggleExpanded(b.key)}
               onConfirm={(action) => setConfirmTarget({ mode: 'single', bundle: b, action })}
-              onRetry={(full) => setRetryTarget({ bundle: b, full })}
+              onRetry={() => setRetryTarget(b)}
               cases={query.data?.cases ?? []}
               proceedings={query.data?.proceedings ?? []}
             />
@@ -307,22 +318,15 @@ export function TriagePage() {
         onConfirm={() => {
           const t = retryTarget
           setRetryTarget(null)
-          if (t?.bundle.batch_id !== null && t)
-            retry.mutate(
-              { batchId: t.bundle.batch_id, full: t.full },
-              {
-                onSuccess: () => toast('Pipeline re-queued'),
-                onError: (e) => toast(e.message, 'error'),
-              },
-            )
+          if (t && t.batch_id !== null)
+            retry.mutate(t.batch_id, {
+              onSuccess: () => toast('Pipeline re-queued'),
+              onError: (e) => toast(e.message, 'error'),
+            })
         }}
-        title={retryTarget?.full ? 'Re-ingest bundle?' : 'Re-analyze bundle?'}
-        body={
-          retryTarget?.full
-            ? 'Extraction and every AI stage run again from the original files. Manual metadata edits are kept; AI suggestions are regenerated.'
-            : 'Every AI stage runs again for all documents in this bundle. Extraction is kept.'
-        }
-        label={retryTarget?.full ? 'Re-ingest' : 'Re-analyze'}
+        title="Retry bundle?"
+        body="Extraction and every AI stage run again from the original files. Manual metadata edits are kept; AI suggestions are regenerated."
+        label="Retry"
       />
       <ConfirmDialog
         open={retryAllOpen}
@@ -462,12 +466,12 @@ function BundleRow({
   expanded: boolean
   onToggle: () => void
   onConfirm: (action: 'confirm_bundle' | 'assign_case') => void
-  onRetry: (full: boolean) => void
+  onRetry: () => void
   cases: Schemas['PickerCase'][]
   proceedings: Schemas['PickerProceeding'][]
 }) {
   const action = useBundleAction()
-  const navigate = useNavigate()
+  const openDocument = useOpenDocument()
   const toast = useToast()
   const [menu, setMenu] = useState(false)
   const [activeDoc, setActiveDoc] = useState<number | null>(b.lead_doc_id)
@@ -607,7 +611,7 @@ function BundleRow({
             <Button
               size="icon"
               variant="secondary"
-              onClick={() => onRetry(false)}
+              onClick={onRetry}
               aria-label="Retry"
               title="Retry"
             >
@@ -660,23 +664,13 @@ function BundleRow({
                     role="menu"
                     className="absolute top-full right-0 z-200 mt-1 w-44 rounded-xl border border-line bg-card p-1 text-[11.5px] shadow-[0_16px_40px_rgba(0,0,0,.5)]"
                   >
-                    {b.batch_id !== null && b.status !== 'stuck' && (
-                      <MenuItem
-                        icon="replay"
-                        label="Re-Analyze"
-                        onClick={() => {
-                          setMenu(false)
-                          onRetry(false)
-                        }}
-                      />
-                    )}
                     {b.batch_id !== null && (
                       <MenuItem
-                        icon="restart_alt"
-                        label="Re-Ingest"
+                        icon="replay"
+                        label="Retry"
                         onClick={() => {
                           setMenu(false)
-                          onRetry(true)
+                          onRetry()
                         }}
                       />
                     )}
@@ -750,7 +744,7 @@ function BundleRow({
             {activeDoc !== null ? (
               <DocumentReview
                 docId={activeDoc}
-                onOpenHud={(id) => navigate(`/document/${id}`)}
+                onOpenHud={openDocument}
                 routing={{
                   bundle: b,
                   cases,

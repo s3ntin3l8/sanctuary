@@ -433,9 +433,7 @@ def test_mutations_find_bundles_beyond_the_default_feed_window(db_session):
     for i in range(50):
         _batch(db_session, admin.id, subject=f"Newer {i}", docs=1)
     with patch("app.api.v1.triage.dispatch_batch_retry"):
-        resp = client.post(
-            f"/api/v1/triage/bundles/{old_batch.id}/retry", json={"full": False}
-        )
+        resp = client.post(f"/api/v1/triage/bundles/{old_batch.id}/retry")
     assert resp.status_code == 200, resp.text
     assert resp.json()["subject"] == "Oldest"
     grouped = client.post(f"/api/v1/triage/bundles/{old_batch.id}/groups")

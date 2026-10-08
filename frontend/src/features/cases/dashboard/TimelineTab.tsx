@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import { type CaseDetail, type TimelineView, useCaseTimeline } from '../../../api/caseDetail'
 import { formatEur, formatShortDate } from '../../../format'
@@ -35,7 +35,7 @@ const KINDS = [
 
 /** The case calendar: every dated event, month ribbon, actor and kind filters. */
 export function TimelineTab({ detail }: { detail: CaseDetail }) {
-  const navigate = useNavigate()
+  const openDocument = useOpenDocument()
   const query = useCaseTimeline(detail.id, true)
   const [actor, setActor] = useState<string | null>(null)
   const [kind, setKind] = useState<string | null>(null)
@@ -114,7 +114,7 @@ export function TimelineTab({ detail }: { detail: CaseDetail }) {
               )}
               <Row
                 docId={e.source_document_id}
-                onOpen={(id) => navigate(`/document/${id}`)}
+                onOpen={openDocument}
                 className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left ${e.source_document_id ? 'cursor-pointer hover:bg-accent/5' : ''} ${e.is_future ? 'opacity-70' : ''}`}
               >
                 <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted">

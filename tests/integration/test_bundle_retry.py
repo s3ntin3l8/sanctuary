@@ -73,9 +73,7 @@ def _stages_with_running(running_stage: PipelineStage) -> dict:
 
 
 def _post(app_client, batch_id):
-    return app_client.post(
-        f"/api/v1/triage/bundles/{batch_id}/retry", json={"full": False}
-    )
+    return app_client.post(f"/api/v1/triage/bundles/{batch_id}/retry")
 
 
 @pytest.mark.integration
@@ -112,23 +110,17 @@ def test_retry_bundle_happy_path(app_client, db_session, sample_case):
     assert batch.analysis_queued_at is None
     assert batch.status == IngestBatchStatus.PENDING
 
-    # All non-EXTRACT stages flipped to PENDING
+    # Every stage flipped to PENDING (a bundle retry re-extracts too)
     stages = stages_dict(doc)
     for stage in PipelineStage:
-        if stage == PipelineStage.EXTRACT:
-            continue
         assert stages[stage.value]["status"] == StageStatus.PENDING.value, (
             f"{stage.value} should be PENDING"
         )
 
-    # Head-of-cascade dispatch: only METADATA (head). Downstream stages
-    # (including EMBEDDINGS) are handled by metadata_task's own cascade once
-    # it actually completes — dispatching EMBEDDINGS here too would always
-    # no-op anyway, since METADATA is unconditionally reset to PENDING above.
+    # Head-of-cascade dispatch: only EXTRACT. Everything downstream is
+    # reached by the stage cascade once extraction completes.
     dispatched_stages = {call.args[2] for call in mock_dispatch.call_args_list}
-    assert dispatched_stages == {PipelineStage.METADATA}
-    assert PipelineStage.EXTRACT not in dispatched_stages
-    assert PipelineStage.ENRICH not in dispatched_stages
+    assert dispatched_stages == {PipelineStage.EXTRACT}
 
     # pipeline_state must be reset so the OOB row reflects the new status
     # (not the old FAILED/STUCK state). This is what makes the Retry button disappear.
@@ -191,10 +183,8 @@ def test_retry_bundle_skips_skipped_stages(app_client, db_session, sample_case):
 
 
 @pytest.mark.integration
-def test_retry_bundle_preserves_extract_when_skipped_in_dispatch(
-    app_client, db_session, sample_case
-):
-    """EXTRACT is never dispatched even if not SKIPPED."""
+def test_retry_bundle_re_extracts(app_client, db_session, sample_case):
+    """A bundle retry always re-runs EXTRACT, even when it had completed."""
     stages = _pending_stages()
     stages[PipelineStage.EXTRACT.value] = {"status": StageStatus.COMPLETED.value}
     batch = _make_batch(db_session, sample_case)
@@ -206,4 +196,4 @@ def test_retry_bundle_preserves_extract_when_skipped_in_dispatch(
 
     assert response.status_code == 200
     dispatched_stages = {call.args[2] for call in mock_dispatch.call_args_list}
-    assert PipelineStage.EXTRACT not in dispatched_stages
+    assert PipelineStage.EXTRACT in dispatched_stages

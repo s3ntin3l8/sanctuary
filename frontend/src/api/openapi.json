@@ -991,17 +991,6 @@
         "title": "BundlePipeline",
         "type": "object"
       },
-      "BundleRetry": {
-        "properties": {
-          "full": {
-            "default": false,
-            "title": "Full",
-            "type": "boolean"
-          }
-        },
-        "title": "BundleRetry",
-        "type": "object"
-      },
       "CaseAccessLevel": {
         "description": "Permission a CaseShare grants a non-owner user (Phase 3 sharing).",
         "enum": [
@@ -15950,7 +15939,7 @@
     },
     "/api/v1/triage/bundles/{batch_id}/retry": {
       "post": {
-        "description": "Re-run the AI stages for every document in the bundle (``full`` re-extracts too).",
+        "description": "Re-extract and re-run every AI stage for every document in the bundle.",
         "operationId": "v1_retry_bundle_api_v1_triage_bundles__batch_id__retry_post",
         "parameters": [
           {
@@ -15963,16 +15952,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BundleRetry"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

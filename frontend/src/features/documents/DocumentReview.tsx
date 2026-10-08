@@ -85,7 +85,7 @@ export function ReviewSections({
     <>
       <Pipeline review={review} />
       <CaseAndProceeding review={review} routing={routing} />
-      <Metadata review={review} />
+      <Metadata review={review} singleColumn={singleColumn} />
       <Summary review={review} />
       <Passages review={review} hooks={passages} />
       <div className="border-b border-line2 px-4.5 py-3">
@@ -415,7 +415,7 @@ const CONF_ROW: Record<string, { row: string; label: string; dot: string }> = {
 const CONF_NONE = { row: 'border-l-line3 bg-card', label: 'text-muted2', dot: '' }
 const MONO_FIELD = /_date$|^internal_id$|^az_court$/
 
-function Metadata({ review }: { review: Review }) {
+function Metadata({ review, singleColumn }: { review: Review; singleColumn?: boolean }) {
   const [editing, setEditing] = useState(false)
   const flagged = review.metadata.filter(
     (f) => f.confidence === 'low' || f.confidence === 'medium',
@@ -447,7 +447,7 @@ function Metadata({ review }: { review: Review }) {
         </Button>
       }
     >
-      <dl className="grid grid-cols-2 gap-[7px]">
+      <dl className={`grid gap-[7px] ${singleColumn ? 'grid-cols-1' : 'grid-cols-2'}`}>
         {review.metadata.map((f) => {
           const c = CONF_ROW[f.confidence ?? ''] ?? CONF_NONE
           return (
@@ -717,7 +717,7 @@ function Passages({ review, hooks }: { review: Review; hooks?: PassageHooks }) {
           const active = hooks?.activePassageId === p.id
           const body = (
             <>
-              <p className="leading-relaxed">“{p.text}”</p>
+              <p className="text-[11px] leading-relaxed">“{p.text}”</p>
               <p className="font-mono text-[10px] text-muted">
                 {p.kind ?? 'passage'}
                 {p.page ? ` · p. ${p.page}` : ''}
@@ -791,7 +791,7 @@ function Relationships({ review }: { review: Review }) {
       title="Relationships"
       meta={review.relationships.length ? `${review.relationships.length}` : 'none'}
     >
-      <ul className="space-y-1">
+      <ul className="space-y-1 text-[11.5px] text-ink2">
         {review.relationships.map((r) => (
           <li key={r.id} className="flex items-center gap-2">
             <span className="w-4 text-center font-mono text-muted">
@@ -860,7 +860,7 @@ function Grounds({ review }: { review: Review }) {
       boxed
       title="Grounds"
       meta={
-        review.claims_status === 'ran'
+        review.claims_status === 'ran' || review.grounds.length > 0
           ? `${review.grounds.length}`
           : review.claims_status.replace('_', ' ')
       }
@@ -876,7 +876,9 @@ function Grounds({ review }: { review: Review }) {
           {review.grounds.map((g) => (
             <li key={g.id} className="flex items-start gap-2">
               <Icon name="balance" size={14} className="mt-0.5 text-muted" />
-              <span className="min-w-0 flex-1 leading-relaxed">{g.claim_text}</span>
+              <span className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-ink2">
+                {g.claim_text}
+              </span>
               <Badge tone={CLAIM_TONE[g.status] ?? 'neutral'}>{g.status}</Badge>
               {g.is_precedent && <Badge tone="accent">⚖</Badge>}
             </li>
@@ -896,7 +898,7 @@ function Actions({ review }: { review: Review }) {
       title="Detected actions"
       meta={review.actions.length ? `${review.actions.length}` : 'none'}
     >
-      <ul className="space-y-1.5">
+      <ul className="space-y-1.5 text-[11.5px] text-ink2">
         {review.actions.map((a) => (
           <li
             key={a.id}

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router'
+import { useOpenDocument } from '../../documents/useOpenDocument'
 
 import type { CaseDetail } from '../../../api/caseDetail'
 import { formatShortDate } from '../../../format'
@@ -14,7 +14,7 @@ type Props = {
 
 /** The case spine (documents of the active proceeding) beside the selected document's review. */
 export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
-  const navigate = useNavigate()
+  const openDocument = useOpenDocument()
   return (
     <div className="flex min-h-0 flex-1">
       <aside
@@ -61,7 +61,7 @@ export function ReviewTab({ detail, selectedDoc, onSelect }: Props) {
       </aside>
       <section className="min-w-0 flex-1 overflow-y-auto p-5">
         {selectedDoc ? (
-          <DocumentReview docId={selectedDoc} onOpenHud={(id) => navigate(`/document/${id}`)} />
+          <DocumentReview docId={selectedDoc} onOpenHud={openDocument} />
         ) : (
           <p className="flex items-center gap-2 text-[12px] text-muted">
             <Icon name="description" size={16} /> Select a document from the spine.
