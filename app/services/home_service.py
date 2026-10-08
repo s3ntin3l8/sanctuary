@@ -5,11 +5,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.timezone import now_utc
+from app.helpers import awaiting_triage_batches
 from app.models.database import ActionItem, Case, Document, IngestBatch
 from app.models.enums import (
     ActionItemStatus,
     CaseStatus,
-    IngestBatchStatus,
     SignificanceTier,
 )
 from app.services.attention_scoring import score_action_item, score_triage_batch
@@ -73,17 +73,10 @@ class HomeService:
 
         # 2. Awaiting Triage Panel — per-user intake inbox (each user sees only
         # the batches they ingested).
+        # Same set as the rail badge (``triage_inbox_count``).
         triage_batches = (
-            self.db.query(IngestBatch)
+            awaiting_triage_batches(self.db, user_id)
             .options(joinedload(IngestBatch.documents))
-            .filter(
-                # Same set as the rail badge (``triage_inbox_count``): bundles
-                # parked for slicing are not awaiting the user's triage.
-                IngestBatch.status.notin_(
-                    (IngestBatchStatus.COMPLETED, IngestBatchStatus.AWAITING_SLICING)
-                ),
-                IngestBatch.owner_id == user_id,
-            )
             .all()
         )
 

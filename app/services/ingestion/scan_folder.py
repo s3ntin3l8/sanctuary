@@ -17,11 +17,15 @@ from app.config import (
     SCAN_PROCESSING_DIR,
     SCAN_PROCESSING_STALE_SECONDS,
 )
+from app.core.paths import to_storage_path
 from app.services.ingestion.batch_orchestrator import ingest_scanned_file
 
 logger = logging.getLogger(__name__)
 
 _IGNORE_SUFFIXES = {".part", ".tmp", ".crdownload"}
+# Written next to the claimed file so the owner survives the move into
+# processed/ — reconcile_processed_orphans needs it if the ingest never committed.
+_OWNER_SIDECAR = ".owner"
 _MTIME_GUARD_SECONDS = int(os.getenv("SCAN_MTIME_GUARD_SECONDS", "5"))
 
 
@@ -98,12 +102,41 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
 
     source_hash = hashlib.sha256(file_bytes).hexdigest()
 
+    if owner_id is not None:
+        try:
+            (processing_batch_dir / _OWNER_SIDECAR).write_text(str(owner_id))
+        except OSError:
+            pass  # only needed for crash recovery; the ingest itself doesn't use it
+
     archive_dir = None
     try:
         archive_dir = _archive_batch(processing_batch_dir, batch_id)
-        archived_pdf_path = archive_dir / dest_path.name
+    except Exception as exc:
+        logger.error(
+            "scan_and_ingest: could not archive %s: %s", incoming_path.name, exc
+        )
+        _fail_batch(processing_batch_dir, batch_id, str(exc))
+        return 0
+    return _ingest_archived(
+        db, archive_dir, dest_path.name, batch_id, source_hash, owner_id
+    )
+
+
+def _ingest_archived(
+    db: Session,
+    archive_dir: Path,
+    pdf_name: str,
+    batch_id: str,
+    source_hash: str,
+    owner_id: int | None,
+) -> int:
+    """Create the batch for a PDF that already sits in processed/<date>/<batch_id>/.
+
+    Returns 1 for a new batch, 0 for a duplicate or a failure (moved to failed/).
+    """
+    try:
         batch = ingest_scanned_file(
-            db, archived_pdf_path, batch_id, source_hash, owner_id=owner_id
+            db, archive_dir / pdf_name, batch_id, source_hash, owner_id=owner_id
         )
         if batch is None:
             shutil.rmtree(archive_dir, ignore_errors=True)
@@ -122,12 +155,107 @@ def _ingest_one(db: Session, incoming_path: Path, owner_id: int | None) -> int:
         # failed/ with a misleading error, even though nothing was actually
         # wrong with them.
         db.rollback()
-        logger.error(
-            "scan_and_ingest: ingest failed for %s: %s", incoming_path.name, exc
-        )
-        failed_source = archive_dir or processing_batch_dir
-        _fail_batch(failed_source, batch_id, str(exc))
+        logger.error("scan_and_ingest: ingest failed for %s: %s", pdf_name, exc)
+        _fail_batch(archive_dir, batch_id, str(exc))
         return 0
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while chunk := fh.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+_RECONCILE_LOOKBACK_DAYS = 7
+_RECONCILE_INTERVAL_SECONDS = 300
+_last_reconcile_at = 0.0
+
+
+def reconcile_processed_orphans(
+    db: Session,
+    *,
+    min_age_seconds: int = SCAN_PROCESSING_STALE_SECONDS,
+    default_owner_id: int | None = None,
+    lookback_days: int = _RECONCILE_LOOKBACK_DAYS,
+) -> int:
+    """Re-ingest PDFs archived to processed/ whose batch row was never committed.
+
+    ``_ingest_one`` archives the file *before* ``ingest_scanned_file`` commits
+    the IngestBatch. A crash in that narrow window leaves a file in processed/
+    that looks successfully processed but has no row, so it is invisible
+    everywhere (#155). The window is a few DB operations wide, so anything older
+    than ``min_age_seconds`` with no IngestBatch pointing at it was genuinely
+    lost (deleting a bundle removes its original, so a deliberately deleted file
+    is not resurrected). It is ingested again from where it sits — the original
+    owner comes from the ``.owner`` sidecar, else ``default_owner_id`` — and the
+    owner-scoped source-hash dedup makes a repeat harmless.
+
+    Only the last ``lookback_days`` date folders are examined, with one batched
+    query for all candidates, so the cost per call stays flat as processed/
+    grows over months.
+
+    Returns the number of batches created.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.database import IngestBatch
+
+    try:
+        date_dirs = sorted(p for p in SCAN_PROCESSED_DIR.iterdir() if p.is_dir())
+    except OSError:
+        return 0
+    oldest = (datetime.now(tz=UTC) - timedelta(days=lookback_days)).date().isoformat()
+    date_dirs = [d for d in date_dirs if d.name >= oldest]
+
+    now = time.time()
+    candidates: list[tuple[Path, Path]] = []  # (batch_dir, pdf)
+    for date_dir in date_dirs:
+        try:
+            batch_dirs = sorted(p for p in date_dir.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        for batch_dir in batch_dirs:
+            pdf = batch_dir / "original.pdf"
+            try:
+                if (
+                    not pdf.is_file()
+                    or now - batch_dir.stat().st_mtime < min_age_seconds
+                ):
+                    continue
+            except OSError:
+                continue
+            candidates.append((batch_dir, pdf))
+    if not candidates:
+        return 0
+
+    stored = {to_storage_path(pdf): (batch_dir, pdf) for batch_dir, pdf in candidates}
+    known = {
+        row[0]
+        for row in db.query(IngestBatch.raw_source_path).filter(
+            IngestBatch.raw_source_path.in_(list(stored))
+        )
+    }
+
+    recovered = 0
+    for key, (batch_dir, pdf) in stored.items():
+        if key in known:
+            continue
+        owner_id = default_owner_id
+        try:
+            owner_id = int((batch_dir / _OWNER_SIDECAR).read_text().strip())
+        except (OSError, ValueError):
+            pass
+        logger.warning(
+            "scan_and_ingest: %s was archived but has no batch row (a crash "
+            "between the archive move and the DB commit) — ingesting it again",
+            pdf,
+        )
+        recovered += _ingest_archived(
+            db, batch_dir, pdf.name, batch_dir.name, _sha256_file(pdf), owner_id
+        )
+    return recovered
 
 
 def sweep_stale_processing_dirs(
@@ -199,6 +327,11 @@ def scan_and_ingest(db: Session) -> int:
     if admin is None:
         return 0  # no admin configured yet — nothing owns ingested scans
     admin_id = admin.id
+
+    global _last_reconcile_at
+    if time.time() - _last_reconcile_at >= _RECONCILE_INTERVAL_SECONDS:
+        _last_reconcile_at = time.time()
+        reconcile_processed_orphans(db, default_owner_id=admin_id)
 
     processed = 0
     for entry in candidates:

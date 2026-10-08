@@ -21,11 +21,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.timezone import now_utc
+from app.helpers import awaiting_triage_batches
 from app.models.database import ActionItem, IngestBatch, LegalCost, User
 from app.models.enums import (
     ActionItemStatus,
     ActionItemType,
-    IngestBatchStatus,
 )
 from app.schemas.notifications import (
     NotificationGroup,
@@ -73,13 +73,7 @@ def build_notifications(db: Session, user: User) -> NotificationsView:
             upcoming.append(_action_row(a, "upcoming_deadline"))
 
     batches = (
-        db.query(IngestBatch)
-        .filter(
-            IngestBatch.owner_id == user.id,
-            IngestBatch.status.notin_(
-                (IngestBatchStatus.COMPLETED, IngestBatchStatus.AWAITING_SLICING)
-            ),
-        )
+        awaiting_triage_batches(db, user.id)
         .order_by(IngestBatch.received_at.desc())
         .all()
     )

@@ -111,6 +111,17 @@ def _try_assign_case_from_subject(
             )
 
 
+NO_NEW_DOCUMENTS = "no_new_documents"
+
+
+def _is_no_document_tombstone(batch: IngestBatch) -> bool:
+    """A committed, inert record that this email produced nothing to ingest."""
+    return (
+        batch.status == IngestBatchStatus.COMPLETED
+        and (batch.meta or {}).get("reason") == NO_NEW_DOCUMENTS
+    )
+
+
 def ingest_raw_email(
     db: Session,
     raw_bytes: bytes,
@@ -142,6 +153,14 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
+            if _is_no_document_tombstone(existing):
+                logger.info(
+                    "Email message-id %s already ingested as a no-document batch "
+                    "#%d — skipping",
+                    msg_id,
+                    existing.id,
+                )
+                return None
             logger.info(
                 "Email batch #%d has 0 docs (orphaned) — deleting and re-ingesting",
                 existing.id,
@@ -174,6 +193,13 @@ def ingest_raw_email(
                     doc_count,
                 )
                 return existing
+            if _is_no_document_tombstone(existing):
+                logger.info(
+                    "Email (fallback hash) already ingested as a no-document "
+                    "batch #%d — skipping",
+                    existing.id,
+                )
+                return None
             db.delete(existing)
             db.flush()
             source_hash = fallback_hash
@@ -276,8 +302,8 @@ def ingest_raw_email(
                     pass
         raise
 
-    if not docs_to_process and has_attachments:
-        return None
+    if not docs_to_process:
+        return None  # recorded as a no-document tombstone above; nothing to dispatch
 
     logger.info(
         "Batch #%d committed — dispatching process_document_task for %d doc(s)",
@@ -431,25 +457,28 @@ def _ingest_email_docs_and_commit(
 
     if docs_to_process:
         batch.status = IngestBatchStatus.PROCESSING
-    elif has_attachments:
-        # Every attachment was either a duplicate already ingested elsewhere,
-        # empty, or unnamed — this email adds nothing new, and the body was
-        # never captured as a fallback (it's discarded whenever attachments
-        # are present). Committing an empty batch here would just be
-        # rediscovered as "orphaned (0 docs)" on the next ingest of the same
-        # Message-ID — which now happens routinely, since the Gmail sync
-        # watermark overlap deliberately refetches recent messages — and
-        # repeatedly deleted-and-recreated under a new batch ID every time.
-        # Roll back everything this call did (this batch, its manifest, and —
-        # if this call itself started by deleting a prior orphaned batch for
-        # the same Message-ID — that delete too) and report a clean no-op.
-        db.rollback()
+    else:
+        # Nothing to ingest: every attachment was a duplicate already ingested
+        # elsewhere, empty or unnamed (the body is discarded whenever there are
+        # attachments), or the email had neither attachments nor a body. Commit
+        # a COMPLETED, document-less tombstone for the message instead of
+        # leaving a PENDING 0-doc batch (which nothing ever advances and
+        # delete_bundle could not remove) or rolling back (which made the next
+        # fetch of the same Message-ID — routine, the Gmail sync watermark
+        # overlaps on purpose — re-process it, and left the Gmail import page
+        # offering the message again for ever). COMPLETED is the honest status:
+        # there is no bundle for the user to triage, so nothing is hidden from
+        # the feed; the tombstone only records "this message was seen".
+        batch.status = IngestBatchStatus.COMPLETED
+        batch.meta = {**(batch.meta or {}), "reason": NO_NEW_DOCUMENTS}
+        db.commit()
         logger.info(
             "Email from=%s subject=%r produced no new documents (every "
-            "attachment was a duplicate, empty, or unnamed) — discarding, "
-            "nothing committed",
+            "attachment was a duplicate, empty, or unnamed, or the message was "
+            "empty) — recorded as a completed no-document batch #%d",
             sender,
             subject,
+            batch.id,
         )
         return None
 
