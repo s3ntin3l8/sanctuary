@@ -32,7 +32,7 @@ re-resolves every batch that names it as an ancestor, by header or by thread.
 import logging
 from typing import NamedTuple
 
-from sqlalchemy import and_, literal, select, tuple_
+from sqlalchemy import and_, asc, desc, literal, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.models.database import (
@@ -108,6 +108,12 @@ def _thread_mates(
     )
     arrival = tuple_(IngestBatch.received_at, IngestBatch.id)
     here = tuple_(literal(batch.received_at), literal(batch.id))
+    if earlier:
+        position = arrival < here
+        ordering = (desc(IngestBatch.received_at), desc(IngestBatch.id))
+    else:
+        position = arrival > here
+        ordering = (asc(IngestBatch.received_at), asc(IngestBatch.id))
     mates = (
         db.query(IngestBatch)
         .join(
@@ -121,13 +127,11 @@ def _thread_mates(
             IngestBatch.owner_id == batch.owner_id,
             IngestBatch.id != batch.id,
             idx.thread_id.in_(own_threads),
-            arrival < here if earlier else arrival > here,
+            position,
         )
+        .order_by(*ordering)
     )
-    if earlier:
-        mates = mates.order_by(IngestBatch.received_at.desc(), IngestBatch.id.desc())
-    else:
-        mates = mates.order_by(IngestBatch.received_at, IngestBatch.id)
+    # A message id could be indexed twice (different gmail ids): keep one each.
     return list({b.id: b for b in mates.all()}.values())
 
 
@@ -277,7 +281,12 @@ def link_batch(db: Session, batch_id: int) -> int:
             .all()
         )
         later_in_thread = _thread_mates(db, batch, earlier=False)
-        for child in {c.id: c for c in [*descendants, *later_in_thread]}.values():
+        # A batch can be both a header descendant and a later thread-mate; it
+        # only needs re-resolving once.
+        relink: dict[int, IngestBatch] = {}
+        for child in (*descendants, *later_in_thread):
+            relink.setdefault(child.id, child)
+        for child in relink.values():
             written += _link_reply(db, child, affected)
 
     db.flush()

@@ -155,6 +155,19 @@ def test_a_nearer_thread_message_arriving_later_replaces_the_edge(
     middle_b, middle = _mail(db_session, sample_case.id, 2, thread="T", minutes=5)
     link_batch(db_session, middle_b.id)
     db_session.commit()
+    assert {e.notes for e in _edges(db_session)} == {"email header: Gmail thread"}
 
     by_edge = {(e.from_document_id, e.to_document_id) for e in _edges(db_session)}
     assert by_edge == {(newest.id, middle.id), (middle.id, oldest.id)}
+
+
+@pytest.mark.unit
+def test_without_index_rows_the_fallback_is_a_noop(db_session, sample_case):
+    """A mailbox that was never indexed has no thread data: headers only."""
+    _mail(db_session, sample_case.id, 1, thread="T", minutes=0)
+    second_b, _ = _mail(db_session, sample_case.id, 2, thread="T", minutes=5)
+    db_session.query(GmailMessageIndex).delete()
+    db_session.commit()
+
+    assert link_batch(db_session, second_b.id) == 0
+    assert _edges(db_session) == []
