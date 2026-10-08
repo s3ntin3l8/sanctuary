@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 
 import {
-  useCancelGmailImport,
   useClearGmailCache,
   useGmailGroups,
   useGmailImportStatus,
@@ -19,8 +18,10 @@ import { Badge } from '../../ui/Badge'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { Icon } from '../../ui/Icon'
+import { Progress } from '../../ui/Progress'
 import { QueryState } from '../../ui/QueryState'
 import { useToast } from '../../ui/toast'
+import { GmailImportStatus } from './GmailImportStatus'
 
 type Group = Schemas['GmailGroup']
 
@@ -33,22 +34,6 @@ function formatSize(bytes: number) {
 function referenceLabel(group: Group) {
   if (group.key === 'unreferenced') return 'No reference'
   return group.kind === 'internal_id' ? group.key.replace('-', '/') : group.key
-}
-
-function Progress({ value, max, label }: { value: number; max: number; label: string }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0
-  return (
-    <div
-      role="progressbar"
-      aria-label={label}
-      aria-valuenow={value}
-      aria-valuemin={0}
-      aria-valuemax={max}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-line2"
-    >
-      <div className="h-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-    </div>
-  )
 }
 
 function GroupMessages({
@@ -126,7 +111,6 @@ export function ImportPage() {
   const importQuery = useGmailImportStatus()
   const refresh = useRefreshGmailIndex()
   const start = useStartGmailImport()
-  const cancel = useCancelGmailImport()
   const clearCache = useClearGmailCache()
   const toast = useToast()
 
@@ -244,47 +228,7 @@ export function ImportPage() {
         </div>
       )}
 
-      {run && run.total > 0 && (
-        <div className="mb-4 space-y-1.5 rounded-xl border border-line bg-card px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1 truncate">
-              {importing ? (
-                <>
-                  Importing {run.done}/{run.total}
-                  {run.current_subject && (
-                    <span className="text-muted">
-                      {run.waiting ? ' · waiting for “' : ' · “'}
-                      {run.current_subject}
-                      {run.waiting ? '” to finish processing' : '”'}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <>
-                  {run.cancelled ? 'Stopped after' : 'Imported'} {run.done} of {run.total}
-                  {run.failed_count > 0 && (
-                    <span className="text-danger"> · {run.failed_count} failed</span>
-                  )}
-                </>
-              )}
-            </div>
-            {importing && (
-              <Button
-                variant="secondary"
-                className="px-2.5 py-1 text-[11px]"
-                disabled={cancel.isPending}
-                onClick={() =>
-                  cancel.mutate(undefined, { onError: (err) => toast(err.message, 'error') })
-                }
-              >
-                Stop
-              </Button>
-            )}
-          </div>
-          <Progress value={run.done} max={run.total} label="Import progress" />
-          {run.error && <Alert>{run.error}</Alert>}
-        </div>
-      )}
+      {run && run.total > 0 && <GmailImportStatus run={run} variant="full" />}
 
       {index.indexed_count > 0 && (
         <>

@@ -65,6 +65,7 @@ Connecting sets the sync starting point to *now*: nothing older is pulled in aut
 ## 5. Import the history (oldest first)
 
 Open **Import history** (Settings → Gmail → Import history, or *Import from Gmail* on the Triage page). It lives inside Settings, so the settings navigation stays on the left.
+A running import is also shown in the **processing queue** (rail icon) and as a banner on **Triage**, both with a Stop button, and a toast tells you when it finishes.
 
 1. **Refresh index.** Reads only the *headers* (sender, subject, date) of every allowlisted message, all time. Nothing is imported yet. The page then lists the case references found in subjects — file numbers like `8372/25` and court Aktenzeichen — oldest history first. Replies with no reference inherit the one in their thread; the rest are under *No reference*.
 2. **Create the case first** for a reference you want filed automatically. The case ID must be the file number with `/` replaced by `-` (`8372/25` → `8372-25`); a court reference matches the Aktenzeichen of one of the case's proceedings. The table shows the matching case, or *no case yet*. Imported mail for a reference with no case lands in Triage unfiled.
