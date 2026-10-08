@@ -58,8 +58,16 @@ function FiltersCard({ gmail }: { gmail: GmailView }) {
         className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault()
+          const submitted = { allowlist, label }
           save.mutate(body, {
-            onSuccess: () => toast('Gmail filters saved'),
+            onSuccess: (saved) => {
+              toast('Gmail filters saved')
+              // Show the saved (trimmed) form — but never over edits made since clicking Save.
+              setAllowlist((cur) =>
+                cur === submitted.allowlist ? saved.allowlist.join(', ') : cur,
+              )
+              setLabel((cur) => (cur === submitted.label ? saved.label_filter : cur))
+            },
             onError: (err) => toast(err.message, 'error'),
           })
         }}
@@ -234,7 +242,7 @@ export function GmailPage() {
         </p>
       </SettingsCard>
 
-      <FiltersCard key={`${gmail.allowlist.join()}|${gmail.label_filter}`} gmail={gmail} />
+      <FiltersCard gmail={gmail} />
 
       <SettingsCard
         title="Sync"

@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
+from app.services.ingestion.gmail import LABEL_FORBIDDEN
 
 # --- Account -----------------------------------------------------------------
 
@@ -72,7 +73,11 @@ class GmailResetSync(BaseModel):
         return value
 
 
-_SENDER_RE = re.compile(r"^@?[^\s@,]+(@[^\s@,]+)?\.[A-Za-z]{2,}$")
+# A domain ("firm.de", "@firm.de") or an address ("a@firm.de"). Letters, digits and
+# a few separators only — no ":" or spaces, so "from:x@y.de", "in:anywhere" or
+# "a OR b" can never be smuggled in as an operator.
+_DOMAIN = r"([A-Za-z0-9-]+\.)+[A-Za-z]{2,}"
+_SENDER_RE = re.compile(rf"^(@?{_DOMAIN}|[A-Za-z0-9._%+-]+@{_DOMAIN})$")
 
 
 class GmailFilters(BaseModel):
@@ -91,7 +96,7 @@ class GmailFilters(BaseModel):
                     f"'{entry}' isn't an email address or domain "
                     "(e.g. lawyer@firm.de or firm.de)"
                 )
-        if '"' in self.label_filter or "\n" in self.label_filter:
+        if any(c in self.label_filter for c in LABEL_FORBIDDEN):
             raise ValueError("The label can't contain quotes or line breaks")
         if not self.allowlist and not self.label_filter:
             raise ValueError("Set a sender allowlist or a label — or both")

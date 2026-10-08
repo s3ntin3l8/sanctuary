@@ -22,9 +22,9 @@ from app.services.ingestion.batch_orchestrator import ingest_raw_email
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
     build_query,
+    connect_gmail,
     fetch_metadata,
     fetch_raw_message,
-    get_gmail_service,
     has_filter,
     list_message_ids,
     parse_metadata,
@@ -231,24 +231,6 @@ def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
             _get_release_script(client)(keys=[key], args=[token])
         except (redis.RedisError, OSError) as exc:
             _maybe_warn(exc)
-
-
-def connect_gmail(db: Session, user_id: int, sj: dict):
-    """Build the Gmail client from the user's stored (encrypted) credentials.
-
-    A token refreshed along the way is persisted immediately, so it survives
-    even if the rest of the run fails.
-    """
-    credentials_json = user_settings_service.decrypt_gmail_credentials(
-        sj.get("gmail_credentials_json")
-    )
-    connection = get_gmail_service(credentials_json or "")
-    if connection.refreshed_credentials_json:
-        user_settings_service.update_gmail_token(
-            db, user_id, connection.refreshed_credentials_json
-        )
-        db.commit()
-    return connection.service
 
 
 def _public_error(exc: Exception) -> str:

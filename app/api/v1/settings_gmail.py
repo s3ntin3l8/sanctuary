@@ -36,6 +36,7 @@ from app.services.ai_config import (
 from app.services.ingestion.gmail import (
     GmailReconnectRequired,
     build_query,
+    connect_gmail,
     estimate_matches,
     revoke_token,
 )
@@ -127,8 +128,6 @@ def preview_filters(
 ):
     """How many messages these (not yet saved) filters would match — one read-only
     list call, so an over-broad filter is obvious before it is saved."""
-    from app.tasks.gmail_sync import connect_gmail
-
     _require_connected(db, user)
     sj = user_settings_service.get_gmail_config(db, user.id)
     try:

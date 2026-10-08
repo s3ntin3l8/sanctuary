@@ -444,6 +444,12 @@ def test_google_rejecting_the_code_is_a_readable_400_not_a_bare_bad_request(db_s
         ({"allowlist": ["  "], "label_filter": "  "}, "allowlist or a label"),
         ({"allowlist": ["not an address"]}, "isn't an email address or domain"),
         ({"allowlist": ["a@b@c.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["from:foo@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["to:me@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["in:anywhere"]}, "isn't an email address or domain"),
+        ({"allowlist": ["a@bar.de OR b@bar.de"]}, "isn't an email address or domain"),
+        ({"allowlist": ["bar.de) OR (from:x"]}, "isn't an email address or domain"),
+        ({"allowlist": [], "label_filter": "“Sanctuary”"}, "quotes"),
         ({"allowlist": [], "label_filter": 'x" OR in:anywhere'}, "quotes"),
     ],
 )
@@ -474,7 +480,7 @@ def test_filter_preview_counts_matches_without_saving(db_session):
     listing = service.users.return_value.messages.return_value.list
     listing.return_value.execute.return_value = {"resultSizeEstimate": 214}
 
-    with patch("app.tasks.gmail_sync.connect_gmail", return_value=service):
+    with patch("app.api.v1.settings_gmail.connect_gmail", return_value=service):
         resp = client.post(
             "/api/v1/settings/gmail/filters/preview",
             json={"allowlist": [], "label_filter": "Sanctuary"},
@@ -510,9 +516,10 @@ def test_filter_preview_reports_a_dead_grant_and_gmail_outages(db_session):
     body = {"allowlist": ["a@firm.de"]}
     url = "/api/v1/settings/gmail/filters/preview"
     with patch(
-        "app.tasks.gmail_sync.connect_gmail", side_effect=GmailReconnectRequired("gone")
+        "app.api.v1.settings_gmail.connect_gmail",
+        side_effect=GmailReconnectRequired("gone"),
     ):
         assert client.post(url, json=body).json()["code"] == "gmail_reconnect_required"
-    with patch("app.tasks.gmail_sync.connect_gmail", side_effect=OSError("down")):
+    with patch("app.api.v1.settings_gmail.connect_gmail", side_effect=OSError("down")):
         resp = client.post(url, json=body)
     assert resp.status_code == 502 and resp.json()["code"] == "gmail_unreachable"

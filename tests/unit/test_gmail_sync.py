@@ -121,7 +121,7 @@ def test_watermark_is_run_start_not_run_end(gmail_user, db_session):
     run_start = datetime.now(UTC)
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
@@ -176,7 +176,7 @@ def test_one_failed_message_does_not_abort_the_run_and_is_tracked_for_retry(
 
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
         patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=_fetch),
@@ -220,7 +220,7 @@ def test_previously_failed_message_is_retried_and_drops_off_once_it_succeeds(
 
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
         patch("app.tasks.gmail_sync.fetch_raw_message", return_value=b"raw"),
@@ -247,7 +247,7 @@ def test_lock_blocks_overlapping_sync_for_same_user(gmail_user, db_session):
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client),
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
     ):
@@ -269,7 +269,7 @@ def test_lock_is_released_after_a_successful_run(gmail_user, db_session):
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=fake_client),
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
     ):
@@ -294,7 +294,7 @@ def test_lock_degrades_open_when_redis_unavailable(gmail_user, db_session):
     with (
         patch("app.tasks.gmail_sync._get_lock_client", return_value=broken_client),
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
     ):
@@ -396,7 +396,7 @@ def _set_settings(db_session, user_id, **changes):
 def _run_sync(user_id, service, **patches):
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, patches.pop("refreshed", None)),
         ),
         patch("app.tasks.gmail_sync.fetch_raw_message", return_value=b"raw"),
@@ -461,7 +461,7 @@ def test_reconnect_required_is_recorded_and_not_retried(gmail_user, db_session):
 
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             side_effect=GmailReconnectRequired("token revoked"),
         ),
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
@@ -498,7 +498,8 @@ def test_undecryptable_credentials_require_reconnect(gmail_user, db_session):
 def test_unexpected_failure_is_recorded_and_still_retried(gmail_user, db_session):
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service", side_effect=RuntimeError("boom")
+            "app.services.ingestion.gmail.get_gmail_service",
+            side_effect=RuntimeError("boom"),
         ),
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
     ):
@@ -547,7 +548,7 @@ def test_disconnect_during_a_sync_is_not_resurrected(gmail_user, db_session):
 
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(_fake_service(), None),
         ),
         patch("app.tasks.gmail_sync._ingest_query", side_effect=_disconnect_mid_run),
@@ -586,7 +587,7 @@ def test_incremental_sync_caches_what_it_fetches_even_if_ingest_fails(
 
     with (
         patch(
-            "app.tasks.gmail_sync.get_gmail_service",
+            "app.services.ingestion.gmail.get_gmail_service",
             return_value=GmailConnection(service, None),
         ),
         patch(
@@ -618,7 +619,7 @@ def test_a_database_error_does_not_leak_sql_or_parameters_into_the_status(
         Exception("connection lost"),
     )
     with (
-        patch("app.tasks.gmail_sync.get_gmail_service", side_effect=leaky),
+        patch("app.services.ingestion.gmail.get_gmail_service", side_effect=leaky),
         patch("app.tasks.gmail_sync._user_sync_lock") as mock_lock,
     ):
         mock_lock.return_value.__enter__.return_value = True

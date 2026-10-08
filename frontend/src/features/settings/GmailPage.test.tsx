@@ -153,3 +153,21 @@ test('gmail: previewing the filters shows how many messages they match', async (
   await user.type(screen.getByLabelText('Label'), 'x')
   expect(screen.queryByText('214')).toBeNull()
 })
+
+test('gmail: saving filters keeps edits typed after clicking Save', async () => {
+  const saved = { ...gmail, allowlist: ['lawyer@example.com'], label_filter: 'Sanctuary' }
+  stubApi({
+    'GET /api/v1/settings/gmail': { body: gmail },
+    'PUT /api/v1/settings/gmail/filters': { body: saved },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  const user = userEvent.setup()
+  const label = await screen.findByLabelText('Label')
+  await user.type(label, 'Sanctuary')
+  await user.click(screen.getByRole('button', { name: 'Save filters' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Gmail filters saved')
+
+  // Editing after a save is not clobbered by the (older) saved value.
+  await user.type(label, '2')
+  expect(label).toHaveValue('Sanctuary2')
+})

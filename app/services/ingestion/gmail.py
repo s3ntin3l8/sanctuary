@@ -87,6 +87,26 @@ def get_gmail_service(credentials_json: str) -> GmailConnection:
     )
 
 
+def connect_gmail(db: Any, user_id: int, settings: dict) -> Any:
+    """Build the Gmail client from the user's stored (encrypted) credentials.
+
+    A token refreshed along the way is persisted immediately, so it survives
+    even if the rest of the caller's work fails.
+    """
+    from app.services import user_settings_service
+
+    credentials_json = user_settings_service.decrypt_gmail_credentials(
+        settings.get("gmail_credentials_json")
+    )
+    connection = get_gmail_service(credentials_json or "")
+    if connection.refreshed_credentials_json:
+        user_settings_service.update_gmail_token(
+            db, user_id, connection.refreshed_credentials_json
+        )
+        db.commit()
+    return connection.service
+
+
 def fetch_raw_message(service: Any, message_id: str) -> bytes:
     import base64
 
@@ -97,6 +117,11 @@ def fetch_raw_message(service: Any, message_id: str) -> bytes:
         .execute()
     )
     return base64.urlsafe_b64decode(msg["raw"])
+
+
+# Characters that would end the quoted label term (ASCII and typographic quotes)
+# or break the query line; shared with the Settings schema's validation.
+LABEL_FORBIDDEN = '"“”„‟«»\n\r'
 
 
 def has_filter(allowlist: list[str] | None, label_filter: str | None) -> bool:
@@ -122,6 +147,8 @@ def build_query(
     or a label; an unbounded query is refused here as the last line of defence.
     """
     label = (label_filter or "").strip()
+    if any(c in label for c in LABEL_FORBIDDEN):
+        raise ValueError("Gmail label can't contain quotes or line breaks")
     if not has_filter(allowlist, label):
         raise ValueError("Gmail query needs a sender allowlist or a label")
     parts = []
