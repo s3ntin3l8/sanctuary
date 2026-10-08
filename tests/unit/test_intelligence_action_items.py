@@ -614,3 +614,56 @@ def test_distinct_non_hearing_types_on_same_day_still_coexist(
         == 1
     )
     assert len(_rows(db_session, sample_case.id)) == 2
+
+
+@pytest.mark.unit
+def test_promotion_reopens_a_dismissed_item_and_resources_it(
+    db_session, sample_case, future_action, sample_doc_date
+):
+    from app.models.enums import ActionItemStatus, ActionItemType
+
+    cover, ladung = _two_docs(db_session, sample_case.id)
+    due = future_action["due_date"]
+    _create(
+        db_session, sample_case.id, cover, "response_required", due, sample_doc_date
+    )
+    _rows(db_session, sample_case.id)[0].status = ActionItemStatus.DISMISSED
+    db_session.flush()
+
+    _create(db_session, sample_case.id, ladung, "court_date", due, sample_doc_date)
+
+    (row,) = _rows(db_session, sample_case.id)
+    assert row.action_type == ActionItemType.COURT_DATE
+    assert row.status == ActionItemStatus.OPEN
+    assert row.source_document_id == ladung.id
+
+
+@pytest.mark.unit
+def test_court_date_promotes_only_the_lowest_id_row_of_a_multi_item_day(
+    db_session, sample_case, future_action, sample_doc_date
+):
+    from app.models.database import Document
+    from app.models.enums import ActionItemType, OriginatorType
+
+    cover, other = _two_docs(db_session, sample_case.id)
+    ladung = Document(
+        title="Ladung 2",
+        content="x",
+        case_id=sample_case.id,
+        originator_type=OriginatorType.COURT,
+    )
+    db_session.add(ladung)
+    db_session.flush()
+    due = future_action["due_date"]
+    _create(
+        db_session, sample_case.id, cover, "response_required", due, sample_doc_date
+    )
+    _create(db_session, sample_case.id, other, "payment_due", due, sample_doc_date)
+
+    _create(db_session, sample_case.id, ladung, "court_date", due, sample_doc_date)
+
+    rows = sorted(_rows(db_session, sample_case.id), key=lambda r: r.id)
+    assert [r.action_type for r in rows] == [
+        ActionItemType.COURT_DATE,
+        ActionItemType.PAYMENT_DUE,
+    ]
