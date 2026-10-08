@@ -907,6 +907,10 @@ def terminal_failure_cascade(stage: PipelineStage) -> tuple[PipelineStage, ...]:
     readiness check (see ``METADATA_FAILURE_CASCADE``). Use this for any
     per-document give-up; reset_stage keeps the full list because a retry does
     want BATCH_ANALYSIS redone.
+
+    The registry lists are transitive (EXTRACT's includes METADATA's own
+    downstream), so a stage can be named twice when cascading; failing an
+    already-failed row again is a harmless no-op.
     """
     return tuple(
         s for s in _DOWNSTREAM.get(stage, []) if s != PipelineStage.BATCH_ANALYSIS
@@ -954,7 +958,8 @@ def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
             )
         ]
         for sibling_id in sibling_ids:
-            # Leave siblings that already settled this stage alone.
+            # Leave siblings that already settled this stage alone — including
+            # one that FAILED earlier, so its original cause is not overwritten.
             _update_stage(
                 sibling_id,
                 stage,
@@ -965,6 +970,7 @@ def _fail_poison_stage(db: Session, doc, stage: PipelineStage) -> None:
                 unless_status_in=(
                     StageStatus.COMPLETED.value,
                     StageStatus.SKIPPED.value,
+                    StageStatus.FAILED.value,
                 ),
             )
         db.commit()

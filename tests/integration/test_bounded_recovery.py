@@ -390,3 +390,23 @@ def test_defensive_stage_insert_starts_the_orphan_count_at_zero(db_session, doc)
 
     status, _, _, resets = _row(db_session, doc.id, "embeddings")
     assert (status, resets) == ("completed", 0)
+
+
+@pytest.mark.integration
+def test_batch_analysis_give_up_keeps_an_earlier_failure_cause(db_session, doc):
+    from app.models.database import IngestBatch
+    from app.models.enums import IngestBatchSourceType, IngestBatchStatus
+    from app.services.pipeline_status import _fail_poison_stage
+
+    batch = IngestBatch(
+        source_type=IngestBatchSourceType.EMAIL, status=IngestBatchStatus.PROCESSING
+    )
+    db_session.add(batch)
+    db_session.flush()
+    doc.ingest_batch_id = batch.id
+    db_session.commit()
+    _set(db_session, doc.id, "batch_analysis", "failed", error="original cause")
+
+    _fail_poison_stage(db_session, doc, PipelineStage.BATCH_ANALYSIS)
+
+    assert _row(db_session, doc.id, "batch_analysis")[1] == "original cause"
