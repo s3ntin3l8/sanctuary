@@ -237,7 +237,13 @@ def test_ai_edge_is_upgraded_but_user_edge_is_kept(db_session, sample_case):
     parent_b = _batch(db_session, "<p@x>")
     parent = _doc(db_session, parent_b, sample_case.id)
     reply_b = _batch(db_session, "<r@x>", in_reply_to="<p@x>", refs=["<p@x>"])
-    reply = _doc(db_session, reply_b, sample_case.id)
+    reply = _doc(
+        db_session,
+        reply_b,
+        sample_case.id,
+        review_reasons=["unresolved_relationship"],
+        needs_review=True,
+    )
     ai = DocumentRelationship(
         from_document_id=reply.id,
         to_document_id=parent.id,
@@ -251,6 +257,10 @@ def test_ai_edge_is_upgraded_but_user_edge_is_kept(db_session, sample_case):
     db_session.commit()
     (edge,) = _edges(db_session)
     assert edge.confidence == RelationshipConfidence.EMAIL_HEADER
+    # The upgraded edge no longer counts as an unresolved AI suggestion.
+    assert "unresolved_relationship" not in (
+        db_session.get(Document, reply.id).review_reasons or []
+    )
 
     edge.confidence = RelationshipConfidence.USER_CONFIRMED
     db_session.commit()

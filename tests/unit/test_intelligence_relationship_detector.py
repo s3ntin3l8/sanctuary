@@ -536,8 +536,12 @@ def test_detect_reraises_and_rolls_back_on_write_phase_failure(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "incoming_confidence",
+    [RelationshipConfidence.EMAIL_HEADER, RelationshipConfidence.AI_DETECTED],
+)
 def test_replies_to_that_would_mirror_an_existing_reply_is_dropped(
-    db_session, proceeding_with_docs
+    db_session, proceeding_with_docs, incoming_confidence
 ):
     """An out-of-order email-header edge (lower id replies to the new doc) must
     not be mirrored by the AI into a replies_to 2-cycle."""
@@ -547,7 +551,7 @@ def test_replies_to_that_would_mirror_an_existing_reply_is_dropped(
             from_document_id=prior1.id,
             to_document_id=new_doc.id,
             relationship_type=RelationshipType.REPLIES_TO,
-            confidence=RelationshipConfidence.EMAIL_HEADER,
+            confidence=incoming_confidence,
         )
     )
     db_session.commit()

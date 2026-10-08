@@ -75,6 +75,8 @@ def _resolve_parent(
 ) -> tuple[Document, RelationshipType] | None:
     """Nearest ingested ancestor's lead document and the edge type it earns."""
     repo = IngestBatchRepository(db)
+    # In-Reply-To is the immediate parent, so it wins over References when both
+    # resolve; References are then tried newest to oldest (nearest ancestor).
     candidates: list[tuple[str, RelationshipType]] = []
     if batch.in_reply_to:
         candidates.append((batch.in_reply_to, RelationshipType.REPLIES_TO))
@@ -161,6 +163,12 @@ def _link_reply(db: Session, batch: IngestBatch, affected: set[int]) -> int:
             existing.confidence = RelationshipConfidence.EMAIL_HEADER
             existing.notes = _NOTES[rel_type]
             inserted = True
+            # The AI edge had flagged the source as "unresolved_relationship";
+            # as a header fact it no longer does. Same transaction, so no commit.
+            from app.services.ingestion.service import refresh_review_reasons
+
+            db.flush()
+            refresh_review_reasons(lead, db, commit=False)
     if inserted and rel_type == RelationshipType.REPLIES_TO:
         affected.add(target.id)
     return int(inserted)
