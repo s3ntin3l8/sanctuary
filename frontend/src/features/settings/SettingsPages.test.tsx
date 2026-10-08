@@ -37,6 +37,18 @@ test('settings nav hides admin-only tabs for regular users', async () => {
   expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
 })
 
+test('settings nav keeps Import history inside Settings, with Gmail marked only on its own page', async () => {
+  stubApi({
+    'GET /api/v1/shell': { body: shellView },
+    'GET /api/v1/settings/account': { body: account },
+  })
+  renderAt('/settings/gmail/import', <AccountPage />, <SettingsLayout />)
+  const history = await screen.findByRole('link', { name: /Import history/ })
+  expect(history).toHaveAttribute('href', '/settings/gmail/import')
+  expect(history).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByRole('link', { name: 'Gmail' })).not.toHaveAttribute('aria-current')
+})
+
 test('account: saves the display name and surfaces a wrong password', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/account': { body: account },

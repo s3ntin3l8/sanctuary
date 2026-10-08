@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { useShell } from '../../api/shell'
 import { Icon } from '../../ui/Icon'
 
-type Item = { to: string; icon: string; label: string; admin?: boolean }
+type Item = { to: string; icon: string; label: string; admin?: boolean; end?: boolean }
 type Group = { label: string; items: Item[] }
 
 const GROUPS: Group[] = [
@@ -22,7 +22,13 @@ const GROUPS: Group[] = [
       { to: '/settings/identity', icon: 'groups', label: 'Identity & Context', admin: true },
     ],
   },
-  { label: 'Gmail', items: [{ to: '/settings/gmail', icon: 'mail', label: 'Gmail' }] },
+  {
+    label: 'Gmail',
+    items: [
+      { to: '/settings/gmail', icon: 'mail', label: 'Gmail', end: true },
+      { to: '/settings/gmail/import', icon: 'history', label: 'Import history' },
+    ],
+  },
   {
     label: 'Data',
     items: [
@@ -35,6 +41,8 @@ const GROUPS: Group[] = [
 
 export function SettingsLayout() {
   const isAdmin = useShell().data?.user.role === 'admin'
+  // The import table needs room; every other settings page is a narrow form.
+  const wide = useLocation().pathname === '/settings/gmail/import'
   useEffect(() => {
     document.title = 'Settings | The Sanctuary'
   }, [])
@@ -63,6 +71,7 @@ export function SettingsLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.end}
                   className={({ isActive }) =>
                     `flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px] ${
                       isActive
@@ -77,7 +86,7 @@ export function SettingsLayout() {
             </div>
           ))}
         </nav>
-        <div className="min-w-0 max-w-[720px] flex-1 space-y-4">
+        <div className={`min-w-0 flex-1 space-y-4 ${wide ? 'max-w-[1100px]' : 'max-w-[720px]'}`}>
           <Outlet />
         </div>
       </div>

@@ -21,6 +21,11 @@ def settings_root() -> Response:
     return RedirectResponse(url="/settings/account", status_code=303)
 
 
+@router.get("/settings/gmail/import")
+def gmail_import_page(user: User = Depends(get_current_user)) -> Response:
+    return spa_index()
+
+
 @router.get("/settings/{tab}")
 def settings_tab(tab: str, user: User = Depends(get_current_user)) -> Response:
     if tab not in SETTINGS_TABS:

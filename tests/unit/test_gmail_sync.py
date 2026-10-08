@@ -434,7 +434,7 @@ def test_incremental_query_respects_the_label_filter(gmail_user, db_session):
     service = _fake_service()
     _run_sync(gmail_user.id, service)
     q = list_call(service).call_args.kwargs["q"]
-    assert "label:Sanctuary" in q and "after:" in q
+    assert 'label:"Sanctuary"' in q and "after:" in q
 
 
 @pytest.mark.unit

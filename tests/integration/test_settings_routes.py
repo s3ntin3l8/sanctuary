@@ -473,7 +473,9 @@ def test_regular_user_keeps_personal_settings_but_not_timezone(
         == 200
     )
     assert (
-        c.put("/api/v1/settings/gmail/filters", json={"allowlist": []}).status_code
+        c.put(
+            "/api/v1/settings/gmail/filters", json={"allowlist": ["a@firm.de"]}
+        ).status_code
         == 200
     )
     denied = c.put("/api/v1/settings/appearance/timezone", json={"tz": "UTC"})

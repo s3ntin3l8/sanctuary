@@ -99,6 +99,15 @@ def fetch_raw_message(service: Any, message_id: str) -> bytes:
     return base64.urlsafe_b64decode(msg["raw"])
 
 
+def has_filter(allowlist: list[str] | None, label_filter: str | None) -> bool:
+    """True when at least one of sender allowlist / label narrows the mailbox.
+
+    Every Gmail list call needs this: with neither, a query would match the
+    whole mailbox, not just the lawyer's mail.
+    """
+    return bool(allowlist) or bool((label_filter or "").strip())
+
+
 def build_query(
     allowlist: list[str],
     label_filter: str = "",
@@ -109,16 +118,31 @@ def build_query(
     """The one Gmail search query every list call goes through.
 
     ``after``/``before`` are epoch seconds (Gmail's ``after:``/``before:``
-    operators accept them), so callers need no date formatting.
+    operators accept them), so callers need no date formatting. Needs a sender
+    or a label; an unbounded query is refused here as the last line of defence.
     """
-    query = "(" + " OR ".join(f"from:{e}" for e in allowlist) + ")"
-    if label_filter:
-        query += f" label:{label_filter}"
+    label = (label_filter or "").strip()
+    if not has_filter(allowlist, label):
+        raise ValueError("Gmail query needs a sender allowlist or a label")
+    parts = []
+    if allowlist:
+        parts.append("(" + " OR ".join(f"from:{e}" for e in allowlist) + ")")
+    if label:
+        # Quoted so a label can't smuggle extra operators into the search.
+        parts.append(f'label:"{label}"')
     if after is not None:
-        query += f" after:{after}"
+        parts.append(f"after:{after}")
     if before is not None:
-        query += f" before:{before}"
-    return query
+        parts.append(f"before:{before}")
+    return " ".join(parts)
+
+
+def estimate_matches(service: Any, query: str) -> int:
+    """Gmail's own estimate of how many messages ``query`` matches (one list call)."""
+    results = (
+        service.users().messages().list(userId="me", q=query, maxResults=1).execute()
+    )
+    return int(results.get("resultSizeEstimate", 0))
 
 
 def revoke_token(credentials_json: str) -> bool:

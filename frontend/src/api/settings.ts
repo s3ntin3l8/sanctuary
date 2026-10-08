@@ -42,6 +42,10 @@ export const useSaveGmailFilters = () =>
   useReplace<S['GmailView'], S['GmailFilters']>('gmail', (body) =>
     unwrap(api.PUT('/api/v1/settings/gmail/filters', { body })),
   )
+export const useGmailFilterPreview = () =>
+  useMutation<S['GmailFilterPreview'], ApiError, S['GmailFilters']>({
+    mutationFn: (body) => unwrap(api.POST('/api/v1/settings/gmail/filters/preview', { body })),
+  })
 export const useSetGmailAutoSync = () =>
   useReplace<S['GmailView'], S['GmailAutoSync']>('gmail', (body) =>
     unwrap(api.PUT('/api/v1/settings/gmail/auto-sync', { body })),

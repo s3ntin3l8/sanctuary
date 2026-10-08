@@ -119,7 +119,7 @@ export function TriagePage() {
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Link to="/import" className={buttonClass('secondary')}>
+          <Link to="/settings/gmail/import" className={buttonClass('secondary')}>
             <Icon name="mail" size={16} /> Import from Gmail
           </Link>
           <Button

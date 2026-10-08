@@ -95,16 +95,17 @@ test('gmail: disconnecting needs a confirmation', async () => {
   expect(sentTo(fetch, 'DELETE', '/api/v1/settings/gmail')).toBeDefined()
 })
 
-test('gmail: resetting sync state sends the chosen date', async () => {
+test('gmail: changing the sync point sends the chosen date', async () => {
   const fetch = stubApi({
     'GET /api/v1/settings/gmail': { body: { ...gmail, failed_count: 2 } },
     'POST /api/v1/settings/gmail/reset-sync': { body: { ...gmail, failed_count: 0 } },
   })
   renderAt('/settings/gmail', <GmailPage />)
   const user = userEvent.setup()
-  await user.type(await screen.findByLabelText('Resume from'), '2026-02-01')
-  await user.click(screen.getByRole('button', { name: 'Reset sync state' }))
-  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reset' }))
+  await user.click(await screen.findByRole('button', { name: 'Change sync point…' }))
+  const dialog = screen.getByRole('dialog')
+  await user.type(within(dialog).getByLabelText('Resume from'), '2026-02-01')
+  await user.click(within(dialog).getByRole('button', { name: 'Change' }))
 
   await waitFor(() =>
     expect(sentTo(fetch, 'POST', '/api/v1/settings/gmail/reset-sync')).toBeDefined(),
@@ -112,4 +113,43 @@ test('gmail: resetting sync state sends the chosen date', async () => {
   expect(await sentTo(fetch, 'POST', '/api/v1/settings/gmail/reset-sync')?.clone().json()).toEqual({
     since: '2026-02-01',
   })
+})
+
+test('gmail: filters come before sync and need a sender or a label', async () => {
+  stubApi({
+    'GET /api/v1/settings/gmail': { body: { ...gmail, allowlist: [], label_filter: '' } },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  const user = userEvent.setup()
+  const save = await screen.findByRole('button', { name: 'Save filters' })
+  expect(save).toBeDisabled()
+  expect(screen.getByText('Required')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Preview matches' })).toBeDisabled()
+
+  const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+  expect(headings.indexOf('What Sanctuary reads')).toBeLessThan(headings.indexOf('Sync'))
+
+  // A label alone is enough.
+  await user.type(screen.getByLabelText('Label'), 'Sanctuary')
+  expect(save).toBeEnabled()
+  expect(screen.queryByText('Required')).toBeNull()
+})
+
+test('gmail: previewing the filters shows how many messages they match', async () => {
+  const fetch = stubApi({
+    'GET /api/v1/settings/gmail': { body: gmail },
+    'POST /api/v1/settings/gmail/filters/preview': { body: { estimate: 214 } },
+  })
+  renderAt('/settings/gmail', <GmailPage />)
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Preview matches' }))
+
+  expect(await screen.findByText('214')).toBeVisible()
+  expect(
+    await sentTo(fetch, 'POST', '/api/v1/settings/gmail/filters/preview')?.clone().json(),
+  ).toEqual({ allowlist: ['lawyer@example.com'], label_filter: '' })
+
+  // Editing invalidates the count.
+  await user.type(screen.getByLabelText('Label'), 'x')
+  expect(screen.queryByText('214')).toBeNull()
 })

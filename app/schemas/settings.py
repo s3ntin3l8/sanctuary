@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
 
@@ -71,9 +72,34 @@ class GmailResetSync(BaseModel):
         return value
 
 
+_SENDER_RE = re.compile(r"^@?[^\s@,]+(@[^\s@,]+)?\.[A-Za-z]{2,}$")
+
+
 class GmailFilters(BaseModel):
     allowlist: list[str]
     label_filter: str = ""
+
+    @model_validator(mode="after")
+    def _clean_and_require_a_filter(self) -> GmailFilters:
+        # Mail is only ever pulled for a bounded slice of the mailbox, so a
+        # filter is mandatory: senders, a label, or both.
+        self.allowlist = [e.strip() for e in self.allowlist if e.strip()]
+        self.label_filter = self.label_filter.strip()
+        for entry in self.allowlist:
+            if not _SENDER_RE.match(entry):
+                raise ValueError(
+                    f"'{entry}' isn't an email address or domain "
+                    "(e.g. lawyer@firm.de or firm.de)"
+                )
+        if '"' in self.label_filter or "\n" in self.label_filter:
+            raise ValueError("The label can't contain quotes or line breaks")
+        if not self.allowlist and not self.label_filter:
+            raise ValueError("Set a sender allowlist or a label — or both")
+        return self
+
+
+class GmailFilterPreview(BaseModel):
+    estimate: int
 
 
 # --- Identity & context (global) ---------------------------------------------

@@ -25,6 +25,7 @@ from app.services.ingestion.gmail import (
     fetch_metadata,
     fetch_raw_message,
     get_gmail_service,
+    has_filter,
     list_message_ids,
     parse_metadata,
 )
@@ -232,7 +233,7 @@ def _user_sync_lock(user_id: int) -> Generator[bool, None, None]:
             _maybe_warn(exc)
 
 
-def _connect(db: Session, user_id: int, sj: dict):
+def connect_gmail(db: Session, user_id: int, sj: dict):
     """Build the Gmail client from the user's stored (encrypted) credentials.
 
     A token refreshed along the way is persisted immediately, so it survives
@@ -385,8 +386,8 @@ def sync_gmail_for_user(self, user_id: int):
                 return "Gmail not connected"
 
             allowlist = sj.get("gmail_allowlist", [])
-            if not allowlist:
-                return "Allowlist empty"
+            if not has_filter(allowlist, sj.get("gmail_label_filter")):
+                return "No sender allowlist or label set"
 
             last_sync = sj.get("gmail_last_sync_at")
             if not last_sync:
@@ -397,7 +398,7 @@ def sync_gmail_for_user(self, user_id: int):
                 db.commit()
                 return "Initialized sync watermark"
 
-            service = _connect(db, user_id, sj)
+            service = connect_gmail(db, user_id, sj)
             query = build_query(
                 allowlist,
                 sj.get("gmail_label_filter", ""),
@@ -487,16 +488,18 @@ def index_gmail_mailbox(self, user_id: int, run_id: str):
             settings = _get_user_settings(db, user_id)
             sj = (settings.settings_json or {}) if settings else {}
             allowlist = sj.get("gmail_allowlist", [])
-            if not sj.get("gmail_credentials_json") or not allowlist:
+            if not sj.get("gmail_credentials_json") or not has_filter(
+                allowlist, sj.get("gmail_label_filter")
+            ):
                 gmail_runs.finish_run(
                     "index",
                     user_id,
                     run_id,
-                    error="Connect Gmail and set a sender allowlist first.",
+                    error="Connect Gmail and set a sender allowlist or a label first.",
                 )
                 return "Not configured"
 
-            service = _connect(db, user_id, sj)
+            service = connect_gmail(db, user_id, sj)
             query = build_query(allowlist, sj.get("gmail_label_filter", ""))
             known = gmail_index_service.indexed_gmail_ids(db, user_id)
             new_ids = [i for i in list_message_ids(service, query) if i not in known]
@@ -736,7 +739,7 @@ def import_gmail_messages(self, user_id: int, run_id: str, hop: int = 0):
             # Built lazily: messages already in the local cache need no Gmail
             # connection (or valid token) at all.
             get_service = _LazyService(
-                lambda: _connect(db, user_id, _settings_json(db, user_id))
+                lambda: connect_gmail(db, user_id, _settings_json(db, user_id))
             )
             while work["remaining"]:
                 _import_one(db, get_service, user_id, work, work["remaining"].pop(0))
