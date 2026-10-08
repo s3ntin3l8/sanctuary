@@ -142,11 +142,19 @@ def retry(
     from app.tasks.dispatch import dispatch_task
     from app.tasks.prepare_slicing import prepare_slicing_task
 
-    if batch.status != IngestBatchStatus.AWAITING_SLICING:
+    # Lock the row and re-read it under the lock (same as confirm_slicing), so
+    # two concurrent retries serialize and only the first one dispatches.
+    locked = db.get(IngestBatch, batch.id, with_for_update=True)
+    assert locked is not None
+    db.refresh(locked)
+    if locked.status != IngestBatchStatus.AWAITING_SLICING:
         raise ApiError(409, "not_awaiting", "Batch is not awaiting slicing.")
-    meta = dict(batch.meta or {})
-    meta["slicing"] = {**meta.get("slicing", {}), "status": "preparing"}
-    batch.meta = meta
+    slicing = (locked.meta or {}).get("slicing", {})
+    if slicing.get("status") == "preparing":
+        raise ApiError(409, "already_preparing", "Slicing is already being prepared.")
+    meta = dict(locked.meta or {})
+    meta["slicing"] = {**slicing, "status": "preparing"}
+    locked.meta = meta
     db.commit()
-    dispatch_task(prepare_slicing_task, batch.id)
-    return _view(batch)
+    dispatch_task(prepare_slicing_task, locked.id)
+    return _view(locked)

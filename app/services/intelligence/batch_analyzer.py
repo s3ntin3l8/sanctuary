@@ -10,7 +10,6 @@ Legacy format (backward compat):
 
 import logging
 import re
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -22,6 +21,7 @@ from app.models.enums import (
     RelationshipType,
     parse_originator_type,
 )
+from app.repositories.document_relationship import insert_edge_if_absent
 from app.services.ai_config import get_chat_config
 from app.services.ai_summary import get_content_preview
 from app.services.intelligence._ai_call import call_json_ai
@@ -299,15 +299,13 @@ def _add_encloses_edge(
     key = (cover_id, enclosure_id)
     if key in existing:
         return
-    db.add(
-        DocumentRelationship(
-            from_document_id=cover_id,
-            to_document_id=enclosure_id,
-            relationship_type=RelationshipType.ENCLOSES,
-            confidence=RelationshipConfidence.AI_DETECTED,
-            notes="batch analyzer: cover→enclosure",
-            ingest_date=datetime.now(UTC),
-        )
+    insert_edge_if_absent(
+        db,
+        from_document_id=cover_id,
+        to_document_id=enclosure_id,
+        relationship_type=RelationshipType.ENCLOSES,
+        confidence=RelationshipConfidence.AI_DETECTED,
+        notes="batch analyzer: cover→enclosure",
     )
     existing.add(key)
 

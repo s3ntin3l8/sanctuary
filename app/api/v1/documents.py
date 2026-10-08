@@ -723,8 +723,9 @@ def retry_stage(
                 "status"
             ) == "failed":
                 reset_stage(sibling.id, PipelineStage.BATCH_ANALYSIS, db)
-    else:
-        reset_stage(doc.id, stage, db)
+    elif not reset_stage(doc.id, stage, db):
+        # A dispatcher claimed the stage after the status check above.
+        raise ApiError(409, "in_flight", f"Stage '{stage.value}' is already running.")
     db.refresh(doc)
     dispatch_pipeline_retry(doc.id, doc.ingest_batch_id, stage, db)
     return pipeline_view(doc)
@@ -740,15 +741,9 @@ def retry_all_stages(
     def _do_reset():
         _lock_row(doc.id, db)
         db.refresh(doc)
-        running = [
-            key
-            for key, val in stages_dict(doc).items()
-            if isinstance(val, dict) and val.get("status") in ("running", "retrying")
-        ]
-        if running:
-            return running
-        reset_all_stages(doc.id, db)
-        return []
+        # All-or-nothing and atomic with the in-flight check: returns the
+        # running stage keys (nothing reset) or [] after resetting everything.
+        return reset_all_stages(doc.id, db)
 
     try:
         running = retry_on_db_locked(_do_reset, db)

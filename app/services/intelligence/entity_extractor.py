@@ -5,6 +5,7 @@ import re
 
 from sqlalchemy.orm import Session
 
+from app.core.db_locks import ENTITIES_NS, advisory_xact_lock
 from app.models.database import Case, Document, Entity
 from app.models.enums import EntityType, SignificanceTier
 from app.services.ai_config import get_chat_config
@@ -178,6 +179,12 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
     if not isinstance(entities_raw, list):
         return 0
 
+    # Dedup here is application logic (normalised names, party snapping), so the
+    # schema can't enforce it. Serialise concurrent writers on this case: the
+    # lock is held until this transaction commits, so the existing-rows read
+    # below always sees what an earlier writer inserted.
+    advisory_xact_lock(db, ENTITIES_NS, str(doc.case_id))
+
     # Build the canonical set from existing rows (case-scoped) so variants
     # of the same name collapse to one row instead of stacking duplicates.
     existing_rows = (
@@ -286,8 +293,9 @@ def _save_entities(doc: Document, result: dict, db: Session) -> int:
         )
         count += 1
 
-    if count:
-        db.commit()
+    # Always commit: it also releases the advisory lock taken above, even when
+    # nothing new was inserted.
+    db.commit()
 
     return count
 

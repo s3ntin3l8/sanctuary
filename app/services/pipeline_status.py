@@ -528,35 +528,71 @@ def mark_skipped(
     )
 
 
-def reset_stage(doc_id: int, stage: PipelineStage, db: Session) -> None:
-    """Reset a stage (and its downstream dependents) to PENDING for retry."""
-    stages_to_reset = [stage] + _DOWNSTREAM.get(stage, [])
-    for s in stages_to_reset:
+_IN_FLIGHT = (StageStatus.RUNNING.value, StageStatus.RETRYING.value)
+
+_RESET_SETS: dict = {
+    "started_at": None,
+    "completed_at": None,
+    "error": None,
+    "reason": None,
+    "attempt": None,
+    "max_attempts": None,
+    "next_at": None,
+}
+
+
+def reset_stage(
+    doc_id: int, stage: PipelineStage, db: Session, *, force: bool = False
+) -> bool:
+    """Reset a stage (and its downstream dependents) to PENDING for retry.
+
+    Returns True when ``stage`` was reset. Unless ``force`` is set, a stage that
+    is RUNNING/RETRYING is left alone and False is returned: the status check
+    is part of the UPDATE itself, so a dispatcher that claims the stage between
+    a caller's read and this reset can never be clobbered back to PENDING
+    (which would let two tasks run the same stage). Callers must dispatch only
+    when this returns True.
+
+    ``force=True`` is for a task resetting its *own* in-flight stage (e.g. the
+    enrich gate deferring itself) — nobody else can legitimately own it then.
+    """
+    guard = () if force else _IN_FLIGHT
+    if not _update_stage(
+        doc_id,
+        stage,
+        db,
+        status=StageStatus.PENDING,
+        extra_sets=dict(_RESET_SETS),
+        commit=False,
+        unless_status_in=guard,
+    ):
+        return False  # in flight: the guarded UPDATE matched nothing, nothing to undo
+    for downstream in _DOWNSTREAM.get(stage, []):
+        # A downstream stage that is in flight keeps running; it re-runs on its
+        # own schedule once its upstream completes again.
         _update_stage(
             doc_id,
-            s,
+            downstream,
             db,
             status=StageStatus.PENDING,
-            extra_sets={
-                "started_at": None,
-                "completed_at": None,
-                "error": None,
-                "reason": None,
-                "attempt": None,
-                "max_attempts": None,
-                "next_at": None,
-            },
+            extra_sets=dict(_RESET_SETS),
             commit=False,
+            unless_status_in=guard,
         )
     db.commit()
+    return True
 
 
-def reset_all_stages(doc_id: int, db: Session) -> None:
-    """Reset every non-skipped stage to PENDING.
+def reset_all_stages(doc_id: int, db: Session) -> list[str]:
+    """Reset every non-skipped stage to PENDING, all or nothing.
 
     Used by the document HUD's "retry all" action. SKIPPED stages stay skipped
     (e.g. BATCH_ANALYSIS on manually-uploaded docs); everything else is cleared
     of error/timestamps so the pipeline can run again from EXTRACT.
+
+    Returns the stage keys that were RUNNING/RETRYING. If there are any, nothing
+    is reset (the whole transaction is rolled back) so the caller can report a
+    conflict; an empty list means every stage was reset and committed.
     """
     rows = db.execute(
         text(
@@ -565,7 +601,8 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
         {"doc_id": doc_id},
     ).fetchall()
     if not rows:
-        return
+        return []
+    in_flight: list[str] = []
     for stage_key, status_val, reason_val in rows:
         try:
             stage_enum = PipelineStage(stage_key)
@@ -578,23 +615,21 @@ def reset_all_stages(doc_id: int, db: Session) -> None:
         ):
             continue
 
-        _update_stage(
+        if not _update_stage(
             doc_id,
             stage_enum,
             db,
             status=StageStatus.PENDING,
-            extra_sets={
-                "started_at": None,
-                "completed_at": None,
-                "error": None,
-                "attempt": None,
-                "max_attempts": None,
-                "next_at": None,
-                "reason": None,
-            },
+            extra_sets=dict(_RESET_SETS),
             commit=False,
-        )
+            unless_status_in=_IN_FLIGHT,
+        ):
+            in_flight.append(stage_key)
+    if in_flight:
+        db.rollback()
+        return in_flight
     db.commit()
+    return []
 
 
 def reset_failed_stages_only(doc_id: int, db: Session) -> None:
@@ -606,6 +641,8 @@ def reset_failed_stages_only(doc_id: int, db: Session) -> None:
 
     Cascade-failed stages (status=failed, error="upstream X failed") are also
     reset — they become PENDING and will re-run once their upstream succeeds.
+    Each update only applies while the row is still FAILED, so a stage another
+    dispatcher has since re-claimed is never clobbered.
     """
     rows = db.execute(
         text(
@@ -627,16 +664,9 @@ def reset_failed_stages_only(doc_id: int, db: Session) -> None:
             stage_enum,
             db,
             status=StageStatus.PENDING,
-            extra_sets={
-                "started_at": None,
-                "completed_at": None,
-                "error": None,
-                "attempt": None,
-                "max_attempts": None,
-                "next_at": None,
-                "reason": None,
-            },
+            extra_sets=dict(_RESET_SETS),
             commit=False,
+            only_if_status_in=(StageStatus.FAILED.value,),
         )
     db.commit()
 
@@ -1431,8 +1461,17 @@ def _update_stage(
     extra_sets: dict,
     *,
     commit: bool = True,
-) -> None:
-    """Update a single stage row in document_pipeline_stages and recompute pipeline_state."""
+    only_if_status_in: tuple[str, ...] = (),
+    unless_status_in: tuple[str, ...] = (),
+) -> bool:
+    """Update a single stage row in document_pipeline_stages and recompute pipeline_state.
+
+    ``only_if_status_in`` / ``unless_status_in`` fold a status precondition into
+    the UPDATE's WHERE clause so the check and the write are one atomic
+    statement (a compare-and-swap, like ``claim_stage_for_dispatch``). Returns
+    True when the stage row was written (or inserted), False when the
+    precondition failed or the document is gone.
+    """
     sk = stage.value
     assert sk.isidentifier(), f"pipeline_status: invalid stage key {sk!r}"
 
@@ -1450,14 +1489,35 @@ def _update_stage(
             set_parts.append(f"{key} = :{pname}")
             params[pname] = val
 
+    where = "document_id = :_doc_id AND stage = :_stage"
+    for i, val in enumerate(only_if_status_in):
+        params[f"_only_{i}"] = val
+    if only_if_status_in:
+        marks = ", ".join(f":_only_{i}" for i in range(len(only_if_status_in)))
+        where += f" AND status IN ({marks})"
+    for i, val in enumerate(unless_status_in):
+        params[f"_unless_{i}"] = val
+    if unless_status_in:
+        marks = ", ".join(f":_unless_{i}" for i in range(len(unless_status_in)))
+        where += f" AND status NOT IN ({marks})"
+
     result = db.execute(
         text(
-            f"UPDATE document_pipeline_stages SET {', '.join(set_parts)} "
-            f"WHERE document_id = :_doc_id AND stage = :_stage"
+            f"UPDATE document_pipeline_stages SET {', '.join(set_parts)} WHERE {where}"
         ),
         params,
     )
     if cast(CursorResult, result).rowcount == 0:
+        if only_if_status_in or unless_status_in:
+            exists = db.execute(
+                text(
+                    "SELECT 1 FROM document_pipeline_stages "
+                    "WHERE document_id = :_doc_id AND stage = :_stage"
+                ),
+                {"_doc_id": doc_id, "_stage": sk},
+            ).scalar()
+            if exists is not None:
+                return False  # row present but its status failed the guard
         # Guard: document may have been deleted between task dispatch and
         # execution (stale Celery task). If it's gone, skip the INSERT
         # rather than raising an IntegrityError on the FK constraint.
@@ -1473,7 +1533,7 @@ def _update_stage(
                 sk,
                 status.value,
             )
-            return
+            return False
         ins: dict = {"_doc_id": doc_id, "_stage": sk, "_status": status.value}
         for k in _ALLOWED_EXTRA_KEYS:
             ins[f"_k_{k}"] = extra_sets.get(k)
@@ -1507,6 +1567,7 @@ def _update_stage(
     )
     if commit:
         db.commit()
+    return True
 
 
 def is_db_locked(exc: Exception) -> bool:
