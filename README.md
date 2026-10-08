@@ -299,13 +299,11 @@ Embeddings live as `pgvector` columns directly on `document_chunks.embedding` an
 `claims.embedding` — no separate vector table:
 
 ```python
-embedding: Mapped[list[float] | None] = mapped_column(
-    Vector(AI_EMBED_DIM), nullable=True
-)
+embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 ```
 
-Dimension is set by `AI_EMBED_DIM` (default 768) and baked into the column at migration
-time. KNN queries use pgvector's `<->` (L2 distance) operator, HNSW-indexed.
+The ORM type is unsized; the dimension lives in the database column, set at migration time
+from `AI_EMBED_DIM` (default 768) and changed by Settings → AI → Rebuild Index. KNN queries use pgvector's `<->` (L2 distance) operator, HNSW-indexed.
 
 ### User Settings Fields
 

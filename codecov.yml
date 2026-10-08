@@ -1,0 +1,12 @@
+# Coverage is informational only. The hard gate is `coverage-fail-under` in
+# .github/workflows/ci.yml; Codecov reports but never blocks a PR.
+coverage:
+  status:
+    project:
+      default:
+        target: 70%
+        informational: true
+    patch:
+      default:
+        target: 70%
+        informational: true

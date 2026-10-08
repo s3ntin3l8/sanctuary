@@ -4,7 +4,7 @@ import time
 
 import httpx
 from celery.exceptions import SoftTimeLimitExceeded
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.models.database import Document, DocumentChunk
 from app.services.ai_config import get_embed_config
@@ -155,8 +155,17 @@ async def generate_embedding(doc_id: int):
         resp_len = written
         run_status = "ok"
     except Exception as exc:
-        run_error = str(exc)
-        raise
+        # A failed flush leaves the session unusable until rolled back; the
+        # `finally` below still reads `doc`.
+        db.rollback()
+        if isinstance(exc, DBAPIError):
+            # str(exc) embeds the whole statement and every bound vector;
+            # the driver's message is the part worth surfacing.
+            run_error = str(exc.orig)
+            raise RuntimeError(run_error) from exc
+        else:
+            run_error = str(exc)
+            raise
     finally:
         if attempted and cfg is not None:
             record_run(
