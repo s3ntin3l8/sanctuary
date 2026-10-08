@@ -5,6 +5,10 @@
 good brief. Job state now lives in brief_state / brief_error and ai_brief keeps
 only the last successfully generated brief.
 
+One-way for the job state: processing/failed are transient breadcrumbs (a
+refresh re-sets them), so downgrade drops the columns without restoring the
+old {"status": ...} JSON.
+
 Revision ID: a7c3e9d1b5f2
 Revises: f3a7c1e9b5d2
 Create Date: 2026-10-08 21:00:00.000000
@@ -55,5 +59,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Transient job state is not restored into ai_brief (see module docstring).
     op.drop_column("cases", "brief_error")
     op.drop_column("cases", "brief_state")

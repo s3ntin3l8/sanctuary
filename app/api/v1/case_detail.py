@@ -290,7 +290,7 @@ def case_detail(
             )
         ],
         opposing_parties=list(case.opposing_parties or []),
-        brief=brief_view(case),
+        brief=_serialize_brief(case),
         financials=_summary(case, db),
         open_claim_count=int(open_claims),
         dormancy_alert=_compute_dormancy_alert(case, db),
@@ -406,7 +406,7 @@ def set_action_item_status(
 # --- Brief -------------------------------------------------------------------
 
 
-def brief_view(case: Case) -> BriefView:
+def _serialize_brief(case: Case) -> BriefView:
     """The last good brief plus the job state of its regeneration."""
     raw = case.ai_brief or {}
     status: BriefStatus
@@ -430,7 +430,7 @@ def brief_view(case: Case) -> BriefView:
 
 @router.get("/cases/{case_id}/brief", response_model=BriefView)
 def get_brief(case: Case = Depends(require_case_access())):
-    return brief_view(case)
+    return _serialize_brief(case)
 
 
 @router.post("/cases/{case_id}/brief/refresh", response_model=BriefView)
@@ -447,7 +447,7 @@ def refresh_brief(
     case.brief_error = None
     db.commit()
     dispatch_task(refresh_case_brief_task, case.id)
-    return brief_view(case)
+    return _serialize_brief(case)
 
 
 # --- Graph / timeline / financials -----------------------------------------

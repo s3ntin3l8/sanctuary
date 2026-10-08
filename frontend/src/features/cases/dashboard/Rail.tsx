@@ -75,9 +75,7 @@ export function Rail({
             {brief.error ? `: ${brief.error}` : ''}.
           </p>
         )}
-        {(brief.status === 'none' || (brief.status === 'ready' && !hasBrief)) && (
-          <p className="text-muted">No brief yet.</p>
-        )}
+        {brief.status === 'none' && <p className="text-muted">No brief yet.</p>}
         {hasBrief && (
           <div className="space-y-2 leading-relaxed text-ink2">
             {brief.posture && <p>{brief.posture}</p>}
