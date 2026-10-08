@@ -16,11 +16,9 @@ const running: Run = {
   total: 3,
   done: 1,
   failed_count: 0,
-  sequential: true,
   cancelled: false,
   error: null,
   current_subject: 'Schriftsatz 8372/25',
-  waiting: false,
   started_at: '2026-10-08T06:00:00Z',
   finished_at: null,
 }

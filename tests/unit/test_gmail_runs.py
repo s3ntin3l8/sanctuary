@@ -26,9 +26,9 @@ def _begin(run_id="run-1", **extra):
     return state
 
 
-def test_begin_creates_an_active_run_at_hop_zero():
+def test_begin_creates_an_active_run():
     state = _begin()
-    assert state["hop"] == 0 and state["finished_at"] is None and state["started_at"]
+    assert state["finished_at"] is None and state["started_at"]
     assert gmail_runs.is_active(gmail_runs.get_run("import", UID))
 
 
@@ -63,10 +63,10 @@ def test_update_merges_a_patch_and_heartbeats():
     assert state["updated_at"]
 
 
-def test_a_cancel_is_never_overwritten_by_a_hop_that_read_earlier():
+def test_a_cancel_is_never_overwritten_by_a_task_that_read_earlier():
     _begin()
     assert gmail_runs.cancel_run("import", UID) is True
-    # The hop had read the state before the cancel; its write must now be refused.
+    # The task had read the state before the cancel; its write must now be refused.
     assert (
         gmail_runs.update_run("import", UID, "run-1", {"done": 1, "remaining": ["b"]})
         is None
@@ -87,18 +87,6 @@ def test_a_stale_runs_writes_cannot_clobber_a_newer_run():
     state = gmail_runs.get_run("import", UID)
     assert state["run_id"] == "run-2" and state["done"] == 0
     assert gmail_runs.is_active(state)
-
-
-def test_the_hop_counter_fences_out_a_duplicated_hop():
-    _begin()
-    assert gmail_runs.update_run("import", UID, "run-1", {"done": 1}, hop=0, next_hop=1)
-    # A redelivered copy of hop 0 arrives after hop 1 was already scheduled.
-    assert (
-        gmail_runs.update_run("import", UID, "run-1", {"done": 1}, hop=0, next_hop=1)
-        is None
-    )
-    assert gmail_runs.get_run("import", UID)["hop"] == 1
-    assert gmail_runs.update_run("import", UID, "run-1", {}, hop=1, next_hop=2)
 
 
 def test_finish_records_the_end_state_and_error():

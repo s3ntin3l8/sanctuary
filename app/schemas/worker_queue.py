@@ -17,6 +17,8 @@ class QueueItem(BaseModel):
     doc_id: int | None
     batch_id: int | None
     doc_count: int
+    # Why a queued item isn't running yet, when that is deliberate.
+    note: str | None = None
 
 
 class FailedDoc(BaseModel):

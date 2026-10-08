@@ -1,6 +1,6 @@
 """index_gmail_mailbox and import_gmail_messages (the history import tasks)."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -253,7 +253,7 @@ def test_a_superseded_index_run_stops(gmail_user, db_session):
 # --- import_gmail_messages ---------------------------------------------------
 
 
-def _start(db, user_id, ids, *, sequential=True):
+def _start(db, user_id, ids):
     for position, gmail_id in enumerate(ids, start=1):
         gmail_index_service.upsert_metadata(
             db,
@@ -281,9 +281,6 @@ def _start(db, user_id, ids, *, sequential=True):
             "done": 0,
             "remaining": list(ids),
             "failed": [],
-            "sequential": sequential,
-            "waiting_on": None,
-            "waiting_since": None,
             "current": None,
             "cancelled": False,
             "error": None,
@@ -294,15 +291,14 @@ def _start(db, user_id, ids, *, sequential=True):
 
 
 class _Import:
-    """Patches around one import hop; records ingests and re-enqueues."""
+    """Patches around one import task run; records ingests and re-enqueues."""
 
-    def __init__(self, ingest=None, settled=True, locked=True):
+    def __init__(self, ingest=None, locked=True):
         self.fetched: list[str] = []  # ids actually requested from Gmail
         self.connect = MagicMock(return_value=GmailConnection(MagicMock(), None))
         self.ingested: list[bytes] = []
         self.batch_ids = iter(range(100, 200))
         self.ingest = ingest or self._default_ingest
-        self.settled = settled
         self.locked = locked
 
     def _default_ingest(self, _db, raw, owner_id):
@@ -313,17 +309,16 @@ class _Import:
         self.fetched.append(gmail_id)
         return gmail_id.encode()
 
-    def hop(self, user_id, run_id="run-1", hop=0):
+    def run(self, user_id, run_id="run-1"):
         with (
             patch("app.services.ingestion.gmail.get_gmail_service", self.connect),
             patch("app.tasks.gmail_sync.fetch_raw_message", side_effect=self._fetch),
             patch("app.tasks.gmail_sync.ingest_raw_email", side_effect=self.ingest),
-            patch("app.tasks.gmail_sync.batch_is_settled", return_value=self.settled),
             patch.object(gmail_sync.import_gmail_messages, "apply_async") as again,
             _locked() as lock,
         ):
             lock.return_value.__enter__.return_value = self.locked
-            result = gmail_sync.import_gmail_messages.run(user_id, run_id, hop)
+            result = gmail_sync.import_gmail_messages.run(user_id, run_id)
         self.again = again
         return result
 
@@ -332,75 +327,59 @@ def _state(user_id):
     return gmail_runs.get_run("import", user_id)
 
 
-def test_sequential_import_ingests_one_message_per_hop_and_waits_for_the_pipeline(
-    gmail_user, db_session
-):
+def test_import_does_not_wait_for_the_pipeline_between_emails(gmail_user, db_session):
+    """Every email is ingested right away; nothing paces on document processing, so
+    extraction and the per-document AI stages overlap across the whole selection."""
     _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
     imp = _Import()
 
-    assert imp.hop(gmail_user.id) == "waiting"
-    assert imp.ingested == [b"g1"]  # one message, then hand control back
-    imp.again.assert_called_once_with(args=[gmail_user.id, "run-1", 1], countdown=15)
+    assert imp.run(gmail_user.id) == "Imported 3 of 3 messages"
+    assert imp.ingested == [b"g1", b"g2", b"g3"]  # chronological, so ids are too
+    imp.again.assert_not_called()  # no hand-offs, no countdowns
     state = _state(gmail_user.id)
-    assert state["done"] == 1 and state["remaining"] == ["g2", "g3"]
-    assert state["waiting_on"] == 100 and state["hop"] == 1
-    assert state["current"]["subject"] == "8372/25 Letter g1"
+    assert state["done"] == 3 and state["finished_at"]
 
 
-def test_the_next_message_waits_until_the_last_ones_documents_are_processed(
-    gmail_user, db_session
-):
-    _start(db_session, gmail_user.id, ["g1", "g2"])
-    _Import().hop(gmail_user.id)  # g1 ingested, now waiting on its batch
-
-    busy = _Import(settled=False)
-    assert busy.hop(gmail_user.id, hop=1) == "waiting"
-    assert busy.ingested == []  # g2 must not start yet
-    busy.again.assert_called_once_with(args=[gmail_user.id, "run-1", 2], countdown=15)
-
-    ready = _Import(settled=True)
-    ready.hop(gmail_user.id, hop=2)
-    assert ready.ingested == [b"g2"]
-
-
-def test_waiting_keeps_the_run_alive(gmail_user, db_session, fake_run_state):
-    _start(db_session, gmail_user.id, ["g1", "g2"])
-    _Import().hop(gmail_user.id)
-    before = _state(gmail_user.id)["updated_at"]
-    _Import(settled=False).hop(gmail_user.id, hop=1)
-    assert _state(gmail_user.id)["updated_at"] > before  # heartbeat, so not 'abandoned'
-
-
-def test_a_batch_that_never_settles_does_not_hold_the_history_forever(
-    gmail_user, db_session
-):
-    _start(db_session, gmail_user.id, ["g1", "g2"])
-    _Import().hop(gmail_user.id)
+def test_a_redelivered_task_resumes_from_stored_progress(gmail_user, db_session):
+    _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
     gmail_runs.update_run(
-        "import",
-        gmail_user.id,
-        "run-1",
-        {"waiting_since": (datetime.now(UTC) - timedelta(minutes=31)).isoformat()},
+        "import", gmail_user.id, "run-1", {"done": 1, "remaining": ["g2", "g3"]}
     )
 
-    stuck = _Import(settled=False)
-    stuck.hop(gmail_user.id, hop=1)
-    assert stuck.ingested == [b"g2"]
+    imp = _Import()
+    assert imp.run(gmail_user.id) == "Imported 3 of 3 messages"
+    assert imp.ingested == [b"g2", b"g3"]  # g1 was already done: not ingested again
 
 
-def test_a_duplicate_email_has_nothing_to_wait_for(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1", "g2"])
-    imp = _Import(ingest=lambda *_a, **_k: None)  # dedup: no new batch
-    imp.hop(gmail_user.id)
-    assert _state(gmail_user.id)["waiting_on"] is None
-    imp.again.assert_called_once_with(args=[gmail_user.id, "run-1", 1], countdown=2)
+def test_a_task_that_arrives_after_the_run_finished_does_nothing(
+    gmail_user, db_session
+):
+    _start(db_session, gmail_user.id, ["g1"])
+    _Import().run(gmail_user.id)
+
+    late = _Import()  # the broker delivers the task a second time
+    assert late.run(gmail_user.id) == "Import no longer active"
+    assert late.ingested == []
+
+
+def test_a_busy_mailbox_defers_the_import_instead_of_dropping_it(
+    gmail_user, db_session
+):
+    _start(db_session, gmail_user.id, ["g1"])
+    before = _state(gmail_user.id)["updated_at"]
+    imp = _Import(locked=False)
+
+    assert imp.run(gmail_user.id) == "waiting"
+    assert imp.ingested == []
+    imp.again.assert_called_once_with(args=[gmail_user.id, "run-1"], countdown=15)
+    assert _state(gmail_user.id)["updated_at"] > before  # heartbeat: not 'abandoned'
 
 
 def test_the_last_message_finishes_the_run_and_records_the_result(
     gmail_user, db_session
 ):
     _start(db_session, gmail_user.id, ["g1"])
-    result = _Import().hop(gmail_user.id)
+    result = _Import().run(gmail_user.id)
 
     assert result == "Imported 1 of 1 messages"
     state = _state(gmail_user.id)
@@ -412,14 +391,14 @@ def test_the_last_message_finishes_the_run_and_records_the_result(
 def test_a_failing_message_is_tracked_for_retry_and_does_not_stop_the_run(
     gmail_user, db_session
 ):
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
 
     def _ingest(_db, raw, owner_id):
         if raw == b"g1":
             raise ValueError("malformed")
         return SimpleNamespace(id=1)
 
-    result = _Import(ingest=_ingest).hop(gmail_user.id)
+    result = _Import(ingest=_ingest).run(gmail_user.id)
 
     assert result == "Imported 2 of 2 messages"
     assert _state(gmail_user.id)["failed"] == ["g1"]
@@ -428,12 +407,12 @@ def test_a_failing_message_is_tracked_for_retry_and_does_not_stop_the_run(
     assert "1 failed" in sj["gmail_last_sync_result"]
 
 
-def test_non_sequential_import_runs_through_in_one_task_oldest_first(
+def test_the_whole_selection_is_ingested_in_one_task_oldest_first(
     gmail_user, db_session
 ):
-    _start(db_session, gmail_user.id, ["g1", "g2", "g3"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
     imp = _Import()
-    assert imp.hop(gmail_user.id) == "Imported 3 of 3 messages"
+    assert imp.run(gmail_user.id) == "Imported 3 of 3 messages"
     assert imp.ingested == [b"g1", b"g2", b"g3"]
     imp.again.assert_not_called()
 
@@ -441,7 +420,7 @@ def test_non_sequential_import_runs_through_in_one_task_oldest_first(
 def test_cancelling_stops_after_the_current_message_and_keeps_the_cancel(
     gmail_user, db_session
 ):
-    _start(db_session, gmail_user.id, ["g1", "g2", "g3"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
     ingested = []
 
     def _ingest(_db, raw, owner_id):
@@ -449,7 +428,7 @@ def test_cancelling_stops_after_the_current_message_and_keeps_the_cancel(
         gmail_runs.cancel_run("import", gmail_user.id)  # user presses Stop mid-run
         return SimpleNamespace(id=1)
 
-    assert _Import(ingest=_ingest).hop(gmail_user.id) == "Import cancelled"
+    assert _Import(ingest=_ingest).run(gmail_user.id) == "Import cancelled"
     assert ingested == [b"g1"]
     state = _state(gmail_user.id)
     assert state["cancelled"] is True and state["remaining"] == []  # not overwritten
@@ -459,38 +438,23 @@ def test_cancelling_stops_after_the_current_message_and_keeps_the_cancel(
 
 
 def test_failures_before_a_cancel_still_reach_the_retry_list(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
 
     def _ingest(_db, raw, owner_id):
         gmail_runs.cancel_run("import", gmail_user.id)
         raise ValueError("malformed")
 
-    _Import(ingest=_ingest).hop(gmail_user.id)
+    _Import(ingest=_ingest).run(gmail_user.id)
 
     sj = _settings(db_session, gmail_user.id)
     assert sj["gmail_failed_message_ids"] == ["g1"]
     assert "Cancelled after 1 of 2" in sj["gmail_last_sync_result"]
 
 
-def test_a_cancel_during_the_last_sequential_ingest_is_not_reported_as_done(
-    gmail_user, db_session
-):
-    _start(db_session, gmail_user.id, ["g1", "g2"])
-
-    def _ingest(_db, raw, owner_id):
-        gmail_runs.cancel_run("import", gmail_user.id)
-        return SimpleNamespace(id=1)
-
-    imp = _Import(ingest=_ingest)
-    assert imp.hop(gmail_user.id) == "Import cancelled"
-    imp.again.assert_not_called()  # the chain ends
-    assert _state(gmail_user.id)["cancelled"] is True
-
-
-def test_an_old_hop_finishing_cannot_clobber_a_newer_run(gmail_user, db_session):
-    """Stop, then immediately start a new import, while the old hop is still
+def test_an_old_task_finishing_cannot_clobber_a_newer_run(gmail_user, db_session):
+    """Stop, then immediately start a new import, while the old task is still
     ingesting its last message."""
-    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1"])
 
     def _ingest(_db, raw, owner_id):
         gmail_runs.cancel_run("import", gmail_user.id)
@@ -508,47 +472,26 @@ def test_an_old_hop_finishing_cannot_clobber_a_newer_run(gmail_user, db_session)
         assert new
         return SimpleNamespace(id=1)
 
-    _Import(ingest=_ingest).hop(gmail_user.id)
+    _Import(ingest=_ingest).run(gmail_user.id)
 
     state = _state(gmail_user.id)
     assert state["run_id"] == "run-2" and gmail_runs.is_active(state)
     assert state["remaining"] == list("abcde") and state["done"] == 0
 
 
-def test_a_stale_chain_cannot_advance_a_newer_run(gmail_user, db_session):
+def test_a_task_of_an_older_run_cannot_advance_a_newer_one(gmail_user, db_session):
     _start(db_session, gmail_user.id, ["g1"])
     imp = _Import()
-    assert imp.hop(gmail_user.id, run_id="an-older-run") == "Import no longer active"
+    assert imp.run(gmail_user.id, run_id="an-older-run") == "Import no longer active"
     assert imp.ingested == []
 
 
-def test_a_duplicated_hop_does_not_ingest_again(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
-    first = _Import()
-    first.hop(gmail_user.id)  # hop 0 -> schedules hop 1
-
-    redelivered = _Import()  # the broker hands hop 0 out a second time
-    assert redelivered.hop(gmail_user.id, hop=0) == "Import no longer active"
-    assert redelivered.ingested == []
-    redelivered.again.assert_not_called()
-    assert _state(gmail_user.id)["done"] == 1
-
-
-def test_a_cancelled_run_does_nothing_on_its_next_hop(gmail_user, db_session):
+def test_a_cancelled_run_does_nothing_when_its_task_starts(gmail_user, db_session):
     _start(db_session, gmail_user.id, ["g1", "g2"])
     gmail_runs.cancel_run("import", gmail_user.id)
     imp = _Import()
-    assert imp.hop(gmail_user.id) == "Import no longer active"
+    assert imp.run(gmail_user.id) == "Import no longer active"
     assert imp.ingested == []
-
-
-def test_a_busy_mailbox_defers_the_hop_instead_of_dropping_it(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1"])
-    imp = _Import(locked=False)
-    assert imp.hop(gmail_user.id) == "waiting"
-    assert imp.ingested == []
-    imp.again.assert_called_once_with(args=[gmail_user.id, "run-1", 1], countdown=15)
-    assert _state(gmail_user.id)["hop"] == 1
 
 
 def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_session):
@@ -562,7 +505,7 @@ def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_se
     ):
         lock.return_value.__enter__.return_value = True
         assert (
-            gmail_sync.import_gmail_messages.run(gmail_user.id, "run-1", 0)
+            gmail_sync.import_gmail_messages.run(gmail_user.id, "run-1")
             == "Reconnect required"
         )
 
@@ -575,7 +518,7 @@ def test_a_revoked_grant_ends_the_run_with_a_reconnect_message(gmail_user, db_se
 
 
 def test_fetched_mail_is_cached_before_it_is_ingested(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1"])
 
     def _ingest(_db, raw, owner_id):
         # By the time ingest runs, the raw message is already safely on disk.
@@ -583,27 +526,27 @@ def test_fetched_mail_is_cached_before_it_is_ingested(gmail_user, db_session):
         return SimpleNamespace(id=1)
 
     imp = _Import(ingest=_ingest)
-    imp.hop(gmail_user.id)
+    imp.run(gmail_user.id)
     assert imp.fetched == ["g1"]
 
 
 def test_a_message_that_fails_to_ingest_is_still_cached(gmail_user, db_session):
-    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1"])
 
     def _boom(*_a, **_k):
         raise ValueError("parser bug")
 
-    _Import(ingest=_boom).hop(gmail_user.id)
+    _Import(ingest=_boom).run(gmail_user.id)
     assert gmail_cache.read(gmail_user.id, "g1") == b"g1"  # can be replayed once fixed
 
 
 def test_cached_mail_is_imported_without_touching_gmail(gmail_user, db_session):
     for gid in ("g1", "g2"):
         gmail_cache.write(gmail_user.id, gid, f"cached {gid}".encode())
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
 
     imp = _Import()
-    assert imp.hop(gmail_user.id) == "Imported 2 of 2 messages"
+    assert imp.run(gmail_user.id) == "Imported 2 of 2 messages"
 
     assert imp.ingested == [b"cached g1", b"cached g2"]
     assert imp.fetched == []  # no Gmail fetch...
@@ -612,10 +555,10 @@ def test_cached_mail_is_imported_without_touching_gmail(gmail_user, db_session):
 
 def test_only_cache_misses_cost_a_gmail_connection(gmail_user, db_session):
     gmail_cache.write(gmail_user.id, "g1", b"cached g1")
-    _start(db_session, gmail_user.id, ["g1", "g2", "g3"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2", "g3"])
 
     imp = _Import()
-    imp.hop(gmail_user.id)
+    imp.run(gmail_user.id)
 
     assert imp.ingested == [b"cached g1", b"g2", b"g3"]
     assert imp.fetched == ["g2", "g3"]
@@ -624,22 +567,22 @@ def test_only_cache_misses_cost_a_gmail_connection(gmail_user, db_session):
 
 def test_cached_mail_imports_even_when_the_grant_is_revoked(gmail_user, db_session):
     gmail_cache.write(gmail_user.id, "g1", b"cached g1")
-    _start(db_session, gmail_user.id, ["g1"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1"])
     imp = _Import()
     imp.connect.side_effect = GmailReconnectRequired("revoked")
 
-    assert imp.hop(gmail_user.id) == "Imported 1 of 1 messages"
+    assert imp.run(gmail_user.id) == "Imported 1 of 1 messages"
     assert imp.ingested == [b"cached g1"]
 
 
 def test_a_revoked_grant_on_a_cache_miss_ends_the_run_instead_of_failing_the_message(
     gmail_user, db_session
 ):
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
     imp = _Import()
     imp.connect.side_effect = GmailReconnectRequired("revoked")
 
-    assert imp.hop(gmail_user.id) == "Reconnect required"
+    assert imp.run(gmail_user.id) == "Reconnect required"
     state = _state(gmail_user.id)
     assert state["failed"] == []  # the message isn't blamed for the dead token
     assert "Reconnect required" in state["error"]
@@ -650,16 +593,16 @@ def test_a_wipe_followed_by_a_reimport_is_deterministic_and_offline(
 ):
     from app.services.maintenance_service import clear_all_data
 
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
     first = _Import()
-    first.hop(gmail_user.id)
+    first.run(gmail_user.id)
     assert first.fetched == ["g1", "g2"]
 
     clear_all_data(db_session)  # Settings -> Data -> Clear all data
 
     assert gmail_cache.stats(gmail_user.id)[0] == 2  # the cache outlived the wipe
-    _start(db_session, gmail_user.id, ["g1", "g2"], sequential=False)
+    _start(db_session, gmail_user.id, ["g1", "g2"])
     again = _Import()
-    again.hop(gmail_user.id)
+    again.run(gmail_user.id)
     assert again.fetched == [] and again.ingested == [b"g1", b"g2"]
     again.connect.assert_not_called()

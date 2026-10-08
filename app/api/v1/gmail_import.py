@@ -251,7 +251,7 @@ def start_import(
 
     run_id = uuid.uuid4().hex
     try:
-        started = _begin_import(user.id, run_id, ids, body.sequential)
+        started = _begin_import(user.id, run_id, ids)
     except RunStateUnavailable as exc:
         raise _run_state_down() from exc
     if started is None:
@@ -260,7 +260,7 @@ def start_import(
     return GmailImportQueued(queued=len(ids))
 
 
-def _begin_import(user_id: int, run_id: str, ids: list[str], sequential: bool):
+def _begin_import(user_id: int, run_id: str, ids: list[str]):
     return gmail_runs.begin_run(
         "import",
         user_id,
@@ -270,9 +270,6 @@ def _begin_import(user_id: int, run_id: str, ids: list[str], sequential: bool):
             "done": 0,
             "remaining": ids,
             "failed": [],
-            "sequential": sequential,
-            "waiting_on": None,
-            "waiting_since": None,
             "current": None,
             "cancelled": False,
             "error": None,

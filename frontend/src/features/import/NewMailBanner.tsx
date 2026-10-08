@@ -45,7 +45,7 @@ export function NewMailNotice() {
  * The Import page's banner for new mail: review it, import it (all or a pick),
  * or skip it. Nothing is imported until you choose.
  */
-export function NewMailBanner({ sequential, busy }: { sequential: boolean; busy: boolean }) {
+export function NewMailBanner({ busy }: { busy: boolean }) {
   const news = useNewMailToReview()
   const check = useCheckGmailNew()
   const start = useStartGmailImport()
@@ -66,7 +66,7 @@ export function NewMailBanner({ sequential, busy }: { sequential: boolean; busy:
 
   function runImport(body: { gmail_ids?: string[] }) {
     start.mutate(
-      { new: true, sequential, ...body },
+      { new: true, ...body },
       {
         onSuccess: (r) => {
           setSelected(new Set())

@@ -4631,11 +4631,6 @@
               }
             ],
             "title": "Oldest N"
-          },
-          "sequential": {
-            "default": true,
-            "title": "Sequential",
-            "type": "boolean"
           }
         },
         "title": "GmailImportRequest",
@@ -4693,10 +4688,6 @@
             ],
             "title": "Finished At"
           },
-          "sequential": {
-            "title": "Sequential",
-            "type": "boolean"
-          },
           "started_at": {
             "anyOf": [
               {
@@ -4712,10 +4703,6 @@
           "total": {
             "title": "Total",
             "type": "integer"
-          },
-          "waiting": {
-            "title": "Waiting",
-            "type": "boolean"
           }
         },
         "required": [
@@ -4723,11 +4710,9 @@
           "total",
           "done",
           "failed_count",
-          "sequential",
           "cancelled",
           "error",
           "current_subject",
-          "waiting",
           "started_at",
           "finished_at"
         ],
@@ -7450,6 +7435,17 @@
           "label": {
             "title": "Label",
             "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           },
           "stage": {
             "$ref": "#/components/schemas/PipelineStage"

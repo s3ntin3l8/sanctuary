@@ -79,9 +79,6 @@ class GmailImportRequest(BaseModel):
     before: date | None = None
     # Narrow to mail that arrived after the sync point (the "new mail" banner).
     new: bool = False
-    # Wait for each email's documents to finish processing before ingesting the
-    # next, so earlier letters are enriched before their replies arrive.
-    sequential: bool = True
 
 
 class GmailImportQueued(BaseModel):
@@ -93,11 +90,8 @@ class GmailImportStatus(BaseModel):
     total: int
     done: int
     failed_count: int
-    sequential: bool
     cancelled: bool
     error: str | None
     current_subject: str | None
-    # Sequential mode: waiting for the last email's documents to finish.
-    waiting: bool
     started_at: datetime | None
     finished_at: datetime | None

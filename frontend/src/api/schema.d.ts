@@ -4084,11 +4084,6 @@ export interface components {
             new: boolean;
             /** Oldest N */
             oldest_n?: number | null;
-            /**
-             * Sequential
-             * @default true
-             */
-            sequential: boolean;
         };
         /** GmailImportStatus */
         GmailImportStatus: {
@@ -4106,14 +4101,10 @@ export interface components {
             failed_count: number;
             /** Finished At */
             finished_at: string | null;
-            /** Sequential */
-            sequential: boolean;
             /** Started At */
             started_at: string | null;
             /** Total */
             total: number;
-            /** Waiting */
-            waiting: boolean;
         };
         /** GmailIndexStatus */
         GmailIndexStatus: {
@@ -4993,6 +4984,8 @@ export interface components {
             kind: "doc" | "batch";
             /** Label */
             label: string;
+            /** Note */
+            note?: string | null;
             stage: components["schemas"]["PipelineStage"];
         };
         /** QueueView */

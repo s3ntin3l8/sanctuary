@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.rate_limit import limiter
 from app.dependencies import get_current_user, get_db
 from app.models.database import Document, User
+from app.models.enums import PipelineStage
 from app.schemas.worker_queue import FailedDoc, QueueCounts, QueueItem, QueueView
 from app.services import gmail_import_status
 from app.services.ai_inflight import count_inflight
+from app.services.pipeline_status import RELATIONSHIPS_HOLD_REASON, stages_dict
 from app.services.worker_queue import (
     _build_queue_items,
     _first_failed_stage_info,
@@ -37,6 +39,11 @@ def _queue_item(item: dict) -> QueueItem:
             doc_count=len(item["docs"]),
         )
     doc = item["doc"]
+    held = (
+        item["stage"] == PipelineStage.RELATIONSHIPS
+        and stages_dict(doc).get(PipelineStage.RELATIONSHIPS.value, {}).get("reason")
+        == RELATIONSHIPS_HOLD_REASON
+    )
     return QueueItem(
         kind="doc",
         stage=item["stage"],
@@ -44,6 +51,7 @@ def _queue_item(item: dict) -> QueueItem:
         doc_id=doc.id,
         batch_id=doc.ingest_batch_id,
         doc_count=1,
+        note="Waiting for earlier documents of the case" if held else None,
     )
 
 

@@ -319,6 +319,7 @@ def mark_started(doc_id: int, stage: PipelineStage, db: Session) -> None:
             "attempt": None,
             "max_attempts": None,
             "next_at": None,
+            "reason": None,  # e.g. a RELATIONSHIPS hold that has now been released
         },
         commit=True,  # early commit so the UI flips to RUNNING immediately
     )
@@ -694,51 +695,139 @@ def compute_overall_state(stages: dict) -> PipelineState:
     return PipelineState.PENDING
 
 
-def batch_pipeline_settled(db: Session, batch_id: int) -> bool:
-    """True when no document in the batch has pipeline work still ahead of it.
+# --- RELATIONSHIPS history gate -----------------------------------------------
+#
+# Relationship detection links a document to *earlier documents of the same case*
+# (Document.id < doc.id) — but only to ones that have been enriched (they need a
+# significance tier and a summary). Every other stage looks at the document alone.
+# So when many emails are ingested at once (a history import), only RELATIONSHIPS
+# has to wait for the documents before it; everything else runs concurrently.
 
-    Used to pace history imports: ingesting the next email only once the last
-    one's documents are fully processed means earlier letters are already
-    enriched when their replies arrive. A document with no stage rows yet
-    (process_document_task hasn't initialised it) counts as unsettled, so the
-    gap between dispatch and first stage can't be mistaken for "done". Stages
-    the user dismissed are terminal.
+RELATIONSHIPS_HOLD_REASON = "waiting_for_earlier_documents"
+
+# A document whose predecessors still haven't finished ENRICH this long after its
+# own ENRICH completed is released anyway: one stuck document must not hold a
+# case's relationships back forever (it just detects against fewer candidates).
+RELATIONSHIPS_GATE_MAX_WAIT = timedelta(minutes=30)
+
+_ENRICH_IN_FLIGHT = (
+    StageStatus.PENDING.value,
+    StageStatus.RUNNING.value,
+    StageStatus.RETRYING.value,
+)
+
+
+def relationship_gate_case_id(db: Session, doc) -> str | None:
+    """The case whose earlier documents are this document's relationship
+    candidates (same resolution as relationship_detector._get_prior_docs).
+    Unfiled mail ("_TRIAGE") has no case history to wait for."""
+    from app.models.database import Proceeding
+
+    case_id = doc.case_id
+    if not case_id and doc.proceeding_id:
+        case_id = (
+            db.query(Proceeding.case_id)
+            .filter(Proceeding.id == doc.proceeding_id)
+            .scalar()
+        )
+    return None if not case_id or case_id == "_TRIAGE" else case_id
+
+
+def relationships_gate_open(db: Session, doc_id: int) -> bool:
+    """True when no earlier document of the same case still has ENRICH ahead of it.
+
+    A batch that awaits the user's slice review can't finish by waiting, so its
+    documents don't hold the gate. Past ``RELATIONSHIPS_GATE_MAX_WAIT`` since this
+    document's own ENRICH completed, the gate opens regardless.
     """
-    from app.models.database import IngestBatch
+    from app.models.database import (
+        Document,
+        DocumentPipelineStage,
+        IngestBatch,
+    )
     from app.models.enums import IngestBatchStatus
 
-    batch_status = (
-        db.query(IngestBatch.status).filter(IngestBatch.id == batch_id).scalar()
+    doc = db.get(Document, doc_id)
+    if doc is None:
+        return True
+    case_id = relationship_gate_case_id(db, doc)
+    if case_id is None:
+        return True
+
+    blocked = (
+        db.query(DocumentPipelineStage.document_id)
+        .join(Document, Document.id == DocumentPipelineStage.document_id)
+        .outerjoin(IngestBatch, IngestBatch.id == Document.ingest_batch_id)
+        .filter(
+            Document.case_id == case_id,
+            Document.id < doc_id,
+            DocumentPipelineStage.stage == PipelineStage.ENRICH.value,
+            DocumentPipelineStage.status.in_(_ENRICH_IN_FLIGHT),
+            (IngestBatch.status.is_(None))
+            | (IngestBatch.status != IngestBatchStatus.AWAITING_SLICING),
+        )
+        .first()
+        is not None
     )
-    if batch_status == IngestBatchStatus.AWAITING_SLICING:
-        return True  # needs the user's slice review: no amount of waiting finishes it
-    rows = db.execute(
+    if not blocked:
+        return True
+
+    enriched_at = (
+        db.query(DocumentPipelineStage.completed_at)
+        .filter(
+            DocumentPipelineStage.document_id == doc_id,
+            DocumentPipelineStage.stage == PipelineStage.ENRICH.value,
+        )
+        .scalar()
+    )
+    if (
+        enriched_at
+        and now_utc() - ensure_utc(enriched_at) > RELATIONSHIPS_GATE_MAX_WAIT
+    ):
+        logger.warning(
+            "Doc #%d: relationships released after %s — an earlier document's "
+            "ENRICH never finished",
+            doc_id,
+            RELATIONSHIPS_GATE_MAX_WAIT,
+        )
+        return True
+    return False
+
+
+def hold_relationships(db: Session, doc_id: int) -> None:
+    """Leave RELATIONSHIPS PENDING and say why (shown in the processing queue)."""
+    db.execute(
         text(
-            """
-            SELECT d.id, dps.status
-            FROM documents d
-            LEFT JOIN document_pipeline_stages dps ON dps.document_id = d.id
-            WHERE d.ingest_batch_id = :batch_id
-            """
+            "UPDATE document_pipeline_stages SET reason = :reason "
+            "WHERE document_id = :doc_id AND stage = :stage AND status = :pending"
         ),
-        {"batch_id": batch_id},
-    ).fetchall()
-    stages_per_doc: dict[int, dict] = {}
-    all_dismissed: set[int] = set()
-    for doc_id, status in rows:
-        stages = stages_per_doc.setdefault(doc_id, {})
-        if status == StageStatus.DISMISSED.value:
-            all_dismissed.add(doc_id)
-        elif status is not None:
-            stages[f"s{len(stages)}"] = {"status": status}
-            all_dismissed.discard(doc_id)
-    unsettled = {PipelineState.PENDING, PipelineState.RUNNING, PipelineState.PARTIAL}
-    return all(
-        # Only-dismissed stages: the user closed this document out.
-        (not stages and doc_id in all_dismissed)
-        or compute_overall_state(stages) not in unsettled
-        for doc_id, stages in stages_per_doc.items()
+        {
+            "reason": RELATIONSHIPS_HOLD_REASON,
+            "doc_id": doc_id,
+            "stage": PipelineStage.RELATIONSHIPS.value,
+            "pending": StageStatus.PENDING.value,
+        },
     )
+    db.commit()
+
+
+def held_relationship_doc_ids(db: Session, case_id: str) -> list[int]:
+    """Documents of ``case_id`` whose RELATIONSHIPS is held by the gate."""
+    from app.models.database import Document, DocumentPipelineStage
+
+    rows = (
+        db.query(DocumentPipelineStage.document_id)
+        .join(Document, Document.id == DocumentPipelineStage.document_id)
+        .filter(
+            Document.case_id == case_id,
+            DocumentPipelineStage.stage == PipelineStage.RELATIONSHIPS.value,
+            DocumentPipelineStage.status == StageStatus.PENDING.value,
+            DocumentPipelineStage.reason == RELATIONSHIPS_HOLD_REASON,
+        )
+        .order_by(DocumentPipelineStage.document_id)
+        .all()
+    )
+    return [row[0] for row in rows]
 
 
 def get_upstream_blocking(stage: PipelineStage, stages: dict) -> list[str]:
@@ -1393,6 +1482,15 @@ def recover_stuck_pending_dispatches(
                 break
 
         if head_spec is None or head_spec.dispatch_arg != "doc_id":
+            continue
+
+        # Held by the history gate: an earlier document of the case is still being
+        # enriched, so this stage is waiting on purpose, not lost. (The gate opens
+        # by itself after RELATIONSHIPS_GATE_MAX_WAIT.)
+        if (
+            head_spec.stage == PipelineStage.RELATIONSHIPS
+            and not relationships_gate_open(db, doc.id)
+        ):
             continue
 
         # See docstring: a PENDING EXTRACT may be queue-waiting (legit) rather
