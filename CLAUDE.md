@@ -47,11 +47,11 @@ Embeddings live as `pgvector` columns directly on their owning tables — no sep
 
 ```python
 embedding: Mapped[list[float] | None] = mapped_column(
-    Vector(AI_EMBED_DIM), nullable=True
+    Vector(), nullable=True
 )
 ```
 
-on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embedding` (semantic claim dedup). Dimension is configured via `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text) and baked into the column at migration time; changing it requires clearing the column and resizing (`ALTER TABLE ... ALTER COLUMN embedding TYPE vector(N)`, see Settings → AI → Rebuild Index). KNN queries use pgvector's `<->` (L2) operator via SQLAlchemy's `Column.l2_distance(vec)`, HNSW-indexed. Search merges vector results with `ilike` results in `app/services/search_service.py`.
+on `DocumentChunk.embedding` (passage-level document retrieval) and `Claim.embedding` (semantic claim dedup). The ORM type is deliberately **unsized**: the width lives only in the database column, set by the baseline migration from `AI_EMBED_DIM` in `app/config.py` (default 768 for nomic-embed-text). Never declare `Vector(N)` in the model — SQLAlchemy's batched INSERT casts to that width and rejects vectors from a resized column. Changing the dimension requires clearing the column and resizing (`ALTER TABLE ... ALTER COLUMN embedding TYPE vector(N)`, see Settings → AI → Rebuild Index). KNN queries use pgvector's `<->` (L2) operator via SQLAlchemy's `Column.l2_distance(vec)`, HNSW-indexed. Search merges vector results with `ilike` results in `app/services/search_service.py`.
 
 ## Routes
 

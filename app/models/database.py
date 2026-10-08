@@ -6,8 +6,6 @@ from typing import Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import event, inspect
 
-from app.config import AI_EMBED_DIM
-
 
 def _utcnow():
     return datetime.now(UTC)
@@ -883,9 +881,7 @@ class Claim(Base):
     # Semantic-dedup vector (pgvector, HNSW-indexed). Plain nullable column —
     # no separate vector table — so it's written/cleared alongside the claim
     # row itself; see app/services/claim_embedding.py.
-    embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(AI_EMBED_DIM), nullable=True
-    )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 
     evidence: Mapped[list["ClaimEvidence"]] = relationship(
         "ClaimEvidence", back_populates="claim", cascade="all, delete-orphan"
@@ -1126,9 +1122,7 @@ class DocumentChunk(Base):
     ingest_date: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, nullable=False
     )
-    embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(AI_EMBED_DIM), nullable=True
-    )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
 

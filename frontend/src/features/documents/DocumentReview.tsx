@@ -193,6 +193,7 @@ function Header({ review, onOpenHud }: { review: Review; onOpenHud?: (id: number
 function Pipeline({ review }: { review: Review }) {
   const retry = useStageRetry(review.id)
   const toast = useToast()
+  const [errorOpen, setErrorOpen] = useState(false)
   const stages = review.pipeline.stages
   const done = stages.filter((s) => s.status === 'completed' || s.status === 'skipped').length
   const failed = stages.filter((s) => s.status === 'failed')
@@ -243,9 +244,19 @@ function Pipeline({ review }: { review: Review }) {
         ))}
       </div>
       {failed[0]?.error && (
-        <p className="mt-1 truncate font-mono text-[10px] text-danger" title={failed[0].error}>
-          {failed[0].error}
-        </p>
+        <button
+          type="button"
+          aria-expanded={errorOpen}
+          onClick={() => setErrorOpen((open) => !open)}
+          className={`mt-1 flex w-full items-start gap-1 text-left font-mono text-[10px] text-danger hover:underline ${
+            errorOpen ? 'whitespace-pre-wrap break-words' : ''
+          }`}
+        >
+          <span aria-hidden="true">{errorOpen ? '▾' : '▸'}</span>
+          <span className={errorOpen ? 'min-w-0 break-words' : 'min-w-0 truncate'}>
+            {failed[0].error}
+          </span>
+        </button>
       )}
     </Section>
   )

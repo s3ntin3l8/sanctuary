@@ -153,6 +153,19 @@ def test_engine():
             register_vector(dbapi_conn)
 
         Base.metadata.create_all(bind=engine)
+        # The ORM declares an unsized Vector() (the width is runtime config,
+        # set by the migration / Rebuild Index), so size the columns the way
+        # a migrated database has them.
+        from app.config import AI_EMBED_DIM
+
+        with engine.begin() as conn:
+            for table in ("document_chunks", "claims"):
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {table} ALTER COLUMN embedding "
+                        f"TYPE vector({AI_EMBED_DIM})"
+                    )
+                )
         yield engine
         engine.dispose()
 

@@ -142,15 +142,19 @@ def reindex_all_embeddings_task(self):
 
         def _on_progress(*, reindexed: int, failed: int) -> None:
             update_reindex_progress(db, reindexed=reindexed, failed=failed)
+            db.commit()
 
         try:
             result = run_async(reindex_all_docs(db, progress_cb=_on_progress))
         except Exception as exc:
             logger.exception("reindex_all_embeddings_task failed")
+            db.rollback()
             set_reindex_failed(db, str(exc))
+            db.commit()
             raise
 
         set_reindex_done(db)
+        db.commit()
 
         try:
             claims_result = run_async(reindex_all_claims(db))

@@ -376,3 +376,120 @@ async def test_reindex_all_docs_does_not_swallow_soft_time_limit(
         pytest.raises(SoftTimeLimitExceeded),
     ):
         await reindex_all_docs(db_session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_multi_chunk_embed_after_column_resized_to_other_dim(
+    db_session, sample_case
+):
+    """Regression: the ORM type used to bake in AI_EMBED_DIM, so SQLAlchemy's
+    batched multi-row INSERT cast every vector to vector(AI_EMBED_DIM) —
+    "expected 768 dimensions, not 1024" for any doc with 2+ chunks once
+    Rebuild Index had resized the column to the real model's width. The
+    column's own declared width is the only one that may matter."""
+    from sqlalchemy import text
+
+    new_dim = AI_EMBED_DIM + 256
+    tables = ("document_chunks", "claims")
+
+    def _resize(dim: int) -> None:
+        db_session.execute(text("DELETE FROM document_chunks"))
+        db_session.execute(text("UPDATE claims SET embedding = NULL"))
+        for table in tables:
+            db_session.execute(
+                text(f"ALTER TABLE {table} ALTER COLUMN embedding TYPE vector({dim})")
+            )
+        db_session.commit()
+
+    doc = Document(
+        title="multi",
+        content="x",
+        case_id=sample_case.id,
+        meta={"chunks": [{"text": "first"}, {"text": "second"}]},
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    _resize(new_dim)
+    try:
+        cfg = MagicMock(embed_dim=new_dim, embed_model="m")
+        with (
+            patch(
+                "app.services.embeddings.embed_provider.get_embedding_params",
+                new=AsyncMock(return_value={"url": "x", "json": {}, "headers": {}}),
+            ),
+            patch(
+                "httpx.AsyncClient.post",
+                new=AsyncMock(return_value=_mock_embedding_response([0.1] * new_dim)),
+            ),
+        ):
+            from app.services.embeddings import _embed_document_chunks
+
+            written = await _embed_document_chunks(doc, db_session, cfg)
+        assert written == 2
+        assert (
+            db_session.query(DocumentChunk)
+            .filter(DocumentChunk.document_id == doc.id)
+            .count()
+            == 2
+        )
+    finally:
+        db_session.rollback()
+        _resize(AI_EMBED_DIM)
+
+
+@pytest.mark.unit
+def test_reindex_task_persists_done_with_nothing_to_embed(db_session):
+    """Regression: set_reindex_done only flushes, and with no documents/claims
+    nothing else committed, so the job stayed "running" forever."""
+    from app.services.user_settings_service import (
+        get_reindex_job,
+        set_reindex_running,
+    )
+    from app.tasks.generate_embedding import reindex_all_embeddings_task
+
+    set_reindex_running(db_session, total=0, embed_dim=AI_EMBED_DIM)
+    db_session.commit()
+
+    empty = {"total": 0, "reindexed": 0, "failed": 0}
+    with (
+        patch(
+            "app.services.embeddings.reindex_all_docs",
+            new=AsyncMock(return_value=empty),
+        ),
+        patch(
+            "app.services.claim_embedding.reindex_all_claims",
+            new=AsyncMock(return_value=empty),
+        ),
+    ):
+        reindex_all_embeddings_task.apply()
+
+    db_session.expire_all()
+    assert get_reindex_job(db_session)["status"] == "done"
+
+
+@pytest.mark.unit
+def test_reindex_task_persists_failure(db_session):
+    from app.services.user_settings_service import (
+        get_reindex_job,
+        set_reindex_running,
+    )
+    from app.tasks.generate_embedding import reindex_all_embeddings_task
+
+    set_reindex_running(db_session, total=1, embed_dim=AI_EMBED_DIM)
+    db_session.commit()
+
+    with (
+        patch(
+            "app.services.embeddings.reindex_all_docs",
+            new=AsyncMock(side_effect=RuntimeError("provider down")),
+        ),
+        pytest.raises(RuntimeError, match="provider down"),
+    ):
+        reindex_all_embeddings_task.apply(throw=True)
+
+    db_session.expire_all()
+    job = get_reindex_job(db_session)
+    assert job["status"] == "failed"
+    assert "provider down" in job["error"]
