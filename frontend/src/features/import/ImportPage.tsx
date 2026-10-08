@@ -65,8 +65,8 @@ function GroupMessages({
       {query.hasNextPage && (
         <div className="px-4 py-2">
           <Button
+            size="sm"
             variant="secondary"
-            className="px-2.5 py-1 text-[11px]"
             disabled={query.isFetchingNextPage}
             onClick={() => query.fetchNextPage()}
           >

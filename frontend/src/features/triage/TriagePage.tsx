@@ -27,6 +27,7 @@ import { DocumentReview, ORIGINATOR_COLOR } from '../documents/DocumentReview'
 import { BundleTree } from './BundleTree'
 import { ConfirmBundleModal, type ConfirmTarget } from './ConfirmBundleModal'
 import { IngestModal } from './IngestModal'
+import { CONFIDENCE_TONE } from './RoutingPickers'
 
 type Status = TriageBundle['status'] | 'all'
 const STATUS_LABEL: Record<Status, string> = {
@@ -182,7 +183,7 @@ export function TriagePage() {
         <div className="mx-6 mb-2 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/8 px-3 py-2 text-[12px]">
           <span className="font-semibold">{selected.size} selected</span>
           <Button
-            className="px-2.5 py-1 text-[11px]"
+            size="sm"
             disabled={batchConfirm.isPending}
             onClick={() =>
               batchConfirm.mutate([...selected], {
@@ -197,8 +198,8 @@ export function TriagePage() {
             Confirm ({selected.size})
           </Button>
           <Button
+            size="sm"
             variant="secondary"
-            className="px-2.5 py-1 text-[11px]"
             onClick={() => setConfirmTarget({ mode: 'batch', keys: [...selected] })}
           >
             Assign to…
@@ -287,6 +288,8 @@ export function TriagePage() {
               onToggle={() => setExpanded((k) => (k === b.key ? null : b.key))}
               onConfirm={(action) => setConfirmTarget({ mode: 'single', bundle: b, action })}
               onRetry={(full) => setRetryTarget({ bundle: b, full })}
+              cases={query.data?.cases ?? []}
+              proceedings={query.data?.proceedings ?? []}
             />
           ))}
         </ul>
@@ -450,6 +453,8 @@ function BundleRow({
   onToggle,
   onConfirm,
   onRetry,
+  cases,
+  proceedings,
 }: {
   bundle: TriageBundle
   selected: boolean
@@ -458,6 +463,8 @@ function BundleRow({
   onToggle: () => void
   onConfirm: (action: 'confirm_bundle' | 'assign_case') => void
   onRetry: (full: boolean) => void
+  cases: Schemas['PickerCase'][]
+  proceedings: Schemas['PickerProceeding'][]
 }) {
   const action = useBundleAction()
   const navigate = useNavigate()
@@ -467,6 +474,8 @@ function BundleRow({
   const [confirmDanger, setConfirmDanger] = useState<'dismiss' | 'delete' | null>(null)
   const processing = b.status === 'processing'
   const sourceIcon = { email: 'mail', scan: 'scanner', manual: 'upload_file' }[b.source_type]
+  const confidence = b.sub_groups[0]?.case_confidence ?? null
+  const confirmable = !processing && b.status !== 'stuck'
 
   return (
     <li
@@ -552,15 +561,25 @@ function BundleRow({
           {b.confirmed_case_id ? (
             <span className="font-mono text-[11px] text-tealink">{b.confirmed_case_id}</span>
           ) : b.suggestion ? (
-            <span className="flex flex-wrap items-center gap-1">
-              {b.sub_groups[0]?.case_confidence && (
-                <Badge tone={b.sub_groups[0].case_confidence === 'high' ? 'success' : 'warning'}>
-                  {b.sub_groups[0].case_confidence}
-                </Badge>
+            <>
+              {(confidence || b.suggestion.is_draft) && (
+                <span className="mb-1 flex items-center gap-1">
+                  {confidence && (
+                    <Badge tone={CONFIDENCE_TONE[confidence] ?? 'neutral'} pill>
+                      {confidence}
+                    </Badge>
+                  )}
+                  {b.suggestion.is_draft && (
+                    <Badge tone="warning" pill>
+                      draft
+                    </Badge>
+                  )}
+                </span>
               )}
-              {b.suggestion.is_draft && <Badge tone="warning">draft</Badge>}
-              <span className="font-mono text-[11px] text-tealink">{b.suggestion.case_id}</span>
-            </span>
+              <span className="block font-mono text-[11px] text-tealink">
+                {b.suggestion.case_id}
+              </span>
+            </>
           ) : (
             <span className="text-muted">no suggestion — route</span>
           )}
@@ -569,9 +588,11 @@ function BundleRow({
         <span className="min-w-0">
           {b.proceeding ? (
             <>
-              <span className="flex items-center gap-1 font-mono text-[11px]">
-                {b.proceeding.az_court ?? '—'}{' '}
-                <Badge tone="accent">{b.proceeding.court_level.toUpperCase()}</Badge>
+              <span className="flex items-center gap-1.5 font-mono text-[11px]">
+                {b.proceeding.az_court ?? '—'}
+                <Badge tone="accent" pill>
+                  {b.proceeding.court_level.toUpperCase()}
+                </Badge>
               </span>
               <span className="block truncate text-[10px] text-muted">
                 {b.proceeding.court_name}
@@ -584,26 +605,34 @@ function BundleRow({
         <span className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
           {b.status === 'stuck' && (
             <Button
+              size="icon"
               variant="secondary"
-              className="px-2 py-1 text-[11px]"
               onClick={() => onRetry(false)}
               aria-label="Retry"
+              title="Retry"
             >
-              <Icon name="replay" size={14} />
+              <Icon name="replay" size={16} />
             </Button>
           )}
-          {!processing && b.status !== 'stuck' && (b.suggestion || b.confirmed_case_id) && (
-            <Button className="px-2.5 py-1 text-[11px]" onClick={() => onConfirm('confirm_bundle')}>
-              Confirm
-            </Button>
-          )}
-          {!processing && b.status !== 'stuck' && !b.suggestion && !b.confirmed_case_id && (
+          {confirmable && (b.suggestion || b.confirmed_case_id) && (
             <Button
-              variant="secondary"
-              className="px-2.5 py-1 text-[11px]"
-              onClick={() => onConfirm('assign_case')}
+              size="icon"
+              onClick={() => onConfirm('confirm_bundle')}
+              aria-label="Confirm"
+              title="Confirm bundle"
             >
-              Route
+              <Icon name="check" size={16} />
+            </Button>
+          )}
+          {confirmable && !b.suggestion && !b.confirmed_case_id && (
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => onConfirm('assign_case')}
+              aria-label="Route"
+              title="Route to a case"
+            >
+              <Icon name="alt_route" size={16} />
             </Button>
           )}
           {processing && <Icon name="hourglass_top" size={16} className="text-warning" />}
@@ -614,7 +643,8 @@ function BundleRow({
                 aria-label="More actions"
                 aria-expanded={menu}
                 onClick={() => setMenu((m) => !m)}
-                className="rounded-md p-1 text-muted hover:bg-accent/7 hover:text-ink"
+                title="More actions"
+                className="flex h-7 w-7 items-center justify-center rounded-[7px] border border-line text-muted hover:bg-accent/7 hover:text-ink"
               >
                 <Icon name="more_horiz" size={16} />
               </button>
@@ -675,42 +705,62 @@ function BundleRow({
         </span>
       </div>
       {expanded && (
-        <div className="grid grid-cols-[300px_1fr] gap-4 border-t border-line2 bg-panel2/60 px-4 py-4">
-          <BundleTree bundle={b} activeDocId={activeDoc} onSelect={setActiveDoc} />
-          <div className="min-w-0">
+        <div className="flex border-t border-line bg-card2">
+          <div className="w-[300px] shrink-0 border-r border-line p-3.5">
+            <BundleTree
+              bundle={b}
+              activeDocId={activeDoc}
+              onSelect={setActiveDoc}
+              footer={
+                <div className="mt-3.5 flex flex-col gap-1.5">
+                  {confirmable && (
+                    <>
+                      <Button
+                        className="w-full"
+                        onClick={() =>
+                          onConfirm(
+                            b.suggestion || b.confirmed_case_id ? 'confirm_bundle' : 'assign_case',
+                          )
+                        }
+                      >
+                        Confirm bundle{' '}
+                        <kbd className="rounded-[3px] bg-on-accent/25 px-[5px] py-px font-mono text-[9px]">
+                          ⌘↵
+                        </kbd>
+                      </Button>
+                      <span className="text-center text-[9px] text-muted2 italic">
+                        {pluralize(b.doc_count, 'doc')} · cascades to case
+                      </span>
+                    </>
+                  )}
+                  {processing && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDanger('dismiss')}
+                      className="text-center text-[10px] text-muted hover:underline"
+                    >
+                      Archive bundle
+                    </button>
+                  )}
+                </div>
+              }
+            />
+          </div>
+          <div className="min-w-0 flex-1">
             {activeDoc !== null ? (
               <DocumentReview
                 docId={activeDoc}
-                onReassign={() => onConfirm('assign_case')}
                 onOpenHud={(id) => navigate(`/document/${id}`)}
+                routing={{
+                  bundle: b,
+                  cases,
+                  proceedings,
+                  onCreateCase: () => onConfirm('assign_case'),
+                }}
               />
             ) : (
-              <p className="text-[12px] text-muted">Select a document.</p>
+              <p className="p-4 text-[12px] text-muted">Select a document.</p>
             )}
-            <div className="mt-3 flex items-center gap-2 border-t border-line2 pt-3">
-              {!processing && b.status !== 'stuck' && (
-                <Button
-                  className="px-3 py-1 text-[11px]"
-                  onClick={() =>
-                    onConfirm(
-                      b.suggestion || b.confirmed_case_id ? 'confirm_bundle' : 'assign_case',
-                    )
-                  }
-                >
-                  Confirm bundle <kbd className="ml-1 font-mono text-[9px] opacity-70">⌘↵</kbd>
-                </Button>
-              )}
-              <Button
-                variant="secondary"
-                className="px-3 py-1 text-[11px]"
-                onClick={() => setConfirmDanger('dismiss')}
-              >
-                Dismiss
-              </Button>
-              <span className="ml-auto font-mono text-[10px] text-muted">
-                {b.documents.findIndex((d) => d.id === activeDoc) + 1} / {b.doc_count}
-              </span>
-            </div>
           </div>
         </div>
       )}

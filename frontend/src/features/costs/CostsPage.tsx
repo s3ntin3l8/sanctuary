@@ -58,7 +58,7 @@ export function CostsPage() {
             {data.cases.length} cases · {formatEur(data.summary.booked)} booked
           </p>
         </div>
-        <Button className="ml-auto px-3 py-1.5 text-[11.5px]" onClick={() => setAdding(true)}>
+        <Button className="ml-auto" onClick={() => setAdding(true)}>
           <Icon name="add" size={14} /> Add cost
         </Button>
       </header>
@@ -223,38 +223,22 @@ function Row({ cost, canEdit }: { cost: CostRow; canEdit: boolean }) {
       </span>
       <span className="flex justify-end gap-1">
         {canEdit && paid < cost.amount_gross && cost.status !== 'erstattet' && (
-          <Button
-            variant="secondary"
-            className="px-1.5 py-0.5 text-[10px]"
-            onClick={() => run('pay')}
-          >
+          <Button size="sm" variant="secondary" onClick={() => run('pay')}>
             paid
           </Button>
         )}
         {canEdit && paid > 0 && (
-          <Button
-            variant="secondary"
-            className="px-1.5 py-0.5 text-[10px]"
-            onClick={() => run('unpay')}
-          >
+          <Button size="sm" variant="secondary" onClick={() => run('unpay')}>
             ↺ paid
           </Button>
         )}
         {canEdit && cost.is_reimbursable !== false && reimbursed < cost.amount_gross && (
-          <Button
-            variant="secondary"
-            className="px-1.5 py-0.5 text-[10px]"
-            onClick={() => run('reimburse')}
-          >
+          <Button size="sm" variant="secondary" onClick={() => run('reimburse')}>
             reimbursed
           </Button>
         )}
         {canEdit && reimbursed > 0 && (
-          <Button
-            variant="secondary"
-            className="px-1.5 py-0.5 text-[10px]"
-            onClick={() => run('unreimburse')}
-          >
+          <Button size="sm" variant="secondary" onClick={() => run('unreimburse')}>
             ↺ reimb.
           </Button>
         )}
@@ -462,15 +446,10 @@ function EditCostModal({
           label="Reimbursable by the opposing party (§91 ZPO)"
         />
         <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            className="px-3 py-1.5 text-[11.5px]"
-            onClick={onClose}
-          >
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" className="px-3 py-1.5 text-[11.5px]" disabled={pending}>
+          <Button type="submit" disabled={pending}>
             Save
           </Button>
         </div>
@@ -616,19 +595,10 @@ function AddCostForm({ onClose }: { onClose: () => void }) {
           label="Reimbursable by the opposing party (§91 ZPO)"
         />
         <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            className="px-3 py-1.5 text-[11.5px]"
-            onClick={onClose}
-          >
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            className="px-3 py-1.5 text-[11.5px]"
-            disabled={create.isPending || editable.length === 0}
-          >
+          <Button type="submit" disabled={create.isPending || editable.length === 0}>
             Book cost
           </Button>
         </div>

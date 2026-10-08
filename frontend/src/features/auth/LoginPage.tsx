@@ -65,7 +65,7 @@ export function LoginPage() {
           required
           autoComplete="current-password"
         />
-        <Button type="submit" className="w-full" disabled={login.isPending}>
+        <Button type="submit" size="lg" className="w-full" disabled={login.isPending}>
           Sign in
         </Button>
       </form>
@@ -76,7 +76,7 @@ export function LoginPage() {
             <span className="text-[10px] tracking-[.1em] text-muted uppercase">or</span>
             <div className="h-px flex-1 bg-line" />
           </div>
-          <a href="/auth/oidc/login" className={buttonClass('secondary', 'w-full')}>
+          <a href="/auth/oidc/login" className={buttonClass('secondary', 'w-full', 'lg')}>
             Sign in with {config.oidc_provider_name}
           </a>
         </>

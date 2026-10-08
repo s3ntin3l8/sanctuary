@@ -93,7 +93,7 @@ export function SharingModal({ open, onClose, caseId }: Props) {
                 <option value="editor">editor</option>
               </select>
             </Field>
-            <Button type="submit" className="px-3 py-1.5 text-[11.5px]" disabled={add.isPending}>
+            <Button type="submit" disabled={add.isPending}>
               Grant
             </Button>
           </form>

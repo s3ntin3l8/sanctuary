@@ -371,7 +371,7 @@ function Hud({ reader }: { reader: Reader }) {
           <aside
             ref={rail}
             aria-label="Document intelligence"
-            className="w-[340px] shrink-0 space-y-3 overflow-y-auto border-l border-line bg-panel p-3 text-[12px]"
+            className="w-[340px] shrink-0 overflow-y-auto border-l border-line bg-card2 text-[12px]"
           >
             <ReviewSections
               review={reader}
@@ -387,7 +387,7 @@ function Hud({ reader }: { reader: Reader }) {
               <button
                 type="button"
                 onClick={() => setChatOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line px-3 py-2 text-[11.5px] text-muted hover:border-accent hover:text-ink"
+                className="m-3 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-xl border border-dashed border-line px-3 py-2 text-[11.5px] text-muted hover:border-accent hover:text-ink"
               >
                 <Icon name="forum" size={14} /> Ask about this document
                 <kbd className="font-mono text-[9px]">/</kbd>

@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, type ReactNode, useState } from 'react'
 
 import { type TriageBundle, useGroupOp } from '../../api/triage'
 import { formatShortDate } from '../../format'
@@ -7,10 +7,16 @@ import { Icon } from '../../ui/Icon'
 import { useToast } from '../../ui/toast'
 import { ORIGINATOR_COLOR } from '../documents/DocumentReview'
 
-type Props = { bundle: TriageBundle; activeDocId: number | null; onSelect: (id: number) => void }
+type Props = {
+  bundle: TriageBundle
+  activeDocId: number | null
+  onSelect: (id: number) => void
+  /** Rendered under the source/received lines (the bundle-level confirm). */
+  footer?: ReactNode
+}
 
 /** Bundle contents: sub-groups (cover letter + enclosures) with manual grouping controls. */
-export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
+export function BundleTree({ bundle, activeDocId, onSelect, footer }: Props) {
   const op = useGroupOp()
   const toast = useToast()
   const docsById = new Map(bundle.documents.map((d) => [d.id, d]))
@@ -19,9 +25,10 @@ export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
     op.mutate(vars, { onError: (e) => toast(e.message, 'error') })
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       <div className="mb-2 flex items-center gap-2">
-        <h4 className="text-[9.5px] font-extrabold tracking-[.12em] text-muted uppercase">
+        <Icon name="account_tree" size={14} className="text-accent" />
+        <h4 className="text-[9.5px] font-bold tracking-[.1em] text-muted uppercase">
           Bundle contents · {bundle.doc_count}
         </h4>
         {batchId !== null && (
@@ -49,7 +56,7 @@ export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
           </span>
         )}
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <div className="space-y-2">
         {bundle.sub_groups.map((g) => (
           <div key={g.id} className="rounded-lg border border-line2">
             <GroupHeader
@@ -159,6 +166,7 @@ export function BundleTree({ bundle, activeDocId, onSelect }: Props) {
         <div>source · {bundle.sender_email ?? bundle.source_type}</div>
         <div>received · {formatShortDate(bundle.received_at)}</div>
       </div>
+      {footer}
     </div>
   )
 }

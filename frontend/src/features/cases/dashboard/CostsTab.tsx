@@ -249,40 +249,24 @@ function Rows({
           <span className="text-right font-mono text-[11px]">{formatEur(r.amount_gross)}</span>
           <span className="flex gap-1">
             {canEdit && r.status !== 'bezahlt' && r.status !== 'erstattet' && (
-              <Button
-                variant="secondary"
-                className="px-1.5 py-0.5 text-[10px]"
-                onClick={() => run(r.id, 'pay')}
-              >
+              <Button size="sm" variant="secondary" onClick={() => run(r.id, 'pay')}>
                 pay
               </Button>
             )}
             {canEdit && r.status === 'bezahlt' && (
               <>
-                <Button
-                  variant="secondary"
-                  className="px-1.5 py-0.5 text-[10px]"
-                  onClick={() => run(r.id, 'unpay')}
-                >
+                <Button size="sm" variant="secondary" onClick={() => run(r.id, 'unpay')}>
                   unpay
                 </Button>
                 {r.is_reimbursable && (
-                  <Button
-                    variant="secondary"
-                    className="px-1.5 py-0.5 text-[10px]"
-                    onClick={() => run(r.id, 'reimburse')}
-                  >
+                  <Button size="sm" variant="secondary" onClick={() => run(r.id, 'reimburse')}>
                     reimbursed
                   </Button>
                 )}
               </>
             )}
             {canEdit && r.status === 'erstattet' && (
-              <Button
-                variant="secondary"
-                className="px-1.5 py-0.5 text-[10px]"
-                onClick={() => run(r.id, 'unreimburse')}
-              >
+              <Button size="sm" variant="secondary" onClick={() => run(r.id, 'unreimburse')}>
                 undo
               </Button>
             )}

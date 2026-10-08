@@ -83,8 +83,8 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
                   <span className="font-mono text-[11px] text-danger">scan failed</span>
                 )}
                 <Button
+                  size="sm"
                   variant="secondary"
-                  className="px-2.5 py-1 text-[11px]"
                   disabled={find.isPending}
                   onClick={() => find.mutate(undefined, { onError })}
                 >
@@ -104,15 +104,12 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
             </h3>
             {detail.can_edit && (
               <span className="ml-auto flex gap-1.5">
-                <Button
-                  className="px-2 py-1 text-[11px]"
-                  onClick={() => batch.mutate('confirm', { onError })}
-                >
+                <Button size="sm" onClick={() => batch.mutate('confirm', { onError })}>
                   Merge all
                 </Button>
                 <Button
+                  size="sm"
                   variant="secondary"
-                  className="px-2 py-1 text-[11px]"
                   onClick={() => batch.mutate('dismiss', { onError })}
                 >
                   Dismiss all
@@ -129,7 +126,7 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
                 {detail.can_edit && (
                   <div className="mt-1.5 flex gap-1.5">
                     <Button
-                      className="px-2 py-0.5 text-[11px]"
+                      size="sm"
                       onClick={() =>
                         decide.mutate(
                           { kind: 'merge', proposalId: m.proposal_id, decision: 'confirm' },
@@ -140,8 +137,8 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
                       Merge
                     </Button>
                     <Button
+                      size="sm"
                       variant="secondary"
-                      className="px-2 py-0.5 text-[11px]"
                       onClick={() =>
                         decide.mutate(
                           { kind: 'merge', proposalId: m.proposal_id, decision: 'dismiss' },
@@ -186,7 +183,7 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
                 {detail.can_edit && (
                   <div className="mt-1.5 flex gap-1.5">
                     <Button
-                      className="px-2 py-0.5 text-[11px]"
+                      size="sm"
                       onClick={() =>
                         decide.mutate(
                           { kind: 'evidence', proposalId: p.proposal_id, decision: 'confirm' },
@@ -197,8 +194,8 @@ export function TruthMapTab({ detail }: { detail: CaseDetail }) {
                       Confirm
                     </Button>
                     <Button
+                      size="sm"
                       variant="secondary"
-                      className="px-2 py-0.5 text-[11px]"
                       onClick={() =>
                         decide.mutate(
                           { kind: 'evidence', proposalId: p.proposal_id, decision: 'dismiss' },

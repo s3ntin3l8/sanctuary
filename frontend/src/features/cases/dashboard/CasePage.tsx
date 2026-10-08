@@ -163,20 +163,12 @@ function Dashboard({
           <span className="truncate">{detail.title}</span>
           <span className="ml-auto flex items-center gap-1">
             {detail.can_manage_sharing && (
-              <Button
-                variant="secondary"
-                className="px-2 py-1 text-[11px]"
-                onClick={() => setSharing(true)}
-              >
+              <Button size="sm" variant="secondary" onClick={() => setSharing(true)}>
                 <Icon name="group" size={13} /> Share
               </Button>
             )}
             {detail.can_edit && (
-              <Button
-                variant="secondary"
-                className="px-2 py-1 text-[11px]"
-                onClick={() => setEditing(true)}
-              >
+              <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
                 <Icon name="edit" size={13} /> Edit
               </Button>
             )}
@@ -186,7 +178,7 @@ function Dashboard({
             >
               <Icon name="upload_file" size={13} /> Add documents
             </Link>
-            <Button className="px-2.5 py-1 text-[11px]" onClick={() => setChatOpen(true)}>
+            <Button size="sm" onClick={() => setChatOpen(true)}>
               <Icon name="forum" size={13} /> Ask AI{' '}
               <kbd className="font-mono text-[9px] opacity-70">/</kbd>
             </Button>
@@ -244,7 +236,7 @@ function Dashboard({
         <Banner tone="warning">
           <span>This case was drafted by the AI from incoming documents.</span>
           <Button
-            className="px-2.5 py-1 text-[11px]"
+            size="sm"
             onClick={() =>
               draftDecision.mutate(
                 { caseId: detail.id, decision: 'confirm' },
@@ -258,8 +250,8 @@ function Dashboard({
             Ratify
           </Button>
           <Button
+            size="sm"
             variant="secondary"
-            className="px-2.5 py-1 text-[11px]"
             onClick={() =>
               draftDecision.mutate(
                 { caseId: detail.id, decision: 'reject' },
@@ -278,7 +270,7 @@ function Dashboard({
             {detail.close_suggestion_rationale ? ` ${detail.close_suggestion_rationale}` : ''}
           </span>
           <Button
-            className="px-2.5 py-1 text-[11px]"
+            size="sm"
             onClick={() =>
               closeDecision.mutate(
                 { caseId: detail.id, decision: 'confirm' },
@@ -289,8 +281,8 @@ function Dashboard({
             Close case
           </Button>
           <Button
+            size="sm"
             variant="secondary"
-            className="px-2.5 py-1 text-[11px]"
             onClick={() =>
               closeDecision.mutate(
                 { caseId: detail.id, decision: 'dismiss' },

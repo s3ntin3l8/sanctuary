@@ -247,13 +247,13 @@ function Parties({ detail }: { detail: CaseDetail }) {
             className="w-full rounded-md border border-line bg-card px-2 py-1 text-[11.5px]"
           />
           <div className="flex gap-1.5">
-            <Button type="submit" className="px-2.5 py-1 text-[11px]" disabled={save.isPending}>
+            <Button size="sm" type="submit" disabled={save.isPending}>
               Save
             </Button>
             <Button
+              size="sm"
               type="button"
               variant="secondary"
-              className="px-2.5 py-1 text-[11px]"
               disabled={reenrich.isPending}
               onClick={() =>
                 reenrich.mutate(undefined, {
