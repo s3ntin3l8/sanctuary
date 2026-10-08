@@ -134,3 +134,27 @@ def test_trimming_drops_minor_documents_first_and_keeps_deadlines(
     assert "Deadline" in block
     assert block.count("Minor") == 1
     assert "(+5 lower-priority events omitted)" in block
+
+
+@pytest.mark.unit
+def test_payment_and_open_past_hearing_and_late_due_time(
+    db_session, sample_case, sample_cost
+):
+    now = now_utc().replace(hour=0, minute=0, second=0, microsecond=0)
+    late = _item(sample_case.id, "Late evening", now - timedelta(seconds=1))
+    past_hearing = _item(
+        sample_case.id,
+        "Old hearing",
+        now - timedelta(days=4),
+        kind=ActionItemType.COURT_DATE,
+    )
+    sample_cost.due_at = now - timedelta(days=8)
+    sample_cost.case_id = sample_case.id
+    db_session.add_all([late, past_hearing])
+    db_session.commit()
+
+    block = format_chronology_for_case(db_session, sample_case.id)
+
+    assert "OVERDUE (open, 1 days past due) Late evening" in block
+    assert "OVERDUE (open, 4 days date passed) Old hearing" in block
+    assert "payment" in block and "€" in block

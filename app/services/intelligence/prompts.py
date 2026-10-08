@@ -621,7 +621,7 @@ Extract these fields:
     * intake       — documents are arriving but no procedural step has been taken yet
     * discovery    — parties exchanging information / pre-pleading correspondence, no formal motion filed
     * pre_trial    — formal motion or complaint filed, pleadings exchanged, no hearing yet
-    * trial        — hearing scheduled (future COURT_DATE action item) or in progress
+    * trial        — hearing scheduled (an UPCOMING hearing in the chronology) or in progress
     * post_trial   — a ruling has been issued; appeal window may be open or appeal pending at a higher court_level
     * closed       — case concluded at all instance levels, no open action items, no pending appeal
   Anchor your choice in the most recent CRITICAL or SIGNIFICANT document and any UPCOMING hearing in the chronology. If the only signals are administrative/informational documents, keep intake.

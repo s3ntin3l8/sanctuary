@@ -543,6 +543,7 @@ class ShareCreate(BaseModel):
 def brief_view(case: Case) -> BriefView:
     """The last good brief plus the job state of its regeneration."""
     raw = case.ai_brief or {}
+    status: Literal["ready", "processing", "failed", "none"]
     if case.brief_state == BriefState.PROCESSING:
         status = "processing"
     elif case.brief_state == BriefState.FAILED:

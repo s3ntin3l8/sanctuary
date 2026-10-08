@@ -330,7 +330,8 @@ def generate(case_id: str) -> None:
             .all()
         )
 
-        chronology_context = format_chronology_for_case(db, case_id)
+        # The brief already lists every document, so keep its chronology tighter.
+        chronology_context = format_chronology_for_case(db, case_id, max_events=40)
         reactions_context = format_reactions_for_case(db, case_id)
         claims_context = format_claims_for_case(db, case_id)
         entities_context = format_entities_for_case(db, case_id)

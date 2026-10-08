@@ -40,7 +40,9 @@ def _flag(ev: TimelineEvent, today) -> str:
         if ev.status == "completed":
             return "done "
         if ev.is_overdue:
-            return f"OVERDUE (open, {(today - ev.date).days} days past due) "
+            days = (today.date() - ev.date.date()).days
+            label = "date passed" if ev.kind == "hearing" else "past due"
+            return f"OVERDUE (open, {days} days {label}) "
         if ev.is_future:
             return "UPCOMING "
         return ""
