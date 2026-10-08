@@ -150,7 +150,7 @@ def confirm_document(
         if finalize:
             conf = dict(doc.extraction_confidence or {})
             field_map = {
-                "originator": originator_type,
+                "originator_type": originator_type,
                 "sender": sender,
                 "issued_date": issued_date,
                 "significance_tier": significance_tier,
