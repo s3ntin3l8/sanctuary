@@ -35,12 +35,21 @@ def _admin(db):
 
 def test_shell_returns_user_and_triage_count(db_session):
     admin = _admin(db_session)
+    batch = IngestBatch(
+        owner_id=admin.id,
+        source_type=IngestBatchSourceType.EMAIL,
+        status=IngestBatchStatus.PENDING,
+        case_id="_TRIAGE",
+    )
+    db_session.add(batch)
+    db_session.flush()
+    # The badge counts bundles that show up in the feed, i.e. batches with a document.
     db_session.add(
-        IngestBatch(
+        Document(
+            title="d",
             owner_id=admin.id,
-            source_type=IngestBatchSourceType.EMAIL,
-            status=IngestBatchStatus.PENDING,
             case_id="_TRIAGE",
+            ingest_batch_id=batch.id,
         )
     )
     db_session.commit()

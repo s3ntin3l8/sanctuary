@@ -1,11 +1,27 @@
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_utc
 from app.models.database import IngestBatch
 from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.repositories.base import BaseRepository
+
+# ``meta["reason"]`` of the committed, document-less record left for an email
+# that produced nothing to ingest. The marker is the reason itself, not the
+# batch's status, so what COMPLETED means can change without making these rows
+# look like ordinary empty batches (and get swept).
+NO_NEW_DOCUMENTS = "no_new_documents"
+
+
+def is_no_document_tombstone(batch: IngestBatch) -> bool:
+    return (batch.meta or {}).get("reason") == NO_NEW_DOCUMENTS
+
+
+def is_not_tombstone_clause():
+    """SQL predicate: the batch is not a no-document tombstone (NULL-safe)."""
+    return func.coalesce(IngestBatch.meta["reason"].as_string(), "") != NO_NEW_DOCUMENTS
 
 
 class IngestBatchRepository(BaseRepository[IngestBatch]):

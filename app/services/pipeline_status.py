@@ -1099,6 +1099,51 @@ def recover_orphaned_running_stages(
     }
 
 
+def recover_empty_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
+    """Delete batches that never got (or lost) all their documents (#145).
+
+    A batch with zero documents is invisible in the triage feed (it is built
+    from documents), so it can never be reviewed or deleted from the UI, yet it
+    used to sit in PENDING for ever: an upload that failed after its batch was
+    committed, a batch whose ingest crashed mid-way, rows left by older code
+    that did not roll back an all-duplicate email.
+
+    Spared: the deliberate no-document tombstone that keeps a message from being
+    re-imported (identified by ``meta.reason``, see ``NO_NEW_DOCUMENTS``, not by
+    status) and AWAITING_SLICING batches (their documents are created when the
+    user confirms the cuts). The age floor keeps a batch whose documents are
+    still being created (``upload`` commits the batch first) out of the sweep.
+
+    Returns {"batches_deleted": N, "batch_ids": [...]}.
+    """
+    from sqlalchemy import exists
+
+    from app.models.database import Document, IngestBatch
+    from app.models.enums import IngestBatchStatus
+    from app.repositories.ingest_batch import is_not_tombstone_clause
+
+    cutoff = now_utc() - timedelta(seconds=max_age_seconds)
+    empty = (
+        db.query(IngestBatch)
+        .filter(
+            IngestBatch.ingest_date < cutoff,
+            IngestBatch.status != IngestBatchStatus.AWAITING_SLICING,
+            is_not_tombstone_clause(),
+            ~exists().where(Document.ingest_batch_id == IngestBatch.id),
+        )
+        .all()
+    )
+    ids = [b.id for b in empty]
+    for batch in empty:
+        db.delete(batch)
+    if ids:
+        db.commit()
+        logger.info(
+            "recover_empty_batches: deleted %d empty batch(es): %s", len(ids), ids
+        )
+    return {"batches_deleted": len(ids), "batch_ids": ids}
+
+
 def recover_stuck_batches(db: Session, *, max_age_seconds: int = 3600) -> dict:
     """Find batches where analysis_queued_at is set but analysis never completed.
 

@@ -1,3 +1,4 @@
+import logging
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -5,6 +6,8 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import event, inspect
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow():
@@ -32,7 +35,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
+    Session,
     mapped_column,
+    object_session,
     relationship,
     validates,
 )
@@ -367,11 +372,19 @@ def generate_normalized_filename(target) -> str:
     return f"{date_str}_{safe_title}{ext}"
 
 
+_PENDING_MOVES_KEY = "pending_file_moves"
+
+
 @event.listens_for(Document, "before_update")
 def move_document_file_on_assignment(mapper, connection, target):
-    """Physically move the document file when assigned to a case/proceeding.
+    """Plan the physical move of a document file when it is assigned to a case/proceeding.
 
-    Only triggers when needs_review is False (finalized).
+    Only triggers when needs_review is False (finalized). This runs *during
+    flush*, which is not durable: a later statement in the same request can
+    still fail and roll the row back. So it only sets ``file_path`` and queues
+    the move in ``session.info``; the file is moved by ``_run_pending_file_moves``
+    once the transaction has actually committed (#167). A rollback just drops
+    the queue, leaving file and row where they were.
     """
     from app.config import DATA_DIR
 
@@ -393,9 +406,23 @@ def move_document_file_on_assignment(mapper, connection, target):
     if not target.case_id or target.case_id == "_TRIAGE":
         return
 
-    old_path = Path(target.file_path)
-    if not old_path.is_absolute():
-        old_path = DATA_DIR / old_path
+    session = object_session(target)
+    if session is None:
+        return
+    pending: dict[int, tuple[str, Path, Path]] = session.info.setdefault(
+        _PENDING_MOVES_KEY, {}
+    )
+
+    # A second flush in the same transaction starts from where the *file*
+    # still is (the first flush only queued the move), not from file_path.
+    queued = pending.get(target.id)
+    if queued is not None:
+        old_rel, old_path, _ = queued
+    else:
+        old_rel = target.file_path
+        old_path = Path(target.file_path)
+        if not old_path.is_absolute():
+            old_path = DATA_DIR / old_path
 
     if not old_path.exists():
         return
@@ -417,22 +444,101 @@ def move_document_file_on_assignment(mapper, connection, target):
         else:
             new_dir = new_dir / f"proc_{target.proceeding_id}"
 
-    new_dir.mkdir(parents=True, exist_ok=True)
     normalized_name = generate_normalized_filename(target)
     new_path = new_dir / normalized_name
 
-    # Collision handling
-    if new_path.exists() and new_path.resolve() != old_path.resolve():
+    # Collision handling: against files on disk *and* destinations other
+    # documents in this transaction have already claimed (nothing is moved yet).
+    claimed = {dest for doc_id, (_, _, dest) in pending.items() if doc_id != target.id}
+
+    def _taken(path: Path) -> bool:
+        return path in claimed or (
+            path.exists() and path.resolve() != old_path.resolve()
+        )
+
+    if _taken(new_path):
         stem = new_path.stem
         suffix = new_path.suffix
         counter = 1
-        while new_path.exists():
+        while _taken(new_path):
             new_path = new_dir / f"{stem}_{counter}{suffix}"
             counter += 1
 
     if new_path.resolve() != old_path.resolve():
-        shutil.move(str(old_path), str(new_path))
+        pending[target.id] = (old_rel, old_path, new_path)
         target.file_path = str(new_path.relative_to(DATA_DIR))
+    else:
+        pending.pop(target.id, None)
+
+
+# The two Session-level hooks below are deliberately global: every commit and
+# every soft rollback in the app passes through them. That is bounded — both
+# return immediately when ``session.info`` has no queued moves, which is the
+# case for everything except confirming/reassigning a document's case.
+@event.listens_for(Session, "after_commit")
+def _run_pending_file_moves(session):
+    """Perform the file moves queued by ``move_document_file_on_assignment``.
+
+    Runs after the transaction is durable. Each queued move is checked against
+    the committed row first (a savepoint can have rolled the change back while
+    the queue entry survived), and a move that fails is undone in the database
+    so ``file_path`` never points at a file that is not there.
+    """
+    pending = session.info.pop(_PENDING_MOVES_KEY, None)
+    if not pending:
+        return
+    from app.config import DATA_DIR, SessionLocal
+
+    revert: list[tuple[int, str]] = []
+    with SessionLocal() as check:
+        for doc_id, (old_rel, old_path, new_path) in pending.items():
+            current = check.execute(
+                _sa_text("SELECT file_path FROM documents WHERE id = :id"),
+                {"id": doc_id},
+            ).scalar()
+            if current != str(new_path.relative_to(DATA_DIR)):
+                continue  # that change never committed
+            try:
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old_path), str(new_path))
+            except OSError:
+                logger.exception(
+                    "Could not move document %s from %s to %s; keeping the old path",
+                    doc_id,
+                    old_path,
+                    new_path,
+                )
+                revert.append((doc_id, old_rel))
+    if revert:
+        # Best-effort, like the rest of this hook: the caller's transaction is
+        # already committed, so a failure here must not surface as an error in
+        # code that has finished its work. Log it; the move failure above was
+        # already logged with the paths needed to repair the row by hand.
+        try:
+            with SessionLocal() as fix:
+                for doc_id, old_rel in revert:
+                    fix.execute(
+                        _sa_text("UPDATE documents SET file_path = :p WHERE id = :id"),
+                        {"p": old_rel, "id": doc_id},
+                    )
+                fix.commit()
+        except Exception:
+            logger.exception(
+                "Could not revert file_path for documents %s after a failed file move",
+                [doc_id for doc_id, _ in revert],
+            )
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _drop_pending_file_moves(session, previous_transaction):
+    """A rolled-back transaction leaves the files untouched: forget the plan.
+
+    Savepoint rollbacks (``previous_transaction.nested``) are ignored here;
+    ``_run_pending_file_moves`` re-checks every entry against the committed row.
+    """
+    if getattr(previous_transaction, "nested", False):
+        return
+    session.info.pop(_PENDING_MOVES_KEY, None)
 
 
 class Case(Base):

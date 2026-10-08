@@ -11,6 +11,7 @@ from app.models.database import (
     ActionItem,
     Case,
     CaseShare,
+    Document,
     IngestBatch,
     LegalCost,
 )
@@ -126,15 +127,34 @@ def test_pending_triage_is_the_callers_inbox_without_slicing(db_session, two_use
         (a, IngestBatchStatus.COMPLETED),
         (b, IngestBatchStatus.PENDING),
     ):
+        batch = IngestBatch(
+            owner_id=owner.id,
+            source_type=IngestBatchSourceType.EMAIL,
+            status=status,
+            case_id="_TRIAGE",
+            subject=f"{owner.email} {status}",
+        )
+        db_session.add(batch)
+        db_session.flush()
+        # A bundle only exists in the triage feed if it has a document.
         db_session.add(
-            IngestBatch(
+            Document(
+                title="d",
                 owner_id=owner.id,
-                source_type=IngestBatchSourceType.EMAIL,
-                status=status,
                 case_id="_TRIAGE",
-                subject=f"{owner.email} {status}",
+                ingest_batch_id=batch.id,
             )
         )
+    # ...and a document-less batch is invisible, so it must not be counted.
+    db_session.add(
+        IngestBatch(
+            owner_id=a.id,
+            source_type=IngestBatchSourceType.EMAIL,
+            status=IngestBatchStatus.PENDING,
+            case_id="_TRIAGE",
+            subject="empty",
+        )
+    )
     db_session.commit()
 
     g = _groups(build_notifications(db_session, a))

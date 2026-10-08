@@ -18,7 +18,7 @@ import email.message
 import pytest
 
 from app.models.database import Document, IngestBatch
-from app.models.enums import IngestBatchSourceType
+from app.models.enums import IngestBatchSourceType, IngestBatchStatus
 from app.services.ingestion.batch_orchestrator import ingest_raw_email
 
 
@@ -87,11 +87,11 @@ def test_duplicate_attachment_across_emails_is_not_moved_or_reprocessed(db_sessi
 def test_reingesting_same_duplicate_only_email_does_not_churn_batch_ids(db_session):
     """Re-ingesting the exact same email (same Message-ID) whose only
     attachment duplicates an already-ingested document must not spawn a new
-    batch row every time. Before this fix, an all-duplicate-attachments
-    batch stayed committed with 0 docs, which ingest_raw_email's own
-    orphaned-batch cleanup then deleted-and-recreated on every re-ingest of
-    that Message-ID — and the Gmail-sync watermark-overlap fix in this same
-    PR deliberately re-ingests recent messages on every sync tick."""
+    batch row every time. The first sight is recorded as one COMPLETED,
+    document-less tombstone (so the message counts as handled and is not
+    offered again); every later re-ingest — which the Gmail-sync watermark
+    overlap does deliberately, on every tick — finds that tombstone and leaves
+    it alone instead of deleting and recreating it under a new id."""
     pdf_bytes = b"%PDF-1.4 already-ingested content"
 
     original_raw = _build_email(
@@ -109,17 +109,36 @@ def test_reingesting_same_duplicate_only_email_does_not_churn_batch_ids(db_sessi
     )
     batch_count_before = db_session.query(IngestBatch).count()
 
+    assert (
+        ingest_raw_email(db_session, dup_raw, source_type=IngestBatchSourceType.EMAIL)
+        is None
+    )
+    tombstones = (
+        db_session.query(IngestBatch)
+        .filter(IngestBatch.message_id == "<repeat-me@example.com>")
+        .all()
+    )
+    assert len(tombstones) == 1
+    assert tombstones[0].status == IngestBatchStatus.COMPLETED
+    assert tombstones[0].meta["reason"] == "no_new_documents"
+    assert db_session.query(IngestBatch).count() == batch_count_before + 1
+
     for _ in range(3):
         result = ingest_raw_email(
             db_session, dup_raw, source_type=IngestBatchSourceType.EMAIL
         )
         assert result is None
 
-    batch_count_after = db_session.query(IngestBatch).count()
-    assert batch_count_after == batch_count_before, (
-        f"Batch count grew from {batch_count_before} to {batch_count_after} "
-        f"across 3 re-ingests of the same duplicate-only email — expected no "
-        f"new batches to be left behind."
+    assert db_session.query(IngestBatch).count() == batch_count_before + 1, (
+        "re-ingesting the same duplicate-only email must reuse its tombstone, "
+        "not delete and recreate it"
+    )
+    assert (
+        db_session.query(IngestBatch)
+        .filter(IngestBatch.message_id == "<repeat-me@example.com>")
+        .one()
+        .id
+        == tombstones[0].id
     )
 
 
