@@ -80,14 +80,6 @@ def _mock_batch_result(cover_id: int, enclosure_id: int) -> dict:
                 "originator_type": "court",
             }
         ],
-        "detected_actions": [
-            {
-                "title": "Urteil prüfen",
-                "action_type": "deadline",
-                "due_date": "2026-05-01",
-                "description": "Berufung prüfen",
-            }
-        ],
     }
 
 
@@ -178,10 +170,7 @@ def test_ingestion_cascade(db_session, email_batch):
     assert enclosure.role == DocumentRole.ENCLOSURE
     assert enclosure.attributed_originator == "Amtsgericht Berlin"
 
-    # Batch analyzer stores detected_actions as hints — no ActionItem rows yet.
-    db_session.refresh(batch)
-    assert batch.detected_actions is not None
-    assert len(batch.detected_actions) >= 1
+    # Batch analysis creates no ActionItem rows.
 
     # ── Stage 2: Document enrichment ─────────────────────────────────────────
     from app.services.intelligence.document_enricher import enrich

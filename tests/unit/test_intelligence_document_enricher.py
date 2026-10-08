@@ -368,3 +368,80 @@ def test_partial_placeholder_summary_stores_real_fields(doc_with_content, db_ses
     assert doc_with_content.ai_summary["required_action"] is None
     # "None" (the string) is short enough to be a placeholder too
     assert doc_with_content.ai_summary["financial_impact"] is None
+
+
+def _capture_enricher_prompt(doc) -> str:
+    captured = {}
+
+    def fake_call_json_ai(*args, **kwargs):
+        from app.services.intelligence.schemas import DocumentEnrichment
+
+        captured["user_prompt"] = kwargs.get("user_prompt", "")
+        return DocumentEnrichment.model_validate({})
+
+    with patch(
+        "app.services.intelligence.document_enricher.call_json_ai",
+        side_effect=fake_call_json_ai,
+    ):
+        _call_enricher_sync(doc)
+    return captured["user_prompt"]
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_includes_settled_metadata(db_session, doc_with_content):
+    """Sender, originator type and issued date from METADATA reach ENRICH as settled."""
+    from datetime import datetime
+
+    from app.models.enums import OriginatorType
+
+    doc_with_content.sender = "Amtsgericht Ingolstadt"
+    doc_with_content.originator_type = OriginatorType.COURT
+    doc_with_content.issued_date = datetime(2026, 4, 30)
+    db_session.commit()
+    db_session.refresh(doc_with_content)
+
+    prompt = _capture_enricher_prompt(doc_with_content)
+
+    assert "Settled by metadata stage" in prompt
+    assert "Sender: Amtsgericht Ingolstadt" in prompt
+    assert "Originator type: court" in prompt
+    assert "Issued date: 2026-04-30" in prompt
+
+
+@pytest.mark.unit
+def test_call_enricher_sync_omits_unsettled_metadata(db_session, doc_with_content):
+    """No sender / unknown originator / no date -> no settled block at all."""
+    from app.models.enums import OriginatorType
+
+    doc_with_content.sender = None
+    doc_with_content.originator_type = OriginatorType.UNKNOWN
+    doc_with_content.issued_date = None
+    db_session.commit()
+    db_session.refresh(doc_with_content)
+
+    prompt = _capture_enricher_prompt(doc_with_content)
+
+    assert "Settled by metadata stage" not in prompt
+    assert "Batch-detected actions" not in prompt
+
+
+@pytest.mark.unit
+def test_enrich_prompt_has_no_originator_rederivation():
+    from app.services.intelligence.prompts import DOCUMENT_ENRICHER_SYSTEM
+
+    assert "Issuers of certifying evidence" not in DOCUMENT_ENRICHER_SYSTEM
+    assert "Settled by metadata stage" in DOCUMENT_ENRICHER_SYSTEM
+
+
+@pytest.mark.unit
+def test_apply_enrichment_keeps_issued_date_set_by_metadata(
+    db_session, doc_with_content
+):
+    from datetime import datetime
+
+    doc_with_content.issued_date = datetime(2026, 4, 30)
+    db_session.commit()
+
+    _apply_enrichment(doc_with_content, {"issued_date": "2020-01-01"}, db=db_session)
+
+    assert doc_with_content.issued_date.date() == datetime(2026, 4, 30).date()

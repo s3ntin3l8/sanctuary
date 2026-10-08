@@ -79,7 +79,6 @@ def test_batch_analysis_skips_failed_docs(
                     ],
                 }
             ],
-            "detected_actions": [],
         }
 
     monkeypatch.setattr(
@@ -104,7 +103,7 @@ def test_batch_analysis_skips_failed_docs(
 
 
 @pytest.mark.integration
-def test_action_items_created_for_triage_case(db_session):
+def test_batch_analysis_creates_no_action_items_for_triage_case(db_session):
     batch = IngestBatch(
         source_type=IngestBatchSourceType.EMAIL,
         case_id="_TRIAGE",
@@ -128,22 +127,12 @@ def test_action_items_created_for_triage_case(db_session):
         "is_cover_letter": True,
         "court_relay": False,
         "enclosed_descriptions": [],
-        "detected_actions": [
-            {
-                "title": "Triage Deadline",
-                "action_type": "deadline",
-                "due_date": "2025-12-31",
-                "description": "Found in triage",
-                "confidence": "high",
-            }
-        ],
     }
 
     _apply_batch_results(batch.id, [doc], result, db_session)
 
-    # Batch analyzer stores detected_actions as hints; enricher creates ActionItem rows.
+    # Batch analysis creates no ActionItem rows; the enricher is the sole owner.
+    from app.models.database import ActionItem
+
     db_session.expire_all()
-    db_session.refresh(batch)
-    assert batch.detected_actions is not None
-    assert len(batch.detected_actions) == 1
-    assert batch.detected_actions[0]["title"] == "Triage Deadline"
+    assert db_session.query(ActionItem).count() == 0
